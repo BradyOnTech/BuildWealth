@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     ignidash_export_dir: Path = Field(default=Path("data/ignidash"), alias="IGNIDASH_EXPORT_DIR")
     import_inbox_dir: Path = Field(default=Path("data/imports/inbox"), alias="IMPORT_INBOX_DIR")
     import_archive_dir: Path = Field(default=Path("data/imports/archive"), alias="IMPORT_ARCHIVE_DIR")
+    conversation_dir: Path = Field(default=Path("data/conversations"), alias="CONVERSATION_DIR")
 
     ghostfolio_api_base: str = Field(default="http://ghostfolio:3333/api", alias="GHOSTFOLIO_API_BASE")
     ghostfolio_security_token: str = Field(default="", alias="GHOSTFOLIO_SECURITY_TOKEN")
@@ -43,6 +44,9 @@ class Settings(BaseSettings):
 
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-5-mini", alias="OPENAI_MODEL")
+    openai_base_url: str = Field(default="https://api.openai.com/v1", alias="OPENAI_BASE_URL")
+    copilot_max_history_messages: int = Field(default=24, alias="COPILOT_MAX_HISTORY_MESSAGES")
+    copilot_max_tool_rounds: int = Field(default=6, alias="COPILOT_MAX_TOOL_ROUNDS")
 
     openbb_provider: str = Field(default="yfinance", alias="OPENBB_PROVIDER")
 

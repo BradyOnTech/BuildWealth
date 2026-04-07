@@ -101,3 +101,40 @@ class SyncStatusResponse(BaseModel):
     last_error: str | None = None
     last_snapshot_path: str | None = None
     last_ignidash_payload_path: str | None = None
+
+
+class CopilotChatRequest(BaseModel):
+    question: str
+    conversation_id: str | None = None
+    use_live_snapshot: bool = False
+
+
+class CopilotToolTrace(BaseModel):
+    name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    result: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
+
+
+class CopilotChatResponse(BaseModel):
+    conversation_id: str
+    answer: str
+    tool_calls: list[CopilotToolTrace] = Field(default_factory=list)
+    model: str | None = None
+    created_at: datetime
+
+
+class CopilotConversationSummary(BaseModel):
+    id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    last_message_preview: str
+
+
+class CopilotConversationResponse(BaseModel):
+    id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    messages: list[dict[str, Any]] = Field(default_factory=list)

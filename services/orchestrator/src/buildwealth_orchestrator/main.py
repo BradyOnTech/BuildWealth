@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from contextlib import suppress
 from datetime import datetime, timezone
@@ -9,12 +10,17 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
+import httpx
 
 from buildwealth_orchestrator.clients.ghostfolio import GhostfolioClient
 from buildwealth_orchestrator.clients.ignidash import IgnidashClient
 from buildwealth_orchestrator.schemas import (
     ChatRequest,
     ChatResponse,
+    CopilotChatRequest,
+    CopilotChatResponse,
+    CopilotConversationResponse,
+    CopilotConversationSummary,
     CsvImportRequest,
     CsvImportResponse,
     OptionsChainRequest,
@@ -25,6 +31,11 @@ from buildwealth_orchestrator.schemas import (
     SyncStatusResponse,
 )
 from buildwealth_orchestrator.services.coordinator import Coordinator
+from buildwealth_orchestrator.services.copilot_runtime import (
+    ConversationStore,
+    FinancialCopilot,
+    OpenAIChatToolClient,
+)
 from buildwealth_orchestrator.services.csv_importer import (
     archive_import_file,
     parse_transaction_csv,
@@ -75,6 +86,24 @@ scenario_engine = ScenarioEngine(
 )
 research_service = OpenBBResearchService(provider=settings.openbb_provider)
 coordinator = Coordinator()
+conversation_store = ConversationStore(settings.conversation_dir)
+openai_tool_client = OpenAIChatToolClient(
+    api_key=settings.openai_api_key,
+    model=settings.openai_model,
+    base_url=settings.openai_base_url,
+)
+copilot = FinancialCopilot(
+    conversation_store=conversation_store,
+    llm_client=openai_tool_client,
+    max_history_messages=settings.copilot_max_history_messages,
+    max_tool_rounds=settings.copilot_max_tool_rounds,
+    system_prompt=(
+        "You are BuildWealth Copilot, a single-user financial research and planning assistant. "
+        "Use tools to ground answers in real portfolio data before making claims. "
+        "Be explicit about assumptions and uncertainty. "
+        "Do not provide legal/tax advice; provide analytical insights and scenarios."
+    ),
+)
 
 sync_lock = asyncio.Lock()
 scheduler_task: asyncio.Task | None = None
@@ -266,10 +295,203 @@ async def execute_csv_import(file_path: Path, request: CsvImportRequest) -> CsvI
     )
 
 
+def summarize_snapshot(snapshot: PortfolioSnapshot, holdings_limit: int = 10) -> dict[str, object]:
+    top_holdings = []
+    for holding in snapshot.holdings[:holdings_limit]:
+        top_holdings.append(
+            {
+                "symbol": holding.symbol,
+                "name": holding.name,
+                "value_usd": round(holding.value_usd, 2),
+                "allocation_percent": round(holding.allocation_percent, 2),
+            }
+        )
+
+    return {
+        "as_of": snapshot.as_of.isoformat(),
+        "currency": snapshot.base_currency,
+        "total_value_usd": round(snapshot.total_value_usd, 2),
+        "total_investment_usd": round(snapshot.total_investment_usd, 2),
+        "net_performance_usd": round(snapshot.net_performance_usd, 2),
+        "net_performance_percent": round(snapshot.net_performance_percent, 4),
+        "holdings_count": len(snapshot.holdings),
+        "top_holdings": top_holdings,
+    }
+
+
+async def build_contextual_brief(use_live_snapshot: bool = False) -> str:
+    snapshot_payload: dict[str, object]
+    try:
+        if use_live_snapshot:
+            snapshot_payload = summarize_snapshot(await build_live_snapshot())
+        else:
+            snapshot_payload = summarize_snapshot(snapshot_store.latest())
+    except FileNotFoundError:
+        snapshot_payload = {"note": "No local snapshot yet. Run sync or ask tool to fetch live snapshot."}
+    except Exception as exc:
+        snapshot_payload = {"note": f"Snapshot context unavailable: {exc}"}
+
+    sync_payload = get_sync_status().model_dump(mode="json")
+
+    context = {
+        "location_state": settings.app_state,
+        "currency": settings.app_currency,
+        "sync_status": sync_payload,
+        "snapshot_summary": snapshot_payload,
+        "planning_defaults": {
+            "years_to_retirement": settings.planner_years_to_retirement,
+            "annual_contribution_usd": settings.planner_annual_contribution_usd,
+            "returns": {
+                "baseline": settings.planner_expected_return_baseline,
+                "optimistic": settings.planner_expected_return_optimistic,
+                "conservative": settings.planner_expected_return_conservative,
+            },
+            "inflation": settings.planner_inflation,
+            "marginal_tax_rate": settings.planner_marginal_tax_rate,
+            "hsa_delta_default": settings.planner_hsa_delta_default,
+        },
+    }
+    return json.dumps(context, indent=2, default=str)
+
+
+async def tool_get_latest_snapshot(_: dict[str, object]) -> dict[str, object]:
+    snapshot = snapshot_store.latest()
+    return summarize_snapshot(snapshot)
+
+
+async def tool_get_live_snapshot(_: dict[str, object]) -> dict[str, object]:
+    snapshot = await build_live_snapshot()
+    return summarize_snapshot(snapshot)
+
+
+async def tool_run_sync(_: dict[str, object]) -> dict[str, object]:
+    return await execute_sync(trigger="copilot-tool")
+
+
+async def tool_get_sync_status(_: dict[str, object]) -> dict[str, object]:
+    return get_sync_status().model_dump(mode="json")
+
+
+async def tool_run_planning(arguments: dict[str, object]) -> dict[str, object]:
+    current_value = arguments.get("current_portfolio_value_usd")
+    annual_contribution = arguments.get("annual_contribution_usd")
+    years = arguments.get("years")
+    hsa_extra = arguments.get("hsa_extra_contribution_usd")
+
+    if current_value is None:
+        current_value = snapshot_store.latest().total_value_usd
+
+    result = scenario_engine.run(
+        current_portfolio_value_usd=float(current_value),
+        annual_contribution_usd=(float(annual_contribution) if annual_contribution is not None else None),
+        years=(int(years) if years is not None else None),
+        hsa_extra_contribution_usd=(float(hsa_extra) if hsa_extra is not None else None),
+    )
+    return result.model_dump(mode="json")
+
+
+async def tool_research_options_chain(arguments: dict[str, object]) -> dict[str, object]:
+    symbol = str(arguments.get("symbol", "AAPL")).strip().upper()
+    result = research_service.options_chain(symbol).model_dump(mode="json")
+    records = result.get("records", [])
+    if isinstance(records, list):
+        result["records"] = records[:25]
+        result["records_truncated"] = max(0, len(records) - 25)
+    return result
+
+
+async def tool_list_accounts(_: dict[str, object]) -> dict[str, object]:
+    accounts = await ghostfolio_client.get_accounts_list()
+    simplified = []
+    for account in accounts:
+        simplified.append(
+            {
+                "id": account.get("id"),
+                "name": account.get("name"),
+                "balance": account.get("balance"),
+                "currency": account.get("currency"),
+                "isExcluded": account.get("isExcluded"),
+            }
+        )
+    return {"count": len(simplified), "accounts": simplified}
+
+
+def configure_copilot_tools() -> None:
+    empty_schema: dict[str, object] = {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    }
+
+    copilot.register_tool(
+        name="get_latest_snapshot",
+        description="Get the latest locally saved portfolio snapshot summary.",
+        parameters=empty_schema,
+        handler=tool_get_latest_snapshot,
+    )
+    copilot.register_tool(
+        name="get_live_snapshot",
+        description="Fetch a live portfolio snapshot from Ghostfolio and summarize it.",
+        parameters=empty_schema,
+        handler=tool_get_live_snapshot,
+    )
+    copilot.register_tool(
+        name="run_sync",
+        description="Run a full portfolio sync pipeline and regenerate downstream payloads.",
+        parameters=empty_schema,
+        handler=tool_run_sync,
+    )
+    copilot.register_tool(
+        name="get_sync_status",
+        description="Read sync engine status, counters, and latest run timestamps.",
+        parameters=empty_schema,
+        handler=tool_get_sync_status,
+    )
+    copilot.register_tool(
+        name="run_planning_scenarios",
+        description=(
+            "Run baseline/optimistic/conservative/HSA planning scenarios. "
+            "Optional fields: current_portfolio_value_usd, annual_contribution_usd, years, hsa_extra_contribution_usd."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "current_portfolio_value_usd": {"type": "number"},
+                "annual_contribution_usd": {"type": "number"},
+                "years": {"type": "integer"},
+                "hsa_extra_contribution_usd": {"type": "number"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_run_planning,
+    )
+    copilot.register_tool(
+        name="research_options_chain",
+        description="Fetch options chain records for a ticker via OpenBB tooling.",
+        parameters={
+            "type": "object",
+            "properties": {"symbol": {"type": "string"}},
+            "required": ["symbol"],
+            "additionalProperties": False,
+        },
+        handler=tool_research_options_chain,
+    )
+    copilot.register_tool(
+        name="list_accounts",
+        description="List known Ghostfolio accounts with balances and metadata.",
+        parameters=empty_schema,
+        handler=tool_list_accounts,
+    )
+
+
+configure_copilot_tools()
+
+
 @app.on_event("startup")
 async def on_startup() -> None:
     settings.import_inbox_dir.mkdir(parents=True, exist_ok=True)
     settings.import_archive_dir.mkdir(parents=True, exist_ok=True)
+    settings.conversation_dir.mkdir(parents=True, exist_ok=True)
 
     global scheduler_task
     if settings.sync_interval_minutes > 0:
@@ -312,6 +534,42 @@ def sync_status() -> SyncStatusResponse:
 def list_import_files() -> dict[str, list[str]]:
     files = sorted([path.name for path in settings.import_inbox_dir.glob("*.csv")])
     return {"files": files}
+
+
+@app.get("/api/copilot/conversations", response_model=list[CopilotConversationSummary])
+def list_copilot_conversations(limit: int = 30) -> list[CopilotConversationSummary]:
+    summaries = conversation_store.list(limit=max(1, min(limit, 200)))
+    return [CopilotConversationSummary(**summary) for summary in summaries]
+
+
+@app.get("/api/copilot/conversations/{conversation_id}", response_model=CopilotConversationResponse)
+def get_copilot_conversation(conversation_id: str) -> CopilotConversationResponse:
+    try:
+        conversation = conversation_store.get(conversation_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return CopilotConversationResponse(**conversation)
+
+
+@app.post("/api/copilot/chat", response_model=CopilotChatResponse)
+async def copilot_chat(request: CopilotChatRequest) -> CopilotChatResponse:
+    contextual_brief = await build_contextual_brief(use_live_snapshot=request.use_live_snapshot)
+    try:
+        result = await copilot.chat(
+            question=request.question,
+            conversation_id=request.conversation_id,
+            contextual_brief=contextual_brief,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except httpx.HTTPStatusError as exc:
+        detail = f"LLM provider error: {exc.response.text}"
+        raise HTTPException(status_code=502, detail=detail) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Copilot failed: {exc}") from exc
+
+    return CopilotChatResponse(**result)
 
 
 @app.get("/api/snapshot/live", response_model=PortfolioSnapshot)

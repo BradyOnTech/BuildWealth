@@ -14,6 +14,7 @@ data/snapshots/*.json
 data/ignidash/*.json
 data/imports/inbox/*.csv
 data/imports/archive/*.csv
+services/orchestrator/data/
 
 # Logs
 *.log
