@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     import_inbox_dir: Path = Field(default=Path("data/imports/inbox"), alias="IMPORT_INBOX_DIR")
     import_archive_dir: Path = Field(default=Path("data/imports/archive"), alias="IMPORT_ARCHIVE_DIR")
     conversation_dir: Path = Field(default=Path("data/conversations"), alias="CONVERSATION_DIR")
+    plans_dir: Path = Field(default=Path("data/plans"), alias="PLANS_DIR")
 
     ghostfolio_api_base: str = Field(default="http://ghostfolio:3333/api", alias="GHOSTFOLIO_API_BASE")
     ghostfolio_security_token: str = Field(default="", alias="GHOSTFOLIO_SECURITY_TOKEN")

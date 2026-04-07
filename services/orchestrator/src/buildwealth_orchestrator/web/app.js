@@ -7,6 +7,10 @@ const state = {
   currentConversationId: null,
   currentMessages: [],
   copilotLoading: false,
+  plans: [],
+  currentPlanId: null,
+  currentPlanDetail: null,
+  copilotPlanId: '',
 };
 
 function stamp() {
@@ -22,7 +26,6 @@ function writeLog(message, payload = null, isError = false) {
   const block = document.createElement('div');
   if (isError) block.classList.add('error');
   block.textContent = `${lines.join('\n')}\n`;
-
   logEl.prepend(block);
 }
 
@@ -77,8 +80,8 @@ function renderSnapshot(snapshot) {
 
   const tbody = byId('holdings-body');
   tbody.innerHTML = '';
-
   const top = (snapshot.holdings || []).slice(0, 12);
+
   for (const row of top) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -114,6 +117,310 @@ function renderInboxFiles(files) {
     option.value = file;
     option.textContent = file;
     select.appendChild(option);
+  }
+}
+
+function setPlanControlsEnabled(enabled) {
+  byId('activate-plan').disabled = !enabled;
+  byId('refresh-plan-context').disabled = !enabled;
+  byId('save-plan').disabled = !enabled;
+  byId('add-decision').disabled = !enabled;
+  byId('plan-markdown').disabled = !enabled;
+  byId('plan-tasks').disabled = !enabled;
+  byId('decision-summary').disabled = !enabled;
+  byId('decision-rationale').disabled = !enabled;
+  byId('decision-status').disabled = !enabled;
+}
+
+function clearPlanDetail() {
+  state.currentPlanDetail = null;
+  byId('plan-meta').textContent = 'Select a plan to view details.';
+  byId('plan-markdown').value = '';
+  byId('plan-tasks').value = '';
+  byId('plan-context').value = '';
+  byId('plan-decisions-body').innerHTML = '<tr><td colspan="4">No decisions yet.</td></tr>';
+  setPlanControlsEnabled(false);
+}
+
+function renderPlanDecisions(decisions) {
+  const tbody = byId('plan-decisions-body');
+  tbody.innerHTML = '';
+
+  if (!decisions.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="4">No decisions yet.</td>';
+    tbody.appendChild(tr);
+    return;
+  }
+
+  for (const decision of decisions) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${fmtDate(decision.created_at)}</td>
+      <td>${decision.status || 'proposed'}</td>
+      <td>${decision.summary || '-'}</td>
+      <td>${decision.rationale || '-'}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+function renderPlanDetail() {
+  const detail = state.currentPlanDetail;
+  if (!detail) {
+    clearPlanDetail();
+    return;
+  }
+
+  byId('plan-meta').textContent =
+    `${detail.title || 'Untitled'} • ${detail.is_active ? 'Active Plan' : 'Inactive'} • Updated ${fmtDate(detail.updated_at)}`;
+  byId('plan-markdown').value = detail.files?.plan_markdown || '';
+  byId('plan-tasks').value = detail.files?.tasks_markdown || '';
+  byId('plan-context').value = detail.files?.context_markdown || '';
+  renderPlanDecisions(Array.isArray(detail.decisions) ? detail.decisions : []);
+  setPlanControlsEnabled(true);
+}
+
+function renderPlanList() {
+  const listEl = byId('plan-list');
+  listEl.innerHTML = '';
+
+  if (!state.plans.length) {
+    const empty = document.createElement('p');
+    empty.className = 'chat-empty';
+    empty.textContent = 'No plans yet.';
+    listEl.appendChild(empty);
+    return;
+  }
+
+  for (const plan of state.plans) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'plan-item';
+    if (plan.id === state.currentPlanId) {
+      button.classList.add('active');
+    }
+
+    const title = document.createElement('p');
+    title.className = 'plan-item-title';
+    title.textContent = plan.is_active ? `${plan.title} (Active)` : plan.title;
+
+    const meta = document.createElement('p');
+    meta.className = 'plan-item-meta';
+    meta.textContent = `Updated ${fmtDate(plan.updated_at)}`;
+
+    button.appendChild(title);
+    button.appendChild(meta);
+    button.addEventListener('click', () => {
+      loadPlan(plan.id).catch((error) => writeLog(`Plan load failed: ${error.message}`, null, true));
+    });
+
+    listEl.appendChild(button);
+  }
+}
+
+function renderCopilotPlanOptions() {
+  const select = byId('copilot-plan');
+  const current = state.copilotPlanId || '';
+  select.innerHTML = '';
+
+  const defaultOption = document.createElement('option');
+  defaultOption.value = '';
+  defaultOption.textContent = 'Active plan (default)';
+  select.appendChild(defaultOption);
+
+  for (const plan of state.plans) {
+    const option = document.createElement('option');
+    option.value = plan.id;
+    option.textContent = plan.is_active ? `${plan.title} (Active)` : plan.title;
+    select.appendChild(option);
+  }
+
+  const hasCurrent = [...select.options].some((option) => option.value === current);
+  if (hasCurrent) {
+    select.value = current;
+  } else if (state.currentPlanId && [...select.options].some((option) => option.value === state.currentPlanId)) {
+    select.value = state.currentPlanId;
+    state.copilotPlanId = state.currentPlanId;
+  } else {
+    select.value = '';
+    state.copilotPlanId = '';
+  }
+}
+
+async function loadPlans(autoSelect = true) {
+  const plans = await fetchJson('/api/plans?limit=200');
+  state.plans = Array.isArray(plans) ? plans : [];
+
+  if (state.currentPlanId && !state.plans.some((plan) => plan.id === state.currentPlanId)) {
+    state.currentPlanId = null;
+    state.currentPlanDetail = null;
+  }
+
+  if (autoSelect && !state.currentPlanId && state.plans.length) {
+    const active = state.plans.find((plan) => plan.is_active);
+    state.currentPlanId = active ? active.id : state.plans[0].id;
+  }
+
+  renderPlanList();
+  renderCopilotPlanOptions();
+
+  if (state.currentPlanId) {
+    await loadPlan(state.currentPlanId, true);
+  } else {
+    clearPlanDetail();
+  }
+}
+
+async function loadPlan(planId, skipListRefresh = false) {
+  if (!planId) return;
+  const detail = await fetchJson(`/api/plans/${encodeURIComponent(planId)}`);
+  state.currentPlanId = detail.id;
+  state.currentPlanDetail = detail;
+  state.copilotPlanId = detail.id;
+
+  if (!skipListRefresh) {
+    renderPlanList();
+  } else {
+    renderPlanList();
+  }
+  renderCopilotPlanOptions();
+  renderPlanDetail();
+}
+
+async function createPlan(event) {
+  event.preventDefault();
+  const titleInput = byId('new-plan-title');
+  const descriptionInput = byId('new-plan-description');
+  const title = titleInput.value.trim();
+  if (!title) return;
+
+  const payload = {
+    title,
+    description: descriptionInput.value.trim(),
+  };
+
+  writeLog('Creating plan...', payload);
+  try {
+    const detail = await fetchJson('/api/plans', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    titleInput.value = '';
+    descriptionInput.value = '';
+    state.currentPlanId = detail.id;
+    state.currentPlanDetail = detail;
+    state.copilotPlanId = detail.id;
+    await loadPlans(false);
+    renderPlanDetail();
+    writeLog('Plan created.', { id: detail.id, title: detail.title });
+  } catch (error) {
+    writeLog(`Create plan failed: ${error.message}`, null, true);
+  }
+}
+
+async function savePlan() {
+  if (!state.currentPlanId) {
+    writeLog('Select a plan before saving.', null, true);
+    return;
+  }
+
+  const payload = {
+    plan_markdown: byId('plan-markdown').value,
+    tasks_markdown: byId('plan-tasks').value,
+  };
+
+  writeLog(`Saving plan ${state.currentPlanId}...`);
+  try {
+    const detail = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    state.currentPlanDetail = detail;
+    await loadPlans(false);
+    renderPlanDetail();
+    writeLog('Plan saved.', { plan_id: state.currentPlanId });
+  } catch (error) {
+    writeLog(`Save plan failed: ${error.message}`, null, true);
+  }
+}
+
+async function activatePlan() {
+  if (!state.currentPlanId) {
+    writeLog('Select a plan first.', null, true);
+    return;
+  }
+
+  try {
+    const summary = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/activate`, {
+      method: 'POST',
+    });
+    await loadPlans(false);
+    await loadPlan(summary.id, true);
+    writeLog('Plan activated.', { plan_id: summary.id, title: summary.title });
+  } catch (error) {
+    writeLog(`Activate plan failed: ${error.message}`, null, true);
+  }
+}
+
+async function refreshPlanContext() {
+  if (!state.currentPlanId) {
+    writeLog('Select a plan first.', null, true);
+    return;
+  }
+
+  try {
+    const detail = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/refresh-context`, {
+      method: 'POST',
+    });
+    state.currentPlanDetail = detail;
+    renderPlanDetail();
+    await loadPlans(false);
+    writeLog('Plan context refreshed.', { plan_id: state.currentPlanId });
+  } catch (error) {
+    writeLog(`Refresh context failed: ${error.message}`, null, true);
+  }
+}
+
+async function addPlanDecision() {
+  if (!state.currentPlanId) {
+    writeLog('Select a plan first.', null, true);
+    return;
+  }
+
+  const summaryInput = byId('decision-summary');
+  const rationaleInput = byId('decision-rationale');
+  const statusInput = byId('decision-status');
+
+  const summary = summaryInput.value.trim();
+  if (!summary) {
+    writeLog('Decision summary is required.', null, true);
+    return;
+  }
+
+  const payload = {
+    summary,
+    rationale: rationaleInput.value.trim(),
+    status: statusInput.value.trim() || 'proposed',
+  };
+
+  try {
+    const detail = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/decisions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    summaryInput.value = '';
+    rationaleInput.value = '';
+    state.currentPlanDetail = detail;
+    renderPlanDetail();
+    await loadPlans(false);
+    writeLog('Decision added.', { plan_id: state.currentPlanId, status: payload.status });
+  } catch (error) {
+    writeLog(`Add decision failed: ${error.message}`, null, true);
   }
 }
 
@@ -193,7 +500,7 @@ function renderChatMessages() {
     const empty = document.createElement('p');
     empty.className = 'chat-empty';
     empty.textContent =
-      'Start a new conversation. Copilot will use your saved snapshot, sync status, and planning defaults as context.';
+      'Start a new conversation. Copilot will use your snapshot, sync status, and selected plan context.';
     chatEl.appendChild(empty);
     return;
   }
@@ -229,15 +536,10 @@ function renderChatMessages() {
 
 function setCopilotBusy(isBusy) {
   state.copilotLoading = isBusy;
-
-  const sendButton = byId('copilot-send');
-  const questionInput = byId('copilot-question');
-  const newConversationButton = byId('new-conversation');
-
-  sendButton.disabled = isBusy;
-  sendButton.textContent = isBusy ? 'Thinking...' : 'Ask Copilot';
-  questionInput.disabled = isBusy;
-  newConversationButton.disabled = isBusy;
+  byId('copilot-send').disabled = isBusy;
+  byId('copilot-send').textContent = isBusy ? 'Thinking...' : 'Ask Copilot';
+  byId('copilot-question').disabled = isBusy;
+  byId('new-conversation').disabled = isBusy;
 }
 
 async function loadStatus() {
@@ -294,7 +596,6 @@ async function loadCopilotConversation(conversationId) {
   const payload = await fetchJson(`/api/copilot/conversations/${encodeURIComponent(conversationId)}`);
   state.currentConversationId = payload.id;
   state.currentMessages = Array.isArray(payload.messages) ? payload.messages : [];
-
   renderConversationList();
   renderChatMessages();
 }
@@ -385,20 +686,23 @@ async function submitCopilotQuestion(event) {
   const question = questionInput.value.trim();
   if (!question) return;
 
-  const localCreatedAt = new Date().toISOString();
   state.currentMessages.push({
     role: 'user',
     content: question,
-    created_at: localCreatedAt,
+    created_at: new Date().toISOString(),
     metadata: {},
   });
   renderChatMessages();
   questionInput.value = '';
 
+  const selectedPlanId = byId('copilot-plan').value || null;
+  state.copilotPlanId = selectedPlanId || '';
+
   const payload = {
     question,
     conversation_id: state.currentConversationId,
     use_live_snapshot: byId('copilot-live-context').checked,
+    plan_id: selectedPlanId,
   };
 
   setCopilotBusy(true);
@@ -467,13 +771,26 @@ function wireEvents() {
   });
   byId('new-conversation').addEventListener('click', startNewConversation);
   byId('copilot-form').addEventListener('submit', submitCopilotQuestion);
+
+  byId('reload-plans').addEventListener('click', () => {
+    loadPlans(false).catch((error) => writeLog(error.message, null, true));
+  });
+  byId('create-plan-form').addEventListener('submit', createPlan);
+  byId('save-plan').addEventListener('click', savePlan);
+  byId('activate-plan').addEventListener('click', activatePlan);
+  byId('refresh-plan-context').addEventListener('click', refreshPlanContext);
+  byId('add-decision').addEventListener('click', addPlanDecision);
+  byId('copilot-plan').addEventListener('change', (event) => {
+    state.copilotPlanId = event.target.value || '';
+  });
 }
 
 async function boot() {
   wireEvents();
+  clearPlanDetail();
   renderChatMessages();
-  await Promise.all([refreshAll(), loadCopilotConversations(true)]);
-  writeLog('BuildWealth UI ready with Copilot chat.');
+  await Promise.all([refreshAll(), loadCopilotConversations(true), loadPlans(true)]);
+  writeLog('BuildWealth UI ready with Copilot and Plan Workspace.');
 }
 
 boot().catch((error) => {

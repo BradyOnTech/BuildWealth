@@ -24,6 +24,11 @@ from buildwealth_orchestrator.schemas import (
     CsvImportRequest,
     CsvImportResponse,
     OptionsChainRequest,
+    PlanCreateRequest,
+    PlanDecisionCreateRequest,
+    PlanDetailResponse,
+    PlanSummary,
+    PlanUpdateRequest,
     PlanningResponse,
     PortfolioSnapshot,
     ResearchResponse,
@@ -49,6 +54,10 @@ from buildwealth_orchestrator.services.scenario_engine import ScenarioEngine
 from buildwealth_orchestrator.services.snapshot_store import (
     SnapshotStore,
     normalize_ghostfolio_snapshot,
+)
+from buildwealth_orchestrator.services.plan_workspace import (
+    PlanNotFoundError,
+    PlanWorkspace,
 )
 from buildwealth_orchestrator.settings import get_settings
 
@@ -87,6 +96,7 @@ scenario_engine = ScenarioEngine(
 research_service = OpenBBResearchService(provider=settings.openbb_provider)
 coordinator = Coordinator()
 conversation_store = ConversationStore(settings.conversation_dir)
+plan_workspace = PlanWorkspace(settings.plans_dir)
 openai_tool_client = OpenAIChatToolClient(
     api_key=settings.openai_api_key,
     model=settings.openai_model,
@@ -319,7 +329,10 @@ def summarize_snapshot(snapshot: PortfolioSnapshot, holdings_limit: int = 10) ->
     }
 
 
-async def build_contextual_brief(use_live_snapshot: bool = False) -> str:
+async def build_contextual_brief(
+    use_live_snapshot: bool = False,
+    plan_id: str | None = None,
+) -> str:
     snapshot_payload: dict[str, object]
     try:
         if use_live_snapshot:
@@ -331,6 +344,13 @@ async def build_contextual_brief(use_live_snapshot: bool = False) -> str:
     except Exception as exc:
         snapshot_payload = {"note": f"Snapshot context unavailable: {exc}"}
 
+    try:
+        plan_payload = plan_workspace.get_context_payload(plan_id=plan_id)
+    except PlanNotFoundError as exc:
+        plan_payload = {"note": str(exc)}
+    except Exception as exc:
+        plan_payload = {"note": f"Plan context unavailable: {exc}"}
+
     sync_payload = get_sync_status().model_dump(mode="json")
 
     context = {
@@ -338,6 +358,7 @@ async def build_contextual_brief(use_live_snapshot: bool = False) -> str:
         "currency": settings.app_currency,
         "sync_status": sync_payload,
         "snapshot_summary": snapshot_payload,
+        "plan_context": plan_payload,
         "planning_defaults": {
             "years_to_retirement": settings.planner_years_to_retirement,
             "annual_contribution_usd": settings.planner_annual_contribution_usd,
@@ -416,6 +437,44 @@ async def tool_list_accounts(_: dict[str, object]) -> dict[str, object]:
     return {"count": len(simplified), "accounts": simplified}
 
 
+async def tool_list_plans(arguments: dict[str, object]) -> dict[str, object]:
+    limit_value = arguments.get("limit", 20)
+    try:
+        limit = max(1, min(int(limit_value), 200))
+    except Exception:
+        limit = 20
+    plans = plan_workspace.list_plans(limit=limit)
+    return {"count": len(plans), "plans": plans}
+
+
+async def tool_get_plan_context(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = arguments.get("plan_id")
+    resolved = str(plan_id).strip() if isinstance(plan_id, str) and plan_id.strip() else None
+    return plan_workspace.get_context_payload(plan_id=resolved)
+
+
+async def tool_append_plan_decision(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = str(arguments.get("plan_id") or "").strip()
+    summary = str(arguments.get("summary") or "").strip()
+    rationale = str(arguments.get("rationale") or "").strip()
+    status = str(arguments.get("status") or "proposed").strip().lower()
+
+    if not plan_id:
+        active_payload = plan_workspace.get_context_payload()
+        plan_id = str(active_payload.get("id") or "").strip()
+
+    if not plan_id:
+        raise ValueError("No active plan is configured and no plan_id was provided.")
+
+    decision = plan_workspace.append_decision(
+        plan_id=plan_id,
+        summary=summary,
+        rationale=rationale,
+        status=status or "proposed",
+    )
+    return {"plan_id": plan_id, "decision": decision}
+
+
 def configure_copilot_tools() -> None:
     empty_schema: dict[str, object] = {
         "type": "object",
@@ -482,6 +541,45 @@ def configure_copilot_tools() -> None:
         parameters=empty_schema,
         handler=tool_list_accounts,
     )
+    copilot.register_tool(
+        name="list_plans",
+        description="List available financial plans in the local Plan Workspace.",
+        parameters={
+            "type": "object",
+            "properties": {"limit": {"type": "integer"}},
+            "additionalProperties": False,
+        },
+        handler=tool_list_plans,
+    )
+    copilot.register_tool(
+        name="get_plan_context",
+        description="Read context summary for a specific plan or the active plan if omitted.",
+        parameters={
+            "type": "object",
+            "properties": {"plan_id": {"type": "string"}},
+            "additionalProperties": False,
+        },
+        handler=tool_get_plan_context,
+    )
+    copilot.register_tool(
+        name="append_plan_decision",
+        description=(
+            "Append a decision entry to plan history. "
+            "Fields: summary (required), optional plan_id, rationale, status."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                "summary": {"type": "string"},
+                "rationale": {"type": "string"},
+                "status": {"type": "string"},
+            },
+            "required": ["summary"],
+            "additionalProperties": False,
+        },
+        handler=tool_append_plan_decision,
+    )
 
 
 configure_copilot_tools()
@@ -492,6 +590,7 @@ async def on_startup() -> None:
     settings.import_inbox_dir.mkdir(parents=True, exist_ok=True)
     settings.import_archive_dir.mkdir(parents=True, exist_ok=True)
     settings.conversation_dir.mkdir(parents=True, exist_ok=True)
+    settings.plans_dir.mkdir(parents=True, exist_ok=True)
 
     global scheduler_task
     if settings.sync_interval_minutes > 0:
@@ -536,6 +635,81 @@ def list_import_files() -> dict[str, list[str]]:
     return {"files": files}
 
 
+@app.get("/api/plans", response_model=list[PlanSummary])
+def list_plans(limit: int = 100) -> list[PlanSummary]:
+    summaries = plan_workspace.list_plans(limit=max(1, min(limit, 500)))
+    return [PlanSummary(**summary) for summary in summaries]
+
+
+@app.post("/api/plans", response_model=PlanDetailResponse)
+def create_plan(request: PlanCreateRequest) -> PlanDetailResponse:
+    try:
+        detail = plan_workspace.create_plan(title=request.title, description=request.description)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PlanDetailResponse(**detail)
+
+
+@app.get("/api/plans/{plan_id}", response_model=PlanDetailResponse)
+def get_plan(plan_id: str) -> PlanDetailResponse:
+    try:
+        detail = plan_workspace.get_plan(plan_id)
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return PlanDetailResponse(**detail)
+
+
+@app.put("/api/plans/{plan_id}", response_model=PlanDetailResponse)
+def update_plan(plan_id: str, request: PlanUpdateRequest) -> PlanDetailResponse:
+    try:
+        detail = plan_workspace.update_plan_files(
+            plan_id=plan_id,
+            plan_markdown=request.plan_markdown,
+            tasks_markdown=request.tasks_markdown,
+        )
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PlanDetailResponse(**detail)
+
+
+@app.post("/api/plans/{plan_id}/activate", response_model=PlanSummary)
+def activate_plan(plan_id: str) -> PlanSummary:
+    try:
+        summary = plan_workspace.set_active_plan(plan_id)
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return PlanSummary(**summary)
+
+
+@app.post("/api/plans/{plan_id}/decisions", response_model=PlanDetailResponse)
+def append_plan_decision(plan_id: str, request: PlanDecisionCreateRequest) -> PlanDetailResponse:
+    try:
+        plan_workspace.append_decision(
+            plan_id=plan_id,
+            summary=request.summary,
+            rationale=request.rationale,
+            status=request.status,
+        )
+        detail = plan_workspace.get_plan(plan_id)
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PlanDetailResponse(**detail)
+
+
+@app.post("/api/plans/{plan_id}/refresh-context", response_model=PlanDetailResponse)
+def refresh_plan_context(plan_id: str) -> PlanDetailResponse:
+    try:
+        plan_workspace.refresh_context(plan_id)
+        detail = plan_workspace.get_plan(plan_id)
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return PlanDetailResponse(**detail)
+
+
 @app.get("/api/copilot/conversations", response_model=list[CopilotConversationSummary])
 def list_copilot_conversations(limit: int = 30) -> list[CopilotConversationSummary]:
     summaries = conversation_store.list(limit=max(1, min(limit, 200)))
@@ -554,7 +728,10 @@ def get_copilot_conversation(conversation_id: str) -> CopilotConversationRespons
 
 @app.post("/api/copilot/chat", response_model=CopilotChatResponse)
 async def copilot_chat(request: CopilotChatRequest) -> CopilotChatResponse:
-    contextual_brief = await build_contextual_brief(use_live_snapshot=request.use_live_snapshot)
+    contextual_brief = await build_contextual_brief(
+        use_live_snapshot=request.use_live_snapshot,
+        plan_id=request.plan_id,
+    )
     try:
         result = await copilot.chat(
             question=request.question,

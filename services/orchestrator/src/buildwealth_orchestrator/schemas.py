@@ -107,6 +107,7 @@ class CopilotChatRequest(BaseModel):
     question: str
     conversation_id: str | None = None
     use_live_snapshot: bool = False
+    plan_id: str | None = None
 
 
 class CopilotToolTrace(BaseModel):
@@ -138,3 +139,54 @@ class CopilotConversationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     messages: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class PlanSummary(BaseModel):
+    id: str
+    title: str
+    description: str = ""
+    created_at: datetime
+    updated_at: datetime
+    is_active: bool = False
+
+
+class PlanDecision(BaseModel):
+    id: str
+    created_at: datetime
+    summary: str
+    rationale: str = ""
+    status: str = "proposed"
+
+
+class PlanFiles(BaseModel):
+    plan_markdown: str = ""
+    plan_yaml: str = ""
+    tasks_markdown: str = ""
+    context_markdown: str = ""
+
+
+class PlanDetailResponse(BaseModel):
+    id: str
+    title: str
+    description: str = ""
+    created_at: datetime
+    updated_at: datetime
+    is_active: bool = False
+    files: PlanFiles
+    decisions: list[PlanDecision] = Field(default_factory=list)
+
+
+class PlanCreateRequest(BaseModel):
+    title: str
+    description: str = ""
+
+
+class PlanUpdateRequest(BaseModel):
+    plan_markdown: str | None = None
+    tasks_markdown: str | None = None
+
+
+class PlanDecisionCreateRequest(BaseModel):
+    summary: str
+    rationale: str = ""
+    status: str = "proposed"

@@ -52,10 +52,91 @@
                 ></textarea>
               </label>
               <div class="copilot-actions">
+                <label class="copilot-plan-field">
+                  <span>Plan</span>
+                  <select id="copilot-plan"></select>
+                </label>
                 <label><input type="checkbox" id="copilot-live-context" /> Refresh context from live data before answering</label>
                 <button class="primary" id="copilot-send" type="submit">Ask Copilot</button>
               </div>
             </form>
+          </section>
+        </div>
+      </section>
+
+      <section class="card plan-shell">
+        <div class="card-head">
+          <h2>Plan Workspace</h2>
+          <button class="ghost" id="reload-plans">Reload</button>
+        </div>
+        <p class="hint">
+          Create and maintain long-lived planning documents. Copilot can use the active or selected plan as context.
+        </p>
+        <form id="create-plan-form" class="create-plan-form">
+          <label class="field">
+            <span>New Plan Title</span>
+            <input type="text" id="new-plan-title" placeholder="Example: 2026 Contribution Optimization" required />
+          </label>
+          <label class="field">
+            <span>Description (Optional)</span>
+            <input type="text" id="new-plan-description" placeholder="One-line objective or focus area" />
+          </label>
+          <button class="primary" type="submit">Create Plan</button>
+        </form>
+        <div class="plan-layout">
+          <aside class="plan-sidebar">
+            <p class="sidebar-title">Plans</p>
+            <div id="plan-list" class="plan-list"></div>
+          </aside>
+          <section class="plan-main">
+            <div class="plan-meta-row">
+              <p id="plan-meta" class="hint">Select a plan to view details.</p>
+              <div class="plan-meta-actions">
+                <button class="ghost" id="activate-plan" type="button">Set Active</button>
+                <button class="ghost" id="refresh-plan-context" type="button">Refresh Context</button>
+                <button class="primary" id="save-plan" type="button">Save Plan</button>
+              </div>
+            </div>
+            <label class="field">
+              <span>Plan Markdown</span>
+              <textarea id="plan-markdown" rows="14" placeholder="Plan markdown will appear here."></textarea>
+            </label>
+            <label class="field">
+              <span>Tasks Markdown</span>
+              <textarea id="plan-tasks" rows="7" placeholder="Task checklist markdown."></textarea>
+            </label>
+            <label class="field">
+              <span>Context Snapshot</span>
+              <textarea id="plan-context" rows="8" readonly></textarea>
+            </label>
+            <div class="plan-decision-form">
+              <label class="field">
+                <span>Add Decision</span>
+                <input type="text" id="decision-summary" placeholder="Decision summary" />
+              </label>
+              <label class="field">
+                <span>Rationale</span>
+                <input type="text" id="decision-rationale" placeholder="Why this decision was made" />
+              </label>
+              <label class="field">
+                <span>Status</span>
+                <input type="text" id="decision-status" value="proposed" />
+              </label>
+              <button class="ghost" id="add-decision" type="button">Add Decision</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Status</th>
+                    <th>Decision</th>
+                    <th>Rationale</th>
+                  </tr>
+                </thead>
+                <tbody id="plan-decisions-body"></tbody>
+              </table>
+            </div>
           </section>
         </div>
       </section>
