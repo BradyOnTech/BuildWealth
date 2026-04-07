@@ -69,3 +69,35 @@ class ResearchResponse(BaseModel):
     available: bool
     message: str
     records: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class CsvImportRequest(BaseModel):
+    path: str
+    dry_run: bool = True
+    delimiter: str = ","
+    default_data_source: str | None = None
+    default_currency: str | None = None
+    archive_after_success: bool = False
+
+
+class CsvImportResponse(BaseModel):
+    file_path: str
+    dry_run: bool
+    parsed_rows: int
+    valid_activities: int
+    imported_activities: int
+    warnings: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    ghostfolio_response: dict[str, Any] | None = None
+
+
+class SyncStatusResponse(BaseModel):
+    running: bool
+    runs_total: int
+    runs_failed: int
+    last_trigger: str | None = None
+    last_started_at: datetime | None = None
+    last_completed_at: datetime | None = None
+    last_error: str | None = None
+    last_snapshot_path: str | None = None
+    last_ignidash_payload_path: str | None = None

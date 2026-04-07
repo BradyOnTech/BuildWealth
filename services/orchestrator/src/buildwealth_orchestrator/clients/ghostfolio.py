@@ -41,6 +41,24 @@ class GhostfolioClient:
             response.raise_for_status()
             return response.json()
 
+    async def _authorized_post(
+        self,
+        path: str,
+        payload: dict[str, Any],
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        async with httpx.AsyncClient() as client:
+            token = await self._get_bearer(client)
+            response = await client.post(
+                f"{self.api_base}{path}",
+                params=params or {},
+                json=payload,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=self.timeout_seconds,
+            )
+            response.raise_for_status()
+            return response.json()
+
     async def get_holdings(self, date_range: str = "max") -> dict[str, Any]:
         return await self._authorized_get("/v1/portfolio/holdings", params={"range": date_range})
 
@@ -52,3 +70,20 @@ class GhostfolioClient:
 
     async def get_accounts(self) -> dict[str, Any] | list[dict[str, Any]]:
         return await self._authorized_get("/v1/account")
+
+    async def get_accounts_list(self) -> list[dict[str, Any]]:
+        payload = await self.get_accounts()
+        if isinstance(payload, list):
+            return payload
+        return payload.get("accounts", [])
+
+    async def import_activities(
+        self,
+        activities: list[dict[str, Any]],
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        return await self._authorized_post(
+            "/v1/import",
+            payload={"activities": activities},
+            params={"dryRun": str(dry_run).lower()},
+        )

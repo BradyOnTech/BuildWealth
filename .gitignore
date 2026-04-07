@@ -12,6 +12,8 @@ __pycache__/
 infra/env/*.env
 data/snapshots/*.json
 data/ignidash/*.json
+data/imports/inbox/*.csv
+data/imports/archive/*.csv
 
 # Logs
 *.log

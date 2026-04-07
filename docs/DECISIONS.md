@@ -42,3 +42,7 @@
 10. Memory strategy
 - Decision: persist normalized snapshots and generated plan payloads from day 1.
 - Rationale: provides durable context immediately and supports replay/debug.
+
+11. Ingestion strategy
+- Decision: standardize on a canonical CSV transaction schema with alias mapping, then translate to Ghostfolio import payloads.
+- Rationale: gets reliable ingestion live quickly while broker-specific adapters are added incrementally.

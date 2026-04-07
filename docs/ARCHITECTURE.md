@@ -12,9 +12,12 @@
 3. BuildWealth Orchestrator (`localhost:8090`)
 - Pulls holdings context from Ghostfolio
 - Normalizes to a stable JSON snapshot schema
+- Imports broker CSV transactions into Ghostfolio activity schema
 - Runs scenario planning and Monte Carlo projections
 - Runs OpenBB-backed research calls when enabled
 - Exposes chat endpoint for agent-like interactions
+- Supports optional periodic background sync via `SYNC_INTERVAL_MINUTES`
+- Serves a browser UI (`/`) for sync operations, CSV upload/import, and snapshot/status visibility
 
 ## Data Flow
 1. `POST /api/snapshot/sync`

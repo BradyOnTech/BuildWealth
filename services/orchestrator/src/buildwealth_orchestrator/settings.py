@@ -15,10 +15,14 @@ class Settings(BaseSettings):
 
     snapshot_dir: Path = Field(default=Path("data/snapshots"), alias="SNAPSHOT_DIR")
     ignidash_export_dir: Path = Field(default=Path("data/ignidash"), alias="IGNIDASH_EXPORT_DIR")
+    import_inbox_dir: Path = Field(default=Path("data/imports/inbox"), alias="IMPORT_INBOX_DIR")
+    import_archive_dir: Path = Field(default=Path("data/imports/archive"), alias="IMPORT_ARCHIVE_DIR")
 
     ghostfolio_api_base: str = Field(default="http://ghostfolio:3333/api", alias="GHOSTFOLIO_API_BASE")
     ghostfolio_security_token: str = Field(default="", alias="GHOSTFOLIO_SECURITY_TOKEN")
     ghostfolio_timeout_seconds: float = Field(default=20.0, alias="GHOSTFOLIO_TIMEOUT_SECONDS")
+    ghostfolio_default_data_source: str = Field(default="YAHOO", alias="GHOSTFOLIO_DEFAULT_DATA_SOURCE")
+    ghostfolio_default_currency: str = Field(default="USD", alias="GHOSTFOLIO_DEFAULT_CURRENCY")
 
     ignidash_app_base_url: str = Field(default="http://ignidash:3000", alias="IGNIDASH_APP_BASE_URL")
     ignidash_convex_url: str = Field(default="http://ignidash-convex-backend:3211", alias="IGNIDASH_CONVEX_URL")
@@ -41,6 +45,8 @@ class Settings(BaseSettings):
     openai_model: str = Field(default="gpt-5-mini", alias="OPENAI_MODEL")
 
     openbb_provider: str = Field(default="yfinance", alias="OPENBB_PROVIDER")
+
+    sync_interval_minutes: float = Field(default=0.0, alias="SYNC_INTERVAL_MINUTES")
 
 
 @lru_cache(maxsize=1)
