@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# Local data and secrets
+infra/env/*.env
+data/snapshots/*.json
+data/ignidash/*.json
+
+# Logs
+*.log
