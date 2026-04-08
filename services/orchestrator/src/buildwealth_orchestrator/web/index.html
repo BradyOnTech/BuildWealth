@@ -137,8 +137,57 @@
                 <tbody id="plan-decisions-body"></tbody>
               </table>
             </div>
+            <div class="card-head inner-head">
+              <h3>Artifacts</h3>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Title</th>
+                    <th>File</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="plan-artifacts-body"></tbody>
+              </table>
+            </div>
+            <label class="field">
+              <span>Artifact Content</span>
+              <textarea id="artifact-content" rows="10" readonly></textarea>
+            </label>
           </section>
         </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Workflow Templates</h2>
+        </div>
+        <p class="hint">
+          Run guided financial workflows that generate structured reports and optionally save them into your current plan.
+        </p>
+        <form id="workflow-form" class="workflow-form">
+          <label class="field">
+            <span>Template</span>
+            <select id="workflow-template"></select>
+          </label>
+          <label class="field">
+            <span>Plan Target</span>
+            <select id="workflow-plan"></select>
+          </label>
+          <div class="inline-options">
+            <label><input type="checkbox" id="workflow-live-snapshot" /> Use live snapshot</label>
+            <label><input type="checkbox" id="workflow-save-to-plan" checked /> Save report as plan artifact</label>
+          </div>
+          <button class="primary" id="run-workflow" type="submit">Run Workflow</button>
+        </form>
+        <p class="hint" id="workflow-summary">No workflow run yet.</p>
+        <label class="field">
+          <span>Workflow Report</span>
+          <textarea id="workflow-report" rows="16" readonly></textarea>
+        </label>
       </section>
 
       <section class="grid grid-3 stats" id="stats">

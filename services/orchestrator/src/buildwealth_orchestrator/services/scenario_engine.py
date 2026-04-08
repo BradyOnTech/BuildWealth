@@ -109,9 +109,15 @@ class ScenarioEngine:
         years: int | None = None,
         hsa_extra_contribution_usd: float | None = None,
     ) -> PlanningResponse:
-        resolved_years = years or self.years_to_retirement
-        resolved_contribution = annual_contribution_usd or self.annual_contribution_usd
-        resolved_hsa_delta = hsa_extra_contribution_usd or self.hsa_delta_default
+        resolved_years = self.years_to_retirement if years is None else years
+        resolved_contribution = (
+            self.annual_contribution_usd if annual_contribution_usd is None else annual_contribution_usd
+        )
+        resolved_hsa_delta = (
+            self.hsa_delta_default
+            if hsa_extra_contribution_usd is None
+            else hsa_extra_contribution_usd
+        )
 
         baseline = self._scenario(
             label="baseline",

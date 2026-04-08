@@ -11,6 +11,7 @@ const state = {
   currentPlanId: null,
   currentPlanDetail: null,
   copilotPlanId: '',
+  workflowTemplates: [],
 };
 
 function stamp() {
@@ -139,6 +140,8 @@ function clearPlanDetail() {
   byId('plan-tasks').value = '';
   byId('plan-context').value = '';
   byId('plan-decisions-body').innerHTML = '<tr><td colspan="4">No decisions yet.</td></tr>';
+  byId('plan-artifacts-body').innerHTML = '<tr><td colspan="4">No artifacts yet.</td></tr>';
+  byId('artifact-content').value = '';
   setPlanControlsEnabled(false);
 }
 
@@ -165,6 +168,48 @@ function renderPlanDecisions(decisions) {
   }
 }
 
+function renderPlanArtifacts(artifacts) {
+  const tbody = byId('plan-artifacts-body');
+  tbody.innerHTML = '';
+
+  if (!artifacts.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="4">No artifacts yet.</td>';
+    tbody.appendChild(tr);
+    return;
+  }
+
+  for (const artifact of artifacts) {
+    const tr = document.createElement('tr');
+    const actionButton = document.createElement('button');
+    actionButton.type = 'button';
+    actionButton.className = 'ghost small';
+    actionButton.textContent = 'Open';
+    actionButton.addEventListener('click', () => {
+      loadPlanArtifact(artifact.id).catch((error) => {
+        writeLog(`Artifact load failed: ${error.message}`, null, true);
+      });
+    });
+
+    tr.innerHTML = `
+      <td>${fmtDate(artifact.created_at)}</td>
+      <td>${artifact.title || '-'}</td>
+      <td>${artifact.file_name || '-'}</td>
+      <td></td>
+    `;
+    tr.children[3].appendChild(actionButton);
+    tbody.appendChild(tr);
+  }
+}
+
+async function loadPlanArtifact(artifactId) {
+  if (!state.currentPlanId || !artifactId) return;
+  const artifact = await fetchJson(
+    `/api/plans/${encodeURIComponent(state.currentPlanId)}/artifacts/${encodeURIComponent(artifactId)}`
+  );
+  byId('artifact-content').value = artifact.content || '';
+}
+
 function renderPlanDetail() {
   const detail = state.currentPlanDetail;
   if (!detail) {
@@ -178,6 +223,10 @@ function renderPlanDetail() {
   byId('plan-tasks').value = detail.files?.tasks_markdown || '';
   byId('plan-context').value = detail.files?.context_markdown || '';
   renderPlanDecisions(Array.isArray(detail.decisions) ? detail.decisions : []);
+  renderPlanArtifacts(Array.isArray(detail.artifacts) ? detail.artifacts : []);
+  if (Array.isArray(detail.artifacts) && detail.artifacts.length > 0) {
+    byId('artifact-content').value = '';
+  }
   setPlanControlsEnabled(true);
 }
 
@@ -219,9 +268,9 @@ function renderPlanList() {
   }
 }
 
-function renderCopilotPlanOptions() {
-  const select = byId('copilot-plan');
-  const current = state.copilotPlanId || '';
+function renderPlanSelectOptions(selectId, currentValue = '') {
+  const select = byId(selectId);
+  const current = currentValue || '';
   select.innerHTML = '';
 
   const defaultOption = document.createElement('option');
@@ -241,11 +290,20 @@ function renderCopilotPlanOptions() {
     select.value = current;
   } else if (state.currentPlanId && [...select.options].some((option) => option.value === state.currentPlanId)) {
     select.value = state.currentPlanId;
-    state.copilotPlanId = state.currentPlanId;
   } else {
     select.value = '';
-    state.copilotPlanId = '';
   }
+}
+
+function renderCopilotPlanOptions() {
+  renderPlanSelectOptions('copilot-plan', state.copilotPlanId);
+  if (![...byId('copilot-plan').options].some((option) => option.value === state.copilotPlanId)) {
+    state.copilotPlanId = byId('copilot-plan').value || '';
+  }
+}
+
+function renderWorkflowPlanOptions() {
+  renderPlanSelectOptions('workflow-plan', state.copilotPlanId);
 }
 
 async function loadPlans(autoSelect = true) {
@@ -264,6 +322,7 @@ async function loadPlans(autoSelect = true) {
 
   renderPlanList();
   renderCopilotPlanOptions();
+  renderWorkflowPlanOptions();
 
   if (state.currentPlanId) {
     await loadPlan(state.currentPlanId, true);
@@ -285,6 +344,7 @@ async function loadPlan(planId, skipListRefresh = false) {
     renderPlanList();
   }
   renderCopilotPlanOptions();
+  renderWorkflowPlanOptions();
   renderPlanDetail();
 }
 
@@ -421,6 +481,84 @@ async function addPlanDecision() {
     writeLog('Decision added.', { plan_id: state.currentPlanId, status: payload.status });
   } catch (error) {
     writeLog(`Add decision failed: ${error.message}`, null, true);
+  }
+}
+
+function renderWorkflowTemplates() {
+  const select = byId('workflow-template');
+  select.innerHTML = '';
+
+  if (!state.workflowTemplates.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No templates available';
+    select.appendChild(option);
+    return;
+  }
+
+  for (const template of state.workflowTemplates) {
+    const option = document.createElement('option');
+    option.value = template.id;
+    option.textContent = template.title;
+    select.appendChild(option);
+  }
+}
+
+async function loadWorkflowTemplates() {
+  const templates = await fetchJson('/api/workflows/templates');
+  state.workflowTemplates = Array.isArray(templates) ? templates : [];
+  renderWorkflowTemplates();
+}
+
+async function runWorkflow(event) {
+  event.preventDefault();
+
+  const workflowId = byId('workflow-template').value;
+  if (!workflowId) {
+    writeLog('Select a workflow template first.', null, true);
+    return;
+  }
+
+  const selectedPlanId = byId('workflow-plan').value || null;
+  const payload = {
+    workflow_id: workflowId,
+    plan_id: selectedPlanId,
+    use_live_snapshot: byId('workflow-live-snapshot').checked,
+    save_to_plan: byId('workflow-save-to-plan').checked,
+    params: {},
+  };
+
+  byId('run-workflow').disabled = true;
+  byId('run-workflow').textContent = 'Running...';
+  writeLog('Running workflow...', payload);
+
+  try {
+    const result = await fetchJson('/api/workflows/run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    byId('workflow-summary').textContent = result.summary || 'Workflow complete.';
+    byId('workflow-report').value = result.report_markdown || '';
+
+    if (result.artifact && selectedPlanId) {
+      await loadPlan(selectedPlanId, true);
+      byId('artifact-content').value = result.report_markdown || '';
+    } else if (result.artifact) {
+      await loadPlans(false);
+    }
+
+    writeLog('Workflow completed.', {
+      workflow_id: result.workflow_id,
+      artifact_id: result.artifact?.id || null,
+    });
+  } catch (error) {
+    writeLog(`Workflow failed: ${error.message}`, null, true);
+    byId('workflow-summary').textContent = `Workflow failed: ${error.message}`;
+  } finally {
+    byId('run-workflow').disabled = false;
+    byId('run-workflow').textContent = 'Run Workflow';
   }
 }
 
@@ -782,15 +920,21 @@ function wireEvents() {
   byId('add-decision').addEventListener('click', addPlanDecision);
   byId('copilot-plan').addEventListener('change', (event) => {
     state.copilotPlanId = event.target.value || '';
+    byId('workflow-plan').value = state.copilotPlanId;
   });
+  byId('workflow-plan').addEventListener('change', (event) => {
+    state.copilotPlanId = event.target.value || '';
+    byId('copilot-plan').value = state.copilotPlanId;
+  });
+  byId('workflow-form').addEventListener('submit', runWorkflow);
 }
 
 async function boot() {
   wireEvents();
   clearPlanDetail();
   renderChatMessages();
-  await Promise.all([refreshAll(), loadCopilotConversations(true), loadPlans(true)]);
-  writeLog('BuildWealth UI ready with Copilot and Plan Workspace.');
+  await Promise.all([refreshAll(), loadCopilotConversations(true), loadPlans(true), loadWorkflowTemplates()]);
+  writeLog('BuildWealth UI ready with Copilot, Plan Workspace, and Workflow Templates.');
 }
 
 boot().catch((error) => {

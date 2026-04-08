@@ -33,8 +33,8 @@ Make BuildWealth the primary single-user desktop experience for financial Q&A an
 - account summaries
 
 ### Phase 2: Financial Workflow Templates
-1. Risk concentration review workflow.
-2. Contribution optimization workflow (401k/HSA/taxable).
+1. Risk concentration review workflow. ✅ Implemented
+2. Contribution optimization workflow (401k/HSA/taxable). ✅ Implemented
 3. Weekly financial change summary workflow.
 4. Structured report outputs with assumptions and caveats.
 

@@ -388,6 +388,28 @@ h1 {
   align-items: end;
 }
 
+.inner-head {
+  margin-top: 0.5rem;
+}
+
+.inner-head h3 {
+  margin: 0;
+  font-size: 0.96rem;
+  font-family: var(--serif);
+}
+
+.workflow-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.7rem;
+  align-items: end;
+}
+
+.table-wrap .ghost.small {
+  padding: 0.35rem 0.55rem;
+  font-size: 0.76rem;
+}
+
 textarea[readonly] {
   background: #f6f9f1;
 }
@@ -579,7 +601,8 @@ th {
   }
 
   .create-plan-form,
-  .plan-decision-form {
+  .plan-decision-form,
+  .workflow-form {
     grid-template-columns: 1fr;
   }
 

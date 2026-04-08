@@ -24,6 +24,7 @@ from buildwealth_orchestrator.schemas import (
     CsvImportRequest,
     CsvImportResponse,
     OptionsChainRequest,
+    PlanArtifactResponse,
     PlanCreateRequest,
     PlanDecisionCreateRequest,
     PlanDetailResponse,
@@ -34,6 +35,9 @@ from buildwealth_orchestrator.schemas import (
     ResearchResponse,
     ScenarioRequest,
     SyncStatusResponse,
+    WorkflowRunRequest,
+    WorkflowRunResponse,
+    WorkflowTemplateResponse,
 )
 from buildwealth_orchestrator.services.coordinator import Coordinator
 from buildwealth_orchestrator.services.copilot_runtime import (
@@ -55,6 +59,7 @@ from buildwealth_orchestrator.services.snapshot_store import (
     SnapshotStore,
     normalize_ghostfolio_snapshot,
 )
+from buildwealth_orchestrator.services.workflow_runner import WorkflowRunner
 from buildwealth_orchestrator.services.plan_workspace import (
     PlanNotFoundError,
     PlanWorkspace,
@@ -97,6 +102,12 @@ research_service = OpenBBResearchService(provider=settings.openbb_provider)
 coordinator = Coordinator()
 conversation_store = ConversationStore(settings.conversation_dir)
 plan_workspace = PlanWorkspace(settings.plans_dir)
+workflow_runner = WorkflowRunner(
+    scenario_engine=scenario_engine,
+    default_annual_contribution_usd=settings.planner_annual_contribution_usd,
+    default_years=settings.planner_years_to_retirement,
+    default_hsa_delta=settings.planner_hsa_delta_default,
+)
 openai_tool_client = OpenAIChatToolClient(
     api_key=settings.openai_api_key,
     model=settings.openai_model,
@@ -375,6 +386,21 @@ async def build_contextual_brief(
     return json.dumps(context, indent=2, default=str)
 
 
+async def resolve_snapshot_for_workflow(use_live_snapshot: bool) -> PortfolioSnapshot:
+    if use_live_snapshot:
+        return await build_live_snapshot()
+
+    try:
+        return snapshot_store.latest()
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No local snapshot is available. Run portfolio sync first or set use_live_snapshot=true."
+            ),
+        ) from exc
+
+
 async def tool_get_latest_snapshot(_: dict[str, object]) -> dict[str, object]:
     snapshot = snapshot_store.latest()
     return summarize_snapshot(snapshot)
@@ -473,6 +499,46 @@ async def tool_append_plan_decision(arguments: dict[str, object]) -> dict[str, o
         status=status or "proposed",
     )
     return {"plan_id": plan_id, "decision": decision}
+
+
+async def tool_list_workflow_templates(_: dict[str, object]) -> dict[str, object]:
+    templates = workflow_runner.templates()
+    return {"count": len(templates), "templates": templates}
+
+
+async def tool_run_workflow(arguments: dict[str, object]) -> dict[str, object]:
+    workflow_id = str(arguments.get("workflow_id") or "").strip()
+    if not workflow_id:
+        raise ValueError("workflow_id is required")
+
+    use_live_snapshot = bool(arguments.get("use_live_snapshot", False))
+    params_value = arguments.get("params")
+    params = params_value if isinstance(params_value, dict) else {}
+
+    snapshot = await resolve_snapshot_for_workflow(use_live_snapshot=use_live_snapshot)
+    result = workflow_runner.run(
+        workflow_id=workflow_id,
+        snapshot=snapshot,
+        params=params,
+    )
+
+    save_to_plan = bool(arguments.get("save_to_plan", True))
+    if save_to_plan:
+        requested_plan_id = arguments.get("plan_id")
+        plan_id = str(requested_plan_id).strip() if isinstance(requested_plan_id, str) else ""
+        if not plan_id:
+            active_id = plan_workspace.get_active_plan_id()
+            plan_id = active_id or ""
+        if plan_id:
+            artifact = plan_workspace.write_artifact(
+                plan_id=plan_id,
+                title=f"{workflow_id.replace('_', ' ').title()} Report",
+                markdown=result.get("report_markdown", ""),
+                kind=workflow_id,
+            )
+            result["artifact"] = artifact
+
+    return result
 
 
 def configure_copilot_tools() -> None:
@@ -579,6 +645,32 @@ def configure_copilot_tools() -> None:
             "additionalProperties": False,
         },
         handler=tool_append_plan_decision,
+    )
+    copilot.register_tool(
+        name="list_workflow_templates",
+        description="List available financial workflow templates and their default parameters.",
+        parameters=empty_schema,
+        handler=tool_list_workflow_templates,
+    )
+    copilot.register_tool(
+        name="run_workflow_template",
+        description=(
+            "Run a workflow template and optionally save a markdown report artifact to a plan. "
+            "Fields: workflow_id (required), optional plan_id, use_live_snapshot, save_to_plan, params object."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "workflow_id": {"type": "string"},
+                "plan_id": {"type": "string"},
+                "use_live_snapshot": {"type": "boolean"},
+                "save_to_plan": {"type": "boolean"},
+                "params": {"type": "object"},
+            },
+            "required": ["workflow_id"],
+            "additionalProperties": False,
+        },
+        handler=tool_run_workflow,
     )
 
 
@@ -708,6 +800,52 @@ def refresh_plan_context(plan_id: str) -> PlanDetailResponse:
     except PlanNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return PlanDetailResponse(**detail)
+
+
+@app.get("/api/plans/{plan_id}/artifacts/{artifact_id}", response_model=PlanArtifactResponse)
+def read_plan_artifact(plan_id: str, artifact_id: str) -> PlanArtifactResponse:
+    try:
+        artifact = plan_workspace.read_artifact(plan_id=plan_id, artifact_id=artifact_id)
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return PlanArtifactResponse(**artifact)
+
+
+@app.get("/api/workflows/templates", response_model=list[WorkflowTemplateResponse])
+def list_workflow_templates() -> list[WorkflowTemplateResponse]:
+    templates = workflow_runner.templates()
+    return [WorkflowTemplateResponse(**item) for item in templates]
+
+
+@app.post("/api/workflows/run", response_model=WorkflowRunResponse)
+async def run_workflow(request: WorkflowRunRequest) -> WorkflowRunResponse:
+    snapshot = await resolve_snapshot_for_workflow(use_live_snapshot=request.use_live_snapshot)
+
+    try:
+        result = workflow_runner.run(
+            workflow_id=request.workflow_id,
+            snapshot=snapshot,
+            params=request.params,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    artifact_payload: dict[str, object] | None = None
+    if request.save_to_plan:
+        resolved_plan_id = request.plan_id or plan_workspace.get_active_plan_id()
+        if resolved_plan_id:
+            try:
+                artifact_payload = plan_workspace.write_artifact(
+                    plan_id=resolved_plan_id,
+                    title=f"{request.workflow_id.replace('_', ' ').title()} Report",
+                    markdown=result.get("report_markdown", ""),
+                    kind=request.workflow_id,
+                )
+            except PlanNotFoundError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    result["artifact"] = artifact_payload
+    return WorkflowRunResponse(**result)
 
 
 @app.get("/api/copilot/conversations", response_model=list[CopilotConversationSummary])

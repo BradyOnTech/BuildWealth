@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,6 +50,14 @@ class PlanWorkspace:
 
     def _plan_dir(self, plan_id: str) -> Path:
         return self.base_dir / plan_id
+
+    def _artifacts_dir(self, plan_id: str) -> Path:
+        return self._plan_dir(plan_id) / "artifacts"
+
+    @staticmethod
+    def _slug(value: str, default: str = "artifact") -> str:
+        cleaned = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
+        return cleaned or default
 
     @staticmethod
     def _find_plan_metadata(index_payload: dict[str, Any], plan_id: str) -> dict[str, Any]:
@@ -132,6 +141,7 @@ class PlanWorkspace:
         plan_dir = self._plan_dir(plan_id)
         plan_dir.mkdir(parents=True, exist_ok=False)
         (plan_dir / "scenarios").mkdir(parents=True, exist_ok=True)
+        (plan_dir / "artifacts").mkdir(parents=True, exist_ok=True)
 
         (plan_dir / "plan.md").write_text(
             self._template_plan_markdown(cleaned_title, description),
@@ -198,6 +208,87 @@ class PlanWorkspace:
         rows.sort(key=lambda item: item.get("created_at", ""), reverse=True)
         return rows[: max(1, limit)]
 
+    def _list_artifacts(self, plan_id: str, limit: int = 40) -> list[dict[str, Any]]:
+        artifacts_dir = self._artifacts_dir(plan_id)
+        if not artifacts_dir.exists():
+            return []
+
+        files = sorted(artifacts_dir.glob("*.md"), reverse=True)
+        artifacts: list[dict[str, Any]] = []
+
+        for path in files[: max(1, limit)]:
+            text = path.read_text(encoding="utf-8")
+            lines = text.splitlines()
+            title = ""
+            if lines:
+                first = lines[0].strip()
+                if first.startswith("# "):
+                    title = first[2:].strip()
+            artifacts.append(
+                {
+                    "id": path.stem,
+                    "file_name": path.name,
+                    "title": title or path.stem,
+                    "created_at": datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat(),
+                }
+            )
+
+        return artifacts
+
+    def read_artifact(self, plan_id: str, artifact_id: str) -> dict[str, Any]:
+        plan_dir = self._plan_dir(plan_id)
+        if not plan_dir.exists():
+            raise PlanNotFoundError(f"Plan not found: {plan_id}")
+
+        artifact_name = artifact_id if artifact_id.endswith(".md") else f"{artifact_id}.md"
+        artifact_path = self._artifacts_dir(plan_id) / artifact_name
+        if not artifact_path.exists():
+            raise PlanNotFoundError(f"Artifact not found: {artifact_id}")
+
+        text = artifact_path.read_text(encoding="utf-8")
+        title = artifact_path.stem
+        lines = text.splitlines()
+        if lines and lines[0].startswith("# "):
+            title = lines[0][2:].strip()
+
+        return {
+            "id": artifact_path.stem,
+            "file_name": artifact_path.name,
+            "title": title,
+            "created_at": datetime.fromtimestamp(artifact_path.stat().st_mtime, tz=timezone.utc).isoformat(),
+            "content": text,
+        }
+
+    def write_artifact(
+        self,
+        plan_id: str,
+        title: str,
+        markdown: str,
+        kind: str = "workflow",
+    ) -> dict[str, Any]:
+        plan_dir = self._plan_dir(plan_id)
+        if not plan_dir.exists():
+            raise PlanNotFoundError(f"Plan not found: {plan_id}")
+
+        artifacts_dir = self._artifacts_dir(plan_id)
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = utc_now().strftime("%Y%m%dT%H%M%SZ")
+        file_stem = f"{timestamp}-{self._slug(kind, default='workflow')}-{self._slug(title)}"
+        artifact_path = artifacts_dir / f"{file_stem}.md"
+        artifact_path.write_text(markdown, encoding="utf-8")
+
+        index_payload = self._load_index()
+        self._touch_plan(index_payload, plan_id)
+        self._save_index(index_payload)
+
+        return {
+            "id": artifact_path.stem,
+            "file_name": artifact_path.name,
+            "title": title,
+            "created_at": datetime.fromtimestamp(artifact_path.stat().st_mtime, tz=timezone.utc).isoformat(),
+        }
+
     def get_plan(self, plan_id: str) -> dict[str, Any]:
         index_payload = self._load_index()
         metadata = self._find_plan_metadata(index_payload, plan_id)
@@ -225,6 +316,7 @@ class PlanWorkspace:
                 "context_markdown": read_optional(plan_dir / "context.md"),
             },
             "decisions": self._load_decisions(plan_id),
+            "artifacts": self._list_artifacts(plan_id),
         }
 
     def set_active_plan(self, plan_id: str) -> dict[str, Any]:
@@ -362,3 +454,10 @@ class PlanWorkspace:
             "updated_at": detail.get("updated_at"),
             "context_excerpt": trimmed,
         }
+
+    def get_active_plan_id(self) -> str | None:
+        index_payload = self._load_index()
+        active_plan_id = index_payload.get("active_plan_id")
+        if isinstance(active_plan_id, str) and active_plan_id.strip():
+            return active_plan_id
+        return None

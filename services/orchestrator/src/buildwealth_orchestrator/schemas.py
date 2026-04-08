@@ -165,6 +165,21 @@ class PlanFiles(BaseModel):
     context_markdown: str = ""
 
 
+class PlanArtifactSummary(BaseModel):
+    id: str
+    file_name: str
+    title: str
+    created_at: datetime
+
+
+class PlanArtifactResponse(BaseModel):
+    id: str
+    file_name: str
+    title: str
+    created_at: datetime
+    content: str
+
+
 class PlanDetailResponse(BaseModel):
     id: str
     title: str
@@ -174,6 +189,7 @@ class PlanDetailResponse(BaseModel):
     is_active: bool = False
     files: PlanFiles
     decisions: list[PlanDecision] = Field(default_factory=list)
+    artifacts: list[PlanArtifactSummary] = Field(default_factory=list)
 
 
 class PlanCreateRequest(BaseModel):
@@ -190,3 +206,27 @@ class PlanDecisionCreateRequest(BaseModel):
     summary: str
     rationale: str = ""
     status: str = "proposed"
+
+
+class WorkflowTemplateResponse(BaseModel):
+    id: str
+    title: str
+    description: str
+    default_params: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowRunRequest(BaseModel):
+    workflow_id: str
+    plan_id: str | None = None
+    use_live_snapshot: bool = False
+    save_to_plan: bool = True
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowRunResponse(BaseModel):
+    workflow_id: str
+    generated_at: datetime
+    summary: str
+    data: dict[str, Any] = Field(default_factory=dict)
+    report_markdown: str
+    artifact: PlanArtifactSummary | None = None
