@@ -29,6 +29,7 @@
           <button class="ghost" id="reload-today">Reload</button>
         </div>
         <p class="hint" id="today-generated">No dashboard data yet.</p>
+        <p class="context-banner warning" id="today-context-banner">Context readiness unavailable.</p>
         <div class="today-kpis">
           <article class="today-kpi">
             <p class="label">Total Value</p>
@@ -461,6 +462,99 @@
         </div>
       </section>
 
+      <section class="card recommendation-shell">
+        <div class="card-head">
+          <h2>Recommendation Inbox</h2>
+          <button class="ghost" id="reload-recommendations" type="button">Reload</button>
+        </div>
+        <p class="hint">
+          Review, edit, apply, reject, or archive recommendations. Applied recommendations write to your plan history.
+        </p>
+        <div class="recommendation-toolbar">
+          <label class="field">
+            <span>Status Filter</span>
+            <select id="recommendation-status-filter">
+              <option value="proposed" selected>Proposed</option>
+              <option value="applied">Applied</option>
+              <option value="rejected">Rejected</option>
+              <option value="archived">Archived</option>
+              <option value="all">All</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Plan Filter</span>
+            <select id="recommendation-plan-filter"></select>
+          </label>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Status</th>
+                <th>Priority</th>
+                <th>Type</th>
+                <th>Recommendation</th>
+                <th>Plan</th>
+                <th>Source</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="recommendation-body"></tbody>
+          </table>
+        </div>
+
+        <div class="card-head inner-head">
+          <h3 id="recommendation-form-title">Create Recommendation</h3>
+          <div class="plan-meta-actions">
+            <button class="ghost small" id="recommendation-cancel-edit" type="button" hidden>Cancel Edit</button>
+            <button class="primary small" id="recommendation-save" type="button">Save Recommendation</button>
+          </div>
+        </div>
+        <div class="settings-grid recommendation-form-grid">
+          <label class="field">
+            <span>Title</span>
+            <input type="text" id="recommendation-title" placeholder="Recommendation title" />
+          </label>
+          <label class="field">
+            <span>Priority</span>
+            <select id="recommendation-priority">
+              <option value="high">High</option>
+              <option value="medium" selected>Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Type</span>
+            <select id="recommendation-type">
+              <option value="general" selected>General</option>
+              <option value="workflow_action">Workflow Action</option>
+              <option value="plan_settings_update">Plan Settings Update</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Plan</span>
+            <select id="recommendation-plan"></select>
+          </label>
+          <label class="field">
+            <span>Source</span>
+            <input type="text" id="recommendation-source" value="manual-ui" />
+          </label>
+          <label class="field recommendation-detail-field">
+            <span>Detail</span>
+            <textarea id="recommendation-detail" rows="3" placeholder="Why this recommendation matters."></textarea>
+          </label>
+          <label class="field recommendation-payload-field">
+            <span>Action Payload (JSON, optional)</span>
+            <textarea
+              id="recommendation-action-payload"
+              rows="4"
+              placeholder='{"plan_settings_updates":{"annual_contribution_usd":22000}}'
+            ></textarea>
+          </label>
+        </div>
+      </section>
+
       <section class="card">
         <div class="card-head">
           <h2>Workflow Templates</h2>
@@ -480,6 +574,7 @@
           <div class="inline-options">
             <label><input type="checkbox" id="workflow-live-snapshot" /> Use live snapshot</label>
             <label><input type="checkbox" id="workflow-save-to-plan" checked /> Save report as plan artifact</label>
+            <label><input type="checkbox" id="workflow-create-recommendations" checked /> Create recommendations</label>
           </div>
           <label class="field workflow-params-field">
             <span>Template Params (JSON)</span>

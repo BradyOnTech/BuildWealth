@@ -23,6 +23,10 @@ class Settings(BaseSettings):
         default=Path("data/profile/financial_profile.json"),
         alias="FINANCIAL_PROFILE_PATH",
     )
+    recommendations_path: Path = Field(
+        default=Path("data/recommendations/inbox.json"),
+        alias="RECOMMENDATIONS_PATH",
+    )
 
     ghostfolio_api_base: str = Field(default="http://ghostfolio:3333/api", alias="GHOSTFOLIO_API_BASE")
     ghostfolio_security_token: str = Field(default="", alias="GHOSTFOLIO_SECURITY_TOKEN")

@@ -46,6 +46,12 @@ from buildwealth_orchestrator.schemas import (
     ScenarioRequest,
     SnapshotHistoryResponse,
     SyncStatusResponse,
+    RecommendationActionResponse,
+    RecommendationApplyRequest,
+    RecommendationCreateRequest,
+    RecommendationItem,
+    RecommendationRejectRequest,
+    RecommendationUpdateRequest,
     TodayDashboardResponse,
     WorkflowRunRequest,
     WorkflowRunResponse,
@@ -77,6 +83,10 @@ from buildwealth_orchestrator.services.workflow_runner import WorkflowRunner
 from buildwealth_orchestrator.services.plan_workspace import (
     PlanNotFoundError,
     PlanWorkspace,
+)
+from buildwealth_orchestrator.services.recommendation_inbox import (
+    RecommendationInbox,
+    RecommendationNotFoundError,
 )
 from buildwealth_orchestrator.settings import get_settings
 
@@ -117,6 +127,7 @@ coordinator = Coordinator()
 conversation_store = ConversationStore(settings.conversation_dir)
 plan_workspace = PlanWorkspace(settings.plans_dir)
 financial_profile_store = FinancialProfileStore(settings.financial_profile_path)
+recommendation_inbox = RecommendationInbox(settings.recommendations_path)
 workflow_runner = WorkflowRunner(
     scenario_engine=scenario_engine,
     default_annual_contribution_usd=settings.planner_annual_contribution_usd,
@@ -646,6 +657,212 @@ def save_financial_profile_payload(request: FinancialProfileRequest) -> dict[str
     return financial_profile_store.save(payload)
 
 
+def _recommendation_list(
+    *,
+    limit: int = 100,
+    status: str | None = None,
+    plan_id: str | None = None,
+    include_archived: bool = False,
+) -> list[dict[str, Any]]:
+    cleaned_status = str(status or "").strip().lower() or None
+    status_filter = None
+    if cleaned_status in {"proposed", "applied", "rejected", "archived"}:
+        status_filter = cleaned_status
+
+    return recommendation_inbox.list(
+        limit=max(1, min(int(limit), 500)),
+        status=status_filter,  # type: ignore[arg-type]
+        plan_id=(plan_id.strip() if isinstance(plan_id, str) and plan_id.strip() else None),
+        include_archived=include_archived,
+    )
+
+
+def _build_recommendation_open_counts() -> tuple[int, int]:
+    rows = recommendation_inbox.list(limit=500, status="proposed")
+    high = [
+        row
+        for row in rows
+        if str(row.get("priority", "")).strip().lower() == "high"
+    ]
+    return len(rows), len(high)
+
+
+def _workflow_recommendation_payload(
+    workflow_id: str,
+    recommendation_text: str,
+    plan_id: str | None = None,
+    result_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    text = recommendation_text.strip()
+    context = result_context if isinstance(result_context, dict) else {}
+    data_payload = context.get("data") if isinstance(context.get("data"), dict) else {}
+    snapshot_as_of = (
+        data_payload.get("snapshot_as_of")
+        or data_payload.get("latest_snapshot_as_of")
+        or data_payload.get("current_snapshot_as_of")
+    )
+    evidence = {
+        "workflow_id": workflow_id,
+        "generated_at": context.get("generated_at"),
+        "summary": context.get("summary"),
+        "snapshot_as_of": snapshot_as_of,
+        "data_keys": sorted(list(data_payload.keys()))[:16],
+    }
+    return recommendation_inbox.create(
+        title=f"{workflow_id.replace('_', ' ').title()} Recommendation",
+        detail=text,
+        priority="medium",
+        recommendation_type="workflow_action",
+        source=f"workflow:{workflow_id}",
+        plan_id=plan_id,
+        action_payload={
+            "workflow_id": workflow_id,
+            "suggested_action": text,
+            "evidence": evidence,
+        },
+    )
+
+
+def create_recommendations_from_workflow_result(
+    workflow_id: str,
+    result: dict[str, Any],
+    plan_id: str | None = None,
+    max_items: int = 4,
+) -> list[dict[str, Any]]:
+    data = result.get("data")
+    if not isinstance(data, dict):
+        return []
+
+    recommendations = data.get("recommendations")
+    if not isinstance(recommendations, list):
+        return []
+
+    created: list[dict[str, Any]] = []
+    for raw in recommendations[: max(1, max_items)]:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        created.append(
+            _workflow_recommendation_payload(
+                workflow_id=workflow_id,
+                recommendation_text=text,
+                plan_id=plan_id,
+                result_context=result,
+            )
+        )
+    return created
+
+
+def _resolve_recommendation_plan_id(
+    recommendation: dict[str, Any],
+    requested_plan_id: str | None = None,
+) -> str:
+    if requested_plan_id and requested_plan_id.strip():
+        return requested_plan_id.strip()
+
+    recommendation_plan_id = str(recommendation.get("plan_id") or "").strip()
+    if recommendation_plan_id:
+        return recommendation_plan_id
+
+    active_plan_id = plan_workspace.get_active_plan_id()
+    if active_plan_id:
+        return active_plan_id
+
+    raise ValueError("No plan_id is available for applying this recommendation.")
+
+
+def apply_recommendation(
+    recommendation_id: str,
+    request: RecommendationApplyRequest,
+) -> RecommendationActionResponse:
+    recommendation = recommendation_inbox.get(recommendation_id)
+    current_status = str(recommendation.get("status", "proposed")).strip().lower()
+    if current_status in {"applied", "rejected", "archived"}:
+        raise ValueError(f"Recommendation status is '{current_status}' and cannot be applied.")
+
+    recommendation_type = str(recommendation.get("recommendation_type", "general")).strip().lower()
+    payload = recommendation.get("action_payload")
+    action_payload = payload if isinstance(payload, dict) else {}
+    plan_detail: PlanDetailResponse | None = None
+    message = "Recommendation applied."
+
+    if recommendation_type == "plan_settings_update":
+        plan_id = _resolve_recommendation_plan_id(recommendation, request.plan_id)
+        payload_updates = action_payload.get("plan_settings_updates")
+        updates_from_payload = payload_updates if isinstance(payload_updates, dict) else {}
+        merged_updates = dict(updates_from_payload)
+        merged_updates.update(request.plan_settings_updates)
+        if not merged_updates:
+            raise ValueError(
+                "No plan settings updates found. Provide plan_settings_updates in recommendation or request."
+            )
+
+        detail = plan_workspace.update_plan_settings(
+            plan_id=plan_id,
+            updates=merged_updates,
+            rationale=request.rationale or recommendation.get("detail") or "Applied recommendation.",
+            status=request.decision_status or "accepted",
+            log_decision=True,
+        )
+        plan_detail = PlanDetailResponse(**detail)
+        message = f"Applied plan settings recommendation to plan {plan_id}."
+    else:
+        plan_id = _resolve_recommendation_plan_id(recommendation, request.plan_id)
+        summary = f"Applied recommendation: {recommendation.get('title', 'Recommendation')}"
+        rationale = request.rationale or str(recommendation.get("detail") or "")
+        plan_workspace.append_decision(
+            plan_id=plan_id,
+            summary=summary,
+            rationale=rationale,
+            status=request.decision_status or "accepted",
+        )
+        detail = plan_workspace.get_plan(plan_id)
+        plan_detail = PlanDetailResponse(**detail)
+        message = f"Logged recommendation application in plan {plan_id}."
+
+    recommendation = recommendation_inbox.set_status(
+        recommendation_id,
+        status="applied",
+        resolution_note=request.rationale.strip() if request.rationale else "",
+    )
+    return RecommendationActionResponse(
+        recommendation=RecommendationItem(**recommendation),
+        plan=plan_detail,
+        message=message,
+    )
+
+
+def reject_recommendation(recommendation_id: str, reason: str = "") -> RecommendationActionResponse:
+    recommendation = recommendation_inbox.get(recommendation_id)
+    current_status = str(recommendation.get("status", "proposed")).strip().lower()
+    if current_status in {"applied", "rejected"}:
+        raise ValueError(f"Recommendation status is '{current_status}' and cannot be rejected.")
+
+    updated = recommendation_inbox.set_status(
+        recommendation_id,
+        status="rejected",
+        resolution_note=reason,
+    )
+    return RecommendationActionResponse(
+        recommendation=RecommendationItem(**updated),
+        plan=None,
+        message="Recommendation rejected.",
+    )
+
+
+def archive_recommendation(recommendation_id: str, note: str = "") -> RecommendationActionResponse:
+    recommendation = recommendation_inbox.set_status(
+        recommendation_id,
+        status="archived",
+        resolution_note=note,
+    )
+    return RecommendationActionResponse(
+        recommendation=RecommendationItem(**recommendation),
+        plan=None,
+        message="Recommendation archived.",
+    )
+
+
 def _plan_settings_completion_percent(active_plan_detail: dict[str, Any] | None) -> float:
     if not active_plan_detail:
         return 0.0
@@ -848,6 +1065,7 @@ def build_today_dashboard_response() -> TodayDashboardResponse:
         latest_snapshot=latest_snapshot,
         active_plan_detail=active_plan_detail,
     )
+    inbox_open_count, inbox_high_priority_count = _build_recommendation_open_counts()
 
     return build_today_dashboard_payload(
         now=utc_now(),
@@ -859,6 +1077,8 @@ def build_today_dashboard_response() -> TodayDashboardResponse:
         active_plan_detail=active_plan_detail,
         onboarding_completion_percent=onboarding_status.completion_percent,
         onboarding_ready_for_daily_review=onboarding_status.ready_for_daily_review,
+        inbox_open_count=inbox_open_count,
+        inbox_high_priority_count=inbox_high_priority_count,
     )
 
 
@@ -898,6 +1118,22 @@ async def build_contextual_brief(
         onboarding_payload = {"note": f"Onboarding context unavailable: {exc}"}
 
     try:
+        recommendation_rows = _recommendation_list(limit=20, status="proposed")
+        recommendation_payload = {
+            "open_count": len(recommendation_rows),
+            "high_priority_count": len(
+                [
+                    row
+                    for row in recommendation_rows
+                    if str(row.get("priority", "")).strip().lower() == "high"
+                ]
+            ),
+            "items": recommendation_rows[:8],
+        }
+    except Exception as exc:
+        recommendation_payload = {"note": f"Recommendation context unavailable: {exc}"}
+
+    try:
         plan_payload = plan_workspace.get_context_payload(plan_id=plan_id)
     except PlanNotFoundError as exc:
         plan_payload = {"note": str(exc)}
@@ -913,6 +1149,7 @@ async def build_contextual_brief(
         "today_dashboard": today_dashboard_payload,
         "financial_profile": profile_payload,
         "onboarding_status": onboarding_payload,
+        "recommendations": recommendation_payload,
         "snapshot_summary": snapshot_payload,
         "snapshot_history": snapshot_history_payload,
         "plan_context": plan_payload,
@@ -1026,6 +1263,77 @@ async def tool_update_financial_profile(arguments: dict[str, object]) -> dict[st
     validated = FinancialProfileRequest(**profile_payload)
     saved = save_financial_profile_payload(validated)
     return FinancialProfileResponse(**saved).model_dump(mode="json")
+
+
+async def tool_list_recommendations(arguments: dict[str, object]) -> dict[str, object]:
+    limit_value = arguments.get("limit", 50)
+    try:
+        limit = max(1, min(int(limit_value), 500))
+    except Exception:
+        limit = 50
+
+    status = str(arguments.get("status") or "").strip().lower() or None
+    plan_id = str(arguments.get("plan_id") or "").strip() or None
+    include_archived = bool(arguments.get("include_archived", False))
+    rows = _recommendation_list(
+        limit=limit,
+        status=status,
+        plan_id=plan_id,
+        include_archived=include_archived,
+    )
+    return {
+        "count": len(rows),
+        "recommendations": rows,
+    }
+
+
+async def tool_create_recommendation(arguments: dict[str, object]) -> dict[str, object]:
+    title = str(arguments.get("title") or "").strip()
+    detail = str(arguments.get("detail") or "").strip()
+    if not title or not detail:
+        raise ValueError("title and detail are required")
+
+    action_payload = arguments.get("action_payload")
+    payload = action_payload if isinstance(action_payload, dict) else {}
+
+    recommendation = recommendation_inbox.create(
+        title=title,
+        detail=detail,
+        priority=str(arguments.get("priority") or "medium").strip().lower() or "medium",
+        recommendation_type=str(arguments.get("recommendation_type") or "general").strip().lower() or "general",
+        source=str(arguments.get("source") or "copilot").strip().lower() or "copilot",
+        plan_id=(str(arguments.get("plan_id") or "").strip() or None),
+        action_payload=payload,
+    )
+    return {"recommendation": recommendation}
+
+
+async def tool_apply_recommendation(arguments: dict[str, object]) -> dict[str, object]:
+    recommendation_id = str(arguments.get("recommendation_id") or "").strip()
+    if not recommendation_id:
+        raise ValueError("recommendation_id is required")
+
+    payload = RecommendationApplyRequest(
+        plan_id=(str(arguments.get("plan_id") or "").strip() or None),
+        plan_settings_updates=(
+            arguments.get("plan_settings_updates")
+            if isinstance(arguments.get("plan_settings_updates"), dict)
+            else {}
+        ),
+        rationale=str(arguments.get("rationale") or ""),
+        decision_status=str(arguments.get("decision_status") or "accepted"),
+    )
+    result = apply_recommendation(recommendation_id, payload)
+    return result.model_dump(mode="json")
+
+
+async def tool_reject_recommendation(arguments: dict[str, object]) -> dict[str, object]:
+    recommendation_id = str(arguments.get("recommendation_id") or "").strip()
+    if not recommendation_id:
+        raise ValueError("recommendation_id is required")
+    reason = str(arguments.get("reason") or "").strip()
+    result = reject_recommendation(recommendation_id, reason=reason)
+    return result.model_dump(mode="json")
 
 
 async def tool_run_sync(_: dict[str, object]) -> dict[str, object]:
@@ -1251,21 +1559,31 @@ async def tool_run_workflow(arguments: dict[str, object]) -> dict[str, object]:
         previous_snapshot=previous_snapshot,
     )
 
+    requested_plan_id = arguments.get("plan_id")
+    plan_id = str(requested_plan_id).strip() if isinstance(requested_plan_id, str) else ""
+    if not plan_id:
+        active_id = plan_workspace.get_active_plan_id()
+        plan_id = active_id or ""
+
     save_to_plan = bool(arguments.get("save_to_plan", True))
-    if save_to_plan:
-        requested_plan_id = arguments.get("plan_id")
-        plan_id = str(requested_plan_id).strip() if isinstance(requested_plan_id, str) else ""
-        if not plan_id:
-            active_id = plan_workspace.get_active_plan_id()
-            plan_id = active_id or ""
-        if plan_id:
-            artifact = plan_workspace.write_artifact(
-                plan_id=plan_id,
-                title=f"{workflow_id.replace('_', ' ').title()} Report",
-                markdown=result.get("report_markdown", ""),
-                kind=workflow_id,
-            )
-            result["artifact"] = artifact
+    if save_to_plan and plan_id:
+        artifact = plan_workspace.write_artifact(
+            plan_id=plan_id,
+            title=f"{workflow_id.replace('_', ' ').title()} Report",
+            markdown=result.get("report_markdown", ""),
+            kind=workflow_id,
+        )
+        result["artifact"] = artifact
+
+    create_recommendations = bool(arguments.get("create_recommendations", True))
+    if create_recommendations:
+        result["recommendations"] = create_recommendations_from_workflow_result(
+            workflow_id=workflow_id,
+            result=result,
+            plan_id=plan_id or None,
+        )
+    else:
+        result["recommendations"] = []
 
     return result
 
@@ -1347,6 +1665,78 @@ def configure_copilot_tools() -> None:
             "additionalProperties": False,
         },
         handler=tool_update_financial_profile,
+    )
+    copilot.register_tool(
+        name="list_recommendations",
+        description=(
+            "List recommendation inbox items. Optional fields: status, plan_id, limit, include_archived."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "status": {"type": "string"},
+                "plan_id": {"type": "string"},
+                "limit": {"type": "integer"},
+                "include_archived": {"type": "boolean"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_list_recommendations,
+    )
+    copilot.register_tool(
+        name="create_recommendation",
+        description=(
+            "Create a recommendation inbox item. "
+            "Required: title, detail. Optional: priority, recommendation_type, source, plan_id, action_payload."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "detail": {"type": "string"},
+                "priority": {"type": "string"},
+                "recommendation_type": {"type": "string"},
+                "source": {"type": "string"},
+                "plan_id": {"type": "string"},
+                "action_payload": {"type": "object"},
+            },
+            "required": ["title", "detail"],
+            "additionalProperties": False,
+        },
+        handler=tool_create_recommendation,
+    )
+    copilot.register_tool(
+        name="apply_recommendation",
+        description=(
+            "Apply a recommendation. For plan_settings_update recommendations, may include plan_settings_updates overrides."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "recommendation_id": {"type": "string"},
+                "plan_id": {"type": "string"},
+                "plan_settings_updates": {"type": "object"},
+                "rationale": {"type": "string"},
+                "decision_status": {"type": "string"},
+            },
+            "required": ["recommendation_id"],
+            "additionalProperties": False,
+        },
+        handler=tool_apply_recommendation,
+    )
+    copilot.register_tool(
+        name="reject_recommendation",
+        description="Reject a recommendation inbox item with an optional reason.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "recommendation_id": {"type": "string"},
+                "reason": {"type": "string"},
+            },
+            "required": ["recommendation_id"],
+            "additionalProperties": False,
+        },
+        handler=tool_reject_recommendation,
     )
     copilot.register_tool(
         name="run_sync",
@@ -1521,7 +1911,8 @@ def configure_copilot_tools() -> None:
         name="run_workflow_template",
         description=(
             "Run a workflow template and optionally save a markdown report artifact to a plan. "
-            "Fields: workflow_id (required), optional plan_id, use_live_snapshot, save_to_plan, params object."
+            "Fields: workflow_id (required), optional plan_id, use_live_snapshot, save_to_plan, "
+            "create_recommendations, params object."
         ),
         parameters={
             "type": "object",
@@ -1530,6 +1921,7 @@ def configure_copilot_tools() -> None:
                 "plan_id": {"type": "string"},
                 "use_live_snapshot": {"type": "boolean"},
                 "save_to_plan": {"type": "boolean"},
+                "create_recommendations": {"type": "boolean"},
                 "params": {"type": "object"},
             },
             "required": ["workflow_id"],
@@ -1549,6 +1941,7 @@ async def on_startup() -> None:
     settings.conversation_dir.mkdir(parents=True, exist_ok=True)
     settings.plans_dir.mkdir(parents=True, exist_ok=True)
     settings.financial_profile_path.parent.mkdir(parents=True, exist_ok=True)
+    settings.recommendations_path.parent.mkdir(parents=True, exist_ok=True)
 
     global scheduler_task
     if settings.sync_interval_minutes > 0:
@@ -1601,6 +1994,105 @@ def update_financial_profile(request: FinancialProfileRequest) -> FinancialProfi
 @app.get("/api/onboarding/status", response_model=OnboardingStatusResponse)
 def onboarding_status() -> OnboardingStatusResponse:
     return build_onboarding_status_response()
+
+
+@app.get("/api/recommendations", response_model=list[RecommendationItem])
+def list_recommendations(
+    limit: int = 100,
+    status: str | None = None,
+    plan_id: str | None = None,
+    include_archived: bool = False,
+) -> list[RecommendationItem]:
+    rows = _recommendation_list(
+        limit=limit,
+        status=status,
+        plan_id=plan_id,
+        include_archived=include_archived,
+    )
+    return [RecommendationItem(**row) for row in rows]
+
+
+@app.post("/api/recommendations", response_model=RecommendationItem)
+def create_recommendation(request: RecommendationCreateRequest) -> RecommendationItem:
+    recommendation = recommendation_inbox.create(
+        title=request.title,
+        detail=request.detail,
+        priority=request.priority,
+        recommendation_type=request.recommendation_type,
+        source=request.source,
+        plan_id=request.plan_id,
+        action_payload=request.action_payload,
+    )
+    return RecommendationItem(**recommendation)
+
+
+@app.get("/api/recommendations/{recommendation_id}", response_model=RecommendationItem)
+def get_recommendation(recommendation_id: str) -> RecommendationItem:
+    try:
+        recommendation = recommendation_inbox.get(recommendation_id)
+    except RecommendationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return RecommendationItem(**recommendation)
+
+
+@app.put("/api/recommendations/{recommendation_id}", response_model=RecommendationItem)
+def update_recommendation(
+    recommendation_id: str,
+    request: RecommendationUpdateRequest,
+) -> RecommendationItem:
+    updates = request.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="Provide at least one field to update")
+
+    try:
+        recommendation = recommendation_inbox.update(recommendation_id, updates=updates)
+    except RecommendationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return RecommendationItem(**recommendation)
+
+
+@app.post("/api/recommendations/{recommendation_id}/apply", response_model=RecommendationActionResponse)
+def apply_recommendation_route(
+    recommendation_id: str,
+    request: RecommendationApplyRequest,
+) -> RecommendationActionResponse:
+    try:
+        return apply_recommendation(recommendation_id, request)
+    except RecommendationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/recommendations/{recommendation_id}/reject", response_model=RecommendationActionResponse)
+def reject_recommendation_route(
+    recommendation_id: str,
+    request: RecommendationRejectRequest,
+) -> RecommendationActionResponse:
+    try:
+        return reject_recommendation(recommendation_id, reason=request.reason)
+    except RecommendationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/recommendations/{recommendation_id}/archive", response_model=RecommendationActionResponse)
+def archive_recommendation_route(
+    recommendation_id: str,
+    request: RecommendationRejectRequest,
+) -> RecommendationActionResponse:
+    try:
+        return archive_recommendation(recommendation_id, note=request.reason)
+    except RecommendationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/sync/status", response_model=SyncStatusResponse)
@@ -1780,9 +2272,10 @@ async def run_workflow(request: WorkflowRunRequest) -> WorkflowRunResponse:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    resolved_plan_id = request.plan_id or plan_workspace.get_active_plan_id()
+
     artifact_payload: dict[str, object] | None = None
     if request.save_to_plan:
-        resolved_plan_id = request.plan_id or plan_workspace.get_active_plan_id()
         if resolved_plan_id:
             try:
                 artifact_payload = plan_workspace.write_artifact(
@@ -1795,6 +2288,14 @@ async def run_workflow(request: WorkflowRunRequest) -> WorkflowRunResponse:
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     result["artifact"] = artifact_payload
+    if request.create_recommendations:
+        result["recommendations"] = create_recommendations_from_workflow_result(
+            workflow_id=request.workflow_id,
+            result=result,
+            plan_id=resolved_plan_id,
+        )
+    else:
+        result["recommendations"] = []
     return WorkflowRunResponse(**result)
 
 

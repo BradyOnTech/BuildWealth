@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from buildwealth_orchestrator.schemas import (
     PortfolioSnapshot,
@@ -262,6 +262,8 @@ def build_today_dashboard_payload(
     active_plan_detail: dict[str, Any] | None,
     onboarding_completion_percent: float = 0.0,
     onboarding_ready_for_daily_review: bool = False,
+    inbox_open_count: int = 0,
+    inbox_high_priority_count: int = 0,
 ) -> TodayDashboardResponse:
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
@@ -352,6 +354,26 @@ def build_today_dashboard_payload(
         "Log one decision in Plan Workspace.",
     ]
 
+    context_notes: list[str] = []
+    context_state: Literal["ready", "warning", "critical"] = "ready"
+    if snapshot_as_of is None:
+        context_state = "critical"
+        context_notes.append("No portfolio snapshot is available yet. Run sync before making decisions.")
+    elif snapshot_age_minutes is not None and snapshot_age_minutes > (24 * 60):
+        context_notes.append("Portfolio snapshot is older than 24 hours.")
+
+    if not onboarding_ready_for_daily_review:
+        context_notes.append("Unified financial profile is incomplete.")
+    if active_plan_summary is None:
+        context_notes.append("No active plan is set.")
+    if inbox_high_priority_count > 0:
+        context_notes.append(f"{inbox_high_priority_count} high-priority recommendation(s) need review.")
+
+    if context_state != "critical" and context_notes:
+        context_state = "warning"
+    if not context_notes:
+        context_notes.append("Context is fresh and ready for daily review.")
+
     return TodayDashboardResponse(
         generated_at=now,
         currency=currency,
@@ -369,6 +391,10 @@ def build_today_dashboard_payload(
         active_plan=active_plan_summary,
         onboarding_completion_percent=onboarding_completion_percent,
         onboarding_ready_for_daily_review=onboarding_ready_for_daily_review,
+        inbox_open_count=max(0, int(inbox_open_count)),
+        inbox_high_priority_count=max(0, int(inbox_high_priority_count)),
+        context_state=context_state,
+        context_notes=context_notes,
         checklist=checklist,
         recommendations=recommendations,
         workflow_steps=workflow_steps,

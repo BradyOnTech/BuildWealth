@@ -41,7 +41,7 @@ Acceptance criteria:
 - Copilot context includes these fields and cites them in responses.
 
 ## Epic 3: Recommendation Inbox + Approval Flow
-Status: Planned
+Status: In progress (core inbox API + UI actions implemented)
 
 Outcomes:
 - Agent suggestions become explicit actions (`apply`, `edit`, `reject`) instead of ad hoc text output.

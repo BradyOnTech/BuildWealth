@@ -15,6 +15,10 @@ const state = {
   todayDashboard: null,
   financialProfile: null,
   onboardingStatus: null,
+  recommendations: [],
+  recommendationFilterStatus: 'proposed',
+  recommendationFilterPlanId: '',
+  recommendationEditingId: null,
 };
 
 const PLAN_SETTING_FIELDS = [
@@ -90,6 +94,14 @@ function uid(prefix) {
   return `${prefix}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
+function recommendationStatusClass(statusValue) {
+  const status = String(statusValue || 'proposed').toLowerCase();
+  if (status === 'applied') return 'complete';
+  if (status === 'rejected') return 'incomplete';
+  if (status === 'archived') return 'attention';
+  return 'attention';
+}
+
 function emptyFinancialProfile() {
   return {
     income_items: [],
@@ -144,9 +156,18 @@ function renderTodayDashboard(payload) {
     typeof payload.onboarding_completion_percent === 'number'
       ? `${payload.onboarding_completion_percent.toFixed(1)}%`
       : '-';
+  const inboxOpen = Number(payload.inbox_open_count || 0);
+  const inboxHigh = Number(payload.inbox_high_priority_count || 0);
   byId('today-generated').textContent =
     `Generated ${fmtDate(payload.generated_at)} • ${payload.state} • ${payload.currency} • ` +
-    `Onboarding ${onboardingPct}`;
+    `Onboarding ${onboardingPct} • Inbox ${inboxOpen} open (${inboxHigh} high)`;
+  const contextState = String(payload.context_state || 'warning').toLowerCase();
+  const contextBanner = byId('today-context-banner');
+  contextBanner.className = `context-banner ${contextState}`;
+  const contextNotes = Array.isArray(payload.context_notes) ? payload.context_notes : [];
+  contextBanner.textContent = contextNotes.length
+    ? contextNotes.join(' ')
+    : 'Context readiness unavailable.';
   byId('today-total-value').textContent = fmtCurrency(payload.total_value_usd);
   byId('today-snapshot-freshness').textContent = fmtAgeMinutes(payload.snapshot_age_minutes);
   byId('today-concentration').textContent = `${String(payload.concentration_risk || '-').toUpperCase()} ${
@@ -736,6 +757,50 @@ function renderWorkflowPlanOptions() {
   renderPlanSelectOptions('workflow-plan', state.copilotPlanId);
 }
 
+function renderRecommendationPlanOptions() {
+  const filterSelect = byId('recommendation-plan-filter');
+  const editorSelect = byId('recommendation-plan');
+
+  if (!filterSelect || !editorSelect) return;
+
+  const previousFilter = state.recommendationFilterPlanId || '';
+  filterSelect.innerHTML = '';
+  const allOption = document.createElement('option');
+  allOption.value = '';
+  allOption.textContent = 'All plans';
+  filterSelect.appendChild(allOption);
+  for (const plan of state.plans) {
+    const option = document.createElement('option');
+    option.value = plan.id;
+    option.textContent = plan.is_active ? `${plan.title} (Active)` : plan.title;
+    filterSelect.appendChild(option);
+  }
+  if ([...filterSelect.options].some((option) => option.value === previousFilter)) {
+    filterSelect.value = previousFilter;
+  } else {
+    filterSelect.value = '';
+    state.recommendationFilterPlanId = '';
+  }
+
+  const previousEditor = editorSelect.value || '';
+  editorSelect.innerHTML = '';
+  const defaultOption = document.createElement('option');
+  defaultOption.value = '';
+  defaultOption.textContent = 'Active plan (default)';
+  editorSelect.appendChild(defaultOption);
+  for (const plan of state.plans) {
+    const option = document.createElement('option');
+    option.value = plan.id;
+    option.textContent = plan.is_active ? `${plan.title} (Active)` : plan.title;
+    editorSelect.appendChild(option);
+  }
+  if ([...editorSelect.options].some((option) => option.value === previousEditor)) {
+    editorSelect.value = previousEditor;
+  } else {
+    editorSelect.value = '';
+  }
+}
+
 async function loadPlans(autoSelect = true) {
   const plans = await fetchJson('/api/plans?limit=200');
   state.plans = Array.isArray(plans) ? plans : [];
@@ -753,6 +818,7 @@ async function loadPlans(autoSelect = true) {
   renderPlanList();
   renderCopilotPlanOptions();
   renderWorkflowPlanOptions();
+  renderRecommendationPlanOptions();
 
   if (state.currentPlanId) {
     await loadPlan(state.currentPlanId, true);
@@ -1136,6 +1202,7 @@ async function runWorkflow(event) {
     plan_id: selectedPlanId,
     use_live_snapshot: byId('workflow-live-snapshot').checked,
     save_to_plan: byId('workflow-save-to-plan').checked,
+    create_recommendations: byId('workflow-create-recommendations').checked,
     params,
   };
 
@@ -1150,7 +1217,9 @@ async function runWorkflow(event) {
       body: JSON.stringify(payload),
     });
 
-    byId('workflow-summary').textContent = result.summary || 'Workflow complete.';
+    const createdRecommendations = Array.isArray(result.recommendations) ? result.recommendations.length : 0;
+    byId('workflow-summary').textContent =
+      `${result.summary || 'Workflow complete.'} • ${createdRecommendations} recommendation(s) created.`;
     byId('workflow-report').value = result.report_markdown || '';
 
     if (result.artifact && selectedPlanId) {
@@ -1163,7 +1232,9 @@ async function runWorkflow(event) {
     writeLog('Workflow completed.', {
       workflow_id: result.workflow_id,
       artifact_id: result.artifact?.id || null,
+      recommendations_created: createdRecommendations,
     });
+    await Promise.all([loadRecommendations(), loadTodayDashboard()]);
   } catch (error) {
     writeLog(`Workflow failed: ${error.message}`, null, true);
     byId('workflow-summary').textContent = `Workflow failed: ${error.message}`;
@@ -1171,6 +1242,303 @@ async function runWorkflow(event) {
     byId('run-workflow').disabled = false;
     byId('run-workflow').textContent = 'Run Workflow';
   }
+}
+
+function resetRecommendationForm() {
+  state.recommendationEditingId = null;
+  byId('recommendation-form-title').textContent = 'Create Recommendation';
+  byId('recommendation-save').textContent = 'Save Recommendation';
+  byId('recommendation-cancel-edit').hidden = true;
+  byId('recommendation-title').value = '';
+  byId('recommendation-detail').value = '';
+  byId('recommendation-priority').value = 'medium';
+  byId('recommendation-type').value = 'general';
+  byId('recommendation-source').value = 'manual-ui';
+  byId('recommendation-action-payload').value = '';
+  byId('recommendation-plan').value = '';
+}
+
+function setRecommendationFormForEdit(recommendation) {
+  state.recommendationEditingId = recommendation.id;
+  byId('recommendation-form-title').textContent = `Edit Recommendation ${recommendation.id}`;
+  byId('recommendation-save').textContent = 'Update Recommendation';
+  byId('recommendation-cancel-edit').hidden = false;
+  byId('recommendation-title').value = recommendation.title || '';
+  byId('recommendation-detail').value = recommendation.detail || '';
+  byId('recommendation-priority').value = recommendation.priority || 'medium';
+  byId('recommendation-type').value = recommendation.recommendation_type || 'general';
+  byId('recommendation-source').value = recommendation.source || 'manual-ui';
+  byId('recommendation-plan').value = recommendation.plan_id || '';
+  byId('recommendation-action-payload').value = JSON.stringify(recommendation.action_payload || {}, null, 2);
+}
+
+function recommendationFormPayload() {
+  const title = byId('recommendation-title').value.trim();
+  const detail = byId('recommendation-detail').value.trim();
+  if (!title || !detail) {
+    throw new Error('Recommendation title and detail are required.');
+  }
+
+  const rawPayload = byId('recommendation-action-payload').value.trim();
+  let actionPayload = {};
+  if (rawPayload) {
+    try {
+      const parsed = JSON.parse(rawPayload);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Action payload must be a JSON object.');
+      }
+      actionPayload = parsed;
+    } catch (error) {
+      throw new Error(`Action payload JSON parse failed: ${error.message}`);
+    }
+  }
+
+  return {
+    title,
+    detail,
+    priority: byId('recommendation-priority').value || 'medium',
+    recommendation_type: byId('recommendation-type').value || 'general',
+    source: byId('recommendation-source').value.trim() || 'manual-ui',
+    plan_id: byId('recommendation-plan').value || null,
+    action_payload: actionPayload,
+  };
+}
+
+function renderRecommendations() {
+  const tbody = byId('recommendation-body');
+  tbody.innerHTML = '';
+
+  if (!Array.isArray(state.recommendations) || !state.recommendations.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="8">No recommendations for this filter.</td>';
+    tbody.appendChild(tr);
+    return;
+  }
+
+  for (const recommendation of state.recommendations) {
+    const tr = document.createElement('tr');
+
+    const whenCell = document.createElement('td');
+    whenCell.textContent = fmtDate(recommendation.created_at);
+
+    const statusCell = document.createElement('td');
+    const statusBadge = document.createElement('span');
+    statusBadge.className = `recommendation-status ${recommendationStatusClass(recommendation.status)}`;
+    statusBadge.textContent = String(recommendation.status || 'proposed').toUpperCase();
+    statusCell.appendChild(statusBadge);
+
+    const priorityCell = document.createElement('td');
+    priorityCell.textContent = String(recommendation.priority || 'medium').toUpperCase();
+
+    const typeCell = document.createElement('td');
+    typeCell.textContent = recommendation.recommendation_type || 'general';
+
+    const recommendationCell = document.createElement('td');
+    const recTitle = document.createElement('p');
+    recTitle.className = 'recommendation-title';
+    recTitle.textContent = recommendation.title || '-';
+    const recDetail = document.createElement('p');
+    recDetail.className = 'recommendation-detail';
+    recDetail.textContent = recommendation.detail || '';
+    recommendationCell.appendChild(recTitle);
+    recommendationCell.appendChild(recDetail);
+    if (recommendation.resolution_note) {
+      const note = document.createElement('p');
+      note.className = 'recommendation-note';
+      note.textContent = `Resolution: ${recommendation.resolution_note}`;
+      recommendationCell.appendChild(note);
+    }
+    const actionPayload =
+      recommendation.action_payload && typeof recommendation.action_payload === 'object'
+        ? recommendation.action_payload
+        : {};
+    const evidence =
+      actionPayload.evidence && typeof actionPayload.evidence === 'object' ? actionPayload.evidence : null;
+    if (evidence) {
+      const evidenceParts = [];
+      if (evidence.workflow_id) evidenceParts.push(`Workflow ${evidence.workflow_id}`);
+      if (evidence.generated_at) evidenceParts.push(`Generated ${fmtDate(evidence.generated_at)}`);
+      if (evidence.snapshot_as_of) evidenceParts.push(`Snapshot ${fmtDate(evidence.snapshot_as_of)}`);
+      if (Array.isArray(evidence.data_keys) && evidence.data_keys.length) {
+        evidenceParts.push(`Data keys: ${evidence.data_keys.slice(0, 4).join(', ')}`);
+      }
+      if (evidenceParts.length) {
+        const evidenceLine = document.createElement('p');
+        evidenceLine.className = 'recommendation-note';
+        evidenceLine.textContent = `Evidence: ${evidenceParts.join(' • ')}`;
+        recommendationCell.appendChild(evidenceLine);
+      }
+    }
+
+    const planCell = document.createElement('td');
+    planCell.textContent = recommendation.plan_id || 'active(default)';
+
+    const sourceCell = document.createElement('td');
+    sourceCell.textContent = recommendation.source || '-';
+
+    const actionsCell = document.createElement('td');
+    const actionsWrap = document.createElement('div');
+    actionsWrap.className = 'table-actions';
+
+    if (recommendation.status === 'proposed') {
+      const applyButton = document.createElement('button');
+      applyButton.type = 'button';
+      applyButton.className = 'primary small';
+      applyButton.textContent = 'Apply';
+      applyButton.addEventListener('click', () => {
+        applyRecommendationItem(recommendation).catch((error) => writeLog(error.message, null, true));
+      });
+      actionsWrap.appendChild(applyButton);
+
+      const rejectButton = document.createElement('button');
+      rejectButton.type = 'button';
+      rejectButton.className = 'ghost small';
+      rejectButton.textContent = 'Reject';
+      rejectButton.addEventListener('click', () => {
+        rejectRecommendationItem(recommendation).catch((error) => writeLog(error.message, null, true));
+      });
+      actionsWrap.appendChild(rejectButton);
+    }
+
+    if (recommendation.status !== 'archived') {
+      const editButton = document.createElement('button');
+      editButton.type = 'button';
+      editButton.className = 'ghost small';
+      editButton.textContent = 'Edit';
+      editButton.addEventListener('click', () => {
+        setRecommendationFormForEdit(recommendation);
+      });
+      actionsWrap.appendChild(editButton);
+
+      const archiveButton = document.createElement('button');
+      archiveButton.type = 'button';
+      archiveButton.className = 'ghost small';
+      archiveButton.textContent = 'Archive';
+      archiveButton.addEventListener('click', () => {
+        archiveRecommendationItem(recommendation).catch((error) => writeLog(error.message, null, true));
+      });
+      actionsWrap.appendChild(archiveButton);
+    }
+
+    actionsCell.appendChild(actionsWrap);
+
+    tr.appendChild(whenCell);
+    tr.appendChild(statusCell);
+    tr.appendChild(priorityCell);
+    tr.appendChild(typeCell);
+    tr.appendChild(recommendationCell);
+    tr.appendChild(planCell);
+    tr.appendChild(sourceCell);
+    tr.appendChild(actionsCell);
+    tbody.appendChild(tr);
+  }
+}
+
+async function loadRecommendations() {
+  const statusFilter = byId('recommendation-status-filter').value || 'proposed';
+  const planFilter = byId('recommendation-plan-filter').value || '';
+  state.recommendationFilterStatus = statusFilter;
+  state.recommendationFilterPlanId = planFilter;
+
+  const params = new URLSearchParams();
+  params.set('limit', '200');
+  if (statusFilter === 'all') {
+    params.set('include_archived', 'true');
+  } else {
+    params.set('status', statusFilter);
+  }
+  if (planFilter) {
+    params.set('plan_id', planFilter);
+  }
+
+  const recommendations = await fetchJson(`/api/recommendations?${params.toString()}`);
+  state.recommendations = Array.isArray(recommendations) ? recommendations : [];
+  renderRecommendations();
+}
+
+async function saveRecommendation() {
+  let payload;
+  try {
+    payload = recommendationFormPayload();
+  } catch (error) {
+    writeLog(error.message, null, true);
+    return;
+  }
+
+  const editingId = state.recommendationEditingId;
+  writeLog(editingId ? `Updating recommendation ${editingId}...` : 'Creating recommendation...', payload);
+
+  try {
+    if (editingId) {
+      await fetchJson(`/api/recommendations/${encodeURIComponent(editingId)}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      writeLog('Recommendation updated.', { recommendation_id: editingId });
+    } else {
+      const created = await fetchJson('/api/recommendations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      writeLog('Recommendation created.', { recommendation_id: created.id });
+    }
+    resetRecommendationForm();
+    await Promise.all([loadRecommendations(), loadTodayDashboard()]);
+  } catch (error) {
+    writeLog(`Recommendation save failed: ${error.message}`, null, true);
+  }
+}
+
+async function applyRecommendationItem(recommendation) {
+  const rationale = window.prompt('Optional rationale for applying this recommendation:', '');
+  if (rationale === null) return;
+
+  const payload = {
+    plan_id: recommendation.plan_id || byId('recommendation-plan').value || state.currentPlanId || null,
+    rationale: rationale.trim(),
+    decision_status: 'accepted',
+  };
+
+  const result = await fetchJson(`/api/recommendations/${encodeURIComponent(recommendation.id)}/apply`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (result.plan && result.plan.id && result.plan.id === state.currentPlanId) {
+    state.currentPlanDetail = result.plan;
+    renderPlanDetail();
+  }
+  writeLog('Recommendation applied.', { recommendation_id: recommendation.id, plan_id: payload.plan_id });
+  await Promise.all([loadPlans(false), loadRecommendations(), loadTodayDashboard()]);
+}
+
+async function rejectRecommendationItem(recommendation) {
+  const reason = window.prompt('Reason for rejecting this recommendation (optional):', '');
+  if (reason === null) return;
+
+  await fetchJson(`/api/recommendations/${encodeURIComponent(recommendation.id)}/reject`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ reason: reason.trim() }),
+  });
+  writeLog('Recommendation rejected.', { recommendation_id: recommendation.id });
+  await Promise.all([loadRecommendations(), loadTodayDashboard()]);
+}
+
+async function archiveRecommendationItem(recommendation) {
+  const reason = window.prompt('Archive note (optional):', '');
+  if (reason === null) return;
+
+  await fetchJson(`/api/recommendations/${encodeURIComponent(recommendation.id)}/archive`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ reason: reason.trim() }),
+  });
+  writeLog('Recommendation archived.', { recommendation_id: recommendation.id });
+  await Promise.all([loadRecommendations(), loadTodayDashboard()]);
 }
 
 function renderConversationList() {
@@ -1302,6 +1670,8 @@ async function loadTodayDashboard() {
     renderTodayDashboard(payload);
   } catch (error) {
     byId('today-generated').textContent = `Today dashboard unavailable: ${error.message}`;
+    byId('today-context-banner').className = 'context-banner warning';
+    byId('today-context-banner').textContent = 'Context readiness unavailable.';
     byId('today-total-value').textContent = '-';
     byId('today-snapshot-freshness').textContent = '-';
     byId('today-concentration').textContent = '-';
@@ -1367,6 +1737,7 @@ async function refreshAll() {
     loadTodayDashboard(),
     loadOnboardingStatus(),
     loadFinancialProfile(),
+    loadRecommendations(),
     loadSnapshot(),
     loadSnapshotHistory(),
     loadInbox(),
@@ -1794,6 +2165,17 @@ function wireEvents() {
   byId('add-expense').addEventListener('click', addExpenseItem);
   byId('add-debt').addEventListener('click', addDebtItem);
   byId('add-goal').addEventListener('click', addGoalItem);
+  byId('reload-recommendations').addEventListener('click', () => {
+    loadRecommendations().catch((error) => writeLog(error.message, null, true));
+  });
+  byId('recommendation-status-filter').addEventListener('change', () => {
+    loadRecommendations().catch((error) => writeLog(error.message, null, true));
+  });
+  byId('recommendation-plan-filter').addEventListener('change', () => {
+    loadRecommendations().catch((error) => writeLog(error.message, null, true));
+  });
+  byId('recommendation-save').addEventListener('click', saveRecommendation);
+  byId('recommendation-cancel-edit').addEventListener('click', resetRecommendationForm);
   byId('run-sync').addEventListener('click', runSync);
   byId('reload-inbox').addEventListener('click', () => {
     loadInbox().catch((error) => writeLog(error.message, null, true));
@@ -1839,9 +2221,10 @@ function wireEvents() {
 async function boot() {
   wireEvents();
   clearPlanDetail();
+  resetRecommendationForm();
   renderChatMessages();
   await Promise.all([refreshAll(), loadCopilotConversations(true), loadPlans(true), loadWorkflowTemplates()]);
-  writeLog('BuildWealth UI ready with Today Dashboard, Copilot, Plan Workspace, and Workflow Templates.');
+  writeLog('BuildWealth UI ready with Today Dashboard, Recommendation Inbox, Copilot, Plan Workspace, and Workflow Templates.');
 }
 
 boot().catch((error) => {

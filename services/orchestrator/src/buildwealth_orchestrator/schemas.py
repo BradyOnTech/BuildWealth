@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Any, Literal
 
@@ -169,6 +171,10 @@ class TodayDashboardResponse(BaseModel):
     active_plan: TodayActivePlanSummary | None = None
     onboarding_completion_percent: float = 0.0
     onboarding_ready_for_daily_review: bool = False
+    inbox_open_count: int = 0
+    inbox_high_priority_count: int = 0
+    context_state: Literal["ready", "warning", "critical"] = "warning"
+    context_notes: list[str] = Field(default_factory=list)
     checklist: list[TodayChecklistItem] = Field(default_factory=list)
     recommendations: list[TodayRecommendation] = Field(default_factory=list)
     workflow_steps: list[str] = Field(default_factory=list)
@@ -252,6 +258,64 @@ class OnboardingStatusResponse(BaseModel):
     completion_percent: float
     ready_for_daily_review: bool
     steps: list[OnboardingStep] = Field(default_factory=list)
+
+
+RecommendationStatus = Literal["proposed", "applied", "rejected", "archived"]
+RecommendationPriority = Literal["high", "medium", "low"]
+RecommendationType = Literal["plan_settings_update", "workflow_action", "general"]
+
+
+class RecommendationItem(BaseModel):
+    id: str
+    created_at: datetime
+    updated_at: datetime
+    title: str
+    detail: str
+    priority: RecommendationPriority = "medium"
+    status: RecommendationStatus = "proposed"
+    recommendation_type: RecommendationType = "general"
+    source: str = "manual"
+    plan_id: str | None = None
+    action_payload: dict[str, Any] = Field(default_factory=dict)
+    resolution_note: str = ""
+    resolved_at: datetime | None = None
+
+
+class RecommendationCreateRequest(BaseModel):
+    title: str
+    detail: str
+    priority: RecommendationPriority = "medium"
+    recommendation_type: RecommendationType = "general"
+    source: str = "manual"
+    plan_id: str | None = None
+    action_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class RecommendationUpdateRequest(BaseModel):
+    title: str | None = None
+    detail: str | None = None
+    priority: RecommendationPriority | None = None
+    recommendation_type: RecommendationType | None = None
+    source: str | None = None
+    plan_id: str | None = None
+    action_payload: dict[str, Any] | None = None
+
+
+class RecommendationApplyRequest(BaseModel):
+    plan_id: str | None = None
+    plan_settings_updates: dict[str, Any] = Field(default_factory=dict)
+    rationale: str = ""
+    decision_status: str = "accepted"
+
+
+class RecommendationRejectRequest(BaseModel):
+    reason: str = ""
+
+
+class RecommendationActionResponse(BaseModel):
+    recommendation: RecommendationItem
+    plan: PlanDetailResponse | None = None
+    message: str
 
 
 class CopilotChatRequest(BaseModel):
@@ -419,6 +483,7 @@ class WorkflowRunRequest(BaseModel):
     plan_id: str | None = None
     use_live_snapshot: bool = False
     save_to_plan: bool = True
+    create_recommendations: bool = True
     params: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -429,3 +494,4 @@ class WorkflowRunResponse(BaseModel):
     data: dict[str, Any] = Field(default_factory=dict)
     report_markdown: str
     artifact: PlanArtifactSummary | None = None
+    recommendations: list[RecommendationItem] = Field(default_factory=list)

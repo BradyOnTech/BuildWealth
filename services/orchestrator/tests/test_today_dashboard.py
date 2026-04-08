@@ -97,6 +97,8 @@ def test_today_dashboard_payload_with_active_plan() -> None:
     assert payload.active_plan is not None
     assert payload.active_plan.title == "Primary Plan"
     assert payload.concentration_risk == "high"
+    assert payload.context_state == "warning"
+    assert any("financial profile is incomplete" in note.lower() for note in payload.context_notes)
     assert payload.recommendations
     assert payload.checklist
     assert payload.workflow_steps
@@ -115,5 +117,7 @@ def test_today_dashboard_payload_without_snapshot_or_plan() -> None:
 
     assert payload.total_value_usd is None
     assert payload.active_plan is None
+    assert payload.context_state == "critical"
+    assert any("no portfolio snapshot" in note.lower() for note in payload.context_notes)
     assert any(item.id == "sync-first-snapshot" for item in payload.checklist)
     assert any(item.id == "create-plan" for item in payload.recommendations)
