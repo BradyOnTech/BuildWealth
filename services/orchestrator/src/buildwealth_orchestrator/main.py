@@ -43,6 +43,7 @@ from buildwealth_orchestrator.schemas import (
     ScenarioRequest,
     SnapshotHistoryResponse,
     SyncStatusResponse,
+    TodayDashboardResponse,
     WorkflowRunRequest,
     WorkflowRunResponse,
     WorkflowTemplateResponse,
@@ -67,6 +68,7 @@ from buildwealth_orchestrator.services.snapshot_store import (
     SnapshotStore,
     normalize_ghostfolio_snapshot,
 )
+from buildwealth_orchestrator.services.today_dashboard import build_today_dashboard_payload
 from buildwealth_orchestrator.services.workflow_runner import WorkflowRunner
 from buildwealth_orchestrator.services.plan_workspace import (
     PlanNotFoundError,
@@ -598,6 +600,39 @@ def build_snapshot_history_payload(limit: int = 30) -> SnapshotHistoryResponse:
     )
 
 
+def resolve_active_plan_detail() -> dict[str, Any] | None:
+    active_plan_id = plan_workspace.get_active_plan_id()
+    if not active_plan_id:
+        return None
+
+    try:
+        return plan_workspace.get_plan(active_plan_id)
+    except PlanNotFoundError:
+        return None
+
+
+def build_today_dashboard_response() -> TodayDashboardResponse:
+    latest_snapshot = None
+    try:
+        latest_snapshot = snapshot_store.latest()
+    except FileNotFoundError:
+        latest_snapshot = None
+
+    history = build_snapshot_history_payload(limit=30)
+    sync_status = get_sync_status()
+    active_plan_detail = resolve_active_plan_detail()
+
+    return build_today_dashboard_payload(
+        now=utc_now(),
+        currency=settings.app_currency,
+        state=settings.app_state,
+        sync_status=sync_status,
+        latest_snapshot=latest_snapshot,
+        snapshot_history=history,
+        active_plan_detail=active_plan_detail,
+    )
+
+
 async def build_contextual_brief(
     use_live_snapshot: bool = False,
     plan_id: str | None = None,
@@ -619,6 +654,11 @@ async def build_contextual_brief(
         snapshot_history_payload = {"note": f"Snapshot history context unavailable: {exc}"}
 
     try:
+        today_dashboard_payload = build_today_dashboard_response().model_dump(mode="json")
+    except Exception as exc:
+        today_dashboard_payload = {"note": f"Today dashboard context unavailable: {exc}"}
+
+    try:
         plan_payload = plan_workspace.get_context_payload(plan_id=plan_id)
     except PlanNotFoundError as exc:
         plan_payload = {"note": str(exc)}
@@ -631,6 +671,7 @@ async def build_contextual_brief(
         "location_state": settings.app_state,
         "currency": settings.app_currency,
         "sync_status": sync_payload,
+        "today_dashboard": today_dashboard_payload,
         "snapshot_summary": snapshot_payload,
         "snapshot_history": snapshot_history_payload,
         "plan_context": plan_payload,
@@ -690,6 +731,10 @@ async def tool_get_snapshot_history(arguments: dict[str, object]) -> dict[str, o
     except Exception:
         limit = 30
     return build_snapshot_history_payload(limit=limit).model_dump(mode="json")
+
+
+async def tool_get_today_dashboard(_: dict[str, object]) -> dict[str, object]:
+    return build_today_dashboard_response().model_dump(mode="json")
 
 
 async def tool_run_sync(_: dict[str, object]) -> dict[str, object]:
@@ -973,6 +1018,12 @@ def configure_copilot_tools() -> None:
         handler=tool_get_snapshot_history,
     )
     copilot.register_tool(
+        name="get_today_dashboard",
+        description="Read the daily dashboard summary, checklist, and prioritized recommendations.",
+        parameters=empty_schema,
+        handler=tool_get_today_dashboard,
+    )
+    copilot.register_tool(
         name="run_sync",
         description="Run a full portfolio sync pipeline and regenerate downstream payloads.",
         parameters=empty_schema,
@@ -1203,6 +1254,11 @@ def ui_root() -> Response:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/dashboard/today", response_model=TodayDashboardResponse)
+def today_dashboard() -> TodayDashboardResponse:
+    return build_today_dashboard_response()
 
 
 @app.get("/api/sync/status", response_model=SyncStatusResponse)

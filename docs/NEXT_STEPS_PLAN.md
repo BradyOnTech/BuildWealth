@@ -3,11 +3,11 @@
 ## Goal
 Make BuildWealth the primary single-user desktop experience for financial Q&A and agentic research workflows, with Ghostfolio and Ignidash as connected data engines.
 
-## Current Reality (2026-04-07)
+## Current Reality (2026-04-08)
 - Data and service plumbing exists: Ghostfolio, Ignidash, OpenBB hooks, orchestrator API.
 - Ops UI exists for sync and CSV import.
-- Main gap: no true Copilot-grade assistant runtime and interaction UX yet.
-- UX is fragmented across multiple surfaces instead of one primary conversational surface.
+- Copilot runtime, plan workspace, workflow templates, and research tools are now implemented.
+- Main gap has shifted to UX consolidation + unified money model + recommendation approval flow.
 
 ## Product Direction
 1. BuildWealth UI becomes the daily entry point.
@@ -44,9 +44,12 @@ Make BuildWealth the primary single-user desktop experience for financial Q&A an
 3. Better transaction/time-window context retrieval for analysis. ✅ Added snapshot history API/tool + UI trend panel
 
 ### Phase 4: UX Consolidation
-1. BuildWealth home dashboard with embedded Copilot as default focus.
+1. BuildWealth home dashboard with embedded Copilot as default focus. ✅ Initial Today Dashboard implemented
 2. Deep links into Ghostfolio/Ignidash when needed.
 3. Unified context panel (portfolio, tax assumptions, data freshness).
+
+## Next Active Workstream
+See [PRODUCT_BACKLOG.md](./PRODUCT_BACKLOG.md) for current epics, acceptance criteria, and step-by-step user workflow.
 
 ## Immediate Implementation Scope in This Iteration
 - [x] Write this plan file.

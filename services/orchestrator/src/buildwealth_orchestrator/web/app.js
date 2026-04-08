@@ -12,6 +12,7 @@ const state = {
   currentPlanDetail: null,
   copilotPlanId: '',
   workflowTemplates: [],
+  todayDashboard: null,
 };
 
 const PLAN_SETTING_FIELDS = [
@@ -67,10 +68,88 @@ function fmtDate(value) {
   return dateValue.toLocaleString();
 }
 
+function fmtAgeMinutes(value) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '-';
+  if (value < 60) return `${value}m`;
+  const hours = Math.floor(value / 60);
+  const minutes = value % 60;
+  if (hours < 48) return `${hours}h ${minutes}m`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ${hours % 24}h`;
+}
+
 function truncate(value, maxLength = 120) {
   const text = String(value || '').trim();
   if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength - 3)}...`;
+}
+
+function renderTodayList(containerId, items, formatter) {
+  const container = byId(containerId);
+  container.innerHTML = '';
+
+  if (!Array.isArray(items) || !items.length) {
+    const empty = document.createElement('p');
+    empty.className = 'chat-empty';
+    empty.textContent = 'No items available.';
+    container.appendChild(empty);
+    return;
+  }
+
+  for (const item of items) {
+    const element = formatter(item);
+    container.appendChild(element);
+  }
+}
+
+function renderTodayDashboard(payload) {
+  state.todayDashboard = payload;
+
+  byId('today-generated').textContent = `Generated ${fmtDate(payload.generated_at)} • ${payload.state} • ${payload.currency}`;
+  byId('today-total-value').textContent = fmtCurrency(payload.total_value_usd);
+  byId('today-snapshot-freshness').textContent = fmtAgeMinutes(payload.snapshot_age_minutes);
+  byId('today-concentration').textContent = `${String(payload.concentration_risk || '-').toUpperCase()} ${
+    payload.top_holding_symbol ? `(${payload.top_holding_symbol})` : ''
+  }`;
+  byId('today-active-plan').textContent = payload.active_plan?.title || 'No active plan';
+
+  renderTodayList('today-checklist', payload.checklist, (item) => {
+    const wrap = document.createElement('article');
+    wrap.className = `today-item ${item.status || 'incomplete'}`;
+    wrap.innerHTML = `
+      <p class="today-item-title">${item.title || '-'}</p>
+      <p class="today-item-meta">${item.detail || ''}</p>
+      <p class="today-item-meta">${item.action_hint ? `Action: ${item.action_hint}` : ''}</p>
+    `;
+    return wrap;
+  });
+
+  renderTodayList('today-recommendations', payload.recommendations, (item) => {
+    const wrap = document.createElement('article');
+    const priority = String(item.priority || 'medium').toLowerCase();
+    wrap.className = `today-item ${priority === 'high' ? 'attention' : priority === 'low' ? 'complete' : 'incomplete'}`;
+    wrap.innerHTML = `
+      <p class="today-item-title">${item.title || '-'}</p>
+      <p class="today-item-meta">Priority: ${String(item.priority || 'medium').toUpperCase()}</p>
+      <p class="today-item-meta">${item.detail || ''}</p>
+    `;
+    return wrap;
+  });
+
+  const workflowList = byId('today-workflow');
+  workflowList.innerHTML = '';
+  const steps = Array.isArray(payload.workflow_steps) ? payload.workflow_steps : [];
+  if (!steps.length) {
+    const li = document.createElement('li');
+    li.textContent = 'No workflow steps available.';
+    workflowList.appendChild(li);
+  } else {
+    for (const step of steps) {
+      const li = document.createElement('li');
+      li.textContent = step;
+      workflowList.appendChild(li);
+    }
+  }
 }
 
 function parseOptionalNumericField(rawValue, fieldLabel, asInteger = false) {
@@ -998,6 +1077,22 @@ async function loadStatus() {
   renderSyncStatus(status);
 }
 
+async function loadTodayDashboard() {
+  try {
+    const payload = await fetchJson('/api/dashboard/today');
+    renderTodayDashboard(payload);
+  } catch (error) {
+    byId('today-generated').textContent = `Today dashboard unavailable: ${error.message}`;
+    byId('today-total-value').textContent = '-';
+    byId('today-snapshot-freshness').textContent = '-';
+    byId('today-concentration').textContent = '-';
+    byId('today-active-plan').textContent = '-';
+    byId('today-checklist').innerHTML = '<p class="chat-empty">Checklist unavailable.</p>';
+    byId('today-recommendations').innerHTML = '<p class="chat-empty">Recommendations unavailable.</p>';
+    byId('today-workflow').innerHTML = '<li>Workflow unavailable.</li>';
+  }
+}
+
 async function loadSnapshot() {
   try {
     const snapshot = await fetchJson('/api/snapshot/latest');
@@ -1024,7 +1119,7 @@ async function loadInbox() {
 }
 
 async function refreshAll() {
-  await Promise.all([loadStatus(), loadSnapshot(), loadSnapshotHistory(), loadInbox()]);
+  await Promise.all([loadStatus(), loadTodayDashboard(), loadSnapshot(), loadSnapshotHistory(), loadInbox()]);
 }
 
 async function loadCopilotConversations(autoSelect = true) {
@@ -1067,6 +1162,22 @@ function startNewConversation() {
   renderConversationList();
   renderChatMessages();
   byId('copilot-question').focus();
+}
+
+function todayReviewPrompt() {
+  return [
+    'Run my daily financial review using current context.',
+    '1) Summarize top portfolio changes and concentration risk.',
+    '2) Highlight the most important recommendation for today with assumptions.',
+    '3) Suggest one workflow template I should run now.',
+  ].join('\n');
+}
+
+function askCopilotDailyReview() {
+  const questionInput = byId('copilot-question');
+  questionInput.value = todayReviewPrompt();
+  questionInput.focus();
+  byId('copilot-form').requestSubmit();
 }
 
 async function runSync() {
@@ -1214,6 +1325,11 @@ function wireEvents() {
   byId('refresh-all').addEventListener('click', () => {
     refreshAll().catch((error) => writeLog(error.message, null, true));
   });
+  byId('reload-today').addEventListener('click', () => {
+    loadTodayDashboard().catch((error) => writeLog(error.message, null, true));
+  });
+  byId('today-run-sync').addEventListener('click', runSync);
+  byId('today-ask-copilot').addEventListener('click', askCopilotDailyReview);
   byId('run-sync').addEventListener('click', runSync);
   byId('reload-inbox').addEventListener('click', () => {
     loadInbox().catch((error) => writeLog(error.message, null, true));
@@ -1261,7 +1377,7 @@ async function boot() {
   clearPlanDetail();
   renderChatMessages();
   await Promise.all([refreshAll(), loadCopilotConversations(true), loadPlans(true), loadWorkflowTemplates()]);
-  writeLog('BuildWealth UI ready with Copilot, Plan Workspace, and Workflow Templates.');
+  writeLog('BuildWealth UI ready with Today Dashboard, Copilot, Plan Workspace, and Workflow Templates.');
 }
 
 boot().catch((error) => {

@@ -23,6 +23,56 @@
         </p>
       </header>
 
+      <section class="card today-shell">
+        <div class="card-head">
+          <h2>Today Dashboard</h2>
+          <button class="ghost" id="reload-today">Reload</button>
+        </div>
+        <p class="hint" id="today-generated">No dashboard data yet.</p>
+        <div class="today-kpis">
+          <article class="today-kpi">
+            <p class="label">Total Value</p>
+            <p class="value" id="today-total-value">-</p>
+          </article>
+          <article class="today-kpi">
+            <p class="label">Snapshot Freshness</p>
+            <p class="value" id="today-snapshot-freshness">-</p>
+          </article>
+          <article class="today-kpi">
+            <p class="label">Concentration Risk</p>
+            <p class="value" id="today-concentration">-</p>
+          </article>
+          <article class="today-kpi">
+            <p class="label">Active Plan</p>
+            <p class="value" id="today-active-plan">-</p>
+          </article>
+        </div>
+        <div class="today-layout">
+          <section class="today-column">
+            <div class="card-head inner-head">
+              <h3>Checklist</h3>
+            </div>
+            <div id="today-checklist" class="today-list"></div>
+          </section>
+          <section class="today-column">
+            <div class="card-head inner-head">
+              <h3>Recommendations</h3>
+            </div>
+            <div id="today-recommendations" class="today-list"></div>
+          </section>
+          <section class="today-column">
+            <div class="card-head inner-head">
+              <h3>Workflow</h3>
+            </div>
+            <ol id="today-workflow" class="today-workflow"></ol>
+            <div class="today-actions">
+              <button class="ghost" id="today-run-sync" type="button">Run Sync Now</button>
+              <button class="primary" id="today-ask-copilot" type="button">Ask Copilot Daily Review</button>
+            </div>
+          </section>
+        </div>
+      </section>
+
       <section class="card copilot-shell">
         <div class="card-head">
           <h2>BuildWealth Copilot</h2>

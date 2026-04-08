@@ -128,6 +128,50 @@ class SyncStatusResponse(BaseModel):
     last_ignidash_payload_path: str | None = None
 
 
+class TodayChecklistItem(BaseModel):
+    id: str
+    title: str
+    status: Literal["complete", "incomplete", "attention"]
+    detail: str
+    action_hint: str | None = None
+
+
+class TodayRecommendation(BaseModel):
+    id: str
+    title: str
+    detail: str
+    priority: Literal["high", "medium", "low"] = "medium"
+
+
+class TodayActivePlanSummary(BaseModel):
+    id: str
+    title: str
+    updated_at: datetime | None = None
+    settings_completion_percent: float = 0.0
+    decisions_count: int = 0
+    artifacts_count: int = 0
+
+
+class TodayDashboardResponse(BaseModel):
+    generated_at: datetime
+    currency: str
+    state: str
+    sync_status: SyncStatusResponse
+    snapshot_as_of: datetime | None = None
+    snapshot_age_minutes: int | None = None
+    snapshot_points_30d: int = 0
+    total_value_usd: float | None = None
+    net_performance_usd: float | None = None
+    net_performance_percent: float | None = None
+    top_holding_symbol: str | None = None
+    top_holding_percent: float | None = None
+    concentration_risk: Literal["low", "medium", "high"] = "low"
+    active_plan: TodayActivePlanSummary | None = None
+    checklist: list[TodayChecklistItem] = Field(default_factory=list)
+    recommendations: list[TodayRecommendation] = Field(default_factory=list)
+    workflow_steps: list[str] = Field(default_factory=list)
+
+
 class CopilotChatRequest(BaseModel):
     question: str
     conversation_id: str | None = None

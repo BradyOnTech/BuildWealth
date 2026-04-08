@@ -113,6 +113,93 @@ h1 {
   font-family: var(--serif);
 }
 
+.today-kpis {
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 0.85rem;
+}
+
+.today-kpi {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.65rem 0.7rem;
+  background: #f9fbf5;
+}
+
+.today-kpi .value {
+  font-size: 1.2rem;
+  line-height: 1.15;
+}
+
+.today-layout {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.today-column {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fcfef8;
+  padding: 0.65rem;
+}
+
+.today-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.today-item {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.55rem 0.6rem;
+  background: #fff;
+}
+
+.today-item p {
+  margin: 0;
+}
+
+.today-item-title {
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.today-item-meta {
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.today-item.complete {
+  border-left: 4px solid #3d9363;
+}
+
+.today-item.attention {
+  border-left: 4px solid #c57f1e;
+}
+
+.today-item.incomplete {
+  border-left: 4px solid #9f2d2d;
+}
+
+.today-workflow {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.45rem;
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+}
+
+.today-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .copilot-head-actions {
   display: flex;
   gap: 0.5rem;
@@ -608,7 +695,9 @@ th {
 @media (max-width: 1050px) {
   .grid-2,
   .grid-3,
-  .grid-4 {
+  .grid-4,
+  .today-kpis,
+  .today-layout {
     grid-template-columns: 1fr;
   }
 
