@@ -30,7 +30,7 @@ Acceptance criteria:
 - Refresh updates dashboard without page reload.
 
 ## Epic 2: Unified Financial Model
-Status: Planned
+Status: In progress (initial profile APIs + onboarding UI scaffold implemented)
 
 Outcomes:
 - First-class context for income, recurring expenses, debt, and goal targets.

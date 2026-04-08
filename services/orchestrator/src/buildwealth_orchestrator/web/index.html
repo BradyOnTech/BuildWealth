@@ -73,6 +73,174 @@
         </div>
       </section>
 
+      <section class="card profile-shell">
+        <div class="card-head">
+          <h2>Unified Financial Model</h2>
+          <div class="copilot-head-actions">
+            <button class="ghost" id="reload-profile">Reload</button>
+            <button class="primary" id="save-profile">Save Profile</button>
+          </div>
+        </div>
+        <p class="hint" id="onboarding-summary">Onboarding status unavailable.</p>
+        <div class="onboarding-progress-wrap">
+          <div class="onboarding-progress-bar">
+            <div id="onboarding-progress-fill" class="onboarding-progress-fill"></div>
+          </div>
+          <p class="hint tight" id="onboarding-ready">-</p>
+        </div>
+        <div id="onboarding-steps" class="today-list"></div>
+
+        <div class="card-head inner-head">
+          <h3>Tax & Preferences</h3>
+        </div>
+        <div class="settings-grid">
+          <label class="field">
+            <span>Filing Status</span>
+            <select id="profile-filing-status">
+              <option value="">Select</option>
+              <option value="single">Single</option>
+              <option value="married_filing_jointly">Married Filing Jointly</option>
+              <option value="married_filing_separately">Married Filing Separately</option>
+              <option value="head_of_household">Head of Household</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Marginal Tax Rate (%)</span>
+            <input type="number" id="profile-marginal-tax-rate" step="0.01" min="0" max="100" placeholder="e.g. 24" />
+          </label>
+          <label class="field">
+            <span>Effective Tax Rate (%)</span>
+            <input type="number" id="profile-effective-tax-rate" step="0.01" min="0" max="100" placeholder="e.g. 18" />
+          </label>
+          <label class="field">
+            <span>State</span>
+            <input type="text" id="profile-state" placeholder="MN" />
+          </label>
+          <label class="field">
+            <span>No Debt</span>
+            <label><input type="checkbox" id="profile-no-debt" /> I currently have no debt</label>
+          </label>
+          <label class="field">
+            <span>No Goals Yet</span>
+            <label><input type="checkbox" id="profile-no-goals" /> I am not tracking goals yet</label>
+          </label>
+        </div>
+        <label class="field">
+          <span>Profile Notes</span>
+          <textarea id="profile-notes" rows="3" placeholder="Optional context for Copilot."></textarea>
+        </label>
+
+        <div class="card-head inner-head">
+          <h3>Income</h3>
+        </div>
+        <div class="inline-builder">
+          <input type="text" id="income-label" placeholder="Income source label" />
+          <input type="number" id="income-amount" step="0.01" min="0" placeholder="Monthly USD" />
+          <select id="income-source-type">
+            <option value="salary">Salary</option>
+            <option value="bonus">Bonus</option>
+            <option value="business">Business</option>
+            <option value="rental">Rental</option>
+            <option value="other">Other</option>
+          </select>
+          <label><input type="checkbox" id="income-pre-tax" /> Pre-tax</label>
+          <button class="ghost" id="add-income" type="button">Add Income</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th>Monthly</th>
+                <th>Type</th>
+                <th>Pre-Tax</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="profile-income-body"></tbody>
+          </table>
+        </div>
+
+        <div class="card-head inner-head">
+          <h3>Expenses</h3>
+        </div>
+        <div class="inline-builder">
+          <input type="text" id="expense-label" placeholder="Expense label" />
+          <input type="number" id="expense-amount" step="0.01" min="0" placeholder="Monthly USD" />
+          <input type="text" id="expense-category" placeholder="Category" />
+          <label><input type="checkbox" id="expense-fixed" checked /> Fixed</label>
+          <button class="ghost" id="add-expense" type="button">Add Expense</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th>Monthly</th>
+                <th>Category</th>
+                <th>Fixed</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="profile-expense-body"></tbody>
+          </table>
+        </div>
+
+        <div class="card-head inner-head">
+          <h3>Debt</h3>
+        </div>
+        <div class="inline-builder">
+          <input type="text" id="debt-label" placeholder="Debt label" />
+          <input type="number" id="debt-balance" step="0.01" min="0" placeholder="Balance USD" />
+          <input type="number" id="debt-rate" step="0.01" min="0" max="100" placeholder="Rate %" />
+          <input type="number" id="debt-min-payment" step="0.01" min="0" placeholder="Min payment USD" />
+          <button class="ghost" id="add-debt" type="button">Add Debt</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th>Balance</th>
+                <th>Rate</th>
+                <th>Min Payment</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="profile-debt-body"></tbody>
+          </table>
+        </div>
+
+        <div class="card-head inner-head">
+          <h3>Goals</h3>
+        </div>
+        <div class="inline-builder">
+          <input type="text" id="goal-label" placeholder="Goal label" />
+          <input type="number" id="goal-amount" step="0.01" min="0" placeholder="Target USD" />
+          <input type="date" id="goal-date" />
+          <select id="goal-priority">
+            <option value="high">High</option>
+            <option value="medium" selected>Medium</option>
+            <option value="low">Low</option>
+          </select>
+          <button class="ghost" id="add-goal" type="button">Add Goal</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th>Target</th>
+                <th>Target Date</th>
+                <th>Priority</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="profile-goal-body"></tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="card copilot-shell">
         <div class="card-head">
           <h2>BuildWealth Copilot</h2>

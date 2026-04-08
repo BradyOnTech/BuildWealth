@@ -167,9 +167,91 @@ class TodayDashboardResponse(BaseModel):
     top_holding_percent: float | None = None
     concentration_risk: Literal["low", "medium", "high"] = "low"
     active_plan: TodayActivePlanSummary | None = None
+    onboarding_completion_percent: float = 0.0
+    onboarding_ready_for_daily_review: bool = False
     checklist: list[TodayChecklistItem] = Field(default_factory=list)
     recommendations: list[TodayRecommendation] = Field(default_factory=list)
     workflow_steps: list[str] = Field(default_factory=list)
+
+
+class IncomeItem(BaseModel):
+    id: str
+    label: str
+    monthly_amount_usd: float = Field(ge=0)
+    source_type: str = "salary"
+    is_pre_tax: bool = False
+
+
+class ExpenseItem(BaseModel):
+    id: str
+    label: str
+    monthly_amount_usd: float = Field(ge=0)
+    category: str = "general"
+    is_fixed: bool = True
+
+
+class DebtItem(BaseModel):
+    id: str
+    label: str
+    balance_usd: float = Field(ge=0)
+    interest_rate: float | None = Field(default=None, ge=0, le=1)
+    minimum_payment_usd: float | None = Field(default=None, ge=0)
+
+
+class GoalItem(BaseModel):
+    id: str
+    label: str
+    target_amount_usd: float = Field(ge=0)
+    target_date: datetime | None = None
+    priority: Literal["high", "medium", "low"] = "medium"
+    notes: str = ""
+
+
+class TaxProfile(BaseModel):
+    filing_status: (
+        Literal[
+            "single",
+            "married_filing_jointly",
+            "married_filing_separately",
+            "head_of_household",
+        ]
+        | None
+    ) = None
+    marginal_tax_rate: float | None = Field(default=None, ge=0, le=1)
+    effective_tax_rate: float | None = Field(default=None, ge=0, le=1)
+    state: str | None = None
+
+
+class ProfileFlags(BaseModel):
+    no_debt: bool = False
+    no_goals: bool = False
+
+
+class FinancialProfileRequest(BaseModel):
+    income_items: list[IncomeItem] = Field(default_factory=list)
+    expense_items: list[ExpenseItem] = Field(default_factory=list)
+    debt_items: list[DebtItem] = Field(default_factory=list)
+    goal_items: list[GoalItem] = Field(default_factory=list)
+    tax_profile: TaxProfile = Field(default_factory=TaxProfile)
+    flags: ProfileFlags = Field(default_factory=ProfileFlags)
+    notes: str = ""
+
+
+class FinancialProfileResponse(FinancialProfileRequest):
+    updated_at: datetime
+
+
+class OnboardingStep(BaseModel):
+    id: str
+    title: str
+    status: Literal["complete", "incomplete", "attention"]
+    detail: str
+
+
+class OnboardingStatusResponse(BaseModel):
+    completion_percent: float
+    ready_for_daily_review: bool
+    steps: list[OnboardingStep] = Field(default_factory=list)
 
 
 class CopilotChatRequest(BaseModel):

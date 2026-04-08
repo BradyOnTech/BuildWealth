@@ -260,6 +260,8 @@ def build_today_dashboard_payload(
     latest_snapshot: PortfolioSnapshot | None,
     snapshot_history: SnapshotHistoryResponse,
     active_plan_detail: dict[str, Any] | None,
+    onboarding_completion_percent: float = 0.0,
+    onboarding_ready_for_daily_review: bool = False,
 ) -> TodayDashboardResponse:
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
@@ -365,6 +367,8 @@ def build_today_dashboard_payload(
         top_holding_percent=top_holding_percent,
         concentration_risk=concentration_risk,
         active_plan=active_plan_summary,
+        onboarding_completion_percent=onboarding_completion_percent,
+        onboarding_ready_for_daily_review=onboarding_ready_for_daily_review,
         checklist=checklist,
         recommendations=recommendations,
         workflow_steps=workflow_steps,

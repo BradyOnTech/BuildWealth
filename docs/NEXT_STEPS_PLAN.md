@@ -50,6 +50,7 @@ Make BuildWealth the primary single-user desktop experience for financial Q&A an
 
 ## Next Active Workstream
 See [PRODUCT_BACKLOG.md](./PRODUCT_BACKLOG.md) for current epics, acceptance criteria, and step-by-step user workflow.
+- Current in-progress implementation: Epic 2 Unified Financial Model (financial profile storage, onboarding status API, and UI editor scaffold).
 
 ## Immediate Implementation Scope in This Iteration
 - [x] Write this plan file.

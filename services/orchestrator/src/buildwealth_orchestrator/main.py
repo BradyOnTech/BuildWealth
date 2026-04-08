@@ -24,6 +24,9 @@ from buildwealth_orchestrator.schemas import (
     CopilotConversationSummary,
     CsvImportRequest,
     CsvImportResponse,
+    FinancialProfileRequest,
+    FinancialProfileResponse,
+    OnboardingStatusResponse,
     OptionsChainRequest,
     PriceHistoryRequest,
     PlanArtifactResponse,
@@ -58,6 +61,7 @@ from buildwealth_orchestrator.services.csv_importer import (
     archive_import_file,
     parse_transaction_csv,
 )
+from buildwealth_orchestrator.services.financial_profile import FinancialProfileStore
 from buildwealth_orchestrator.services.ignidash_exporter import (
     IgnidashExportStore,
     build_ignidash_plan_payload,
@@ -112,6 +116,7 @@ research_service = OpenBBResearchService(provider=settings.openbb_provider)
 coordinator = Coordinator()
 conversation_store = ConversationStore(settings.conversation_dir)
 plan_workspace = PlanWorkspace(settings.plans_dir)
+financial_profile_store = FinancialProfileStore(settings.financial_profile_path)
 workflow_runner = WorkflowRunner(
     scenario_engine=scenario_engine,
     default_annual_contribution_usd=settings.planner_annual_contribution_usd,
@@ -611,6 +616,222 @@ def resolve_active_plan_detail() -> dict[str, Any] | None:
         return None
 
 
+def get_financial_profile_payload() -> dict[str, Any]:
+    payload = financial_profile_store.get()
+    tax_profile = payload.get("tax_profile")
+    if isinstance(tax_profile, dict) and not tax_profile.get("state"):
+        tax_profile["state"] = settings.app_state
+        payload["tax_profile"] = tax_profile
+    return payload
+
+
+def save_financial_profile_payload(request: FinancialProfileRequest) -> dict[str, Any]:
+    payload = request.model_dump(mode="json")
+
+    for key in ("income_items", "expense_items", "debt_items", "goal_items"):
+        rows = payload.get(key)
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            label = str(row.get("label") or "").strip()
+            row["label"] = label or "Untitled"
+
+    tax_profile = payload.get("tax_profile")
+    if isinstance(tax_profile, dict) and not tax_profile.get("state"):
+        tax_profile["state"] = settings.app_state
+        payload["tax_profile"] = tax_profile
+
+    return financial_profile_store.save(payload)
+
+
+def _plan_settings_completion_percent(active_plan_detail: dict[str, Any] | None) -> float:
+    if not active_plan_detail:
+        return 0.0
+
+    settings_payload = active_plan_detail.get("settings")
+    if not isinstance(settings_payload, dict):
+        return 0.0
+
+    set_count = 0
+    for key in PLAN_SETTINGS_FIELDS:
+        if settings_payload.get(key) is not None:
+            set_count += 1
+
+    return round((set_count / len(PLAN_SETTINGS_FIELDS)) * 100, 1)
+
+
+def build_onboarding_status_response(
+    profile_payload: dict[str, Any] | None = None,
+    latest_snapshot: PortfolioSnapshot | None = None,
+    active_plan_detail: dict[str, Any] | None = None,
+    load_fallbacks: bool = True,
+) -> OnboardingStatusResponse:
+    profile = profile_payload or get_financial_profile_payload()
+    flags = profile.get("flags") if isinstance(profile.get("flags"), dict) else {}
+    tax_profile = profile.get("tax_profile") if isinstance(profile.get("tax_profile"), dict) else {}
+
+    if latest_snapshot is None and load_fallbacks:
+        try:
+            latest_snapshot = snapshot_store.latest()
+        except FileNotFoundError:
+            latest_snapshot = None
+
+    if active_plan_detail is None and load_fallbacks:
+        active_plan_detail = resolve_active_plan_detail()
+
+    steps = []
+
+    if latest_snapshot is None:
+        steps.append(
+            {
+                "id": "snapshot",
+                "title": "Portfolio data connected",
+                "status": "incomplete",
+                "detail": "Run first sync to load portfolio context.",
+            }
+        )
+    else:
+        age_minutes = int((utc_now() - latest_snapshot.as_of).total_seconds() // 60)
+        if age_minutes > 24 * 60:
+            status = "attention"
+            detail = f"Snapshot is {age_minutes // 60}h old."
+        else:
+            status = "complete"
+            detail = "Snapshot is fresh."
+        steps.append(
+            {
+                "id": "snapshot",
+                "title": "Portfolio data connected",
+                "status": status,
+                "detail": detail,
+            }
+        )
+
+    income_items = profile.get("income_items") if isinstance(profile.get("income_items"), list) else []
+    expense_items = profile.get("expense_items") if isinstance(profile.get("expense_items"), list) else []
+    debt_items = profile.get("debt_items") if isinstance(profile.get("debt_items"), list) else []
+    goal_items = profile.get("goal_items") if isinstance(profile.get("goal_items"), list) else []
+
+    steps.append(
+        {
+            "id": "income",
+            "title": "Income profile",
+            "status": "complete" if len(income_items) > 0 else "incomplete",
+            "detail": f"{len(income_items)} income item(s) configured.",
+        }
+    )
+    steps.append(
+        {
+            "id": "expenses",
+            "title": "Expense profile",
+            "status": "complete" if len(expense_items) > 0 else "incomplete",
+            "detail": f"{len(expense_items)} expense item(s) configured.",
+        }
+    )
+
+    if len(debt_items) > 0 or bool(flags.get("no_debt")):
+        debt_status = "complete"
+        debt_detail = (
+            f"{len(debt_items)} debt item(s) configured."
+            if len(debt_items) > 0
+            else "Marked as no current debt."
+        )
+    else:
+        debt_status = "attention"
+        debt_detail = "Add debt balances or mark that you currently have no debt."
+    steps.append(
+        {
+            "id": "debt",
+            "title": "Debt profile",
+            "status": debt_status,
+            "detail": debt_detail,
+        }
+    )
+
+    if len(goal_items) > 0 or bool(flags.get("no_goals")):
+        goal_status = "complete"
+        goal_detail = (
+            f"{len(goal_items)} goal item(s) configured."
+            if len(goal_items) > 0
+            else "Goals deferred for now."
+        )
+    else:
+        goal_status = "attention"
+        goal_detail = "Add at least one financial goal or mark goals as deferred."
+    steps.append(
+        {
+            "id": "goals",
+            "title": "Goals profile",
+            "status": goal_status,
+            "detail": goal_detail,
+        }
+    )
+
+    filing_status = str(tax_profile.get("filing_status") or "").strip()
+    marginal_tax_rate = tax_profile.get("marginal_tax_rate")
+    tax_complete = bool(filing_status) and marginal_tax_rate is not None
+    steps.append(
+        {
+            "id": "tax_profile",
+            "title": "Tax profile",
+            "status": "complete" if tax_complete else "incomplete",
+            "detail": "Filing status and marginal tax rate are configured."
+            if tax_complete
+            else "Set filing status and marginal tax rate.",
+        }
+    )
+
+    plan_exists = active_plan_detail is not None
+    settings_completion = _plan_settings_completion_percent(active_plan_detail)
+    steps.append(
+        {
+            "id": "active_plan",
+            "title": "Active plan",
+            "status": "complete" if plan_exists else "incomplete",
+            "detail": "Active plan selected." if plan_exists else "Create or activate a plan.",
+        }
+    )
+    if not plan_exists:
+        steps.append(
+            {
+                "id": "plan_assumptions",
+                "title": "Plan assumptions",
+                "status": "incomplete",
+                "detail": "No active plan assumptions available.",
+            }
+        )
+    elif settings_completion >= 57:
+        steps.append(
+            {
+                "id": "plan_assumptions",
+                "title": "Plan assumptions",
+                "status": "complete",
+                "detail": f"Settings completion is {settings_completion:.1f}%.",
+            }
+        )
+    else:
+        steps.append(
+            {
+                "id": "plan_assumptions",
+                "title": "Plan assumptions",
+                "status": "attention",
+                "detail": f"Settings completion is {settings_completion:.1f}%. Fill missing assumptions.",
+            }
+        )
+
+    complete_count = sum(1 for item in steps if item["status"] == "complete")
+    completion_percent = round((complete_count / len(steps)) * 100, 1) if steps else 0.0
+    ready_for_daily_review = all(item["status"] == "complete" for item in steps)
+
+    return OnboardingStatusResponse(
+        completion_percent=completion_percent,
+        ready_for_daily_review=ready_for_daily_review,
+        steps=steps,
+    )
+
+
 def build_today_dashboard_response() -> TodayDashboardResponse:
     latest_snapshot = None
     try:
@@ -621,6 +842,12 @@ def build_today_dashboard_response() -> TodayDashboardResponse:
     history = build_snapshot_history_payload(limit=30)
     sync_status = get_sync_status()
     active_plan_detail = resolve_active_plan_detail()
+    profile_payload = get_financial_profile_payload()
+    onboarding_status = build_onboarding_status_response(
+        profile_payload=profile_payload,
+        latest_snapshot=latest_snapshot,
+        active_plan_detail=active_plan_detail,
+    )
 
     return build_today_dashboard_payload(
         now=utc_now(),
@@ -630,6 +857,8 @@ def build_today_dashboard_response() -> TodayDashboardResponse:
         latest_snapshot=latest_snapshot,
         snapshot_history=history,
         active_plan_detail=active_plan_detail,
+        onboarding_completion_percent=onboarding_status.completion_percent,
+        onboarding_ready_for_daily_review=onboarding_status.ready_for_daily_review,
     )
 
 
@@ -659,6 +888,16 @@ async def build_contextual_brief(
         today_dashboard_payload = {"note": f"Today dashboard context unavailable: {exc}"}
 
     try:
+        profile_payload = FinancialProfileResponse(**get_financial_profile_payload()).model_dump(mode="json")
+    except Exception as exc:
+        profile_payload = {"note": f"Financial profile context unavailable: {exc}"}
+
+    try:
+        onboarding_payload = build_onboarding_status_response().model_dump(mode="json")
+    except Exception as exc:
+        onboarding_payload = {"note": f"Onboarding context unavailable: {exc}"}
+
+    try:
         plan_payload = plan_workspace.get_context_payload(plan_id=plan_id)
     except PlanNotFoundError as exc:
         plan_payload = {"note": str(exc)}
@@ -672,6 +911,8 @@ async def build_contextual_brief(
         "currency": settings.app_currency,
         "sync_status": sync_payload,
         "today_dashboard": today_dashboard_payload,
+        "financial_profile": profile_payload,
+        "onboarding_status": onboarding_payload,
         "snapshot_summary": snapshot_payload,
         "snapshot_history": snapshot_history_payload,
         "plan_context": plan_payload,
@@ -735,6 +976,56 @@ async def tool_get_snapshot_history(arguments: dict[str, object]) -> dict[str, o
 
 async def tool_get_today_dashboard(_: dict[str, object]) -> dict[str, object]:
     return build_today_dashboard_response().model_dump(mode="json")
+
+
+async def tool_get_financial_profile(_: dict[str, object]) -> dict[str, object]:
+    profile = FinancialProfileResponse(**get_financial_profile_payload())
+    return profile.model_dump(mode="json")
+
+
+async def tool_get_onboarding_status(_: dict[str, object]) -> dict[str, object]:
+    return build_onboarding_status_response().model_dump(mode="json")
+
+
+async def tool_update_financial_profile(arguments: dict[str, object]) -> dict[str, object]:
+    profile_payload = get_financial_profile_payload()
+
+    def _merge_list(key: str) -> None:
+        value = arguments.get(key)
+        if value is None:
+            return
+        if not isinstance(value, list):
+            raise ValueError(f"{key} must be a list")
+        profile_payload[key] = value
+
+    _merge_list("income_items")
+    _merge_list("expense_items")
+    _merge_list("debt_items")
+    _merge_list("goal_items")
+
+    notes = arguments.get("notes")
+    if notes is not None:
+        profile_payload["notes"] = str(notes)
+
+    tax_profile = arguments.get("tax_profile")
+    if tax_profile is not None:
+        if not isinstance(tax_profile, dict):
+            raise ValueError("tax_profile must be an object")
+        merged_tax = dict(profile_payload.get("tax_profile", {}))
+        merged_tax.update(tax_profile)
+        profile_payload["tax_profile"] = merged_tax
+
+    flags = arguments.get("flags")
+    if flags is not None:
+        if not isinstance(flags, dict):
+            raise ValueError("flags must be an object")
+        merged_flags = dict(profile_payload.get("flags", {}))
+        merged_flags.update(flags)
+        profile_payload["flags"] = merged_flags
+
+    validated = FinancialProfileRequest(**profile_payload)
+    saved = save_financial_profile_payload(validated)
+    return FinancialProfileResponse(**saved).model_dump(mode="json")
 
 
 async def tool_run_sync(_: dict[str, object]) -> dict[str, object]:
@@ -1024,6 +1315,40 @@ def configure_copilot_tools() -> None:
         handler=tool_get_today_dashboard,
     )
     copilot.register_tool(
+        name="get_financial_profile",
+        description="Read the unified financial profile (income, expenses, debt, goals, tax settings).",
+        parameters=empty_schema,
+        handler=tool_get_financial_profile,
+    )
+    copilot.register_tool(
+        name="get_onboarding_status",
+        description="Read onboarding completion status for unified financial context.",
+        parameters=empty_schema,
+        handler=tool_get_onboarding_status,
+    )
+    copilot.register_tool(
+        name="update_financial_profile",
+        description=(
+            "Update financial profile collections and tax settings. "
+            "You may provide any subset of income_items, expense_items, debt_items, goal_items, "
+            "tax_profile, flags, and notes."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "income_items": {"type": "array", "items": {"type": "object"}},
+                "expense_items": {"type": "array", "items": {"type": "object"}},
+                "debt_items": {"type": "array", "items": {"type": "object"}},
+                "goal_items": {"type": "array", "items": {"type": "object"}},
+                "tax_profile": {"type": "object"},
+                "flags": {"type": "object"},
+                "notes": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_update_financial_profile,
+    )
+    copilot.register_tool(
         name="run_sync",
         description="Run a full portfolio sync pipeline and regenerate downstream payloads.",
         parameters=empty_schema,
@@ -1223,6 +1548,7 @@ async def on_startup() -> None:
     settings.import_archive_dir.mkdir(parents=True, exist_ok=True)
     settings.conversation_dir.mkdir(parents=True, exist_ok=True)
     settings.plans_dir.mkdir(parents=True, exist_ok=True)
+    settings.financial_profile_path.parent.mkdir(parents=True, exist_ok=True)
 
     global scheduler_task
     if settings.sync_interval_minutes > 0:
@@ -1259,6 +1585,22 @@ def health() -> dict[str, str]:
 @app.get("/api/dashboard/today", response_model=TodayDashboardResponse)
 def today_dashboard() -> TodayDashboardResponse:
     return build_today_dashboard_response()
+
+
+@app.get("/api/financial-profile", response_model=FinancialProfileResponse)
+def get_financial_profile() -> FinancialProfileResponse:
+    return FinancialProfileResponse(**get_financial_profile_payload())
+
+
+@app.put("/api/financial-profile", response_model=FinancialProfileResponse)
+def update_financial_profile(request: FinancialProfileRequest) -> FinancialProfileResponse:
+    saved = save_financial_profile_payload(request)
+    return FinancialProfileResponse(**saved)
+
+
+@app.get("/api/onboarding/status", response_model=OnboardingStatusResponse)
+def onboarding_status() -> OnboardingStatusResponse:
+    return build_onboarding_status_response()
 
 
 @app.get("/api/sync/status", response_model=SyncStatusResponse)

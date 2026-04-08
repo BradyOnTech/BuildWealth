@@ -13,6 +13,8 @@ const state = {
   copilotPlanId: '',
   workflowTemplates: [],
   todayDashboard: null,
+  financialProfile: null,
+  onboardingStatus: null,
 };
 
 const PLAN_SETTING_FIELDS = [
@@ -84,6 +86,39 @@ function truncate(value, maxLength = 120) {
   return `${text.slice(0, maxLength - 3)}...`;
 }
 
+function uid(prefix) {
+  return `${prefix}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
+function emptyFinancialProfile() {
+  return {
+    income_items: [],
+    expense_items: [],
+    debt_items: [],
+    goal_items: [],
+    tax_profile: {
+      filing_status: '',
+      marginal_tax_rate: null,
+      effective_tax_rate: null,
+      state: '',
+    },
+    flags: {
+      no_debt: false,
+      no_goals: false,
+    },
+    notes: '',
+    updated_at: null,
+  };
+}
+
+function parseOptionalNumber(value, label) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const numeric = Number(text);
+  if (Number.isNaN(numeric)) throw new Error(`${label} must be numeric.`);
+  return numeric;
+}
+
 function renderTodayList(containerId, items, formatter) {
   const container = byId(containerId);
   container.innerHTML = '';
@@ -105,7 +140,13 @@ function renderTodayList(containerId, items, formatter) {
 function renderTodayDashboard(payload) {
   state.todayDashboard = payload;
 
-  byId('today-generated').textContent = `Generated ${fmtDate(payload.generated_at)} • ${payload.state} • ${payload.currency}`;
+  const onboardingPct =
+    typeof payload.onboarding_completion_percent === 'number'
+      ? `${payload.onboarding_completion_percent.toFixed(1)}%`
+      : '-';
+  byId('today-generated').textContent =
+    `Generated ${fmtDate(payload.generated_at)} • ${payload.state} • ${payload.currency} • ` +
+    `Onboarding ${onboardingPct}`;
   byId('today-total-value').textContent = fmtCurrency(payload.total_value_usd);
   byId('today-snapshot-freshness').textContent = fmtAgeMinutes(payload.snapshot_age_minutes);
   byId('today-concentration').textContent = `${String(payload.concentration_risk || '-').toUpperCase()} ${
@@ -150,6 +191,184 @@ function renderTodayDashboard(payload) {
       workflowList.appendChild(li);
     }
   }
+}
+
+function ensureFinancialProfileState() {
+  if (!state.financialProfile || typeof state.financialProfile !== 'object') {
+    state.financialProfile = emptyFinancialProfile();
+  }
+}
+
+function renderOnboardingStatus(status) {
+  state.onboardingStatus = status;
+  byId('onboarding-summary').textContent = `Onboarding ${Number(status.completion_percent || 0).toFixed(1)}% complete`;
+  byId('onboarding-progress-fill').style.width = `${Math.max(0, Math.min(100, status.completion_percent || 0))}%`;
+  byId('onboarding-ready').textContent = status.ready_for_daily_review
+    ? 'Ready for daily review.'
+    : 'Complete remaining onboarding steps for best Copilot context.';
+
+  renderTodayList('onboarding-steps', status.steps || [], (item) => {
+    const wrap = document.createElement('article');
+    wrap.className = `today-item ${item.status || 'incomplete'}`;
+    wrap.innerHTML = `
+      <p class="today-item-title">${item.title || '-'}</p>
+      <p class="today-item-meta">${item.detail || ''}</p>
+    `;
+    return wrap;
+  });
+}
+
+function renderFinancialProfileTables() {
+  ensureFinancialProfileState();
+  const profile = state.financialProfile;
+
+  const renderRows = (tbodyId, items, renderer, emptyMessage) => {
+    const tbody = byId(tbodyId);
+    tbody.innerHTML = '';
+
+    if (!Array.isArray(items) || !items.length) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td colspan="5">${emptyMessage}</td>`;
+      tbody.appendChild(tr);
+      return;
+    }
+
+    for (const item of items) {
+      const tr = renderer(item);
+      tbody.appendChild(tr);
+    }
+  };
+
+  renderRows(
+    'profile-income-body',
+    profile.income_items,
+    (item) => {
+      const tr = document.createElement('tr');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'ghost small';
+      button.textContent = 'Remove';
+      button.addEventListener('click', () => {
+        profile.income_items = profile.income_items.filter((row) => row.id !== item.id);
+        renderFinancialProfileTables();
+      });
+
+      tr.innerHTML = `
+        <td>${item.label || '-'}</td>
+        <td>${fmtCurrency(item.monthly_amount_usd)}</td>
+        <td>${item.source_type || '-'}</td>
+        <td>${item.is_pre_tax ? 'Yes' : 'No'}</td>
+        <td></td>
+      `;
+      tr.children[4].appendChild(button);
+      return tr;
+    },
+    'No income items yet.'
+  );
+
+  renderRows(
+    'profile-expense-body',
+    profile.expense_items,
+    (item) => {
+      const tr = document.createElement('tr');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'ghost small';
+      button.textContent = 'Remove';
+      button.addEventListener('click', () => {
+        profile.expense_items = profile.expense_items.filter((row) => row.id !== item.id);
+        renderFinancialProfileTables();
+      });
+
+      tr.innerHTML = `
+        <td>${item.label || '-'}</td>
+        <td>${fmtCurrency(item.monthly_amount_usd)}</td>
+        <td>${item.category || '-'}</td>
+        <td>${item.is_fixed ? 'Yes' : 'No'}</td>
+        <td></td>
+      `;
+      tr.children[4].appendChild(button);
+      return tr;
+    },
+    'No expense items yet.'
+  );
+
+  renderRows(
+    'profile-debt-body',
+    profile.debt_items,
+    (item) => {
+      const tr = document.createElement('tr');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'ghost small';
+      button.textContent = 'Remove';
+      button.addEventListener('click', () => {
+        profile.debt_items = profile.debt_items.filter((row) => row.id !== item.id);
+        renderFinancialProfileTables();
+      });
+
+      const ratePct =
+        typeof item.interest_rate === 'number' && !Number.isNaN(item.interest_rate)
+          ? `${(item.interest_rate * 100).toFixed(2)}%`
+          : '-';
+      tr.innerHTML = `
+        <td>${item.label || '-'}</td>
+        <td>${fmtCurrency(item.balance_usd)}</td>
+        <td>${ratePct}</td>
+        <td>${fmtCurrency(item.minimum_payment_usd)}</td>
+        <td></td>
+      `;
+      tr.children[4].appendChild(button);
+      return tr;
+    },
+    'No debt items yet.'
+  );
+
+  renderRows(
+    'profile-goal-body',
+    profile.goal_items,
+    (item) => {
+      const tr = document.createElement('tr');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'ghost small';
+      button.textContent = 'Remove';
+      button.addEventListener('click', () => {
+        profile.goal_items = profile.goal_items.filter((row) => row.id !== item.id);
+        renderFinancialProfileTables();
+      });
+
+      tr.innerHTML = `
+        <td>${item.label || '-'}</td>
+        <td>${fmtCurrency(item.target_amount_usd)}</td>
+        <td>${item.target_date ? fmtDate(item.target_date) : '-'}</td>
+        <td>${item.priority || '-'}</td>
+        <td></td>
+      `;
+      tr.children[4].appendChild(button);
+      return tr;
+    },
+    'No goal items yet.'
+  );
+}
+
+function renderFinancialProfile() {
+  ensureFinancialProfileState();
+  const profile = state.financialProfile;
+  const tax = profile.tax_profile || {};
+  const flags = profile.flags || {};
+
+  byId('profile-filing-status').value = tax.filing_status || '';
+  byId('profile-marginal-tax-rate').value =
+    typeof tax.marginal_tax_rate === 'number' ? formatNumericInput(tax.marginal_tax_rate * 100) : '';
+  byId('profile-effective-tax-rate').value =
+    typeof tax.effective_tax_rate === 'number' ? formatNumericInput(tax.effective_tax_rate * 100) : '';
+  byId('profile-state').value = tax.state || '';
+  byId('profile-no-debt').checked = Boolean(flags.no_debt);
+  byId('profile-no-goals').checked = Boolean(flags.no_goals);
+  byId('profile-notes').value = profile.notes || '';
+
+  renderFinancialProfileTables();
 }
 
 function parseOptionalNumericField(rawValue, fieldLabel, asInteger = false) {
@@ -1093,6 +1312,30 @@ async function loadTodayDashboard() {
   }
 }
 
+async function loadFinancialProfile() {
+  try {
+    const payload = await fetchJson('/api/financial-profile');
+    state.financialProfile = payload;
+    renderFinancialProfile();
+  } catch (error) {
+    state.financialProfile = emptyFinancialProfile();
+    renderFinancialProfile();
+    writeLog(`Financial profile load failed: ${error.message}`, null, true);
+  }
+}
+
+async function loadOnboardingStatus() {
+  try {
+    const payload = await fetchJson('/api/onboarding/status');
+    renderOnboardingStatus(payload);
+  } catch (error) {
+    byId('onboarding-summary').textContent = `Onboarding unavailable: ${error.message}`;
+    byId('onboarding-progress-fill').style.width = '0%';
+    byId('onboarding-ready').textContent = '-';
+    byId('onboarding-steps').innerHTML = '<p class="chat-empty">Onboarding steps unavailable.</p>';
+  }
+}
+
 async function loadSnapshot() {
   try {
     const snapshot = await fetchJson('/api/snapshot/latest');
@@ -1119,7 +1362,15 @@ async function loadInbox() {
 }
 
 async function refreshAll() {
-  await Promise.all([loadStatus(), loadTodayDashboard(), loadSnapshot(), loadSnapshotHistory(), loadInbox()]);
+  await Promise.all([
+    loadStatus(),
+    loadTodayDashboard(),
+    loadOnboardingStatus(),
+    loadFinancialProfile(),
+    loadSnapshot(),
+    loadSnapshotHistory(),
+    loadInbox(),
+  ]);
 }
 
 async function loadCopilotConversations(autoSelect = true) {
@@ -1178,6 +1429,209 @@ function askCopilotDailyReview() {
   questionInput.value = todayReviewPrompt();
   questionInput.focus();
   byId('copilot-form').requestSubmit();
+}
+
+function updateFinancialProfileFromInputs() {
+  ensureFinancialProfileState();
+  const profile = state.financialProfile;
+
+  const marginalRate = parseOptionalNumber(byId('profile-marginal-tax-rate').value, 'Marginal tax rate');
+  const effectiveRate = parseOptionalNumber(byId('profile-effective-tax-rate').value, 'Effective tax rate');
+  if (marginalRate !== null && (marginalRate < 0 || marginalRate > 100)) {
+    throw new Error('Marginal tax rate must be between 0 and 100.');
+  }
+  if (effectiveRate !== null && (effectiveRate < 0 || effectiveRate > 100)) {
+    throw new Error('Effective tax rate must be between 0 and 100.');
+  }
+
+  profile.tax_profile = {
+    filing_status: byId('profile-filing-status').value || null,
+    marginal_tax_rate: marginalRate === null ? null : marginalRate / 100,
+    effective_tax_rate: effectiveRate === null ? null : effectiveRate / 100,
+    state: byId('profile-state').value.trim() || null,
+  };
+  profile.flags = {
+    no_debt: byId('profile-no-debt').checked,
+    no_goals: byId('profile-no-goals').checked,
+  };
+  profile.notes = byId('profile-notes').value.trim();
+}
+
+async function saveFinancialProfile() {
+  try {
+    updateFinancialProfileFromInputs();
+  } catch (error) {
+    writeLog(`Financial profile validation failed: ${error.message}`, null, true);
+    return;
+  }
+
+  writeLog('Saving financial profile...');
+  try {
+    const payload = await fetchJson('/api/financial-profile', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(state.financialProfile),
+    });
+    state.financialProfile = payload;
+    renderFinancialProfile();
+    await Promise.all([loadOnboardingStatus(), loadTodayDashboard()]);
+    writeLog('Financial profile saved.', { updated_at: payload.updated_at || null });
+  } catch (error) {
+    writeLog(`Save financial profile failed: ${error.message}`, null, true);
+  }
+}
+
+function addIncomeItem() {
+  ensureFinancialProfileState();
+  const label = byId('income-label').value.trim();
+  if (!label) {
+    writeLog('Income label is required.', null, true);
+    return;
+  }
+  let amount;
+  try {
+    amount = parseOptionalNumber(byId('income-amount').value, 'Income amount');
+  } catch (error) {
+    writeLog(error.message, null, true);
+    return;
+  }
+  if (amount === null || amount < 0) {
+    writeLog('Income amount must be >= 0.', null, true);
+    return;
+  }
+
+  state.financialProfile.income_items.push({
+    id: uid('income'),
+    label,
+    monthly_amount_usd: amount,
+    source_type: byId('income-source-type').value || 'salary',
+    is_pre_tax: byId('income-pre-tax').checked,
+  });
+
+  byId('income-label').value = '';
+  byId('income-amount').value = '';
+  byId('income-pre-tax').checked = false;
+  renderFinancialProfileTables();
+}
+
+function addExpenseItem() {
+  ensureFinancialProfileState();
+  const label = byId('expense-label').value.trim();
+  if (!label) {
+    writeLog('Expense label is required.', null, true);
+    return;
+  }
+  let amount;
+  try {
+    amount = parseOptionalNumber(byId('expense-amount').value, 'Expense amount');
+  } catch (error) {
+    writeLog(error.message, null, true);
+    return;
+  }
+  if (amount === null || amount < 0) {
+    writeLog('Expense amount must be >= 0.', null, true);
+    return;
+  }
+
+  state.financialProfile.expense_items.push({
+    id: uid('expense'),
+    label,
+    monthly_amount_usd: amount,
+    category: byId('expense-category').value.trim() || 'general',
+    is_fixed: byId('expense-fixed').checked,
+  });
+
+  byId('expense-label').value = '';
+  byId('expense-amount').value = '';
+  byId('expense-category').value = '';
+  byId('expense-fixed').checked = true;
+  renderFinancialProfileTables();
+}
+
+function addDebtItem() {
+  ensureFinancialProfileState();
+  const label = byId('debt-label').value.trim();
+  if (!label) {
+    writeLog('Debt label is required.', null, true);
+    return;
+  }
+
+  let balance;
+  let rate;
+  let minPayment;
+  try {
+    balance = parseOptionalNumber(byId('debt-balance').value, 'Debt balance');
+    rate = parseOptionalNumber(byId('debt-rate').value, 'Debt rate');
+    minPayment = parseOptionalNumber(byId('debt-min-payment').value, 'Debt minimum payment');
+  } catch (error) {
+    writeLog(error.message, null, true);
+    return;
+  }
+  if (balance === null || balance < 0) {
+    writeLog('Debt balance must be >= 0.', null, true);
+    return;
+  }
+  if (rate !== null && (rate < 0 || rate > 100)) {
+    writeLog('Debt rate must be between 0 and 100.', null, true);
+    return;
+  }
+  if (minPayment !== null && minPayment < 0) {
+    writeLog('Debt minimum payment must be >= 0.', null, true);
+    return;
+  }
+
+  state.financialProfile.debt_items.push({
+    id: uid('debt'),
+    label,
+    balance_usd: balance,
+    interest_rate: rate === null ? null : rate / 100,
+    minimum_payment_usd: minPayment,
+  });
+
+  byId('debt-label').value = '';
+  byId('debt-balance').value = '';
+  byId('debt-rate').value = '';
+  byId('debt-min-payment').value = '';
+  renderFinancialProfileTables();
+}
+
+function addGoalItem() {
+  ensureFinancialProfileState();
+  const label = byId('goal-label').value.trim();
+  if (!label) {
+    writeLog('Goal label is required.', null, true);
+    return;
+  }
+
+  let targetAmount;
+  try {
+    targetAmount = parseOptionalNumber(byId('goal-amount').value, 'Goal target amount');
+  } catch (error) {
+    writeLog(error.message, null, true);
+    return;
+  }
+  if (targetAmount === null || targetAmount < 0) {
+    writeLog('Goal target amount must be >= 0.', null, true);
+    return;
+  }
+
+  const rawDate = byId('goal-date').value;
+  const targetDate = rawDate ? new Date(`${rawDate}T00:00:00.000Z`).toISOString() : null;
+
+  state.financialProfile.goal_items.push({
+    id: uid('goal'),
+    label,
+    target_amount_usd: targetAmount,
+    target_date: targetDate,
+    priority: byId('goal-priority').value || 'medium',
+    notes: '',
+  });
+
+  byId('goal-label').value = '';
+  byId('goal-amount').value = '';
+  byId('goal-date').value = '';
+  byId('goal-priority').value = 'medium';
+  renderFinancialProfileTables();
 }
 
 async function runSync() {
@@ -1330,6 +1784,16 @@ function wireEvents() {
   });
   byId('today-run-sync').addEventListener('click', runSync);
   byId('today-ask-copilot').addEventListener('click', askCopilotDailyReview);
+  byId('reload-profile').addEventListener('click', () => {
+    Promise.all([loadFinancialProfile(), loadOnboardingStatus()]).catch((error) =>
+      writeLog(error.message, null, true)
+    );
+  });
+  byId('save-profile').addEventListener('click', saveFinancialProfile);
+  byId('add-income').addEventListener('click', addIncomeItem);
+  byId('add-expense').addEventListener('click', addExpenseItem);
+  byId('add-debt').addEventListener('click', addDebtItem);
+  byId('add-goal').addEventListener('click', addGoalItem);
   byId('run-sync').addEventListener('click', runSync);
   byId('reload-inbox').addEventListener('click', () => {
     loadInbox().catch((error) => writeLog(error.message, null, true));
