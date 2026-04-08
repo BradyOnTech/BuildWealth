@@ -9,6 +9,15 @@ class OpenBBResearchService:
     def __init__(self, provider: str):
         self.provider = provider
 
+    def _unavailable(self, symbol: str, detail: str) -> ResearchResponse:
+        return ResearchResponse(
+            symbol=symbol,
+            provider=self.provider,
+            available=False,
+            message=detail,
+            records=[],
+        )
+
     def _as_records(self, value: Any, limit: int = 100) -> list[dict[str, Any]]:
         if value is None:
             return []
@@ -23,19 +32,62 @@ class OpenBBResearchService:
                 return data[:limit]
         return []
 
+    @staticmethod
+    def _compute_price_change(records: list[dict[str, Any]]) -> tuple[float | None, float | None, float | None]:
+        if not records:
+            return None, None, None
+
+        close_keys = ("close", "adj_close", "last")
+        closes: list[float] = []
+        for row in records:
+            close_value = None
+            for key in close_keys:
+                if key in row:
+                    close_value = row.get(key)
+                    break
+
+            try:
+                if close_value is not None:
+                    closes.append(float(close_value))
+            except Exception:
+                continue
+
+        if len(closes) < 2:
+            return None, None, None
+
+        first_value = closes[0]
+        last_value = closes[-1]
+        if first_value == 0:
+            pct_change = None
+        else:
+            pct_change = ((last_value - first_value) / first_value) * 100
+
+        return first_value, last_value, pct_change
+
+    def _call_endpoint(self, endpoint: Any, kwargs_variants: list[dict[str, Any]]) -> Any:
+        attempts: list[str] = []
+        for kwargs in kwargs_variants:
+            try:
+                return endpoint(**kwargs)
+            except TypeError as exc:
+                attempts.append(f"{kwargs}: {exc}")
+                continue
+            except Exception as exc:
+                raise RuntimeError(str(exc)) from exc
+
+        joined = "; ".join(attempts) if attempts else "No endpoint call variants were attempted."
+        raise RuntimeError(f"Unable to call OpenBB endpoint with tested kwargs. {joined}")
+
     def options_chain(self, symbol: str) -> ResearchResponse:
         try:
             from openbb import obb  # type: ignore
         except Exception as exc:  # pragma: no cover - import-path dependent
-            return ResearchResponse(
+            return self._unavailable(
                 symbol=symbol,
-                provider=self.provider,
-                available=False,
-                message=(
+                detail=(
                     "OpenBB is unavailable in this runtime. Install with `pip install .[openbb]` "
                     f"in services/orchestrator. Details: {exc}"
                 ),
-                records=[],
             )
 
         try:
@@ -49,13 +101,126 @@ class OpenBBResearchService:
                 records=records,
             )
         except Exception as exc:  # pragma: no cover - API/provider dependent
+            return self._unavailable(
+                symbol=symbol,
+                detail=f"OpenBB request failed: {exc}",
+            )
+
+    def price_history(self, symbol: str, period: str = "1y", interval: str = "1d") -> ResearchResponse:
+        try:
+            from openbb import obb  # type: ignore
+        except Exception as exc:  # pragma: no cover - import-path dependent
+            return self._unavailable(
+                symbol=symbol,
+                detail=(
+                    "OpenBB is unavailable in this runtime. Install with `pip install .[openbb]` "
+                    f"in services/orchestrator. Details: {exc}"
+                ),
+            )
+
+        try:
+            endpoint = obb.equity.price.historical
+        except Exception as exc:  # pragma: no cover - API/provider dependent
+            return self._unavailable(
+                symbol=symbol,
+                detail=f"OpenBB historical price endpoint is unavailable: {exc}",
+            )
+
+        kwargs_variants = [
+            {
+                "symbol": symbol,
+                "provider": self.provider,
+                "period": period,
+                "interval": interval,
+            },
+            {
+                "symbol": symbol,
+                "provider": self.provider,
+                "interval": interval,
+            },
+            {
+                "symbol": symbol,
+                "provider": self.provider,
+            },
+            {"symbol": symbol},
+        ]
+
+        try:
+            response = self._call_endpoint(endpoint=endpoint, kwargs_variants=kwargs_variants)
+            records = self._as_records(response)
+            first_close, last_close, pct_change = self._compute_price_change(records)
+
+            message_bits = [f"Fetched {len(records)} historical rows"]
+            if first_close is not None and last_close is not None and pct_change is not None:
+                message_bits.append(
+                    f"change {first_close:,.2f} -> {last_close:,.2f} ({pct_change:.2f}%)"
+                )
+
             return ResearchResponse(
                 symbol=symbol,
                 provider=self.provider,
-                available=False,
-                message=f"OpenBB request failed: {exc}",
-                records=[],
+                available=True,
+                message="; ".join(message_bits),
+                records=records,
             )
+        except Exception as exc:  # pragma: no cover - API/provider dependent
+            return self._unavailable(symbol=symbol, detail=f"OpenBB price history request failed: {exc}")
+
+    def quote(self, symbol: str) -> ResearchResponse:
+        try:
+            from openbb import obb  # type: ignore
+        except Exception as exc:  # pragma: no cover - import-path dependent
+            return self._unavailable(
+                symbol=symbol,
+                detail=(
+                    "OpenBB is unavailable in this runtime. Install with `pip install .[openbb]` "
+                    f"in services/orchestrator. Details: {exc}"
+                ),
+            )
+
+        endpoint_candidates: list[Any] = []
+        with_provider: list[dict[str, Any]] = [{"symbol": symbol, "provider": self.provider}]
+        without_provider: list[dict[str, Any]] = [{"symbol": symbol}]
+
+        with_provider_endpoint = getattr(getattr(getattr(obb, "equity", None), "price", None), "quote", None)
+        if callable(with_provider_endpoint):
+            endpoint_candidates.append(with_provider_endpoint)
+
+        quote_snapshot_endpoint = getattr(
+            getattr(getattr(obb, "equity", None), "price", None), "snapshot", None
+        )
+        if callable(quote_snapshot_endpoint):
+            endpoint_candidates.append(quote_snapshot_endpoint)
+
+        if not endpoint_candidates:
+            return self._unavailable(
+                symbol=symbol,
+                detail="OpenBB quote endpoint is unavailable for this runtime/provider.",
+            )
+
+        last_error = ""
+        for endpoint in endpoint_candidates:
+            try:
+                response = self._call_endpoint(
+                    endpoint=endpoint,
+                    kwargs_variants=[*with_provider, *without_provider],
+                )
+                records = self._as_records(response, limit=20)
+                return ResearchResponse(
+                    symbol=symbol,
+                    provider=self.provider,
+                    available=True,
+                    message=f"Fetched {len(records)} quote row(s)",
+                    records=records,
+                )
+            except Exception as exc:  # pragma: no cover - API/provider dependent
+                last_error = str(exc)
+                continue
+
+        return self._unavailable(
+            symbol=symbol,
+            detail=f"OpenBB quote request failed: {last_error or 'Unknown error'}",
+        )
 
 
 def concentration_metrics(holdings: list[dict[str, Any]]) -> dict[str, Any]:

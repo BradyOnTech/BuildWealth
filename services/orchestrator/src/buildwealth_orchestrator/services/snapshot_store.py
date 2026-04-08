@@ -77,6 +77,9 @@ class SnapshotStore:
         self.snapshot_dir = snapshot_dir
         self.snapshot_dir.mkdir(parents=True, exist_ok=True)
 
+    def _candidate_paths(self) -> list[Path]:
+        return sorted(self.snapshot_dir.glob("snapshot-*.json"))
+
     def write(self, snapshot: PortfolioSnapshot) -> Path:
         filename = snapshot.as_of.strftime("snapshot-%Y%m%dT%H%M%SZ.json")
         path = self.snapshot_dir / filename
@@ -84,9 +87,22 @@ class SnapshotStore:
         return path
 
     def latest(self) -> PortfolioSnapshot:
-        candidates = sorted(self.snapshot_dir.glob("snapshot-*.json"))
+        candidates = self._candidate_paths()
         if not candidates:
             raise FileNotFoundError("No snapshot files exist yet")
 
         payload = json.loads(candidates[-1].read_text(encoding="utf-8"))
         return PortfolioSnapshot(**payload)
+
+    def recent(self, limit: int = 10) -> list[PortfolioSnapshot]:
+        candidates = self._candidate_paths()
+        if not candidates:
+            return []
+
+        snapshots: list[PortfolioSnapshot] = []
+        for path in reversed(candidates[-max(1, limit) :]):
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            snapshots.append(PortfolioSnapshot(**payload))
+
+        snapshots.sort(key=lambda item: item.as_of, reverse=True)
+        return snapshots

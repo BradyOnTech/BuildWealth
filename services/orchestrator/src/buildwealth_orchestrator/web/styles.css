@@ -388,6 +388,13 @@ h1 {
   align-items: end;
 }
 
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+  align-items: end;
+}
+
 .inner-head {
   margin-top: 0.5rem;
 }
@@ -400,14 +407,23 @@ h1 {
 
 .workflow-form {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: 1fr 1fr;
   gap: 0.7rem;
   align-items: end;
+}
+
+.workflow-params-field {
+  grid-column: 1 / -1;
 }
 
 .table-wrap .ghost.small {
   padding: 0.35rem 0.55rem;
   font-size: 0.76rem;
+}
+
+button.small {
+  padding: 0.4rem 0.62rem;
+  font-size: 0.78rem;
 }
 
 textarea[readonly] {
@@ -418,6 +434,10 @@ textarea[readonly] {
   margin: 0 0 0.8rem;
   color: var(--ink-soft);
   font-size: 0.95rem;
+}
+
+.hint.tight {
+  margin-bottom: 0.55rem;
 }
 
 button {
@@ -602,7 +622,8 @@ th {
 
   .create-plan-form,
   .plan-decision-form,
-  .workflow-form {
+  .workflow-form,
+  .settings-grid {
     grid-template-columns: 1fr;
   }
 

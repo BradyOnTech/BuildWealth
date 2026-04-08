@@ -14,6 +14,26 @@ const state = {
   workflowTemplates: [],
 };
 
+const PLAN_SETTING_FIELDS = [
+  { key: 'annual_contribution_usd', inputId: 'setting-annual-contribution', scale: 1, integer: false },
+  { key: 'years', inputId: 'setting-years', scale: 1, integer: true },
+  { key: 'hsa_extra_contribution_usd', inputId: 'setting-hsa-extra', scale: 1, integer: false },
+  { key: 'marginal_tax_rate', inputId: 'setting-marginal-tax-rate', scale: 100, integer: false },
+  { key: 'expected_return_baseline', inputId: 'setting-return-baseline', scale: 100, integer: false },
+  { key: 'expected_return_optimistic', inputId: 'setting-return-optimistic', scale: 100, integer: false },
+  { key: 'expected_return_conservative', inputId: 'setting-return-conservative', scale: 100, integer: false },
+];
+
+const DIFF_SETTING_FIELDS = [
+  { key: 'annual_contribution_usd', inputId: 'diff-annual-contribution', scale: 1, integer: false },
+  { key: 'years', inputId: 'diff-years', scale: 1, integer: true },
+  { key: 'hsa_extra_contribution_usd', inputId: 'diff-hsa-extra', scale: 1, integer: false },
+  { key: 'marginal_tax_rate', inputId: 'diff-marginal-tax-rate', scale: 100, integer: false },
+  { key: 'expected_return_baseline', inputId: 'diff-return-baseline', scale: 100, integer: false },
+  { key: 'expected_return_optimistic', inputId: 'diff-return-optimistic', scale: 100, integer: false },
+  { key: 'expected_return_conservative', inputId: 'diff-return-conservative', scale: 100, integer: false },
+];
+
 function stamp() {
   return new Date().toLocaleTimeString();
 }
@@ -51,6 +71,64 @@ function truncate(value, maxLength = 120) {
   const text = String(value || '').trim();
   if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength - 3)}...`;
+}
+
+function parseOptionalNumericField(rawValue, fieldLabel, asInteger = false) {
+  const text = String(rawValue || '').trim();
+  if (!text) return { present: false, value: null };
+
+  const numeric = Number(text);
+  if (Number.isNaN(numeric)) {
+    throw new Error(`${fieldLabel} must be numeric.`);
+  }
+  if (asInteger && !Number.isInteger(numeric)) {
+    throw new Error(`${fieldLabel} must be an integer.`);
+  }
+
+  return { present: true, value: numeric };
+}
+
+function formatNumericInput(value, maxDecimals = 6) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '';
+  if (Number.isInteger(value)) return String(value);
+  return String(Number(value.toFixed(maxDecimals)));
+}
+
+function collectSettingsPayload(fields, { includeNulls }) {
+  const payload = {};
+
+  for (const field of fields) {
+    const input = byId(field.inputId);
+    if (!input) continue;
+    const parsed = parseOptionalNumericField(input.value, field.key, Boolean(field.integer));
+    if (!parsed.present) {
+      if (includeNulls) payload[field.key] = null;
+      continue;
+    }
+
+    const divisor = field.scale || 1;
+    const normalized = parsed.value / divisor;
+    payload[field.key] = field.integer ? Math.trunc(normalized) : normalized;
+  }
+
+  return payload;
+}
+
+function setSettingsInputs(fields, settingsPayload) {
+  const settings = settingsPayload && typeof settingsPayload === 'object' ? settingsPayload : {};
+
+  for (const field of fields) {
+    const input = byId(field.inputId);
+    if (!input) continue;
+    const rawValue = settings[field.key];
+    if (rawValue === null || rawValue === undefined || rawValue === '') {
+      input.value = '';
+      continue;
+    }
+    const multiplier = field.scale || 1;
+    const displayValue = Number(rawValue) * multiplier;
+    input.value = formatNumericInput(displayValue);
+  }
 }
 
 async function fetchJson(url, options = {}) {
@@ -101,6 +179,37 @@ function renderSnapshot(snapshot) {
   }
 }
 
+function renderSnapshotHistory(historyPayload) {
+  const summaryEl = byId('snapshot-history-summary');
+  const tbody = byId('snapshot-history-body');
+  tbody.innerHTML = '';
+
+  const points = Array.isArray(historyPayload?.points) ? historyPayload.points : [];
+  if (!points.length) {
+    summaryEl.textContent = 'No snapshot history is available yet.';
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="3">Run sync multiple times to build trend history.</td>';
+    tbody.appendChild(tr);
+    return;
+  }
+
+  const deltaValue = historyPayload.delta_total_value_usd;
+  const deltaPct = historyPayload.delta_total_value_percent;
+  summaryEl.textContent =
+    `Window: ${historyPayload.window_points || points.length} points | ` +
+    `Delta total value: ${fmtCurrency(deltaValue)} (${fmtPct(deltaPct)})`;
+
+  for (const point of points.slice(0, 10)) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${fmtDate(point.as_of)}</td>
+      <td>${fmtCurrency(point.total_value_usd)}</td>
+      <td>${fmtCurrency(point.net_performance_usd)}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
 function renderInboxFiles(files) {
   const select = byId('inbox-file');
   select.innerHTML = '';
@@ -125,23 +234,39 @@ function setPlanControlsEnabled(enabled) {
   byId('activate-plan').disabled = !enabled;
   byId('refresh-plan-context').disabled = !enabled;
   byId('save-plan').disabled = !enabled;
+  byId('save-plan-settings').disabled = !enabled;
+  byId('run-scenario-diff').disabled = !enabled;
+  byId('apply-scenario-overrides').disabled = !enabled;
   byId('add-decision').disabled = !enabled;
   byId('plan-markdown').disabled = !enabled;
   byId('plan-tasks').disabled = !enabled;
   byId('decision-summary').disabled = !enabled;
   byId('decision-rationale').disabled = !enabled;
   byId('decision-status').disabled = !enabled;
+  for (const field of PLAN_SETTING_FIELDS) {
+    const input = byId(field.inputId);
+    if (input) input.disabled = !enabled;
+  }
+  for (const field of DIFF_SETTING_FIELDS) {
+    const input = byId(field.inputId);
+    if (input) input.disabled = !enabled;
+  }
 }
 
 function clearPlanDetail() {
   state.currentPlanDetail = null;
   byId('plan-meta').textContent = 'Select a plan to view details.';
+  byId('plan-settings-meta').textContent = 'Blank values use global defaults from planner configuration.';
   byId('plan-markdown').value = '';
   byId('plan-tasks').value = '';
   byId('plan-context').value = '';
+  byId('scenario-diff-summary').textContent = 'No scenario diff run yet.';
+  byId('scenario-diff-output').value = '';
   byId('plan-decisions-body').innerHTML = '<tr><td colspan="4">No decisions yet.</td></tr>';
   byId('plan-artifacts-body').innerHTML = '<tr><td colspan="4">No artifacts yet.</td></tr>';
   byId('artifact-content').value = '';
+  setSettingsInputs(PLAN_SETTING_FIELDS, {});
+  setSettingsInputs(DIFF_SETTING_FIELDS, {});
   setPlanControlsEnabled(false);
 }
 
@@ -222,6 +347,13 @@ function renderPlanDetail() {
   byId('plan-markdown').value = detail.files?.plan_markdown || '';
   byId('plan-tasks').value = detail.files?.tasks_markdown || '';
   byId('plan-context').value = detail.files?.context_markdown || '';
+  byId('scenario-diff-summary').textContent = 'No scenario diff run yet.';
+  byId('scenario-diff-output').value = '';
+  setSettingsInputs(PLAN_SETTING_FIELDS, detail.settings || {});
+  const settingsUpdatedAt = detail.settings?.updated_at ? fmtDate(detail.settings.updated_at) : null;
+  byId('plan-settings-meta').textContent = settingsUpdatedAt
+    ? `Settings updated ${settingsUpdatedAt}`
+    : 'Blank values use global defaults from planner configuration.';
   renderPlanDecisions(Array.isArray(detail.decisions) ? detail.decisions : []);
   renderPlanArtifacts(Array.isArray(detail.artifacts) ? detail.artifacts : []);
   if (Array.isArray(detail.artifacts) && detail.artifacts.length > 0) {
@@ -408,6 +540,143 @@ async function savePlan() {
   }
 }
 
+function formatScenarioDiffOutput(diffPayload) {
+  const rows = Array.isArray(diffPayload?.scenario_deltas) ? diffPayload.scenario_deltas : [];
+  const lines = [
+    `Plan: ${diffPayload?.plan_id || '-'}`,
+    `Current Portfolio Value: ${fmtCurrency(diffPayload?.current_portfolio_value_usd)}`,
+    '',
+    'Scenario Delta (Candidate - Base):',
+  ];
+
+  if (!rows.length) {
+    lines.push('- No scenario deltas available.');
+  } else {
+    for (const row of rows) {
+      lines.push(
+        `- ${row.label}: Future ${fmtCurrency(row.delta_future_value_usd)}, Real ${fmtCurrency(row.delta_real_value_usd)}`
+      );
+    }
+  }
+
+  const monte = diffPayload?.monte_carlo_delta || {};
+  lines.push('', 'Monte Carlo Delta:');
+  lines.push(`- P10: ${fmtCurrency(monte.delta_p10_future_value_usd)}`);
+  lines.push(`- P50: ${fmtCurrency(monte.delta_p50_future_value_usd)}`);
+  lines.push(`- P90: ${fmtCurrency(monte.delta_p90_future_value_usd)}`);
+  lines.push('', 'Raw Payload:');
+  lines.push(JSON.stringify(diffPayload, null, 2));
+  return lines.join('\n');
+}
+
+async function savePlanSettings() {
+  if (!state.currentPlanId) {
+    writeLog('Select a plan before saving settings.', null, true);
+    return;
+  }
+
+  let payload;
+  try {
+    payload = collectSettingsPayload(PLAN_SETTING_FIELDS, { includeNulls: true });
+  } catch (error) {
+    writeLog(`Plan settings validation failed: ${error.message}`, null, true);
+    return;
+  }
+
+  writeLog(`Saving plan settings for ${state.currentPlanId}...`, payload);
+  try {
+    const detail = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/settings`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    state.currentPlanDetail = detail;
+    renderPlanDetail();
+    await loadPlans(false);
+    writeLog('Plan settings saved.', { plan_id: state.currentPlanId });
+  } catch (error) {
+    writeLog(`Save plan settings failed: ${error.message}`, null, true);
+  }
+}
+
+async function runScenarioDiff() {
+  if (!state.currentPlanId) {
+    writeLog('Select a plan first.', null, true);
+    return;
+  }
+
+  let compareSettings;
+  try {
+    compareSettings = collectSettingsPayload(DIFF_SETTING_FIELDS, { includeNulls: false });
+  } catch (error) {
+    writeLog(`Scenario override validation failed: ${error.message}`, null, true);
+    return;
+  }
+
+  const payload = { compare_settings: compareSettings };
+  writeLog(`Running scenario diff for ${state.currentPlanId}...`, payload);
+
+  try {
+    const result = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/scenario-diff`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const baseline = (result.scenario_deltas || []).find((row) => row.label === 'baseline');
+    byId('scenario-diff-summary').textContent = baseline
+      ? `Baseline future value delta: ${fmtCurrency(baseline.delta_future_value_usd)} (real: ${fmtCurrency(
+          baseline.delta_real_value_usd
+        )})`
+      : 'Scenario diff completed.';
+    byId('scenario-diff-output').value = formatScenarioDiffOutput(result);
+    writeLog('Scenario diff completed.', {
+      plan_id: state.currentPlanId,
+      overrides_count: Object.keys(compareSettings).length,
+    });
+  } catch (error) {
+    writeLog(`Scenario diff failed: ${error.message}`, null, true);
+    byId('scenario-diff-summary').textContent = `Scenario diff failed: ${error.message}`;
+  }
+}
+
+async function applyScenarioOverrides() {
+  if (!state.currentPlanId) {
+    writeLog('Select a plan first.', null, true);
+    return;
+  }
+
+  let payload;
+  try {
+    payload = collectSettingsPayload(DIFF_SETTING_FIELDS, { includeNulls: false });
+  } catch (error) {
+    writeLog(`Scenario override validation failed: ${error.message}`, null, true);
+    return;
+  }
+
+  if (!Object.keys(payload).length) {
+    writeLog('Enter at least one override before applying.', null, true);
+    return;
+  }
+
+  writeLog(`Applying scenario overrides to ${state.currentPlanId}...`, payload);
+  try {
+    const detail = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/settings`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    state.currentPlanDetail = detail;
+    renderPlanDetail();
+    setSettingsInputs(DIFF_SETTING_FIELDS, {});
+    byId('scenario-diff-summary').textContent = 'Overrides applied to plan settings.';
+    await loadPlans(false);
+    writeLog('Scenario overrides applied.', { plan_id: state.currentPlanId });
+  } catch (error) {
+    writeLog(`Apply overrides failed: ${error.message}`, null, true);
+  }
+}
+
 async function activatePlan() {
   if (!state.currentPlanId) {
     writeLog('Select a plan first.', null, true);
@@ -486,6 +755,7 @@ async function addPlanDecision() {
 
 function renderWorkflowTemplates() {
   const select = byId('workflow-template');
+  const previousValue = select.value;
   select.innerHTML = '';
 
   if (!state.workflowTemplates.length) {
@@ -502,12 +772,36 @@ function renderWorkflowTemplates() {
     option.textContent = template.title;
     select.appendChild(option);
   }
+
+  if ([...select.options].some((option) => option.value === previousValue)) {
+    select.value = previousValue;
+  }
+  updateWorkflowParamsEditor(true);
 }
 
 async function loadWorkflowTemplates() {
   const templates = await fetchJson('/api/workflows/templates');
   state.workflowTemplates = Array.isArray(templates) ? templates : [];
   renderWorkflowTemplates();
+}
+
+function selectedWorkflowTemplate() {
+  const selectedId = byId('workflow-template').value;
+  return state.workflowTemplates.find((item) => item.id === selectedId) || null;
+}
+
+function updateWorkflowParamsEditor(preserveIfPopulated = false) {
+  const textarea = byId('workflow-params');
+  if (!textarea) return;
+
+  const current = textarea.value.trim();
+  if (preserveIfPopulated && current) {
+    return;
+  }
+
+  const template = selectedWorkflowTemplate();
+  const defaults = template?.default_params || {};
+  textarea.value = JSON.stringify(defaults, null, 2);
 }
 
 async function runWorkflow(event) {
@@ -520,12 +814,31 @@ async function runWorkflow(event) {
   }
 
   const selectedPlanId = byId('workflow-plan').value || null;
+  const rawParams = byId('workflow-params').value.trim();
+  let params = {};
+  if (rawParams) {
+    try {
+      const parsed = JSON.parse(rawParams);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        params = parsed;
+      } else {
+        writeLog('Workflow params must be a JSON object.', null, true);
+        byId('workflow-summary').textContent = 'Workflow params must be a JSON object.';
+        return;
+      }
+    } catch (error) {
+      writeLog(`Workflow params JSON parse failed: ${error.message}`, null, true);
+      byId('workflow-summary').textContent = `Workflow params JSON parse failed: ${error.message}`;
+      return;
+    }
+  }
+
   const payload = {
     workflow_id: workflowId,
     plan_id: selectedPlanId,
     use_live_snapshot: byId('workflow-live-snapshot').checked,
     save_to_plan: byId('workflow-save-to-plan').checked,
-    params: {},
+    params,
   };
 
   byId('run-workflow').disabled = true;
@@ -695,13 +1008,23 @@ async function loadSnapshot() {
   }
 }
 
+async function loadSnapshotHistory() {
+  try {
+    const payload = await fetchJson('/api/snapshot/history?limit=20');
+    renderSnapshotHistory(payload);
+  } catch (error) {
+    byId('snapshot-history-summary').textContent = `Snapshot history unavailable: ${error.message}`;
+    byId('snapshot-history-body').innerHTML = '<tr><td colspan="3">Snapshot history unavailable.</td></tr>';
+  }
+}
+
 async function loadInbox() {
   const payload = await fetchJson('/api/import/files');
   renderInboxFiles(payload.files || []);
 }
 
 async function refreshAll() {
-  await Promise.all([loadStatus(), loadSnapshot(), loadInbox()]);
+  await Promise.all([loadStatus(), loadSnapshot(), loadSnapshotHistory(), loadInbox()]);
 }
 
 async function loadCopilotConversations(autoSelect = true) {
@@ -896,7 +1219,7 @@ function wireEvents() {
     loadInbox().catch((error) => writeLog(error.message, null, true));
   });
   byId('reload-snapshot').addEventListener('click', () => {
-    loadSnapshot().catch((error) => writeLog(error.message, null, true));
+    Promise.all([loadSnapshot(), loadSnapshotHistory()]).catch((error) => writeLog(error.message, null, true));
   });
   byId('import-inbox').addEventListener('click', importInboxFile);
   byId('upload-form').addEventListener('submit', uploadAndImport);
@@ -915,6 +1238,9 @@ function wireEvents() {
   });
   byId('create-plan-form').addEventListener('submit', createPlan);
   byId('save-plan').addEventListener('click', savePlan);
+  byId('save-plan-settings').addEventListener('click', savePlanSettings);
+  byId('run-scenario-diff').addEventListener('click', runScenarioDiff);
+  byId('apply-scenario-overrides').addEventListener('click', applyScenarioOverrides);
   byId('activate-plan').addEventListener('click', activatePlan);
   byId('refresh-plan-context').addEventListener('click', refreshPlanContext);
   byId('add-decision').addEventListener('click', addPlanDecision);
@@ -927,6 +1253,7 @@ function wireEvents() {
     byId('copilot-plan').value = state.copilotPlanId;
   });
   byId('workflow-form').addEventListener('submit', runWorkflow);
+  byId('workflow-template').addEventListener('change', () => updateWorkflowParamsEditor(false));
 }
 
 async function boot() {

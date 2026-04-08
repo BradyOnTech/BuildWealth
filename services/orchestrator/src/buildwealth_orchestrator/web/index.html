@@ -109,6 +109,88 @@
               <span>Context Snapshot</span>
               <textarea id="plan-context" rows="8" readonly></textarea>
             </label>
+            <div class="card-head inner-head">
+              <h3>Plan Settings</h3>
+              <button class="primary small" id="save-plan-settings" type="button">Save Settings</button>
+            </div>
+            <p class="hint tight" id="plan-settings-meta">
+              Blank values use global defaults from planner configuration.
+            </p>
+            <div class="settings-grid">
+              <label class="field">
+                <span>Annual Contribution (USD)</span>
+                <input type="number" id="setting-annual-contribution" step="100" min="0" placeholder="e.g. 22000" />
+              </label>
+              <label class="field">
+                <span>Horizon (Years)</span>
+                <input type="number" id="setting-years" step="1" min="1" max="80" placeholder="e.g. 25" />
+              </label>
+              <label class="field">
+                <span>HSA Extra Contribution (USD)</span>
+                <input type="number" id="setting-hsa-extra" step="100" min="0" placeholder="e.g. 1000" />
+              </label>
+              <label class="field">
+                <span>Marginal Tax Rate (%)</span>
+                <input type="number" id="setting-marginal-tax-rate" step="0.01" min="0" max="100" placeholder="e.g. 24" />
+              </label>
+              <label class="field">
+                <span>Baseline Return (%)</span>
+                <input type="number" id="setting-return-baseline" step="0.01" min="-95" max="100" placeholder="e.g. 7" />
+              </label>
+              <label class="field">
+                <span>Optimistic Return (%)</span>
+                <input type="number" id="setting-return-optimistic" step="0.01" min="-95" max="100" placeholder="e.g. 9" />
+              </label>
+              <label class="field">
+                <span>Conservative Return (%)</span>
+                <input type="number" id="setting-return-conservative" step="0.01" min="-95" max="100" placeholder="e.g. 5" />
+              </label>
+            </div>
+            <div class="card-head inner-head">
+              <h3>Scenario Diff</h3>
+              <div class="plan-meta-actions">
+                <button class="primary small" id="run-scenario-diff" type="button">Run Diff</button>
+                <button class="ghost small" id="apply-scenario-overrides" type="button">Apply Overrides</button>
+              </div>
+            </div>
+            <p class="hint tight">
+              Enter only fields you want to compare. Overrides are optional and do not persist unless applied.
+            </p>
+            <div class="settings-grid">
+              <label class="field">
+                <span>Override Annual Contribution (USD)</span>
+                <input type="number" id="diff-annual-contribution" step="100" min="0" placeholder="Optional" />
+              </label>
+              <label class="field">
+                <span>Override Horizon (Years)</span>
+                <input type="number" id="diff-years" step="1" min="1" max="80" placeholder="Optional" />
+              </label>
+              <label class="field">
+                <span>Override HSA Extra (USD)</span>
+                <input type="number" id="diff-hsa-extra" step="100" min="0" placeholder="Optional" />
+              </label>
+              <label class="field">
+                <span>Override Tax Rate (%)</span>
+                <input type="number" id="diff-marginal-tax-rate" step="0.01" min="0" max="100" placeholder="Optional" />
+              </label>
+              <label class="field">
+                <span>Override Baseline Return (%)</span>
+                <input type="number" id="diff-return-baseline" step="0.01" min="-95" max="100" placeholder="Optional" />
+              </label>
+              <label class="field">
+                <span>Override Optimistic Return (%)</span>
+                <input type="number" id="diff-return-optimistic" step="0.01" min="-95" max="100" placeholder="Optional" />
+              </label>
+              <label class="field">
+                <span>Override Conservative Return (%)</span>
+                <input type="number" id="diff-return-conservative" step="0.01" min="-95" max="100" placeholder="Optional" />
+              </label>
+            </div>
+            <p class="hint tight" id="scenario-diff-summary">No scenario diff run yet.</p>
+            <label class="field">
+              <span>Scenario Diff Output</span>
+              <textarea id="scenario-diff-output" rows="10" readonly></textarea>
+            </label>
             <div class="plan-decision-form">
               <label class="field">
                 <span>Add Decision</span>
@@ -181,6 +263,10 @@
             <label><input type="checkbox" id="workflow-live-snapshot" /> Use live snapshot</label>
             <label><input type="checkbox" id="workflow-save-to-plan" checked /> Save report as plan artifact</label>
           </div>
+          <label class="field workflow-params-field">
+            <span>Template Params (JSON)</span>
+            <textarea id="workflow-params" rows="7" placeholder="{}"></textarea>
+          </label>
           <button class="primary" id="run-workflow" type="submit">Run Workflow</button>
         </form>
         <p class="hint" id="workflow-summary">No workflow run yet.</p>
@@ -287,6 +373,19 @@
               </tr>
             </thead>
             <tbody id="holdings-body"></tbody>
+          </table>
+        </div>
+        <p class="hint tight" id="snapshot-history-summary">Snapshot trend unavailable.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>As Of</th>
+                <th>Total Value (USD)</th>
+                <th>Net Perf (USD)</th>
+              </tr>
+            </thead>
+            <tbody id="snapshot-history-body"></tbody>
           </table>
         </div>
       </section>

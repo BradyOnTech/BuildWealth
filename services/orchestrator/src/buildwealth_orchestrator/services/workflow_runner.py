@@ -31,7 +31,8 @@ class WorkflowRunner:
                 "id": "risk_concentration_review",
                 "title": "Risk Concentration Review",
                 "description": (
-                    "Evaluate portfolio concentration risk from latest holdings and flag potential over-exposure."
+                    "Evaluate portfolio concentration risk from latest holdings and flag potential "
+                    "over-exposure."
                 ),
                 "default_params": {
                     "max_single_holding_percent": 25.0,
@@ -42,7 +43,8 @@ class WorkflowRunner:
                 "id": "contribution_optimization",
                 "title": "Contribution Optimization",
                 "description": (
-                    "Compare annual contribution levels and HSA optimization deltas against long-term outcomes."
+                    "Compare annual contribution levels and HSA optimization deltas against long-term "
+                    "outcomes."
                 ),
                 "default_params": {
                     "years": self.default_years,
@@ -51,23 +53,53 @@ class WorkflowRunner:
                     "hsa_extra_contribution_usd": self.default_hsa_delta,
                 },
             },
+            {
+                "id": "weekly_change_summary",
+                "title": "Weekly Financial Change Summary",
+                "description": (
+                    "Compare the latest snapshot to the previous snapshot and summarize portfolio-level "
+                    "changes, new/exited positions, and top movers."
+                ),
+                "default_params": {
+                    "lookback_days": 7,
+                },
+            },
         ]
 
     @staticmethod
     def _round(value: float) -> float:
         return round(float(value), 2)
 
+    @staticmethod
+    def _append_assumptions_and_caveats(
+        report_lines: list[str],
+        assumptions: list[str],
+        caveats: list[str],
+    ) -> None:
+        report_lines.extend(["", "## Assumptions", ""])
+        report_lines.extend([f"- {item}" for item in assumptions])
+        report_lines.extend(["", "## Caveats", ""])
+        report_lines.extend([f"- {item}" for item in caveats])
+        report_lines.append("")
+
     def run(
         self,
         workflow_id: str,
         snapshot: PortfolioSnapshot,
         params: dict[str, Any] | None = None,
+        previous_snapshot: PortfolioSnapshot | None = None,
     ) -> dict[str, Any]:
         resolved = (params or {}).copy()
         if workflow_id == "risk_concentration_review":
             return self._run_risk_concentration(snapshot=snapshot, params=resolved)
         if workflow_id == "contribution_optimization":
             return self._run_contribution_optimization(snapshot=snapshot, params=resolved)
+        if workflow_id == "weekly_change_summary":
+            return self._run_weekly_change_summary(
+                snapshot=snapshot,
+                previous_snapshot=previous_snapshot,
+                params=resolved,
+            )
         raise ValueError(f"Unsupported workflow template: {workflow_id}")
 
     def _run_risk_concentration(
@@ -83,7 +115,11 @@ class WorkflowRunner:
         top_positions = metrics.get("top_positions", [])
 
         top1_pct = self._round(float(top_positions[0]["weight"]) * 100) if top_positions else 0.0
-        top3_pct = self._round(sum(float(item["weight"]) for item in top_positions[:3]) * 100) if top_positions else 0.0
+        top3_pct = (
+            self._round(sum(float(item["weight"]) for item in top_positions[:3]) * 100)
+            if top_positions
+            else 0.0
+        )
 
         breaches: list[str] = []
         if top1_pct > max_single:
@@ -101,7 +137,9 @@ class WorkflowRunner:
 
         recommendations: list[str] = []
         if breaches:
-            recommendations.append("Set a rebalancing target for the largest position over the next contribution cycle.")
+            recommendations.append(
+                "Set a rebalancing target for the largest position over the next contribution cycle."
+            )
             recommendations.append("Direct new contributions to underweight broad-market positions.")
             recommendations.append("Re-run this workflow after the next sync to track concentration trend.")
         else:
@@ -135,7 +173,8 @@ class WorkflowRunner:
             for position in top_positions[:8]:
                 weight_pct = float(position.get("weight", 0.0)) * 100
                 report_lines.append(
-                    f"- {position.get('symbol', 'UNKNOWN')}: {weight_pct:.2f}% (${float(position.get('value_usd', 0.0)):,.2f})"
+                    f"- {position.get('symbol', 'UNKNOWN')}: {weight_pct:.2f}% "
+                    f"(${float(position.get('value_usd', 0.0)):,.2f})"
                 )
         else:
             report_lines.append("- No holdings available.")
@@ -148,7 +187,18 @@ class WorkflowRunner:
 
         report_lines.extend(["", "## Recommendations", ""])
         report_lines.extend([f"- {item}" for item in recommendations])
-        report_lines.append("")
+
+        self._append_assumptions_and_caveats(
+            report_lines=report_lines,
+            assumptions=[
+                "Concentration thresholds are user-configurable via workflow params.",
+                "Holdings and values are sourced from the latest snapshot.",
+            ],
+            caveats=[
+                "Concentration alone does not capture valuation risk or macro exposure.",
+                "Intraday price moves can materially change concentration after this report is generated.",
+            ],
+        )
 
         summary = (
             f"Risk level is {risk_level}. Top holding {top1_pct:.2f}%, top 3 holdings {top3_pct:.2f}%."
@@ -175,7 +225,9 @@ class WorkflowRunner:
         params: dict[str, Any],
     ) -> dict[str, Any]:
         years = int(params.get("years", self.default_years))
-        base_contribution = float(params.get("annual_contribution_usd", self.default_annual_contribution_usd))
+        base_contribution = float(
+            params.get("annual_contribution_usd", self.default_annual_contribution_usd)
+        )
         hsa_extra = float(params.get("hsa_extra_contribution_usd", self.default_hsa_delta))
 
         increments_raw = params.get("increment_options_usd", [0, 1000, 3000, 5000])
@@ -207,7 +259,9 @@ class WorkflowRunner:
                     "annual_contribution_usd": self._round(annual),
                     "future_value_usd": self._round(baseline.future_value_usd),
                     "real_value_usd": self._round(baseline.real_value_usd),
-                    "monte_carlo_p50_usd": self._round(float(planning.monte_carlo.get("p50_future_value_usd", 0.0))),
+                    "monte_carlo_p50_usd": self._round(
+                        float(planning.monte_carlo.get("p50_future_value_usd", 0.0))
+                    ),
                 }
             )
 
@@ -245,7 +299,9 @@ class WorkflowRunner:
         ]
         for run in runs:
             report_lines.append(
-                f"| ${run['increment_usd']:,.0f} | ${run['annual_contribution_usd']:,.0f} | ${run['future_value_usd']:,.0f} | ${run['real_value_usd']:,.0f} | ${run['monte_carlo_p50_usd']:,.0f} |"
+                f"| ${run['increment_usd']:,.0f} | ${run['annual_contribution_usd']:,.0f} "
+                f"| ${run['future_value_usd']:,.0f} | ${run['real_value_usd']:,.0f} "
+                f"| ${run['monte_carlo_p50_usd']:,.0f} |"
             )
 
         report_lines.extend(
@@ -260,18 +316,27 @@ class WorkflowRunner:
 
         if hsa_scenario is not None:
             report_lines.append(
-                f"- HSA strategy real value estimate: ${float(hsa_scenario.real_value_usd):,.0f} at {years} years."
+                f"- HSA strategy real value estimate: ${float(hsa_scenario.real_value_usd):,.0f} "
+                f"at {years} years."
             )
 
-        report_lines.extend(
-            [
-                "",
-                "## Notes",
-                "",
-                "- Results are deterministic projection + Monte Carlo summary, not financial advice.",
-                "- Re-run after major income/portfolio changes or assumption updates.",
-                "",
-            ]
+        self._append_assumptions_and_caveats(
+            report_lines=report_lines,
+            assumptions=[
+                f"Projection horizon is {years} years with fixed annual contributions.",
+                (
+                    "Expected return assumptions use engine defaults "
+                    f"(baseline {self.scenario_engine.baseline_return:.2%}, "
+                    f"optimistic {self.scenario_engine.optimistic_return:.2%}, "
+                    f"conservative {self.scenario_engine.conservative_return:.2%})."
+                ),
+                f"Inflation assumption is {self.scenario_engine.inflation:.2%}.",
+            ],
+            caveats=[
+                "This is a scenario model and not a prediction of realized returns.",
+                "Tax treatment, contribution limits, and employer match details are simplified.",
+                "Re-run when assumptions or contribution capacity changes.",
+            ],
         )
 
         summary = (
@@ -289,7 +354,229 @@ class WorkflowRunner:
                 "runs": runs,
                 "best_run": best_run,
                 "real_value_delta_vs_baseline": best_delta_real,
-                "hsa_scenario": (hsa_scenario.model_dump(mode="json") if hsa_scenario is not None else None),
+                "hsa_scenario": (
+                    hsa_scenario.model_dump(mode="json") if hsa_scenario is not None else None
+                ),
+            },
+            "report_markdown": "\n".join(report_lines),
+        }
+
+    def _run_weekly_change_summary(
+        self,
+        snapshot: PortfolioSnapshot,
+        previous_snapshot: PortfolioSnapshot | None,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        lookback_days = int(params.get("lookback_days", 7))
+
+        if previous_snapshot is None:
+            report_lines = [
+                "# Workflow Report: Weekly Financial Change Summary",
+                "",
+                f"Generated: {utc_now_iso()}",
+                "",
+                "## Snapshot",
+                "",
+                f"- Current as of: {snapshot.as_of.isoformat()}",
+                f"- Current portfolio value: ${snapshot.total_value_usd:,.2f}",
+                "",
+                "## Change Summary",
+                "",
+                "- No previous snapshot is available, so week-over-week changes cannot be calculated yet.",
+                "- Run another sync later to establish a comparison baseline.",
+            ]
+            self._append_assumptions_and_caveats(
+                report_lines=report_lines,
+                assumptions=[
+                    f"Target lookback window is {lookback_days} days.",
+                    "This report compares latest and previous snapshots when available.",
+                ],
+                caveats=[
+                    "Without a prior snapshot, this is a point-in-time summary only.",
+                ],
+            )
+            return {
+                "workflow_id": "weekly_change_summary",
+                "summary": "No prior snapshot found; run another sync to enable weekly comparisons.",
+                "generated_at": utc_now_iso(),
+                "data": {
+                    "history_available": False,
+                    "lookback_days": lookback_days,
+                },
+                "report_markdown": "\n".join(report_lines),
+            }
+
+        prev_total = float(previous_snapshot.total_value_usd)
+        current_total = float(snapshot.total_value_usd)
+        total_delta = current_total - prev_total
+        total_delta_pct = (total_delta / prev_total * 100) if prev_total else 0.0
+        net_perf_delta = float(snapshot.net_performance_usd) - float(previous_snapshot.net_performance_usd)
+        days_between = (snapshot.as_of - previous_snapshot.as_of).total_seconds() / 86400
+
+        prev_holdings = {item.symbol: item for item in previous_snapshot.holdings}
+        curr_holdings = {item.symbol: item for item in snapshot.holdings}
+
+        new_positions = sorted(
+            [
+                {
+                    "symbol": item.symbol,
+                    "name": item.name,
+                    "value_usd": self._round(item.value_usd),
+                    "allocation_percent": self._round(item.allocation_percent),
+                }
+                for symbol, item in curr_holdings.items()
+                if symbol not in prev_holdings
+            ],
+            key=lambda item: item["value_usd"],
+            reverse=True,
+        )
+        exited_positions = sorted(
+            [
+                {
+                    "symbol": item.symbol,
+                    "name": item.name,
+                    "value_usd": self._round(item.value_usd),
+                    "allocation_percent": self._round(item.allocation_percent),
+                }
+                for symbol, item in prev_holdings.items()
+                if symbol not in curr_holdings
+            ],
+            key=lambda item: item["value_usd"],
+            reverse=True,
+        )
+
+        changed_positions: list[dict[str, Any]] = []
+        for symbol, current_item in curr_holdings.items():
+            previous_item = prev_holdings.get(symbol)
+            if previous_item is None:
+                continue
+            value_delta = float(current_item.value_usd) - float(previous_item.value_usd)
+            if value_delta == 0:
+                continue
+            changed_positions.append(
+                {
+                    "symbol": symbol,
+                    "name": current_item.name,
+                    "value_delta_usd": self._round(value_delta),
+                    "allocation_delta_percent": self._round(
+                        float(current_item.allocation_percent) - float(previous_item.allocation_percent)
+                    ),
+                    "current_value_usd": self._round(float(current_item.value_usd)),
+                }
+            )
+
+        changed_positions.sort(key=lambda item: abs(item["value_delta_usd"]), reverse=True)
+        top_movers = changed_positions[:8]
+        top_gainers = [item for item in top_movers if item["value_delta_usd"] > 0][:4]
+        top_decliners = [item for item in top_movers if item["value_delta_usd"] < 0][:4]
+
+        recommendations: list[str] = []
+        if abs(total_delta_pct) >= 5:
+            recommendations.append(
+                "Review whether this move is market-driven or contribution/withdrawal-driven before rebalancing."
+            )
+        if new_positions:
+            recommendations.append(
+                "Validate each newly added position against your plan constraints and target allocation."
+            )
+        if exited_positions:
+            recommendations.append(
+                "Document rationale for exited positions in plan decisions for future context."
+            )
+        if not recommendations:
+            recommendations.append(
+                "Portfolio changes are relatively stable; continue weekly monitoring."
+            )
+
+        report_lines = [
+            "# Workflow Report: Weekly Financial Change Summary",
+            "",
+            f"Generated: {utc_now_iso()}",
+            "",
+            "## Snapshot Range",
+            "",
+            f"- Current snapshot: {snapshot.as_of.isoformat()}",
+            f"- Previous snapshot: {previous_snapshot.as_of.isoformat()}",
+            f"- Days between snapshots: {days_between:.1f}",
+            "",
+            "## Portfolio Delta",
+            "",
+            f"- Total value change: ${total_delta:,.2f} ({total_delta_pct:.2f}%)",
+            f"- Net performance change: ${net_perf_delta:,.2f}",
+            f"- New positions: {len(new_positions)}",
+            f"- Exited positions: {len(exited_positions)}",
+            "",
+            "## Top Movers (By Value Change)",
+            "",
+        ]
+
+        if top_movers:
+            for mover in top_movers:
+                report_lines.append(
+                    f"- {mover['symbol']}: ${mover['value_delta_usd']:,.2f} "
+                    f"(allocation delta {mover['allocation_delta_percent']:.2f}%)"
+                )
+        else:
+            report_lines.append("- No overlapping position value changes detected.")
+
+        report_lines.extend(["", "## Newly Added Positions", ""])
+        if new_positions:
+            for item in new_positions[:6]:
+                report_lines.append(
+                    f"- {item['symbol']}: ${item['value_usd']:,.2f} ({item['allocation_percent']:.2f}%)"
+                )
+        else:
+            report_lines.append("- None")
+
+        report_lines.extend(["", "## Exited Positions", ""])
+        if exited_positions:
+            for item in exited_positions[:6]:
+                report_lines.append(
+                    f"- {item['symbol']}: previous ${item['value_usd']:,.2f} "
+                    f"({item['allocation_percent']:.2f}%)"
+                )
+        else:
+            report_lines.append("- None")
+
+        report_lines.extend(["", "## Recommendations", ""])
+        report_lines.extend([f"- {item}" for item in recommendations])
+
+        self._append_assumptions_and_caveats(
+            report_lines=report_lines,
+            assumptions=[
+                f"Intended cadence is approximately weekly ({lookback_days} days).",
+                "Comparison is based on latest and previous available snapshots.",
+                "Position-level changes are measured on value deltas in base currency (USD).",
+            ],
+            caveats=[
+                "Snapshot deltas can include both market movement and cash-flow activity.",
+                "Missing intraperiod transactions reduce precision of attribution.",
+            ],
+        )
+
+        summary = (
+            f"Portfolio changed by ${total_delta:,.0f} ({total_delta_pct:.2f}%) over "
+            f"{days_between:.1f} days with {len(new_positions)} new and "
+            f"{len(exited_positions)} exited positions."
+        )
+
+        return {
+            "workflow_id": "weekly_change_summary",
+            "summary": summary,
+            "generated_at": utc_now_iso(),
+            "data": {
+                "history_available": True,
+                "lookback_days": lookback_days,
+                "days_between_snapshots": self._round(days_between),
+                "total_value_delta_usd": self._round(total_delta),
+                "total_value_delta_percent": self._round(total_delta_pct),
+                "net_performance_delta_usd": self._round(net_perf_delta),
+                "new_positions": new_positions,
+                "exited_positions": exited_positions,
+                "top_movers": top_movers,
+                "top_gainers": top_gainers,
+                "top_decliners": top_decliners,
+                "recommendations": recommendations,
             },
             "report_markdown": "\n".join(report_lines),
         }

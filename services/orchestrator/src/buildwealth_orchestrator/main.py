@@ -6,6 +6,7 @@ import re
 from contextlib import suppress
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
@@ -24,16 +25,23 @@ from buildwealth_orchestrator.schemas import (
     CsvImportRequest,
     CsvImportResponse,
     OptionsChainRequest,
+    PriceHistoryRequest,
     PlanArtifactResponse,
     PlanCreateRequest,
     PlanDecisionCreateRequest,
     PlanDetailResponse,
+    PlanScenarioDiffRequest,
+    PlanScenarioDiffResponse,
+    PlanSettings,
+    PlanSettingsUpdateRequest,
+    ScenarioComparisonRow,
     PlanSummary,
     PlanUpdateRequest,
     PlanningResponse,
     PortfolioSnapshot,
     ResearchResponse,
     ScenarioRequest,
+    SnapshotHistoryResponse,
     SyncStatusResponse,
     WorkflowRunRequest,
     WorkflowRunResponse,
@@ -340,6 +348,256 @@ def summarize_snapshot(snapshot: PortfolioSnapshot, holdings_limit: int = 10) ->
     }
 
 
+PLAN_SETTINGS_FIELDS = (
+    "annual_contribution_usd",
+    "years",
+    "hsa_extra_contribution_usd",
+    "marginal_tax_rate",
+    "expected_return_baseline",
+    "expected_return_optimistic",
+    "expected_return_conservative",
+)
+
+
+def extract_plan_settings_updates(arguments: dict[str, object]) -> dict[str, object]:
+    updates: dict[str, object] = {}
+    for field in PLAN_SETTINGS_FIELDS:
+        if field in arguments:
+            updates[field] = arguments[field]
+    return updates
+
+
+def merge_plan_settings(base_settings: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base_settings)
+    for field in PLAN_SETTINGS_FIELDS:
+        if field in updates:
+            merged[field] = updates[field]
+    return merged
+
+
+def validate_plan_return_relationships(plan_settings: dict[str, Any]) -> None:
+    baseline = plan_settings.get("expected_return_baseline")
+    optimistic = plan_settings.get("expected_return_optimistic")
+    conservative = plan_settings.get("expected_return_conservative")
+
+    if baseline is not None and optimistic is not None and float(optimistic) < float(baseline):
+        raise ValueError("expected_return_optimistic must be >= expected_return_baseline")
+    if baseline is not None and conservative is not None and float(conservative) > float(baseline):
+        raise ValueError("expected_return_conservative must be <= expected_return_baseline")
+    if optimistic is not None and conservative is not None and float(conservative) > float(optimistic):
+        raise ValueError("expected_return_conservative must be <= expected_return_optimistic")
+
+
+def build_scenario_engine_for_plan_settings(plan_settings: dict[str, Any]) -> ScenarioEngine:
+    baseline_return = plan_settings.get("expected_return_baseline")
+    optimistic_return = plan_settings.get("expected_return_optimistic")
+    conservative_return = plan_settings.get("expected_return_conservative")
+    marginal_tax_rate = plan_settings.get("marginal_tax_rate")
+
+    return ScenarioEngine(
+        years_to_retirement=settings.planner_years_to_retirement,
+        annual_contribution_usd=settings.planner_annual_contribution_usd,
+        baseline_return=(
+            float(baseline_return)
+            if baseline_return is not None
+            else settings.planner_expected_return_baseline
+        ),
+        optimistic_return=(
+            float(optimistic_return)
+            if optimistic_return is not None
+            else settings.planner_expected_return_optimistic
+        ),
+        conservative_return=(
+            float(conservative_return)
+            if conservative_return is not None
+            else settings.planner_expected_return_conservative
+        ),
+        return_volatility=settings.planner_return_volatility,
+        inflation=settings.planner_inflation,
+        monte_carlo_runs=settings.planner_monte_carlo_runs,
+        hsa_delta_default=settings.planner_hsa_delta_default,
+        marginal_tax_rate=(
+            float(marginal_tax_rate)
+            if marginal_tax_rate is not None
+            else settings.planner_marginal_tax_rate
+        ),
+    )
+
+
+def run_scenarios_for_plan_settings(
+    current_portfolio_value_usd: float,
+    plan_settings: dict[str, Any],
+) -> PlanningResponse:
+    validate_plan_return_relationships(plan_settings)
+    engine = build_scenario_engine_for_plan_settings(plan_settings)
+    annual_contribution = plan_settings.get("annual_contribution_usd")
+    years = plan_settings.get("years")
+    hsa_extra = plan_settings.get("hsa_extra_contribution_usd")
+
+    return engine.run(
+        current_portfolio_value_usd=float(current_portfolio_value_usd),
+        annual_contribution_usd=(
+            float(annual_contribution) if annual_contribution is not None else None
+        ),
+        years=int(years) if years is not None else None,
+        hsa_extra_contribution_usd=(float(hsa_extra) if hsa_extra is not None else None),
+    )
+
+
+def resolve_portfolio_value(
+    current_portfolio_value_usd: float | None,
+) -> float:
+    if current_portfolio_value_usd is not None:
+        return float(current_portfolio_value_usd)
+
+    try:
+        latest_snapshot = snapshot_store.latest()
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide current_portfolio_value_usd or create a snapshot first",
+        ) from exc
+
+    return float(latest_snapshot.total_value_usd)
+
+
+def build_scenario_diff_payload(
+    base_result: PlanningResponse,
+    candidate_result: PlanningResponse,
+) -> tuple[list[dict[str, Any]], dict[str, float | int | None]]:
+    scenario_deltas: list[dict[str, Any]] = []
+    base_by_label = {item.label: item for item in base_result.scenarios}
+    candidate_by_label = {item.label: item for item in candidate_result.scenarios}
+
+    for label in ("baseline", "optimistic", "conservative", "hsa_delta"):
+        base_scenario = base_by_label.get(label)
+        candidate_scenario = candidate_by_label.get(label)
+        if base_scenario is None or candidate_scenario is None:
+            continue
+
+        scenario_deltas.append(
+            ScenarioComparisonRow(
+                label=label,
+                base_future_value_usd=float(base_scenario.future_value_usd),
+                candidate_future_value_usd=float(candidate_scenario.future_value_usd),
+                delta_future_value_usd=round(
+                    float(candidate_scenario.future_value_usd) - float(base_scenario.future_value_usd),
+                    2,
+                ),
+                base_real_value_usd=float(base_scenario.real_value_usd),
+                candidate_real_value_usd=float(candidate_scenario.real_value_usd),
+                delta_real_value_usd=round(
+                    float(candidate_scenario.real_value_usd) - float(base_scenario.real_value_usd),
+                    2,
+                ),
+            ).model_dump(mode="json")
+        )
+
+    monte_keys = ("p10_future_value_usd", "p50_future_value_usd", "p90_future_value_usd")
+    monte_delta: dict[str, float | int | None] = {
+        "runs": base_result.monte_carlo.get("runs"),
+    }
+
+    for key in monte_keys:
+        base_value = base_result.monte_carlo.get(key)
+        candidate_value = candidate_result.monte_carlo.get(key)
+        base_float = float(base_value) if isinstance(base_value, (float, int)) else None
+        candidate_float = float(candidate_value) if isinstance(candidate_value, (float, int)) else None
+        monte_delta[f"base_{key}"] = base_float
+        monte_delta[f"candidate_{key}"] = candidate_float
+        if base_float is None or candidate_float is None:
+            monte_delta[f"delta_{key}"] = None
+        else:
+            monte_delta[f"delta_{key}"] = round(candidate_float - base_float, 2)
+
+    return scenario_deltas, monte_delta
+
+
+def resolve_plan_id_or_active(requested_plan_id: object | None) -> str:
+    plan_id = str(requested_plan_id).strip() if isinstance(requested_plan_id, str) else ""
+    if plan_id:
+        return plan_id
+
+    active_plan_id = plan_workspace.get_active_plan_id()
+    if active_plan_id:
+        return active_plan_id
+
+    raise ValueError("No active plan is configured and no plan_id was provided.")
+
+
+def summarize_holding_value_changes(
+    latest_snapshot: PortfolioSnapshot,
+    older_snapshot: PortfolioSnapshot | None,
+    limit: int = 10,
+) -> list[dict[str, object]]:
+    if older_snapshot is None:
+        return []
+
+    previous_by_symbol: dict[str, dict[str, Any]] = {}
+    for holding in older_snapshot.holdings:
+        previous_by_symbol[holding.symbol] = {
+            "value_usd": float(holding.value_usd),
+            "allocation_percent": float(holding.allocation_percent),
+        }
+
+    changes: list[dict[str, object]] = []
+    for holding in latest_snapshot.holdings:
+        previous = previous_by_symbol.get(holding.symbol, {"value_usd": 0.0, "allocation_percent": 0.0})
+        value_delta = float(holding.value_usd) - float(previous.get("value_usd", 0.0))
+        allocation_delta = float(holding.allocation_percent) - float(previous.get("allocation_percent", 0.0))
+        changes.append(
+            {
+                "symbol": holding.symbol,
+                "name": holding.name,
+                "latest_value_usd": round(float(holding.value_usd), 2),
+                "previous_value_usd": round(float(previous.get("value_usd", 0.0)), 2),
+                "delta_value_usd": round(value_delta, 2),
+                "delta_allocation_percent": round(allocation_delta, 3),
+            }
+        )
+
+    changes.sort(key=lambda item: abs(float(item.get("delta_value_usd", 0.0))), reverse=True)
+    return changes[: max(1, limit)]
+
+
+def build_snapshot_history_payload(limit: int = 30) -> SnapshotHistoryResponse:
+    bounded_limit = max(2, min(int(limit), 365))
+    history = snapshot_store.recent(limit=bounded_limit)
+
+    if not history:
+        return SnapshotHistoryResponse(points=[], window_points=0)
+
+    points = []
+    for snapshot in history:
+        points.append(
+            {
+                "as_of": snapshot.as_of,
+                "total_value_usd": round(snapshot.total_value_usd, 2),
+                "net_performance_usd": round(snapshot.net_performance_usd, 2),
+                "net_performance_percent": round(snapshot.net_performance_percent, 4),
+                "holdings_count": len(snapshot.holdings),
+            }
+        )
+
+    latest = history[0]
+    oldest = history[-1]
+    delta_total_value = latest.total_value_usd - oldest.total_value_usd
+    delta_percent = None
+    if oldest.total_value_usd:
+        delta_percent = (delta_total_value / oldest.total_value_usd) * 100
+
+    return SnapshotHistoryResponse(
+        points=points,
+        window_points=len(points),
+        latest_as_of=latest.as_of,
+        oldest_as_of=oldest.as_of,
+        delta_total_value_usd=round(delta_total_value, 2),
+        delta_total_value_percent=(round(delta_percent, 4) if delta_percent is not None else None),
+        delta_net_performance_usd=round(latest.net_performance_usd - oldest.net_performance_usd, 2),
+        top_holding_value_changes=summarize_holding_value_changes(latest, oldest, limit=10),
+    )
+
+
 async def build_contextual_brief(
     use_live_snapshot: bool = False,
     plan_id: str | None = None,
@@ -356,6 +614,11 @@ async def build_contextual_brief(
         snapshot_payload = {"note": f"Snapshot context unavailable: {exc}"}
 
     try:
+        snapshot_history_payload = build_snapshot_history_payload(limit=14).model_dump(mode="json")
+    except Exception as exc:
+        snapshot_history_payload = {"note": f"Snapshot history context unavailable: {exc}"}
+
+    try:
         plan_payload = plan_workspace.get_context_payload(plan_id=plan_id)
     except PlanNotFoundError as exc:
         plan_payload = {"note": str(exc)}
@@ -369,6 +632,7 @@ async def build_contextual_brief(
         "currency": settings.app_currency,
         "sync_status": sync_payload,
         "snapshot_summary": snapshot_payload,
+        "snapshot_history": snapshot_history_payload,
         "plan_context": plan_payload,
         "planning_defaults": {
             "years_to_retirement": settings.planner_years_to_retirement,
@@ -386,19 +650,27 @@ async def build_contextual_brief(
     return json.dumps(context, indent=2, default=str)
 
 
-async def resolve_snapshot_for_workflow(use_live_snapshot: bool) -> PortfolioSnapshot:
+async def resolve_snapshots_for_workflow(
+    use_live_snapshot: bool,
+) -> tuple[PortfolioSnapshot, PortfolioSnapshot | None]:
     if use_live_snapshot:
-        return await build_live_snapshot()
+        current = await build_live_snapshot()
+        history = snapshot_store.recent(limit=1)
+        previous = history[0] if history else None
+        return current, previous
 
-    try:
-        return snapshot_store.latest()
-    except FileNotFoundError as exc:
+    history = snapshot_store.recent(limit=2)
+    if not history:
         raise HTTPException(
             status_code=400,
             detail=(
                 "No local snapshot is available. Run portfolio sync first or set use_live_snapshot=true."
             ),
-        ) from exc
+        )
+
+    current = history[0]
+    previous = history[1] if len(history) > 1 else None
+    return current, previous
 
 
 async def tool_get_latest_snapshot(_: dict[str, object]) -> dict[str, object]:
@@ -409,6 +681,15 @@ async def tool_get_latest_snapshot(_: dict[str, object]) -> dict[str, object]:
 async def tool_get_live_snapshot(_: dict[str, object]) -> dict[str, object]:
     snapshot = await build_live_snapshot()
     return summarize_snapshot(snapshot)
+
+
+async def tool_get_snapshot_history(arguments: dict[str, object]) -> dict[str, object]:
+    limit_value = arguments.get("limit", 30)
+    try:
+        limit = max(2, min(int(limit_value), 365))
+    except Exception:
+        limit = 30
+    return build_snapshot_history_payload(limit=limit).model_dump(mode="json")
 
 
 async def tool_run_sync(_: dict[str, object]) -> dict[str, object]:
@@ -447,6 +728,32 @@ async def tool_research_options_chain(arguments: dict[str, object]) -> dict[str,
     return result
 
 
+async def tool_research_quote(arguments: dict[str, object]) -> dict[str, object]:
+    symbol = str(arguments.get("symbol", "AAPL")).strip().upper()
+    result = research_service.quote(symbol).model_dump(mode="json")
+    records = result.get("records", [])
+    if isinstance(records, list):
+        result["records"] = records[:25]
+        result["records_truncated"] = max(0, len(records) - 25)
+    return result
+
+
+async def tool_research_price_history(arguments: dict[str, object]) -> dict[str, object]:
+    symbol = str(arguments.get("symbol", "AAPL")).strip().upper()
+    period = str(arguments.get("period", "1y")).strip() or "1y"
+    interval = str(arguments.get("interval", "1d")).strip() or "1d"
+    result = research_service.price_history(
+        symbol=symbol,
+        period=period,
+        interval=interval,
+    ).model_dump(mode="json")
+    records = result.get("records", [])
+    if isinstance(records, list):
+        result["records"] = records[:50]
+        result["records_truncated"] = max(0, len(records) - 50)
+    return result
+
+
 async def tool_list_accounts(_: dict[str, object]) -> dict[str, object]:
     accounts = await ghostfolio_client.get_accounts_list()
     simplified = []
@@ -477,6 +784,89 @@ async def tool_get_plan_context(arguments: dict[str, object]) -> dict[str, objec
     plan_id = arguments.get("plan_id")
     resolved = str(plan_id).strip() if isinstance(plan_id, str) and plan_id.strip() else None
     return plan_workspace.get_context_payload(plan_id=resolved)
+
+
+async def tool_get_plan_settings(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+    detail = plan_workspace.get_plan(plan_id)
+    return {
+        "plan_id": plan_id,
+        "title": detail.get("title"),
+        "settings": detail.get("settings", {}),
+        "updated_at": detail.get("updated_at"),
+    }
+
+
+async def tool_update_plan_settings(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+    updates = extract_plan_settings_updates(arguments)
+    rationale = str(arguments.get("rationale") or "").strip()
+    status = str(arguments.get("status") or "accepted").strip().lower() or "accepted"
+
+    detail = plan_workspace.update_plan_settings(
+        plan_id=plan_id,
+        updates=updates,
+        rationale=rationale or None,
+        status=status,
+        log_decision=True,
+    )
+    return {
+        "plan_id": plan_id,
+        "settings": detail.get("settings", {}),
+        "updated_at": detail.get("updated_at"),
+    }
+
+
+async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+    detail = plan_workspace.get_plan(plan_id)
+    base_settings = detail.get("settings", {})
+    compare_updates = extract_plan_settings_updates(arguments)
+    candidate_settings = merge_plan_settings(base_settings, compare_updates)
+
+    current_value_raw = arguments.get("current_portfolio_value_usd")
+    current_value = resolve_portfolio_value(
+        float(current_value_raw) if current_value_raw is not None else None
+    )
+
+    base_result = run_scenarios_for_plan_settings(
+        current_portfolio_value_usd=current_value,
+        plan_settings=base_settings,
+    )
+    candidate_result = run_scenarios_for_plan_settings(
+        current_portfolio_value_usd=current_value,
+        plan_settings=candidate_settings,
+    )
+    scenario_deltas, monte_carlo_delta = build_scenario_diff_payload(base_result, candidate_result)
+
+    apply_to_plan = bool(arguments.get("apply_to_plan", False))
+    applied = False
+    if apply_to_plan:
+        if not compare_updates:
+            raise ValueError("apply_to_plan=true requires at least one plan settings override.")
+        rationale = str(arguments.get("rationale") or "").strip() or "Applied from scenario-diff action."
+        status = str(arguments.get("status") or "accepted").strip().lower() or "accepted"
+        updated = plan_workspace.update_plan_settings(
+            plan_id=plan_id,
+            updates=compare_updates,
+            rationale=rationale,
+            status=status,
+            log_decision=True,
+        )
+        candidate_settings = updated.get("settings", candidate_settings)
+        applied = True
+
+    return {
+        "plan_id": plan_id,
+        "current_portfolio_value_usd": current_value,
+        "base_settings": base_settings,
+        "candidate_settings": candidate_settings,
+        "base_result": base_result.model_dump(mode="json"),
+        "candidate_result": candidate_result.model_dump(mode="json"),
+        "scenario_deltas": scenario_deltas,
+        "monte_carlo_delta": monte_carlo_delta,
+        "applied_to_plan": applied,
+    }
 
 
 async def tool_append_plan_decision(arguments: dict[str, object]) -> dict[str, object]:
@@ -515,11 +905,14 @@ async def tool_run_workflow(arguments: dict[str, object]) -> dict[str, object]:
     params_value = arguments.get("params")
     params = params_value if isinstance(params_value, dict) else {}
 
-    snapshot = await resolve_snapshot_for_workflow(use_live_snapshot=use_live_snapshot)
+    snapshot, previous_snapshot = await resolve_snapshots_for_workflow(
+        use_live_snapshot=use_live_snapshot
+    )
     result = workflow_runner.run(
         workflow_id=workflow_id,
         snapshot=snapshot,
         params=params,
+        previous_snapshot=previous_snapshot,
     )
 
     save_to_plan = bool(arguments.get("save_to_plan", True))
@@ -547,6 +940,15 @@ def configure_copilot_tools() -> None:
         "properties": {},
         "additionalProperties": False,
     }
+    plan_settings_properties: dict[str, object] = {
+        "annual_contribution_usd": {"type": "number"},
+        "years": {"type": "integer"},
+        "hsa_extra_contribution_usd": {"type": "number"},
+        "marginal_tax_rate": {"type": "number"},
+        "expected_return_baseline": {"type": "number"},
+        "expected_return_optimistic": {"type": "number"},
+        "expected_return_conservative": {"type": "number"},
+    }
 
     copilot.register_tool(
         name="get_latest_snapshot",
@@ -559,6 +961,16 @@ def configure_copilot_tools() -> None:
         description="Fetch a live portfolio snapshot from Ghostfolio and summarize it.",
         parameters=empty_schema,
         handler=tool_get_live_snapshot,
+    )
+    copilot.register_tool(
+        name="get_snapshot_history",
+        description="Read historical local snapshots and summarize trend deltas across a time window.",
+        parameters={
+            "type": "object",
+            "properties": {"limit": {"type": "integer"}},
+            "additionalProperties": False,
+        },
+        handler=tool_get_snapshot_history,
     )
     copilot.register_tool(
         name="run_sync",
@@ -602,6 +1014,35 @@ def configure_copilot_tools() -> None:
         handler=tool_research_options_chain,
     )
     copilot.register_tool(
+        name="research_quote",
+        description="Fetch latest quote/snapshot fields for a ticker via OpenBB tooling.",
+        parameters={
+            "type": "object",
+            "properties": {"symbol": {"type": "string"}},
+            "required": ["symbol"],
+            "additionalProperties": False,
+        },
+        handler=tool_research_quote,
+    )
+    copilot.register_tool(
+        name="research_price_history",
+        description=(
+            "Fetch historical price rows and summary change for a ticker. "
+            "Optional fields: period (e.g. 1mo, 6mo, 1y), interval (e.g. 1d, 1wk)."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string"},
+                "period": {"type": "string"},
+                "interval": {"type": "string"},
+            },
+            "required": ["symbol"],
+            "additionalProperties": False,
+        },
+        handler=tool_research_price_history,
+    )
+    copilot.register_tool(
         name="list_accounts",
         description="List known Ghostfolio accounts with balances and metadata.",
         parameters=empty_schema,
@@ -626,6 +1067,54 @@ def configure_copilot_tools() -> None:
             "additionalProperties": False,
         },
         handler=tool_get_plan_context,
+    )
+    copilot.register_tool(
+        name="get_plan_settings",
+        description="Read planning assumptions/settings for a plan or active plan by default.",
+        parameters={
+            "type": "object",
+            "properties": {"plan_id": {"type": "string"}},
+            "additionalProperties": False,
+        },
+        handler=tool_get_plan_settings,
+    )
+    copilot.register_tool(
+        name="update_plan_settings",
+        description=(
+            "Update planning assumptions/settings for a plan and record a decision trail. "
+            "Optional fields include annual contribution, years, HSA delta, and return/tax assumptions."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                **plan_settings_properties,
+                "rationale": {"type": "string"},
+                "status": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_update_plan_settings,
+    )
+    copilot.register_tool(
+        name="run_plan_scenario_diff",
+        description=(
+            "Run scenario diff between current plan settings and provided overrides. "
+            "Optional apply_to_plan=true to commit overrides and log a decision."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                "current_portfolio_value_usd": {"type": "number"},
+                **plan_settings_properties,
+                "apply_to_plan": {"type": "boolean"},
+                "rationale": {"type": "string"},
+                "status": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_run_plan_scenario_diff,
     )
     copilot.register_tool(
         name="append_plan_decision",
@@ -766,6 +1255,66 @@ def update_plan(plan_id: str, request: PlanUpdateRequest) -> PlanDetailResponse:
     return PlanDetailResponse(**detail)
 
 
+@app.patch("/api/plans/{plan_id}/settings", response_model=PlanDetailResponse)
+def update_plan_settings(plan_id: str, request: PlanSettingsUpdateRequest) -> PlanDetailResponse:
+    updates = request.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="Provide at least one settings field to update")
+
+    try:
+        detail = plan_workspace.update_plan_settings(
+            plan_id=plan_id,
+            updates=updates,
+            rationale="Updated via Plan Workspace settings.",
+            status="accepted",
+            log_decision=True,
+        )
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PlanDetailResponse(**detail)
+
+
+@app.post("/api/plans/{plan_id}/scenario-diff", response_model=PlanScenarioDiffResponse)
+def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest) -> PlanScenarioDiffResponse:
+    compare_updates = request.compare_settings.model_dump(exclude_unset=True)
+
+    try:
+        detail = plan_workspace.get_plan(plan_id)
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    base_settings = dict(detail.get("settings", {}))
+    candidate_settings = merge_plan_settings(base_settings, compare_updates)
+
+    try:
+        current_value = resolve_portfolio_value(request.current_portfolio_value_usd)
+        base_result = run_scenarios_for_plan_settings(
+            current_portfolio_value_usd=current_value,
+            plan_settings=base_settings,
+        )
+        candidate_result = run_scenarios_for_plan_settings(
+            current_portfolio_value_usd=current_value,
+            plan_settings=candidate_settings,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    scenario_deltas, monte_carlo_delta = build_scenario_diff_payload(base_result, candidate_result)
+
+    return PlanScenarioDiffResponse(
+        plan_id=plan_id,
+        current_portfolio_value_usd=current_value,
+        base_settings=PlanSettings(**base_settings),
+        candidate_settings=PlanSettings(**candidate_settings),
+        base_result=base_result,
+        candidate_result=candidate_result,
+        scenario_deltas=[ScenarioComparisonRow(**item) for item in scenario_deltas],
+        monte_carlo_delta=monte_carlo_delta,
+    )
+
+
 @app.post("/api/plans/{plan_id}/activate", response_model=PlanSummary)
 def activate_plan(plan_id: str) -> PlanSummary:
     try:
@@ -819,13 +1368,16 @@ def list_workflow_templates() -> list[WorkflowTemplateResponse]:
 
 @app.post("/api/workflows/run", response_model=WorkflowRunResponse)
 async def run_workflow(request: WorkflowRunRequest) -> WorkflowRunResponse:
-    snapshot = await resolve_snapshot_for_workflow(use_live_snapshot=request.use_live_snapshot)
+    snapshot, previous_snapshot = await resolve_snapshots_for_workflow(
+        use_live_snapshot=request.use_live_snapshot
+    )
 
     try:
         result = workflow_runner.run(
             workflow_id=request.workflow_id,
             snapshot=snapshot,
             params=request.params,
+            previous_snapshot=previous_snapshot,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -908,6 +1460,11 @@ def get_latest_snapshot() -> PortfolioSnapshot:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@app.get("/api/snapshot/history", response_model=SnapshotHistoryResponse)
+def get_snapshot_history(limit: int = 30) -> SnapshotHistoryResponse:
+    return build_snapshot_history_payload(limit=max(2, min(limit, 365)))
+
+
 @app.post("/api/import/csv", response_model=CsvImportResponse)
 async def import_csv_transactions(request: CsvImportRequest) -> CsvImportResponse:
     file_path = resolve_import_path(request.path)
@@ -971,6 +1528,20 @@ def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
 @app.post("/api/research/options-chain", response_model=ResearchResponse)
 def options_chain(request: OptionsChainRequest) -> ResearchResponse:
     return research_service.options_chain(request.symbol)
+
+
+@app.post("/api/research/quote", response_model=ResearchResponse)
+def quote(request: OptionsChainRequest) -> ResearchResponse:
+    return research_service.quote(request.symbol)
+
+
+@app.post("/api/research/price-history", response_model=ResearchResponse)
+def price_history(request: PriceHistoryRequest) -> ResearchResponse:
+    return research_service.price_history(
+        symbol=request.symbol,
+        period=request.period,
+        interval=request.interval,
+    )
 
 
 @app.post("/api/chat", response_model=ChatResponse)

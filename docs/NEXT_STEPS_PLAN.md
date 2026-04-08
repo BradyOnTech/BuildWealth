@@ -35,13 +35,13 @@ Make BuildWealth the primary single-user desktop experience for financial Q&A an
 ### Phase 2: Financial Workflow Templates
 1. Risk concentration review workflow. ✅ Implemented
 2. Contribution optimization workflow (401k/HSA/taxable). ✅ Implemented
-3. Weekly financial change summary workflow.
-4. Structured report outputs with assumptions and caveats.
+3. Weekly financial change summary workflow. ✅ Implemented
+4. Structured report outputs with assumptions and caveats. ✅ Implemented
 
 ### Phase 3: Deeper Integrations
-1. Ignidash scenario diff and direct plan update actions from Copilot.
-2. Expand OpenBB research tools beyond options chain.
-3. Better transaction/time-window context retrieval for analysis.
+1. Ignidash scenario diff and direct plan update actions from Copilot. ✅ Implemented in BuildWealth Plan Settings + Scenario Diff (local planner engine parity while Ignidash write APIs are limited)
+2. Expand OpenBB research tools beyond options chain. ✅ Added quote + price history endpoints/tools
+3. Better transaction/time-window context retrieval for analysis. ✅ Added snapshot history API/tool + UI trend panel
 
 ### Phase 4: UX Consolidation
 1. BuildWealth home dashboard with embedded Copilot as default focus.

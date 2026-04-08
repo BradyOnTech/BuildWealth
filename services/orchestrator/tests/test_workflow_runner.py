@@ -22,6 +22,23 @@ def _snapshot() -> PortfolioSnapshot:
     )
 
 
+def _previous_snapshot() -> PortfolioSnapshot:
+    return PortfolioSnapshot(
+        as_of=datetime.now(timezone.utc).replace(day=1),
+        base_currency="USD",
+        total_value_usd=230000.0,
+        total_investment_usd=198000.0,
+        net_performance_usd=32000.0,
+        net_performance_percent=0.16,
+        holdings=[
+            Holding(symbol="VTI", name="Vanguard Total Stock Market", value_usd=85000, allocation_percent=37.0),
+            Holding(symbol="AAPL", name="Apple", value_usd=65000, allocation_percent=28.0),
+            Holding(symbol="MSFT", name="Microsoft", value_usd=40000, allocation_percent=17.0),
+            Holding(symbol="BND", name="Vanguard Total Bond", value_usd=40000, allocation_percent=18.0),
+        ],
+    )
+
+
 def _engine() -> ScenarioEngine:
     return ScenarioEngine(
         years_to_retirement=25,
@@ -48,6 +65,8 @@ def test_workflow_runner_risk_concentration_output() -> None:
     result = runner.run(workflow_id="risk_concentration_review", snapshot=_snapshot())
     assert result["workflow_id"] == "risk_concentration_review"
     assert "Risk Concentration Review" in result["report_markdown"]
+    assert "## Assumptions" in result["report_markdown"]
+    assert "## Caveats" in result["report_markdown"]
     assert "risk_level" in result["data"]
     assert "top_holding_percent" in result["data"]
 
@@ -67,5 +86,44 @@ def test_workflow_runner_contribution_optimization_output() -> None:
     )
     assert result["workflow_id"] == "contribution_optimization"
     assert "Contribution Comparisons" in result["report_markdown"]
+    assert "## Assumptions" in result["report_markdown"]
+    assert "## Caveats" in result["report_markdown"]
     assert len(result["data"]["runs"]) == 3
     assert result["data"]["best_run"]["annual_contribution_usd"] >= 18000
+
+
+def test_workflow_runner_weekly_change_summary_with_history() -> None:
+    runner = WorkflowRunner(
+        scenario_engine=_engine(),
+        default_annual_contribution_usd=18000,
+        default_years=25,
+        default_hsa_delta=1000,
+    )
+
+    result = runner.run(
+        workflow_id="weekly_change_summary",
+        snapshot=_snapshot(),
+        previous_snapshot=_previous_snapshot(),
+    )
+    assert result["workflow_id"] == "weekly_change_summary"
+    assert result["data"]["history_available"] is True
+    assert "Portfolio Delta" in result["report_markdown"]
+    assert isinstance(result["data"]["top_movers"], list)
+
+
+def test_workflow_runner_weekly_change_summary_without_history() -> None:
+    runner = WorkflowRunner(
+        scenario_engine=_engine(),
+        default_annual_contribution_usd=18000,
+        default_years=25,
+        default_hsa_delta=1000,
+    )
+
+    result = runner.run(
+        workflow_id="weekly_change_summary",
+        snapshot=_snapshot(),
+        previous_snapshot=None,
+    )
+    assert result["workflow_id"] == "weekly_change_summary"
+    assert result["data"]["history_available"] is False
+    assert "No previous snapshot is available" in result["report_markdown"]

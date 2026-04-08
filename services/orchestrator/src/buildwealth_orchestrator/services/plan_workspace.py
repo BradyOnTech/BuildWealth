@@ -54,6 +54,9 @@ class PlanWorkspace:
     def _artifacts_dir(self, plan_id: str) -> Path:
         return self._plan_dir(plan_id) / "artifacts"
 
+    def _settings_path(self, plan_id: str) -> Path:
+        return self._plan_dir(plan_id) / "settings.json"
+
     @staticmethod
     def _slug(value: str, default: str = "artifact") -> str:
         cleaned = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
@@ -132,6 +135,120 @@ class PlanWorkspace:
             ]
         )
 
+    @staticmethod
+    def _default_settings() -> dict[str, Any]:
+        return {
+            "annual_contribution_usd": None,
+            "years": None,
+            "hsa_extra_contribution_usd": None,
+            "marginal_tax_rate": None,
+            "expected_return_baseline": None,
+            "expected_return_optimistic": None,
+            "expected_return_conservative": None,
+            "updated_at": utc_now_iso(),
+        }
+
+    @staticmethod
+    def _format_setting_value(key: str, value: Any) -> str:
+        if value is None:
+            return "default"
+
+        if key in {"annual_contribution_usd", "hsa_extra_contribution_usd"}:
+            return f"${float(value):,.2f}"
+        if key == "years":
+            return f"{int(value)} years"
+        if key in {
+            "marginal_tax_rate",
+            "expected_return_baseline",
+            "expected_return_optimistic",
+            "expected_return_conservative",
+        }:
+            return f"{float(value) * 100:.2f}%"
+        return str(value)
+
+    def _read_settings(self, plan_id: str) -> dict[str, Any]:
+        path = self._settings_path(plan_id)
+        if not path.exists():
+            settings = self._default_settings()
+            path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+            return settings
+
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            payload = self._default_settings()
+
+        defaults = self._default_settings()
+        defaults.update(payload if isinstance(payload, dict) else {})
+        return defaults
+
+    def _write_settings(self, plan_id: str, settings_payload: dict[str, Any]) -> None:
+        path = self._settings_path(plan_id)
+        settings_payload = dict(settings_payload)
+        settings_payload["updated_at"] = utc_now_iso()
+        path.write_text(json.dumps(settings_payload, indent=2), encoding="utf-8")
+
+    def _sanitize_settings_update(self, updates: dict[str, Any]) -> dict[str, Any]:
+        allowed_fields = {
+            "annual_contribution_usd",
+            "years",
+            "hsa_extra_contribution_usd",
+            "marginal_tax_rate",
+            "expected_return_baseline",
+            "expected_return_optimistic",
+            "expected_return_conservative",
+        }
+        sanitized: dict[str, Any] = {}
+
+        for key, raw_value in updates.items():
+            if key not in allowed_fields:
+                continue
+
+            if raw_value is None:
+                sanitized[key] = None
+                continue
+
+            if key == "years":
+                try:
+                    years = int(raw_value)
+                except Exception as exc:
+                    raise ValueError("years must be an integer between 1 and 80") from exc
+                if years < 1 or years > 80:
+                    raise ValueError("years must be between 1 and 80")
+                sanitized[key] = years
+                continue
+
+            try:
+                value = float(raw_value)
+            except Exception as exc:
+                raise ValueError(f"{key} must be numeric") from exc
+
+            if key in {"annual_contribution_usd", "hsa_extra_contribution_usd"} and value < 0:
+                raise ValueError(f"{key} must be >= 0")
+
+            if key == "marginal_tax_rate" and not (0 <= value <= 1):
+                raise ValueError("marginal_tax_rate must be between 0 and 1")
+
+            if key.startswith("expected_return_") and not (-0.95 <= value <= 1):
+                raise ValueError(f"{key} must be between -0.95 and 1")
+
+            sanitized[key] = value
+
+        return sanitized
+
+    @staticmethod
+    def _validate_return_relationships(settings_payload: dict[str, Any]) -> None:
+        baseline = settings_payload.get("expected_return_baseline")
+        optimistic = settings_payload.get("expected_return_optimistic")
+        conservative = settings_payload.get("expected_return_conservative")
+
+        if baseline is not None and optimistic is not None and float(optimistic) < float(baseline):
+            raise ValueError("expected_return_optimistic must be >= expected_return_baseline")
+        if baseline is not None and conservative is not None and float(conservative) > float(baseline):
+            raise ValueError("expected_return_conservative must be <= expected_return_baseline")
+        if optimistic is not None and conservative is not None and float(conservative) > float(optimistic):
+            raise ValueError("expected_return_conservative must be <= expected_return_optimistic")
+
     def create_plan(self, title: str, description: str = "") -> dict[str, Any]:
         cleaned_title = title.strip()
         if not cleaned_title:
@@ -151,6 +268,7 @@ class PlanWorkspace:
         (plan_dir / "tasks.md").write_text(self._template_tasks(), encoding="utf-8")
         (plan_dir / "context.md").write_text("", encoding="utf-8")
         (plan_dir / "decisions.jsonl").write_text("", encoding="utf-8")
+        self._write_settings(plan_id, self._default_settings())
 
         now = utc_now_iso()
         metadata = {
@@ -315,6 +433,7 @@ class PlanWorkspace:
                 "tasks_markdown": read_optional(plan_dir / "tasks.md"),
                 "context_markdown": read_optional(plan_dir / "context.md"),
             },
+            "settings": self._read_settings(plan_id),
             "decisions": self._load_decisions(plan_id),
             "artifacts": self._list_artifacts(plan_id),
         }
@@ -392,6 +511,56 @@ class PlanWorkspace:
         self.refresh_context(plan_id)
         return decision
 
+    def update_plan_settings(
+        self,
+        plan_id: str,
+        updates: dict[str, Any],
+        rationale: str | None = None,
+        status: str = "accepted",
+        log_decision: bool = True,
+    ) -> dict[str, Any]:
+        plan_dir = self._plan_dir(plan_id)
+        if not plan_dir.exists():
+            raise PlanNotFoundError(f"Plan not found: {plan_id}")
+
+        sanitized = self._sanitize_settings_update(updates)
+        if not sanitized:
+            raise ValueError("At least one supported settings field is required")
+
+        current_settings = self._read_settings(plan_id)
+        merged_settings = dict(current_settings)
+        merged_settings.update(sanitized)
+        self._validate_return_relationships(merged_settings)
+        self._write_settings(plan_id, merged_settings)
+
+        index_payload = self._load_index()
+        self._touch_plan(index_payload, plan_id)
+        self._save_index(index_payload)
+
+        if log_decision:
+            changed_lines = []
+            for key in sanitized:
+                before = self._format_setting_value(key, current_settings.get(key))
+                after = self._format_setting_value(key, merged_settings.get(key))
+                if before == after:
+                    continue
+                changed_lines.append(f"{key}: {before} -> {after}")
+
+            if changed_lines:
+                summary = f"Updated plan settings: {'; '.join(changed_lines[:4])}"
+                if len(changed_lines) > 4:
+                    summary = f"{summary}; +{len(changed_lines) - 4} additional changes"
+                self.append_decision(
+                    plan_id=plan_id,
+                    summary=summary,
+                    rationale=(rationale or "Plan assumptions/inputs were updated."),
+                    status=status,
+                )
+                return self.get_plan(plan_id)
+
+        self.refresh_context(plan_id)
+        return self.get_plan(plan_id)
+
     def refresh_context(self, plan_id: str) -> str:
         plan_dir = self._plan_dir(plan_id)
         if not plan_dir.exists():
@@ -402,6 +571,7 @@ class PlanWorkspace:
 
         plan_text = (plan_dir / "plan.md").read_text(encoding="utf-8") if (plan_dir / "plan.md").exists() else ""
         tasks_text = (plan_dir / "tasks.md").read_text(encoding="utf-8") if (plan_dir / "tasks.md").exists() else ""
+        settings_payload = self._read_settings(plan_id)
         decisions = self._load_decisions(plan_id, limit=8)
 
         decision_lines: list[str] = []
@@ -409,6 +579,16 @@ class PlanWorkspace:
             decision_lines.append(
                 f"- [{item.get('status', 'proposed')}] {item.get('summary', '')} ({item.get('created_at', '')})"
             )
+
+        setting_lines = [
+            f"- Annual contribution: {self._format_setting_value('annual_contribution_usd', settings_payload.get('annual_contribution_usd'))}",
+            f"- Horizon: {self._format_setting_value('years', settings_payload.get('years'))}",
+            f"- HSA extra contribution: {self._format_setting_value('hsa_extra_contribution_usd', settings_payload.get('hsa_extra_contribution_usd'))}",
+            f"- Marginal tax rate: {self._format_setting_value('marginal_tax_rate', settings_payload.get('marginal_tax_rate'))}",
+            f"- Baseline return: {self._format_setting_value('expected_return_baseline', settings_payload.get('expected_return_baseline'))}",
+            f"- Optimistic return: {self._format_setting_value('expected_return_optimistic', settings_payload.get('expected_return_optimistic'))}",
+            f"- Conservative return: {self._format_setting_value('expected_return_conservative', settings_payload.get('expected_return_conservative'))}",
+        ]
 
         context_lines = [
             f"# Plan Context: {metadata.get('title', 'Untitled Plan')}",
@@ -420,6 +600,10 @@ class PlanWorkspace:
             "## Task Snapshot",
             "",
             tasks_text.strip()[:2000] or "No tasks documented yet.",
+            "",
+            "## Plan Settings",
+            "",
+            "\n".join(setting_lines),
             "",
             "## Recent Decisions",
             "",
@@ -452,6 +636,7 @@ class PlanWorkspace:
             "description": detail.get("description", ""),
             "is_active": detail.get("is_active", False),
             "updated_at": detail.get("updated_at"),
+            "settings": detail.get("settings", {}),
             "context_excerpt": trimmed,
         }
 

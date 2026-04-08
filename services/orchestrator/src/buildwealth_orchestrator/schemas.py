@@ -29,6 +29,25 @@ class PortfolioSnapshot(BaseModel):
     raw: dict[str, Any] = Field(default_factory=dict)
 
 
+class SnapshotHistoryPoint(BaseModel):
+    as_of: datetime
+    total_value_usd: float
+    net_performance_usd: float
+    net_performance_percent: float
+    holdings_count: int
+
+
+class SnapshotHistoryResponse(BaseModel):
+    points: list[SnapshotHistoryPoint] = Field(default_factory=list)
+    window_points: int
+    latest_as_of: datetime | None = None
+    oldest_as_of: datetime | None = None
+    delta_total_value_usd: float | None = None
+    delta_total_value_percent: float | None = None
+    delta_net_performance_usd: float | None = None
+    top_holding_value_changes: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class ScenarioRequest(BaseModel):
     current_portfolio_value_usd: float | None = None
     annual_contribution_usd: float | None = None
@@ -61,6 +80,12 @@ class ChatResponse(BaseModel):
 
 class OptionsChainRequest(BaseModel):
     symbol: str
+
+
+class PriceHistoryRequest(BaseModel):
+    symbol: str
+    period: str = "1y"
+    interval: str = "1d"
 
 
 class ResearchResponse(BaseModel):
@@ -165,6 +190,53 @@ class PlanFiles(BaseModel):
     context_markdown: str = ""
 
 
+class PlanSettings(BaseModel):
+    annual_contribution_usd: float | None = None
+    years: int | None = None
+    hsa_extra_contribution_usd: float | None = None
+    marginal_tax_rate: float | None = None
+    expected_return_baseline: float | None = None
+    expected_return_optimistic: float | None = None
+    expected_return_conservative: float | None = None
+    updated_at: datetime | None = None
+
+
+class PlanSettingsUpdateRequest(BaseModel):
+    annual_contribution_usd: float | None = None
+    years: int | None = None
+    hsa_extra_contribution_usd: float | None = None
+    marginal_tax_rate: float | None = None
+    expected_return_baseline: float | None = None
+    expected_return_optimistic: float | None = None
+    expected_return_conservative: float | None = None
+
+
+class PlanScenarioDiffRequest(BaseModel):
+    current_portfolio_value_usd: float | None = None
+    compare_settings: PlanSettingsUpdateRequest = Field(default_factory=PlanSettingsUpdateRequest)
+
+
+class ScenarioComparisonRow(BaseModel):
+    label: Literal["baseline", "optimistic", "conservative", "hsa_delta"]
+    base_future_value_usd: float
+    candidate_future_value_usd: float
+    delta_future_value_usd: float
+    base_real_value_usd: float
+    candidate_real_value_usd: float
+    delta_real_value_usd: float
+
+
+class PlanScenarioDiffResponse(BaseModel):
+    plan_id: str
+    current_portfolio_value_usd: float
+    base_settings: PlanSettings
+    candidate_settings: PlanSettings
+    base_result: PlanningResponse
+    candidate_result: PlanningResponse
+    scenario_deltas: list[ScenarioComparisonRow] = Field(default_factory=list)
+    monte_carlo_delta: dict[str, float | int | None] = Field(default_factory=dict)
+
+
 class PlanArtifactSummary(BaseModel):
     id: str
     file_name: str
@@ -188,6 +260,7 @@ class PlanDetailResponse(BaseModel):
     updated_at: datetime
     is_active: bool = False
     files: PlanFiles
+    settings: PlanSettings
     decisions: list[PlanDecision] = Field(default_factory=list)
     artifacts: list[PlanArtifactSummary] = Field(default_factory=list)
 
