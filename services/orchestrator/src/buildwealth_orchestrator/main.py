@@ -55,6 +55,7 @@ from buildwealth_orchestrator.schemas import (
     AffordabilityRequest,
     AffordabilityResponse,
     FinancialHealthResponse,
+    GoalProgressResponse,
     PlanTrackingResponse,
     TodayDashboardResponse,
     WorkflowRunRequest,
@@ -83,6 +84,7 @@ from buildwealth_orchestrator.services.snapshot_store import (
     normalize_ghostfolio_snapshot,
 )
 from buildwealth_orchestrator.services.affordability import assess_affordability
+from buildwealth_orchestrator.services.goal_tracker import compute_goal_progress
 from buildwealth_orchestrator.services.financial_health import compute_financial_health
 from buildwealth_orchestrator.services.plan_tracker import compute_plan_tracking
 from buildwealth_orchestrator.services.today_dashboard import build_today_dashboard_payload
@@ -161,7 +163,8 @@ copilot = FinancialCopilot(
         "- For 'how am I doing?' or 'what is my financial situation?' → call get_financial_health first.\n"
         "- For 'can I afford X?' → call assess_affordability with the monthly cost or purchase price. "
         "It computes the full impact on cash flow, savings rate, and DTI automatically.\n"
-        "- For 'am I on track?' → call get_plan_tracking.\n"
+        "- For 'am I on track?' → call get_plan_tracking for plan assumptions, or get_goal_progress for specific goals.\n"
+        "- For 'when will I reach my goal?' or 'what do I need to save?' → call get_goal_progress.\n"
         "- For 'what if I change my contributions?' → call run_plan_scenario_diff.\n"
         "- For 'what should I do?' → call get_today_dashboard and list_recommendations.\n"
         "- For stock/investment research → call research_quote or research_price_history, "
@@ -1268,6 +1271,10 @@ async def tool_get_financial_health(_: dict[str, object]) -> dict[str, object]:
     return get_financial_health().model_dump(mode="json")
 
 
+async def tool_get_goal_progress(_: dict[str, object]) -> dict[str, object]:
+    return get_goal_progress().model_dump(mode="json")
+
+
 async def tool_assess_affordability(arguments: dict[str, object]) -> dict[str, object]:
     request = AffordabilityRequest(
         description=str(arguments.get("description") or ""),
@@ -1754,6 +1761,18 @@ def configure_copilot_tools() -> None:
         handler=tool_assess_affordability,
     )
     copilot.register_tool(
+        name="get_goal_progress",
+        description=(
+            "Track progress toward financial goals. Shows per-goal progress percentage, "
+            "months to target at current savings rate, required monthly savings to hit deadline, "
+            "and on_track/ahead/behind/achieved status. Use this for questions like "
+            "'when will I reach my goal?', 'am I on track for my down payment?', "
+            "or 'what do I need to save monthly to hit $X by date?'."
+        ),
+        parameters=empty_schema,
+        handler=tool_get_goal_progress,
+    )
+    copilot.register_tool(
         name="get_onboarding_status",
         description="Read onboarding completion status for unified financial context.",
         parameters=empty_schema,
@@ -2159,6 +2178,34 @@ def check_affordability(request: AffordabilityRequest) -> AffordabilityResponse:
         income_items=[IncomeItem(**i) for i in profile.get("income_items", [])],
         expense_items=[ExpenseItem(**e) for e in profile.get("expense_items", [])],
         debt_items=[DebtItem(**d) for d in profile.get("debt_items", [])],
+    )
+
+
+@app.get("/api/goals/progress", response_model=GoalProgressResponse)
+def get_goal_progress() -> GoalProgressResponse:
+    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem
+
+    profile = financial_profile_store.load()
+    try:
+        snap = snapshot_store.latest()
+        portfolio_value = snap.total_value_usd
+    except FileNotFoundError:
+        portfolio_value = 0.0
+
+    income_items = [IncomeItem(**i) for i in profile.get("income_items", [])]
+    expense_items = [ExpenseItem(**e) for e in profile.get("expense_items", [])]
+    debt_items = [DebtItem(**d) for d in profile.get("debt_items", [])]
+    goal_items = [GoalItem(**g) for g in profile.get("goal_items", [])]
+
+    gross_income = sum(i.monthly_amount_usd for i in income_items)
+    total_expenses = sum(e.monthly_amount_usd for e in expense_items)
+    total_debt_payments = sum(d.minimum_payment_usd or 0.0 for d in debt_items)
+    monthly_surplus = gross_income - total_expenses - total_debt_payments
+
+    return compute_goal_progress(
+        goals=goal_items,
+        monthly_surplus_usd=monthly_surplus,
+        portfolio_value_usd=portfolio_value,
     )
 
 

@@ -501,6 +501,34 @@ class WorkflowRunResponse(BaseModel):
     recommendations: list[RecommendationItem] = Field(default_factory=list)
 
 
+class GoalProgressItem(BaseModel):
+    goal_id: str
+    label: str
+    target_amount_usd: float
+    target_date: datetime | None = None
+    priority: Literal["high", "medium", "low"] = "medium"
+
+    current_savings_usd: float
+    progress_pct: float
+    remaining_usd: float
+
+    monthly_savings_available_usd: float
+    months_to_target: float | None = None
+    estimated_completion_date: datetime | None = None
+    required_monthly_usd: float | None = None
+
+    status: Literal["on_track", "ahead", "behind", "achieved", "no_deadline"]
+    status_detail: str
+
+
+class GoalProgressResponse(BaseModel):
+    generated_at: datetime
+    monthly_surplus_usd: float
+    goal_count: int
+    goals: list[GoalProgressItem]
+    summary: str
+
+
 class AffordabilityRequest(BaseModel):
     description: str = ""
     monthly_amount_usd: float | None = Field(default=None, ge=0)
