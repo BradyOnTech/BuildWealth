@@ -15,9 +15,13 @@ def test_plan_workspace_create_and_get_context(tmp_path: Path) -> None:
 
     assert detail["title"] == "Retirement Acceleration 2026"
     assert detail["is_active"] is True
+    assert detail["schema_version"] == 2
     assert "## Goal" in detail["files"]["plan_markdown"]
     assert detail["files"]["plan_yaml"].startswith("currency: USD")
+    assert '"events": []' in detail["files"]["timeline_json"]
+    assert '"rules": []' in detail["files"]["contribution_rules_json"]
     assert detail["settings"]["annual_contribution_usd"] is None
+    assert detail["settings"]["schema_version"] == 2
 
     context_payload = workspace.get_context_payload()
     assert context_payload["id"] == detail["id"]
@@ -95,12 +99,16 @@ def test_plan_workspace_settings_update_and_validation(tmp_path: Path) -> None:
             "expected_return_baseline": 0.07,
             "expected_return_optimistic": 0.09,
             "expected_return_conservative": 0.05,
+            "filing_status": "single",
+            "withdrawal_strategy": "4_percent_rule",
         },
         rationale="Tune assumptions for 2026 plan.",
     )
     assert updated["settings"]["annual_contribution_usd"] == 22000
     assert updated["settings"]["years"] == 22
     assert updated["settings"]["marginal_tax_rate"] == 0.24
+    assert updated["settings"]["filing_status"] == "single"
+    assert updated["settings"]["withdrawal_strategy"] == "4_percent_rule"
     assert "## Plan Settings" in updated["files"]["context_markdown"]
     assert updated["decisions"]
     assert updated["decisions"][0]["summary"].startswith("Updated plan settings:")
@@ -113,3 +121,46 @@ def test_plan_workspace_settings_update_and_validation(tmp_path: Path) -> None:
                 "expected_return_optimistic": 0.06,
             },
         )
+
+
+def test_plan_workspace_migrates_legacy_index_and_settings(tmp_path: Path) -> None:
+    (tmp_path / "index.json").write_text(
+        """
+{
+  "active_plan_id": "plan-legacy",
+  "plans": [{
+    "id": "plan-legacy",
+    "title": "Legacy Plan",
+    "description": "",
+    "created_at": "2026-04-09T00:00:00+00:00",
+    "updated_at": "2026-04-09T00:00:00+00:00"
+  }]
+}
+        """.strip(),
+        encoding="utf-8",
+    )
+    plan_dir = tmp_path / "plan-legacy"
+    plan_dir.mkdir(parents=True)
+    (plan_dir / "artifacts").mkdir()
+    (plan_dir / "plan.md").write_text("# Legacy Plan", encoding="utf-8")
+    (plan_dir / "plan.yaml").write_text("currency: USD\n", encoding="utf-8")
+    (plan_dir / "tasks.md").write_text("# Tasks\n", encoding="utf-8")
+    (plan_dir / "context.md").write_text("", encoding="utf-8")
+    (plan_dir / "decisions.jsonl").write_text("", encoding="utf-8")
+    (plan_dir / "settings.json").write_text(
+        """
+{
+  "annual_contribution_usd": 10000
+}
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    workspace = PlanWorkspace(tmp_path)
+    detail = workspace.get_plan("plan-legacy")
+
+    assert detail["schema_version"] == 2
+    assert detail["settings"]["schema_version"] == 2
+    assert detail["settings"]["annual_contribution_usd"] == 10000
+    assert '"events": []' in detail["files"]["timeline_json"]
+    assert '"rules": []' in detail["files"]["contribution_rules_json"]

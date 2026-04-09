@@ -190,6 +190,9 @@ class IncomeItem(BaseModel):
     monthly_amount_usd: float = Field(ge=0)
     source_type: str = "salary"
     is_pre_tax: bool = False
+    annual_growth_rate: float | None = Field(default=None, ge=-1, le=1)
+    start_date: datetime | None = None
+    end_date: datetime | None = None
 
 
 class ExpenseItem(BaseModel):
@@ -198,6 +201,9 @@ class ExpenseItem(BaseModel):
     monthly_amount_usd: float = Field(ge=0)
     category: str = "general"
     is_fixed: bool = True
+    inflation_rate: float | None = Field(default=None, ge=-1, le=1)
+    start_date: datetime | None = None
+    end_date: datetime | None = None
 
 
 class DebtItem(BaseModel):
@@ -206,6 +212,7 @@ class DebtItem(BaseModel):
     balance_usd: float = Field(ge=0)
     interest_rate: float | None = Field(default=None, ge=0, le=1)
     minimum_payment_usd: float | None = Field(default=None, ge=0)
+    payoff_strategy: Literal["minimum", "snowball", "avalanche", "custom"] = "minimum"
 
 
 class GoalItem(BaseModel):
@@ -237,17 +244,28 @@ class ProfileFlags(BaseModel):
     no_goals: bool = False
 
 
+class PhysicalAssetItem(BaseModel):
+    id: str
+    label: str
+    current_value_usd: float = Field(ge=0)
+    asset_type: Literal["real_estate", "vehicle", "jewelry", "equipment", "collectible", "other"] = "other"
+    annual_growth_rate: float | None = Field(default=None, ge=-1, le=1)
+    purchase_date: datetime | None = None
+
+
 class FinancialProfileRequest(BaseModel):
     income_items: list[IncomeItem] = Field(default_factory=list)
     expense_items: list[ExpenseItem] = Field(default_factory=list)
     debt_items: list[DebtItem] = Field(default_factory=list)
     goal_items: list[GoalItem] = Field(default_factory=list)
+    physical_assets: list[PhysicalAssetItem] = Field(default_factory=list)
     tax_profile: TaxProfile = Field(default_factory=TaxProfile)
     flags: ProfileFlags = Field(default_factory=ProfileFlags)
     notes: str = ""
 
 
 class FinancialProfileResponse(FinancialProfileRequest):
+    schema_version: int = 1
     updated_at: datetime
 
 
@@ -382,9 +400,13 @@ class PlanFiles(BaseModel):
     plan_yaml: str = ""
     tasks_markdown: str = ""
     context_markdown: str = ""
+    timeline_json: str = ""
+    contribution_rules_json: str = ""
+    assumption_sets_json: str = ""
 
 
 class PlanSettings(BaseModel):
+    schema_version: int = 1
     annual_contribution_usd: float | None = None
     years: int | None = None
     hsa_extra_contribution_usd: float | None = None
@@ -392,6 +414,8 @@ class PlanSettings(BaseModel):
     expected_return_baseline: float | None = None
     expected_return_optimistic: float | None = None
     expected_return_conservative: float | None = None
+    filing_status: str | None = None
+    withdrawal_strategy: str | None = None
     updated_at: datetime | None = None
 
 
@@ -403,6 +427,8 @@ class PlanSettingsUpdateRequest(BaseModel):
     expected_return_baseline: float | None = None
     expected_return_optimistic: float | None = None
     expected_return_conservative: float | None = None
+    filing_status: str | None = None
+    withdrawal_strategy: str | None = None
 
 
 class PlanScenarioDiffRequest(BaseModel):
@@ -453,6 +479,7 @@ class PlanDetailResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     is_active: bool = False
+    schema_version: int = 1
     files: PlanFiles
     settings: PlanSettings
     decisions: list[PlanDecision] = Field(default_factory=list)

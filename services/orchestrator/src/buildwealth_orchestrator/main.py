@@ -659,15 +659,16 @@ def get_financial_profile_payload() -> dict[str, Any]:
 def save_financial_profile_payload(request: FinancialProfileRequest) -> dict[str, Any]:
     payload = request.model_dump(mode="json")
 
-    for key in ("income_items", "expense_items", "debt_items", "goal_items"):
+    for key in ("income_items", "expense_items", "debt_items", "goal_items", "physical_assets"):
         rows = payload.get(key)
         if not isinstance(rows, list):
             continue
         for row in rows:
             if not isinstance(row, dict):
                 continue
-            label = str(row.get("label") or "").strip()
-            row["label"] = label or "Untitled"
+            label_key = "label"
+            label = str(row.get(label_key) or "").strip()
+            row[label_key] = label or "Untitled"
 
     tax_profile = payload.get("tax_profile")
     if isinstance(tax_profile, dict) and not tax_profile.get("state"):

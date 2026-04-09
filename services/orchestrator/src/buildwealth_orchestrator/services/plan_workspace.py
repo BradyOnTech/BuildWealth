@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+PLAN_WORKSPACE_SCHEMA_VERSION = 2
+
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -33,6 +35,7 @@ class PlanWorkspace:
 
         self._save_index(
             {
+                "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
                 "active_plan_id": None,
                 "plans": [],
             }
@@ -40,10 +43,19 @@ class PlanWorkspace:
 
     def _load_index(self) -> dict[str, Any]:
         try:
-            return json.loads(self.index_path.read_text(encoding="utf-8"))
+            payload = json.loads(self.index_path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             self._initialize_index()
-            return json.loads(self.index_path.read_text(encoding="utf-8"))
+            payload = json.loads(self.index_path.read_text(encoding="utf-8"))
+
+        if not isinstance(payload, dict):
+            payload = {}
+
+        payload.setdefault("active_plan_id", None)
+        payload.setdefault("plans", [])
+        payload["schema_version"] = PLAN_WORKSPACE_SCHEMA_VERSION
+        self._save_index(payload)
+        return payload
 
     def _save_index(self, index_payload: dict[str, Any]) -> None:
         self.index_path.write_text(json.dumps(index_payload, indent=2), encoding="utf-8")
@@ -56,6 +68,15 @@ class PlanWorkspace:
 
     def _settings_path(self, plan_id: str) -> Path:
         return self._plan_dir(plan_id) / "settings.json"
+
+    def _timeline_path(self, plan_id: str) -> Path:
+        return self._plan_dir(plan_id) / "timeline.json"
+
+    def _contribution_rules_path(self, plan_id: str) -> Path:
+        return self._plan_dir(plan_id) / "contribution_rules.json"
+
+    def _assumption_sets_path(self, plan_id: str) -> Path:
+        return self._plan_dir(plan_id) / "assumption_sets.json"
 
     @staticmethod
     def _slug(value: str, default: str = "artifact") -> str:
@@ -138,6 +159,7 @@ class PlanWorkspace:
     @staticmethod
     def _default_settings() -> dict[str, Any]:
         return {
+            "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
             "annual_contribution_usd": None,
             "years": None,
             "hsa_extra_contribution_usd": None,
@@ -145,7 +167,45 @@ class PlanWorkspace:
             "expected_return_baseline": None,
             "expected_return_optimistic": None,
             "expected_return_conservative": None,
+            "filing_status": None,
+            "withdrawal_strategy": None,
             "updated_at": utc_now_iso(),
+        }
+
+    @staticmethod
+    def _default_timeline() -> dict[str, Any]:
+        return {
+            "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
+            "events": [],
+            "retirement": {
+                "target_retirement_age": None,
+                "withdrawal_strategy": None,
+            },
+        }
+
+    @staticmethod
+    def _default_contribution_rules() -> dict[str, Any]:
+        return {
+            "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
+            "base_rule": {"type": "save"},
+            "rules": [],
+        }
+
+    @staticmethod
+    def _default_assumption_sets() -> dict[str, Any]:
+        return {
+            "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
+            "active_assumption_set_id": "default",
+            "sets": [
+                {
+                    "id": "default",
+                    "name": "Default",
+                    "expected_return_baseline": None,
+                    "expected_return_optimistic": None,
+                    "expected_return_conservative": None,
+                    "inflation_rate": None,
+                }
+            ],
         }
 
     @staticmethod
@@ -180,7 +240,26 @@ class PlanWorkspace:
 
         defaults = self._default_settings()
         defaults.update(payload if isinstance(payload, dict) else {})
+        defaults["schema_version"] = PLAN_WORKSPACE_SCHEMA_VERSION
+        path.write_text(json.dumps(defaults, indent=2), encoding="utf-8")
         return defaults
+
+    def _read_or_initialize_json(self, path: Path, default_payload: dict[str, Any]) -> dict[str, Any]:
+        if not path.exists():
+            path.write_text(json.dumps(default_payload, indent=2), encoding="utf-8")
+            return dict(default_payload)
+
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            payload = {}
+
+        merged = dict(default_payload)
+        if isinstance(payload, dict):
+            merged.update(payload)
+        merged["schema_version"] = PLAN_WORKSPACE_SCHEMA_VERSION
+        path.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+        return merged
 
     def _write_settings(self, plan_id: str, settings_payload: dict[str, Any]) -> None:
         path = self._settings_path(plan_id)
@@ -197,6 +276,8 @@ class PlanWorkspace:
             "expected_return_baseline",
             "expected_return_optimistic",
             "expected_return_conservative",
+            "filing_status",
+            "withdrawal_strategy",
         }
         sanitized: dict[str, Any] = {}
 
@@ -206,6 +287,11 @@ class PlanWorkspace:
 
             if raw_value is None:
                 sanitized[key] = None
+                continue
+
+            if key in {"filing_status", "withdrawal_strategy"}:
+                value = str(raw_value).strip()
+                sanitized[key] = value or None
                 continue
 
             if key == "years":
@@ -269,12 +355,22 @@ class PlanWorkspace:
         (plan_dir / "context.md").write_text("", encoding="utf-8")
         (plan_dir / "decisions.jsonl").write_text("", encoding="utf-8")
         self._write_settings(plan_id, self._default_settings())
+        self._timeline_path(plan_id).write_text(json.dumps(self._default_timeline(), indent=2), encoding="utf-8")
+        self._contribution_rules_path(plan_id).write_text(
+            json.dumps(self._default_contribution_rules(), indent=2),
+            encoding="utf-8",
+        )
+        self._assumption_sets_path(plan_id).write_text(
+            json.dumps(self._default_assumption_sets(), indent=2),
+            encoding="utf-8",
+        )
 
         now = utc_now_iso()
         metadata = {
             "id": plan_id,
             "title": cleaned_title,
             "description": description.strip() or "",
+            "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
             "created_at": now,
             "updated_at": now,
         }
@@ -427,11 +523,30 @@ class PlanWorkspace:
             "created_at": metadata.get("created_at"),
             "updated_at": metadata.get("updated_at"),
             "is_active": metadata.get("id") == index_payload.get("active_plan_id"),
+            "schema_version": metadata.get("schema_version", PLAN_WORKSPACE_SCHEMA_VERSION),
             "files": {
                 "plan_markdown": read_optional(plan_dir / "plan.md"),
                 "plan_yaml": read_optional(plan_dir / "plan.yaml"),
                 "tasks_markdown": read_optional(plan_dir / "tasks.md"),
                 "context_markdown": read_optional(plan_dir / "context.md"),
+                "timeline_json": json.dumps(
+                    self._read_or_initialize_json(self._timeline_path(plan_id), self._default_timeline()),
+                    indent=2,
+                ),
+                "contribution_rules_json": json.dumps(
+                    self._read_or_initialize_json(
+                        self._contribution_rules_path(plan_id),
+                        self._default_contribution_rules(),
+                    ),
+                    indent=2,
+                ),
+                "assumption_sets_json": json.dumps(
+                    self._read_or_initialize_json(
+                        self._assumption_sets_path(plan_id),
+                        self._default_assumption_sets(),
+                    ),
+                    indent=2,
+                ),
             },
             "settings": self._read_settings(plan_id),
             "decisions": self._load_decisions(plan_id),
@@ -451,6 +566,7 @@ class PlanWorkspace:
             "created_at": metadata.get("created_at"),
             "updated_at": metadata.get("updated_at"),
             "is_active": True,
+            "schema_version": metadata.get("schema_version", PLAN_WORKSPACE_SCHEMA_VERSION),
         }
 
     def update_plan_files(
@@ -572,6 +688,11 @@ class PlanWorkspace:
         plan_text = (plan_dir / "plan.md").read_text(encoding="utf-8") if (plan_dir / "plan.md").exists() else ""
         tasks_text = (plan_dir / "tasks.md").read_text(encoding="utf-8") if (plan_dir / "tasks.md").exists() else ""
         settings_payload = self._read_settings(plan_id)
+        timeline_payload = self._read_or_initialize_json(self._timeline_path(plan_id), self._default_timeline())
+        contribution_rules_payload = self._read_or_initialize_json(
+            self._contribution_rules_path(plan_id),
+            self._default_contribution_rules(),
+        )
         decisions = self._load_decisions(plan_id, limit=8)
 
         decision_lines: list[str] = []
@@ -588,6 +709,8 @@ class PlanWorkspace:
             f"- Baseline return: {self._format_setting_value('expected_return_baseline', settings_payload.get('expected_return_baseline'))}",
             f"- Optimistic return: {self._format_setting_value('expected_return_optimistic', settings_payload.get('expected_return_optimistic'))}",
             f"- Conservative return: {self._format_setting_value('expected_return_conservative', settings_payload.get('expected_return_conservative'))}",
+            f"- Filing status: {settings_payload.get('filing_status') or 'default'}",
+            f"- Withdrawal strategy: {settings_payload.get('withdrawal_strategy') or 'not set'}",
         ]
 
         context_lines = [
@@ -604,6 +727,11 @@ class PlanWorkspace:
             "## Plan Settings",
             "",
             "\n".join(setting_lines),
+            "",
+            "## Standalone Modeling",
+            "",
+            f"- Timeline events: {len(timeline_payload.get('events', []))}",
+            f"- Contribution rules: {len(contribution_rules_payload.get('rules', []))}",
             "",
             "## Recent Decisions",
             "",

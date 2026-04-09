@@ -88,3 +88,6 @@ Acceptance criteria:
 
 ## Feature Gap Analysis
 See [FEATURE_GAPS.md](./FEATURE_GAPS.md) for detailed user walkthrough analysis and prioritized feature proposals.
+
+## Standalone Build Plan
+See [STANDALONE_BUILD_PLAN.md](./STANDALONE_BUILD_PLAN.md) for the comprehensive plan to make BuildWealth a fully standalone single-user financial command center by porting MIT-licensed logic from Ghostfolio (portfolio analytics) and Ignidash (planning engine). Includes capability audit, 9-sprint implementation order, and reference source code locations.
