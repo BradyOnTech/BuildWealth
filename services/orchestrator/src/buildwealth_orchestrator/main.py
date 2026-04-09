@@ -52,6 +52,8 @@ from buildwealth_orchestrator.schemas import (
     RecommendationItem,
     RecommendationRejectRequest,
     RecommendationUpdateRequest,
+    AffordabilityRequest,
+    AffordabilityResponse,
     FinancialHealthResponse,
     PlanTrackingResponse,
     TodayDashboardResponse,
@@ -80,6 +82,7 @@ from buildwealth_orchestrator.services.snapshot_store import (
     SnapshotStore,
     normalize_ghostfolio_snapshot,
 )
+from buildwealth_orchestrator.services.affordability import assess_affordability
 from buildwealth_orchestrator.services.financial_health import compute_financial_health
 from buildwealth_orchestrator.services.plan_tracker import compute_plan_tracking
 from buildwealth_orchestrator.services.today_dashboard import build_today_dashboard_payload
@@ -156,8 +159,8 @@ copilot = FinancialCopilot(
         "- Do not provide legal or tax advice; provide analytical insights and scenarios.\n\n"
         "TOOL SELECTION GUIDE:\n"
         "- For 'how am I doing?' or 'what is my financial situation?' → call get_financial_health first.\n"
-        "- For 'can I afford X?' → call get_financial_health to check cash flow and savings rate, "
-        "then explain how the expense would affect monthly surplus and plan trajectory.\n"
+        "- For 'can I afford X?' → call assess_affordability with the monthly cost or purchase price. "
+        "It computes the full impact on cash flow, savings rate, and DTI automatically.\n"
         "- For 'am I on track?' → call get_plan_tracking.\n"
         "- For 'what if I change my contributions?' → call run_plan_scenario_diff.\n"
         "- For 'what should I do?' → call get_today_dashboard and list_recommendations.\n"
@@ -1265,6 +1268,18 @@ async def tool_get_financial_health(_: dict[str, object]) -> dict[str, object]:
     return get_financial_health().model_dump(mode="json")
 
 
+async def tool_assess_affordability(arguments: dict[str, object]) -> dict[str, object]:
+    request = AffordabilityRequest(
+        description=str(arguments.get("description") or ""),
+        monthly_amount_usd=arguments.get("monthly_amount_usd"),
+        purchase_price_usd=arguments.get("purchase_price_usd"),
+        loan_rate_pct=arguments.get("loan_rate_pct"),
+        loan_term_years=arguments.get("loan_term_years"),
+        down_payment_pct=arguments.get("down_payment_pct"),
+    )
+    return check_affordability(request).model_dump(mode="json")
+
+
 async def tool_get_onboarding_status(_: dict[str, object]) -> dict[str, object]:
     return build_onboarding_status_response().model_dump(mode="json")
 
@@ -1715,6 +1730,30 @@ def configure_copilot_tools() -> None:
         handler=tool_get_financial_health,
     )
     copilot.register_tool(
+        name="assess_affordability",
+        description=(
+            "Assess whether a proposed expense or purchase is affordable given current income, "
+            "expenses, and debt. Provide either monthly_amount_usd for recurring expenses, or "
+            "purchase_price_usd for large purchases (auto-estimates loan payment). "
+            "Optional: loan_rate_pct, loan_term_years, down_payment_pct for custom loan terms. "
+            "Returns current vs projected cash flow, savings rate, DTI impact, and an "
+            "affordable/stretch/not_affordable assessment."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "description": {"type": "string", "description": "What the user wants to buy or spend on"},
+                "monthly_amount_usd": {"type": "number", "description": "Monthly cost for recurring expenses"},
+                "purchase_price_usd": {"type": "number", "description": "Total price for large purchases (triggers loan estimate)"},
+                "loan_rate_pct": {"type": "number", "description": "Annual interest rate as percentage (default 6.5%)"},
+                "loan_term_years": {"type": "integer", "description": "Loan term in years (default 30)"},
+                "down_payment_pct": {"type": "number", "description": "Down payment as percentage of price (default 20%)"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_assess_affordability,
+    )
+    copilot.register_tool(
         name="get_onboarding_status",
         description="Read onboarding completion status for unified financial context.",
         parameters=empty_schema,
@@ -2102,6 +2141,24 @@ def get_financial_health() -> FinancialHealthResponse:
         debt_items=[DebtItem(**d) for d in profile.get("debt_items", [])],
         goal_items=[GoalItem(**g) for g in profile.get("goal_items", [])],
         snapshot=snap,
+    )
+
+
+@app.post("/api/affordability", response_model=AffordabilityResponse)
+def check_affordability(request: AffordabilityRequest) -> AffordabilityResponse:
+    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem
+
+    profile = financial_profile_store.load()
+    return assess_affordability(
+        description=request.description,
+        monthly_amount_usd=request.monthly_amount_usd,
+        purchase_price_usd=request.purchase_price_usd,
+        loan_rate_pct=request.loan_rate_pct,
+        loan_term_years=request.loan_term_years,
+        down_payment_pct=request.down_payment_pct,
+        income_items=[IncomeItem(**i) for i in profile.get("income_items", [])],
+        expense_items=[ExpenseItem(**e) for e in profile.get("expense_items", [])],
+        debt_items=[DebtItem(**d) for d in profile.get("debt_items", [])],
     )
 
 

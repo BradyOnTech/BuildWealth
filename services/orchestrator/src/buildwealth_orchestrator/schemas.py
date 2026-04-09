@@ -501,6 +501,55 @@ class WorkflowRunResponse(BaseModel):
     recommendations: list[RecommendationItem] = Field(default_factory=list)
 
 
+class AffordabilityRequest(BaseModel):
+    description: str = ""
+    monthly_amount_usd: float | None = Field(default=None, ge=0)
+    purchase_price_usd: float | None = Field(default=None, ge=0)
+    loan_rate_pct: float | None = Field(default=None, ge=0, le=100)
+    loan_term_years: int | None = Field(default=None, ge=1, le=50)
+    down_payment_pct: float | None = Field(default=None, ge=0, le=100)
+
+
+class AffordabilityResponse(BaseModel):
+    description: str
+    assessment: Literal["affordable", "stretch", "not_affordable", "insufficient_data"]
+    assessment_detail: str
+
+    # Proposed expense
+    proposed_monthly_usd: float
+    is_loan_estimate: bool
+
+    # Loan estimate details (only if purchase_price provided)
+    loan_principal_usd: float | None = None
+    down_payment_usd: float | None = None
+    estimated_monthly_payment_usd: float | None = None
+    loan_rate_pct: float | None = None
+    loan_term_years: int | None = None
+
+    # Current state
+    current_monthly_surplus_usd: float
+    current_savings_rate_pct: float
+    current_dti_pct: float
+
+    # After expense
+    new_monthly_surplus_usd: float
+    new_savings_rate_pct: float
+    new_dti_pct: float
+
+    # Impact
+    surplus_change_usd: float
+    savings_rate_change_pct: float
+    dti_change_pct: float
+
+    # Plan impact (if plan data available)
+    current_annual_savings_usd: float
+    new_annual_savings_usd: float
+    annual_savings_reduction_usd: float
+    plan_impact_detail: str | None = None
+
+    highlights: list[str]
+
+
 class FinancialHealthResponse(BaseModel):
     generated_at: datetime
 
