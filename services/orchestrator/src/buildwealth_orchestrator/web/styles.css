@@ -529,6 +529,16 @@ textarea[readonly] { background: #f6f9f1; }
 
 .field-hint { font-size: 0.72rem; color: var(--ink-soft); font-style: italic; text-transform: none; letter-spacing: 0; }
 .settings-form { max-width: 720px; }
+.txn-form {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr) auto;
+  gap: 0.5rem;
+  align-items: end;
+  margin-bottom: 0.8rem;
+}
+
+.statement-results { margin-top: 1rem; }
+.statement-results .card { margin-top: 0.8rem; }
 
 .inline-builder {
   display: grid;

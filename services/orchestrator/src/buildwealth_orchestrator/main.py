@@ -86,10 +86,16 @@ from buildwealth_orchestrator.services.snapshot_store import (
     normalize_ghostfolio_snapshot,
 )
 from buildwealth_orchestrator.services.affordability import assess_affordability
+from buildwealth_orchestrator.services.statement_importer import parse_statement_csv
 from buildwealth_orchestrator.services.portfolio_simulator import simulate_trade
 from buildwealth_orchestrator.services.goal_tracker import compute_goal_progress
 from buildwealth_orchestrator.services.financial_health import compute_financial_health
 from buildwealth_orchestrator.services.plan_tracker import compute_plan_tracking
+from buildwealth_orchestrator.services.portfolio_store import PortfolioStore
+from buildwealth_orchestrator.services.price_updater import (
+    build_snapshot_from_holdings,
+    refresh_portfolio,
+)
 from buildwealth_orchestrator.services.today_dashboard import build_today_dashboard_payload
 from buildwealth_orchestrator.services.workflow_runner import WorkflowRunner
 from buildwealth_orchestrator.services.plan_workspace import (
@@ -137,6 +143,7 @@ ignidash_client = IgnidashClient(
     timeout_seconds=settings.ghostfolio_timeout_seconds,
 )
 snapshot_store = SnapshotStore(settings.snapshot_dir)
+portfolio_store = PortfolioStore(settings.snapshot_dir.parent / "portfolio")
 ignidash_export_store = IgnidashExportStore(settings.ignidash_export_dir)
 scenario_engine = ScenarioEngine(
     years_to_retirement=settings.planner_years_to_retirement,
@@ -219,19 +226,12 @@ def utc_now() -> datetime:
 
 
 async def build_live_snapshot() -> PortfolioSnapshot:
+    """Refresh prices from OpenBB and build a snapshot from local portfolio store."""
     try:
-        holdings_payload = await ghostfolio_client.get_holdings(date_range="max")
-        performance_payload = await ghostfolio_client.get_performance(date_range="max")
-        accounts_payload = await ghostfolio_client.get_accounts()
+        holdings_data = await refresh_portfolio(portfolio_store, research_service)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Ghostfolio fetch failed: {exc}") from exc
-
-    return normalize_ghostfolio_snapshot(
-        holdings_payload=holdings_payload,
-        performance_payload=performance_payload,
-        accounts_payload=accounts_payload,
-        base_currency=settings.app_currency,
-    )
+        raise HTTPException(status_code=502, detail=f"Price refresh failed: {exc}") from exc
+    return build_snapshot_from_holdings(holdings_data)
 
 
 def get_sync_status() -> SyncStatusResponse:
@@ -249,34 +249,11 @@ async def execute_sync(trigger: str) -> dict[str, str | dict[str, str]]:
             snapshot = await build_live_snapshot()
             snapshot_path = snapshot_store.write(snapshot)
 
-            ignidash_payload = build_ignidash_plan_payload(snapshot)
-            ignidash_path = ignidash_export_store.write(ignidash_payload)
-
-            default_plan_response = {"status": "skipped"}
-            if settings.ignidash_convex_api_secret:
-                try:
-                    response = await ignidash_client.create_default_plan(
-                        user_id=settings.ignidash_default_user_id,
-                        user_name=settings.ignidash_default_user_name,
-                    )
-                    default_plan_response = {
-                        "status": response.get("status", "ok"),
-                        "message": response.get("body", ""),
-                    }
-                except Exception as exc:
-                    default_plan_response = {
-                        "status": "error",
-                        "message": str(exc),
-                    }
-
             sync_state["last_snapshot_path"] = str(snapshot_path)
-            sync_state["last_ignidash_payload_path"] = str(ignidash_path)
             sync_state["last_completed_at"] = utc_now()
 
             return {
                 "snapshot": str(snapshot_path),
-                "ignidash_import_payload": str(ignidash_path),
-                "ignidash_default_plan": default_plan_response,
             }
         except Exception as exc:
             sync_state["runs_failed"] = int(sync_state["runs_failed"]) + 1
@@ -341,35 +318,31 @@ async def execute_csv_import(file_path: Path, request: CsvImportRequest) -> CsvI
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"CSV file not found: {file_path}")
 
-    accounts = await ghostfolio_client.get_accounts_list()
-    account_ids_by_name: dict[str, str] = {}
-    for account in accounts:
-        name = str(account.get("name") or "").strip().lower()
-        account_id = str(account.get("id") or "").strip()
-        if name and account_id and name not in account_ids_by_name:
-            account_ids_by_name[name] = account_id
-
     parsed = parse_transaction_csv(
         file_path=file_path,
-        default_data_source=request.default_data_source or settings.ghostfolio_default_data_source,
-        default_currency=request.default_currency or settings.ghostfolio_default_currency,
+        default_data_source=request.default_data_source or "YAHOO",
+        default_currency=request.default_currency or settings.app_currency,
         delimiter=request.delimiter,
-        account_ids_by_name=account_ids_by_name,
+        account_ids_by_name={},
     )
 
-    ghostfolio_response = None
     imported_activities = 0
 
     if parsed.activities:
-        try:
-            ghostfolio_response = await ghostfolio_client.import_activities(
-                activities=parsed.activities,
-                dry_run=request.dry_run,
-            )
-            if not request.dry_run:
-                imported_activities = len(parsed.activities)
-        except Exception as exc:
-            parsed.errors.append(f"Ghostfolio import request failed: {exc}")
+        if not request.dry_run:
+            items = []
+            for act in parsed.activities:
+                items.append({
+                    "date": act.get("date", ""),
+                    "symbol": act.get("symbol", ""),
+                    "action": act.get("type", "BUY"),
+                    "quantity": float(act.get("quantity", 0)),
+                    "unit_price": float(act.get("unitPrice", 0)),
+                    "fee": float(act.get("fee", 0)),
+                    "currency": act.get("currency", "USD"),
+                    "account": act.get("accountId", "default"),
+                })
+            imported_activities = portfolio_store.add_transactions_bulk(items)
     else:
         parsed.warnings.append("No valid activities were parsed from this CSV file.")
 
@@ -385,7 +358,7 @@ async def execute_csv_import(file_path: Path, request: CsvImportRequest) -> CsvI
         imported_activities=imported_activities,
         warnings=parsed.warnings,
         errors=parsed.errors,
-        ghostfolio_response=ghostfolio_response,
+        ghostfolio_response=None,
     )
 
 
@@ -1496,19 +1469,8 @@ async def tool_research_price_history(arguments: dict[str, object]) -> dict[str,
 
 
 async def tool_list_accounts(_: dict[str, object]) -> dict[str, object]:
-    accounts = await ghostfolio_client.get_accounts_list()
-    simplified = []
-    for account in accounts:
-        simplified.append(
-            {
-                "id": account.get("id"),
-                "name": account.get("name"),
-                "balance": account.get("balance"),
-                "currency": account.get("currency"),
-                "isExcluded": account.get("isExcluded"),
-            }
-        )
-    return {"count": len(simplified), "accounts": simplified}
+    accounts = portfolio_store.get_accounts()
+    return {"count": len(accounts), "accounts": accounts}
 
 
 async def tool_list_plans(arguments: dict[str, object]) -> dict[str, object]:
@@ -2260,6 +2222,138 @@ def check_affordability(request: AffordabilityRequest) -> AffordabilityResponse:
         expense_items=[ExpenseItem(**e) for e in profile.get("expense_items", [])],
         debt_items=[DebtItem(**d) for d in profile.get("debt_items", [])],
     )
+
+
+@app.post("/api/import/statement")
+async def upload_statement(
+    file: UploadFile = File(...),
+    delimiter: str = Form(","),
+) -> dict[str, Any]:
+    """Upload a bank/credit card CSV statement and get expense/income suggestions."""
+    raw = (await file.read()).decode("utf-8", errors="replace")
+    result = parse_statement_csv(raw, delimiter=delimiter)
+    return {
+        "file_name": file.filename,
+        "transaction_count": len(result.transactions),
+        "date_range_start": result.date_range_start.isoformat() if result.date_range_start else None,
+        "date_range_end": result.date_range_end.isoformat() if result.date_range_end else None,
+        "months_covered": result.months_covered,
+        "total_monthly_expenses": result.total_expenses,
+        "total_monthly_income": result.total_income,
+        "expense_suggestions": [
+            {
+                "label": s.label,
+                "monthly_amount_usd": s.monthly_amount_usd,
+                "category": s.category,
+                "is_fixed": s.is_fixed,
+                "transaction_count": s.transaction_count,
+                "sample_descriptions": s.sample_descriptions,
+            }
+            for s in result.expense_suggestions
+        ],
+        "income_suggestions": [
+            {
+                "label": s.label,
+                "monthly_amount_usd": s.monthly_amount_usd,
+                "source_type": s.source_type,
+                "transaction_count": s.transaction_count,
+            }
+            for s in result.income_suggestions
+        ],
+        "parse_errors": result.parse_errors,
+    }
+
+
+@app.post("/api/import/statement/apply")
+def apply_statement_suggestions(request: dict[str, Any]) -> dict[str, Any]:
+    """Apply selected expense/income suggestions to the financial profile."""
+    from buildwealth_orchestrator.schemas import ExpenseItem, IncomeItem
+
+    profile = financial_profile_store.load()
+    added_expenses = 0
+    added_income = 0
+
+    for item in request.get("expenses", []):
+        from buildwealth_orchestrator.services.statement_importer import _normalize_merchant
+        item_id = f"stmt-{_normalize_merchant(item['label'])[:20].replace(' ', '-')}"
+        profile.setdefault("expense_items", []).append({
+            "id": item_id,
+            "label": item["label"],
+            "monthly_amount_usd": item["monthly_amount_usd"],
+            "category": item.get("category", "general"),
+            "is_fixed": item.get("is_fixed", True),
+        })
+        added_expenses += 1
+
+    for item in request.get("income", []):
+        item_id = f"stmt-{item['label'][:20].lower().replace(' ', '-')}"
+        profile.setdefault("income_items", []).append({
+            "id": item_id,
+            "label": item["label"],
+            "monthly_amount_usd": item["monthly_amount_usd"],
+            "source_type": item.get("source_type", "other"),
+            "is_pre_tax": item.get("is_pre_tax", False),
+        })
+        added_income += 1
+
+    financial_profile_store.save(profile)
+
+    return {
+        "added_expenses": added_expenses,
+        "added_income": added_income,
+        "total_expense_items": len(profile.get("expense_items", [])),
+        "total_income_items": len(profile.get("income_items", [])),
+    }
+
+
+@app.get("/api/portfolio/holdings")
+def get_portfolio_holdings() -> dict[str, Any]:
+    return portfolio_store.get_holdings()
+
+
+@app.get("/api/portfolio/transactions")
+def get_portfolio_transactions(limit: int = 200) -> list[dict[str, Any]]:
+    return portfolio_store.list_transactions(limit=limit)
+
+
+@app.post("/api/portfolio/transactions")
+def add_portfolio_transaction(request: dict[str, Any]) -> dict[str, Any]:
+    return portfolio_store.add_transaction(
+        date=request.get("date", ""),
+        symbol=request.get("symbol", ""),
+        action=request.get("action", "BUY"),
+        quantity=float(request.get("quantity", 0)),
+        unit_price=float(request.get("unit_price", 0)),
+        fee=float(request.get("fee", 0)),
+        account=request.get("account", "default"),
+        currency=request.get("currency", "USD"),
+        note=request.get("note", ""),
+    )
+
+
+@app.delete("/api/portfolio/transactions/{transaction_id}")
+def delete_portfolio_transaction(transaction_id: str) -> dict[str, Any]:
+    deleted = portfolio_store.delete_transaction(transaction_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Transaction not found.")
+    return {"deleted": True, "id": transaction_id}
+
+
+@app.post("/api/portfolio/refresh-prices")
+async def refresh_portfolio_prices() -> dict[str, Any]:
+    holdings_data = await refresh_portfolio(portfolio_store, research_service)
+    snapshot = build_snapshot_from_holdings(holdings_data)
+    snapshot_store.write(snapshot)
+    return {
+        "total_value": holdings_data.get("total_value", 0),
+        "holdings_count": len(holdings_data.get("holdings", {})),
+        "prices_updated_at": holdings_data.get("prices_updated_at"),
+    }
+
+
+@app.get("/api/portfolio/accounts")
+def get_portfolio_accounts() -> list[dict[str, Any]]:
+    return portfolio_store.get_accounts()
 
 
 @app.post("/api/portfolio/simulate-trade", response_model=SimulateTradeResponse)
