@@ -52,6 +52,7 @@ from buildwealth_orchestrator.schemas import (
     RecommendationItem,
     RecommendationRejectRequest,
     RecommendationUpdateRequest,
+    FinancialHealthResponse,
     PlanTrackingResponse,
     TodayDashboardResponse,
     WorkflowRunRequest,
@@ -79,6 +80,7 @@ from buildwealth_orchestrator.services.snapshot_store import (
     SnapshotStore,
     normalize_ghostfolio_snapshot,
 )
+from buildwealth_orchestrator.services.financial_health import compute_financial_health
 from buildwealth_orchestrator.services.plan_tracker import compute_plan_tracking
 from buildwealth_orchestrator.services.today_dashboard import build_today_dashboard_payload
 from buildwealth_orchestrator.services.workflow_runner import WorkflowRunner
@@ -147,10 +149,27 @@ copilot = FinancialCopilot(
     max_history_messages=settings.copilot_max_history_messages,
     max_tool_rounds=settings.copilot_max_tool_rounds,
     system_prompt=(
-        "You are BuildWealth Copilot, a single-user financial research and planning assistant. "
-        "Use tools to ground answers in real portfolio data before making claims. "
-        "Be explicit about assumptions and uncertainty. "
-        "Do not provide legal/tax advice; provide analytical insights and scenarios."
+        "You are BuildWealth Copilot, a personal financial research and planning assistant.\n\n"
+        "CORE PRINCIPLES:\n"
+        "- Always use tools to ground answers in real data before making claims.\n"
+        "- Be explicit about assumptions and uncertainty.\n"
+        "- Do not provide legal or tax advice; provide analytical insights and scenarios.\n\n"
+        "TOOL SELECTION GUIDE:\n"
+        "- For 'how am I doing?' or 'what is my financial situation?' → call get_financial_health first.\n"
+        "- For 'can I afford X?' → call get_financial_health to check cash flow and savings rate, "
+        "then explain how the expense would affect monthly surplus and plan trajectory.\n"
+        "- For 'am I on track?' → call get_plan_tracking.\n"
+        "- For 'what if I change my contributions?' → call run_plan_scenario_diff.\n"
+        "- For 'what should I do?' → call get_today_dashboard and list_recommendations.\n"
+        "- For stock/investment research → call research_quote or research_price_history, "
+        "then reference current holdings from the snapshot to discuss portfolio fit.\n"
+        "- For daily reviews → call get_financial_health, get_plan_tracking, and get_today_dashboard.\n\n"
+        "RESPONSE GUIDELINES:\n"
+        "- When discussing portfolio holdings, reference specific symbols and allocation percentages.\n"
+        "- When discussing cash flow, cite monthly income, expenses, and surplus figures.\n"
+        "- When recommending actions, explain the quantitative impact (e.g., 'increasing contributions by "
+        "$200/month would add ~$X to your projected retirement value').\n"
+        "- Proactively flag risks you discover (high concentration, low emergency fund, negative cash flow)."
     ),
 )
 
@@ -1069,7 +1088,7 @@ def build_today_dashboard_response() -> TodayDashboardResponse:
     )
     inbox_open_count, inbox_high_priority_count = _build_recommendation_open_counts()
 
-    return build_today_dashboard_payload(
+    dashboard = build_today_dashboard_payload(
         now=utc_now(),
         currency=settings.app_currency,
         state=settings.app_state,
@@ -1082,6 +1101,26 @@ def build_today_dashboard_response() -> TodayDashboardResponse:
         inbox_open_count=inbox_open_count,
         inbox_high_priority_count=inbox_high_priority_count,
     )
+
+    # Enrich with financial health summary
+    try:
+        from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem
+
+        health = compute_financial_health(
+            income_items=[IncomeItem(**i) for i in profile_payload.get("income_items", [])],
+            expense_items=[ExpenseItem(**e) for e in profile_payload.get("expense_items", [])],
+            debt_items=[DebtItem(**d) for d in profile_payload.get("debt_items", [])],
+            goal_items=[GoalItem(**g) for g in profile_payload.get("goal_items", [])],
+            snapshot=latest_snapshot,
+        )
+        dashboard.net_worth_usd = health.net_worth_usd
+        dashboard.monthly_surplus_usd = health.monthly_surplus_usd
+        dashboard.savings_rate_pct = health.savings_rate_pct
+        dashboard.financial_health_status = health.status
+    except Exception:
+        pass
+
+    return dashboard
 
 
 async def build_contextual_brief(
@@ -1220,6 +1259,10 @@ async def tool_get_today_dashboard(_: dict[str, object]) -> dict[str, object]:
 async def tool_get_financial_profile(_: dict[str, object]) -> dict[str, object]:
     profile = FinancialProfileResponse(**get_financial_profile_payload())
     return profile.model_dump(mode="json")
+
+
+async def tool_get_financial_health(_: dict[str, object]) -> dict[str, object]:
+    return get_financial_health().model_dump(mode="json")
 
 
 async def tool_get_onboarding_status(_: dict[str, object]) -> dict[str, object]:
@@ -1661,6 +1704,17 @@ def configure_copilot_tools() -> None:
         handler=tool_get_financial_profile,
     )
     copilot.register_tool(
+        name="get_financial_health",
+        description=(
+            "Compute a financial health summary with net worth, monthly cash flow, savings rate, "
+            "debt-to-income ratio, emergency fund coverage, and an overall health assessment. "
+            "Use this to answer questions like 'how am I doing financially?', 'what is my net worth?', "
+            "'what is my monthly cash flow?', or 'can I afford this?'."
+        ),
+        parameters=empty_schema,
+        handler=tool_get_financial_health,
+    )
+    copilot.register_tool(
         name="get_onboarding_status",
         description="Read onboarding completion status for unified financial context.",
         parameters=empty_schema,
@@ -2031,6 +2085,24 @@ def update_financial_profile(request: FinancialProfileRequest) -> FinancialProfi
 @app.get("/api/onboarding/status", response_model=OnboardingStatusResponse)
 def onboarding_status() -> OnboardingStatusResponse:
     return build_onboarding_status_response()
+
+
+@app.get("/api/financial-health", response_model=FinancialHealthResponse)
+def get_financial_health() -> FinancialHealthResponse:
+    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem
+
+    profile = financial_profile_store.load()
+    try:
+        snap = snapshot_store.latest()
+    except FileNotFoundError:
+        snap = None
+    return compute_financial_health(
+        income_items=[IncomeItem(**i) for i in profile.get("income_items", [])],
+        expense_items=[ExpenseItem(**e) for e in profile.get("expense_items", [])],
+        debt_items=[DebtItem(**d) for d in profile.get("debt_items", [])],
+        goal_items=[GoalItem(**g) for g in profile.get("goal_items", [])],
+        snapshot=snap,
+    )
 
 
 @app.get("/api/recommendations", response_model=list[RecommendationItem])

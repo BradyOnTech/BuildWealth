@@ -79,3 +79,12 @@ Acceptance criteria:
 3. Implement Recommendation Inbox and apply/reject actions.
 4. Add evidence panel and stale-context warning system.
 5. Add plan version history, compare, and rollback.
+
+## Completed Post-Epic Work (2026-04-08)
+- **Frontend modernization**: Monolithic app.js (2232 lines) broken into ES modules with hash-based routing and sidebar navigation.
+- **Plan-vs-Actual tracking**: Service, API (`GET /api/plans/{plan_id}/tracking`), Copilot tool, and frontend view for comparing plan assumptions against actual portfolio performance.
+- **Financial Health Summary**: Service, API (`GET /api/financial-health`), Copilot tool computing net worth, monthly cash flow, savings rate, debt-to-income ratio, emergency fund coverage, and overall health assessment. Integrated into Today Dashboard as top-level KPIs.
+- **Enhanced Copilot system prompt**: Replaced generic 2-sentence prompt with detailed tool selection guide and response guidelines.
+
+## Feature Gap Analysis
+See [FEATURE_GAPS.md](./FEATURE_GAPS.md) for detailed user walkthrough analysis and prioritized feature proposals.

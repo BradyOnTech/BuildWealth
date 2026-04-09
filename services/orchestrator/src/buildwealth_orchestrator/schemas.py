@@ -173,6 +173,10 @@ class TodayDashboardResponse(BaseModel):
     onboarding_ready_for_daily_review: bool = False
     inbox_open_count: int = 0
     inbox_high_priority_count: int = 0
+    net_worth_usd: float | None = None
+    monthly_surplus_usd: float | None = None
+    savings_rate_pct: float | None = None
+    financial_health_status: Literal["healthy", "needs_attention", "critical", "insufficient_data"] | None = None
     context_state: Literal["ready", "warning", "critical"] = "warning"
     context_notes: list[str] = Field(default_factory=list)
     checklist: list[TodayChecklistItem] = Field(default_factory=list)
@@ -495,6 +499,37 @@ class WorkflowRunResponse(BaseModel):
     report_markdown: str
     artifact: PlanArtifactSummary | None = None
     recommendations: list[RecommendationItem] = Field(default_factory=list)
+
+
+class FinancialHealthResponse(BaseModel):
+    generated_at: datetime
+
+    # Net worth
+    portfolio_value_usd: float
+    total_debt_usd: float
+    net_worth_usd: float
+
+    # Cash flow
+    gross_monthly_income_usd: float
+    total_monthly_expenses_usd: float
+    total_monthly_debt_payments_usd: float
+    monthly_surplus_usd: float
+
+    # Ratios
+    savings_rate_pct: float
+    debt_to_income_ratio_pct: float
+    emergency_fund_months: float
+
+    # Assessment
+    status: Literal["healthy", "needs_attention", "critical", "insufficient_data"]
+    status_detail: str
+    highlights: list[str]
+
+    # Breakdown context
+    income_item_count: int
+    expense_item_count: int
+    debt_item_count: int
+    goal_item_count: int
 
 
 class PlanTrackingResponse(BaseModel):

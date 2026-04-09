@@ -13,9 +13,15 @@ export function template() {
     <p class="hint" id="today-generated">Loading dashboard...</p>
     <p class="context-banner warning" id="today-context-banner">Context readiness unavailable.</p>
     <div class="kpi-row">
-      <article class="kpi-card"><p class="kpi-label">Total Value</p><p class="kpi-value" id="today-total-value">-</p></article>
+      <article class="kpi-card"><p class="kpi-label">Net Worth</p><p class="kpi-value" id="today-net-worth">-</p></article>
+      <article class="kpi-card"><p class="kpi-label">Portfolio Value</p><p class="kpi-value" id="today-total-value">-</p></article>
+      <article class="kpi-card"><p class="kpi-label">Monthly Surplus</p><p class="kpi-value" id="today-surplus">-</p></article>
+      <article class="kpi-card"><p class="kpi-label">Savings Rate</p><p class="kpi-value" id="today-savings-rate">-</p></article>
+    </div>
+    <div class="kpi-row">
       <article class="kpi-card"><p class="kpi-label">Snapshot Freshness</p><p class="kpi-value" id="today-snapshot-freshness">-</p></article>
       <article class="kpi-card"><p class="kpi-label">Concentration Risk</p><p class="kpi-value" id="today-concentration">-</p></article>
+      <article class="kpi-card"><p class="kpi-label">Financial Health</p><p class="kpi-value" id="today-health-status">-</p></article>
       <article class="kpi-card"><p class="kpi-label">Active Plan</p><p class="kpi-value" id="today-active-plan">-</p></article>
     </div>
     <div class="three-col">
@@ -51,9 +57,13 @@ function render(payload) {
   const notes = Array.isArray(payload.context_notes) ? payload.context_notes : [];
   banner.textContent = notes.length ? notes.join(' ') : 'Context readiness unavailable.';
 
+  byId('today-net-worth').textContent = payload.net_worth_usd != null ? fmtCurrency(payload.net_worth_usd) : '-';
   byId('today-total-value').textContent = fmtCurrency(payload.total_value_usd);
+  byId('today-surplus').textContent = payload.monthly_surplus_usd != null ? fmtCurrency(payload.monthly_surplus_usd) : '-';
+  byId('today-savings-rate').textContent = payload.savings_rate_pct != null ? `${payload.savings_rate_pct.toFixed(1)}%` : '-';
   byId('today-snapshot-freshness').textContent = fmtAgeMinutes(payload.snapshot_age_minutes);
   byId('today-concentration').textContent = `${String(payload.concentration_risk || '-').toUpperCase()} ${payload.top_holding_symbol ? `(${payload.top_holding_symbol})` : ''}`;
+  byId('today-health-status').textContent = payload.financial_health_status ? payload.financial_health_status.replace('_', ' ').toUpperCase() : '-';
   byId('today-active-plan').textContent = payload.active_plan?.title || 'No active plan';
 
   renderItemList('today-checklist', payload.checklist, (item) => {
