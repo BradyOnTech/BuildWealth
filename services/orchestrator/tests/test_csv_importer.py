@@ -26,6 +26,7 @@ def test_parse_transaction_csv_with_aliases_and_account_mapping(tmp_path: Path) 
     assert activity["type"] == "BUY"
     assert activity["symbol"] == "VTI"
     assert activity["accountId"] == "acc-1"
+    assert activity["accountName"] == "Taxable Brokerage"
     assert activity["quantity"] == 10
     assert activity["unitPrice"] == 250.5
 
@@ -69,3 +70,27 @@ def test_parse_transaction_csv_reports_unsupported_action(tmp_path: Path) -> Non
 
     assert len(result.activities) == 0
     assert len(result.errors) == 1
+
+
+def test_parse_transaction_csv_extracts_asset_metadata_columns(tmp_path: Path) -> None:
+    csv_file = tmp_path / "metadata.csv"
+    csv_file.write_text(
+        "date,action,symbol,quantity,unit_price,name,asset class,sector,country,lot method\n"
+        "2026-01-10,buy,QQQ,2,450,Invesco QQQ,US Stocks,Technology,US,FIFO\n",
+        encoding="utf-8",
+    )
+
+    result = parse_transaction_csv(
+        file_path=csv_file,
+        default_data_source="YAHOO",
+        default_currency="USD",
+    )
+
+    assert not result.errors
+    assert len(result.activities) == 1
+    activity = result.activities[0]
+    assert activity["name"] == "Invesco QQQ"
+    assert activity["assetClass"] == "US Stocks"
+    assert activity["sector"] == "Technology"
+    assert activity["region"] == "US"
+    assert activity["lotMethod"] == "FIFO"

@@ -48,6 +48,23 @@ These decisions refine the build plan based on the current repository and upstre
 
 ---
 
+## Progress Log
+
+### 2026-04-09 (Completed)
+- Phase 1.1: BuildWealth-native TWR calculator integrated into local portfolio store
+- Phase 1.2: XIRR money-weighted return added and surfaced in portfolio snapshot/UI
+- Tracking now prefers transaction-aware Modified Dietz and falls back to snapshot-delta when needed
+
+### 2026-04-09 (Completed - Next Slice Foundation)
+- Phase 1.3 foundation: portfolio holdings are now account-scoped (`account_id:symbol`) with explicit account registry and migration to schema v3
+- Phase 1.4 foundation: lot-aware holdings model added (FIFO lot consumption for sells, per-position lots persisted, realized gains/fees tracked)
+- Phase 1.6 foundation: local asset metadata cache introduced (`asset_metadata.json`) and threaded into holdings/snapshots
+- Import pipeline now resolves account names to local account IDs, auto-creates missing accounts, and ingests asset metadata columns
+- Portfolio UI now supports account creation/selection and displays account + asset-class on holdings/transactions
+- Plan tracking assumptions now infer expected return from latest snapshot asset-class mix when no explicit plan return assumption is set
+
+---
+
 ## Current Capability Audit
 
 ### What We Already Built (relative to Ghostfolio)
@@ -58,12 +75,12 @@ These decisions refine the build plan based on the current repository and upstre
 | Average cost basis | Built | One method only |
 | Current price fetch (via OpenBB) | Built | Single provider |
 | CSV import (basic) | Built | One generic format |
-| Multi-account ledger | NOT BUILT | 0% |
+| Multi-account ledger | Built (foundation) | ~40% |
 | Time-weighted return (TWR) | NOT BUILT | 0% |
 | Money-weighted return (IRR/XIRR) | NOT BUILT | 0% |
-| FIFO/LIFO cost basis | NOT BUILT | 0% |
-| Tax lot tracking | NOT BUILT | 0% |
-| Asset class breakdown | NOT BUILT | 0% |
+| FIFO/LIFO cost basis | Built (FIFO only) | ~35% |
+| Tax lot tracking | Built (FIFO lots) | ~40% |
+| Asset class breakdown | Built (position metadata layer) | ~25% |
 | Sector breakdown | NOT BUILT | 0% |
 | Geographic breakdown | NOT BUILT | 0% |
 | Multi-currency | NOT BUILT | 0% |

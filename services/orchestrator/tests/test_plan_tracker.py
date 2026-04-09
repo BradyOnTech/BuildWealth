@@ -49,6 +49,7 @@ class TestInsufficientData:
         assert result.status == "insufficient_data"
         assert result.snapshot_count == 1
         assert result.current_value_usd == 100000
+        assert result.actual_return_method == "snapshot_delta"
 
     def test_short_window(self):
         snaps = [_snap(0, 101000, 80500), _snap(3, 100000, 80000)]
@@ -159,6 +160,7 @@ class TestDefaultFallback:
         snaps = [_snap(0, 102000, 81000), _snap(90, 100000, 80000)]
         result = _track(settings=PlanSettings(), snapshots=snaps)
         assert result.expected_annualized_return_pct == pytest.approx(6.5, abs=0.01)
+        assert result.expected_return_method == "planner_default"
 
     def test_uses_plan_settings_when_set(self):
         snaps = [_snap(0, 102000, 81000), _snap(90, 100000, 80000)]
@@ -167,6 +169,45 @@ class TestDefaultFallback:
             snapshots=snaps,
         )
         assert result.expected_annualized_return_pct == pytest.approx(8.0, abs=0.01)
+        assert result.expected_return_method == "plan_setting"
+
+    def test_infers_expected_return_from_asset_mix(self):
+        snaps = [
+            PortfolioSnapshot(
+                as_of=NOW,
+                total_value_usd=100000,
+                total_investment_usd=80000,
+                net_performance_usd=20000,
+                net_performance_percent=25,
+                holdings=[
+                    {"symbol": "VTI", "name": "VTI", "value_usd": 60000, "asset_class": "US Stocks", "allocation_percent": 60},
+                    {"symbol": "BND", "name": "BND", "value_usd": 40000, "asset_class": "US Bonds", "allocation_percent": 40},
+                ],
+            ),
+            _snap(90, 95000, 78000),
+        ]
+        result = _track(settings=PlanSettings(), snapshots=snaps)
+        assert result.expected_return_method == "asset_mix_inferred"
+        assert result.expected_annualized_return_pct == pytest.approx(5.8, abs=0.2)
+
+
+class TestTransactionAwareTracking:
+    def test_uses_transaction_flows_for_contribution_tracking(self):
+        snaps = [_snap(0, 108000, 85000), _snap(90, 100000, 80000)]
+        result = compute_plan_tracking(
+            plan_id="plan-1",
+            plan_title="Test Plan",
+            plan_settings=PlanSettings(),
+            planner_defaults=DEFAULTS,
+            snapshots=snaps,
+            transactions=[
+                {"date": "2026-01-15", "symbol": "AAPL", "action": "BUY", "quantity": 40, "unit_price": 100},
+                {"date": "2026-02-15", "symbol": "AAPL", "action": "SELL", "quantity": 10, "unit_price": 100},
+            ],
+        )
+        assert result.actual_contributions_usd == 3000.0
+        assert result.market_growth_usd == 5000.0
+        assert result.actual_return_method == "modified_dietz"
 
 
 class TestMetadata:

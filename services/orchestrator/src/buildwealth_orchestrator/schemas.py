@@ -10,7 +10,10 @@ class Holding(BaseModel):
     symbol: str
     name: str
     data_source: str | None = None
+    asset_type: str | None = None
     asset_class: str | None = None
+    sector: str | None = None
+    region: str | None = None
     allocation_percent: float = 0.0
     value_usd: float = 0.0
     quantity: float = 0.0
@@ -26,6 +29,9 @@ class PortfolioSnapshot(BaseModel):
     total_investment_usd: float = 0.0
     net_performance_usd: float = 0.0
     net_performance_percent: float = 0.0
+    twr_return_pct: float | None = None
+    twr_annualized_return_pct: float | None = None
+    xirr_annualized_return_pct: float | None = None
     holdings: list[Holding] = Field(default_factory=list)
     accounts: list[dict[str, Any]] = Field(default_factory=list)
     raw: dict[str, Any] = Field(default_factory=dict)
@@ -696,6 +702,8 @@ class PlanTrackingResponse(BaseModel):
     actual_annualized_return_pct: float
     expected_annualized_return_pct: float
     return_drift_pct: float
+    actual_return_method: Literal["modified_dietz", "snapshot_delta"]
+    expected_return_method: Literal["plan_setting", "asset_mix_inferred", "planner_default"]
 
     actual_contributions_usd: float
     expected_contributions_usd: float

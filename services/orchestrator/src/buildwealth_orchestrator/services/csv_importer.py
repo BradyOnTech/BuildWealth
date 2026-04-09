@@ -43,6 +43,12 @@ FIELD_ALIASES = {
     "currency": {"currency", "curr"},
     "data_source": {"datasource", "data source", "provider", "source"},
     "account_name": {"account", "accountname", "account number", "accountnumber"},
+    "name": {"name", "securityname", "assetname", "security name", "asset name"},
+    "asset_class": {"assetclass", "asset class", "class"},
+    "asset_type": {"assettype", "asset type", "securitytype", "instrumenttype", "security type"},
+    "sector": {"sector", "industrysector", "industry sector"},
+    "region": {"region", "country", "geography"},
+    "lot_method": {"lotmethod", "costbasismethod", "basis method", "cost basis method"},
     "comment": {"comment", "description", "memo", "notes"},
 }
 
@@ -211,13 +217,38 @@ def parse_transaction_csv(
 
             account_name = (row.get("account_name") or "").strip()
             if account_name:
+                activity["accountName"] = account_name
                 account_id = account_ids.get(account_name.lower())
                 if account_id:
                     activity["accountId"] = account_id
                 else:
                     output.warnings.append(
-                        f"Row {row_num}: Account '{account_name}' was not found in Ghostfolio. Importing without accountId."
+                        f"Row {row_num}: Account '{account_name}' was not found in local accounts. Importing without accountId."
                     )
+
+            name = (row.get("name") or "").strip()
+            if name:
+                activity["name"] = name
+
+            asset_class = (row.get("asset_class") or "").strip()
+            if asset_class:
+                activity["assetClass"] = asset_class
+
+            asset_type = (row.get("asset_type") or "").strip()
+            if asset_type:
+                activity["assetType"] = asset_type
+
+            sector = (row.get("sector") or "").strip()
+            if sector:
+                activity["sector"] = sector
+
+            region = (row.get("region") or "").strip()
+            if region:
+                activity["region"] = region
+
+            lot_method = (row.get("lot_method") or "").strip().upper()
+            if lot_method:
+                activity["lotMethod"] = lot_method
 
             output.activities.append(activity)
 

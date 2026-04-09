@@ -27,6 +27,12 @@ function statusClass(status) {
   return 'attention';
 }
 
+function expectedReturnLabel(method) {
+  if (method === 'plan_setting') return 'Plan';
+  if (method === 'asset_mix_inferred') return 'Asset Mix';
+  return 'Default';
+}
+
 function render(data) {
   const container = byId('tracking-content');
 
@@ -71,8 +77,8 @@ function render(data) {
       <div class="tracking-row header"><span>Metric</span><span>Plan Assumption</span><span>Actual</span><span>Drift</span></div>
       <div class="tracking-row">
         <span>Annualized Return</span>
-        <span>${fmtPct(data.expected_annualized_return_pct)}</span>
-        <span>${fmtPct(data.actual_annualized_return_pct)}</span>
+        <span>${fmtPct(data.expected_annualized_return_pct)} <small>(${expectedReturnLabel(data.expected_return_method)})</small></span>
+        <span>${fmtPct(data.actual_annualized_return_pct)} <small>(${data.actual_return_method === 'modified_dietz' ? 'Dietz' : 'Snapshot'})</small></span>
         <span class="${data.return_drift_pct >= 0 ? 'drift-pos' : 'drift-neg'}">${returnDriftSign}${fmtPct(data.return_drift_pct)}</span>
       </div>
       <div class="tracking-row">

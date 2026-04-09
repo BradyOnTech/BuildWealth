@@ -10,9 +10,25 @@ from buildwealth_orchestrator.schemas import (
     PlanTrackingResponse,
     PortfolioSnapshot,
 )
+from buildwealth_orchestrator.services.portfolio_performance import (
+    calculate_modified_dietz_return,
+    filter_transaction_cash_flows,
+)
 
 MIN_WINDOW_DAYS = 7
 DRIFT_THRESHOLD_PCT = 2.0  # +/- 2% annualized return drift = on_track
+ASSET_CLASS_EXPECTED_RETURNS = {
+    "us_stocks": 0.07,
+    "international_stocks": 0.072,
+    "emerging_markets": 0.078,
+    "us_bonds": 0.04,
+    "international_bonds": 0.038,
+    "cash": 0.025,
+    "reit": 0.065,
+    "reits": 0.065,
+    "commodities": 0.045,
+    "crypto": 0.10,
+}
 
 
 def _resolve_setting(plan: PlanSettings, key: str, defaults: dict[str, Any]) -> float | None:
@@ -32,6 +48,34 @@ def _annualize_return(total_return: float, days: int) -> float:
     return (1.0 + total_return) ** (365.0 / days) - 1.0
 
 
+def _normalize_asset_class(value: str | None) -> str:
+    text = (value or "").strip().lower()
+    return text.replace(" ", "_").replace("-", "_")
+
+
+def _infer_expected_return_from_asset_mix(snapshot: PortfolioSnapshot | None) -> float | None:
+    if snapshot is None:
+        return None
+
+    weighted_sum = 0.0
+    weighted_value = 0.0
+    for holding in snapshot.holdings:
+        value = float(holding.value_usd or 0.0)
+        if value <= 0:
+            continue
+        normalized_asset_class = _normalize_asset_class(holding.asset_class)
+        expected_return = ASSET_CLASS_EXPECTED_RETURNS.get(normalized_asset_class)
+        if expected_return is None:
+            continue
+        weighted_sum += value * expected_return
+        weighted_value += value
+
+    if weighted_value <= 0:
+        return None
+
+    return weighted_sum / weighted_value
+
+
 def compute_plan_tracking(
     *,
     plan_id: str,
@@ -39,6 +83,7 @@ def compute_plan_tracking(
     plan_settings: PlanSettings,
     planner_defaults: dict[str, Any],
     snapshots: list[PortfolioSnapshot],
+    transactions: list[dict[str, Any]] | None = None,
 ) -> PlanTrackingResponse:
     """Build a plan-vs-actual tracking comparison from plan settings and snapshot history.
 
@@ -47,6 +92,10 @@ def compute_plan_tracking(
     now = datetime.now(timezone.utc)
 
     if len(snapshots) < 2:
+        plan_expected = _resolve_setting(plan_settings, "expected_return_baseline", {})
+        expected_return_method: Literal["plan_setting", "asset_mix_inferred", "planner_default"] = (
+            "plan_setting" if plan_expected is not None else "planner_default"
+        )
         return PlanTrackingResponse(
             plan_id=plan_id,
             plan_title=plan_title,
@@ -61,8 +110,10 @@ def compute_plan_tracking(
             value_drift_usd=0.0,
             value_drift_pct=0.0,
             actual_annualized_return_pct=0.0,
-            expected_annualized_return_pct=_resolve_setting(plan_settings, "expected_return_baseline", planner_defaults) or 0.065,
+            expected_annualized_return_pct=plan_expected or (planner_defaults.get("expected_return_baseline") or 0.065),
             return_drift_pct=0.0,
+            actual_return_method="snapshot_delta",
+            expected_return_method=expected_return_method,
             actual_contributions_usd=0.0,
             expected_contributions_usd=0.0,
             contribution_pace_pct=0.0,
@@ -75,9 +126,22 @@ def compute_plan_tracking(
 
     delta = latest.as_of - oldest.as_of
     window_days = max(1, int(delta.total_seconds() / 86400))
+    tracking_flows = (
+        filter_transaction_cash_flows(
+            transactions=transactions or [],
+            start_date=oldest.as_of,
+            end_date=latest.as_of,
+        )
+        if transactions
+        else []
+    )
 
     # -- Contribution tracking --
-    actual_contributions = latest.total_investment_usd - oldest.total_investment_usd
+    actual_contributions = sum(amount for _, amount in tracking_flows)
+    actual_return_method: Literal["modified_dietz", "snapshot_delta"] = "modified_dietz"
+    if not tracking_flows:
+        actual_contributions = latest.total_investment_usd - oldest.total_investment_usd
+        actual_return_method = "snapshot_delta"
     plan_annual_contribution = _resolve_setting(plan_settings, "annual_contribution_usd", planner_defaults) or 0.0
     hsa_extra = _resolve_setting(plan_settings, "hsa_extra_contribution_usd", planner_defaults) or 0.0
     total_annual_contribution = plan_annual_contribution + hsa_extra
@@ -88,18 +152,47 @@ def compute_plan_tracking(
     value_change = latest.total_value_usd - oldest.total_value_usd
     market_growth = value_change - actual_contributions
 
-    # -- Actual return (time-weighted approximation) --
-    #   Use average capital base to estimate return rate.
-    avg_base = (oldest.total_value_usd + latest.total_value_usd) / 2.0
-    if avg_base > 0 and window_days >= MIN_WINDOW_DAYS:
-        period_return = market_growth / avg_base
-        actual_annual_return = _annualize_return(period_return, window_days)
+    # -- Actual return --
+    if tracking_flows and window_days >= MIN_WINDOW_DAYS:
+        period_return, annualized_return = calculate_modified_dietz_return(
+            start_value=oldest.total_value_usd,
+            end_value=latest.total_value_usd,
+            start_date=oldest.as_of,
+            end_date=latest.as_of,
+            cash_flows=tracking_flows,
+        )
+        if period_return is None or annualized_return is None:
+            actual_return_method = "snapshot_delta"
+            avg_base = (oldest.total_value_usd + latest.total_value_usd) / 2.0
+            if avg_base > 0:
+                period_return = market_growth / avg_base
+                actual_annual_return = _annualize_return(period_return, window_days)
+            else:
+                period_return = 0.0
+                actual_annual_return = 0.0
+        else:
+            actual_annual_return = annualized_return
     else:
-        period_return = 0.0
-        actual_annual_return = 0.0
+        avg_base = (oldest.total_value_usd + latest.total_value_usd) / 2.0
+        if avg_base > 0 and window_days >= MIN_WINDOW_DAYS:
+            period_return = market_growth / avg_base
+            actual_annual_return = _annualize_return(period_return, window_days)
+        else:
+            period_return = 0.0
+            actual_annual_return = 0.0
 
     # -- Expected return from plan --
-    expected_annual_return = _resolve_setting(plan_settings, "expected_return_baseline", planner_defaults) or 0.065
+    plan_expected_return = plan_settings.expected_return_baseline
+    inferred_expected_return = _infer_expected_return_from_asset_mix(latest)
+    if plan_expected_return is not None:
+        expected_annual_return = float(plan_expected_return)
+        expected_return_method: Literal["plan_setting", "asset_mix_inferred", "planner_default"] = "plan_setting"
+    elif inferred_expected_return is not None:
+        expected_annual_return = inferred_expected_return
+        expected_return_method = "asset_mix_inferred"
+    else:
+        expected_annual_return = _resolve_setting(plan_settings, "expected_return_baseline", planner_defaults) or 0.065
+        expected_return_method = "planner_default"
 
     return_drift = actual_annual_return - expected_annual_return
 
@@ -148,6 +241,8 @@ def compute_plan_tracking(
         actual_annualized_return_pct=round(actual_annual_return * 100, 2),
         expected_annualized_return_pct=round(expected_annual_return * 100, 2),
         return_drift_pct=round(return_drift * 100, 2),
+        actual_return_method=actual_return_method,
+        expected_return_method=expected_return_method,
         actual_contributions_usd=round(actual_contributions, 2),
         expected_contributions_usd=round(expected_contributions, 2),
         contribution_pace_pct=round(contribution_pace, 1),

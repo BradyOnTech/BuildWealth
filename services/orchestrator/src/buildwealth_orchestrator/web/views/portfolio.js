@@ -5,9 +5,27 @@ export const id = 'portfolio';
 export const label = 'Portfolio';
 export const icon = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><polyline points="3,14 7,8 11,11 17,4"/><line x1="3" y1="17" x2="17" y2="17"/></svg>';
 
-let holdingsData = null;
+let accountNameById = new Map();
+
+const ACCOUNT_TYPE_OPTIONS = [
+  'taxable',
+  'traditional_ira',
+  'roth_ira',
+  'traditional_401k',
+  'roth_401k',
+  'hsa',
+  '529',
+  'savings',
+  'checking',
+];
+
+function accountLabel(accountId) {
+  if (!accountId) return '-';
+  return accountNameById.get(accountId) || accountId;
+}
 
 export function template() {
+  const accountTypeOptions = ACCOUNT_TYPE_OPTIONS.map((type) => `<option value="${type}">${type}</option>`).join('');
   return `
     <div class="view-header">
       <h2>Portfolio</h2>
@@ -19,17 +37,36 @@ export function template() {
     <div class="kpi-row">
       <article class="kpi-card"><p class="kpi-label">Total Value</p><p class="kpi-value" id="port-total">-</p></article>
       <article class="kpi-card"><p class="kpi-label">Net Performance</p><p class="kpi-value" id="port-perf">-</p></article>
-      <article class="kpi-card"><p class="kpi-label">Holdings</p><p class="kpi-value" id="port-count">-</p></article>
+      <article class="kpi-card"><p class="kpi-label">TWR</p><p class="kpi-value" id="port-twr">-</p></article>
+      <article class="kpi-card"><p class="kpi-label">XIRR</p><p class="kpi-value" id="port-xirr">-</p></article>
+      <article class="kpi-card"><p class="kpi-label">Positions</p><p class="kpi-value" id="port-count">-</p></article>
       <article class="kpi-card"><p class="kpi-label">Prices Updated</p><p class="kpi-value" id="port-updated">-</p></article>
     </div>
+
+    <h3 class="section-title">Accounts</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Name</th><th>ID</th><th>Type</th><th>Currency</th></tr></thead>
+      <tbody id="port-accounts-body"><tr><td colspan="4">Loading...</td></tr></tbody>
+    </table></div>
+    <form id="port-account-form" class="txn-form">
+      <label class="field"><span>Name</span><input type="text" id="account-name" placeholder="Roth IRA" required /></label>
+      <label class="field"><span>Type</span>
+        <select id="account-type">${accountTypeOptions}</select>
+      </label>
+      <label class="field"><span>Currency</span><input type="text" id="account-currency" value="USD" maxlength="8" /></label>
+      <button class="primary" type="submit">Add Account</button>
+    </form>
+
     <h3 class="section-title">Holdings</h3>
     <div class="table-wrap"><table>
-      <thead><tr><th>Symbol</th><th>Qty</th><th>Avg Cost</th><th>Price</th><th>Value</th><th>Gain/Loss</th><th>Return</th><th>Alloc</th></tr></thead>
-      <tbody id="port-holdings-body"><tr><td colspan="8">Loading...</td></tr></tbody>
+      <thead><tr><th>Symbol</th><th>Account</th><th>Asset Class</th><th>Qty</th><th>Avg Cost</th><th>Price</th><th>Value</th><th>Gain/Loss</th><th>Return</th><th>Alloc</th></tr></thead>
+      <tbody id="port-holdings-body"><tr><td colspan="10">Loading...</td></tr></tbody>
     </table></div>
+
     <h3 class="section-title">Record Transaction</h3>
     <form id="port-txn-form" class="txn-form">
       <label class="field"><span>Date</span><input type="date" id="txn-date" required /></label>
+      <label class="field"><span>Account</span><select id="txn-account"></select></label>
       <label class="field"><span>Symbol</span><input type="text" id="txn-symbol" placeholder="AAPL" required /></label>
       <label class="field"><span>Action</span>
         <select id="txn-action"><option value="BUY">Buy</option><option value="SELL">Sell</option><option value="DIVIDEND">Dividend</option></select>
@@ -39,25 +76,73 @@ export function template() {
       <label class="field"><span>Fee</span><input type="number" id="txn-fee" step="0.01" min="0" value="0" /></label>
       <button class="primary" type="submit">Add Transaction</button>
     </form>
+
     <h3 class="section-title">Transaction History</h3>
     <div class="table-wrap"><table>
-      <thead><tr><th>Date</th><th>Symbol</th><th>Action</th><th>Qty</th><th>Price</th><th>Total</th><th>Fee</th><th></th></tr></thead>
-      <tbody id="port-txn-body"><tr><td colspan="8">Loading...</td></tr></tbody>
+      <thead><tr><th>Date</th><th>Account</th><th>Symbol</th><th>Action</th><th>Qty</th><th>Price</th><th>Total</th><th>Fee</th><th></th></tr></thead>
+      <tbody id="port-txn-body"><tr><td colspan="9">Loading...</td></tr></tbody>
     </table></div>`;
 }
 
 function renderKPIs(data) {
-  holdingsData = data;
   const total = data.total_value || 0;
   const perf = data.net_performance || 0;
   const perfPct = data.net_performance_pct || 0;
   const count = Object.keys(data.holdings || {}).length;
+  const performance = data.performance || {};
   byId('port-total').textContent = fmtCurrency(total);
+
   const perfEl = byId('port-perf');
   perfEl.textContent = `${perf >= 0 ? '+' : ''}${fmtCurrency(perf)} (${perfPct >= 0 ? '+' : ''}${fmtPct(perfPct)})`;
   perfEl.className = `kpi-value ${perf >= 0 ? 'drift-pos' : 'drift-neg'}`;
+
+  const twrEl = byId('port-twr');
+  const twr = performance.twr_return_pct;
+  twrEl.textContent = typeof twr === 'number' ? `${twr >= 0 ? '+' : ''}${fmtPct(twr)}` : '-';
+  twrEl.className = `kpi-value ${typeof twr === 'number' ? (twr >= 0 ? 'drift-pos' : 'drift-neg') : ''}`;
+
+  const xirrEl = byId('port-xirr');
+  const xirr = performance.xirr_annualized_return_pct;
+  xirrEl.textContent = typeof xirr === 'number' ? `${xirr >= 0 ? '+' : ''}${fmtPct(xirr)}` : '-';
+  xirrEl.className = `kpi-value ${typeof xirr === 'number' ? (xirr >= 0 ? 'drift-pos' : 'drift-neg') : ''}`;
+
   byId('port-count').textContent = String(count);
   byId('port-updated').textContent = data.prices_updated_at ? fmtDate(data.prices_updated_at) : 'Never';
+}
+
+function renderAccounts(accountRows) {
+  const accounts = Array.isArray(accountRows) ? accountRows : [];
+  accountNameById = new Map(accounts.map((account) => [account.id, account.name || account.id]));
+
+  const tbody = byId('port-accounts-body');
+  if (!accounts.length) {
+    tbody.innerHTML = '<tr><td colspan="4">No accounts yet.</td></tr>';
+  } else {
+    tbody.innerHTML = '';
+    for (const account of accounts) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong>${account.name || account.id}</strong></td>
+        <td><code>${account.id}</code></td>
+        <td>${account.type || '-'}</td>
+        <td>${account.currency || 'USD'}</td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  const accountSelect = byId('txn-account');
+  accountSelect.innerHTML = '';
+  if (!accounts.length) {
+    accountSelect.innerHTML = '<option value="default">default</option>';
+    return;
+  }
+
+  for (const account of accounts) {
+    const option = document.createElement('option');
+    option.value = account.id;
+    option.textContent = `${account.name || account.id} (${account.type || 'taxable'})`;
+    accountSelect.appendChild(option);
+  }
 }
 
 function renderHoldings(data) {
@@ -66,7 +151,10 @@ function renderHoldings(data) {
   const total = data.total_value || 0;
   const entries = Object.values(holdings).sort((a, b) => (b.current_value || 0) - (a.current_value || 0));
 
-  if (!entries.length) { tbody.innerHTML = '<tr><td colspan="8">No holdings. Add transactions to build your portfolio.</td></tr>'; return; }
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="10">No holdings. Add transactions to build your portfolio.</td></tr>';
+    return;
+  }
 
   tbody.innerHTML = '';
   for (const h of entries) {
@@ -81,7 +169,9 @@ function renderHoldings(data) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><strong>${h.symbol}</strong></td>
-      <td>${h.quantity?.toFixed(2)}</td>
+      <td>${accountLabel(h.account)}</td>
+      <td>${h.asset_class || '-'}</td>
+      <td>${h.quantity?.toFixed(4)}</td>
       <td>${fmtCurrency(h.avg_cost_per_share)}</td>
       <td>${h.current_price ? fmtCurrency(h.current_price) : '-'}</td>
       <td>${value ? fmtCurrency(value) : '-'}</td>
@@ -94,7 +184,11 @@ function renderHoldings(data) {
 
 function renderTransactions(txns) {
   const tbody = byId('port-txn-body');
-  if (!txns.length) { tbody.innerHTML = '<tr><td colspan="8">No transactions recorded yet.</td></tr>'; return; }
+  if (!txns.length) {
+    tbody.innerHTML = '<tr><td colspan="9">No transactions recorded yet.</td></tr>';
+    return;
+  }
+
   tbody.innerHTML = '';
   for (const t of txns) {
     const total = (t.quantity || 0) * (t.unit_price || 0);
@@ -102,6 +196,7 @@ function renderTransactions(txns) {
     const actionClass = t.action === 'BUY' ? 'drift-pos' : t.action === 'SELL' ? 'drift-neg' : '';
     tr.innerHTML = `
       <td>${t.date || '-'}</td>
+      <td>${accountLabel(t.account)}</td>
       <td><strong>${t.symbol}</strong></td>
       <td class="${actionClass}">${t.action}</td>
       <td>${t.quantity}</td>
@@ -120,31 +215,41 @@ function renderTransactions(txns) {
 
 async function loadAll() {
   try {
-    const [holdings, txns] = await Promise.all([
+    const [holdings, txns, accountRows] = await Promise.all([
       fetchJson('/api/portfolio/holdings'),
       fetchJson('/api/portfolio/transactions?limit=100'),
+      fetchJson('/api/portfolio/accounts'),
     ]);
+    renderAccounts(accountRows || holdings.accounts || []);
     renderKPIs(holdings);
     renderHoldings(holdings);
     renderTransactions(txns);
-  } catch (e) { writeLog(`Portfolio load failed: ${e.message}`, null, true); }
+  } catch (e) {
+    writeLog(`Portfolio load failed: ${e.message}`, null, true);
+  }
 }
 
 async function refreshPrices() {
   const btn = byId('port-refresh-prices');
-  btn.disabled = true; btn.textContent = 'Refreshing...';
+  btn.disabled = true;
+  btn.textContent = 'Refreshing...';
   try {
     await fetchJson('/api/portfolio/refresh-prices', { method: 'POST' });
     writeLog('Prices refreshed.');
     await loadAll();
-  } catch (e) { writeLog(`Price refresh failed: ${e.message}`, null, true); }
-  finally { btn.disabled = false; btn.textContent = 'Refresh Prices'; }
+  } catch (e) {
+    writeLog(`Price refresh failed: ${e.message}`, null, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Refresh Prices';
+  }
 }
 
 async function addTxn(event) {
   event.preventDefault();
   const payload = {
     date: byId('txn-date').value,
+    account: byId('txn-account').value || 'default',
     symbol: byId('txn-symbol').value.trim().toUpperCase(),
     action: byId('txn-action').value,
     quantity: parseFloat(byId('txn-qty').value),
@@ -152,9 +257,11 @@ async function addTxn(event) {
     fee: parseFloat(byId('txn-fee').value || '0'),
   };
   if (!payload.symbol || !payload.quantity || !payload.unit_price) return;
+
   try {
     await fetchJson('/api/portfolio/transactions', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
     });
     byId('txn-symbol').value = '';
@@ -163,15 +270,43 @@ async function addTxn(event) {
     byId('txn-fee').value = '0';
     writeLog(`Transaction added: ${payload.action} ${payload.quantity} ${payload.symbol}`);
     await loadAll();
-  } catch (e) { writeLog(`Add transaction failed: ${e.message}`, null, true); }
+  } catch (e) {
+    writeLog(`Add transaction failed: ${e.message}`, null, true);
+  }
+}
+
+async function addAccount(event) {
+  event.preventDefault();
+  const payload = {
+    name: byId('account-name').value.trim(),
+    type: byId('account-type').value,
+    currency: (byId('account-currency').value || 'USD').trim().toUpperCase(),
+  };
+  if (!payload.name) return;
+
+  try {
+    await fetchJson('/api/portfolio/accounts', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    byId('account-name').value = '';
+    byId('account-currency').value = 'USD';
+    writeLog(`Account added: ${payload.name}`);
+    await loadAll();
+  } catch (e) {
+    writeLog(`Add account failed: ${e.message}`, null, true);
+  }
 }
 
 async function deleteTxn(id) {
   try {
     await fetchJson(`/api/portfolio/transactions/${encodeURIComponent(id)}`, { method: 'DELETE' });
-    writeLog(`Transaction deleted.`);
+    writeLog('Transaction deleted.');
     await loadAll();
-  } catch (e) { writeLog(`Delete failed: ${e.message}`, null, true); }
+  } catch (e) {
+    writeLog(`Delete failed: ${e.message}`, null, true);
+  }
 }
 
 export function init() {
@@ -179,5 +314,6 @@ export function init() {
   byId('port-reload').addEventListener('click', loadAll);
   byId('port-refresh-prices').addEventListener('click', refreshPrices);
   byId('port-txn-form').addEventListener('submit', addTxn);
+  byId('port-account-form').addEventListener('submit', addAccount);
   loadAll();
 }

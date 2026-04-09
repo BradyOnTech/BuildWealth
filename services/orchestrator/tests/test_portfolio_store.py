@@ -7,6 +7,14 @@ from buildwealth_orchestrator.services.portfolio_store import PortfolioStore
 from buildwealth_orchestrator.services.price_updater import build_snapshot_from_holdings
 
 
+def _position_key(symbol: str, account: str = "default") -> str:
+    return f"{account}:{symbol}"
+
+
+def _position(holdings_payload: dict, symbol: str, account: str = "default") -> dict:
+    return holdings_payload["holdings"][_position_key(symbol, account)]
+
+
 @pytest.fixture
 def store(tmp_path):
     return PortfolioStore(tmp_path / "portfolio")
@@ -57,41 +65,62 @@ class TestHoldings:
     def test_buy_creates_holding(self, store):
         store.add_transaction(date="2026-01-15", symbol="AAPL", action="BUY", quantity=10, unit_price=150)
         holdings = store.get_holdings()
-        assert "AAPL" in holdings["holdings"]
-        assert holdings["holdings"]["AAPL"]["quantity"] == 10
-        assert holdings["holdings"]["AAPL"]["cost_basis"] == 1500
+        assert _position_key("AAPL") in holdings["holdings"]
+        assert _position(holdings, "AAPL")["quantity"] == 10
+        assert _position(holdings, "AAPL")["cost_basis"] == 1500
 
     def test_multiple_buys_accumulate(self, store):
         store.add_transaction(date="2026-01-15", symbol="AAPL", action="BUY", quantity=10, unit_price=150)
         store.add_transaction(date="2026-01-20", symbol="AAPL", action="BUY", quantity=5, unit_price=160)
-        h = store.get_holdings()["holdings"]["AAPL"]
+        h = _position(store.get_holdings(), "AAPL")
         assert h["quantity"] == 15
         assert h["cost_basis"] == 2300
 
     def test_sell_reduces_holding(self, store):
         store.add_transaction(date="2026-01-15", symbol="AAPL", action="BUY", quantity=10, unit_price=150)
         store.add_transaction(date="2026-02-01", symbol="AAPL", action="SELL", quantity=4, unit_price=170)
-        h = store.get_holdings()["holdings"]["AAPL"]
+        h = _position(store.get_holdings(), "AAPL")
         assert h["quantity"] == 6
         # Avg cost was 150, sold 4 at avg cost → remaining cost = 6 * 150 = 900
         assert h["cost_basis"] == pytest.approx(900, abs=1)
+        assert h["lot_count"] == 1
 
     def test_sell_all_removes_holding(self, store):
         store.add_transaction(date="2026-01-15", symbol="AAPL", action="BUY", quantity=10, unit_price=150)
         store.add_transaction(date="2026-02-01", symbol="AAPL", action="SELL", quantity=10, unit_price=170)
-        assert "AAPL" not in store.get_holdings()["holdings"]
+        assert _position_key("AAPL") not in store.get_holdings()["holdings"]
 
     def test_dividend_tracked(self, store):
         store.add_transaction(date="2026-01-15", symbol="AAPL", action="BUY", quantity=10, unit_price=150)
         store.add_transaction(date="2026-03-01", symbol="AAPL", action="DIVIDEND", quantity=10, unit_price=0.25)
-        h = store.get_holdings()["holdings"]["AAPL"]
+        h = _position(store.get_holdings(), "AAPL")
         assert h["dividends_received"] == 2.50
 
     def test_avg_cost_per_share(self, store):
         store.add_transaction(date="2026-01-15", symbol="AAPL", action="BUY", quantity=10, unit_price=150)
         store.add_transaction(date="2026-01-20", symbol="AAPL", action="BUY", quantity=10, unit_price=170)
-        h = store.get_holdings()["holdings"]["AAPL"]
+        h = _position(store.get_holdings(), "AAPL")
         assert h["avg_cost_per_share"] == pytest.approx(160, abs=0.01)
+
+    def test_buy_fee_included_in_cost_basis(self, store):
+        store.add_transaction(date="2026-01-15", symbol="AAPL", action="BUY", quantity=10, unit_price=150, fee=7.25)
+        h = _position(store.get_holdings(), "AAPL")
+        assert h["cost_basis"] == pytest.approx(1507.25, abs=0.01)
+
+    def test_sell_tracks_realized_gain_after_fee(self, store):
+        store.add_transaction(date="2026-01-15", symbol="AAPL", action="BUY", quantity=10, unit_price=100)
+        store.add_transaction(date="2026-02-01", symbol="AAPL", action="SELL", quantity=4, unit_price=120, fee=8)
+        h = _position(store.get_holdings(), "AAPL")
+        assert h["realized_gains"] == pytest.approx(72.0, abs=0.01)
+
+    def test_same_symbol_different_accounts_stays_split(self, store):
+        store.add_account("Roth IRA", "roth_ira")
+        store.add_transaction(date="2026-01-15", symbol="AAPL", action="BUY", quantity=4, unit_price=100, account="default")
+        store.add_transaction(date="2026-01-16", symbol="AAPL", action="BUY", quantity=6, unit_price=110, account="Roth IRA")
+        holdings = store.get_holdings()
+        assert _position_key("AAPL", "default") in holdings["holdings"]
+        assert _position_key("AAPL", "roth_ira") in holdings["holdings"]
+        assert holdings["holdings_by_symbol"]["AAPL"]["quantity"] == pytest.approx(10.0)
 
 
 class TestPriceUpdate:
@@ -99,15 +128,32 @@ class TestPriceUpdate:
         store.add_transaction(date="2026-01-15", symbol="AAPL", action="BUY", quantity=10, unit_price=150)
         store.add_transaction(date="2026-01-15", symbol="MSFT", action="BUY", quantity=5, unit_price=400)
         result = store.update_prices({"AAPL": 175.00, "MSFT": 420.00})
-        assert result["holdings"]["AAPL"]["current_price"] == 175.00
-        assert result["holdings"]["AAPL"]["current_value"] == 1750.00
+        assert _position(result, "AAPL")["current_price"] == 175.00
+        assert _position(result, "AAPL")["current_value"] == 1750.00
         assert result["total_value"] == 1750 + 2100
         assert result["net_performance"] == (1750 + 2100) - (1500 + 2000)
 
     def test_missing_price_leaves_none(self, store):
         store.add_transaction(date="2026-01-15", symbol="AAPL", action="BUY", quantity=10, unit_price=150)
         result = store.update_prices({})
-        assert result["holdings"]["AAPL"]["current_price"] is None
+        assert _position(result, "AAPL")["current_price"] is None
+
+    def test_price_persists_across_holdings_rebuild(self, store):
+        store.add_transaction(date="2026-01-15", symbol="AAPL", action="BUY", quantity=10, unit_price=150)
+        store.update_prices({"AAPL": 175.00})
+        store.add_transaction(date="2026-01-20", symbol="AAPL", action="BUY", quantity=1, unit_price=155)
+        result = store.get_holdings()
+        assert _position(result, "AAPL")["current_price"] == 175.00
+        assert _position(result, "AAPL")["current_value"] == pytest.approx(1925.00, abs=0.01)
+
+    def test_performance_summary_populated_after_pricing(self, store):
+        store.add_transaction(date="2026-01-15", symbol="AAPL", action="BUY", quantity=10, unit_price=150)
+        result = store.update_prices({"AAPL": 175.00})
+        performance = result["performance"]
+        assert performance["ending_value"] == 1750.0
+        assert performance["net_contributions"] == 1500.0
+        assert performance["twr_return_pct"] == pytest.approx(16.67, abs=0.01)
+        assert performance["xirr_annualized_return_pct"] is not None
 
 
 class TestSnapshotGeneration:
@@ -120,18 +166,22 @@ class TestSnapshotGeneration:
         assert snapshot.total_value_usd == 3850
         assert len(snapshot.holdings) == 2
         assert snapshot.holdings[0].symbol == "MSFT"  # Higher value first
+        assert snapshot.twr_return_pct is not None
+        assert snapshot.xirr_annualized_return_pct is not None
 
 
 class TestAccounts:
     def test_default_account_exists(self, store):
         accounts = store.get_accounts()
         assert len(accounts) == 1
-        assert accounts[0]["name"] == "default"
+        assert accounts[0]["id"] == "default"
+        assert accounts[0]["name"] == "Default Brokerage"
 
     def test_add_account(self, store):
         store.add_account("Roth IRA", "roth_ira")
         accounts = store.get_accounts()
         assert len(accounts) == 2
+        assert accounts[1]["id"] == "roth_ira"
 
 
 class TestPersistence:
@@ -142,4 +192,39 @@ class TestPersistence:
 
         store2 = PortfolioStore(dir_)
         assert len(store2.list_transactions()) == 1
-        assert "AAPL" in store2.get_holdings()["holdings"]
+        assert _position_key("AAPL") in store2.get_holdings()["holdings"]
+
+    def test_legacy_holdings_payload_migrates_on_load(self, tmp_path):
+        dir_ = tmp_path / "portfolio"
+        dir_.mkdir(parents=True)
+        (dir_ / "transactions.json").write_text("[]", encoding="utf-8")
+        (dir_ / "accounts.json").write_text(json.dumps({"accounts": [{"name": "default", "type": "taxable"}]}), encoding="utf-8")
+        (dir_ / "holdings.json").write_text(
+            json.dumps(
+                {
+                    "holdings": {
+                        "AAPL": {
+                            "symbol": "AAPL",
+                            "quantity": 10,
+                            "cost_basis": 1500,
+                            "avg_cost_per_share": 150,
+                            "dividends_received": 0,
+                            "current_price": 175,
+                            "current_value": 1750,
+                        }
+                    },
+                    "total_value": 1750,
+                    "total_cost_basis": 1500,
+                    "net_performance": 250,
+                    "net_performance_pct": 16.67,
+                    "prices_updated_at": "2026-01-31T00:00:00+00:00",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        store = PortfolioStore(dir_)
+        holdings = store.get_holdings()
+        assert holdings["schema_version"] == 3
+        assert holdings["performance"]["as_of"] == "2026-01-31T00:00:00+00:00"
+        assert holdings["holdings"][_position_key("AAPL")]["realized_gains"] == 0.0

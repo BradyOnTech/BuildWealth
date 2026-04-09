@@ -323,7 +323,7 @@ async def execute_csv_import(file_path: Path, request: CsvImportRequest) -> CsvI
         default_data_source=request.default_data_source or "YAHOO",
         default_currency=request.default_currency or settings.app_currency,
         delimiter=request.delimiter,
-        account_ids_by_name={},
+        account_ids_by_name=portfolio_store.account_ids_by_name(),
     )
 
     imported_activities = 0
@@ -332,6 +332,11 @@ async def execute_csv_import(file_path: Path, request: CsvImportRequest) -> CsvI
         if not request.dry_run:
             items = []
             for act in parsed.activities:
+                account_id = act.get("accountId")
+                account_name = str(act.get("accountName") or "").strip()
+                if not account_id and account_name:
+                    account_record = portfolio_store.ensure_account(account_name)
+                    account_id = account_record.get("id")
                 items.append({
                     "date": act.get("date", ""),
                     "symbol": act.get("symbol", ""),
@@ -340,7 +345,13 @@ async def execute_csv_import(file_path: Path, request: CsvImportRequest) -> CsvI
                     "unit_price": float(act.get("unitPrice", 0)),
                     "fee": float(act.get("fee", 0)),
                     "currency": act.get("currency", "USD"),
-                    "account": act.get("accountId", "default"),
+                    "account": account_id or "default",
+                    "lot_method": act.get("lotMethod", "FIFO"),
+                    "name": act.get("name"),
+                    "asset_type": act.get("assetType"),
+                    "asset_class": act.get("assetClass"),
+                    "sector": act.get("sector"),
+                    "region": act.get("region"),
                 })
             imported_activities = portfolio_store.add_transactions_bulk(items)
     else:
@@ -1526,6 +1537,7 @@ async def tool_get_plan_tracking(arguments: dict[str, object]) -> dict[str, obje
     detail = plan_workspace.get_plan(plan_id)
     plan_settings = PlanSettings(**detail.get("settings", {}))
     snapshots = snapshot_store.recent(limit=90)
+    transactions = portfolio_store.list_transactions(limit=10_000)
     planner_defaults = {
         "annual_contribution_usd": settings.planner_annual_contribution_usd,
         "expected_return_baseline": settings.planner_expected_return_baseline,
@@ -1537,6 +1549,7 @@ async def tool_get_plan_tracking(arguments: dict[str, object]) -> dict[str, obje
         plan_settings=plan_settings,
         planner_defaults=planner_defaults,
         snapshots=snapshots,
+        transactions=transactions,
     )
     return result.model_dump(mode="json")
 
@@ -2329,6 +2342,12 @@ def add_portfolio_transaction(request: dict[str, Any]) -> dict[str, Any]:
         account=request.get("account", "default"),
         currency=request.get("currency", "USD"),
         note=request.get("note", ""),
+        lot_method=request.get("lot_method", "FIFO"),
+        name=request.get("name"),
+        asset_type=request.get("asset_type"),
+        asset_class=request.get("asset_class"),
+        sector=request.get("sector"),
+        region=request.get("region"),
     )
 
 
@@ -2355,6 +2374,18 @@ async def refresh_portfolio_prices() -> dict[str, Any]:
 @app.get("/api/portfolio/accounts")
 def get_portfolio_accounts() -> list[dict[str, Any]]:
     return portfolio_store.get_accounts()
+
+
+@app.post("/api/portfolio/accounts")
+def add_portfolio_account(request: dict[str, Any]) -> dict[str, Any]:
+    name = str(request.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Account name is required.")
+    return portfolio_store.add_account(
+        name=name,
+        account_type=str(request.get("type") or "taxable"),
+        currency=str(request.get("currency") or "USD"),
+    )
 
 
 @app.post("/api/portfolio/simulate-trade", response_model=SimulateTradeResponse)
@@ -2618,6 +2649,7 @@ def get_plan_tracking(plan_id: str) -> PlanTrackingResponse:
 
     plan_settings = PlanSettings(**detail.get("settings", {}))
     snapshots = snapshot_store.recent(limit=90)
+    transactions = portfolio_store.list_transactions(limit=10_000)
 
     planner_defaults = {
         "annual_contribution_usd": settings.planner_annual_contribution_usd,
@@ -2631,6 +2663,7 @@ def get_plan_tracking(plan_id: str) -> PlanTrackingResponse:
         plan_settings=plan_settings,
         planner_defaults=planner_defaults,
         snapshots=snapshots,
+        transactions=transactions,
     )
 
 
