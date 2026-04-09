@@ -246,6 +246,76 @@ class TestManualPriceOverrides:
             store.set_manual_price(symbol="AAPL", price=0)
 
 
+class TestFxRates:
+    def test_non_base_currency_position_converts_to_base_currency(self, store):
+        euro_account = store.add_account("Euro Brokerage", currency="EUR")
+        store.set_fx_rate(currency="EUR", rate=1.1)
+        store.add_transaction(
+            date="2026-01-01",
+            symbol="SAP",
+            action="BUY",
+            quantity=10,
+            unit_price=100,
+            account=euro_account["id"],
+            currency="EUR",
+        )
+
+        holdings = store.update_prices({"SAP": 120})
+        position = _position(holdings, "SAP", euro_account["id"])
+        assert position["currency"] == "EUR"
+        assert holdings["base_currency"] == "USD"
+        assert position["cost_basis_native"] == pytest.approx(1000.0, abs=0.01)
+        assert position["cost_basis"] == pytest.approx(1100.0, abs=0.01)
+        assert position["current_price_native"] == pytest.approx(120.0, abs=0.0001)
+        assert position["current_price"] == pytest.approx(132.0, abs=0.0001)
+        assert position["current_value_native"] == pytest.approx(1200.0, abs=0.01)
+        assert position["current_value"] == pytest.approx(1320.0, abs=0.01)
+
+    def test_updating_fx_rate_revalues_base_totals(self, store):
+        euro_account = store.add_account("Euro Brokerage", currency="EUR")
+        store.set_fx_rate(currency="EUR", rate=1.1)
+        store.add_transaction(
+            date="2026-01-01",
+            symbol="SAP",
+            action="BUY",
+            quantity=10,
+            unit_price=100,
+            account=euro_account["id"],
+            currency="EUR",
+        )
+        initial = store.update_prices({"SAP": 100})
+        initial_position = _position(initial, "SAP", euro_account["id"])
+        assert initial_position["current_value_native"] == pytest.approx(1000.0, abs=0.01)
+        assert initial_position["current_value"] == pytest.approx(1100.0, abs=0.01)
+
+        store.set_fx_rate(currency="EUR", rate=1.2)
+        repriced = store.get_holdings()
+        repriced_position = _position(repriced, "SAP", euro_account["id"])
+        assert repriced_position["current_value_native"] == pytest.approx(1000.0, abs=0.01)
+        assert repriced_position["current_value"] == pytest.approx(1200.0, abs=0.01)
+        assert repriced["total_value"] == pytest.approx(1200.0, abs=0.01)
+
+    def test_performance_uses_fx_converted_contributions(self, store):
+        euro_account = store.add_account("Euro Brokerage", currency="EUR")
+        store.set_fx_rate(currency="EUR", rate=1.2)
+        store.add_transaction(
+            date="2026-01-01",
+            symbol="SAP",
+            action="BUY",
+            quantity=10,
+            unit_price=100,
+            account=euro_account["id"],
+            currency="EUR",
+        )
+        holdings = store.update_prices({"SAP": 100})
+        performance = holdings["performance"]
+        assert performance["gross_contributions"] == pytest.approx(1200.0, abs=0.01)
+        assert performance["ending_value"] == pytest.approx(1200.0, abs=0.01)
+
+    def test_cannot_clear_base_currency_fx_rate(self, store):
+        assert store.clear_fx_rate("USD") is False
+
+
 class TestCustomAssets:
     def test_create_custom_asset_sets_manual_metadata_and_position(self, store):
         created = store.create_custom_asset(
@@ -412,6 +482,6 @@ class TestPersistence:
 
         store = PortfolioStore(dir_)
         holdings = store.get_holdings()
-        assert holdings["schema_version"] == 5
+        assert holdings["schema_version"] == 6
         assert holdings["performance"]["as_of"] == "2026-01-31T00:00:00+00:00"
         assert holdings["holdings"][_position_key("AAPL")]["realized_gains"] == 0.0

@@ -90,6 +90,12 @@ These decisions refine the build plan based on the current repository and upstre
 - Custom assets now carry metadata (`data_source=MANUAL`, `is_custom_asset=true`, valuation method) and appear in dedicated portfolio UI section
 - Portfolio API now supports listing and creating custom assets using the same manual valuation path as manual price overrides
 
+### 2026-04-09 (Completed - Multi-Currency Foundation)
+- Phase 1.8 foundation: holdings are now currency-aware with persisted native and base-currency fields (`currency`, `base_currency`, `fx_rate_to_base`, native/base cost/value/returns)
+- Added standalone FX rate store (`fx_rates.json`) with migration-safe payload, portfolio API CRUD endpoints, and portfolio UI controls for set/clear rates
+- Rebuild/finalize performance paths now convert transaction cash flows to base currency before TWR/XIRR-style calculations; totals and account views remain base-normalized
+- Implementation pattern follows Ghostfolio exchange-rate service design (static/manual rates first, upstream provider fetching can layer on next)
+
 ---
 
 ## Current Capability Audit
@@ -110,7 +116,7 @@ These decisions refine the build plan based on the current repository and upstre
 | Asset class breakdown | Built | ~45% |
 | Sector breakdown | Built (foundation) | ~35% |
 | Geographic breakdown | Built (foundation) | ~35% |
-| Multi-currency | NOT BUILT | 0% |
+| Multi-currency | Built (foundation) | ~35% |
 | Historical price backfill | NOT BUILT | 0% |
 | Total return (incl. dividends) | Built (foundation) | ~45% |
 | Performance attribution | NOT BUILT | 0% |

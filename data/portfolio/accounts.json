@@ -1,0 +1,14 @@
+{
+  "schema_version": 2,
+  "default_account_id": "default",
+  "accounts": [
+    {
+      "id": "default",
+      "name": "Default Brokerage",
+      "type": "taxable",
+      "currency": "USD",
+      "created_at": "2026-04-09T21:45:01.219671+00:00"
+    }
+  ],
+  "updated_at": "2026-04-09T21:45:01.219675+00:00"
+}

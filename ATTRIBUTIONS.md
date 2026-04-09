@@ -11,6 +11,10 @@ adapted from the following open source projects:
 - Intended reuse in BuildWealth:
   portfolio activity models, import workflows, broker CSV handling patterns,
   asset metadata patterns, and portfolio test fixtures
+- File-level adaptations:
+  `services/orchestrator/src/buildwealth_orchestrator/services/portfolio_store.py`
+  (multi-currency rate storage and normalization patterns adapted from
+  `apps/api/src/services/exchange-rate-data/exchange-rate-data.service.ts`)
 
 ## Ignidash
 

@@ -1,0 +1,8 @@
+{
+  "openai_api_key": "",
+  "openai_model": "gpt-4o",
+  "openai_base_url": "https://api.openai.com/v1",
+  "ghostfolio_api_base": "http://localhost:3333/api",
+  "ghostfolio_security_token": "",
+  "updated_at": "2026-04-09T21:45:01.219211+00:00"
+}

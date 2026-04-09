@@ -2437,6 +2437,39 @@ def clear_portfolio_manual_price(symbol: str) -> dict[str, Any]:
     return {"deleted": True, "symbol": str(symbol).upper()}
 
 
+@app.get("/api/portfolio/fx-rates")
+def get_portfolio_fx_rates() -> dict[str, Any]:
+    return portfolio_store.get_fx_rates()
+
+
+@app.put("/api/portfolio/fx-rates")
+def set_portfolio_fx_rate(request: dict[str, Any]) -> dict[str, Any]:
+    currency = str(request.get("currency") or "").strip().upper()
+    if not currency:
+        raise HTTPException(status_code=400, detail="currency is required")
+    try:
+        rate = float(request.get("rate"))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="rate must be a number") from exc
+    base_currency = request.get("base_currency")
+    try:
+        return portfolio_store.set_fx_rate(
+            currency=currency,
+            rate=rate,
+            base_currency=str(base_currency).strip().upper() if base_currency is not None else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/portfolio/fx-rates/{currency}")
+def clear_portfolio_fx_rate(currency: str) -> dict[str, Any]:
+    deleted = portfolio_store.clear_fx_rate(currency)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="FX rate not found or cannot clear base currency.")
+    return {"deleted": True, "currency": str(currency).upper()}
+
+
 @app.get("/api/portfolio/custom-assets")
 def get_portfolio_custom_assets() -> list[dict[str, Any]]:
     return portfolio_store.list_custom_assets()

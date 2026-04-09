@@ -1,0 +1,20 @@
+{
+  "schema_version": 2,
+  "income_items": [],
+  "expense_items": [],
+  "debt_items": [],
+  "goal_items": [],
+  "physical_assets": [],
+  "tax_profile": {
+    "filing_status": null,
+    "marginal_tax_rate": null,
+    "effective_tax_rate": null,
+    "state": null
+  },
+  "flags": {
+    "no_debt": false,
+    "no_goals": false
+  },
+  "notes": "",
+  "updated_at": "2026-04-09T21:45:01.221332+00:00"
+}

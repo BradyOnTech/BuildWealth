@@ -1,0 +1,55 @@
+{
+  "schema_version": 6,
+  "holdings": {},
+  "holdings_by_symbol": {},
+  "account_cash": {},
+  "account_totals": {},
+  "allocation_breakdowns": {
+    "asset_class": [],
+    "sector": [],
+    "region": []
+  },
+  "cost_basis_methods": {
+    "schema_version": 1,
+    "global": "FIFO",
+    "by_account": {},
+    "by_symbol": {},
+    "by_position": {},
+    "updated_at": "2026-04-09T21:45:01.220556+00:00"
+  },
+  "manual_prices": {},
+  "base_currency": "USD",
+  "fx_rates": {
+    "USD": 1.0
+  },
+  "performance": {
+    "start_date": null,
+    "as_of": null,
+    "period_days": 0,
+    "gross_contributions": 0.0,
+    "net_contributions": 0.0,
+    "ending_value": 0.0,
+    "twr_return_pct": null,
+    "twr_annualized_return_pct": null,
+    "xirr_annualized_return_pct": null,
+    "realized_gains_usd": 0.0,
+    "unrealized_gains_usd": 0.0,
+    "income_received_usd": 0.0,
+    "fees_paid_usd": 0.0,
+    "price_return_usd": 0.0,
+    "income_return_usd": 0.0,
+    "total_return_usd": 0.0,
+    "price_return_pct": null,
+    "income_return_pct": null,
+    "total_return_pct": null,
+    "return_denominator_usd": 0.0,
+    "calculation_basis": "transaction_price_estimate"
+  },
+  "total_cash": 0,
+  "total_portfolio_value": 0.0,
+  "updated_at": "2026-04-09T21:45:01.220905+00:00",
+  "total_value": 0.0,
+  "total_cost_basis": 0.0,
+  "net_performance": 0.0,
+  "net_performance_pct": 0.0
+}

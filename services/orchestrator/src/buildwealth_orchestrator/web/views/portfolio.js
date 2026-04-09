@@ -84,10 +84,21 @@ export function template() {
       <button class="primary" type="submit">Add Account</button>
     </form>
 
+    <h3 class="section-title">FX Rates</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Currency</th><th>Rate To Base</th><th>Base</th><th></th></tr></thead>
+      <tbody id="port-fx-body"><tr><td colspan="4">Loading...</td></tr></tbody>
+    </table></div>
+    <form id="port-fx-form" class="txn-form">
+      <label class="field"><span>Currency</span><input type="text" id="fx-currency" placeholder="EUR" maxlength="8" required /></label>
+      <label class="field"><span>Rate To Base</span><input type="number" id="fx-rate" step="0.00000001" min="0" placeholder="1.0800" required /></label>
+      <button class="primary" type="submit">Set FX Rate</button>
+    </form>
+
     <h3 class="section-title">Holdings</h3>
     <div class="table-wrap"><table>
-      <thead><tr><th>Symbol</th><th>Account</th><th>Asset Class</th><th>Method</th><th>Qty</th><th>Avg Cost</th><th>Price</th><th>Value</th><th>Gain/Loss</th><th>Return</th><th>Alloc</th></tr></thead>
-      <tbody id="port-holdings-body"><tr><td colspan="11">Loading...</td></tr></tbody>
+      <thead><tr><th>Symbol</th><th>Account</th><th>CCY</th><th>Asset Class</th><th>Method</th><th>Qty</th><th>Avg Cost</th><th>Price</th><th>Value</th><th>Gain/Loss</th><th>Return</th><th>Alloc</th></tr></thead>
+      <tbody id="port-holdings-body"><tr><td colspan="12">Loading...</td></tr></tbody>
     </table></div>
     <div class="table-wrap">
       <table>
@@ -242,11 +253,12 @@ function renderHoldings(data) {
   const tbody = byId('port-holdings-body');
   const holdings = data.holdings || {};
   const manualPrices = data.manual_prices || {};
+  const baseCurrency = String(data.base_currency || 'USD').toUpperCase();
   const total = data.total_value || 0;
   const entries = Object.values(holdings).sort((a, b) => (b.current_value || 0) - (a.current_value || 0));
 
   if (!entries.length) {
-    tbody.innerHTML = '<tr><td colspan="11">No holdings. Add transactions to build your portfolio.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12">No holdings. Add transactions to build your portfolio.</td></tr>';
     return;
   }
 
@@ -263,21 +275,31 @@ function renderHoldings(data) {
     const manualEntry = manualPrices[h.symbol];
     const manualPriceValue = typeof manualEntry?.price === 'number' ? manualEntry.price : '';
     const priceSource = h.price_source || (manualEntry ? 'MANUAL' : '-');
+    const currency = String(h.currency || baseCurrency).toUpperCase();
+    const showNative = currency !== baseCurrency;
+    const nativeAvgCost = Number.isFinite(h.avg_cost_per_share_native) ? h.avg_cost_per_share_native : null;
+    const nativePrice = Number.isFinite(h.current_price_native) ? h.current_price_native : null;
+    const nativeValue = Number.isFinite(h.current_value_native) ? h.current_value_native : null;
     const tr = document.createElement('tr');
     const currentMethod = COST_BASIS_METHOD_OPTIONS.includes(h.cost_basis_method) ? h.cost_basis_method : 'FIFO';
     const methodOptions = COST_BASIS_METHOD_OPTIONS.map((method) => `<option value="${method}" ${method === currentMethod ? 'selected' : ''}>${method}</option>`).join('');
     tr.innerHTML = `
       <td><strong>${h.symbol}</strong></td>
       <td>${accountLabel(h.account)}</td>
+      <td><code>${currency}</code></td>
       <td>${h.asset_class || '-'}</td>
       <td>
         <select class="compact-method" data-symbol="${h.symbol}" data-account="${h.account}">${methodOptions}</select>
         <button class="ghost small" data-action="save-method" data-symbol="${h.symbol}" data-account="${h.account}">Set</button>
       </td>
       <td>${h.quantity?.toFixed(4)}</td>
-      <td>${fmtCurrency(h.avg_cost_per_share)}</td>
+      <td>
+        <div>${fmtCurrency(h.avg_cost_per_share)}</div>
+        ${showNative && nativeAvgCost !== null ? `<div class="muted">${nativeAvgCost.toFixed(4)} ${currency}</div>` : ''}
+      </td>
       <td>
         <div>${h.current_price ? fmtCurrency(h.current_price) : '-'}</div>
+        ${showNative && nativePrice !== null ? `<div class="muted">${nativePrice.toFixed(4)} ${currency}</div>` : ''}
         <div class="muted">${priceSource}</div>
         <div>
           <input type="number" class="compact-manual-price" data-symbol="${h.symbol}" step="0.0001" min="0" placeholder="Manual" value="${manualPriceValue}" />
@@ -285,7 +307,10 @@ function renderHoldings(data) {
           <button class="ghost small" data-action="clear-manual" data-symbol="${h.symbol}">Clear</button>
         </div>
       </td>
-      <td>${value ? fmtCurrency(value) : '-'}</td>
+      <td>
+        <div>${value ? fmtCurrency(value) : '-'}</div>
+        ${showNative && nativeValue !== null ? `<div class="muted">${nativeValue.toFixed(2)} ${currency}</div>` : ''}
+      </td>
       <td class="${cls}">${sign}${fmtCurrency(gain)}</td>
       <td class="${cls}">${sign}${fmtPct(gainPct)}</td>
       <td>${fmtPct(alloc)}</td>`;
@@ -311,6 +336,37 @@ function renderHoldings(data) {
       clearManualButton.addEventListener('click', async () => {
         await clearManualPrice(h.symbol);
       });
+    }
+    tbody.appendChild(tr);
+  }
+}
+
+function renderFxRates(data) {
+  const tbody = byId('port-fx-body');
+  const baseCurrency = String(data.base_currency || 'USD').toUpperCase();
+  const rates = data.fx_rates || {};
+  const entries = Object.entries(rates).sort((a, b) => a[0].localeCompare(b[0]));
+
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="4">No FX rates configured.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = '';
+  for (const [currency, rawRate] of entries) {
+    const rate = Number(rawRate);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><code>${currency}</code></td>
+      <td>${Number.isFinite(rate) ? rate.toFixed(8) : '-'}</td>
+      <td>${currency === baseCurrency ? 'Yes' : ''}</td>
+      <td></td>`;
+    if (currency !== baseCurrency) {
+      const clearBtn = document.createElement('button');
+      clearBtn.className = 'ghost small';
+      clearBtn.textContent = 'Clear';
+      clearBtn.addEventListener('click', () => clearFxRate(currency));
+      tr.lastElementChild.appendChild(clearBtn);
     }
     tbody.appendChild(tr);
   }
@@ -410,6 +466,7 @@ async function loadAll() {
     ]);
     renderAccounts(accountRows || holdings.accounts || [], holdings.account_totals || {});
     renderKPIs(holdings);
+    renderFxRates(holdings);
     renderHoldings(holdings);
     renderBreakdowns(holdings);
     renderCustomAssets(holdings);
@@ -569,6 +626,36 @@ async function clearManualPrice(symbol) {
   }
 }
 
+async function setFxRate(event) {
+  event.preventDefault();
+  const currency = (byId('fx-currency').value || '').trim().toUpperCase();
+  const rate = parseFloat(byId('fx-rate').value || '');
+  if (!currency || !Number.isFinite(rate) || rate <= 0) return;
+  try {
+    await fetchJson('/api/portfolio/fx-rates', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ currency, rate }),
+    });
+    byId('fx-currency').value = '';
+    byId('fx-rate').value = '';
+    writeLog(`FX rate set: ${currency} -> ${rate}`);
+    await loadAll();
+  } catch (e) {
+    writeLog(`Set FX rate failed: ${e.message}`, null, true);
+  }
+}
+
+async function clearFxRate(currency) {
+  try {
+    await fetchJson(`/api/portfolio/fx-rates/${encodeURIComponent(currency)}`, { method: 'DELETE' });
+    writeLog(`FX rate cleared: ${currency}`);
+    await loadAll();
+  } catch (e) {
+    writeLog(`Clear FX rate failed: ${e.message}`, null, true);
+  }
+}
+
 async function deleteTxn(id) {
   try {
     await fetchJson(`/api/portfolio/transactions/${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -586,6 +673,7 @@ export function init() {
   byId('port-refresh-prices').addEventListener('click', refreshPrices);
   byId('port-txn-form').addEventListener('submit', addTxn);
   byId('port-account-form').addEventListener('submit', addAccount);
+  byId('port-fx-form').addEventListener('submit', setFxRate);
   byId('port-custom-asset-form').addEventListener('submit', addCustomAsset);
   syncTxnFieldRequirements();
   loadAll();

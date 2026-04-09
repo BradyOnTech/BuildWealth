@@ -190,6 +190,7 @@ def build_snapshot_from_holdings(holdings_data: dict[str, Any]) -> PortfolioSnap
             if as_of
             else datetime.now(timezone.utc)
         ),
+        base_currency=str(holdings_data.get("base_currency") or "USD"),
         total_value_usd=total_value,
         total_investment_usd=total_cost,
         net_performance_usd=round(total_value - total_cost, 2),
