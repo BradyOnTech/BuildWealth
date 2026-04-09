@@ -495,3 +495,30 @@ class WorkflowRunResponse(BaseModel):
     report_markdown: str
     artifact: PlanArtifactSummary | None = None
     recommendations: list[RecommendationItem] = Field(default_factory=list)
+
+
+class PlanTrackingResponse(BaseModel):
+    plan_id: str
+    plan_title: str
+    status: Literal["on_track", "ahead", "behind", "insufficient_data"]
+    status_detail: str
+    tracking_window_days: int
+    window_start: datetime
+    window_end: datetime
+
+    starting_value_usd: float
+    current_value_usd: float
+    projected_value_usd: float
+    value_drift_usd: float
+    value_drift_pct: float
+
+    actual_annualized_return_pct: float
+    expected_annualized_return_pct: float
+    return_drift_pct: float
+
+    actual_contributions_usd: float
+    expected_contributions_usd: float
+    contribution_pace_pct: float
+
+    market_growth_usd: float
+    snapshot_count: int

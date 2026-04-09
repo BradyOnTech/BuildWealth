@@ -52,6 +52,7 @@ from buildwealth_orchestrator.schemas import (
     RecommendationItem,
     RecommendationRejectRequest,
     RecommendationUpdateRequest,
+    PlanTrackingResponse,
     TodayDashboardResponse,
     WorkflowRunRequest,
     WorkflowRunResponse,
@@ -78,6 +79,7 @@ from buildwealth_orchestrator.services.snapshot_store import (
     SnapshotStore,
     normalize_ghostfolio_snapshot,
 )
+from buildwealth_orchestrator.services.plan_tracker import compute_plan_tracking
 from buildwealth_orchestrator.services.today_dashboard import build_today_dashboard_payload
 from buildwealth_orchestrator.services.workflow_runner import WorkflowRunner
 from buildwealth_orchestrator.services.plan_workspace import (
@@ -1461,6 +1463,26 @@ async def tool_update_plan_settings(arguments: dict[str, object]) -> dict[str, o
     }
 
 
+async def tool_get_plan_tracking(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+    detail = plan_workspace.get_plan(plan_id)
+    plan_settings = PlanSettings(**detail.get("settings", {}))
+    snapshots = snapshot_store.recent(limit=90)
+    planner_defaults = {
+        "annual_contribution_usd": settings.planner_annual_contribution_usd,
+        "expected_return_baseline": settings.planner_expected_return_baseline,
+        "hsa_extra_contribution_usd": settings.planner_hsa_delta_default,
+    }
+    result = compute_plan_tracking(
+        plan_id=plan_id,
+        plan_title=detail.get("title", ""),
+        plan_settings=plan_settings,
+        planner_defaults=planner_defaults,
+        snapshots=snapshots,
+    )
+    return result.model_dump(mode="json")
+
+
 async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str, object]:
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
     detail = plan_workspace.get_plan(plan_id)
@@ -1845,6 +1867,21 @@ def configure_copilot_tools() -> None:
         handler=tool_get_plan_settings,
     )
     copilot.register_tool(
+        name="get_plan_tracking",
+        description=(
+            "Compare plan assumptions against actual portfolio performance. "
+            "Returns annualized actual vs expected return, contribution pace, "
+            "projected vs actual value, and an on-track/ahead/behind assessment. "
+            "Use this to answer 'am I on track?' questions."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {"plan_id": {"type": "string"}},
+            "additionalProperties": False,
+        },
+        handler=tool_get_plan_tracking,
+    )
+    copilot.register_tool(
         name="update_plan_settings",
         description=(
             "Update planning assumptions/settings for a plan and record a decision trail. "
@@ -2202,6 +2239,31 @@ def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest) -> Pl
         candidate_result=candidate_result,
         scenario_deltas=[ScenarioComparisonRow(**item) for item in scenario_deltas],
         monte_carlo_delta=monte_carlo_delta,
+    )
+
+
+@app.get("/api/plans/{plan_id}/tracking", response_model=PlanTrackingResponse)
+def get_plan_tracking(plan_id: str) -> PlanTrackingResponse:
+    try:
+        detail = plan_workspace.get_plan(plan_id)
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    plan_settings = PlanSettings(**detail.get("settings", {}))
+    snapshots = snapshot_store.recent(limit=90)
+
+    planner_defaults = {
+        "annual_contribution_usd": settings.planner_annual_contribution_usd,
+        "expected_return_baseline": settings.planner_expected_return_baseline,
+        "hsa_extra_contribution_usd": settings.planner_hsa_delta_default,
+    }
+
+    return compute_plan_tracking(
+        plan_id=plan_id,
+        plan_title=detail.get("title", ""),
+        plan_settings=plan_settings,
+        planner_defaults=planner_defaults,
+        snapshots=snapshots,
     )
 
 

@@ -8,10 +8,11 @@ import * as copilot from './views/copilot.js';
 import * as plans from './views/plans.js';
 import * as recommendations from './views/recommendations.js';
 import * as workflows from './views/workflows.js';
+import * as tracking from './views/tracking.js';
 import * as sync from './views/sync.js';
 import * as snapshot from './views/snapshot.js';
 
-const views = [dashboard, profile, copilot, plans, recommendations, workflows, sync, snapshot];
+const views = [dashboard, profile, copilot, plans, tracking, recommendations, workflows, sync, snapshot];
 let currentView = null;
 let pendingParams = null;
 
