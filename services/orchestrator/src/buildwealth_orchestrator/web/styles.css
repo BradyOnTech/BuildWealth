@@ -176,6 +176,12 @@ html, body {
   z-index: 30;
   display: flex;
   flex-direction: column;
+  transition: transform 150ms ease;
+}
+
+.log-drawer.closed {
+  transform: translateX(100%);
+  pointer-events: none;
 }
 
 .log-head {
@@ -520,6 +526,9 @@ textarea[readonly] { background: #f6f9f1; }
 }
 
 .form-span { grid-column: 1 / -1; }
+
+.field-hint { font-size: 0.72rem; color: var(--ink-soft); font-style: italic; text-transform: none; letter-spacing: 0; }
+.settings-form { max-width: 720px; }
 
 .inline-builder {
   display: grid;

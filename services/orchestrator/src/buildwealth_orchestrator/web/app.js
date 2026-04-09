@@ -11,8 +11,9 @@ import * as workflows from './views/workflows.js';
 import * as tracking from './views/tracking.js';
 import * as sync from './views/sync.js';
 import * as snapshot from './views/snapshot.js';
+import * as settings from './views/settings.js';
 
-const views = [dashboard, profile, copilot, plans, tracking, recommendations, workflows, sync, snapshot];
+const views = [dashboard, profile, copilot, plans, tracking, recommendations, workflows, sync, snapshot, settings];
 let currentView = null;
 let pendingParams = null;
 
@@ -63,7 +64,7 @@ function route() {
 
 function toggleLog() {
   const drawer = byId('log-drawer');
-  drawer.hidden = !drawer.hidden;
+  drawer.classList.toggle('closed');
 }
 
 async function loadGlobalState() {

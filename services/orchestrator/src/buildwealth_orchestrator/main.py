@@ -100,6 +100,7 @@ from buildwealth_orchestrator.services.recommendation_inbox import (
     RecommendationInbox,
     RecommendationNotFoundError,
 )
+from buildwealth_orchestrator.services.user_settings import UserSettingsStore
 from buildwealth_orchestrator.settings import get_settings
 
 settings = get_settings()
@@ -109,6 +110,21 @@ web_dir = Path(__file__).resolve().parent / "web"
 if web_dir.exists():
     app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
 
+
+user_settings_store = UserSettingsStore(settings.snapshot_dir.parent / "settings" / "user_settings.json")
+
+# Apply user settings over env defaults
+_user_cfg = user_settings_store.load_raw()
+if _user_cfg.get("openai_api_key"):
+    settings.openai_api_key = _user_cfg["openai_api_key"]
+if _user_cfg.get("openai_model"):
+    settings.openai_model = _user_cfg["openai_model"]
+if _user_cfg.get("openai_base_url"):
+    settings.openai_base_url = _user_cfg["openai_base_url"]
+if _user_cfg.get("ghostfolio_api_base"):
+    settings.ghostfolio_api_base = _user_cfg["ghostfolio_api_base"]
+if _user_cfg.get("ghostfolio_security_token"):
+    settings.ghostfolio_security_token = _user_cfg["ghostfolio_security_token"]
 
 ghostfolio_client = GhostfolioClient(
     api_base=settings.ghostfolio_api_base,
@@ -2116,6 +2132,36 @@ def configure_copilot_tools() -> None:
 
 
 configure_copilot_tools()
+
+
+@app.get("/api/settings")
+def get_user_settings() -> dict[str, Any]:
+    return user_settings_store.load_masked()
+
+
+@app.put("/api/settings")
+def update_user_settings(request: dict[str, Any]) -> dict[str, Any]:
+    global ghostfolio_client, openai_tool_client
+
+    saved = user_settings_store.save(request)
+
+    # Hot-reload affected services
+    if saved.get("openai_api_key"):
+        openai_tool_client = OpenAIChatToolClient(
+            api_key=saved["openai_api_key"],
+            model=saved.get("openai_model") or settings.openai_model,
+            base_url=saved.get("openai_base_url") or settings.openai_base_url,
+        )
+        copilot.llm_client = openai_tool_client
+
+    if saved.get("ghostfolio_security_token") or saved.get("ghostfolio_api_base"):
+        ghostfolio_client = GhostfolioClient(
+            api_base=saved.get("ghostfolio_api_base") or settings.ghostfolio_api_base,
+            security_token=saved.get("ghostfolio_security_token") or settings.ghostfolio_security_token,
+            timeout_seconds=settings.ghostfolio_timeout_seconds,
+        )
+
+    return user_settings_store.load_masked()
 
 
 @app.on_event("startup")
