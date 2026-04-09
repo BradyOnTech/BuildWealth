@@ -74,6 +74,12 @@ These decisions refine the build plan based on the current repository and upstre
 - Account totals now include `cash_balance` and per-account `total_value`; portfolio UI surfaces these balances and expanded activity entry options
 - CSV importer now recognizes transfer/cash/split/merger activity aliases and supports symbol-optional cash rows
 
+### 2026-04-09 (Completed - Total Return Foundation)
+- Phase 1.5 foundation: portfolio performance now decomposes return into `price_return` and `income_return`, with explicit `total_return` and contribution-based return percentages
+- Performance model now tracks `gross_contributions`, `realized_gains`, `unrealized_gains`, and `income_received` in the local snapshot contract
+- Closed-position realized gains/income are preserved in rebuild-time performance aggregation so total return does not reset after a full exit
+- Portfolio UI now surfaces price-return and income-return KPI cards
+
 ---
 
 ## Current Capability Audit
@@ -96,7 +102,7 @@ These decisions refine the build plan based on the current repository and upstre
 | Geographic breakdown | Built (foundation) | ~35% |
 | Multi-currency | NOT BUILT | 0% |
 | Historical price backfill | NOT BUILT | 0% |
-| Total return (incl. dividends) | NOT BUILT | 0% |
+| Total return (incl. dividends) | Built (foundation) | ~45% |
 | Performance attribution | NOT BUILT | 0% |
 | Benchmark comparison | NOT BUILT | 0% |
 | Activity types beyond buy/sell/div | Built (foundation) | ~40% |

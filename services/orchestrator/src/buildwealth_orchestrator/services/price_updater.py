@@ -193,6 +193,12 @@ def build_snapshot_from_holdings(holdings_data: dict[str, Any]) -> PortfolioSnap
         twr_return_pct=performance.get("twr_return_pct"),
         twr_annualized_return_pct=performance.get("twr_annualized_return_pct"),
         xirr_annualized_return_pct=performance.get("xirr_annualized_return_pct"),
+        price_return_usd=performance.get("price_return_usd"),
+        income_return_usd=performance.get("income_return_usd"),
+        total_return_usd=performance.get("total_return_usd"),
+        price_return_pct=performance.get("price_return_pct"),
+        income_return_pct=performance.get("income_return_pct"),
+        total_return_pct=performance.get("total_return_pct"),
         holdings=holdings,
         accounts=holdings_data.get("accounts", []),
         raw={

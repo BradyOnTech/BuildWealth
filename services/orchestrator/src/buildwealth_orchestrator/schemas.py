@@ -32,6 +32,12 @@ class PortfolioSnapshot(BaseModel):
     twr_return_pct: float | None = None
     twr_annualized_return_pct: float | None = None
     xirr_annualized_return_pct: float | None = None
+    price_return_usd: float | None = None
+    income_return_usd: float | None = None
+    total_return_usd: float | None = None
+    price_return_pct: float | None = None
+    income_return_pct: float | None = None
+    total_return_pct: float | None = None
     holdings: list[Holding] = Field(default_factory=list)
     accounts: list[dict[str, Any]] = Field(default_factory=list)
     raw: dict[str, Any] = Field(default_factory=dict)

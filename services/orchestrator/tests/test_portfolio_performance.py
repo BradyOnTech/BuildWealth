@@ -35,9 +35,14 @@ def test_calculate_portfolio_performance_single_position_gain():
 
     assert result["ending_value"] == 1100.0
     assert result["net_contributions"] == 1000.0
+    assert result["gross_contributions"] == 1000.0
     assert result["twr_return_pct"] == pytest.approx(10.0, abs=0.01)
     assert result["twr_annualized_return_pct"] is not None
     assert result["xirr_annualized_return_pct"] is not None
+    assert result["price_return_usd"] == pytest.approx(100.0, abs=0.01)
+    assert result["income_return_usd"] == pytest.approx(0.0, abs=0.01)
+    assert result["total_return_usd"] == pytest.approx(100.0, abs=0.01)
+    assert result["price_return_pct"] == pytest.approx(10.0, abs=0.01)
 
 
 def test_calculate_portfolio_performance_handles_mid_period_buy():
@@ -72,7 +77,10 @@ def test_calculate_portfolio_performance_handles_mid_period_buy():
 
     assert result["ending_value"] == 1800.0
     assert result["net_contributions"] == 1600.0
+    assert result["gross_contributions"] == 1600.0
     assert result["twr_return_pct"] == pytest.approx(20.0, abs=0.01)
+    assert result["price_return_usd"] == pytest.approx(200.0, abs=0.01)
+    assert result["total_return_pct"] == pytest.approx(12.5, abs=0.01)
 
 
 def test_filter_transaction_cash_flows_uses_portfolio_contribution_signs():
@@ -90,6 +98,26 @@ def test_filter_transaction_cash_flows_uses_portfolio_contribution_signs():
         (datetime(2026, 1, 10, tzinfo=timezone.utc), 1000.0),
         (datetime(2026, 1, 20, tzinfo=timezone.utc), -240.0),
         (datetime(2026, 1, 25, tzinfo=timezone.utc), -5.0),
+    ]
+
+
+def test_filter_transaction_cash_flows_includes_cash_deposits_and_withdrawals():
+    flows = filter_transaction_cash_flows(
+        transactions=[
+            {"date": "2026-01-10", "symbol": "CASH", "action": "CASH_DEPOSIT", "quantity": 1, "unit_price": 500},
+            {"date": "2026-01-20", "symbol": "CASH", "action": "CASH_WITHDRAW", "quantity": 1, "unit_price": 100},
+            {"date": "2026-01-25", "symbol": "CASH", "action": "TRANSFER_IN", "quantity": 1, "unit_price": 250},
+            {"date": "2026-01-26", "symbol": "CASH", "action": "TRANSFER_OUT", "quantity": 1, "unit_price": 50},
+        ],
+        start_date=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        end_date=datetime(2026, 1, 31, tzinfo=timezone.utc),
+    )
+
+    assert flows == [
+        (datetime(2026, 1, 10, tzinfo=timezone.utc), 500.0),
+        (datetime(2026, 1, 20, tzinfo=timezone.utc), -100.0),
+        (datetime(2026, 1, 25, tzinfo=timezone.utc), 250.0),
+        (datetime(2026, 1, 26, tzinfo=timezone.utc), -50.0),
     ]
 
 

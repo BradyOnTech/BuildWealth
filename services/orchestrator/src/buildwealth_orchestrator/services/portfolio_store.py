@@ -131,11 +131,23 @@ class PortfolioStore:
                 "start_date": None,
                 "as_of": None,
                 "period_days": 0,
+                "gross_contributions": 0.0,
                 "net_contributions": 0.0,
                 "ending_value": 0.0,
                 "twr_return_pct": None,
                 "twr_annualized_return_pct": None,
                 "xirr_annualized_return_pct": None,
+                "realized_gains_usd": 0.0,
+                "unrealized_gains_usd": 0.0,
+                "income_received_usd": 0.0,
+                "fees_paid_usd": 0.0,
+                "price_return_usd": 0.0,
+                "income_return_usd": 0.0,
+                "total_return_usd": 0.0,
+                "price_return_pct": None,
+                "income_return_pct": None,
+                "total_return_pct": None,
+                "return_denominator_usd": 0.0,
                 "calculation_basis": "transaction_price_estimate",
             },
             "total_cash": 0.0,
@@ -943,6 +955,7 @@ class PortfolioStore:
         transactions: list[dict[str, Any]],
         prices_updated_at: str | None = None,
         account_cash: dict[str, float] | None = None,
+        return_components_override: dict[str, float] | None = None,
     ) -> dict[str, Any]:
         total_market_value = 0.0
         total_cost = 0.0
@@ -981,6 +994,7 @@ class PortfolioStore:
             transactions=transactions,
             holdings=holdings,
             as_of=prices_updated_at or _utc_now(),
+            return_components_override=return_components_override,
         )
         payload["prices_updated_at"] = prices_updated_at
         payload["asset_metadata_updated_at"] = self._read_asset_metadata_payload().get("updated_at")
@@ -1393,6 +1407,12 @@ class PortfolioStore:
             self._apply_metadata(position["symbol"], holding, metadata_map)
             holdings[key] = holding
 
+        return_components_override = {
+            "realized_gains_usd": round(sum(_safe_float(pos.get("realized_gains"), 0.0) for pos in positions.values()), 2),
+            "income_received_usd": round(sum(_safe_float(pos.get("dividends"), 0.0) for pos in positions.values()), 2),
+            "fees_paid_usd": round(sum(_safe_float(pos.get("fees"), 0.0) for pos in positions.values()), 2),
+        }
+
         try:
             prices_updated_at = self._read_holdings_payload().get("prices_updated_at")
         except Exception:
@@ -1403,6 +1423,7 @@ class PortfolioStore:
             transactions=txns,
             prices_updated_at=prices_updated_at,
             account_cash=account_cash,
+            return_components_override=return_components_override,
         )
         self._write_json(self._holdings_path, data)
         return data
@@ -1411,6 +1432,7 @@ class PortfolioStore:
         """Update current prices for holdings and compute values."""
         data = self._read_holdings_payload()
         holdings = data.get("holdings", {})
+        performance_seed = data.get("performance") if isinstance(data.get("performance"), dict) else {}
 
         for holding in holdings.values():
             symbol = self._normalize_symbol(holding.get("symbol"))
@@ -1425,6 +1447,11 @@ class PortfolioStore:
             transactions=self._read_transactions(),
             prices_updated_at=_utc_now(),
             account_cash=self._normalize_account_cash_payload(data.get("account_cash")),
+            return_components_override={
+                "realized_gains_usd": _safe_float(performance_seed.get("realized_gains_usd"), 0.0),
+                "income_received_usd": _safe_float(performance_seed.get("income_received_usd"), 0.0),
+                "fees_paid_usd": _safe_float(performance_seed.get("fees_paid_usd"), 0.0),
+            },
         )
         self._write_json(self._holdings_path, data)
         return data

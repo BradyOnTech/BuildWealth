@@ -53,6 +53,8 @@ export function template() {
     <div class="kpi-row">
       <article class="kpi-card"><p class="kpi-label">Total Value</p><p class="kpi-value" id="port-total">-</p></article>
       <article class="kpi-card"><p class="kpi-label">Net Performance</p><p class="kpi-value" id="port-perf">-</p></article>
+      <article class="kpi-card"><p class="kpi-label">Price Return</p><p class="kpi-value" id="port-price-return">-</p></article>
+      <article class="kpi-card"><p class="kpi-label">Income Return</p><p class="kpi-value" id="port-income-return">-</p></article>
       <article class="kpi-card"><p class="kpi-label">TWR</p><p class="kpi-value" id="port-twr">-</p></article>
       <article class="kpi-card"><p class="kpi-label">XIRR</p><p class="kpi-value" id="port-xirr">-</p></article>
       <article class="kpi-card"><p class="kpi-label">Positions</p><p class="kpi-value" id="port-count">-</p></article>
@@ -129,6 +131,32 @@ function renderKPIs(data) {
   const perfEl = byId('port-perf');
   perfEl.textContent = `${perf >= 0 ? '+' : ''}${fmtCurrency(perf)} (${perfPct >= 0 ? '+' : ''}${fmtPct(perfPct)})`;
   perfEl.className = `kpi-value ${perf >= 0 ? 'drift-pos' : 'drift-neg'}`;
+
+  const priceReturn = performance.price_return_usd;
+  const priceReturnPct = performance.price_return_pct;
+  const priceReturnEl = byId('port-price-return');
+  if (typeof priceReturn === 'number') {
+    const signed = priceReturn >= 0 ? '+' : '';
+    const pctText = typeof priceReturnPct === 'number' ? ` (${priceReturnPct >= 0 ? '+' : ''}${fmtPct(priceReturnPct)})` : '';
+    priceReturnEl.textContent = `${signed}${fmtCurrency(priceReturn)}${pctText}`;
+    priceReturnEl.className = `kpi-value ${priceReturn >= 0 ? 'drift-pos' : 'drift-neg'}`;
+  } else {
+    priceReturnEl.textContent = '-';
+    priceReturnEl.className = 'kpi-value';
+  }
+
+  const incomeReturn = performance.income_return_usd;
+  const incomeReturnPct = performance.income_return_pct;
+  const incomeReturnEl = byId('port-income-return');
+  if (typeof incomeReturn === 'number') {
+    const signed = incomeReturn >= 0 ? '+' : '';
+    const pctText = typeof incomeReturnPct === 'number' ? ` (${incomeReturnPct >= 0 ? '+' : ''}${fmtPct(incomeReturnPct)})` : '';
+    incomeReturnEl.textContent = `${signed}${fmtCurrency(incomeReturn)}${pctText}`;
+    incomeReturnEl.className = `kpi-value ${incomeReturn >= 0 ? 'drift-pos' : 'drift-neg'}`;
+  } else {
+    incomeReturnEl.textContent = '-';
+    incomeReturnEl.className = 'kpi-value';
+  }
 
   const twrEl = byId('port-twr');
   const twr = performance.twr_return_pct;
@@ -362,6 +390,18 @@ async function addTxn(event) {
   }
 }
 
+function syncTxnFieldRequirements() {
+  const action = byId('txn-action').value;
+  const symbolInput = byId('txn-symbol');
+  if (SYMBOL_OPTIONAL_ACTIONS.has(action)) {
+    symbolInput.required = false;
+    symbolInput.placeholder = 'Optional (defaults to CASH)';
+  } else {
+    symbolInput.required = true;
+    symbolInput.placeholder = 'AAPL';
+  }
+}
+
 async function addAccount(event) {
   event.preventDefault();
   const payload = {
@@ -412,9 +452,11 @@ async function deleteTxn(id) {
 
 export function init() {
   byId('txn-date').valueAsDate = new Date();
+  byId('txn-action').addEventListener('change', syncTxnFieldRequirements);
   byId('port-reload').addEventListener('click', loadAll);
   byId('port-refresh-prices').addEventListener('click', refreshPrices);
   byId('port-txn-form').addEventListener('submit', addTxn);
   byId('port-account-form').addEventListener('submit', addAccount);
+  syncTxnFieldRequirements();
   loadAll();
 }

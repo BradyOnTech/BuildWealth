@@ -69,6 +69,12 @@ def _transaction_cash_flow(transaction: dict[str, Any]) -> float:
         return gross - fee
     if action == "FEE":
         return -abs(fee or gross)
+    if action in {"TRANSFER_IN", "CASH_DEPOSIT"}:
+        return -(gross + fee)
+    if action in {"TRANSFER_OUT", "CASH_WITHDRAW"}:
+        return gross - fee
+    if action == "MERGER":
+        return gross - fee
     return 0.0
 
 
@@ -94,6 +100,7 @@ def calculate_portfolio_performance(
     transactions: list[dict[str, Any]],
     holdings: dict[str, dict[str, Any]],
     as_of: str | None = None,
+    return_components_override: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     normalized = _normalized_transactions(transactions)
     if not normalized:
@@ -101,6 +108,7 @@ def calculate_portfolio_performance(
             "start_date": None,
             "as_of": as_of,
             "period_days": 0,
+            "gross_contributions": 0.0,
             "net_contributions": 0.0,
             "ending_value": round(
                 sum(float(item.get("current_value") or 0.0) for item in holdings.values()),
@@ -109,6 +117,17 @@ def calculate_portfolio_performance(
             "twr_return_pct": None,
             "twr_annualized_return_pct": None,
             "xirr_annualized_return_pct": None,
+            "realized_gains_usd": 0.0,
+            "unrealized_gains_usd": 0.0,
+            "income_received_usd": 0.0,
+            "fees_paid_usd": 0.0,
+            "price_return_usd": 0.0,
+            "income_return_usd": 0.0,
+            "total_return_usd": 0.0,
+            "price_return_pct": None,
+            "income_return_pct": None,
+            "total_return_pct": None,
+            "return_denominator_usd": 0.0,
             "calculation_basis": "transaction_price_estimate",
         }
 
@@ -166,23 +185,66 @@ def calculate_portfolio_performance(
     twr_annualized = _annualize(twr_return, max(period_days, 1))
 
     net_contributions = 0.0
+    gross_contributions = 0.0
     for _, amount in cash_flows:
         if amount < 0:
             net_contributions += -amount
+            gross_contributions += -amount
         else:
             net_contributions -= amount
 
     xirr_return = _calculate_xirr(cash_flows=cash_flows, ending_value=final_value, as_of=resolved_as_of)
 
+    holdings_cost_basis = 0.0
+    for item in holdings.values():
+        explicit_cost_basis = item.get("cost_basis")
+        if explicit_cost_basis is not None:
+            holdings_cost_basis += float(explicit_cost_basis or 0.0)
+            continue
+        quantity = float(item.get("quantity") or 0.0)
+        avg_cost = float(item.get("avg_cost_per_share") or 0.0)
+        holdings_cost_basis += quantity * avg_cost
+    holdings_realized = sum(float(item.get("realized_gains") or 0.0) for item in holdings.values())
+    holdings_income = sum(float(item.get("dividends_received") or 0.0) for item in holdings.values())
+    holdings_fees = sum(float(item.get("fees_paid") or 0.0) for item in holdings.values())
+
+    override = return_components_override or {}
+    realized_gains = float(override.get("realized_gains_usd", holdings_realized))
+    income_received = float(override.get("income_received_usd", holdings_income))
+    fees_paid = float(override.get("fees_paid_usd", holdings_fees))
+    unrealized_gains = final_value - holdings_cost_basis
+    price_return = realized_gains + unrealized_gains
+    total_return = price_return + income_received
+
+    denominator = gross_contributions if gross_contributions > 0 else holdings_cost_basis
+    if denominator <= 1e-9:
+        denominator = 0.0
+
+    price_return_pct = (price_return / denominator * 100.0) if denominator > 0 else None
+    income_return_pct = (income_received / denominator * 100.0) if denominator > 0 else None
+    total_return_pct = (total_return / denominator * 100.0) if denominator > 0 else None
+
     return {
         "start_date": normalized[0]["_parsed_date"].isoformat(),
         "as_of": resolved_as_of.isoformat(),
         "period_days": period_days,
+        "gross_contributions": round(gross_contributions, 2),
         "net_contributions": round(net_contributions, 2),
         "ending_value": round(final_value, 2),
         "twr_return_pct": round(twr_return * 100, 2) if isfinite(twr_return) else None,
         "twr_annualized_return_pct": round(twr_annualized * 100, 2) if twr_annualized is not None else None,
         "xirr_annualized_return_pct": round(xirr_return * 100, 2) if xirr_return is not None else None,
+        "realized_gains_usd": round(realized_gains, 2),
+        "unrealized_gains_usd": round(unrealized_gains, 2),
+        "income_received_usd": round(income_received, 2),
+        "fees_paid_usd": round(fees_paid, 2),
+        "price_return_usd": round(price_return, 2),
+        "income_return_usd": round(income_received, 2),
+        "total_return_usd": round(total_return, 2),
+        "price_return_pct": round(price_return_pct, 2) if price_return_pct is not None else None,
+        "income_return_pct": round(income_return_pct, 2) if income_return_pct is not None else None,
+        "total_return_pct": round(total_return_pct, 2) if total_return_pct is not None else None,
+        "return_denominator_usd": round(denominator, 2),
         "calculation_basis": "transaction_price_estimate",
     }
 

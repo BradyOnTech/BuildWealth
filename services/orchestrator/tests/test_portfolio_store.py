@@ -191,8 +191,28 @@ class TestPriceUpdate:
         performance = result["performance"]
         assert performance["ending_value"] == 1750.0
         assert performance["net_contributions"] == 1500.0
+        assert performance["gross_contributions"] == 1500.0
         assert performance["twr_return_pct"] == pytest.approx(16.67, abs=0.01)
         assert performance["xirr_annualized_return_pct"] is not None
+        assert performance["price_return_usd"] == pytest.approx(250.0, abs=0.01)
+        assert performance["income_return_usd"] == pytest.approx(0.0, abs=0.01)
+        assert performance["total_return_usd"] == pytest.approx(250.0, abs=0.01)
+
+    def test_performance_keeps_realized_return_after_position_closed(self, store):
+        store.add_transaction(date="2026-01-01", symbol="AAPL", action="BUY", quantity=10, unit_price=100)
+        store.add_transaction(date="2026-01-15", symbol="AAPL", action="SELL", quantity=10, unit_price=120)
+
+        holdings = store.get_holdings()
+        assert _position_key("AAPL") not in holdings["holdings"]
+        performance = holdings["performance"]
+        assert performance["realized_gains_usd"] == pytest.approx(200.0, abs=0.01)
+        assert performance["price_return_usd"] == pytest.approx(200.0, abs=0.01)
+        assert performance["total_return_usd"] == pytest.approx(200.0, abs=0.01)
+
+        repriced = store.update_prices({})
+        repriced_performance = repriced["performance"]
+        assert repriced_performance["realized_gains_usd"] == pytest.approx(200.0, abs=0.01)
+        assert repriced_performance["total_return_usd"] == pytest.approx(200.0, abs=0.01)
 
 
 class TestCostBasisMethods:
@@ -264,6 +284,8 @@ class TestSnapshotGeneration:
         assert snapshot.holdings[0].symbol == "MSFT"  # Higher value first
         assert snapshot.twr_return_pct is not None
         assert snapshot.xirr_annualized_return_pct is not None
+        assert snapshot.price_return_usd is not None
+        assert snapshot.total_return_usd is not None
 
 
 class TestAccounts:
