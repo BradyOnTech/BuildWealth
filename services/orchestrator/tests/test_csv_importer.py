@@ -58,7 +58,7 @@ def test_parse_transaction_csv_reports_unsupported_action(tmp_path: Path) -> Non
     csv_file = tmp_path / "bad.csv"
     csv_file.write_text(
         "date,action,symbol,quantity,unit_price\n"
-        "2026-01-01,transfer,VTI,1,1\n",
+        "2026-01-01,spin_off,VTI,1,1\n",
         encoding="utf-8",
     )
 
@@ -70,6 +70,31 @@ def test_parse_transaction_csv_reports_unsupported_action(tmp_path: Path) -> Non
 
     assert len(result.activities) == 0
     assert len(result.errors) == 1
+
+
+def test_parse_transaction_csv_supports_symbol_optional_cash_actions(tmp_path: Path) -> None:
+    csv_file = tmp_path / "cash.csv"
+    csv_file.write_text(
+        "date,action,amount,account\n"
+        "2026-01-01,deposit,5000,Taxable Brokerage\n"
+        "2026-01-02,withdrawal,1500,Taxable Brokerage\n",
+        encoding="utf-8",
+    )
+
+    result = parse_transaction_csv(
+        file_path=csv_file,
+        default_data_source="YAHOO",
+        default_currency="USD",
+    )
+
+    assert not result.errors
+    assert len(result.activities) == 2
+    assert result.activities[0]["type"] == "CASH_DEPOSIT"
+    assert result.activities[0]["symbol"] == "CASH"
+    assert result.activities[0]["quantity"] == 1
+    assert result.activities[0]["unitPrice"] == 5000
+    assert result.activities[1]["type"] == "CASH_WITHDRAW"
+    assert result.activities[1]["symbol"] == "CASH"
 
 
 def test_parse_transaction_csv_extracts_asset_metadata_columns(tmp_path: Path) -> None:

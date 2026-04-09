@@ -123,6 +123,45 @@ class TestHoldings:
         assert holdings["holdings_by_symbol"]["AAPL"]["quantity"] == pytest.approx(10.0)
 
 
+class TestExtendedActivities:
+    def test_cash_deposit_and_buy_updates_account_cash(self, store):
+        store.add_transaction(date="2026-01-01", symbol="", action="CASH_DEPOSIT", quantity=1, unit_price=1000)
+        store.add_transaction(date="2026-01-02", symbol="AAPL", action="BUY", quantity=2, unit_price=100)
+        holdings = store.get_holdings()
+        assert holdings["account_cash"]["default"] == pytest.approx(800.0, abs=0.01)
+        assert holdings["total_cash"] == pytest.approx(800.0, abs=0.01)
+        assert holdings["total_portfolio_value"] == pytest.approx(800.0, abs=0.01)
+
+    def test_transfer_actions_adjust_cash_balance(self, store):
+        store.add_transaction(date="2026-01-01", symbol="", action="TRANSFER_IN", quantity=1, unit_price=500)
+        store.add_transaction(date="2026-01-02", symbol="", action="TRANSFER_OUT", quantity=1, unit_price=125)
+        holdings = store.get_holdings()
+        assert holdings["account_cash"]["default"] == pytest.approx(375.0, abs=0.01)
+        account_total = holdings["account_totals"]["default"]
+        assert account_total["cash_balance"] == pytest.approx(375.0, abs=0.01)
+        assert account_total["total_value"] == pytest.approx(375.0, abs=0.01)
+
+    def test_stock_split_scales_quantity_and_unit_cost(self, store):
+        store.add_transaction(date="2026-01-01", symbol="AAPL", action="BUY", quantity=2, unit_price=100)
+        store.add_transaction(date="2026-01-02", symbol="AAPL", action="STOCK_SPLIT", quantity=2, unit_price=0)
+        holding = _position(store.get_holdings(), "AAPL")
+        assert holding["quantity"] == pytest.approx(4.0, abs=1e-6)
+        assert holding["cost_basis"] == pytest.approx(200.0, abs=0.01)
+        assert holding["avg_cost_per_share"] == pytest.approx(50.0, abs=0.01)
+        assert holding["lots"][0]["remaining_quantity"] == pytest.approx(4.0, abs=1e-6)
+        assert holding["lots"][0]["unit_cost"] == pytest.approx(50.0, abs=1e-6)
+
+    def test_merger_consumes_lots_and_credits_cash(self, store):
+        store.add_transaction(date="2026-01-01", symbol="", action="CASH_DEPOSIT", quantity=1, unit_price=1000)
+        store.add_transaction(date="2026-01-02", symbol="AAPL", action="BUY", quantity=10, unit_price=10)
+        store.add_transaction(date="2026-01-03", symbol="AAPL", action="MERGER", quantity=4, unit_price=15, fee=1)
+        holdings = store.get_holdings()
+        holding = _position(holdings, "AAPL")
+        assert holding["quantity"] == pytest.approx(6.0, abs=1e-6)
+        assert holding["realized_gains"] == pytest.approx(19.0, abs=0.01)
+        assert holdings["account_cash"]["default"] == pytest.approx(959.0, abs=0.01)
+
+
 class TestPriceUpdate:
     def test_update_prices(self, store):
         store.add_transaction(date="2026-01-15", symbol="AAPL", action="BUY", quantity=10, unit_price=150)
@@ -282,6 +321,6 @@ class TestPersistence:
 
         store = PortfolioStore(dir_)
         holdings = store.get_holdings()
-        assert holdings["schema_version"] == 3
+        assert holdings["schema_version"] == 4
         assert holdings["performance"]["as_of"] == "2026-01-31T00:00:00+00:00"
         assert holdings["holdings"][_position_key("AAPL")]["realized_gains"] == 0.0

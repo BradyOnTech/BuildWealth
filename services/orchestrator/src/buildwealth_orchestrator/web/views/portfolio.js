@@ -19,6 +19,20 @@ const ACCOUNT_TYPE_OPTIONS = [
   'checking',
 ];
 const COST_BASIS_METHOD_OPTIONS = ['FIFO', 'LIFO', 'AVERAGE'];
+const TRANSACTION_ACTION_OPTIONS = [
+  ['BUY', 'Buy'],
+  ['SELL', 'Sell'],
+  ['DIVIDEND', 'Dividend'],
+  ['INTEREST', 'Interest'],
+  ['FEE', 'Fee'],
+  ['TRANSFER_IN', 'Transfer In'],
+  ['TRANSFER_OUT', 'Transfer Out'],
+  ['CASH_DEPOSIT', 'Cash Deposit'],
+  ['CASH_WITHDRAW', 'Cash Withdraw'],
+  ['STOCK_SPLIT', 'Stock Split'],
+  ['MERGER', 'Merger'],
+];
+const SYMBOL_OPTIONAL_ACTIONS = new Set(['TRANSFER_IN', 'TRANSFER_OUT', 'CASH_DEPOSIT', 'CASH_WITHDRAW']);
 
 function accountLabel(accountId) {
   if (!accountId) return '-';
@@ -27,6 +41,7 @@ function accountLabel(accountId) {
 
 export function template() {
   const accountTypeOptions = ACCOUNT_TYPE_OPTIONS.map((type) => `<option value="${type}">${type}</option>`).join('');
+  const txnActionOptions = TRANSACTION_ACTION_OPTIONS.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
   return `
     <div class="view-header">
       <h2>Portfolio</h2>
@@ -46,8 +61,8 @@ export function template() {
 
     <h3 class="section-title">Accounts</h3>
     <div class="table-wrap"><table>
-      <thead><tr><th>Name</th><th>ID</th><th>Type</th><th>Currency</th></tr></thead>
-      <tbody id="port-accounts-body"><tr><td colspan="4">Loading...</td></tr></tbody>
+      <thead><tr><th>Name</th><th>ID</th><th>Type</th><th>Currency</th><th>Cash</th><th>Market Value</th><th>Total</th></tr></thead>
+      <tbody id="port-accounts-body"><tr><td colspan="7">Loading...</td></tr></tbody>
     </table></div>
     <form id="port-account-form" class="txn-form">
       <label class="field"><span>Name</span><input type="text" id="account-name" placeholder="Roth IRA" required /></label>
@@ -88,7 +103,7 @@ export function template() {
       <label class="field"><span>Account</span><select id="txn-account"></select></label>
       <label class="field"><span>Symbol</span><input type="text" id="txn-symbol" placeholder="AAPL" required /></label>
       <label class="field"><span>Action</span>
-        <select id="txn-action"><option value="BUY">Buy</option><option value="SELL">Sell</option><option value="DIVIDEND">Dividend</option></select>
+        <select id="txn-action">${txnActionOptions}</select>
       </label>
       <label class="field"><span>Quantity</span><input type="number" id="txn-qty" step="0.0001" min="0" placeholder="10" required /></label>
       <label class="field"><span>Price</span><input type="number" id="txn-price" step="0.01" min="0" placeholder="150.00" required /></label>
@@ -104,7 +119,7 @@ export function template() {
 }
 
 function renderKPIs(data) {
-  const total = data.total_value || 0;
+  const total = data.total_portfolio_value ?? data.total_value ?? 0;
   const perf = data.net_performance || 0;
   const perfPct = data.net_performance_pct || 0;
   const count = Object.keys(data.holdings || {}).length;
@@ -129,22 +144,26 @@ function renderKPIs(data) {
   byId('port-updated').textContent = data.prices_updated_at ? fmtDate(data.prices_updated_at) : 'Never';
 }
 
-function renderAccounts(accountRows) {
+function renderAccounts(accountRows, accountTotals = {}) {
   const accounts = Array.isArray(accountRows) ? accountRows : [];
   accountNameById = new Map(accounts.map((account) => [account.id, account.name || account.id]));
 
   const tbody = byId('port-accounts-body');
   if (!accounts.length) {
-    tbody.innerHTML = '<tr><td colspan="4">No accounts yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7">No accounts yet.</td></tr>';
   } else {
     tbody.innerHTML = '';
     for (const account of accounts) {
+      const totals = accountTotals?.[account.id] || {};
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><strong>${account.name || account.id}</strong></td>
         <td><code>${account.id}</code></td>
         <td>${account.type || '-'}</td>
-        <td>${account.currency || 'USD'}</td>`;
+        <td>${account.currency || 'USD'}</td>
+        <td>${fmtCurrency(totals.cash_balance || 0)}</td>
+        <td>${fmtCurrency(totals.market_value || 0)}</td>
+        <td>${fmtCurrency(totals.total_value || 0)}</td>`;
       tbody.appendChild(tr);
     }
   }
@@ -251,7 +270,11 @@ function renderTransactions(txns) {
   for (const t of txns) {
     const total = (t.quantity || 0) * (t.unit_price || 0);
     const tr = document.createElement('tr');
-    const actionClass = t.action === 'BUY' ? 'drift-pos' : t.action === 'SELL' ? 'drift-neg' : '';
+    const actionClass = ['BUY', 'TRANSFER_IN', 'CASH_DEPOSIT', 'DIVIDEND', 'INTEREST'].includes(t.action)
+      ? 'drift-pos'
+      : ['SELL', 'TRANSFER_OUT', 'CASH_WITHDRAW', 'FEE'].includes(t.action)
+        ? 'drift-neg'
+        : '';
     tr.innerHTML = `
       <td>${t.date || '-'}</td>
       <td>${accountLabel(t.account)}</td>
@@ -278,7 +301,7 @@ async function loadAll() {
       fetchJson('/api/portfolio/transactions?limit=100'),
       fetchJson('/api/portfolio/accounts'),
     ]);
-    renderAccounts(accountRows || holdings.accounts || []);
+    renderAccounts(accountRows || holdings.accounts || [], holdings.account_totals || {});
     renderKPIs(holdings);
     renderHoldings(holdings);
     renderBreakdowns(holdings);
@@ -306,16 +329,21 @@ async function refreshPrices() {
 
 async function addTxn(event) {
   event.preventDefault();
+  const action = byId('txn-action').value;
+  let symbol = byId('txn-symbol').value.trim().toUpperCase();
+  if (!symbol && SYMBOL_OPTIONAL_ACTIONS.has(action)) {
+    symbol = 'CASH';
+  }
   const payload = {
     date: byId('txn-date').value,
     account: byId('txn-account').value || 'default',
-    symbol: byId('txn-symbol').value.trim().toUpperCase(),
-    action: byId('txn-action').value,
+    symbol,
+    action,
     quantity: parseFloat(byId('txn-qty').value),
     unit_price: parseFloat(byId('txn-price').value),
     fee: parseFloat(byId('txn-fee').value || '0'),
   };
-  if (!payload.symbol || !payload.quantity || !payload.unit_price) return;
+  if (!payload.symbol || !Number.isFinite(payload.quantity) || !Number.isFinite(payload.unit_price)) return;
 
   try {
     await fetchJson('/api/portfolio/transactions', {

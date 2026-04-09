@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from buildwealth_orchestrator.services.portfolio_performance import calculate_portfolio_performance
 
-PORTFOLIO_STORE_SCHEMA_VERSION = 3
+PORTFOLIO_STORE_SCHEMA_VERSION = 4
 ACCOUNTS_SCHEMA_VERSION = 2
 ASSET_METADATA_SCHEMA_VERSION = 1
 COST_BASIS_METHODS_SCHEMA_VERSION = 1
@@ -20,6 +20,20 @@ DEFAULT_ACCOUNT_ID = "default"
 DEFAULT_ACCOUNT_NAME = "Default Brokerage"
 DEFAULT_CURRENCY = "USD"
 VALID_COST_BASIS_METHODS = {"FIFO", "LIFO", "AVERAGE"}
+SUPPORTED_TRANSACTION_ACTIONS = {
+    "BUY",
+    "SELL",
+    "DIVIDEND",
+    "INTEREST",
+    "FEE",
+    "TRANSFER_IN",
+    "TRANSFER_OUT",
+    "CASH_DEPOSIT",
+    "CASH_WITHDRAW",
+    "STOCK_SPLIT",
+    "MERGER",
+}
+SYMBOL_OPTIONAL_ACTIONS = {"TRANSFER_IN", "TRANSFER_OUT", "CASH_DEPOSIT", "CASH_WITHDRAW"}
 
 
 def _utc_now() -> str:
@@ -38,7 +52,19 @@ class Transaction:
     id: str
     date: str  # ISO date
     symbol: str
-    action: Literal["BUY", "SELL", "DIVIDEND", "INTEREST", "FEE"]
+    action: Literal[
+        "BUY",
+        "SELL",
+        "DIVIDEND",
+        "INTEREST",
+        "FEE",
+        "TRANSFER_IN",
+        "TRANSFER_OUT",
+        "CASH_DEPOSIT",
+        "CASH_WITHDRAW",
+        "STOCK_SPLIT",
+        "MERGER",
+    ]
     quantity: float
     unit_price: float
     fee: float = 0.0
@@ -88,6 +114,7 @@ class PortfolioStore:
             "schema_version": PORTFOLIO_STORE_SCHEMA_VERSION,
             "holdings": {},
             "holdings_by_symbol": {},
+            "account_cash": {},
             "account_totals": {},
             "allocation_breakdowns": {
                 "asset_class": [],
@@ -111,6 +138,8 @@ class PortfolioStore:
                 "xirr_annualized_return_pct": None,
                 "calculation_basis": "transaction_price_estimate",
             },
+            "total_cash": 0.0,
+            "total_portfolio_value": 0.0,
             "updated_at": _utc_now(),
         }
 
@@ -186,6 +215,11 @@ class PortfolioStore:
     @staticmethod
     def _normalize_symbol(value: Any) -> str:
         return str(value or "").strip().upper()
+
+    @staticmethod
+    def _normalize_action(value: Any, fallback: str = "BUY") -> str:
+        action = str(value or "").strip().upper() or fallback
+        return action if action in SUPPORTED_TRANSACTION_ACTIONS else fallback
 
     @staticmethod
     def _normalize_cost_basis_method(value: Any, fallback: str = "FIFO") -> str:
@@ -484,11 +518,13 @@ class PortfolioStore:
             if not isinstance(raw, dict):
                 continue
 
+            action = self._normalize_action(raw.get("action"), "BUY")
             symbol = self._normalize_symbol(raw.get("symbol"))
+            if not symbol and action in SYMBOL_OPTIONAL_ACTIONS:
+                symbol = "CASH"
             if not symbol:
                 continue
 
-            action = str(raw.get("action") or "BUY").strip().upper() or "BUY"
             account = self._ensure_account(str(raw.get("account") or DEFAULT_ACCOUNT_ID), create_if_missing=True)
 
             migrated.append(
@@ -520,7 +556,7 @@ class PortfolioStore:
 
         holdings_input = payload.get("holdings") if isinstance(payload.get("holdings"), dict) else {}
         migrated_holdings: dict[str, dict[str, Any]] = {}
-        total_value = 0.0
+        total_market_value = 0.0
         total_cost = 0.0
 
         for holding_key, raw_holding in holdings_input.items():
@@ -608,7 +644,7 @@ class PortfolioStore:
             migrated_holdings[scoped_key] = holding_record
 
             if current_value_value is not None:
-                total_value += float(current_value_value)
+                total_market_value += float(current_value_value)
             total_cost += float(cost_basis)
 
         performance_input = payload.get("performance") if isinstance(payload.get("performance"), dict) else {}
@@ -616,13 +652,16 @@ class PortfolioStore:
             **default_payload["performance"],
             **performance_input,
         }
-        if performance.get("ending_value") in (None, 0, 0.0) and total_value > 0:
-            performance["ending_value"] = round(total_value, 2)
+        if performance.get("ending_value") in (None, 0, 0.0) and total_market_value > 0:
+            performance["ending_value"] = round(total_market_value, 2)
         if performance.get("as_of") is None:
             performance["as_of"] = payload.get("prices_updated_at")
 
-        total_value = float(payload.get("total_value", total_value) or total_value)
+        total_market_value = float(payload.get("total_value", total_market_value) or total_market_value)
         total_cost = float(payload.get("total_cost_basis", total_cost) or total_cost)
+        account_cash = self._normalize_account_cash_payload(payload.get("account_cash"))
+        total_cash = round(sum(account_cash.values()), 2)
+        total_portfolio_value = round(total_market_value + total_cash, 2)
 
         migrated = {
             **default_payload,
@@ -630,24 +669,28 @@ class PortfolioStore:
             "schema_version": PORTFOLIO_STORE_SCHEMA_VERSION,
             "holdings": migrated_holdings,
             "holdings_by_symbol": self._summarize_holdings_by_symbol(migrated_holdings),
-            "account_totals": self._summarize_account_totals(migrated_holdings),
+            "account_cash": account_cash,
+            "account_totals": self._summarize_account_totals(migrated_holdings, account_cash=account_cash),
             "allocation_breakdowns": self._summarize_allocation_breakdowns(
                 migrated_holdings,
-                total_value=total_value,
+                total_market_value=total_market_value,
+                total_cash=total_cash,
             ),
             "cost_basis_methods": self._read_cost_basis_methods_payload(),
             "performance": performance,
-            "total_value": round(total_value, 2),
+            "total_value": round(total_market_value, 2),
             "total_cost_basis": round(total_cost, 2),
+            "total_cash": total_cash,
+            "total_portfolio_value": total_portfolio_value,
             "net_performance": round(
-                _safe_float(payload.get("net_performance"), total_value - total_cost),
+                _safe_float(payload.get("net_performance"), total_market_value - total_cost),
                 2,
             ),
             "net_performance_pct": (
                 round(
                     _safe_float(
                         payload.get("net_performance_pct"),
-                        ((total_value - total_cost) / total_cost * 100) if total_cost > 0 else 0.0,
+                        ((total_market_value - total_cost) / total_cost * 100) if total_cost > 0 else 0.0,
                     ),
                     2,
                 )
@@ -664,6 +707,24 @@ class PortfolioStore:
         if payload != original:
             self._write_json(self._holdings_path, payload)
         return payload
+
+    def _normalize_account_cash_payload(self, account_cash: Any) -> dict[str, float]:
+        if not isinstance(account_cash, dict):
+            return {}
+
+        normalized: dict[str, float] = {}
+        for account_ref, raw_balance in account_cash.items():
+            account = self._ensure_account(str(account_ref), create_if_missing=True)
+            account_id = str(account.get("id") or DEFAULT_ACCOUNT_ID)
+            normalized[account_id] = round(_safe_float(raw_balance, 0.0), 2)
+        return normalized
+
+    @staticmethod
+    def _transaction_gross_amount(quantity: float, unit_price: float, fee: float = 0.0) -> float:
+        gross = abs(quantity) * abs(unit_price)
+        if gross <= 0 and fee > 0:
+            return abs(fee)
+        return gross
 
     def _summarize_holdings_by_symbol(self, holdings: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
         summary: dict[str, dict[str, Any]] = {}
@@ -737,7 +798,12 @@ class PortfolioStore:
 
         return summary
 
-    def _summarize_account_totals(self, holdings: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    def _summarize_account_totals(
+        self,
+        holdings: dict[str, dict[str, Any]],
+        *,
+        account_cash: dict[str, float] | None = None,
+    ) -> dict[str, dict[str, Any]]:
         accounts_payload = self._read_accounts_payload()
         accounts_by_id = {
             str(account.get("id")): account
@@ -746,11 +812,11 @@ class PortfolioStore:
         }
 
         totals: dict[str, dict[str, Any]] = {}
+        normalized_cash = account_cash or {}
 
-        for holding in holdings.values():
-            account_id = str(holding.get("account") or DEFAULT_ACCOUNT_ID)
+        def ensure_bucket(account_id: str) -> dict[str, Any]:
             account = accounts_by_id.get(account_id, {})
-            bucket = totals.setdefault(
+            return totals.setdefault(
                 account_id,
                 {
                     "account_id": account_id,
@@ -758,18 +824,27 @@ class PortfolioStore:
                     "type": account.get("type") or "taxable",
                     "currency": account.get("currency") or DEFAULT_CURRENCY,
                     "market_value": 0.0,
+                    "cash_balance": 0.0,
                     "cost_basis": 0.0,
                     "holdings_count": 0,
                 },
             )
 
+        for holding in holdings.values():
+            account_id = str(holding.get("account") or DEFAULT_ACCOUNT_ID)
+            bucket = ensure_bucket(account_id)
             bucket["market_value"] += _safe_float(holding.get("current_value"), 0.0)
             bucket["cost_basis"] += _safe_float(holding.get("cost_basis"), 0.0)
             bucket["holdings_count"] += 1
 
+        for account_id, balance in normalized_cash.items():
+            ensure_bucket(account_id)["cash_balance"] += _safe_float(balance, 0.0)
+
         for account_id, bucket in totals.items():
             bucket["market_value"] = round(_safe_float(bucket.get("market_value"), 0.0), 2)
+            bucket["cash_balance"] = round(_safe_float(bucket.get("cash_balance"), 0.0), 2)
             bucket["cost_basis"] = round(_safe_float(bucket.get("cost_basis"), 0.0), 2)
+            bucket["total_value"] = round(bucket["market_value"] + bucket["cash_balance"], 2)
             bucket["net_performance"] = round(bucket["market_value"] - bucket["cost_basis"], 2)
             if bucket["cost_basis"] > 0:
                 bucket["net_performance_pct"] = round((bucket["net_performance"] / bucket["cost_basis"]) * 100, 2)
@@ -810,7 +885,8 @@ class PortfolioStore:
         self,
         holdings: dict[str, dict[str, Any]],
         *,
-        total_value: float,
+        total_market_value: float,
+        total_cash: float = 0.0,
     ) -> dict[str, list[dict[str, Any]]]:
         breakdown_map: dict[str, dict[str, float]] = {
             "asset_class": {},
@@ -832,9 +908,15 @@ class PortfolioStore:
                 key = raw_key or fallback_labels[dimension]
                 breakdown_map[dimension][key] = breakdown_map[dimension].get(key, 0.0) + value
 
+        if total_cash > 0:
+            breakdown_map["asset_class"]["Cash"] = breakdown_map["asset_class"].get("Cash", 0.0) + total_cash
+
         breakdowns: dict[str, list[dict[str, Any]]] = {}
-        denominator = total_value if total_value > 0 else 1.0
         for dimension, buckets in breakdown_map.items():
+            if dimension == "asset_class":
+                denominator = (total_market_value + total_cash) if (total_market_value + total_cash) > 0 else 1.0
+            else:
+                denominator = total_market_value if total_market_value > 0 else 1.0
             rows = [
                 {
                     "key": key,
@@ -860,8 +942,9 @@ class PortfolioStore:
         holdings: dict[str, dict[str, Any]],
         transactions: list[dict[str, Any]],
         prices_updated_at: str | None = None,
+        account_cash: dict[str, float] | None = None,
     ) -> dict[str, Any]:
-        total_value = 0.0
+        total_market_value = 0.0
         total_cost = 0.0
 
         for holding in holdings.values():
@@ -869,21 +952,31 @@ class PortfolioStore:
             if current_price is not None:
                 holding["current_value"] = round(_safe_float(holding.get("quantity"), 0.0) * float(current_price), 2)
             if holding.get("current_value") is not None:
-                total_value += float(holding["current_value"])
+                total_market_value += float(holding["current_value"])
             total_cost += float(holding.get("cost_basis", 0) or 0)
+
+        normalized_account_cash = self._normalize_account_cash_payload(account_cash)
+        total_cash = round(sum(normalized_account_cash.values()), 2)
+        total_portfolio_value = round(total_market_value + total_cash, 2)
 
         payload = self._default_holdings_payload()
         payload["holdings"] = holdings
         payload["holdings_by_symbol"] = self._summarize_holdings_by_symbol(holdings)
-        payload["account_totals"] = self._summarize_account_totals(holdings)
+        payload["account_cash"] = normalized_account_cash
+        payload["account_totals"] = self._summarize_account_totals(holdings, account_cash=normalized_account_cash)
         payload["allocation_breakdowns"] = self._summarize_allocation_breakdowns(
             holdings,
-            total_value=total_value,
+            total_market_value=total_market_value,
+            total_cash=total_cash,
         )
-        payload["total_value"] = round(total_value, 2)
+        payload["total_value"] = round(total_market_value, 2)
+        payload["total_cash"] = total_cash
+        payload["total_portfolio_value"] = total_portfolio_value
         payload["total_cost_basis"] = round(total_cost, 2)
-        payload["net_performance"] = round(total_value - total_cost, 2)
-        payload["net_performance_pct"] = round((total_value - total_cost) / total_cost * 100, 2) if total_cost > 0 else 0.0
+        payload["net_performance"] = round(total_market_value - total_cost, 2)
+        payload["net_performance_pct"] = (
+            round((total_market_value - total_cost) / total_cost * 100, 2) if total_cost > 0 else 0.0
+        )
         payload["performance"] = calculate_portfolio_performance(
             transactions=transactions,
             holdings=holdings,
@@ -926,13 +1019,16 @@ class PortfolioStore:
         region: str | None = None,
     ) -> dict[str, Any]:
         account_record = self._ensure_account(account, create_if_missing=True)
+        normalized_action = self._normalize_action(action, "BUY")
         normalized_symbol = self._normalize_symbol(symbol)
+        if not normalized_symbol and normalized_action in SYMBOL_OPTIONAL_ACTIONS:
+            normalized_symbol = "CASH"
 
         txn = Transaction(
             id=str(uuid.uuid4())[:8],
             date=str(date),
             symbol=normalized_symbol,
-            action=str(action).upper().strip(),
+            action=normalized_action,
             quantity=float(quantity),
             unit_price=float(unit_price),
             fee=float(fee),
@@ -954,7 +1050,7 @@ class PortfolioStore:
             "sector": sector,
             "region": region,
         }
-        if any(value for value in metadata_payload.values()):
+        if normalized_symbol and normalized_symbol != "CASH" and any(value for value in metadata_payload.values()):
             self.upsert_asset_metadata(normalized_symbol, metadata_payload)
 
         self._rebuild_holdings()
@@ -973,7 +1069,10 @@ class PortfolioStore:
                 or DEFAULT_ACCOUNT_ID
             )
             account_record = self._ensure_account(str(account_ref), create_if_missing=True)
+            action = self._normalize_action(item.get("action", "BUY"), "BUY")
             symbol = self._normalize_symbol(item.get("symbol"))
+            if not symbol and action in SYMBOL_OPTIONAL_ACTIONS:
+                symbol = "CASH"
             if not symbol:
                 continue
 
@@ -981,7 +1080,7 @@ class PortfolioStore:
                 id=str(uuid.uuid4())[:8],
                 date=str(item.get("date", "")),
                 symbol=symbol,
-                action=str(item.get("action", "BUY")).upper().strip() or "BUY",
+                action=action,
                 quantity=float(item.get("quantity", 0)),
                 unit_price=float(item.get("unit_price", 0)),
                 fee=float(item.get("fee", 0)),
@@ -1001,7 +1100,7 @@ class PortfolioStore:
                 "sector": item.get("sector"),
                 "region": item.get("region"),
             }
-            if any(value for value in metadata_payload.values()):
+            if symbol != "CASH" and any(value for value in metadata_payload.values()):
                 metadata_updates[symbol] = {**metadata_updates.get(symbol, {}), **metadata_payload}
 
         self._write_json(self._transactions_path, txns)
@@ -1070,24 +1169,41 @@ class PortfolioStore:
         methods_payload = self._read_cost_basis_methods_payload()
 
         positions: dict[str, dict[str, Any]] = {}
+        account_cash: dict[str, float] = {}
         sorted_txns = sorted(
             txns,
             key=lambda t: (str(t.get("date", "")), str(t.get("created_at", "")), str(t.get("id", ""))),
         )
 
         for txn in sorted_txns:
-            symbol = self._normalize_symbol(txn.get("symbol"))
-            if not symbol:
-                continue
-
             account_record = self._ensure_account(str(txn.get("account") or DEFAULT_ACCOUNT_ID), create_if_missing=True)
             account_id = str(account_record.get("id") or DEFAULT_ACCOUNT_ID)
-            key = f"{account_id}:{symbol}"
+            action = self._normalize_action(txn.get("action"), "BUY")
+            symbol = self._normalize_symbol(txn.get("symbol"))
+            if not symbol and action in SYMBOL_OPTIONAL_ACTIONS:
+                symbol = "CASH"
 
-            action = str(txn.get("action") or "").upper().strip()
             quantity = abs(_safe_float(txn.get("quantity"), 0.0))
             price = abs(_safe_float(txn.get("unit_price"), 0.0))
             fee = abs(_safe_float(txn.get("fee"), 0.0))
+            gross_amount = self._transaction_gross_amount(quantity, price, fee)
+
+            def apply_cash_delta(delta: float) -> None:
+                if abs(delta) <= 1e-9:
+                    return
+                account_cash[account_id] = account_cash.get(account_id, 0.0) + float(delta)
+
+            if action in {"TRANSFER_IN", "CASH_DEPOSIT"}:
+                apply_cash_delta(gross_amount)
+                continue
+            if action in {"TRANSFER_OUT", "CASH_WITHDRAW"}:
+                apply_cash_delta(-gross_amount)
+                continue
+
+            if not symbol:
+                continue
+
+            key = f"{account_id}:{symbol}"
             lot_method = str(txn.get("lot_method") or "FIFO").strip().upper() or "FIFO"
 
             if key not in positions:
@@ -1150,6 +1266,7 @@ class PortfolioStore:
                             "unit_cost": round(unit_cost, 8),
                         }
                     )
+                apply_cash_delta(-((quantity * price) + fee))
             elif action == "SELL":
                 available_qty = sum(_safe_float(lot.get("remaining_quantity"), 0.0) for lot in position["lots"])
                 sell_qty = min(quantity, available_qty)
@@ -1177,13 +1294,56 @@ class PortfolioStore:
                 position["quantity"] = max(position["quantity"] - sell_qty, 0.0)
                 position["realized_gains"] += realized_gain
                 position["fees"] += fee
+                apply_cash_delta(proceeds)
             elif action in {"DIVIDEND", "INTEREST"}:
                 income = (quantity * price) - fee
                 position["dividends"] += income
+                apply_cash_delta(income)
             elif action == "FEE":
-                charge = fee if fee > 0 else quantity * price
+                charge = fee if fee > 0 else gross_amount
                 position["fees"] += abs(charge)
                 position["realized_gains"] -= abs(charge)
+                apply_cash_delta(-abs(charge))
+            elif action == "STOCK_SPLIT":
+                split_factor = quantity
+                if split_factor <= 0:
+                    continue
+                position["quantity"] *= split_factor
+                for lot in position["lots"]:
+                    lot_qty = _safe_float(lot.get("quantity"), 0.0)
+                    lot_remaining = _safe_float(lot.get("remaining_quantity"), 0.0)
+                    unit_cost = _safe_float(lot.get("unit_cost"), 0.0)
+                    lot["quantity"] = round(lot_qty * split_factor, 8)
+                    lot["remaining_quantity"] = round(lot_remaining * split_factor, 8)
+                    lot["unit_cost"] = round(unit_cost / split_factor, 8) if split_factor > 0 else round(unit_cost, 8)
+            elif action == "MERGER":
+                available_qty = sum(_safe_float(lot.get("remaining_quantity"), 0.0) for lot in position["lots"])
+                merge_qty = min(quantity if quantity > 0 else available_qty, available_qty)
+                if merge_qty <= 0:
+                    continue
+
+                if resolved_method == "AVERAGE":
+                    total_cost = sum(
+                        _safe_float(lot.get("remaining_quantity"), 0.0) * _safe_float(lot.get("unit_cost"), 0.0)
+                        for lot in position["lots"]
+                    )
+                    avg_unit = (total_cost / available_qty) if available_qty > 0 else 0.0
+                    consumed_cost = merge_qty * avg_unit
+                    remaining_qty = max(available_qty - merge_qty, 0.0)
+                    if position["lots"]:
+                        position["lots"][0]["remaining_quantity"] = round(remaining_qty, 8)
+                        position["lots"][0]["quantity"] = round(remaining_qty, 8)
+                    else:
+                        position["lots"] = []
+                else:
+                    consumed_cost = self._consume_lots(position["lots"], merge_qty, resolved_method)
+
+                proceeds = (merge_qty * price) - fee
+                realized_gain = proceeds - consumed_cost
+                position["quantity"] = max(position["quantity"] - merge_qty, 0.0)
+                position["realized_gains"] += realized_gain
+                position["fees"] += fee
+                apply_cash_delta(proceeds)
 
         holdings: dict[str, dict[str, Any]] = {}
         for key, position in positions.items():
@@ -1242,6 +1402,7 @@ class PortfolioStore:
             holdings=holdings,
             transactions=txns,
             prices_updated_at=prices_updated_at,
+            account_cash=account_cash,
         )
         self._write_json(self._holdings_path, data)
         return data
@@ -1263,6 +1424,7 @@ class PortfolioStore:
             holdings=holdings,
             transactions=self._read_transactions(),
             prices_updated_at=_utc_now(),
+            account_cash=self._normalize_account_cash_payload(data.get("account_cash")),
         )
         self._write_json(self._holdings_path, data)
         return data

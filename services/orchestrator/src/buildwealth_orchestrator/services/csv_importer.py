@@ -30,6 +30,21 @@ ACTION_MAP = {
     "interest": "INTEREST",
     "fee": "FEE",
     "commission": "FEE",
+    "transferin": "TRANSFER_IN",
+    "transfer_in": "TRANSFER_IN",
+    "transferout": "TRANSFER_OUT",
+    "transfer_out": "TRANSFER_OUT",
+    "deposit": "CASH_DEPOSIT",
+    "cashdeposit": "CASH_DEPOSIT",
+    "cash_deposit": "CASH_DEPOSIT",
+    "withdraw": "CASH_WITHDRAW",
+    "withdrawal": "CASH_WITHDRAW",
+    "cashwithdraw": "CASH_WITHDRAW",
+    "cash_withdraw": "CASH_WITHDRAW",
+    "stocksplit": "STOCK_SPLIT",
+    "stock_split": "STOCK_SPLIT",
+    "split": "STOCK_SPLIT",
+    "merger": "MERGER",
 }
 
 FIELD_ALIASES = {
@@ -50,6 +65,13 @@ FIELD_ALIASES = {
     "region": {"region", "country", "geography"},
     "lot_method": {"lotmethod", "costbasismethod", "basis method", "cost basis method"},
     "comment": {"comment", "description", "memo", "notes"},
+}
+
+CASH_SYMBOL_OPTIONAL_ACTIONS = {
+    "TRANSFER_IN",
+    "TRANSFER_OUT",
+    "CASH_DEPOSIT",
+    "CASH_WITHDRAW",
 }
 
 
@@ -171,6 +193,8 @@ def parse_transaction_csv(
                 continue
 
             symbol = (row.get("symbol") or "").strip().upper()
+            if not symbol and action in CASH_SYMBOL_OPTIONAL_ACTIONS:
+                symbol = "CASH"
             if not symbol:
                 output.errors.append(f"Row {row_num}: Missing symbol/ticker.")
                 continue
@@ -186,10 +210,14 @@ def parse_transaction_csv(
             if unit_price is None and amount is not None and quantity not in (None, 0):
                 unit_price = abs(amount) / abs(quantity)
 
-            if action in {"DIVIDEND", "INTEREST", "FEE"}:
+            if action in {"DIVIDEND", "INTEREST", "FEE", "TRANSFER_IN", "TRANSFER_OUT", "CASH_DEPOSIT", "CASH_WITHDRAW"}:
                 quantity = quantity if quantity is not None else 1.0
                 if unit_price is None and amount is not None:
                     unit_price = abs(amount)
+            elif action == "STOCK_SPLIT":
+                if quantity is None and amount is not None:
+                    quantity = abs(amount)
+                unit_price = unit_price if unit_price is not None else 0.0
 
             if quantity is None or unit_price is None:
                 output.errors.append(

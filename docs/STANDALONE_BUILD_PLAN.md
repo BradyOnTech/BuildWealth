@@ -68,6 +68,12 @@ These decisions refine the build plan based on the current repository and upstre
 - Phase 1.7 foundation: allocation breakdowns now computed in-store for asset class, sector, and region
 - Portfolio UI now includes per-position cost basis method controls plus allocation breakdown tables
 
+### 2026-04-09 (Completed - Activity + Cash Foundation)
+- Phase 1.10 foundation: transaction activity model now supports `FEE`, `INTEREST`, `TRANSFER_IN`, `TRANSFER_OUT`, `CASH_DEPOSIT`, `CASH_WITHDRAW`, `STOCK_SPLIT`, and `MERGER` in local rebuild logic
+- Phase 1.11 foundation: account-level cash ledger added (`account_cash`) with derived `total_cash` and `total_portfolio_value`
+- Account totals now include `cash_balance` and per-account `total_value`; portfolio UI surfaces these balances and expanded activity entry options
+- CSV importer now recognizes transfer/cash/split/merger activity aliases and supports symbol-optional cash rows
+
 ---
 
 ## Current Capability Audit
@@ -93,10 +99,10 @@ These decisions refine the build plan based on the current repository and upstre
 | Total return (incl. dividends) | NOT BUILT | 0% |
 | Performance attribution | NOT BUILT | 0% |
 | Benchmark comparison | NOT BUILT | 0% |
-| Activity types beyond buy/sell/div | NOT BUILT | 0% |
+| Activity types beyond buy/sell/div | Built (foundation) | ~40% |
 | Watchlists | NOT BUILT | 0% |
 | Custom asset types | NOT BUILT | 0% |
-| Cash management | NOT BUILT | 0% |
+| Cash management | Built (foundation) | ~35% |
 | Manual price overrides | NOT BUILT | 0% |
 | Time-series charts | NOT BUILT | 0% |
 | Broker-specific CSV templates | NOT BUILT | 0% |
