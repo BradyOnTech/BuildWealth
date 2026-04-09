@@ -96,6 +96,11 @@ These decisions refine the build plan based on the current repository and upstre
 - Rebuild/finalize performance paths now convert transaction cash flows to base currency before TWR/XIRR-style calculations; totals and account views remain base-normalized
 - Implementation pattern follows Ghostfolio exchange-rate service design (static/manual rates first, upstream provider fetching can layer on next)
 
+### 2026-04-09 (Completed - Multi-Currency Expansion)
+- Phase 1.8 expansion: added FX history store (`fx_rates_history.json`) with date-indexed pair factors and migration-safe payload handling
+- Performance conversion now prefers historical FX factor by transaction date (with prior-rate fallback), then falls back to current FX rates
+- Portfolio refresh now auto-fetches latest and historical FX pairs for non-base currencies using OpenBB quote/history endpoints with Ghostfolio-style direct/inverse pair fallback
+
 ---
 
 ## Current Capability Audit
@@ -116,7 +121,7 @@ These decisions refine the build plan based on the current repository and upstre
 | Asset class breakdown | Built | ~45% |
 | Sector breakdown | Built (foundation) | ~35% |
 | Geographic breakdown | Built (foundation) | ~35% |
-| Multi-currency | Built (foundation) | ~35% |
+| Multi-currency | Built (foundation + expansion) | ~55% |
 | Historical price backfill | NOT BUILT | 0% |
 | Total return (incl. dividends) | Built (foundation) | ~45% |
 | Performance attribution | NOT BUILT | 0% |

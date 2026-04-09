@@ -315,6 +315,61 @@ class TestFxRates:
     def test_cannot_clear_base_currency_fx_rate(self, store):
         assert store.clear_fx_rate("USD") is False
 
+    def test_historical_fx_rate_is_used_for_performance_cash_flows(self, store):
+        euro_account = store.add_account("Euro Brokerage", currency="EUR")
+        store.set_fx_rate(currency="EUR", rate=1.0)
+        store.set_fx_rate_history(
+            currency="EUR",
+            rates_by_date={
+                "2026-01-01": 1.2,
+            },
+        )
+        store.add_transaction(
+            date="2026-01-01",
+            symbol="SAP",
+            action="BUY",
+            quantity=10,
+            unit_price=100,
+            account=euro_account["id"],
+            currency="EUR",
+        )
+        holdings = store.update_prices({"SAP": 100})
+        performance = holdings["performance"]
+        assert performance["gross_contributions"] == pytest.approx(1200.0, abs=0.01)
+        assert performance["ending_value"] == pytest.approx(1000.0, abs=0.01)
+
+    def test_historical_fx_uses_latest_prior_rate_when_date_missing(self, store):
+        euro_account = store.add_account("Euro Brokerage", currency="EUR")
+        store.set_fx_rate(currency="EUR", rate=1.0)
+        store.set_fx_rate_history(
+            currency="EUR",
+            rates_by_date={
+                "2026-01-01": 1.3,
+            },
+        )
+        store.add_transaction(
+            date="2026-01-05",
+            symbol="SAP",
+            action="BUY",
+            quantity=10,
+            unit_price=100,
+            account=euro_account["id"],
+            currency="EUR",
+        )
+        holdings = store.update_prices({"SAP": 100})
+        performance = holdings["performance"]
+        assert performance["gross_contributions"] == pytest.approx(1300.0, abs=0.01)
+
+    def test_update_fx_market_data_sets_rates_and_history(self, store):
+        store.update_fx_market_data(
+            rates_by_currency={"EUR": 1.11},
+            history_by_currency={"EUR": {"2026-01-01": 1.2}},
+        )
+        fx_rates = store.get_fx_rates()
+        assert fx_rates["rates"]["EUR"] == pytest.approx(1.11, abs=1e-6)
+        fx_history = store.get_fx_rates_history()
+        assert fx_history["pairs"]["EURUSD"]["2026-01-01"] == pytest.approx(1.2, abs=1e-6)
+
 
 class TestCustomAssets:
     def test_create_custom_asset_sets_manual_metadata_and_position(self, store):

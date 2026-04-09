@@ -222,6 +222,19 @@ class OpenBBResearchService:
             detail=f"OpenBB quote request failed: {last_error or 'Unknown error'}",
         )
 
+    def get_quote(self, symbol: str) -> dict[str, Any]:
+        response = self.quote(symbol)
+        if not response.available or not response.records:
+            return {}
+        row = response.records[0]
+        return row if isinstance(row, dict) else {}
+
+    def get_price_history(self, symbol: str, period: str = "1y", interval: str = "1d") -> list[dict[str, Any]]:
+        response = self.price_history(symbol=symbol, period=period, interval=interval)
+        if not response.available:
+            return []
+        return [row for row in response.records if isinstance(row, dict)]
+
 
 def concentration_metrics(holdings: list[dict[str, Any]]) -> dict[str, Any]:
     if not holdings:

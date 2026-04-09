@@ -2442,6 +2442,11 @@ def get_portfolio_fx_rates() -> dict[str, Any]:
     return portfolio_store.get_fx_rates()
 
 
+@app.get("/api/portfolio/fx-rates/history")
+def get_portfolio_fx_rate_history() -> dict[str, Any]:
+    return portfolio_store.get_fx_rates_history()
+
+
 @app.put("/api/portfolio/fx-rates")
 def set_portfolio_fx_rate(request: dict[str, Any]) -> dict[str, Any]:
     currency = str(request.get("currency") or "").strip().upper()
@@ -2456,6 +2461,25 @@ def set_portfolio_fx_rate(request: dict[str, Any]) -> dict[str, Any]:
         return portfolio_store.set_fx_rate(
             currency=currency,
             rate=rate,
+            base_currency=str(base_currency).strip().upper() if base_currency is not None else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.put("/api/portfolio/fx-rates/history")
+def set_portfolio_fx_rate_history(request: dict[str, Any]) -> dict[str, Any]:
+    currency = str(request.get("currency") or "").strip().upper()
+    if not currency:
+        raise HTTPException(status_code=400, detail="currency is required")
+    rates_by_date = request.get("rates_by_date")
+    if not isinstance(rates_by_date, dict):
+        raise HTTPException(status_code=400, detail="rates_by_date must be an object of date->rate")
+    base_currency = request.get("base_currency")
+    try:
+        return portfolio_store.set_fx_rate_history(
+            currency=currency,
+            rates_by_date=rates_by_date,
             base_currency=str(base_currency).strip().upper() if base_currency is not None else None,
         )
     except ValueError as exc:

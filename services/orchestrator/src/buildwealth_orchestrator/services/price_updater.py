@@ -6,12 +6,212 @@ as the price source.
 
 from __future__ import annotations
 
+# FX pair fallback and historical-rate lookup flow adapted from Ghostfolio (MIT):
+# apps/api/src/services/exchange-rate-data/exchange-rate-data.service.ts
+
 from datetime import datetime, timezone
 from typing import Any
 
 from buildwealth_orchestrator.schemas import Holding, PortfolioSnapshot
 from buildwealth_orchestrator.services.portfolio_store import PortfolioStore
 from buildwealth_orchestrator.services.research import OpenBBResearchService
+
+
+def _extract_quote_price(quote: dict[str, Any]) -> float | None:
+    for key in ("market_price", "regular_market_price", "last_price", "price", "close", "prev_close"):
+        value = quote.get(key)
+        if value is None:
+            continue
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            continue
+        if parsed > 0:
+            return parsed
+    return None
+
+
+def _extract_history_row_rate(row: dict[str, Any]) -> tuple[str | None, float | None]:
+    date_value = row.get("date") or row.get("datetime") or row.get("timestamp")
+    if date_value is None:
+        return None, None
+    date_text = str(date_value).strip()
+    if not date_text:
+        return None, None
+    date_string = date_text[:10]
+
+    for key in ("close", "adj_close", "last", "market_price", "price"):
+        value = row.get(key)
+        if value is None:
+            continue
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            continue
+        if parsed > 0:
+            return date_string, parsed
+    return date_string, None
+
+
+def _fx_symbol_candidates(currency_from: str, currency_to: str) -> list[tuple[str, bool]]:
+    direct = f"{currency_from}{currency_to}"
+    inverse = f"{currency_to}{currency_from}"
+    return [
+        (f"{direct}=X", False),
+        (f"{inverse}=X", True),
+        (direct, False),
+        (inverse, True),
+    ]
+
+
+def _fx_history_period(start_date: datetime | None) -> str:
+    if start_date is None:
+        return "1y"
+    days = max((datetime.now(timezone.utc) - start_date).days, 1)
+    if days <= 31:
+        return "1mo"
+    if days <= 93:
+        return "3mo"
+    if days <= 186:
+        return "6mo"
+    if days <= 370:
+        return "1y"
+    if days <= 730:
+        return "2y"
+    if days <= 1825:
+        return "5y"
+    return "max"
+
+
+def _parse_start_date(transactions: list[dict[str, Any]]) -> datetime | None:
+    earliest: datetime | None = None
+    for transaction in transactions:
+        raw_date = str(transaction.get("date") or "").strip()
+        if not raw_date:
+            continue
+        normalized = raw_date if "T" in raw_date else f"{raw_date}T00:00:00+00:00"
+        normalized = normalized.replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            continue
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed = parsed.astimezone(timezone.utc)
+        if earliest is None or parsed < earliest:
+            earliest = parsed
+    return earliest
+
+
+def _collect_portfolio_currencies(holdings_data: dict[str, Any]) -> tuple[str, set[str]]:
+    base_currency = str(holdings_data.get("base_currency") or "USD").upper()
+    currencies: set[str] = set()
+    accounts = holdings_data.get("accounts", [])
+    if isinstance(accounts, list):
+        for account in accounts:
+            if not isinstance(account, dict):
+                continue
+            currency = str(account.get("currency") or "").strip().upper()
+            if currency:
+                currencies.add(currency)
+    holdings = holdings_data.get("holdings", {})
+    if isinstance(holdings, dict):
+        for row in holdings.values():
+            if not isinstance(row, dict):
+                continue
+            currency = str(row.get("currency") or "").strip().upper()
+            if currency:
+                currencies.add(currency)
+    currencies.discard(base_currency)
+    return base_currency, currencies
+
+
+def _fetch_latest_fx_rate(currency: str, base_currency: str, research: OpenBBResearchService) -> float | None:
+    for symbol, invert in _fx_symbol_candidates(currency, base_currency):
+        quote = research.get_quote(symbol)
+        if not isinstance(quote, dict) or not quote:
+            continue
+        price = _extract_quote_price(quote)
+        if price is None or price <= 0:
+            continue
+        return (1.0 / price) if invert else price
+    return None
+
+
+def _fetch_historical_fx_rates(
+    *,
+    currency: str,
+    base_currency: str,
+    period: str,
+    research: OpenBBResearchService,
+) -> dict[str, float]:
+    for symbol, invert in _fx_symbol_candidates(currency, base_currency):
+        rows = research.get_price_history(symbol, period=period, interval="1d")
+        if not rows:
+            continue
+        rates_by_date: dict[str, float] = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            date_string, price = _extract_history_row_rate(row)
+            if date_string is None or price is None or price <= 0:
+                continue
+            rate = (1.0 / price) if invert else price
+            if rate <= 0:
+                continue
+            rates_by_date[date_string] = round(float(rate), 8)
+        if rates_by_date:
+            return dict(sorted(rates_by_date.items()))
+    return {}
+
+
+def refresh_fx_for_portfolio(
+    *,
+    portfolio_store: PortfolioStore,
+    research: OpenBBResearchService,
+    holdings_data: dict[str, Any],
+) -> dict[str, Any]:
+    base_currency, currencies = _collect_portfolio_currencies(holdings_data)
+    if not currencies:
+        return {
+            "base_currency": base_currency,
+            "rates_updated": 0,
+            "history_updated": 0,
+        }
+
+    transactions = portfolio_store.list_transactions(limit=5000)
+    start_date = _parse_start_date(transactions)
+    period = _fx_history_period(start_date)
+
+    rates_by_currency: dict[str, float] = {}
+    history_by_currency: dict[str, dict[str, float]] = {}
+
+    for currency in sorted(currencies):
+        latest = _fetch_latest_fx_rate(currency, base_currency, research)
+        if latest is not None and latest > 0:
+            rates_by_currency[currency] = round(latest, 8)
+        history = _fetch_historical_fx_rates(
+            currency=currency,
+            base_currency=base_currency,
+            period=period,
+            research=research,
+        )
+        if history:
+            history_by_currency[currency] = history
+
+    if rates_by_currency or history_by_currency:
+        portfolio_store.update_fx_market_data(
+            rates_by_currency=rates_by_currency,
+            history_by_currency=history_by_currency,
+            base_currency=base_currency,
+        )
+
+    return {
+        "base_currency": base_currency,
+        "rates_updated": len(rates_by_currency),
+        "history_updated": len(history_by_currency),
+        "history_period": period,
+    }
 
 
 def _infer_asset_class(symbol: str, quote: dict[str, Any]) -> str | None:
@@ -95,6 +295,12 @@ async def refresh_portfolio(
     research: OpenBBResearchService,
 ) -> dict[str, Any]:
     """Fetch prices for all holdings and update the portfolio store."""
+    holdings_data = portfolio_store.get_holdings()
+    refresh_fx_for_portfolio(
+        portfolio_store=portfolio_store,
+        research=research,
+        holdings_data=holdings_data,
+    )
     holdings_data = portfolio_store.get_holdings()
     symbols: set[str] = set()
     for key, holding in holdings_data.get("holdings", {}).items():

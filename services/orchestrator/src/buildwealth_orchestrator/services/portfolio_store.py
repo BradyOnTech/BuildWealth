@@ -21,6 +21,7 @@ ASSET_METADATA_SCHEMA_VERSION = 1
 COST_BASIS_METHODS_SCHEMA_VERSION = 1
 MANUAL_PRICES_SCHEMA_VERSION = 1
 FX_RATES_SCHEMA_VERSION = 1
+FX_RATES_HISTORY_SCHEMA_VERSION = 1
 DEFAULT_ACCOUNT_ID = "default"
 DEFAULT_ACCOUNT_NAME = "Default Brokerage"
 DEFAULT_CURRENCY = "USD"
@@ -113,6 +114,7 @@ class PortfolioStore:
         self._cost_basis_methods_path = portfolio_dir / "cost_basis_methods.json"
         self._manual_prices_path = portfolio_dir / "manual_prices.json"
         self._fx_rates_path = portfolio_dir / "fx_rates.json"
+        self._fx_rates_history_path = portfolio_dir / "fx_rates_history.json"
         self._initialize()
 
     @staticmethod
@@ -222,6 +224,15 @@ class PortfolioStore:
             "updated_at": _utc_now(),
         }
 
+    @staticmethod
+    def _default_fx_rates_history_payload() -> dict[str, Any]:
+        return {
+            "schema_version": FX_RATES_HISTORY_SCHEMA_VERSION,
+            "base_currency": DEFAULT_CURRENCY,
+            "pairs": {},
+            "updated_at": _utc_now(),
+        }
+
     def _initialize(self) -> None:
         if not self._accounts_path.exists():
             self._write_json(self._accounts_path, self._default_accounts_payload())
@@ -251,6 +262,11 @@ class PortfolioStore:
             self._write_json(self._fx_rates_path, self._default_fx_rates_payload())
         else:
             self._read_fx_rates_payload()
+
+        if not self._fx_rates_history_path.exists():
+            self._write_json(self._fx_rates_history_path, self._default_fx_rates_history_payload())
+        else:
+            self._read_fx_rates_history_payload()
 
         if not self._holdings_path.exists():
             self._write_json(self._holdings_path, self._default_holdings_payload())
@@ -618,6 +634,52 @@ class PortfolioStore:
             self._write_json(self._fx_rates_path, payload)
         return payload
 
+    def _migrate_fx_rates_history_payload(self, payload: Any) -> dict[str, Any]:
+        default_payload = self._default_fx_rates_history_payload()
+        if payload is None:
+            return default_payload
+
+        if isinstance(payload, dict) and "pairs" not in payload:
+            payload = {"pairs": payload}
+        if not isinstance(payload, dict):
+            return default_payload
+
+        base_currency = str(payload.get("base_currency") or DEFAULT_CURRENCY).strip().upper() or DEFAULT_CURRENCY
+        pairs_raw = payload.get("pairs") if isinstance(payload.get("pairs"), dict) else {}
+        pairs: dict[str, dict[str, float]] = {}
+
+        for pair_ref, date_map_raw in pairs_raw.items():
+            pair = str(pair_ref or "").strip().upper()
+            if len(pair) != 6:
+                continue
+            if not isinstance(date_map_raw, dict):
+                continue
+            normalized_date_map: dict[str, float] = {}
+            for date_ref, rate_ref in date_map_raw.items():
+                date_string = str(date_ref or "").strip()
+                if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_string):
+                    continue
+                rate = _safe_float(rate_ref, None)
+                if rate is None or rate <= 0:
+                    continue
+                normalized_date_map[date_string] = round(rate, 8)
+            if normalized_date_map:
+                pairs[pair] = dict(sorted(normalized_date_map.items()))
+
+        return {
+            "schema_version": FX_RATES_HISTORY_SCHEMA_VERSION,
+            "base_currency": base_currency,
+            "pairs": pairs,
+            "updated_at": str(payload.get("updated_at") or _utc_now()),
+        }
+
+    def _read_fx_rates_history_payload(self) -> dict[str, Any]:
+        original = self._read_json(self._fx_rates_history_path)
+        payload = self._migrate_fx_rates_history_payload(original)
+        if payload != original:
+            self._write_json(self._fx_rates_history_path, payload)
+        return payload
+
     def get_asset_metadata_map(self) -> dict[str, dict[str, Any]]:
         payload = self._read_asset_metadata_payload()
         symbols = payload.get("symbols", {})
@@ -972,6 +1034,28 @@ class PortfolioStore:
         rates[base_currency] = 1.0
         return base_currency, rates
 
+    def _fx_rates_history_data(self) -> tuple[str, dict[str, dict[str, float]]]:
+        payload = self._read_fx_rates_history_payload()
+        base_currency = str(payload.get("base_currency") or DEFAULT_CURRENCY).strip().upper() or DEFAULT_CURRENCY
+        pairs_raw = payload.get("pairs") if isinstance(payload.get("pairs"), dict) else {}
+        pairs: dict[str, dict[str, float]] = {}
+        for pair_ref, date_map_raw in pairs_raw.items():
+            pair = str(pair_ref or "").strip().upper()
+            if len(pair) != 6 or not isinstance(date_map_raw, dict):
+                continue
+            normalized_map: dict[str, float] = {}
+            for date_ref, rate_ref in date_map_raw.items():
+                date_string = str(date_ref or "").strip()
+                if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_string):
+                    continue
+                rate = _safe_float(rate_ref, None)
+                if rate is None or rate <= 0:
+                    continue
+                normalized_map[date_string] = float(rate)
+            if normalized_map:
+                pairs[pair] = dict(sorted(normalized_map.items()))
+        return base_currency, pairs
+
     @staticmethod
     def _fx_rate_to_base(currency: str, *, base_currency: str, rates: dict[str, float]) -> float:
         normalized = str(currency or "").strip().upper() or base_currency
@@ -981,6 +1065,49 @@ class PortfolioStore:
         if rate is None or rate <= 0:
             return 1.0
         return float(rate)
+
+    def _fx_rate_to_base_on_date(
+        self,
+        currency: str,
+        *,
+        date_string: str | None,
+        base_currency: str,
+        rates: dict[str, float],
+        history_pairs: dict[str, dict[str, float]],
+    ) -> float:
+        normalized = str(currency or "").strip().upper() or base_currency
+        if normalized == base_currency:
+            return 1.0
+        if not date_string:
+            return self._fx_rate_to_base(normalized, base_currency=base_currency, rates=rates)
+
+        pair = f"{normalized}{base_currency}"
+        daily = history_pairs.get(pair) if isinstance(history_pairs, dict) else None
+        if isinstance(daily, dict) and daily:
+            if date_string in daily:
+                return float(daily[date_string])
+            dates = [date for date in daily.keys() if isinstance(date, str)]
+            prior_dates = [date for date in dates if date <= date_string]
+            if prior_dates:
+                return float(daily[max(prior_dates)])
+            return float(daily[min(dates)])
+
+        reverse_pair = f"{base_currency}{normalized}"
+        reverse_daily = history_pairs.get(reverse_pair) if isinstance(history_pairs, dict) else None
+        if isinstance(reverse_daily, dict) and reverse_daily:
+            if date_string in reverse_daily and reverse_daily[date_string] > 0:
+                return 1.0 / float(reverse_daily[date_string])
+            dates = [date for date in reverse_daily.keys() if isinstance(date, str)]
+            prior_dates = [date for date in dates if date <= date_string]
+            if prior_dates:
+                value = float(reverse_daily[max(prior_dates)])
+                if value > 0:
+                    return 1.0 / value
+            value = float(reverse_daily[min(dates)])
+            if value > 0:
+                return 1.0 / value
+
+        return self._fx_rate_to_base(normalized, base_currency=base_currency, rates=rates)
 
     def _convert_amount_between_currencies(
         self,
@@ -1345,10 +1472,21 @@ class PortfolioStore:
         normalized_account_cash = self._normalize_account_cash_payload(account_cash)
         total_cash = round(sum(normalized_account_cash.values()), 2)
         total_portfolio_value = round(total_market_value + total_cash, 2)
+        history_base_currency, history_pairs = self._fx_rates_history_data()
+        if history_base_currency != base_currency:
+            history_pairs = {}
         converted_transactions: list[dict[str, Any]] = []
         for transaction in transactions:
             currency = str(transaction.get("currency") or base_currency).strip().upper() or base_currency
-            fx_rate_to_base = self._fx_rate_to_base(currency, base_currency=base_currency, rates=fx_rates)
+            date_text = str(transaction.get("date") or "").strip()
+            date_string = date_text[:10] if len(date_text) >= 10 else None
+            fx_rate_to_base = self._fx_rate_to_base_on_date(
+                currency,
+                date_string=date_string,
+                base_currency=base_currency,
+                rates=fx_rates,
+                history_pairs=history_pairs,
+            )
             converted_transactions.append(
                 {
                     **transaction,
@@ -2040,6 +2178,9 @@ class PortfolioStore:
     def get_fx_rates(self) -> dict[str, Any]:
         return self._read_fx_rates_payload()
 
+    def get_fx_rates_history(self) -> dict[str, Any]:
+        return self._read_fx_rates_history_payload()
+
     def set_fx_rate(
         self,
         *,
@@ -2079,6 +2220,126 @@ class PortfolioStore:
         self._write_json(self._fx_rates_path, next_payload)
         self._rebuild_holdings()
         return next_payload
+
+    def set_fx_rates_bulk(
+        self,
+        *,
+        rates_by_currency: dict[str, float],
+        base_currency: str | None = None,
+        rebuild: bool = True,
+    ) -> dict[str, Any]:
+        payload = self._read_fx_rates_payload()
+        resolved_base_currency = (
+            str(base_currency or payload.get("base_currency") or DEFAULT_CURRENCY).strip().upper() or DEFAULT_CURRENCY
+        )
+        next_rates: dict[str, float] = {resolved_base_currency: 1.0}
+
+        if resolved_base_currency == str(payload.get("base_currency") or DEFAULT_CURRENCY).strip().upper():
+            existing_rates = payload.get("rates") if isinstance(payload.get("rates"), dict) else {}
+            for currency_ref, raw_rate in existing_rates.items():
+                currency = str(currency_ref or "").strip().upper()
+                rate = _safe_float(raw_rate, None)
+                if not currency or rate is None or rate <= 0:
+                    continue
+                next_rates[currency] = round(rate, 8)
+
+        for currency_ref, raw_rate in rates_by_currency.items():
+            currency = str(currency_ref or "").strip().upper()
+            rate = _safe_float(raw_rate, None)
+            if not currency or rate is None or rate <= 0:
+                continue
+            if currency == resolved_base_currency:
+                next_rates[currency] = 1.0
+            else:
+                next_rates[currency] = round(rate, 8)
+
+        next_payload = {
+            "schema_version": FX_RATES_SCHEMA_VERSION,
+            "base_currency": resolved_base_currency,
+            "rates": next_rates,
+            "updated_at": _utc_now(),
+        }
+        self._write_json(self._fx_rates_path, next_payload)
+        if rebuild:
+            self._rebuild_holdings()
+        return next_payload
+
+    def set_fx_rate_history(
+        self,
+        *,
+        currency: str,
+        rates_by_date: dict[str, float],
+        base_currency: str | None = None,
+        rebuild: bool = True,
+    ) -> dict[str, Any]:
+        normalized_currency = str(currency or "").strip().upper()
+        if not normalized_currency:
+            raise ValueError("currency is required")
+
+        payload = self._read_fx_rates_history_payload()
+        resolved_base_currency = (
+            str(base_currency or payload.get("base_currency") or DEFAULT_CURRENCY).strip().upper() or DEFAULT_CURRENCY
+        )
+        if normalized_currency == resolved_base_currency:
+            return payload
+
+        pair = f"{normalized_currency}{resolved_base_currency}"
+        if resolved_base_currency != str(payload.get("base_currency") or DEFAULT_CURRENCY).strip().upper():
+            payload = self._default_fx_rates_history_payload()
+            payload["base_currency"] = resolved_base_currency
+            payload["pairs"] = {}
+
+        pairs = payload.get("pairs") if isinstance(payload.get("pairs"), dict) else {}
+        current = pairs.get(pair) if isinstance(pairs.get(pair), dict) else {}
+        next_map: dict[str, float] = {}
+        for date_ref, rate_ref in {**current, **rates_by_date}.items():
+            date_string = str(date_ref or "").strip()
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_string):
+                continue
+            rate = _safe_float(rate_ref, None)
+            if rate is None or rate <= 0:
+                continue
+            next_map[date_string] = round(rate, 8)
+        if next_map:
+            pairs[pair] = dict(sorted(next_map.items()))
+        else:
+            pairs.pop(pair, None)
+
+        payload["schema_version"] = FX_RATES_HISTORY_SCHEMA_VERSION
+        payload["base_currency"] = resolved_base_currency
+        payload["pairs"] = pairs
+        payload["updated_at"] = _utc_now()
+        self._write_json(self._fx_rates_history_path, payload)
+        if rebuild:
+            self._rebuild_holdings()
+        return payload
+
+    def update_fx_market_data(
+        self,
+        *,
+        rates_by_currency: dict[str, float],
+        history_by_currency: dict[str, dict[str, float]] | None = None,
+        base_currency: str | None = None,
+    ) -> dict[str, Any]:
+        fx_payload = self.set_fx_rates_bulk(
+            rates_by_currency=rates_by_currency,
+            base_currency=base_currency,
+            rebuild=False,
+        )
+        history_payload = self._read_fx_rates_history_payload()
+        if history_by_currency:
+            for currency, rates_by_date in history_by_currency.items():
+                history_payload = self.set_fx_rate_history(
+                    currency=currency,
+                    rates_by_date=rates_by_date,
+                    base_currency=base_currency or fx_payload.get("base_currency"),
+                    rebuild=False,
+                )
+        self._rebuild_holdings()
+        return {
+            "fx_rates": fx_payload,
+            "fx_history": history_payload,
+        }
 
     def clear_fx_rate(self, currency: str) -> bool:
         normalized_currency = str(currency or "").strip().upper()

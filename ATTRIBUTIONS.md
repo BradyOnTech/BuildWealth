@@ -14,6 +14,9 @@ adapted from the following open source projects:
 - File-level adaptations:
   `services/orchestrator/src/buildwealth_orchestrator/services/portfolio_store.py`
   (multi-currency rate storage and normalization patterns adapted from
+  `apps/api/src/services/exchange-rate-data/exchange-rate-data.service.ts`);
+  `services/orchestrator/src/buildwealth_orchestrator/services/price_updater.py`
+  (FX pair resolution and historical-rate lookup fallback patterns adapted from
   `apps/api/src/services/exchange-rate-data/exchange-rate-data.service.ts`)
 
 ## Ignidash
