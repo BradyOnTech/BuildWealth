@@ -18,6 +18,7 @@ const ACCOUNT_TYPE_OPTIONS = [
   'savings',
   'checking',
 ];
+const COST_BASIS_METHOD_OPTIONS = ['FIFO', 'LIFO', 'AVERAGE'];
 
 function accountLabel(accountId) {
   if (!accountId) return '-';
@@ -59,9 +60,27 @@ export function template() {
 
     <h3 class="section-title">Holdings</h3>
     <div class="table-wrap"><table>
-      <thead><tr><th>Symbol</th><th>Account</th><th>Asset Class</th><th>Qty</th><th>Avg Cost</th><th>Price</th><th>Value</th><th>Gain/Loss</th><th>Return</th><th>Alloc</th></tr></thead>
-      <tbody id="port-holdings-body"><tr><td colspan="10">Loading...</td></tr></tbody>
+      <thead><tr><th>Symbol</th><th>Account</th><th>Asset Class</th><th>Method</th><th>Qty</th><th>Avg Cost</th><th>Price</th><th>Value</th><th>Gain/Loss</th><th>Return</th><th>Alloc</th></tr></thead>
+      <tbody id="port-holdings-body"><tr><td colspan="11">Loading...</td></tr></tbody>
     </table></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th colspan="3">Asset Class Breakdown</th></tr><tr><th>Category</th><th>Value</th><th>Alloc</th></tr></thead>
+        <tbody id="port-breakdown-asset-class"><tr><td colspan="3">Loading...</td></tr></tbody>
+      </table>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th colspan="3">Sector Breakdown</th></tr><tr><th>Category</th><th>Value</th><th>Alloc</th></tr></thead>
+        <tbody id="port-breakdown-sector"><tr><td colspan="3">Loading...</td></tr></tbody>
+      </table>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th colspan="3">Region Breakdown</th></tr><tr><th>Category</th><th>Value</th><th>Alloc</th></tr></thead>
+        <tbody id="port-breakdown-region"><tr><td colspan="3">Loading...</td></tr></tbody>
+      </table>
+    </div>
 
     <h3 class="section-title">Record Transaction</h3>
     <form id="port-txn-form" class="txn-form">
@@ -152,7 +171,7 @@ function renderHoldings(data) {
   const entries = Object.values(holdings).sort((a, b) => (b.current_value || 0) - (a.current_value || 0));
 
   if (!entries.length) {
-    tbody.innerHTML = '<tr><td colspan="10">No holdings. Add transactions to build your portfolio.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11">No holdings. Add transactions to build your portfolio.</td></tr>';
     return;
   }
 
@@ -167,10 +186,16 @@ function renderHoldings(data) {
     const sign = gain >= 0 ? '+' : '';
 
     const tr = document.createElement('tr');
+    const currentMethod = COST_BASIS_METHOD_OPTIONS.includes(h.cost_basis_method) ? h.cost_basis_method : 'FIFO';
+    const methodOptions = COST_BASIS_METHOD_OPTIONS.map((method) => `<option value="${method}" ${method === currentMethod ? 'selected' : ''}>${method}</option>`).join('');
     tr.innerHTML = `
       <td><strong>${h.symbol}</strong></td>
       <td>${accountLabel(h.account)}</td>
       <td>${h.asset_class || '-'}</td>
+      <td>
+        <select class="compact-method" data-symbol="${h.symbol}" data-account="${h.account}">${methodOptions}</select>
+        <button class="ghost small" data-action="save-method" data-symbol="${h.symbol}" data-account="${h.account}">Set</button>
+      </td>
       <td>${h.quantity?.toFixed(4)}</td>
       <td>${fmtCurrency(h.avg_cost_per_share)}</td>
       <td>${h.current_price ? fmtCurrency(h.current_price) : '-'}</td>
@@ -178,8 +203,41 @@ function renderHoldings(data) {
       <td class="${cls}">${sign}${fmtCurrency(gain)}</td>
       <td class="${cls}">${sign}${fmtPct(gainPct)}</td>
       <td>${fmtPct(alloc)}</td>`;
+    const saveButton = tr.querySelector('button[data-action="save-method"]');
+    if (saveButton) {
+      saveButton.addEventListener('click', async () => {
+        const selector = tr.querySelector('select.compact-method');
+        const method = selector?.value || currentMethod;
+        await setCostBasisMethod({ account: h.account, symbol: h.symbol, method });
+      });
+    }
     tbody.appendChild(tr);
   }
+}
+
+function renderBreakdownTable(rows, tbodyId) {
+  const tbody = byId(tbodyId);
+  const entries = Array.isArray(rows) ? rows : [];
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="3">No data</td></tr>';
+    return;
+  }
+  tbody.innerHTML = '';
+  for (const row of entries) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${row.key || '-'}</td>
+      <td>${fmtCurrency(row.value || 0)}</td>
+      <td>${fmtPct(row.allocation_pct || 0)}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function renderBreakdowns(data) {
+  const breakdowns = data.allocation_breakdowns || {};
+  renderBreakdownTable(breakdowns.asset_class, 'port-breakdown-asset-class');
+  renderBreakdownTable(breakdowns.sector, 'port-breakdown-sector');
+  renderBreakdownTable(breakdowns.region, 'port-breakdown-region');
 }
 
 function renderTransactions(txns) {
@@ -223,6 +281,7 @@ async function loadAll() {
     renderAccounts(accountRows || holdings.accounts || []);
     renderKPIs(holdings);
     renderHoldings(holdings);
+    renderBreakdowns(holdings);
     renderTransactions(txns);
   } catch (e) {
     writeLog(`Portfolio load failed: ${e.message}`, null, true);
@@ -296,6 +355,20 @@ async function addAccount(event) {
     await loadAll();
   } catch (e) {
     writeLog(`Add account failed: ${e.message}`, null, true);
+  }
+}
+
+async function setCostBasisMethod({ account, symbol, method }) {
+  try {
+    await fetchJson('/api/portfolio/cost-basis-methods', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ account, symbol, method }),
+    });
+    writeLog(`Cost basis method set: ${symbol} (${accountLabel(account)}) -> ${method}`);
+    await loadAll();
+  } catch (e) {
+    writeLog(`Set cost basis method failed: ${e.message}`, null, true);
   }
 }
 

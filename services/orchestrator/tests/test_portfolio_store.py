@@ -156,6 +156,63 @@ class TestPriceUpdate:
         assert performance["xirr_annualized_return_pct"] is not None
 
 
+class TestCostBasisMethods:
+    def test_lifo_method_changes_realized_gain(self, store):
+        store.set_cost_basis_method(method="LIFO", account="default", symbol="AAPL")
+        store.add_transaction(date="2026-01-01", symbol="AAPL", action="BUY", quantity=10, unit_price=100)
+        store.add_transaction(date="2026-02-01", symbol="AAPL", action="BUY", quantity=10, unit_price=200)
+        store.add_transaction(date="2026-03-01", symbol="AAPL", action="SELL", quantity=10, unit_price=250)
+        holding = _position(store.get_holdings(), "AAPL")
+        assert holding["cost_basis_method"] == "LIFO"
+        assert holding["realized_gains"] == pytest.approx(500.0, abs=0.01)
+        assert holding["cost_basis"] == pytest.approx(1000.0, abs=0.01)
+
+    def test_average_method_uses_weighted_unit_cost(self, store):
+        store.set_cost_basis_method(method="AVERAGE", account="default", symbol="AAPL")
+        store.add_transaction(date="2026-01-01", symbol="AAPL", action="BUY", quantity=10, unit_price=100)
+        store.add_transaction(date="2026-02-01", symbol="AAPL", action="BUY", quantity=10, unit_price=200)
+        store.add_transaction(date="2026-03-01", symbol="AAPL", action="SELL", quantity=10, unit_price=250)
+        holding = _position(store.get_holdings(), "AAPL")
+        assert holding["cost_basis_method"] == "AVERAGE"
+        assert holding["realized_gains"] == pytest.approx(1000.0, abs=0.01)
+        assert holding["cost_basis"] == pytest.approx(1500.0, abs=0.01)
+        assert holding["lot_count"] == 1
+
+
+class TestAllocationBreakdowns:
+    def test_breakdowns_include_asset_class_sector_region(self, store):
+        store.add_transaction(
+            date="2026-01-01",
+            symbol="AAPL",
+            action="BUY",
+            quantity=10,
+            unit_price=100,
+            asset_class="US Stocks",
+            sector="Technology",
+            region="US",
+        )
+        store.add_transaction(
+            date="2026-01-02",
+            symbol="BND",
+            action="BUY",
+            quantity=20,
+            unit_price=50,
+            asset_class="US Bonds",
+            sector="Fixed Income",
+            region="US",
+        )
+        result = store.update_prices({"AAPL": 120, "BND": 50})
+
+        asset_rows = result["allocation_breakdowns"]["asset_class"]
+        sector_rows = result["allocation_breakdowns"]["sector"]
+        region_rows = result["allocation_breakdowns"]["region"]
+
+        assert asset_rows[0]["key"] == "US Stocks"
+        assert asset_rows[0]["value"] == pytest.approx(1200.0, abs=0.01)
+        assert sector_rows[0]["key"] == "Technology"
+        assert region_rows[0]["key"] == "US"
+
+
 class TestSnapshotGeneration:
     def test_build_snapshot(self, store):
         store.add_transaction(date="2026-01-15", symbol="AAPL", action="BUY", quantity=10, unit_price=150)

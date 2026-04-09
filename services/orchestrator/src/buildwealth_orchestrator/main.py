@@ -2388,6 +2388,26 @@ def add_portfolio_account(request: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+@app.get("/api/portfolio/cost-basis-methods")
+def get_portfolio_cost_basis_methods() -> dict[str, Any]:
+    return portfolio_store.get_cost_basis_methods()
+
+
+@app.put("/api/portfolio/cost-basis-methods")
+def set_portfolio_cost_basis_method(request: dict[str, Any]) -> dict[str, Any]:
+    method = str(request.get("method") or "").strip().upper()
+    if not method:
+        raise HTTPException(status_code=400, detail="method is required")
+    try:
+        return portfolio_store.set_cost_basis_method(
+            method=method,
+            account=request.get("account"),
+            symbol=request.get("symbol"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/portfolio/simulate-trade", response_model=SimulateTradeResponse)
 def simulate_portfolio_trade(request: SimulateTradeRequest) -> SimulateTradeResponse:
     try:

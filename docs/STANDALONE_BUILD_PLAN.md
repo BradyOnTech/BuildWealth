@@ -63,6 +63,11 @@ These decisions refine the build plan based on the current repository and upstre
 - Portfolio UI now supports account creation/selection and displays account + asset-class on holdings/transactions
 - Plan tracking assumptions now infer expected return from latest snapshot asset-class mix when no explicit plan return assumption is set
 
+### 2026-04-09 (Completed - Next Slice Expansion)
+- Phase 1.4 expansion: configurable cost basis methods added (FIFO, LIFO, AVERAGE) with persistent method rules (global, account, symbol, position) and rebuild-time application
+- Phase 1.7 foundation: allocation breakdowns now computed in-store for asset class, sector, and region
+- Portfolio UI now includes per-position cost basis method controls plus allocation breakdown tables
+
 ---
 
 ## Current Capability Audit
@@ -72,17 +77,17 @@ These decisions refine the build plan based on the current repository and upstre
 |------------|--------|----------|
 | Position tracking | Built | ~20% of Ghostfolio |
 | Transaction ledger (BUY/SELL/DIVIDEND) | Built | Basic |
-| Average cost basis | Built | One method only |
+| Average cost basis | Built | Method-selectable (avg/fifo/lifo) |
 | Current price fetch (via OpenBB) | Built | Single provider |
 | CSV import (basic) | Built | One generic format |
 | Multi-account ledger | Built (foundation) | ~40% |
-| Time-weighted return (TWR) | NOT BUILT | 0% |
-| Money-weighted return (IRR/XIRR) | NOT BUILT | 0% |
-| FIFO/LIFO cost basis | Built (FIFO only) | ~35% |
-| Tax lot tracking | Built (FIFO lots) | ~40% |
-| Asset class breakdown | Built (position metadata layer) | ~25% |
-| Sector breakdown | NOT BUILT | 0% |
-| Geographic breakdown | NOT BUILT | 0% |
+| Time-weighted return (TWR) | Built | ~55% |
+| Money-weighted return (IRR/XIRR) | Built | ~50% |
+| FIFO/LIFO cost basis | Built (configurable) | ~55% |
+| Tax lot tracking | Built (lot-aware) | ~55% |
+| Asset class breakdown | Built | ~45% |
+| Sector breakdown | Built (foundation) | ~35% |
+| Geographic breakdown | Built (foundation) | ~35% |
 | Multi-currency | NOT BUILT | 0% |
 | Historical price backfill | NOT BUILT | 0% |
 | Total return (incl. dividends) | NOT BUILT | 0% |

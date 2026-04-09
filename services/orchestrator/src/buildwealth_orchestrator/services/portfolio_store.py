@@ -15,9 +15,11 @@ from buildwealth_orchestrator.services.portfolio_performance import calculate_po
 PORTFOLIO_STORE_SCHEMA_VERSION = 3
 ACCOUNTS_SCHEMA_VERSION = 2
 ASSET_METADATA_SCHEMA_VERSION = 1
+COST_BASIS_METHODS_SCHEMA_VERSION = 1
 DEFAULT_ACCOUNT_ID = "default"
 DEFAULT_ACCOUNT_NAME = "Default Brokerage"
 DEFAULT_CURRENCY = "USD"
+VALID_COST_BASIS_METHODS = {"FIFO", "LIFO", "AVERAGE"}
 
 
 def _utc_now() -> str:
@@ -77,6 +79,7 @@ class PortfolioStore:
         self._holdings_path = portfolio_dir / "holdings.json"
         self._accounts_path = portfolio_dir / "accounts.json"
         self._asset_metadata_path = portfolio_dir / "asset_metadata.json"
+        self._cost_basis_methods_path = portfolio_dir / "cost_basis_methods.json"
         self._initialize()
 
     @staticmethod
@@ -86,6 +89,17 @@ class PortfolioStore:
             "holdings": {},
             "holdings_by_symbol": {},
             "account_totals": {},
+            "allocation_breakdowns": {
+                "asset_class": [],
+                "sector": [],
+                "region": [],
+            },
+            "cost_basis_methods": {
+                "global": "FIFO",
+                "by_account": {},
+                "by_symbol": {},
+                "by_position": {},
+            },
             "performance": {
                 "start_date": None,
                 "as_of": None,
@@ -125,6 +139,17 @@ class PortfolioStore:
             "updated_at": _utc_now(),
         }
 
+    @staticmethod
+    def _default_cost_basis_methods_payload() -> dict[str, Any]:
+        return {
+            "schema_version": COST_BASIS_METHODS_SCHEMA_VERSION,
+            "global": "FIFO",
+            "by_account": {},
+            "by_symbol": {},
+            "by_position": {},
+            "updated_at": _utc_now(),
+        }
+
     def _initialize(self) -> None:
         if not self._accounts_path.exists():
             self._write_json(self._accounts_path, self._default_accounts_payload())
@@ -139,6 +164,11 @@ class PortfolioStore:
             self._write_json(self._asset_metadata_path, self._default_asset_metadata_payload())
         else:
             self._read_asset_metadata_payload()
+
+        if not self._cost_basis_methods_path.exists():
+            self._write_json(self._cost_basis_methods_path, self._default_cost_basis_methods_payload())
+        else:
+            self._read_cost_basis_methods_payload()
 
         if not self._holdings_path.exists():
             self._write_json(self._holdings_path, self._default_holdings_payload())
@@ -156,6 +186,11 @@ class PortfolioStore:
     @staticmethod
     def _normalize_symbol(value: Any) -> str:
         return str(value or "").strip().upper()
+
+    @staticmethod
+    def _normalize_cost_basis_method(value: Any, fallback: str = "FIFO") -> str:
+        candidate = str(value or "").strip().upper() or fallback
+        return candidate if candidate in VALID_COST_BASIS_METHODS else fallback
 
     @staticmethod
     def _slugify(text: str) -> str:
@@ -342,6 +377,58 @@ class PortfolioStore:
             self._write_json(self._asset_metadata_path, payload)
         return payload
 
+    def _migrate_cost_basis_methods_payload(self, payload: Any) -> dict[str, Any]:
+        default_payload = self._default_cost_basis_methods_payload()
+        if not isinstance(payload, dict):
+            return default_payload
+
+        by_account_raw = payload.get("by_account") if isinstance(payload.get("by_account"), dict) else {}
+        by_symbol_raw = payload.get("by_symbol") if isinstance(payload.get("by_symbol"), dict) else {}
+        by_position_raw = payload.get("by_position") if isinstance(payload.get("by_position"), dict) else {}
+
+        by_account: dict[str, str] = {}
+        by_symbol: dict[str, str] = {}
+        by_position: dict[str, str] = {}
+
+        for account_ref, method in by_account_raw.items():
+            account = self._ensure_account(str(account_ref), create_if_missing=True)
+            account_id = str(account.get("id") or DEFAULT_ACCOUNT_ID)
+            by_account[account_id] = self._normalize_cost_basis_method(method)
+
+        for symbol, method in by_symbol_raw.items():
+            normalized_symbol = self._normalize_symbol(symbol)
+            if not normalized_symbol:
+                continue
+            by_symbol[normalized_symbol] = self._normalize_cost_basis_method(method)
+
+        for position_key, method in by_position_raw.items():
+            key = str(position_key or "").strip()
+            if ":" not in key:
+                continue
+            account_ref, symbol_ref = key.split(":", 1)
+            account = self._ensure_account(account_ref, create_if_missing=True)
+            account_id = str(account.get("id") or DEFAULT_ACCOUNT_ID)
+            symbol = self._normalize_symbol(symbol_ref)
+            if not symbol:
+                continue
+            by_position[f"{account_id}:{symbol}"] = self._normalize_cost_basis_method(method)
+
+        return {
+            "schema_version": COST_BASIS_METHODS_SCHEMA_VERSION,
+            "global": self._normalize_cost_basis_method(payload.get("global"), "FIFO"),
+            "by_account": by_account,
+            "by_symbol": by_symbol,
+            "by_position": by_position,
+            "updated_at": str(payload.get("updated_at") or _utc_now()),
+        }
+
+    def _read_cost_basis_methods_payload(self) -> dict[str, Any]:
+        original = self._read_json(self._cost_basis_methods_path)
+        payload = self._migrate_cost_basis_methods_payload(original)
+        if payload != original:
+            self._write_json(self._cost_basis_methods_path, payload)
+        return payload
+
     def get_asset_metadata_map(self) -> dict[str, dict[str, Any]]:
         payload = self._read_asset_metadata_payload()
         symbols = payload.get("symbols", {})
@@ -416,7 +503,7 @@ class PortfolioStore:
                     "currency": str(raw.get("currency") or DEFAULT_CURRENCY).strip().upper() or DEFAULT_CURRENCY,
                     "account": str(account.get("id") or DEFAULT_ACCOUNT_ID),
                     "note": str(raw.get("note") or ""),
-                    "lot_method": str(raw.get("lot_method") or "FIFO").strip().upper() or "FIFO",
+                    "lot_method": self._normalize_cost_basis_method(raw.get("lot_method"), "FIFO"),
                     "created_at": str(raw.get("created_at") or _utc_now()),
                 }
             )
@@ -503,7 +590,7 @@ class PortfolioStore:
                 "quantity": round(quantity, 8),
                 "cost_basis": round(cost_basis, 2),
                 "avg_cost_per_share": round(avg_cost_per_share, 8),
-                "cost_basis_method": str(raw_holding.get("cost_basis_method") or "FIFO").strip().upper() or "FIFO",
+                "cost_basis_method": self._normalize_cost_basis_method(raw_holding.get("cost_basis_method"), "FIFO"),
                 "dividends_received": round(_safe_float(raw_holding.get("dividends_received"), 0.0), 2),
                 "realized_gains": round(_safe_float(raw_holding.get("realized_gains"), 0.0), 2),
                 "fees_paid": round(_safe_float(raw_holding.get("fees_paid"), 0.0), 2),
@@ -544,6 +631,11 @@ class PortfolioStore:
             "holdings": migrated_holdings,
             "holdings_by_symbol": self._summarize_holdings_by_symbol(migrated_holdings),
             "account_totals": self._summarize_account_totals(migrated_holdings),
+            "allocation_breakdowns": self._summarize_allocation_breakdowns(
+                migrated_holdings,
+                total_value=total_value,
+            ),
+            "cost_basis_methods": self._read_cost_basis_methods_payload(),
             "performance": performance,
             "total_value": round(total_value, 2),
             "total_cost_basis": round(total_cost, 2),
@@ -686,6 +778,74 @@ class PortfolioStore:
 
         return totals
 
+    def _resolve_cost_basis_method(
+        self,
+        *,
+        methods_payload: dict[str, Any],
+        account_id: str,
+        symbol: str,
+        transaction_method: str | None = None,
+        preserved_method: str | None = None,
+    ) -> str:
+        position_key = f"{account_id}:{symbol}"
+        by_position = methods_payload.get("by_position", {})
+        by_account = methods_payload.get("by_account", {})
+        by_symbol = methods_payload.get("by_symbol", {})
+
+        for candidate in (
+            by_position.get(position_key) if isinstance(by_position, dict) else None,
+            by_account.get(account_id) if isinstance(by_account, dict) else None,
+            by_symbol.get(symbol) if isinstance(by_symbol, dict) else None,
+            preserved_method,
+            transaction_method,
+            methods_payload.get("global"),
+            "FIFO",
+        ):
+            normalized = self._normalize_cost_basis_method(candidate, "")
+            if normalized:
+                return normalized
+        return "FIFO"
+
+    def _summarize_allocation_breakdowns(
+        self,
+        holdings: dict[str, dict[str, Any]],
+        *,
+        total_value: float,
+    ) -> dict[str, list[dict[str, Any]]]:
+        breakdown_map: dict[str, dict[str, float]] = {
+            "asset_class": {},
+            "sector": {},
+            "region": {},
+        }
+        fallback_labels = {
+            "asset_class": "Unclassified",
+            "sector": "Unknown",
+            "region": "Unknown",
+        }
+
+        for holding in holdings.values():
+            value = _safe_float(holding.get("current_value"), 0.0)
+            if value <= 0:
+                continue
+            for dimension in ("asset_class", "sector", "region"):
+                raw_key = str(holding.get(dimension) or "").strip()
+                key = raw_key or fallback_labels[dimension]
+                breakdown_map[dimension][key] = breakdown_map[dimension].get(key, 0.0) + value
+
+        breakdowns: dict[str, list[dict[str, Any]]] = {}
+        denominator = total_value if total_value > 0 else 1.0
+        for dimension, buckets in breakdown_map.items():
+            rows = [
+                {
+                    "key": key,
+                    "value": round(value, 2),
+                    "allocation_pct": round((value / denominator) * 100, 2),
+                }
+                for key, value in sorted(buckets.items(), key=lambda item: item[1], reverse=True)
+            ]
+            breakdowns[dimension] = rows
+        return breakdowns
+
     def _apply_metadata(self, symbol: str, base: dict[str, Any], metadata_map: dict[str, dict[str, Any]]) -> None:
         metadata = metadata_map.get(symbol) if isinstance(metadata_map, dict) else None
         if not isinstance(metadata, dict):
@@ -716,6 +876,10 @@ class PortfolioStore:
         payload["holdings"] = holdings
         payload["holdings_by_symbol"] = self._summarize_holdings_by_symbol(holdings)
         payload["account_totals"] = self._summarize_account_totals(holdings)
+        payload["allocation_breakdowns"] = self._summarize_allocation_breakdowns(
+            holdings,
+            total_value=total_value,
+        )
         payload["total_value"] = round(total_value, 2)
         payload["total_cost_basis"] = round(total_cost, 2)
         payload["net_performance"] = round(total_value - total_cost, 2)
@@ -727,6 +891,7 @@ class PortfolioStore:
         )
         payload["prices_updated_at"] = prices_updated_at
         payload["asset_metadata_updated_at"] = self._read_asset_metadata_payload().get("updated_at")
+        payload["cost_basis_methods"] = self._read_cost_basis_methods_payload()
         payload["updated_at"] = _utc_now()
         return payload
 
@@ -774,7 +939,7 @@ class PortfolioStore:
             currency=str(currency).strip().upper() or DEFAULT_CURRENCY,
             account=str(account_record.get("id") or DEFAULT_ACCOUNT_ID),
             note=note,
-            lot_method=str(lot_method).upper().strip() or "FIFO",
+            lot_method=self._normalize_cost_basis_method(lot_method, "FIFO"),
             created_at=_utc_now(),
         )
 
@@ -823,7 +988,7 @@ class PortfolioStore:
                 currency=str(item.get("currency", DEFAULT_CURRENCY)).strip().upper() or DEFAULT_CURRENCY,
                 account=str(account_record.get("id") or DEFAULT_ACCOUNT_ID),
                 note=str(item.get("note", "")),
-                lot_method=str(item.get("lot_method", "FIFO")).upper().strip() or "FIFO",
+                lot_method=self._normalize_cost_basis_method(item.get("lot_method"), "FIFO"),
                 created_at=_utc_now(),
             )
             txns.append(txn.to_dict())
@@ -860,17 +1025,19 @@ class PortfolioStore:
     def get_holdings(self) -> dict[str, Any]:
         payload = self._read_holdings_payload()
         payload["accounts"] = self.get_accounts()
+        payload["cost_basis_methods"] = self.get_cost_basis_methods()
         return payload
 
     @staticmethod
     def _lot_sort_key(lot: dict[str, Any]) -> tuple[str, str]:
         return str(lot.get("acquired_date") or ""), str(lot.get("lot_id") or "")
 
-    def _consume_lots_fifo(self, lots: list[dict[str, Any]], quantity_to_sell: float) -> float:
+    def _consume_lots(self, lots: list[dict[str, Any]], quantity_to_sell: float, method: str) -> float:
         remaining = quantity_to_sell
         consumed_cost = 0.0
 
-        lots.sort(key=self._lot_sort_key)
+        reverse = method == "LIFO"
+        lots.sort(key=self._lot_sort_key, reverse=reverse)
 
         for lot in lots:
             lot_remaining = _safe_float(lot.get("remaining_quantity"), 0.0)
@@ -900,6 +1067,7 @@ class PortfolioStore:
             existing_holdings = {}
 
         metadata_map = self.get_asset_metadata_map()
+        methods_payload = self._read_cost_basis_methods_payload()
 
         positions: dict[str, dict[str, Any]] = {}
         sorted_txns = sorted(
@@ -937,28 +1105,72 @@ class PortfolioStore:
                 }
 
             position = positions[key]
+            position["cost_basis_method"] = self._resolve_cost_basis_method(
+                methods_payload=methods_payload,
+                account_id=account_id,
+                symbol=symbol,
+                transaction_method=lot_method,
+                preserved_method=position.get("cost_basis_method"),
+            )
+            resolved_method = str(position.get("cost_basis_method") or "FIFO")
 
             if action == "BUY":
                 if quantity <= 0:
                     continue
-                unit_cost = price + (fee / quantity if quantity > 0 else 0.0)
-                position["quantity"] += quantity
-                position["lots"].append(
-                    {
-                        "lot_id": str(txn.get("id") or f"{key}-{len(position['lots']) + 1}"),
-                        "acquired_date": str(txn.get("date") or ""),
-                        "quantity": round(quantity, 8),
-                        "remaining_quantity": round(quantity, 8),
-                        "unit_cost": round(unit_cost, 8),
-                    }
-                )
+                if resolved_method == "AVERAGE":
+                    existing_qty = sum(_safe_float(lot.get("remaining_quantity"), 0.0) for lot in position["lots"])
+                    existing_cost = sum(
+                        _safe_float(lot.get("remaining_quantity"), 0.0) * _safe_float(lot.get("unit_cost"), 0.0)
+                        for lot in position["lots"]
+                    )
+                    buy_cost = (quantity * price) + fee
+                    new_qty = existing_qty + quantity
+                    if new_qty <= 0:
+                        continue
+                    avg_unit_cost = (existing_cost + buy_cost) / new_qty
+                    position["quantity"] = new_qty
+                    position["lots"] = [
+                        {
+                            "lot_id": str(txn.get("id") or f"{key}-avg"),
+                            "acquired_date": str(txn.get("date") or ""),
+                            "quantity": round(new_qty, 8),
+                            "remaining_quantity": round(new_qty, 8),
+                            "unit_cost": round(avg_unit_cost, 8),
+                        }
+                    ]
+                else:
+                    unit_cost = price + (fee / quantity if quantity > 0 else 0.0)
+                    position["quantity"] += quantity
+                    position["lots"].append(
+                        {
+                            "lot_id": str(txn.get("id") or f"{key}-{len(position['lots']) + 1}"),
+                            "acquired_date": str(txn.get("date") or ""),
+                            "quantity": round(quantity, 8),
+                            "remaining_quantity": round(quantity, 8),
+                            "unit_cost": round(unit_cost, 8),
+                        }
+                    )
             elif action == "SELL":
                 available_qty = sum(_safe_float(lot.get("remaining_quantity"), 0.0) for lot in position["lots"])
                 sell_qty = min(quantity, available_qty)
                 if sell_qty <= 0:
                     continue
 
-                consumed_cost = self._consume_lots_fifo(position["lots"], sell_qty)
+                if resolved_method == "AVERAGE":
+                    total_cost = sum(
+                        _safe_float(lot.get("remaining_quantity"), 0.0) * _safe_float(lot.get("unit_cost"), 0.0)
+                        for lot in position["lots"]
+                    )
+                    avg_unit = (total_cost / available_qty) if available_qty > 0 else 0.0
+                    consumed_cost = sell_qty * avg_unit
+                    remaining_qty = max(available_qty - sell_qty, 0.0)
+                    if position["lots"]:
+                        position["lots"][0]["remaining_quantity"] = round(remaining_qty, 8)
+                        position["lots"][0]["quantity"] = round(remaining_qty, 8)
+                    else:
+                        position["lots"] = []
+                else:
+                    consumed_cost = self._consume_lots(position["lots"], sell_qty, resolved_method)
                 proceeds = (sell_qty * price) - fee
                 realized_gain = proceeds - consumed_cost
 
@@ -1061,6 +1273,48 @@ class PortfolioStore:
         data = self._read_accounts_payload()
         accounts = data.get("accounts", [])
         return accounts if isinstance(accounts, list) else []
+
+    # ---- Cost basis methods ----
+
+    def get_cost_basis_methods(self) -> dict[str, Any]:
+        return self._read_cost_basis_methods_payload()
+
+    def set_cost_basis_method(
+        self,
+        *,
+        method: str,
+        account: str | None = None,
+        symbol: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_method = self._normalize_cost_basis_method(method, "")
+        if not normalized_method:
+            raise ValueError(f"Unsupported cost basis method: {method}")
+
+        payload = self._read_cost_basis_methods_payload()
+
+        if account and symbol:
+            account_record = self._ensure_account(account, create_if_missing=True)
+            account_id = str(account_record.get("id") or DEFAULT_ACCOUNT_ID)
+            symbol_value = self._normalize_symbol(symbol)
+            if not symbol_value:
+                raise ValueError("symbol is required when setting a position cost basis method")
+            payload.setdefault("by_position", {})[f"{account_id}:{symbol_value}"] = normalized_method
+        elif account:
+            account_record = self._ensure_account(account, create_if_missing=True)
+            account_id = str(account_record.get("id") or DEFAULT_ACCOUNT_ID)
+            payload.setdefault("by_account", {})[account_id] = normalized_method
+        elif symbol:
+            symbol_value = self._normalize_symbol(symbol)
+            if not symbol_value:
+                raise ValueError("symbol is required")
+            payload.setdefault("by_symbol", {})[symbol_value] = normalized_method
+        else:
+            payload["global"] = normalized_method
+
+        payload["updated_at"] = _utc_now()
+        self._write_json(self._cost_basis_methods_path, payload)
+        self._rebuild_holdings()
+        return payload
 
     def account_ids_by_name(self) -> dict[str, str]:
         mapping: dict[str, str] = {}
