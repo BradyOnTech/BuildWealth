@@ -12,10 +12,11 @@ from typing import Any, Literal
 
 from buildwealth_orchestrator.services.portfolio_performance import calculate_portfolio_performance
 
-PORTFOLIO_STORE_SCHEMA_VERSION = 4
+PORTFOLIO_STORE_SCHEMA_VERSION = 5
 ACCOUNTS_SCHEMA_VERSION = 2
 ASSET_METADATA_SCHEMA_VERSION = 1
 COST_BASIS_METHODS_SCHEMA_VERSION = 1
+MANUAL_PRICES_SCHEMA_VERSION = 1
 DEFAULT_ACCOUNT_ID = "default"
 DEFAULT_ACCOUNT_NAME = "Default Brokerage"
 DEFAULT_CURRENCY = "USD"
@@ -106,6 +107,7 @@ class PortfolioStore:
         self._accounts_path = portfolio_dir / "accounts.json"
         self._asset_metadata_path = portfolio_dir / "asset_metadata.json"
         self._cost_basis_methods_path = portfolio_dir / "cost_basis_methods.json"
+        self._manual_prices_path = portfolio_dir / "manual_prices.json"
         self._initialize()
 
     @staticmethod
@@ -127,6 +129,7 @@ class PortfolioStore:
                 "by_symbol": {},
                 "by_position": {},
             },
+            "manual_prices": {},
             "performance": {
                 "start_date": None,
                 "as_of": None,
@@ -191,6 +194,14 @@ class PortfolioStore:
             "updated_at": _utc_now(),
         }
 
+    @staticmethod
+    def _default_manual_prices_payload() -> dict[str, Any]:
+        return {
+            "schema_version": MANUAL_PRICES_SCHEMA_VERSION,
+            "by_symbol": {},
+            "updated_at": _utc_now(),
+        }
+
     def _initialize(self) -> None:
         if not self._accounts_path.exists():
             self._write_json(self._accounts_path, self._default_accounts_payload())
@@ -210,6 +221,11 @@ class PortfolioStore:
             self._write_json(self._cost_basis_methods_path, self._default_cost_basis_methods_payload())
         else:
             self._read_cost_basis_methods_payload()
+
+        if not self._manual_prices_path.exists():
+            self._write_json(self._manual_prices_path, self._default_manual_prices_payload())
+        else:
+            self._read_manual_prices_payload()
 
         if not self._holdings_path.exists():
             self._write_json(self._holdings_path, self._default_holdings_payload())
@@ -379,6 +395,17 @@ class PortfolioStore:
             text = str(value).strip()
             return text if text else None
 
+        raw_custom = merged.get("is_custom_asset")
+        if isinstance(raw_custom, bool):
+            is_custom_asset = raw_custom
+        elif raw_custom is None:
+            is_custom_asset = bool(existing.get("is_custom_asset")) if isinstance(existing, dict) else False
+        else:
+            is_custom_asset = str(raw_custom).strip().lower() in {"1", "true", "yes", "y"}
+
+        data_source = _clean(merged.get("data_source") or merged.get("dataSource") or merged.get("source"))
+        valuation_method = _clean(merged.get("valuation_method") or merged.get("valuationMethod"))
+
         return {
             "symbol": symbol_normalized,
             "name": _clean(merged.get("name") or merged.get("asset_name") or merged.get("long_name") or merged.get("short_name")),
@@ -386,6 +413,9 @@ class PortfolioStore:
             "asset_class": _clean(merged.get("asset_class")),
             "sector": _clean(merged.get("sector")),
             "region": _clean(merged.get("region") or merged.get("country") or merged.get("geography")),
+            "data_source": data_source.upper() if data_source else None,
+            "is_custom_asset": is_custom_asset,
+            "valuation_method": valuation_method,
             "updated_at": _utc_now(),
         }
 
@@ -473,6 +503,56 @@ class PortfolioStore:
         payload = self._migrate_cost_basis_methods_payload(original)
         if payload != original:
             self._write_json(self._cost_basis_methods_path, payload)
+        return payload
+
+    def _migrate_manual_prices_payload(self, payload: Any) -> dict[str, Any]:
+        default_payload = self._default_manual_prices_payload()
+        if payload is None:
+            return default_payload
+
+        if isinstance(payload, dict) and "by_symbol" not in payload:
+            payload = {"by_symbol": payload}
+
+        if not isinstance(payload, dict):
+            return default_payload
+
+        by_symbol_raw = payload.get("by_symbol") if isinstance(payload.get("by_symbol"), dict) else {}
+        by_symbol: dict[str, dict[str, Any]] = {}
+        for symbol_ref, raw_entry in by_symbol_raw.items():
+            symbol = self._normalize_symbol(symbol_ref)
+            if not symbol:
+                continue
+
+            if isinstance(raw_entry, dict):
+                price = _safe_float(raw_entry.get("price"), None)
+                note = str(raw_entry.get("note") or "")
+                updated_at = str(raw_entry.get("updated_at") or _utc_now())
+            else:
+                price = _safe_float(raw_entry, None)
+                note = ""
+                updated_at = _utc_now()
+
+            if price is None or price <= 0:
+                continue
+
+            by_symbol[symbol] = {
+                "symbol": symbol,
+                "price": round(price, 4),
+                "note": note,
+                "updated_at": updated_at,
+            }
+
+        return {
+            "schema_version": MANUAL_PRICES_SCHEMA_VERSION,
+            "by_symbol": by_symbol,
+            "updated_at": str(payload.get("updated_at") or _utc_now()),
+        }
+
+    def _read_manual_prices_payload(self) -> dict[str, Any]:
+        original = self._read_json(self._manual_prices_path)
+        payload = self._migrate_manual_prices_payload(original)
+        if payload != original:
+            self._write_json(self._manual_prices_path, payload)
         return payload
 
     def get_asset_metadata_map(self) -> dict[str, dict[str, Any]]:
@@ -567,6 +647,7 @@ class PortfolioStore:
             return default_payload
 
         holdings_input = payload.get("holdings") if isinstance(payload.get("holdings"), dict) else {}
+        manual_prices = self._manual_prices_by_symbol()
         migrated_holdings: dict[str, dict[str, Any]] = {}
         total_market_value = 0.0
         total_cost = 0.0
@@ -595,9 +676,14 @@ class PortfolioStore:
 
             current_price = raw_holding.get("current_price")
             current_price_value = _safe_float(current_price, None) if current_price is not None else None
+            manual_price_entry = manual_prices.get(symbol)
+            if isinstance(manual_price_entry, dict):
+                current_price_value = _safe_float(manual_price_entry.get("price"), current_price_value)
             current_value = raw_holding.get("current_value")
             current_value_value = _safe_float(current_value, None) if current_value is not None else None
             if current_value_value is None and current_price_value is not None:
+                current_value_value = round(quantity * current_price_value, 2)
+            elif current_price_value is not None:
                 current_value_value = round(quantity * current_price_value, 2)
 
             lots: list[dict[str, Any]] = []
@@ -646,11 +732,15 @@ class PortfolioStore:
                 "lot_count": len(lots),
                 "current_price": round(current_price_value, 4) if current_price_value is not None else None,
                 "current_value": round(current_value_value, 2) if current_value_value is not None else None,
+                "price_source": "MANUAL" if isinstance(manual_price_entry, dict) else ("LIVE" if current_price_value is not None else None),
                 "name": raw_holding.get("name"),
                 "asset_type": raw_holding.get("asset_type"),
                 "asset_class": raw_holding.get("asset_class"),
                 "sector": raw_holding.get("sector"),
                 "region": raw_holding.get("region"),
+                "data_source": raw_holding.get("data_source"),
+                "is_custom_asset": bool(raw_holding.get("is_custom_asset", False)),
+                "valuation_method": raw_holding.get("valuation_method"),
             }
 
             migrated_holdings[scoped_key] = holding_record
@@ -689,6 +779,7 @@ class PortfolioStore:
                 total_cash=total_cash,
             ),
             "cost_basis_methods": self._read_cost_basis_methods_payload(),
+            "manual_prices": manual_prices,
             "performance": performance,
             "total_value": round(total_market_value, 2),
             "total_cost_basis": round(total_cost, 2),
@@ -731,6 +822,11 @@ class PortfolioStore:
             normalized[account_id] = round(_safe_float(raw_balance, 0.0), 2)
         return normalized
 
+    def _manual_prices_by_symbol(self) -> dict[str, dict[str, Any]]:
+        payload = self._read_manual_prices_payload()
+        by_symbol = payload.get("by_symbol", {})
+        return by_symbol if isinstance(by_symbol, dict) else {}
+
     @staticmethod
     def _transaction_gross_amount(quantity: float, unit_price: float, fee: float = 0.0) -> float:
         gross = abs(quantity) * abs(unit_price)
@@ -763,11 +859,15 @@ class PortfolioStore:
                     "fees_paid": 0.0,
                     "accounts": [],
                     "current_price": None,
+                    "price_source": holding.get("price_source"),
                     "name": holding.get("name"),
                     "asset_type": holding.get("asset_type"),
                     "asset_class": holding.get("asset_class"),
                     "sector": holding.get("sector"),
                     "region": holding.get("region"),
+                    "data_source": holding.get("data_source"),
+                    "is_custom_asset": bool(holding.get("is_custom_asset", False)),
+                    "valuation_method": holding.get("valuation_method"),
                 },
             )
 
@@ -789,10 +889,13 @@ class PortfolioStore:
                     prev_qty = max(bucket["quantity"] - quantity, 0.0)
                     weighted = ((prev_qty * float(existing_price)) + (quantity * float(current_price))) / max(bucket["quantity"], 1e-9)
                     bucket["current_price"] = round(weighted, 4)
+            if holding.get("price_source") == "MANUAL":
+                bucket["price_source"] = "MANUAL"
 
-            for field in ("name", "asset_type", "asset_class", "sector", "region"):
+            for field in ("name", "asset_type", "asset_class", "sector", "region", "data_source", "valuation_method"):
                 if not bucket.get(field) and holding.get(field):
                     bucket[field] = holding.get(field)
+            bucket["is_custom_asset"] = bool(bucket.get("is_custom_asset")) or bool(holding.get("is_custom_asset"))
 
         for symbol, bucket in summary.items():
             qty = _safe_float(bucket.get("quantity"), 0.0)
@@ -944,7 +1047,16 @@ class PortfolioStore:
         metadata = metadata_map.get(symbol) if isinstance(metadata_map, dict) else None
         if not isinstance(metadata, dict):
             return
-        for field in ("name", "asset_type", "asset_class", "sector", "region"):
+        for field in (
+            "name",
+            "asset_type",
+            "asset_class",
+            "sector",
+            "region",
+            "data_source",
+            "is_custom_asset",
+            "valuation_method",
+        ):
             if metadata.get(field) is not None:
                 base[field] = metadata.get(field)
 
@@ -959,11 +1071,22 @@ class PortfolioStore:
     ) -> dict[str, Any]:
         total_market_value = 0.0
         total_cost = 0.0
+        manual_prices = self._manual_prices_by_symbol()
 
         for holding in holdings.values():
+            symbol = self._normalize_symbol(holding.get("symbol"))
+            manual_price_entry = manual_prices.get(symbol) if symbol else None
             current_price = holding.get("current_price")
+            if isinstance(manual_price_entry, dict):
+                current_price = _safe_float(manual_price_entry.get("price"), current_price)
+                holding["price_source"] = "MANUAL"
+            elif current_price is not None:
+                holding["price_source"] = "LIVE"
+            else:
+                holding["price_source"] = None
             if current_price is not None:
                 holding["current_value"] = round(_safe_float(holding.get("quantity"), 0.0) * float(current_price), 2)
+                holding["current_price"] = round(float(current_price), 4)
             if holding.get("current_value") is not None:
                 total_market_value += float(holding["current_value"])
             total_cost += float(holding.get("cost_basis", 0) or 0)
@@ -982,6 +1105,7 @@ class PortfolioStore:
             total_market_value=total_market_value,
             total_cash=total_cash,
         )
+        payload["manual_prices"] = manual_prices
         payload["total_value"] = round(total_market_value, 2)
         payload["total_cash"] = total_cash
         payload["total_portfolio_value"] = total_portfolio_value
@@ -1139,6 +1263,7 @@ class PortfolioStore:
         payload = self._read_holdings_payload()
         payload["accounts"] = self.get_accounts()
         payload["cost_basis_methods"] = self.get_cost_basis_methods()
+        payload["manual_prices"] = self._manual_prices_by_symbol()
         return payload
 
     @staticmethod
@@ -1232,6 +1357,7 @@ class PortfolioStore:
                     "lots": [],
                     "cost_basis_method": str(preserved.get("cost_basis_method") or lot_method or "FIFO").upper(),
                     "current_price": preserved.get("current_price"),
+                    "price_source": preserved.get("price_source"),
                 }
 
             position = positions[key]
@@ -1397,11 +1523,15 @@ class PortfolioStore:
                 "lot_count": len(remaining_lots),
                 "current_price": round(_safe_float(current_price), 4) if current_price is not None else None,
                 "current_value": current_value,
+                "price_source": position.get("price_source"),
                 "name": None,
                 "asset_type": None,
                 "asset_class": None,
                 "sector": None,
                 "region": None,
+                "data_source": None,
+                "is_custom_asset": False,
+                "valuation_method": None,
             }
 
             self._apply_metadata(position["symbol"], holding, metadata_map)
@@ -1504,6 +1634,183 @@ class PortfolioStore:
         self._write_json(self._cost_basis_methods_path, payload)
         self._rebuild_holdings()
         return payload
+
+    # ---- Manual prices ----
+
+    def get_manual_prices(self) -> dict[str, Any]:
+        return self._read_manual_prices_payload()
+
+    def set_manual_price(
+        self,
+        *,
+        symbol: str,
+        price: float,
+        note: str = "",
+    ) -> dict[str, Any]:
+        normalized_symbol = self._normalize_symbol(symbol)
+        if not normalized_symbol:
+            raise ValueError("symbol is required")
+        normalized_price = float(price)
+        if normalized_price <= 0:
+            raise ValueError("price must be greater than 0")
+
+        payload = self._read_manual_prices_payload()
+        by_symbol = payload.setdefault("by_symbol", {})
+        by_symbol[normalized_symbol] = {
+            "symbol": normalized_symbol,
+            "price": round(normalized_price, 4),
+            "note": str(note or ""),
+            "updated_at": _utc_now(),
+        }
+        payload["updated_at"] = _utc_now()
+        self._write_json(self._manual_prices_path, payload)
+        self._rebuild_holdings()
+        return payload
+
+    def clear_manual_price(self, symbol: str) -> bool:
+        normalized_symbol = self._normalize_symbol(symbol)
+        if not normalized_symbol:
+            return False
+        payload = self._read_manual_prices_payload()
+        by_symbol = payload.get("by_symbol") if isinstance(payload.get("by_symbol"), dict) else {}
+        if normalized_symbol not in by_symbol:
+            return False
+
+        by_symbol.pop(normalized_symbol, None)
+        payload["updated_at"] = _utc_now()
+        self._write_json(self._manual_prices_path, payload)
+        self._rebuild_holdings()
+        return True
+
+    # ---- Custom assets ----
+
+    def _existing_symbols(self) -> set[str]:
+        symbols: set[str] = set()
+        for txn in self._read_transactions():
+            symbol = self._normalize_symbol(txn.get("symbol"))
+            if symbol:
+                symbols.add(symbol)
+        for symbol in self.get_asset_metadata_map().keys():
+            normalized = self._normalize_symbol(symbol)
+            if normalized:
+                symbols.add(normalized)
+        return symbols
+
+    def _generate_custom_asset_symbol(self, name: str, existing_symbols: set[str]) -> str:
+        slug = self._slugify(name).upper()
+        base = f"MANUAL_{slug}" if slug else "MANUAL_ASSET"
+        candidate = base
+        index = 1
+        while candidate in existing_symbols:
+            index += 1
+            candidate = f"{base}_{index}"
+        return candidate
+
+    def list_custom_assets(self) -> list[dict[str, Any]]:
+        holdings = self.get_holdings()
+        by_symbol = holdings.get("holdings_by_symbol", {})
+        if not isinstance(by_symbol, dict):
+            return []
+
+        items: list[dict[str, Any]] = []
+        for symbol, row in by_symbol.items():
+            if not isinstance(row, dict):
+                continue
+            data_source = str(row.get("data_source") or "").upper()
+            is_custom = bool(row.get("is_custom_asset")) or data_source == "MANUAL"
+            if not is_custom:
+                continue
+            items.append(
+                {
+                    "symbol": symbol,
+                    "name": row.get("name") or symbol,
+                    "asset_type": row.get("asset_type"),
+                    "asset_class": row.get("asset_class"),
+                    "sector": row.get("sector"),
+                    "region": row.get("region"),
+                    "data_source": data_source or None,
+                    "valuation_method": row.get("valuation_method"),
+                    "price_source": row.get("price_source"),
+                    "quantity": round(_safe_float(row.get("quantity"), 0.0), 8),
+                    "current_price": row.get("current_price"),
+                    "current_value": round(_safe_float(row.get("current_value"), 0.0), 2),
+                    "position_count": int(row.get("position_count") or 0),
+                }
+            )
+        items.sort(key=lambda item: float(item.get("current_value") or 0.0), reverse=True)
+        return items
+
+    def create_custom_asset(
+        self,
+        *,
+        name: str,
+        value: float,
+        account: str = DEFAULT_ACCOUNT_ID,
+        asset_type: str = "custom_asset",
+        asset_class: str | None = None,
+        sector: str | None = None,
+        region: str | None = None,
+        symbol: str | None = None,
+        date: str | None = None,
+        note: str = "",
+    ) -> dict[str, Any]:
+        normalized_name = str(name or "").strip()
+        if not normalized_name:
+            raise ValueError("name is required")
+
+        normalized_value = float(value)
+        if normalized_value <= 0:
+            raise ValueError("value must be greater than 0")
+
+        account_record = self._ensure_account(account, create_if_missing=True)
+        account_id = str(account_record.get("id") or DEFAULT_ACCOUNT_ID)
+        normalized_symbol = self._normalize_symbol(symbol)
+        if not normalized_symbol:
+            normalized_symbol = self._generate_custom_asset_symbol(normalized_name, self._existing_symbols())
+
+        metadata_payload = {
+            "name": normalized_name,
+            "asset_type": str(asset_type or "custom_asset"),
+            "asset_class": asset_class,
+            "sector": sector,
+            "region": region,
+            "data_source": "MANUAL",
+            "is_custom_asset": True,
+            "valuation_method": "MANUAL_PRICE_OVERRIDE",
+        }
+        self.upsert_asset_metadata(normalized_symbol, metadata_payload)
+
+        activity_date = str(date or _utc_now().split("T")[0])
+        self.add_transaction(
+            date=activity_date,
+            symbol=normalized_symbol,
+            action="BUY",
+            quantity=1.0,
+            unit_price=normalized_value,
+            fee=0.0,
+            account=account_id,
+            currency=DEFAULT_CURRENCY,
+            note=str(note or ""),
+            name=normalized_name,
+            asset_type=str(asset_type or "custom_asset"),
+            asset_class=asset_class,
+            sector=sector,
+            region=region,
+        )
+        self.set_manual_price(symbol=normalized_symbol, price=normalized_value, note=note)
+
+        return {
+            "symbol": normalized_symbol,
+            "name": normalized_name,
+            "account": account_id,
+            "value": round(normalized_value, 2),
+            "asset_type": str(asset_type or "custom_asset"),
+            "asset_class": asset_class,
+            "sector": sector,
+            "region": region,
+            "data_source": "MANUAL",
+            "valuation_method": "MANUAL_PRICE_OVERRIDE",
+        }
 
     def account_ids_by_name(self) -> dict[str, str]:
         mapping: dict[str, str] = {}

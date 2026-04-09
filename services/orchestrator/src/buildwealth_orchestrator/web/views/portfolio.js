@@ -19,6 +19,14 @@ const ACCOUNT_TYPE_OPTIONS = [
   'checking',
 ];
 const COST_BASIS_METHOD_OPTIONS = ['FIFO', 'LIFO', 'AVERAGE'];
+const CUSTOM_ASSET_TYPE_OPTIONS = [
+  'real_estate',
+  'private_equity',
+  'private_credit',
+  'art_collectible',
+  'business_equity',
+  'custom_asset',
+];
 const TRANSACTION_ACTION_OPTIONS = [
   ['BUY', 'Buy'],
   ['SELL', 'Sell'],
@@ -41,6 +49,7 @@ function accountLabel(accountId) {
 
 export function template() {
   const accountTypeOptions = ACCOUNT_TYPE_OPTIONS.map((type) => `<option value="${type}">${type}</option>`).join('');
+  const customAssetTypeOptions = CUSTOM_ASSET_TYPE_OPTIONS.map((type) => `<option value="${type}">${type}</option>`).join('');
   const txnActionOptions = TRANSACTION_ACTION_OPTIONS.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
   return `
     <div class="view-header">
@@ -98,6 +107,19 @@ export function template() {
         <tbody id="port-breakdown-region"><tr><td colspan="3">Loading...</td></tr></tbody>
       </table>
     </div>
+
+    <h3 class="section-title">Custom Assets</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Name</th><th>Symbol</th><th>Type</th><th>Value</th><th>Price Source</th><th>Positions</th></tr></thead>
+      <tbody id="port-custom-assets-body"><tr><td colspan="6">Loading...</td></tr></tbody>
+    </table></div>
+    <form id="port-custom-asset-form" class="txn-form">
+      <label class="field"><span>Name</span><input type="text" id="custom-asset-name" placeholder="Rental Property - Austin" required /></label>
+      <label class="field"><span>Type</span><select id="custom-asset-type">${customAssetTypeOptions}</select></label>
+      <label class="field"><span>Account</span><select id="custom-asset-account"></select></label>
+      <label class="field"><span>Value</span><input type="number" id="custom-asset-value" step="0.01" min="0" placeholder="250000" required /></label>
+      <button class="primary" type="submit">Add Custom Asset</button>
+    </form>
 
     <h3 class="section-title">Record Transaction</h3>
     <form id="port-txn-form" class="txn-form">
@@ -209,11 +231,17 @@ function renderAccounts(accountRows, accountTotals = {}) {
     option.textContent = `${account.name || account.id} (${account.type || 'taxable'})`;
     accountSelect.appendChild(option);
   }
+
+  const customAccountSelect = byId('custom-asset-account');
+  if (customAccountSelect) {
+    customAccountSelect.innerHTML = accountSelect.innerHTML;
+  }
 }
 
 function renderHoldings(data) {
   const tbody = byId('port-holdings-body');
   const holdings = data.holdings || {};
+  const manualPrices = data.manual_prices || {};
   const total = data.total_value || 0;
   const entries = Object.values(holdings).sort((a, b) => (b.current_value || 0) - (a.current_value || 0));
 
@@ -232,6 +260,9 @@ function renderHoldings(data) {
     const cls = gain >= 0 ? 'drift-pos' : 'drift-neg';
     const sign = gain >= 0 ? '+' : '';
 
+    const manualEntry = manualPrices[h.symbol];
+    const manualPriceValue = typeof manualEntry?.price === 'number' ? manualEntry.price : '';
+    const priceSource = h.price_source || (manualEntry ? 'MANUAL' : '-');
     const tr = document.createElement('tr');
     const currentMethod = COST_BASIS_METHOD_OPTIONS.includes(h.cost_basis_method) ? h.cost_basis_method : 'FIFO';
     const methodOptions = COST_BASIS_METHOD_OPTIONS.map((method) => `<option value="${method}" ${method === currentMethod ? 'selected' : ''}>${method}</option>`).join('');
@@ -245,7 +276,15 @@ function renderHoldings(data) {
       </td>
       <td>${h.quantity?.toFixed(4)}</td>
       <td>${fmtCurrency(h.avg_cost_per_share)}</td>
-      <td>${h.current_price ? fmtCurrency(h.current_price) : '-'}</td>
+      <td>
+        <div>${h.current_price ? fmtCurrency(h.current_price) : '-'}</div>
+        <div class="muted">${priceSource}</div>
+        <div>
+          <input type="number" class="compact-manual-price" data-symbol="${h.symbol}" step="0.0001" min="0" placeholder="Manual" value="${manualPriceValue}" />
+          <button class="ghost small" data-action="set-manual" data-symbol="${h.symbol}">Set</button>
+          <button class="ghost small" data-action="clear-manual" data-symbol="${h.symbol}">Clear</button>
+        </div>
+      </td>
       <td>${value ? fmtCurrency(value) : '-'}</td>
       <td class="${cls}">${sign}${fmtCurrency(gain)}</td>
       <td class="${cls}">${sign}${fmtPct(gainPct)}</td>
@@ -256,6 +295,21 @@ function renderHoldings(data) {
         const selector = tr.querySelector('select.compact-method');
         const method = selector?.value || currentMethod;
         await setCostBasisMethod({ account: h.account, symbol: h.symbol, method });
+      });
+    }
+    const setManualButton = tr.querySelector('button[data-action="set-manual"]');
+    if (setManualButton) {
+      setManualButton.addEventListener('click', async () => {
+        const input = tr.querySelector('input.compact-manual-price');
+        const price = parseFloat(input?.value || '');
+        if (!Number.isFinite(price) || price <= 0) return;
+        await setManualPrice({ symbol: h.symbol, price });
+      });
+    }
+    const clearManualButton = tr.querySelector('button[data-action="clear-manual"]');
+    if (clearManualButton) {
+      clearManualButton.addEventListener('click', async () => {
+        await clearManualPrice(h.symbol);
       });
     }
     tbody.appendChild(tr);
@@ -285,6 +339,31 @@ function renderBreakdowns(data) {
   renderBreakdownTable(breakdowns.asset_class, 'port-breakdown-asset-class');
   renderBreakdownTable(breakdowns.sector, 'port-breakdown-sector');
   renderBreakdownTable(breakdowns.region, 'port-breakdown-region');
+}
+
+function renderCustomAssets(data) {
+  const tbody = byId('port-custom-assets-body');
+  const rows = Object.values(data.holdings_by_symbol || {})
+    .filter((row) => row?.is_custom_asset || String(row?.data_source || '').toUpperCase() === 'MANUAL')
+    .sort((a, b) => (b.current_value || 0) - (a.current_value || 0));
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6">No custom assets yet.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = '';
+  for (const row of rows) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${row.name || row.symbol}</strong></td>
+      <td><code>${row.symbol}</code></td>
+      <td>${row.asset_type || 'custom_asset'}</td>
+      <td>${fmtCurrency(row.current_value || 0)}</td>
+      <td>${row.price_source || '-'}</td>
+      <td>${row.position_count || 0}</td>`;
+    tbody.appendChild(tr);
+  }
 }
 
 function renderTransactions(txns) {
@@ -333,6 +412,7 @@ async function loadAll() {
     renderKPIs(holdings);
     renderHoldings(holdings);
     renderBreakdowns(holdings);
+    renderCustomAssets(holdings);
     renderTransactions(txns);
   } catch (e) {
     writeLog(`Portfolio load failed: ${e.message}`, null, true);
@@ -426,6 +506,31 @@ async function addAccount(event) {
   }
 }
 
+async function addCustomAsset(event) {
+  event.preventDefault();
+  const payload = {
+    name: byId('custom-asset-name').value.trim(),
+    asset_type: byId('custom-asset-type').value,
+    account: byId('custom-asset-account').value || 'default',
+    value: parseFloat(byId('custom-asset-value').value),
+  };
+  if (!payload.name || !Number.isFinite(payload.value) || payload.value <= 0) return;
+
+  try {
+    await fetchJson('/api/portfolio/custom-assets', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    byId('custom-asset-name').value = '';
+    byId('custom-asset-value').value = '';
+    writeLog(`Custom asset added: ${payload.name}`);
+    await loadAll();
+  } catch (e) {
+    writeLog(`Add custom asset failed: ${e.message}`, null, true);
+  }
+}
+
 async function setCostBasisMethod({ account, symbol, method }) {
   try {
     await fetchJson('/api/portfolio/cost-basis-methods', {
@@ -437,6 +542,30 @@ async function setCostBasisMethod({ account, symbol, method }) {
     await loadAll();
   } catch (e) {
     writeLog(`Set cost basis method failed: ${e.message}`, null, true);
+  }
+}
+
+async function setManualPrice({ symbol, price }) {
+  try {
+    await fetchJson('/api/portfolio/manual-prices', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ symbol, price }),
+    });
+    writeLog(`Manual price set: ${symbol} -> ${fmtCurrency(price)}`);
+    await loadAll();
+  } catch (e) {
+    writeLog(`Set manual price failed: ${e.message}`, null, true);
+  }
+}
+
+async function clearManualPrice(symbol) {
+  try {
+    await fetchJson(`/api/portfolio/manual-prices/${encodeURIComponent(symbol)}`, { method: 'DELETE' });
+    writeLog(`Manual price cleared: ${symbol}`);
+    await loadAll();
+  } catch (e) {
+    writeLog(`Clear manual price failed: ${e.message}`, null, true);
   }
 }
 
@@ -457,6 +586,7 @@ export function init() {
   byId('port-refresh-prices').addEventListener('click', refreshPrices);
   byId('port-txn-form').addEventListener('submit', addTxn);
   byId('port-account-form').addEventListener('submit', addAccount);
+  byId('port-custom-asset-form').addEventListener('submit', addCustomAsset);
   syncTxnFieldRequirements();
   loadAll();
 }

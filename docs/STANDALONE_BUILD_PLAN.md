@@ -80,6 +80,16 @@ These decisions refine the build plan based on the current repository and upstre
 - Closed-position realized gains/income are preserved in rebuild-time performance aggregation so total return does not reset after a full exit
 - Portfolio UI now surfaces price-return and income-return KPI cards
 
+### 2026-04-09 (Completed - Manual Price Foundation)
+- Phase 1.12 foundation: manual price override store added (`manual_prices.json`) with migration-safe payload and per-symbol overrides
+- Holdings pricing now follows Ghostfolio-style `MANUAL` source precedence over fetched market prices
+- Portfolio API now supports manual price override CRUD endpoints and the UI can set/clear per-symbol overrides inline
+
+### 2026-04-09 (Completed - Custom Asset Foundation)
+- Phase 1.13 foundation: custom asset creation flow added (manual symbol generation, manual metadata tagging, and initial ledger position)
+- Custom assets now carry metadata (`data_source=MANUAL`, `is_custom_asset=true`, valuation method) and appear in dedicated portfolio UI section
+- Portfolio API now supports listing and creating custom assets using the same manual valuation path as manual price overrides
+
 ---
 
 ## Current Capability Audit
@@ -107,9 +117,9 @@ These decisions refine the build plan based on the current repository and upstre
 | Benchmark comparison | NOT BUILT | 0% |
 | Activity types beyond buy/sell/div | Built (foundation) | ~40% |
 | Watchlists | NOT BUILT | 0% |
-| Custom asset types | NOT BUILT | 0% |
+| Custom asset types | Built (foundation) | ~40% |
 | Cash management | Built (foundation) | ~35% |
-| Manual price overrides | NOT BUILT | 0% |
+| Manual price overrides | Built (foundation) | ~45% |
 | Time-series charts | NOT BUILT | 0% |
 | Broker-specific CSV templates | NOT BUILT | 0% |
 

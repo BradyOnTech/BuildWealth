@@ -131,6 +131,7 @@ def build_snapshot_from_holdings(holdings_data: dict[str, Any]) -> PortfolioSnap
                 {
                     "symbol": symbol,
                     "name": holding.get("name"),
+                    "data_source": holding.get("data_source") or holding.get("price_source"),
                     "asset_type": holding.get("asset_type"),
                     "asset_class": holding.get("asset_class"),
                     "sector": holding.get("sector"),
@@ -150,6 +151,8 @@ def build_snapshot_from_holdings(holdings_data: dict[str, Any]) -> PortfolioSnap
             for field in ("name", "asset_type", "asset_class", "sector", "region"):
                 if not bucket.get(field) and holding.get(field):
                     bucket[field] = holding.get(field)
+            if not bucket.get("data_source"):
+                bucket["data_source"] = holding.get("data_source") or holding.get("price_source")
 
     holdings: list[Holding] = []
     for symbol, holding in aggregated.items():
@@ -163,6 +166,7 @@ def build_snapshot_from_holdings(holdings_data: dict[str, Any]) -> PortfolioSnap
             Holding(
                 symbol=symbol,
                 name=holding.get("name") or symbol,
+                data_source=holding.get("data_source"),
                 asset_type=holding.get("asset_type"),
                 asset_class=holding.get("asset_class"),
                 sector=holding.get("sector"),

@@ -215,6 +215,75 @@ class TestPriceUpdate:
         assert repriced_performance["total_return_usd"] == pytest.approx(200.0, abs=0.01)
 
 
+class TestManualPriceOverrides:
+    def test_manual_price_override_takes_precedence_over_live_prices(self, store):
+        store.add_transaction(date="2026-01-01", symbol="AAPL", action="BUY", quantity=10, unit_price=100)
+        store.update_prices({"AAPL": 120.0})
+
+        store.set_manual_price(symbol="AAPL", price=95.0)
+        holdings = store.get_holdings()
+        holding = _position(holdings, "AAPL")
+        assert holding["current_price"] == pytest.approx(95.0, abs=0.0001)
+        assert holding["price_source"] == "MANUAL"
+        assert holdings["manual_prices"]["AAPL"]["price"] == pytest.approx(95.0, abs=0.0001)
+
+        updated = store.update_prices({"AAPL": 130.0})
+        assert _position(updated, "AAPL")["current_price"] == pytest.approx(95.0, abs=0.0001)
+        assert _position(updated, "AAPL")["price_source"] == "MANUAL"
+
+    def test_clear_manual_price_restores_live_price_updates(self, store):
+        store.add_transaction(date="2026-01-01", symbol="AAPL", action="BUY", quantity=10, unit_price=100)
+        store.update_prices({"AAPL": 120.0})
+        store.set_manual_price(symbol="AAPL", price=95.0)
+
+        assert store.clear_manual_price("AAPL") is True
+        result = store.update_prices({"AAPL": 130.0})
+        assert _position(result, "AAPL")["current_price"] == pytest.approx(130.0, abs=0.0001)
+        assert _position(result, "AAPL")["price_source"] == "LIVE"
+
+    def test_set_manual_price_requires_positive_price(self, store):
+        with pytest.raises(ValueError):
+            store.set_manual_price(symbol="AAPL", price=0)
+
+
+class TestCustomAssets:
+    def test_create_custom_asset_sets_manual_metadata_and_position(self, store):
+        created = store.create_custom_asset(
+            name="Austin Rental Condo",
+            value=250000,
+            account="default",
+            asset_type="real_estate",
+            asset_class="Real Estate",
+            region="US",
+        )
+
+        assert created["symbol"].startswith("MANUAL_")
+        holdings = store.get_holdings()
+        row = holdings["holdings_by_symbol"][created["symbol"]]
+        assert row["name"] == "Austin Rental Condo"
+        assert row["asset_type"] == "real_estate"
+        assert row["data_source"] == "MANUAL"
+        assert row["is_custom_asset"] is True
+        assert row["price_source"] == "MANUAL"
+        assert row["current_price"] == pytest.approx(250000.0, abs=0.0001)
+        assert row["current_value"] == pytest.approx(250000.0, abs=0.01)
+        assert holdings["manual_prices"][created["symbol"]]["price"] == pytest.approx(250000.0, abs=0.0001)
+
+    def test_list_custom_assets_returns_manual_custom_positions(self, store):
+        created = store.create_custom_asset(
+            name="Private Startup Stake",
+            value=50000,
+            account="default",
+            asset_type="private_equity",
+        )
+        rows = store.list_custom_assets()
+        assert any(row["symbol"] == created["symbol"] for row in rows)
+
+    def test_create_custom_asset_requires_positive_value(self, store):
+        with pytest.raises(ValueError):
+            store.create_custom_asset(name="Invalid Asset", value=0)
+
+
 class TestCostBasisMethods:
     def test_lifo_method_changes_realized_gain(self, store):
         store.set_cost_basis_method(method="LIFO", account="default", symbol="AAPL")
@@ -343,6 +412,6 @@ class TestPersistence:
 
         store = PortfolioStore(dir_)
         holdings = store.get_holdings()
-        assert holdings["schema_version"] == 4
+        assert holdings["schema_version"] == 5
         assert holdings["performance"]["as_of"] == "2026-01-31T00:00:00+00:00"
         assert holdings["holdings"][_position_key("AAPL")]["realized_gains"] == 0.0

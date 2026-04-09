@@ -2408,6 +2408,67 @@ def set_portfolio_cost_basis_method(request: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/api/portfolio/manual-prices")
+def get_portfolio_manual_prices() -> dict[str, Any]:
+    return portfolio_store.get_manual_prices()
+
+
+@app.put("/api/portfolio/manual-prices")
+def set_portfolio_manual_price(request: dict[str, Any]) -> dict[str, Any]:
+    symbol = str(request.get("symbol") or "").strip().upper()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="symbol is required")
+    try:
+        price = float(request.get("price"))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="price must be a number") from exc
+    note = str(request.get("note") or "")
+    try:
+        return portfolio_store.set_manual_price(symbol=symbol, price=price, note=note)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/portfolio/manual-prices/{symbol}")
+def clear_portfolio_manual_price(symbol: str) -> dict[str, Any]:
+    deleted = portfolio_store.clear_manual_price(symbol)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Manual price override not found.")
+    return {"deleted": True, "symbol": str(symbol).upper()}
+
+
+@app.get("/api/portfolio/custom-assets")
+def get_portfolio_custom_assets() -> list[dict[str, Any]]:
+    return portfolio_store.list_custom_assets()
+
+
+@app.post("/api/portfolio/custom-assets")
+def create_portfolio_custom_asset(request: dict[str, Any]) -> dict[str, Any]:
+    name = str(request.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    try:
+        value = float(request.get("value"))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="value must be a number") from exc
+
+    try:
+        return portfolio_store.create_custom_asset(
+            name=name,
+            value=value,
+            account=str(request.get("account") or "default"),
+            asset_type=str(request.get("asset_type") or "custom_asset"),
+            asset_class=request.get("asset_class"),
+            sector=request.get("sector"),
+            region=request.get("region"),
+            symbol=request.get("symbol"),
+            date=request.get("date"),
+            note=str(request.get("note") or ""),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/portfolio/simulate-trade", response_model=SimulateTradeResponse)
 def simulate_portfolio_trade(request: SimulateTradeRequest) -> SimulateTradeResponse:
     try:
