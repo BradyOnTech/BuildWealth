@@ -54,6 +54,8 @@ from buildwealth_orchestrator.schemas import (
     RecommendationUpdateRequest,
     AffordabilityRequest,
     AffordabilityResponse,
+    SimulateTradeRequest,
+    SimulateTradeResponse,
     FinancialHealthResponse,
     GoalProgressResponse,
     PlanTrackingResponse,
@@ -84,6 +86,7 @@ from buildwealth_orchestrator.services.snapshot_store import (
     normalize_ghostfolio_snapshot,
 )
 from buildwealth_orchestrator.services.affordability import assess_affordability
+from buildwealth_orchestrator.services.portfolio_simulator import simulate_trade
 from buildwealth_orchestrator.services.goal_tracker import compute_goal_progress
 from buildwealth_orchestrator.services.financial_health import compute_financial_health
 from buildwealth_orchestrator.services.plan_tracker import compute_plan_tracking
@@ -168,7 +171,8 @@ copilot = FinancialCopilot(
         "- For 'what if I change my contributions?' → call run_plan_scenario_diff.\n"
         "- For 'what should I do?' → call get_today_dashboard and list_recommendations.\n"
         "- For stock/investment research → call research_quote or research_price_history, "
-        "then reference current holdings from the snapshot to discuss portfolio fit.\n"
+        "then call simulate_trade to show how buying it would affect portfolio allocation.\n"
+        "- For 'what if I buy/sell X?' → call simulate_trade to show allocation and concentration impact.\n"
         "- For daily reviews → call get_financial_health, get_plan_tracking, and get_today_dashboard.\n\n"
         "RESPONSE GUIDELINES:\n"
         "- When discussing portfolio holdings, reference specific symbols and allocation percentages.\n"
@@ -1275,6 +1279,16 @@ async def tool_get_goal_progress(_: dict[str, object]) -> dict[str, object]:
     return get_goal_progress().model_dump(mode="json")
 
 
+async def tool_simulate_trade(arguments: dict[str, object]) -> dict[str, object]:
+    request = SimulateTradeRequest(
+        symbol=str(arguments.get("symbol", "")),
+        action=str(arguments.get("action", "buy")),
+        amount_usd=float(arguments.get("amount_usd", 0)),
+        name=arguments.get("name"),
+    )
+    return simulate_portfolio_trade(request).model_dump(mode="json")
+
+
 async def tool_assess_affordability(arguments: dict[str, object]) -> dict[str, object]:
     request = AffordabilityRequest(
         description=str(arguments.get("description") or ""),
@@ -1773,6 +1787,27 @@ def configure_copilot_tools() -> None:
         handler=tool_get_goal_progress,
     )
     copilot.register_tool(
+        name="simulate_trade",
+        description=(
+            "Simulate a buy or sell trade against the current portfolio WITHOUT executing it. "
+            "Shows how the trade would change allocation, concentration risk, and top holdings. "
+            "Use this for questions like 'what if I buy $10k of AAPL?', "
+            "'what happens if I sell half my MSFT?', or 'would buying TSLA increase my risk?'."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Ticker symbol (e.g. AAPL, MSFT)"},
+                "action": {"type": "string", "enum": ["buy", "sell"], "description": "Buy or sell"},
+                "amount_usd": {"type": "number", "description": "Dollar amount to buy or sell"},
+                "name": {"type": "string", "description": "Company name (optional, for display)"},
+            },
+            "required": ["symbol", "action", "amount_usd"],
+            "additionalProperties": False,
+        },
+        handler=tool_simulate_trade,
+    )
+    copilot.register_tool(
         name="get_onboarding_status",
         description="Read onboarding completion status for unified financial context.",
         parameters=empty_schema,
@@ -2178,6 +2213,21 @@ def check_affordability(request: AffordabilityRequest) -> AffordabilityResponse:
         income_items=[IncomeItem(**i) for i in profile.get("income_items", [])],
         expense_items=[ExpenseItem(**e) for e in profile.get("expense_items", [])],
         debt_items=[DebtItem(**d) for d in profile.get("debt_items", [])],
+    )
+
+
+@app.post("/api/portfolio/simulate-trade", response_model=SimulateTradeResponse)
+def simulate_portfolio_trade(request: SimulateTradeRequest) -> SimulateTradeResponse:
+    try:
+        snap = snapshot_store.latest()
+    except FileNotFoundError:
+        raise HTTPException(status_code=400, detail="No portfolio snapshot available. Run sync first.")
+    return simulate_trade(
+        snapshot=snap,
+        symbol=request.symbol,
+        action=request.action,
+        amount_usd=request.amount_usd,
+        name=request.name,
     )
 
 

@@ -501,6 +501,48 @@ class WorkflowRunResponse(BaseModel):
     recommendations: list[RecommendationItem] = Field(default_factory=list)
 
 
+class SimulateTradeRequest(BaseModel):
+    symbol: str
+    action: Literal["buy", "sell"]
+    amount_usd: float = Field(gt=0)
+    name: str | None = None
+
+
+class SimulatedHolding(BaseModel):
+    symbol: str
+    name: str
+    current_value_usd: float
+    new_value_usd: float
+    current_allocation_pct: float
+    new_allocation_pct: float
+    allocation_change_pct: float
+
+
+class SimulateTradeResponse(BaseModel):
+    symbol: str
+    action: Literal["buy", "sell"]
+    amount_usd: float
+    name: str
+
+    current_total_value_usd: float
+    new_total_value_usd: float
+
+    current_top_holding_symbol: str | None = None
+    current_top_holding_pct: float = 0.0
+    new_top_holding_symbol: str | None = None
+    new_top_holding_pct: float = 0.0
+
+    current_concentration_risk: Literal["low", "medium", "high"]
+    new_concentration_risk: Literal["low", "medium", "high"]
+    concentration_change: Literal["improved", "unchanged", "worsened"]
+
+    current_holdings_count: int
+    new_holdings_count: int
+
+    top_holdings: list[SimulatedHolding]
+    highlights: list[str]
+
+
 class GoalProgressItem(BaseModel):
     goal_id: str
     label: str
