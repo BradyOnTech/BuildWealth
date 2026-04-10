@@ -4,7 +4,7 @@ import asyncio
 import json
 import re
 from contextlib import suppress
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -85,6 +85,7 @@ from buildwealth_orchestrator.services.snapshot_store import (
     SnapshotStore,
     normalize_ghostfolio_snapshot,
 )
+from buildwealth_orchestrator.services.snapshot_backfill import backfill_snapshot_history
 from buildwealth_orchestrator.services.affordability import assess_affordability
 from buildwealth_orchestrator.services.statement_importer import parse_statement_csv
 from buildwealth_orchestrator.services.portfolio_simulator import simulate_trade
@@ -2962,6 +2963,51 @@ def get_latest_snapshot() -> PortfolioSnapshot:
 @app.get("/api/snapshot/history", response_model=SnapshotHistoryResponse)
 def get_snapshot_history(limit: int = 30) -> SnapshotHistoryResponse:
     return build_snapshot_history_payload(limit=max(2, min(limit, 365)))
+
+
+@app.post("/api/snapshot/backfill-history")
+def backfill_snapshot_history_route(request: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = request or {}
+    raw_days = payload.get("days")
+    days: int | None = None
+    if raw_days is not None:
+        try:
+            parsed_days = int(raw_days)
+            if parsed_days > 0:
+                days = min(parsed_days, 3650)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="days must be a positive integer")
+
+    overwrite = bool(payload.get("overwrite", True))
+
+    start_date_value = payload.get("start_date")
+    end_date_value = payload.get("end_date")
+
+    def _parse_optional_date(raw: Any, field: str) -> date | None:
+        if raw is None:
+            return None
+        text = str(raw).strip()
+        if not text:
+            return None
+        try:
+            return datetime.fromisoformat(text[:10]).date()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"{field} must be YYYY-MM-DD") from exc
+
+    start_date = _parse_optional_date(start_date_value, "start_date")
+    end_date = _parse_optional_date(end_date_value, "end_date")
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=400, detail="start_date must be before or equal to end_date")
+
+    return backfill_snapshot_history(
+        portfolio_store=portfolio_store,
+        snapshot_store=snapshot_store,
+        research=research_service,
+        start_date=start_date,
+        end_date=end_date,
+        days=days,
+        overwrite=overwrite,
+    )
 
 
 @app.post("/api/import/csv", response_model=CsvImportResponse)

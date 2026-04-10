@@ -101,6 +101,11 @@ These decisions refine the build plan based on the current repository and upstre
 - Performance conversion now prefers historical FX factor by transaction date (with prior-rate fallback), then falls back to current FX rates
 - Portfolio refresh now auto-fetches latest and historical FX pairs for non-base currencies using OpenBB quote/history endpoints with Ghostfolio-style direct/inverse pair fallback
 
+### 2026-04-09 (Completed - Historical Backfill Foundation)
+- Phase 1.9 foundation: added transaction-replay snapshot backfill service to generate daily historical snapshots from ledger + historical prices
+- New snapshot backfill API endpoint (`POST /api/snapshot/backfill-history`) supports date range or day-window generation and overwrite control
+- Backfill valuation applies per-day FX conversion and historical FX factors for non-base currency positions
+
 ---
 
 ## Current Capability Audit
@@ -122,7 +127,7 @@ These decisions refine the build plan based on the current repository and upstre
 | Sector breakdown | Built (foundation) | ~35% |
 | Geographic breakdown | Built (foundation) | ~35% |
 | Multi-currency | Built (foundation + expansion) | ~55% |
-| Historical price backfill | NOT BUILT | 0% |
+| Historical price backfill | Built (foundation) | ~35% |
 | Total return (incl. dividends) | Built (foundation) | ~45% |
 | Performance attribution | NOT BUILT | 0% |
 | Benchmark comparison | NOT BUILT | 0% |

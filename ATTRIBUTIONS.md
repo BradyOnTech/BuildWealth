@@ -17,7 +17,11 @@ adapted from the following open source projects:
   `apps/api/src/services/exchange-rate-data/exchange-rate-data.service.ts`);
   `services/orchestrator/src/buildwealth_orchestrator/services/price_updater.py`
   (FX pair resolution and historical-rate lookup fallback patterns adapted from
-  `apps/api/src/services/exchange-rate-data/exchange-rate-data.service.ts`)
+  `apps/api/src/services/exchange-rate-data/exchange-rate-data.service.ts`);
+  `services/orchestrator/src/buildwealth_orchestrator/services/snapshot_backfill.py`
+  (historical timeline/transaction-point backfill patterns adapted from
+  `apps/api/src/app/portfolio/calculator/portfolio-calculator.ts` and
+  `apps/api/src/helper/portfolio.helper.ts`)
 
 ## Ignidash
 
