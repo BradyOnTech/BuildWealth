@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
 from buildwealth_orchestrator.schemas import PlanningResponse, ScenarioResult
+from buildwealth_orchestrator.services.contribution_rules import (
+    normalize_account_type,
+    tax_treatment_for_account_type,
+)
 from buildwealth_orchestrator.services.engine_adapter import SidecarAdapter, SidecarAdapterError
 from buildwealth_orchestrator.services.scenario_engine import ScenarioEngine
 
@@ -110,6 +114,8 @@ class IgnidashScenarioService:
         annual_contribution_usd: float | None = None,
         years: int | None = None,
         hsa_extra_contribution_usd: float | None = None,
+        accounts: list[dict[str, Any]] | None = None,
+        contribution_allocation: dict[str, Any] | None = None,
     ) -> PlanningResponse:
         local_result = self.scenario_engine.run(
             current_portfolio_value_usd=current_portfolio_value_usd,
@@ -125,6 +131,7 @@ class IgnidashScenarioService:
                     "engine_status": "ok",
                     "fallback_method": None,
                     "warnings": [],
+                    "contribution_allocation": contribution_allocation,
                 }
             )
 
@@ -133,6 +140,8 @@ class IgnidashScenarioService:
             annual_contribution_usd=annual_contribution_usd,
             years=years,
             hsa_extra_contribution_usd=hsa_extra_contribution_usd,
+            accounts=accounts,
+            contribution_allocation=contribution_allocation,
         )
 
         try:
@@ -153,6 +162,7 @@ class IgnidashScenarioService:
                 engine_status=response_payload.engine_status,
                 fallback_method=response_payload.fallback_method,
                 warnings=list(response_payload.warnings),
+                contribution_allocation=contribution_allocation,
             )
         except SidecarAdapterError as exc:
             return local_result.model_copy(
@@ -161,6 +171,7 @@ class IgnidashScenarioService:
                     "engine_status": "degraded",
                     "fallback_method": "local_scenario_engine_fallback",
                     "warnings": [f"Ignidash scenario sidecar unavailable: {exc}"],
+                    "contribution_allocation": contribution_allocation,
                 }
             )
 
@@ -171,6 +182,8 @@ class IgnidashScenarioService:
         annual_contribution_usd: float | None,
         years: int | None,
         hsa_extra_contribution_usd: float | None,
+        accounts: list[dict[str, Any]] | None,
+        contribution_allocation: dict[str, Any] | None,
     ) -> IgnidashScenarioRequestV1:
         resolved_years = int(self.scenario_engine.years_to_retirement if years is None else years)
         resolved_contribution = float(
@@ -231,28 +244,95 @@ class IgnidashScenarioService:
             ),
         ]
 
+        mapped_accounts = self._map_accounts(
+            current_portfolio_value_usd=current_portfolio_value_usd,
+            annual_contribution_usd=resolved_contribution,
+            accounts=accounts,
+        )
+
+        metadata: dict[str, Any] = {
+            "source": "buildwealth_orchestrator",
+            "annual_contribution_usd": resolved_contribution,
+        }
+        if contribution_allocation:
+            metadata["contribution_allocation"] = contribution_allocation
+
         return IgnidashScenarioRequestV1(
             request_id=uuid4().hex,
             currency=self.currency,
             start_year=datetime.now(timezone.utc).year,
             horizon_years=resolved_years,
             household={"current_age": 35, "retirement_age": 35 + resolved_years},
-            accounts=[
+            accounts=mapped_accounts,
+            baseline_assumptions=baseline_assumptions,
+            scenario_overrides=scenario_overrides,
+            metadata=metadata,
+        )
+
+    def _map_accounts(
+        self,
+        *,
+        current_portfolio_value_usd: float,
+        annual_contribution_usd: float,
+        accounts: list[dict[str, Any]] | None,
+    ) -> list[IgnidashScenarioAccountV1]:
+        if not accounts:
+            return [
                 IgnidashScenarioAccountV1(
                     account_id="primary",
                     account_type="portfolio",
                     tax_treatment="taxable",
                     balance=float(current_portfolio_value_usd),
-                    annual_contribution=resolved_contribution,
+                    annual_contribution=annual_contribution_usd,
                 )
-            ],
-            baseline_assumptions=baseline_assumptions,
-            scenario_overrides=scenario_overrides,
-            metadata={
-                "source": "buildwealth_orchestrator",
-                "annual_contribution_usd": resolved_contribution,
-            },
-        )
+            ]
+
+        mapped: list[IgnidashScenarioAccountV1] = []
+        for index, account in enumerate(accounts, start=1):
+            account_id = str(account.get("account_id") or account.get("id") or f"account-{index}").strip()
+            if not account_id:
+                account_id = f"account-{index}"
+
+            account_type = normalize_account_type(account.get("account_type") or account.get("type"))
+            tax_treatment_raw = account.get("tax_treatment")
+            if isinstance(tax_treatment_raw, str):
+                candidate_treatment = tax_treatment_raw.strip()
+            else:
+                candidate_treatment = ""
+            if candidate_treatment in {"taxable", "tax_deferred", "tax_free"}:
+                tax_treatment = cast(Literal["taxable", "tax_deferred", "tax_free"], candidate_treatment)
+            else:
+                tax_treatment = tax_treatment_for_account_type(account_type)
+
+            balance = float(account.get("balance_usd") or account.get("balance") or 0.0)
+            annual_contribution = float(
+                account.get("annual_contribution_usd")
+                or account.get("annual_contribution")
+                or account.get("total_contribution_usd")
+                or 0.0
+            )
+
+            mapped.append(
+                IgnidashScenarioAccountV1(
+                    account_id=account_id,
+                    account_type=account_type,
+                    tax_treatment=tax_treatment,
+                    balance=balance,
+                    annual_contribution=annual_contribution,
+                )
+            )
+
+        if mapped:
+            return mapped
+        return [
+            IgnidashScenarioAccountV1(
+                account_id="primary",
+                account_type="portfolio",
+                tax_treatment="taxable",
+                balance=float(current_portfolio_value_usd),
+                annual_contribution=annual_contribution_usd,
+            )
+        ]
 
     @staticmethod
     def _merge_sidecar_scenarios(

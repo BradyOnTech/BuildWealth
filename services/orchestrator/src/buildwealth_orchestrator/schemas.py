@@ -154,6 +154,59 @@ class ScenarioRequest(BaseModel):
     hsa_extra_contribution_usd: float | None = None
 
 
+class ContributionAllocationAccountInput(BaseModel):
+    account_id: str
+    account_name: str | None = None
+    account_type: str = "taxableBrokerage"
+    balance_usd: float = Field(default=0.0, ge=0)
+
+
+class ContributionAllocationRequest(BaseModel):
+    annual_contribution_usd: float = Field(ge=0)
+    age: int = Field(default=35, ge=0, le=120)
+    accounts: list[ContributionAllocationAccountInput] = Field(default_factory=list)
+    rules: list[dict[str, Any]] = Field(default_factory=list)
+    base_rule: dict[str, Any] = Field(default_factory=lambda: {"type": "save"})
+    profile_id: str | None = None
+    employer_match_target_usd: float = Field(default=6000.0, ge=0)
+
+
+class ContributionAllocationAccountResult(BaseModel):
+    account_id: str
+    account_name: str
+    account_type: str
+    balance_usd: float = 0.0
+    employee_contribution_usd: float = 0.0
+    employer_match_usd: float = 0.0
+    total_contribution_usd: float = 0.0
+    applied_rule_ids: list[str] = Field(default_factory=list)
+
+
+class ContributionAllocationRuleResult(BaseModel):
+    rule_id: str
+    account_id: str
+    account_type: str
+    rank: int
+    contribution_type: str
+    requested_employee_contribution_usd: float | None = None
+    employee_contribution_usd: float = 0.0
+    employer_match_usd: float = 0.0
+    limited_by: list[str] = Field(default_factory=list)
+
+
+class ContributionAllocationResponse(BaseModel):
+    profile_id: str | None = None
+    base_rule_type: str
+    annual_contribution_target_usd: float
+    employee_contributions_usd: float
+    employer_match_usd: float
+    total_contributions_usd: float
+    unallocated_contribution_usd: float
+    allocations: list[ContributionAllocationAccountResult] = Field(default_factory=list)
+    rule_results: list[ContributionAllocationRuleResult] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class TaxEstimateRequest(BaseModel):
     tax_year: int = Field(default=2026, ge=1900, le=2500)
     filing_status: Literal[
@@ -214,6 +267,7 @@ class PlanningResponse(BaseModel):
     engine_status: Literal["ok", "degraded"] = "ok"
     fallback_method: str | None = None
     warnings: list[str] = Field(default_factory=list)
+    contribution_allocation: ContributionAllocationResponse | None = None
 
 
 class ChatRequest(BaseModel):

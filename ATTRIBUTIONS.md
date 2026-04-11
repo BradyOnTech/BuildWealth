@@ -39,7 +39,11 @@ adapted from the following open source projects:
   `services/orchestrator/src/buildwealth_orchestrator/services/tax_engine.py`
   (federal tax calculation flow and tax-data table structure adapted from
   `src/lib/calc/taxes.ts` and
-  `src/lib/calc/tax-data/{federal-income-tax-brackets,capital-gains-tax-brackets,standard-deduction,niit-thresholds,social-security-tax-brackets}.ts`)
+  `src/lib/calc/tax-data/{federal-income-tax-brackets,capital-gains-tax-brackets,standard-deduction,niit-thresholds,social-security-tax-brackets}.ts`);
+  `services/orchestrator/src/buildwealth_orchestrator/services/contribution_rules.py`
+  (ranked contribution waterfall, shared-limit enforcement, and account-type annual
+  limit helper structure adapted from `src/lib/calc/contribution-rules.ts` and
+  `src/lib/schemas/inputs/contribution-form-schema.ts`)
 
 ## OpenBB Platform
 

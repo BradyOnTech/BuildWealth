@@ -46,6 +46,8 @@ from buildwealth_orchestrator.schemas import (
     PortfolioAttributionResponse,
     ResearchResponse,
     ScenarioRequest,
+    ContributionAllocationRequest,
+    ContributionAllocationResponse,
     TaxEstimateRequest,
     TaxEstimateResponse,
     SnapshotHistoryResponse,
@@ -96,6 +98,12 @@ from buildwealth_orchestrator.services.goal_tracker import compute_goal_progress
 from buildwealth_orchestrator.services.financial_health import compute_financial_health
 from buildwealth_orchestrator.services.plan_tracker import compute_plan_tracking
 from buildwealth_orchestrator.services.portfolio_store import PortfolioStore
+from buildwealth_orchestrator.services.contribution_rules import (
+    allocate_contributions,
+    build_tax_optimized_high_earner_rules,
+    normalize_account_type,
+    tax_treatment_for_account_type,
+)
 from buildwealth_orchestrator.services.price_updater import (
     build_snapshot_from_holdings,
     refresh_portfolio,
@@ -620,9 +628,161 @@ def build_ignidash_service_for_plan_settings(plan_settings: dict[str, Any]) -> I
     )
 
 
+def _coerce_float(value: Any, fallback: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _coerce_int(value: Any, fallback: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def build_planning_accounts_from_portfolio() -> list[dict[str, Any]]:
+    holdings_payload = portfolio_store.get_holdings()
+    account_totals = holdings_payload.get("account_totals", {})
+    if not isinstance(account_totals, dict):
+        account_totals = {}
+
+    accounts: list[dict[str, Any]] = []
+    for account in portfolio_store.get_accounts():
+        if not isinstance(account, dict):
+            continue
+        account_id = str(account.get("id") or "").strip()
+        if not account_id:
+            continue
+
+        account_total = account_totals.get(account_id, {})
+        if not isinstance(account_total, dict):
+            account_total = {}
+
+        accounts.append(
+            {
+                "account_id": account_id,
+                "account_name": str(account.get("name") or account_id).strip() or account_id,
+                "account_type": normalize_account_type(account.get("type") or account.get("account_type")),
+                "balance_usd": max(
+                    0.0,
+                    _coerce_float(
+                        account_total.get("total_value", account_total.get("market_value", account.get("balance", 0.0))),
+                        0.0,
+                    ),
+                ),
+            }
+        )
+
+    return accounts
+
+
+def parse_contribution_rules_payload(raw_payload: Any) -> dict[str, Any]:
+    if isinstance(raw_payload, str):
+        text = raw_payload.strip()
+        if not text:
+            payload: Any = {}
+        else:
+            try:
+                payload = json.loads(text)
+            except json.JSONDecodeError:
+                payload = {}
+    elif isinstance(raw_payload, dict):
+        payload = raw_payload
+    else:
+        payload = {}
+
+    if not isinstance(payload, dict):
+        payload = {}
+
+    base_rule = payload.get("base_rule")
+    if not isinstance(base_rule, dict):
+        base_rule = {"type": "save"}
+    base_rule_type = str(base_rule.get("type") or "save").strip().lower()
+    if base_rule_type not in {"save", "spend"}:
+        base_rule_type = "save"
+    base_rule = {"type": base_rule_type}
+
+    rules = payload.get("rules")
+    if not isinstance(rules, list):
+        rules = []
+
+    profile_id = str(payload.get("profile_id") or payload.get("default_profile") or "").strip() or None
+    employer_match_target_usd = max(0.0, _coerce_float(payload.get("employer_match_target_usd"), 6000.0))
+    age = _coerce_int(payload.get("age"), 35)
+    if age < 0:
+        age = 0
+    if age > 120:
+        age = 120
+
+    return {
+        "base_rule": base_rule,
+        "rules": rules,
+        "profile_id": profile_id,
+        "employer_match_target_usd": employer_match_target_usd,
+        "age": age,
+    }
+
+
+def resolve_plan_contribution_rules(detail: dict[str, Any]) -> dict[str, Any]:
+    files = detail.get("files", {})
+    raw_payload = files.get("contribution_rules_json") if isinstance(files, dict) else None
+    return parse_contribution_rules_payload(raw_payload)
+
+
+def build_contribution_allocation_for_plan_settings(
+    *,
+    plan_settings: dict[str, Any],
+    contribution_rules_payload: dict[str, Any] | None = None,
+    accounts_override: list[dict[str, Any]] | None = None,
+) -> ContributionAllocationResponse | None:
+    annual_contribution_raw = plan_settings.get("annual_contribution_usd")
+    if annual_contribution_raw is None:
+        return None
+
+    annual_contribution_usd = max(0.0, _coerce_float(annual_contribution_raw, 0.0))
+    accounts = accounts_override if accounts_override is not None else build_planning_accounts_from_portfolio()
+    if not accounts:
+        return None
+
+    payload = contribution_rules_payload or {}
+    rules = payload.get("rules") if isinstance(payload.get("rules"), list) else []
+    base_rule = payload.get("base_rule") if isinstance(payload.get("base_rule"), dict) else {"type": "save"}
+    profile_id = str(payload.get("profile_id") or "").strip() or None
+    age = _coerce_int(payload.get("age"), 35)
+    if age < 0:
+        age = 0
+    if age > 120:
+        age = 120
+
+    if not rules and (profile_id is None or profile_id == "tax_optimized_high_earner"):
+        generated = build_tax_optimized_high_earner_rules(
+            accounts,
+            employer_match_target_usd=max(
+                0.0,
+                _coerce_float(payload.get("employer_match_target_usd"), 6000.0),
+            ),
+        )
+        rules = generated.get("rules", [])
+        base_rule = generated.get("base_rule", base_rule)
+        profile_id = generated.get("profile_id", "tax_optimized_high_earner")
+
+    allocation_payload = allocate_contributions(
+        annual_contribution_usd=annual_contribution_usd,
+        accounts=accounts,
+        rules=rules,
+        base_rule=base_rule,
+        age=age,
+        profile_id=profile_id,
+    )
+    return ContributionAllocationResponse(**allocation_payload)
+
+
 async def run_scenarios_for_plan_settings(
     current_portfolio_value_usd: float,
     plan_settings: dict[str, Any],
+    contribution_allocation: ContributionAllocationResponse | None = None,
 ) -> PlanningResponse:
     validate_plan_return_relationships(plan_settings)
     service = build_ignidash_service_for_plan_settings(plan_settings)
@@ -630,13 +790,36 @@ async def run_scenarios_for_plan_settings(
     years = plan_settings.get("years")
     hsa_extra = plan_settings.get("hsa_extra_contribution_usd")
 
+    resolved_annual_contribution = (
+        float(annual_contribution)
+        if annual_contribution is not None
+        else None
+    )
+    sidecar_accounts: list[dict[str, Any]] | None = None
+    contribution_allocation_payload: dict[str, Any] | None = None
+
+    if contribution_allocation is not None:
+        resolved_annual_contribution = float(contribution_allocation.total_contributions_usd)
+        sidecar_accounts = []
+        for item in contribution_allocation.allocations:
+            sidecar_accounts.append(
+                {
+                    "account_id": item.account_id,
+                    "account_type": item.account_type,
+                    "balance_usd": item.balance_usd,
+                    "annual_contribution_usd": item.total_contribution_usd,
+                    "tax_treatment": tax_treatment_for_account_type(item.account_type),
+                }
+            )
+        contribution_allocation_payload = contribution_allocation.model_dump(mode="json")
+
     result = await service.run(
         current_portfolio_value_usd=float(current_portfolio_value_usd),
-        annual_contribution_usd=(
-            float(annual_contribution) if annual_contribution is not None else None
-        ),
+        annual_contribution_usd=resolved_annual_contribution,
         years=int(years) if years is not None else None,
         hsa_extra_contribution_usd=(float(hsa_extra) if hsa_extra is not None else None),
+        accounts=sidecar_accounts,
+        contribution_allocation=contribution_allocation_payload,
     )
     if result.engine_status == "degraded":
         await engine_status_tracker.increment_degraded(
@@ -1714,6 +1897,15 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
     base_settings = detail.get("settings", {})
     compare_updates = extract_plan_settings_updates(arguments)
     candidate_settings = merge_plan_settings(base_settings, compare_updates)
+    contribution_rules_payload = resolve_plan_contribution_rules(detail)
+    base_contribution_allocation = build_contribution_allocation_for_plan_settings(
+        plan_settings=base_settings,
+        contribution_rules_payload=contribution_rules_payload,
+    )
+    candidate_contribution_allocation = build_contribution_allocation_for_plan_settings(
+        plan_settings=candidate_settings,
+        contribution_rules_payload=contribution_rules_payload,
+    )
 
     current_value_raw = arguments.get("current_portfolio_value_usd")
     current_value = resolve_portfolio_value(
@@ -1723,10 +1915,12 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
     base_result = await run_scenarios_for_plan_settings(
         current_portfolio_value_usd=current_value,
         plan_settings=base_settings,
+        contribution_allocation=base_contribution_allocation,
     )
     candidate_result = await run_scenarios_for_plan_settings(
         current_portfolio_value_usd=current_value,
         plan_settings=candidate_settings,
+        contribution_allocation=candidate_contribution_allocation,
     )
     scenario_deltas, monte_carlo_delta = build_scenario_diff_payload(base_result, candidate_result)
 
@@ -2959,16 +3153,27 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
 
     base_settings = dict(detail.get("settings", {}))
     candidate_settings = merge_plan_settings(base_settings, compare_updates)
+    contribution_rules_payload = resolve_plan_contribution_rules(detail)
+    base_contribution_allocation = build_contribution_allocation_for_plan_settings(
+        plan_settings=base_settings,
+        contribution_rules_payload=contribution_rules_payload,
+    )
+    candidate_contribution_allocation = build_contribution_allocation_for_plan_settings(
+        plan_settings=candidate_settings,
+        contribution_rules_payload=contribution_rules_payload,
+    )
 
     try:
         current_value = resolve_portfolio_value(request.current_portfolio_value_usd)
         base_result = await run_scenarios_for_plan_settings(
             current_portfolio_value_usd=current_value,
             plan_settings=base_settings,
+            contribution_allocation=base_contribution_allocation,
         )
         candidate_result = await run_scenarios_for_plan_settings(
             current_portfolio_value_usd=current_value,
             plan_settings=candidate_settings,
+            contribution_allocation=candidate_contribution_allocation,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -3301,6 +3506,36 @@ def planning_tax_estimate(request: TaxEstimateRequest) -> TaxEstimateResponse:
             tax_withholding_usd=request.tax_withholding_usd,
         )
     )
+
+
+@app.post("/api/planning/contribution-allocation", response_model=ContributionAllocationResponse)
+def planning_contribution_allocation(request: ContributionAllocationRequest) -> ContributionAllocationResponse:
+    accounts = [item.model_dump(mode="json") for item in request.accounts] or build_planning_accounts_from_portfolio()
+    if not accounts:
+        raise HTTPException(status_code=400, detail="No accounts available to allocate contributions.")
+
+    base_rule = request.base_rule if isinstance(request.base_rule, dict) else {"type": "save"}
+    rules = list(request.rules)
+    profile_id = request.profile_id
+
+    if not rules and (profile_id is None or profile_id == "tax_optimized_high_earner"):
+        generated = build_tax_optimized_high_earner_rules(
+            accounts,
+            employer_match_target_usd=request.employer_match_target_usd,
+        )
+        rules = generated.get("rules", [])
+        base_rule = generated.get("base_rule", base_rule)
+        profile_id = generated.get("profile_id", "tax_optimized_high_earner")
+
+    payload = allocate_contributions(
+        annual_contribution_usd=request.annual_contribution_usd,
+        age=request.age,
+        accounts=accounts,
+        rules=rules,
+        base_rule=base_rule,
+        profile_id=profile_id,
+    )
+    return ContributionAllocationResponse(**payload)
 
 
 @app.post("/api/research/options-chain", response_model=ResearchResponse)

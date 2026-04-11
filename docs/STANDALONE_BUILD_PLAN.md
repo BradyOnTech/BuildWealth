@@ -105,6 +105,13 @@ These decisions refine the build plan based on the current repository and upstre
 - Added planning endpoint `POST /api/planning/tax-estimate` for callable tax breakdowns
 - Added focused tax engine unit coverage in `test_tax_engine.py` (ordinary income, capital gains/NIIT, Social Security taxability, year-fallback behavior)
 
+### 2026-04-11 (Completed - Contribution Rule Prioritization Foundation)
+- Added contribution allocation engine (`contribution_rules.py`) adapted from Ignidash ranked-rule and shared-limit logic (`contribution-rules.ts`, `contribution-form-schema.ts`)
+- Added planning endpoint `POST /api/planning/contribution-allocation` with support for rule-based allocation and default `tax_optimized_high_earner` profile generation
+- Planner scenario-diff flows now consume plan contribution rules and pass per-account annual contributions into the Ignidash sidecar request payload when rules are present
+- Planning responses now include `contribution_allocation` metadata so scenario output can show effective employee + employer funded contribution totals
+- Added focused coverage in `test_contribution_rules.py` and extended sidecar request coverage in `test_planning_sidecar.py`
+
 ### 2026-04-09 (Completed)
 - Phase 1.1: BuildWealth-native TWR calculator integrated into local portfolio store
 - Phase 1.2: XIRR money-weighted return added and surfaced in portfolio snapshot/UI
@@ -208,7 +215,7 @@ These decisions refine the build plan based on the current repository and upstre
 | Goal progress tracking | Built | Functional |
 | Plan workspace (file-based) | Built | Functional |
 | Scenario diff | Built | Basic |
-| Account contribution prioritization | NOT BUILT | 0% |
+| Account contribution prioritization | Built (foundation) | ~35% |
 | Tax-aware account modeling | NOT BUILT | 0% |
 | Income modeling with growth rates | NOT BUILT | 0% |
 | Expense modeling with inflation | NOT BUILT | 0% |
