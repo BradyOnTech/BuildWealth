@@ -1452,13 +1452,14 @@ def build_today_dashboard_response() -> TodayDashboardResponse:
 
     # Enrich with financial health summary
     try:
-        from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem
+        from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem, PhysicalAssetItem
 
         health = compute_financial_health(
             income_items=[IncomeItem(**i) for i in profile_payload.get("income_items", [])],
             expense_items=[ExpenseItem(**e) for e in profile_payload.get("expense_items", [])],
             debt_items=[DebtItem(**d) for d in profile_payload.get("debt_items", [])],
             goal_items=[GoalItem(**g) for g in profile_payload.get("goal_items", [])],
+            physical_assets=[PhysicalAssetItem(**a) for a in profile_payload.get("physical_assets", [])],
             snapshot=latest_snapshot,
         )
         dashboard.net_worth_usd = health.net_worth_usd
@@ -2569,7 +2570,7 @@ def onboarding_status() -> OnboardingStatusResponse:
 
 @app.get("/api/financial-health", response_model=FinancialHealthResponse)
 def get_financial_health() -> FinancialHealthResponse:
-    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem
+    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem, PhysicalAssetItem
 
     profile = financial_profile_store.load()
     try:
@@ -2581,6 +2582,7 @@ def get_financial_health() -> FinancialHealthResponse:
         expense_items=[ExpenseItem(**e) for e in profile.get("expense_items", [])],
         debt_items=[DebtItem(**d) for d in profile.get("debt_items", [])],
         goal_items=[GoalItem(**g) for g in profile.get("goal_items", [])],
+        physical_assets=[PhysicalAssetItem(**a) for a in profile.get("physical_assets", [])],
         snapshot=snap,
     )
 

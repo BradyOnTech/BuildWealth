@@ -853,6 +853,8 @@ class FinancialHealthResponse(BaseModel):
 
     # Net worth
     portfolio_value_usd: float
+    physical_assets_value_usd: float
+    total_assets_usd: float
     total_debt_usd: float
     net_worth_usd: float
 
@@ -877,6 +879,7 @@ class FinancialHealthResponse(BaseModel):
     expense_item_count: int
     debt_item_count: int
     goal_item_count: int
+    physical_asset_item_count: int
 
 
 class PlanTrackingResponse(BaseModel):

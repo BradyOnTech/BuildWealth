@@ -7,6 +7,7 @@ from buildwealth_orchestrator.schemas import (
     ExpenseItem,
     IncomeItem,
     GoalItem,
+    PhysicalAssetItem,
     PortfolioSnapshot,
 )
 from buildwealth_orchestrator.services.financial_health import compute_financial_health
@@ -26,6 +27,7 @@ def _health(**kwargs):
         expense_items=[ExpenseItem(id="e1", label="Rent", monthly_amount_usd=2000)],
         debt_items=[],
         goal_items=[],
+        physical_assets=[],
         snapshot=_snap(),
     )
     defaults.update(kwargs)
@@ -43,6 +45,22 @@ class TestNetWorth:
         r = _health(debt_items=[DebtItem(id="d1", label="Loan", balance_usd=30000, minimum_payment_usd=500)])
         assert r.net_worth_usd == 70000
         assert r.total_debt_usd == 30000
+
+    def test_net_worth_includes_physical_assets(self):
+        r = _health(
+            physical_assets=[
+                PhysicalAssetItem(
+                    id="asset-1",
+                    label="House",
+                    current_value_usd=450000,
+                    asset_type="real_estate",
+                )
+            ],
+        )
+        assert r.portfolio_value_usd == 100000
+        assert r.physical_assets_value_usd == 450000
+        assert r.total_assets_usd == 550000
+        assert r.net_worth_usd == 550000
 
     def test_net_worth_no_portfolio(self):
         r = _health(snapshot=None)
@@ -147,6 +165,16 @@ class TestStatusAssessment:
         r = _health(income_items=[], expense_items=[], snapshot=None)
         assert r.status == "insufficient_data"
 
+    def test_physical_assets_count_as_data(self):
+        r = _health(
+            income_items=[],
+            expense_items=[],
+            snapshot=None,
+            physical_assets=[PhysicalAssetItem(id="asset-1", label="Car", current_value_usd=25000, asset_type="vehicle")],
+        )
+        assert r.status == "insufficient_data"
+        assert r.net_worth_usd == 25000
+
 
 class TestHighlights:
     def test_surplus_highlight(self):
@@ -170,8 +198,10 @@ class TestCounts:
     def test_item_counts(self):
         r = _health(
             goal_items=[GoalItem(id="g1", label="House", target_amount_usd=80000)],
+            physical_assets=[PhysicalAssetItem(id="asset-1", label="House", current_value_usd=400000, asset_type="real_estate")],
         )
         assert r.income_item_count == 1
         assert r.expense_item_count == 1
         assert r.debt_item_count == 0
         assert r.goal_item_count == 1
+        assert r.physical_asset_item_count == 1

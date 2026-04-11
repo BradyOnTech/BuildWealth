@@ -112,6 +112,13 @@ These decisions refine the build plan based on the current repository and upstre
 - Planning responses now include `contribution_allocation` metadata so scenario output can show effective employee + employer funded contribution totals
 - Added focused coverage in `test_contribution_rules.py` and extended sidecar request coverage in `test_planning_sidecar.py`
 
+### 2026-04-11 (Completed - Physical Assets Foundation)
+- Financial health model now includes `physical_assets` from financial profile in net-worth computation (`net_worth = portfolio + physical_assets - debt`)
+- Added explicit health-response breakdown fields for `physical_assets_value_usd` and `total_assets_usd`
+- Today dashboard financial-health enrichment now passes profile physical assets through to health computation
+- Added compatibility alias on financial profile store (`load()`) for existing API handlers
+- Added/updated focused tests in `test_financial_health.py` for physical-asset net-worth inclusion and response counts
+
 ### 2026-04-09 (Completed)
 - Phase 1.1: BuildWealth-native TWR calculator integrated into local portfolio store
 - Phase 1.2: XIRR money-weighted return added and surfaced in portfolio snapshot/UI
@@ -220,7 +227,7 @@ These decisions refine the build plan based on the current repository and upstre
 | Income modeling with growth rates | NOT BUILT | 0% |
 | Expense modeling with inflation | NOT BUILT | 0% |
 | Debt payoff modeling | NOT BUILT | 0% |
-| Physical assets | NOT BUILT | 0% |
+| Physical assets | Built (foundation) | ~35% |
 | Timeline events on plans | NOT BUILT | 0% |
 | Federal tax brackets | Built (foundation) | ~35% |
 | State tax | NOT BUILT | 0% |

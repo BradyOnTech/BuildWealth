@@ -137,6 +137,10 @@ class FinancialProfileStore:
         self.profile_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return payload
 
+    # Backward-compatible alias used by existing route handlers.
+    def load(self) -> dict[str, Any]:
+        return self.get()
+
     def save(self, payload: dict[str, Any]) -> dict[str, Any]:
         current = self.get()
         current.update(payload)

@@ -10,6 +10,7 @@ from buildwealth_orchestrator.schemas import (
     FinancialHealthResponse,
     IncomeItem,
     GoalItem,
+    PhysicalAssetItem,
     PortfolioSnapshot,
 )
 
@@ -28,14 +29,17 @@ def compute_financial_health(
     expense_items: list[ExpenseItem],
     debt_items: list[DebtItem],
     goal_items: list[GoalItem],
+    physical_assets: list[PhysicalAssetItem],
     snapshot: PortfolioSnapshot | None,
 ) -> FinancialHealthResponse:
     now = datetime.now(timezone.utc)
 
     # --- Portfolio & Debt ---
     portfolio_value = snapshot.total_value_usd if snapshot else 0.0
+    physical_assets_value = sum(asset.current_value_usd for asset in physical_assets)
+    total_assets = portfolio_value + physical_assets_value
     total_debt = sum(d.balance_usd for d in debt_items)
-    net_worth = portfolio_value - total_debt
+    net_worth = total_assets - total_debt
 
     # --- Cash Flow ---
     gross_income = sum(i.monthly_amount_usd for i in income_items)
@@ -51,12 +55,14 @@ def compute_financial_health(
 
     # --- Highlights ---
     highlights: list[str] = []
-    has_data = gross_income > 0 or portfolio_value > 0
+    has_data = gross_income > 0 or total_assets > 0 or total_debt > 0
 
     if not has_data:
         return FinancialHealthResponse(
             generated_at=now,
             portfolio_value_usd=0.0,
+            physical_assets_value_usd=0.0,
+            total_assets_usd=0.0,
             total_debt_usd=0.0,
             net_worth_usd=0.0,
             gross_monthly_income_usd=0.0,
@@ -73,6 +79,12 @@ def compute_financial_health(
             expense_item_count=0,
             debt_item_count=0,
             goal_item_count=len(goal_items),
+            physical_asset_item_count=0,
+        )
+
+    if physical_assets_value > 0:
+        highlights.append(
+            f"Physical assets contribute ${physical_assets_value:,.0f} to net worth."
         )
 
     # Cash flow highlights
@@ -156,6 +168,8 @@ def compute_financial_health(
     return FinancialHealthResponse(
         generated_at=now,
         portfolio_value_usd=round(portfolio_value, 2),
+        physical_assets_value_usd=round(physical_assets_value, 2),
+        total_assets_usd=round(total_assets, 2),
         total_debt_usd=round(total_debt, 2),
         net_worth_usd=round(net_worth, 2),
         gross_monthly_income_usd=round(gross_income, 2),
@@ -172,4 +186,5 @@ def compute_financial_health(
         expense_item_count=len(expense_items),
         debt_item_count=len(debt_items),
         goal_item_count=len(goal_items),
+        physical_asset_item_count=len(physical_assets),
     )
