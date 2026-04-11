@@ -60,6 +60,7 @@ from buildwealth_orchestrator.schemas import (
     FinancialHealthResponse,
     GoalProgressResponse,
     PlanTrackingResponse,
+    EngineStatusResponse,
     TodayDashboardResponse,
     WorkflowRunRequest,
     WorkflowRunResponse,
@@ -99,6 +100,7 @@ from buildwealth_orchestrator.services.price_updater import (
 from buildwealth_orchestrator.services.engine_adapter import SidecarAdapter
 from buildwealth_orchestrator.services.portfolio_benchmark import GhostfolioBenchmarkService
 from buildwealth_orchestrator.services.planning_sidecar import IgnidashScenarioService
+from buildwealth_orchestrator.services.engine_status import EngineProbeConfig, EngineStatusTracker
 from buildwealth_orchestrator.services.today_dashboard import build_today_dashboard_payload
 from buildwealth_orchestrator.services.workflow_runner import WorkflowRunner
 from buildwealth_orchestrator.services.plan_workspace import (
@@ -134,6 +136,16 @@ if _user_cfg.get("ghostfolio_api_base"):
     settings.ghostfolio_api_base = _user_cfg["ghostfolio_api_base"]
 if _user_cfg.get("ghostfolio_security_token"):
     settings.ghostfolio_security_token = _user_cfg["ghostfolio_security_token"]
+
+
+def parse_path_candidates(raw_value: str, fallback: tuple[str, ...]) -> tuple[str, ...]:
+    values = tuple(
+        item.strip()
+        for item in str(raw_value or "").split(",")
+        if item.strip()
+    )
+    return values or fallback
+
 
 ghostfolio_client = GhostfolioClient(
     api_base=settings.ghostfolio_api_base,
@@ -187,6 +199,37 @@ ignidash_scenario_service = IgnidashScenarioService(
     currency=settings.app_currency,
     default_tax_rate=settings.planner_marginal_tax_rate,
 )
+engine_status_tracker = EngineStatusTracker(
+    configs=[
+        EngineProbeConfig(
+            name="ghostfolio_benchmark",
+            base_url=settings.ghostfolio_sidecar_base_url,
+            enabled=settings.enable_ghostfolio_benchmark_sidecar,
+            health_paths=parse_path_candidates(
+                settings.ghostfolio_sidecar_health_paths,
+                fallback=("/health", "/api/v1/health"),
+            ),
+            version_paths=parse_path_candidates(
+                settings.engine_sidecar_version_paths,
+                fallback=("/version",),
+            ),
+        ),
+        EngineProbeConfig(
+            name="ignidash_scenario",
+            base_url=settings.ignidash_sidecar_base_url,
+            enabled=settings.enable_ignidash_scenario_sidecar,
+            health_paths=parse_path_candidates(
+                settings.ignidash_sidecar_health_paths,
+                fallback=("/health", "/api/health"),
+            ),
+            version_paths=parse_path_candidates(
+                settings.engine_sidecar_version_paths,
+                fallback=("/version",),
+            ),
+        ),
+    ],
+    timeout_seconds=settings.engine_sidecar_timeout_seconds,
+)
 coordinator = Coordinator()
 conversation_store = ConversationStore(settings.conversation_dir)
 plan_workspace = PlanWorkspace(settings.plans_dir)
@@ -237,6 +280,7 @@ copilot = FinancialCopilot(
 
 sync_lock = asyncio.Lock()
 scheduler_task: asyncio.Task | None = None
+engine_health_task: asyncio.Task | None = None
 sync_state: dict[str, object] = {
     "running": False,
     "runs_total": 0,
@@ -302,6 +346,19 @@ async def scheduled_sync_loop() -> None:
             await execute_sync(trigger="scheduled")
         except Exception:
             # Failures are captured in sync_state for observability.
+            pass
+
+        await asyncio.sleep(interval_seconds)
+
+
+async def engine_probe_loop() -> None:
+    interval_seconds = max(10, int(settings.engine_health_probe_interval_seconds))
+
+    while True:
+        try:
+            await engine_status_tracker.probe_all()
+        except Exception:
+            # Probe failures are reflected in tracker state where possible.
             pass
 
         await asyncio.sleep(interval_seconds)
@@ -2202,19 +2259,29 @@ async def on_startup() -> None:
     settings.financial_profile_path.parent.mkdir(parents=True, exist_ok=True)
     settings.recommendations_path.parent.mkdir(parents=True, exist_ok=True)
 
-    global scheduler_task
+    global scheduler_task, engine_health_task
+    await engine_status_tracker.probe_all()
+
     if settings.sync_interval_minutes > 0:
         scheduler_task = asyncio.create_task(scheduled_sync_loop())
+    if settings.engine_health_probe_interval_seconds > 0:
+        engine_health_task = asyncio.create_task(engine_probe_loop())
 
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
-    global scheduler_task
+    global scheduler_task, engine_health_task
     if scheduler_task is not None:
         scheduler_task.cancel()
         with suppress(asyncio.CancelledError):
             await scheduler_task
         scheduler_task = None
+
+    if engine_health_task is not None:
+        engine_health_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await engine_health_task
+        engine_health_task = None
 
 
 @app.get("/", include_in_schema=False)
@@ -2232,6 +2299,13 @@ def ui_root() -> Response:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/engines/status", response_model=EngineStatusResponse)
+async def get_engine_status(refresh: bool = False) -> EngineStatusResponse:
+    if refresh:
+        await engine_status_tracker.probe_all()
+    return await engine_status_tracker.snapshot()
 
 
 @app.get("/api/dashboard/today", response_model=TodayDashboardResponse)
@@ -2433,10 +2507,16 @@ async def get_portfolio_benchmark(symbols: str | None = None, limit: int = 180) 
 
     bounded_limit = max(2, min(int(limit), 3650))
     try:
-        return await benchmark_service.compare(
+        result = await benchmark_service.compare(
             benchmark_symbols=resolved_symbols,
             limit=bounded_limit,
         )
+        if result.engine_status == "degraded":
+            await engine_status_tracker.increment_degraded(
+                "ghostfolio_benchmark",
+                reason=result.warnings[0] if result.warnings else None,
+            )
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -3131,12 +3211,18 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
                 detail="Provide current_portfolio_value_usd or create a snapshot first",
             ) from exc
 
-    return await ignidash_scenario_service.run(
+    result = await ignidash_scenario_service.run(
         current_portfolio_value_usd=current_value,
         annual_contribution_usd=request.annual_contribution_usd,
         years=request.years,
         hsa_extra_contribution_usd=request.hsa_extra_contribution_usd,
     )
+    if result.engine_status == "degraded":
+        await engine_status_tracker.increment_degraded(
+            "ignidash_scenario",
+            reason=result.warnings[0] if result.warnings else None,
+        )
+    return result
 
 
 @app.post("/api/research/options-chain", response_model=ResearchResponse)

@@ -79,6 +79,14 @@ These decisions refine the build plan based on the current repository and upstre
 - Added benchmark symbol controls and chart overlay rendering (portfolio value line + benchmark-scaled line)
 - Added benchmark summary line showing benchmark return, alpha, and engine status/fallback metadata
 
+### 2026-04-11 (Completed - Engine Health Hardening)
+- Added `EngineStatusTracker` with startup and periodic sidecar probes plus degraded-path counters for benchmark/planning engines
+- Added `GET /api/engines/status` for runtime engine visibility (`enabled`, `reachable`, `contract_version`, `degraded_count`, `last_error`)
+- Probes now use upstream-informed health conventions:
+  - Ghostfolio supports `GET /api/v1/health`
+  - Ignidash self-hosting health checks use `GET /api/health` for app and `/version` for Convex backend
+- Benchmark and planning routes now increment degraded counters whenever sidecar execution falls back to local logic
+
 ### 2026-04-09 (Completed)
 - Phase 1.1: BuildWealth-native TWR calculator integrated into local portfolio store
 - Phase 1.2: XIRR money-weighted return added and surfaced in portfolio snapshot/UI

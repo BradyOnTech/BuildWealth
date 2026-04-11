@@ -62,6 +62,21 @@ class SnapshotHistoryResponse(BaseModel):
     top_holding_value_changes: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class EngineStatusItem(BaseModel):
+    name: str
+    enabled: bool
+    reachable: bool
+    contract_version: int | None = None
+    degraded_count: int = 0
+    last_error: str | None = None
+    last_checked_at: datetime | None = None
+
+
+class EngineStatusResponse(BaseModel):
+    as_of: datetime
+    engines: list[EngineStatusItem] = Field(default_factory=list)
+
+
 class PortfolioBenchmarkSummary(BaseModel):
     portfolio_return_pct: float
     benchmark_return_pct_by_symbol: dict[str, float] = Field(default_factory=dict)

@@ -47,6 +47,22 @@ class Settings(BaseSettings):
     )
     engine_sidecar_timeout_seconds: float = Field(default=3.0, alias="ENGINE_SIDECAR_TIMEOUT_SECONDS")
     engine_sidecar_retry_count: int = Field(default=1, alias="ENGINE_SIDECAR_RETRY_COUNT")
+    engine_health_probe_interval_seconds: float = Field(
+        default=60.0,
+        alias="ENGINE_HEALTH_PROBE_INTERVAL_SECONDS",
+    )
+    engine_sidecar_version_paths: str = Field(
+        default="/version",
+        alias="ENGINE_SIDECAR_VERSION_PATHS",
+    )
+    ghostfolio_sidecar_health_paths: str = Field(
+        default="/health,/api/v1/health",
+        alias="GHOSTFOLIO_SIDECAR_HEALTH_PATHS",
+    )
+    ignidash_sidecar_health_paths: str = Field(
+        default="/health,/api/health",
+        alias="IGNIDASH_SIDECAR_HEALTH_PATHS",
+    )
     portfolio_benchmark_default_symbols: str = Field(
         default="SPY",
         alias="PORTFOLIO_BENCHMARK_DEFAULT_SYMBOLS",
