@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -62,6 +62,36 @@ class SnapshotHistoryResponse(BaseModel):
     top_holding_value_changes: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class PortfolioBenchmarkSummary(BaseModel):
+    portfolio_return_pct: float
+    benchmark_return_pct_by_symbol: dict[str, float] = Field(default_factory=dict)
+    alpha_pct_by_symbol: dict[str, float] = Field(default_factory=dict)
+    tracking_error_pct: float | None = None
+    max_drawdown_pct: float | None = None
+
+
+class PortfolioBenchmarkSeriesPoint(BaseModel):
+    date: date
+    portfolio_index: float
+    benchmark_index_by_symbol: dict[str, float] = Field(default_factory=dict)
+    alpha_index_by_symbol: dict[str, float] = Field(default_factory=dict)
+
+
+class PortfolioBenchmarkResponse(BaseModel):
+    request_id: str
+    contract_version: int
+    engine: str
+    engine_status: Literal["ok", "degraded"]
+    fallback_method: str | None = None
+    benchmark_symbols: list[str] = Field(default_factory=list)
+    start_date: date
+    end_date: date
+    summary: PortfolioBenchmarkSummary
+    series: list[PortfolioBenchmarkSeriesPoint] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    generated_at: datetime | None = None
+
+
 class ScenarioRequest(BaseModel):
     current_portfolio_value_usd: float | None = None
     annual_contribution_usd: float | None = None
@@ -79,6 +109,10 @@ class ScenarioResult(BaseModel):
 class PlanningResponse(BaseModel):
     scenarios: list[ScenarioResult]
     monte_carlo: dict[str, Any]
+    engine: Literal["local", "ignidash"] = "local"
+    engine_status: Literal["ok", "degraded"] = "ok"
+    fallback_method: str | None = None
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ChatRequest(BaseModel):

@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://buildwealth.local/contracts/engine/v1/ghostfolio.benchmark.request.schema.json",
+  "title": "Ghostfolio Benchmark Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "request_id",
+    "portfolio_base_currency",
+    "start_date",
+    "end_date",
+    "portfolio_series",
+    "benchmark_symbols"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "portfolio_base_currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "start_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "end_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "portfolio_series": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "date",
+          "total_value_base"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "total_value_base": {
+            "type": "number"
+          },
+          "net_external_flow_base": {
+            "type": "number",
+            "default": 0
+          }
+        }
+      }
+    },
+    "benchmark_symbols": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "sampling_interval": {
+      "type": "string",
+      "enum": [
+        "DAILY",
+        "WEEKLY",
+        "MONTHLY"
+      ],
+      "default": "DAILY"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

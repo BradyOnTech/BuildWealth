@@ -42,6 +42,7 @@ from buildwealth_orchestrator.schemas import (
     PlanUpdateRequest,
     PlanningResponse,
     PortfolioSnapshot,
+    PortfolioBenchmarkResponse,
     ResearchResponse,
     ScenarioRequest,
     SnapshotHistoryResponse,
@@ -77,13 +78,11 @@ from buildwealth_orchestrator.services.csv_importer import (
 from buildwealth_orchestrator.services.financial_profile import FinancialProfileStore
 from buildwealth_orchestrator.services.ignidash_exporter import (
     IgnidashExportStore,
-    build_ignidash_plan_payload,
 )
 from buildwealth_orchestrator.services.research import OpenBBResearchService
 from buildwealth_orchestrator.services.scenario_engine import ScenarioEngine
 from buildwealth_orchestrator.services.snapshot_store import (
     SnapshotStore,
-    normalize_ghostfolio_snapshot,
 )
 from buildwealth_orchestrator.services.snapshot_backfill import backfill_snapshot_history
 from buildwealth_orchestrator.services.affordability import assess_affordability
@@ -97,6 +96,9 @@ from buildwealth_orchestrator.services.price_updater import (
     build_snapshot_from_holdings,
     refresh_portfolio,
 )
+from buildwealth_orchestrator.services.engine_adapter import SidecarAdapter
+from buildwealth_orchestrator.services.portfolio_benchmark import GhostfolioBenchmarkService
+from buildwealth_orchestrator.services.planning_sidecar import IgnidashScenarioService
 from buildwealth_orchestrator.services.today_dashboard import build_today_dashboard_payload
 from buildwealth_orchestrator.services.workflow_runner import WorkflowRunner
 from buildwealth_orchestrator.services.plan_workspace import (
@@ -159,6 +161,32 @@ scenario_engine = ScenarioEngine(
     marginal_tax_rate=settings.planner_marginal_tax_rate,
 )
 research_service = OpenBBResearchService(provider=settings.openbb_provider)
+ghostfolio_sidecar_adapter = SidecarAdapter(
+    base_url=settings.ghostfolio_sidecar_base_url,
+    timeout_seconds=settings.engine_sidecar_timeout_seconds,
+    max_retries=settings.engine_sidecar_retry_count,
+)
+benchmark_service = GhostfolioBenchmarkService(
+    snapshot_store=snapshot_store,
+    research_service=research_service,
+    sidecar_adapter=ghostfolio_sidecar_adapter,
+    sidecar_enabled=settings.enable_ghostfolio_benchmark_sidecar,
+    sidecar_path=settings.ghostfolio_benchmark_sidecar_path,
+    base_currency=settings.app_currency,
+)
+ignidash_sidecar_adapter = SidecarAdapter(
+    base_url=settings.ignidash_sidecar_base_url,
+    timeout_seconds=settings.engine_sidecar_timeout_seconds,
+    max_retries=settings.engine_sidecar_retry_count,
+)
+ignidash_scenario_service = IgnidashScenarioService(
+    scenario_engine=scenario_engine,
+    sidecar_adapter=ignidash_sidecar_adapter,
+    sidecar_enabled=settings.enable_ignidash_scenario_sidecar,
+    sidecar_path=settings.ignidash_scenario_sidecar_path,
+    currency=settings.app_currency,
+    default_tax_rate=settings.planner_marginal_tax_rate,
+)
 coordinator = Coordinator()
 conversation_store = ConversationStore(settings.conversation_dir)
 plan_workspace = PlanWorkspace(settings.plans_dir)
@@ -396,6 +424,30 @@ def summarize_snapshot(snapshot: PortfolioSnapshot, holdings_limit: int = 10) ->
         "holdings_count": len(snapshot.holdings),
         "top_holdings": top_holdings,
     }
+
+
+def parse_benchmark_symbols(
+    raw_symbols: str | list[str] | None,
+    *,
+    default_symbols: str,
+) -> list[str]:
+    if isinstance(raw_symbols, list):
+        candidates = [str(item).strip().upper() for item in raw_symbols]
+    else:
+        text = str(raw_symbols or "").strip() or str(default_symbols or "").strip()
+        candidates = [item.strip().upper() for item in text.split(",")]
+
+    unique: list[str] = []
+    seen: set[str] = set()
+    for symbol in candidates:
+        if not symbol:
+            continue
+        if symbol in seen:
+            continue
+        seen.add(symbol)
+        unique.append(symbol)
+
+    return unique
 
 
 PLAN_SETTINGS_FIELDS = (
@@ -2223,7 +2275,7 @@ def get_financial_health() -> FinancialHealthResponse:
 
 @app.post("/api/affordability", response_model=AffordabilityResponse)
 def check_affordability(request: AffordabilityRequest) -> AffordabilityResponse:
-    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem
+    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, IncomeItem
 
     profile = financial_profile_store.load()
     return assess_affordability(
@@ -2282,8 +2334,6 @@ async def upload_statement(
 @app.post("/api/import/statement/apply")
 def apply_statement_suggestions(request: dict[str, Any]) -> dict[str, Any]:
     """Apply selected expense/income suggestions to the financial profile."""
-    from buildwealth_orchestrator.schemas import ExpenseItem, IncomeItem
-
     profile = financial_profile_store.load()
     added_expenses = 0
     added_income = 0
@@ -2370,6 +2420,25 @@ async def refresh_portfolio_prices() -> dict[str, Any]:
         "holdings_count": len(holdings_data.get("holdings", {})),
         "prices_updated_at": holdings_data.get("prices_updated_at"),
     }
+
+
+@app.get("/api/portfolio/benchmark", response_model=PortfolioBenchmarkResponse)
+async def get_portfolio_benchmark(symbols: str | None = None, limit: int = 180) -> PortfolioBenchmarkResponse:
+    resolved_symbols = parse_benchmark_symbols(
+        symbols,
+        default_symbols=settings.portfolio_benchmark_default_symbols,
+    )
+    if not resolved_symbols:
+        raise HTTPException(status_code=400, detail="At least one benchmark symbol is required.")
+
+    bounded_limit = max(2, min(int(limit), 3650))
+    try:
+        return await benchmark_service.compare(
+            benchmark_symbols=resolved_symbols,
+            limit=bounded_limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/portfolio/accounts")
@@ -3050,7 +3119,7 @@ async def import_uploaded_csv(
 
 
 @app.post("/api/planning/scenarios", response_model=PlanningResponse)
-def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
+async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
     current_value = request.current_portfolio_value_usd
     if current_value is None:
         try:
@@ -3062,7 +3131,7 @@ def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
                 detail="Provide current_portfolio_value_usd or create a snapshot first",
             ) from exc
 
-    return scenario_engine.run(
+    return await ignidash_scenario_service.run(
         current_portfolio_value_usd=current_value,
         annual_contribution_usd=request.annual_contribution_usd,
         years=request.years,

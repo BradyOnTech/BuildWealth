@@ -33,12 +33,42 @@ class Settings(BaseSettings):
     ghostfolio_timeout_seconds: float = Field(default=20.0, alias="GHOSTFOLIO_TIMEOUT_SECONDS")
     ghostfolio_default_data_source: str = Field(default="YAHOO", alias="GHOSTFOLIO_DEFAULT_DATA_SOURCE")
     ghostfolio_default_currency: str = Field(default="USD", alias="GHOSTFOLIO_DEFAULT_CURRENCY")
+    ghostfolio_sidecar_base_url: str = Field(
+        default="http://localhost:8411",
+        alias="GHOSTFOLIO_SIDECAR_BASE_URL",
+    )
+    ghostfolio_benchmark_sidecar_path: str = Field(
+        default="/v1/benchmark/compare",
+        alias="GHOSTFOLIO_BENCHMARK_SIDECAR_PATH",
+    )
+    enable_ghostfolio_benchmark_sidecar: bool = Field(
+        default=False,
+        alias="ENABLE_GHOSTFOLIO_BENCHMARK_SIDECAR",
+    )
+    engine_sidecar_timeout_seconds: float = Field(default=3.0, alias="ENGINE_SIDECAR_TIMEOUT_SECONDS")
+    engine_sidecar_retry_count: int = Field(default=1, alias="ENGINE_SIDECAR_RETRY_COUNT")
+    portfolio_benchmark_default_symbols: str = Field(
+        default="SPY",
+        alias="PORTFOLIO_BENCHMARK_DEFAULT_SYMBOLS",
+    )
 
     ignidash_app_base_url: str = Field(default="http://ignidash:3000", alias="IGNIDASH_APP_BASE_URL")
     ignidash_convex_url: str = Field(default="http://ignidash-convex-backend:3211", alias="IGNIDASH_CONVEX_URL")
     ignidash_convex_api_secret: str = Field(default="", alias="IGNIDASH_CONVEX_API_SECRET")
     ignidash_default_user_id: str = Field(default="buildwealth-local-user", alias="IGNIDASH_DEFAULT_USER_ID")
     ignidash_default_user_name: str = Field(default="BuildWealth", alias="IGNIDASH_DEFAULT_USER_NAME")
+    ignidash_sidecar_base_url: str = Field(
+        default="http://localhost:8412",
+        alias="IGNIDASH_SIDECAR_BASE_URL",
+    )
+    ignidash_scenario_sidecar_path: str = Field(
+        default="/v1/scenario/simulate",
+        alias="IGNIDASH_SCENARIO_SIDECAR_PATH",
+    )
+    enable_ignidash_scenario_sidecar: bool = Field(
+        default=False,
+        alias="ENABLE_IGNIDASH_SCENARIO_SIDECAR",
+    )
 
     planner_years_to_retirement: int = Field(default=30, alias="PLANNER_YEARS_TO_RETIREMENT")
     planner_annual_contribution_usd: float = Field(default=18000.0, alias="PLANNER_ANNUAL_CONTRIBUTION_USD")

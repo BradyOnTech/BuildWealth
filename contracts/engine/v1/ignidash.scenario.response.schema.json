@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://buildwealth.local/contracts/engine/v1/ignidash.scenario.response.schema.json",
+  "title": "Ignidash Scenario Response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "request_id",
+    "engine",
+    "engine_status",
+    "scenarios"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "engine": {
+      "type": "string",
+      "const": "ignidash"
+    },
+    "engine_status": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "degraded"
+      ]
+    },
+    "fallback_method": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scenario_id",
+          "label",
+          "summary",
+          "timeline"
+        ],
+        "properties": {
+          "scenario_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "summary": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "ending_balance_nominal",
+              "ending_balance_real"
+            ],
+            "properties": {
+              "ending_balance_nominal": {
+                "type": "number"
+              },
+              "ending_balance_real": {
+                "type": "number"
+              },
+              "total_contributions": {
+                "type": "number"
+              },
+              "total_taxes": {
+                "type": "number"
+              },
+              "success_probability": {
+                "type": "number"
+              }
+            }
+          },
+          "timeline": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "year",
+                "age",
+                "starting_balance",
+                "ending_balance"
+              ],
+              "properties": {
+                "year": {
+                  "type": "integer"
+                },
+                "age": {
+                  "type": "integer"
+                },
+                "starting_balance": {
+                  "type": "number"
+                },
+                "contributions": {
+                  "type": "number"
+                },
+                "income": {
+                  "type": "number"
+                },
+                "expenses": {
+                  "type": "number"
+                },
+                "taxes": {
+                  "type": "number"
+                },
+                "growth": {
+                  "type": "number"
+                },
+                "withdrawals": {
+                  "type": "number"
+                },
+                "ending_balance": {
+                  "type": "number"
+                },
+                "ending_balance_real": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -6,6 +6,7 @@ export const label = 'Portfolio';
 export const icon = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><polyline points="3,14 7,8 11,11 17,4"/><line x1="3" y1="17" x2="17" y2="17"/></svg>';
 
 let accountNameById = new Map();
+let benchmarkSymbolsFilter = 'SPY';
 
 const ACCOUNT_TYPE_OPTIONS = [
   'taxable',
@@ -47,6 +48,10 @@ function accountLabel(accountId) {
   return accountNameById.get(accountId) || accountId;
 }
 
+function pctOrDash(value) {
+  return Number.isFinite(value) ? fmtPct(value) : '-';
+}
+
 export function template() {
   const accountTypeOptions = ACCOUNT_TYPE_OPTIONS.map((type) => `<option value="${type}">${type}</option>`).join('');
   const customAssetTypeOptions = CUSTOM_ASSET_TYPE_OPTIONS.map((type) => `<option value="${type}">${type}</option>`).join('');
@@ -56,6 +61,7 @@ export function template() {
       <h2>Portfolio</h2>
       <div class="header-actions">
         <button class="ghost small" id="port-reload">Reload</button>
+        <button class="ghost small" id="port-backfill-history-btn">Backfill History</button>
         <button class="primary small" id="port-refresh-prices">Refresh Prices</button>
       </div>
     </div>
@@ -68,6 +74,33 @@ export function template() {
       <article class="kpi-card"><p class="kpi-label">XIRR</p><p class="kpi-value" id="port-xirr">-</p></article>
       <article class="kpi-card"><p class="kpi-label">Positions</p><p class="kpi-value" id="port-count">-</p></article>
       <article class="kpi-card"><p class="kpi-label">Prices Updated</p><p class="kpi-value" id="port-updated">-</p></article>
+    </div>
+
+    <h3 class="section-title">Value History</h3>
+    <p class="hint" id="port-history-summary">No historical snapshots yet.</p>
+    <div class="history-toolbar">
+      <label class="field">
+        <span>Benchmark Symbols</span>
+        <input type="text" id="port-benchmark-symbols" value="${benchmarkSymbolsFilter}" placeholder="SPY or SPY,QQQ" />
+      </label>
+      <button class="ghost small" id="port-benchmark-apply">Apply Benchmark</button>
+      <p class="hint history-benchmark-note" id="port-benchmark-summary">Benchmark overlay not loaded yet.</p>
+    </div>
+    <form id="port-backfill-form" class="txn-form">
+      <label class="field"><span>Days</span><input type="number" id="backfill-days" min="1" max="3650" placeholder="365" /></label>
+      <label class="field"><span>Start Date</span><input type="date" id="backfill-start-date" /></label>
+      <label class="field"><span>End Date</span><input type="date" id="backfill-end-date" /></label>
+      <label class="field"><span>Overwrite</span><input type="checkbox" id="backfill-overwrite" checked /></label>
+      <button class="primary" type="submit" id="port-backfill-submit">Run Backfill</button>
+    </form>
+    <div class="history-chart-card">
+      <svg id="port-history-chart" viewBox="0 0 760 220" role="img" aria-label="Portfolio value history chart"></svg>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>As Of</th><th>Total Value</th><th>Net Performance</th></tr></thead>
+        <tbody id="port-history-body"><tr><td colspan="3">No history yet.</td></tr></tbody>
+      </table>
     </div>
 
     <h3 class="section-title">Accounts</h3>
@@ -422,6 +455,136 @@ function renderCustomAssets(data) {
   }
 }
 
+function renderHistory(historyPayload, benchmarkPayload = null) {
+  const summary = byId('port-history-summary');
+  const benchmarkSummary = byId('port-benchmark-summary');
+  const tbody = byId('port-history-body');
+  const chart = byId('port-history-chart');
+
+  const points = Array.isArray(historyPayload?.points) ? historyPayload.points : [];
+  if (!points.length) {
+    summary.textContent = 'No snapshot history available. Run backfill or sync over multiple days.';
+    if (benchmarkSummary) benchmarkSummary.textContent = 'Benchmark overlay unavailable: no history points.';
+    tbody.innerHTML = '<tr><td colspan="3">No history yet.</td></tr>';
+    chart.innerHTML = '';
+    return;
+  }
+
+  const chron = [...points].reverse();
+  const portfolioValues = chron.map((point) => Number(point.total_value_usd || 0));
+  const firstPortfolioValue = portfolioValues[0] || 0;
+
+  let benchmarkSymbol = null;
+  let benchmarkValues = null;
+  if (Array.isArray(benchmarkPayload?.series) && benchmarkPayload.series.length) {
+    const symbolCandidates = Array.isArray(benchmarkPayload?.benchmark_symbols)
+      ? benchmarkPayload.benchmark_symbols
+      : [];
+    const firstPointBench = benchmarkPayload.series[0]?.benchmark_index_by_symbol || {};
+    benchmarkSymbol = symbolCandidates[0] || Object.keys(firstPointBench)[0] || null;
+    if (benchmarkSymbol) {
+      const indexByDate = new Map();
+      for (const row of benchmarkPayload.series) {
+        const key = String(row.date || '').slice(0, 10);
+        const indexValue = Number(row.benchmark_index_by_symbol?.[benchmarkSymbol]);
+        if (key && Number.isFinite(indexValue) && indexValue > 0) {
+          indexByDate.set(key, indexValue);
+        }
+      }
+      if (indexByDate.size) {
+        let baseIndex = null;
+        let previous = firstPortfolioValue;
+        benchmarkValues = chron.map((point) => {
+          const key = String(point.as_of || '').slice(0, 10);
+          const indexValue = Number(indexByDate.get(key));
+          if (Number.isFinite(indexValue) && indexValue > 0) {
+            if (baseIndex === null) baseIndex = indexValue;
+            previous = baseIndex > 0 ? firstPortfolioValue * (indexValue / baseIndex) : previous;
+          }
+          return previous;
+        });
+      }
+    }
+  }
+
+  const values = benchmarkValues ? [...portfolioValues, ...benchmarkValues] : portfolioValues;
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const valueRange = Math.max(maxValue - minValue, 1);
+
+  const width = 760;
+  const height = 220;
+  const left = 44;
+  const right = 18;
+  const top = 12;
+  const bottom = 30;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+
+  const toCoords = (seriesValues) => seriesValues.map((value, index) => {
+    const x = left + (chron.length === 1 ? 0 : (index / (chron.length - 1)) * plotWidth);
+    const y = top + ((maxValue - value) / valueRange) * plotHeight;
+    return { x, y, value, asOf: chron[index]?.as_of };
+  });
+  const coords = toCoords(portfolioValues);
+  const benchmarkCoords = benchmarkValues ? toCoords(benchmarkValues) : null;
+
+  const linePath = coords.map((c, i) => `${i === 0 ? 'M' : 'L'} ${c.x.toFixed(2)} ${c.y.toFixed(2)}`).join(' ');
+  const benchmarkPath = benchmarkCoords
+    ? benchmarkCoords.map((c, i) => `${i === 0 ? 'M' : 'L'} ${c.x.toFixed(2)} ${c.y.toFixed(2)}`).join(' ')
+    : '';
+  const areaPath = [
+    `M ${coords[0].x.toFixed(2)} ${(top + plotHeight).toFixed(2)}`,
+    ...coords.map((c) => `L ${c.x.toFixed(2)} ${c.y.toFixed(2)}`),
+    `L ${coords[coords.length - 1].x.toFixed(2)} ${(top + plotHeight).toFixed(2)}`,
+    'Z',
+  ].join(' ');
+
+  const yTicks = 4;
+  const grid = [];
+  for (let i = 0; i <= yTicks; i += 1) {
+    const ratio = i / yTicks;
+    const y = top + ratio * plotHeight;
+    const tickValue = maxValue - ratio * valueRange;
+    grid.push(`<line x1="${left}" y1="${y.toFixed(2)}" x2="${(left + plotWidth).toFixed(2)}" y2="${y.toFixed(2)}" class="history-grid-line"></line>`);
+    grid.push(`<text x="4" y="${(y + 4).toFixed(2)}" class="history-axis-label">${fmtCurrency(tickValue)}</text>`);
+  }
+
+  const firstDate = chron[0]?.as_of ? fmtDate(chron[0].as_of) : '-';
+  const lastDate = chron[chron.length - 1]?.as_of ? fmtDate(chron[chron.length - 1].as_of) : '-';
+  chart.innerHTML = `
+    ${grid.join('')}
+    <path d="${areaPath}" class="history-area"></path>
+    <path d="${linePath}" class="history-line"></path>
+    ${benchmarkPath ? `<path d="${benchmarkPath}" class="history-line history-line-benchmark"></path>` : ''}
+    <text x="${left}" y="${height - 8}" class="history-axis-label">${firstDate}</text>
+    <text x="${(left + plotWidth - 72).toFixed(2)}" y="${height - 8}" class="history-axis-label">${lastDate}</text>
+  `;
+
+  summary.textContent = `Window: ${historyPayload.window_points || points.length} points | Delta total value: ${fmtCurrency(historyPayload.delta_total_value_usd || 0)} (${fmtPct(historyPayload.delta_total_value_percent || 0)})`;
+  if (benchmarkSummary) {
+    if (!benchmarkPayload || !benchmarkSymbol) {
+      benchmarkSummary.textContent = 'Benchmark overlay unavailable.';
+    } else {
+      const benchReturn = Number(benchmarkPayload.summary?.benchmark_return_pct_by_symbol?.[benchmarkSymbol]);
+      const alphaPct = Number(benchmarkPayload.summary?.alpha_pct_by_symbol?.[benchmarkSymbol]);
+      const engineStatus = benchmarkPayload.engine_status || 'unknown';
+      const fallback = benchmarkPayload.fallback_method ? ` (${benchmarkPayload.fallback_method})` : '';
+      benchmarkSummary.textContent = `${benchmarkSymbol}: ${pctOrDash(benchReturn)} | Alpha: ${pctOrDash(alphaPct)} | Engine: ${engineStatus}${fallback}`;
+    }
+  }
+
+  tbody.innerHTML = '';
+  for (const point of points.slice(0, 14)) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${fmtDate(point.as_of)}</td>
+      <td>${fmtCurrency(point.total_value_usd || 0)}</td>
+      <td>${fmtCurrency(point.net_performance_usd || 0)}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
 function renderTransactions(txns) {
   const tbody = byId('port-txn-body');
   if (!txns.length) {
@@ -459,13 +622,32 @@ function renderTransactions(txns) {
 
 async function loadAll() {
   try {
-    const [holdings, txns, accountRows] = await Promise.all([
+    const benchmarkQuery = benchmarkSymbolsFilter ? `&symbols=${encodeURIComponent(benchmarkSymbolsFilter)}` : '';
+    const [holdingsResult, txnsResult, accountResult, historyResult, benchmarkResult] = await Promise.allSettled([
       fetchJson('/api/portfolio/holdings'),
       fetchJson('/api/portfolio/transactions?limit=100'),
       fetchJson('/api/portfolio/accounts'),
+      fetchJson('/api/snapshot/history?limit=120'),
+      fetchJson(`/api/portfolio/benchmark?limit=120${benchmarkQuery}`),
     ]);
+
+    if (holdingsResult.status !== 'fulfilled') throw holdingsResult.reason;
+    if (txnsResult.status !== 'fulfilled') throw txnsResult.reason;
+    if (accountResult.status !== 'fulfilled') throw accountResult.reason;
+
+    const holdings = holdingsResult.value;
+    const txns = txnsResult.value;
+    const accountRows = accountResult.value;
     renderAccounts(accountRows || holdings.accounts || [], holdings.account_totals || {});
     renderKPIs(holdings);
+    if (historyResult.status === 'fulfilled') {
+      renderHistory(
+        historyResult.value,
+        benchmarkResult.status === 'fulfilled' ? benchmarkResult.value : null,
+      );
+    } else {
+      renderHistory(null, null);
+    }
     renderFxRates(holdings);
     renderHoldings(holdings);
     renderBreakdowns(holdings);
@@ -656,6 +838,57 @@ async function clearFxRate(currency) {
   }
 }
 
+function buildBackfillPayload() {
+  const payload = {};
+  const daysValue = byId('backfill-days').value;
+  const startDate = byId('backfill-start-date').value;
+  const endDate = byId('backfill-end-date').value;
+  if (daysValue) {
+    const days = parseInt(daysValue, 10);
+    if (Number.isFinite(days) && days > 0) payload.days = days;
+  }
+  if (startDate) payload.start_date = startDate;
+  if (endDate) payload.end_date = endDate;
+  payload.overwrite = byId('backfill-overwrite').checked;
+  return payload;
+}
+
+async function runBackfill() {
+  const submit = byId('port-backfill-submit');
+  const prevText = submit.textContent;
+  submit.disabled = true;
+  submit.textContent = 'Backfilling...';
+  try {
+    const result = await fetchJson('/api/snapshot/backfill-history', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(buildBackfillPayload()),
+    });
+    writeLog(`Backfill completed: wrote ${result.days_written || 0}, skipped ${result.days_skipped || 0}.`);
+    await loadAll();
+  } catch (e) {
+    writeLog(`Backfill failed: ${e.message}`, null, true);
+  } finally {
+    submit.disabled = false;
+    submit.textContent = prevText;
+  }
+}
+
+async function backfillHistory(event) {
+  event.preventDefault();
+  await runBackfill();
+}
+
+async function backfillHistoryFromHeader() {
+  await runBackfill();
+}
+
+function applyBenchmarkSymbols() {
+  const raw = byId('port-benchmark-symbols').value || '';
+  benchmarkSymbolsFilter = raw.trim().toUpperCase();
+  loadAll();
+}
+
 async function deleteTxn(id) {
   try {
     await fetchJson(`/api/portfolio/transactions/${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -670,8 +903,11 @@ export function init() {
   byId('txn-date').valueAsDate = new Date();
   byId('txn-action').addEventListener('change', syncTxnFieldRequirements);
   byId('port-reload').addEventListener('click', loadAll);
+  byId('port-benchmark-apply').addEventListener('click', applyBenchmarkSymbols);
+  byId('port-backfill-history-btn').addEventListener('click', backfillHistoryFromHeader);
   byId('port-refresh-prices').addEventListener('click', refreshPrices);
   byId('port-txn-form').addEventListener('submit', addTxn);
+  byId('port-backfill-form').addEventListener('submit', backfillHistory);
   byId('port-account-form').addEventListener('submit', addAccount);
   byId('port-fx-form').addEventListener('submit', setFxRate);
   byId('port-custom-asset-form').addEventListener('submit', addCustomAsset);

@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://buildwealth.local/contracts/engine/v1/ghostfolio.benchmark.response.schema.json",
+  "title": "Ghostfolio Benchmark Response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "request_id",
+    "engine",
+    "engine_status",
+    "summary",
+    "series"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "engine": {
+      "type": "string",
+      "const": "ghostfolio"
+    },
+    "engine_status": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "degraded"
+      ]
+    },
+    "fallback_method": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "portfolio_return_pct",
+        "benchmark_return_pct_by_symbol",
+        "alpha_pct_by_symbol"
+      ],
+      "properties": {
+        "portfolio_return_pct": {
+          "type": "number"
+        },
+        "benchmark_return_pct_by_symbol": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "alpha_pct_by_symbol": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "tracking_error_pct": {
+          "type": "number"
+        },
+        "max_drawdown_pct": {
+          "type": "number"
+        }
+      }
+    },
+    "series": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "date",
+          "portfolio_index",
+          "benchmark_index_by_symbol",
+          "alpha_index_by_symbol"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "portfolio_index": {
+            "type": "number"
+          },
+          "benchmark_index_by_symbol": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "alpha_index_by_symbol": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

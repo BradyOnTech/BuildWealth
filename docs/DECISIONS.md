@@ -46,3 +46,21 @@
 11. Ingestion strategy
 - Decision: standardize on a canonical CSV transaction schema with alias mapping, then translate to Ghostfolio import payloads.
 - Rationale: gets reliable ingestion live quickly while broker-specific adapters are added incrementally.
+
+## 2026-04-10 Architecture Update
+
+1. Standalone strategy refinement
+- Decision: keep BuildWealth Python orchestrator as the control plane, but shift from broad TypeScript-to-Python logic translation to targeted Ghostfolio/Ignidash sidecar reuse for high-complexity domains.
+- Rationale: preserves single-app UX and local-first operation while reducing parity risk and rewrite cost on mature financial calculation logic.
+
+2. Canonical data ownership
+- Decision: Python remains the system of record for ledger, profile, plans, and snapshots. Sidecars are stateless compute engines.
+- Rationale: avoids split-brain data models and keeps migration logic centralized.
+
+3. Engine integration model
+- Decision: use versioned contract interfaces between Python adapters and sidecars, with strict response validation and fallback behavior.
+- Rationale: contract versioning reduces integration drift and allows independent evolution of sidecars.
+
+4. Scope of sidecar adoption
+- Decision: prioritize sidecars for benchmark/timeline attribution (Ghostfolio) and tax/scenario calculation (Ignidash), while retaining low-complexity logic in Python.
+- Rationale: maximizes reuse ROI without introducing unnecessary service complexity.

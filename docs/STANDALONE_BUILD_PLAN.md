@@ -1,14 +1,15 @@
 # BuildWealth Standalone Build Plan
 
-## Date: 2026-04-09
+## Date: 2026-04-10
 
 ## Strategic Direction
 
-**BuildWealth is becoming a fully standalone single-user financial command center.** Rather than depending on Ghostfolio (portfolio tracker) and Ignidash (planning simulator) as external services, we are porting their core logic into BuildWealth itself.
+**BuildWealth is becoming a standalone single-user financial command center with targeted engine reuse.** Python remains the control plane and system of record, while selected high-complexity calculations are delegated to local TypeScript sidecars adapted from Ghostfolio (portfolio analytics) and Ignidash (planning/tax simulation).
 
 Both Ghostfolio and Ignidash are MIT licensed, which permits us to:
 - Read and reference their source code on GitHub
-- Port their algorithms to Python
+- Port algorithms to Python when needed
+- Reuse logic in sidecar services with adapter contracts
 - Borrow their data schemas and test cases
 - Use their broker CSV templates and asset class taxonomies
 
@@ -16,39 +17,67 @@ We must:
 - Add an `ATTRIBUTIONS.md` to the repo acknowledging both projects and their copyright holders
 - Keep the MIT license attribution for any substantial code we adapt
 
-## Why This Approach (vs. Integration)
+## Why This Approach (vs. Full Rewrite)
 
-We considered three options:
+We considered four options:
 
-### Option A: Standalone BuildWealth (CHOSEN)
-Build everything ourselves, leveraging MIT-licensed code from Ghostfolio and Ignidash where it makes sense.
-- **Pros:** Single app, single deployment, full control, no external dependencies
-- **Cons:** Significant effort to reach feature parity with mature tools
+### Option A: Full TypeScript-to-Python Rewrite
+Rebuild all mature Ghostfolio/Ignidash logic in Python.
+- **Pros:** One language in runtime path
+- **Cons:** High parity risk, long validation cycle, large maintenance burden
 
-### Option B: BuildWealth as Orchestration Layer
-Run Ghostfolio + Ignidash as services, with BuildWealth as the AI/synthesis layer on top.
-- **Pros:** Each tool excels at its domain
-- **Cons:** Three services to run, integration complexity (especially Ignidash's auth-scoped Convex API), shared infrastructure burden
+### Option B: BuildWealth as Thin Orchestration Layer
+Keep full Ghostfolio and Ignidash apps as runtime dependencies.
+- **Pros:** Maximum upstream behavior fidelity
+- **Cons:** Multi-app operations burden and tighter coupling to external app boundaries
 
-### Option C: Hybrid
-Standalone basics, optional integration for power users.
-- **Pros:** Flexible
-- **Cons:** Two paths to maintain, neither gets full attention
+### Option C: Dual Path (Both Rewrite + Integrations)
+Maintain complete local rewrite while also preserving integration stack.
+- **Pros:** Flexibility
+- **Cons:** Highest complexity and long-term maintenance cost
 
-**Decision:** Option A. The user wants a single application. We accept the build effort in exchange for deployment simplicity and control.
+### Option D: Targeted Sidecar Reuse (CHOSEN)
+Keep Python as source of truth; use local sidecars for high-complexity domains behind strict versioned adapter contracts.
+- **Pros:** Single BuildWealth UX, faster parity in hard domains, bounded operational complexity
+- **Cons:** Requires robust contract governance and degraded-mode handling
+
+**Decision:** Option D. This keeps the product single-entrypoint while avoiding unnecessary reimplementation of mature financial engines.
 
 ## Execution Constraints
 
 These decisions refine the build plan based on the current repository and upstream source reality:
 
 - **Breaking schema/API changes are allowed early.** We will move schema, migration, and UI contract changes into Sprint 1 instead of deferring them.
-- **Ghostfolio and Ignidash are temporary compatibility adapters during the transition.** We may keep import/export compatibility paths while standalone replacements are being built, but we should not preserve them as long-term architectural dependencies.
+- **Ghostfolio and Ignidash sidecars are intentional architecture, not temporary shims.** We will keep sidecars only for high-complexity domains where reuse beats rewrite, with explicit contracts and fallback behavior.
 - **Upstream reuse should be selective, not literal.** Ghostfolio is most useful for import/account/asset metadata patterns and test fixtures; Ignidash is most useful for tax, account, contribution, and simulation logic.
 - **Migration is a foundation task, not polish.** New ledger and planner models should replace the current simplified contracts early, with explicit migrations for stored portfolio, plan, and profile data.
+- **Contract-first integration is mandatory.** Adapter/sidecar payloads must be schema-versioned under `contracts/engine/v{n}` and validated on request/response boundaries.
 
 ---
 
 ## Progress Log
+
+### 2026-04-10 (Completed - Architecture Draft)
+- Added architecture decision update in `docs/DECISIONS.md` selecting targeted sidecar reuse
+- Added `docs/SIDECAR_ADAPTER_ARCHITECTURE.md` blueprint for adapter boundaries, contracts, fallback, and rollout
+- Added initial engine contract schemas under `contracts/engine/v1` for Ghostfolio benchmark and Ignidash scenario endpoints
+
+### 2026-04-10 (Completed - Sidecar Foundation v1)
+- Added adapter base utility (`engine_adapter.py`) with contract validation, timeout handling, and retry policy for sidecar calls
+- Added Ghostfolio benchmark service (`portfolio_benchmark.py`) that builds contract payloads from local snapshot history and supports sidecar + local degraded fallback
+- Added portfolio benchmark API endpoint (`GET /api/portfolio/benchmark`) and associated sidecar feature flags/settings
+- Added unit coverage for adapter transport/validation behavior and benchmark service sidecar/fallback execution paths
+
+### 2026-04-10 (Completed - Planning Sidecar v1)
+- Added Ignidash scenario sidecar service (`planning_sidecar.py`) with contract payload construction, response mapping, and local fallback behavior
+- `/api/planning/scenarios` now routes through sidecar integration when enabled and falls back to local scenario engine when unavailable
+- Planning response now includes engine metadata (`engine`, `engine_status`, `fallback_method`, `warnings`) for degraded-path transparency
+- Added unit coverage for sidecar disabled/success/failure paths in `test_planning_sidecar.py`
+
+### 2026-04-10 (Completed - Benchmark Overlay UI)
+- Portfolio history panel now fetches benchmark comparison data from `GET /api/portfolio/benchmark` alongside snapshot history
+- Added benchmark symbol controls and chart overlay rendering (portfolio value line + benchmark-scaled line)
+- Added benchmark summary line showing benchmark return, alpha, and engine status/fallback metadata
 
 ### 2026-04-09 (Completed)
 - Phase 1.1: BuildWealth-native TWR calculator integrated into local portfolio store
@@ -106,6 +135,11 @@ These decisions refine the build plan based on the current repository and upstre
 - New snapshot backfill API endpoint (`POST /api/snapshot/backfill-history`) supports date range or day-window generation and overwrite control
 - Backfill valuation applies per-day FX conversion and historical FX factors for non-base currency positions
 
+### 2026-04-09 (Completed - Portfolio History UI Foundation)
+- Phase 1.14 foundation: portfolio view now includes a snapshot-history trend chart and recent-history table sourced from `/api/snapshot/history`
+- Portfolio UI now includes one-click historical backfill controls (days/date range + overwrite) that call `POST /api/snapshot/backfill-history`
+- Standalone workflow now supports: rebuild historical data from ledger, then immediately visualize value trend inside the main portfolio screen
+
 ---
 
 ## Current Capability Audit
@@ -136,7 +170,7 @@ These decisions refine the build plan based on the current repository and upstre
 | Custom asset types | Built (foundation) | ~40% |
 | Cash management | Built (foundation) | ~35% |
 | Manual price overrides | Built (foundation) | ~45% |
-| Time-series charts | NOT BUILT | 0% |
+| Time-series charts | Built (foundation) | ~30% |
 | Broker-specific CSV templates | NOT BUILT | 0% |
 
 ### What We Already Built (relative to Ignidash)
@@ -439,11 +473,11 @@ These decisions refine the build plan based on the current repository and upstre
 - Credit any other ported code with file references
 - **Why:** License compliance and good citizenship
 
-#### 3.3 Remove Transitional Compatibility Paths
-- Retire Ghostfolio client calls once standalone import/ledger/performance flows fully replace them
-- Retire Ignidash export/client flows once standalone planning becomes the source of truth
-- Update env vars, docs, and health checks to reflect standalone operation
-- **Why:** Avoid preserving dead integration surfaces after the cutover
+#### 3.3 Sidecar Boundary Hardening
+- Remove legacy full-app bridge assumptions from runtime and docs
+- Keep only contract-bound sidecar endpoints with health/version checks
+- Add degraded-mode observability and fallback regression coverage
+- **Why:** Keep sidecar usage intentional, bounded, and operationally safe
 
 #### 3.4 UI Updates
 - Portfolio view: Add account selector, allocation charts, TWR/IRR display
@@ -459,7 +493,7 @@ These decisions refine the build plan based on the current repository and upstre
 
 #### 3.6 Documentation and Ops Cleanup
 - Rewrite README and local run instructions for standalone mode
-- Remove Ghostfolio/Ignidash setup steps once no longer needed
+- Document sidecar startup and contract compatibility guarantees
 - Document migration steps and compatibility windows
 - **Why:** The repo should describe the architecture we actually ship
 
@@ -471,8 +505,8 @@ These decisions refine the build plan based on the current repository and upstre
 1. `ATTRIBUTIONS.md`
 2. New standalone portfolio + planning schemas
 3. Migration for existing transactions, plans, and profile data
-4. Compatibility adapter boundary:
-   Ghostfolio/Ignidash clients stay available only behind import/export bridges during transition
+4. Sidecar adapter foundation:
+   establish `contracts/engine/v1` schemas and adapter validation utilities
 5. Phase 1.1 — Time-Weighted Return calculator
 6. Phase 1.2 — Money-Weighted Return (IRR/XIRR)
 7. Update portfolio view and tracking view to consume the new schema and show TWR/IRR
@@ -523,7 +557,7 @@ These decisions refine the build plan based on the current repository and upstre
 3. Phase 1.13 — Custom Asset Types
 4. Phase 1.17 — Watchlists
 5. Phase 1.18 — Broker-Specific CSV Templates
-6. Phase 3.3 — Remove Transitional Compatibility Paths
+6. Phase 3.3 — Sidecar Boundary Hardening
 7. Phase 3.6 — Documentation and Ops Cleanup
 
 ---
@@ -547,7 +581,8 @@ When porting code, fetch from these locations:
 
 **Tools to use:**
 - `WebFetch` to read GitHub source files when needed
-- Translate TypeScript algorithms to Python
+- Prefer sidecar reuse for high-complexity benchmark/attribution and planning/tax logic
+- Translate TypeScript algorithms to Python only when sidecar integration is not the best fit
 - Use upstream test cases as reference for correctness whenever they map cleanly to our standalone model
 
 ---
@@ -568,8 +603,8 @@ We will know this plan is succeeding when:
 
 - **Phase 1 complete:** A user can track a real multi-account portfolio with proper TWR/IRR, asset allocation breakdowns, and accurate cost basis. Feature parity with Ghostfolio core functionality.
 - **Phase 2 complete:** A user can build a real retirement plan with tax-aware projections, contribution prioritization, timeline events, and withdrawal strategies. Feature parity with Ignidash core functionality.
-- **Phase 3 complete:** Transitional adapters are removed, docs match the shipped standalone architecture, polished UI, copilot has access to all new tools.
-- **Overall:** A single-user can run BuildWealth standalone (no Docker, no Ghostfolio, no Ignidash) and have a more powerful financial command center than any single existing tool, with the AI orchestration layer as the differentiator.
+- **Phase 3 complete:** Sidecar boundaries are hardened, docs match shipped architecture, polished UI, copilot has access to all new tools.
+- **Overall:** A single-user can run BuildWealth as one local application entrypoint with Python-owned data and optional local engine sidecars, delivering stronger portfolio and planning intelligence than any single upstream tool alone.
 
 ---
 
