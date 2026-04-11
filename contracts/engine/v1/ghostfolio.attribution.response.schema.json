@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://buildwealth.local/contracts/engine/v1/ghostfolio.attribution.response.schema.json",
+  "title": "Ghostfolio Attribution Response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "request_id",
+    "engine",
+    "engine_status",
+    "summary",
+    "contributors",
+    "detractors",
+    "positions"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "engine": {
+      "type": "string",
+      "const": "ghostfolio"
+    },
+    "engine_status": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "degraded"
+      ]
+    },
+    "fallback_method": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "portfolio_total_return_base",
+        "portfolio_total_value_base",
+        "accounted_return_base",
+        "residual_return_base",
+        "contributors_count",
+        "detractors_count"
+      ],
+      "properties": {
+        "portfolio_total_return_base": {
+          "type": "number"
+        },
+        "portfolio_total_value_base": {
+          "type": "number"
+        },
+        "accounted_return_base": {
+          "type": "number"
+        },
+        "residual_return_base": {
+          "type": "number"
+        },
+        "contributors_count": {
+          "type": "integer"
+        },
+        "detractors_count": {
+          "type": "integer"
+        }
+      }
+    },
+    "contributors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/attribution_position"
+      }
+    },
+    "detractors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/attribution_position"
+      }
+    },
+    "positions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/attribution_position"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "attribution_position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "current_value_base",
+        "price_return_base",
+        "income_return_base",
+        "total_return_base",
+        "contribution_pct",
+        "allocation_pct"
+      ],
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "account_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "asset_class": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "current_value_base": {
+          "type": "number"
+        },
+        "cost_basis_base": {
+          "type": "number"
+        },
+        "price_return_base": {
+          "type": "number"
+        },
+        "income_return_base": {
+          "type": "number"
+        },
+        "total_return_base": {
+          "type": "number"
+        },
+        "total_return_pct": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "contribution_pct": {
+          "type": "number"
+        },
+        "allocation_pct": {
+          "type": "number"
+        }
+      }
+    }
+  }
+}

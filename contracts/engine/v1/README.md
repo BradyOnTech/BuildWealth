@@ -12,6 +12,8 @@ This directory defines versioned JSON contracts between BuildWealth Python adapt
 ## Included v1 Contracts
 - `ghostfolio.benchmark.request.schema.json`
 - `ghostfolio.benchmark.response.schema.json`
+- `ghostfolio.attribution.request.schema.json`
+- `ghostfolio.attribution.response.schema.json`
 - `ignidash.scenario.request.schema.json`
 - `ignidash.scenario.response.schema.json`
 

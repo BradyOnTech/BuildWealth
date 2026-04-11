@@ -21,7 +21,11 @@ adapted from the following open source projects:
   `services/orchestrator/src/buildwealth_orchestrator/services/snapshot_backfill.py`
   (historical timeline/transaction-point backfill patterns adapted from
   `apps/api/src/app/portfolio/calculator/portfolio-calculator.ts` and
-  `apps/api/src/helper/portfolio.helper.ts`)
+  `apps/api/src/helper/portfolio.helper.ts`);
+  `services/orchestrator/src/buildwealth_orchestrator/services/portfolio_attribution.py`
+  (position-level net-performance attribution structure adapted from
+  `apps/api/src/app/portfolio/calculator/roai/portfolio-calculator.ts` and
+  `apps/api/src/app/portfolio/portfolio.service.ts`)
 
 ## Ignidash
 
@@ -31,6 +35,11 @@ adapted from the following open source projects:
 - Intended reuse in BuildWealth:
   planning schemas, tax engine structure, contribution rule logic,
   account simulation mechanics, and retirement-planning test patterns
+- File-level adaptations:
+  `services/orchestrator/src/buildwealth_orchestrator/services/tax_engine.py`
+  (federal tax calculation flow and tax-data table structure adapted from
+  `src/lib/calc/taxes.ts` and
+  `src/lib/calc/tax-data/{federal-income-tax-brackets,capital-gains-tax-brackets,standard-deduction,niit-thresholds,social-security-tax-brackets}.ts`)
 
 ## OpenBB Platform
 

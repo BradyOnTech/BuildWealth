@@ -103,6 +103,23 @@ export function template() {
       </table>
     </div>
 
+    <h3 class="section-title">Performance Attribution</h3>
+    <p class="hint" id="port-attribution-summary">Attribution not loaded yet.</p>
+    <div class="two-col">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th colspan="5">Top Contributors</th></tr><tr><th>Position</th><th>Return</th><th>Contribution</th><th>Allocation</th><th>Class</th></tr></thead>
+          <tbody id="port-attribution-contributors"><tr><td colspan="5">Loading...</td></tr></tbody>
+        </table>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th colspan="5">Top Detractors</th></tr><tr><th>Position</th><th>Return</th><th>Contribution</th><th>Allocation</th><th>Class</th></tr></thead>
+          <tbody id="port-attribution-detractors"><tr><td colspan="5">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
     <h3 class="section-title">Accounts</h3>
     <div class="table-wrap"><table>
       <thead><tr><th>Name</th><th>ID</th><th>Type</th><th>Currency</th><th>Cash</th><th>Market Value</th><th>Total</th></tr></thead>
@@ -585,6 +602,54 @@ function renderHistory(historyPayload, benchmarkPayload = null) {
   }
 }
 
+function renderAttributionRows(rows, tbodyId, emptyText) {
+  const tbody = byId(tbodyId);
+  const entries = Array.isArray(rows) ? rows : [];
+  if (!entries.length) {
+    tbody.innerHTML = `<tr><td colspan="5">${emptyText}</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = '';
+  for (const row of entries) {
+    const totalReturn = Number(row.total_return_base || 0);
+    const contribution = Number(row.contribution_pct || 0);
+    const cls = totalReturn >= 0 ? 'drift-pos' : 'drift-neg';
+    const sign = totalReturn >= 0 ? '+' : '';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${row.symbol || '-'}</strong>${row.account_id ? `<div class="muted">${accountLabel(row.account_id)}</div>` : ''}</td>
+      <td class="${cls}">${sign}${fmtCurrency(totalReturn)}</td>
+      <td class="${cls}">${contribution >= 0 ? '+' : ''}${fmtPct(contribution)}</td>
+      <td>${fmtPct(Number(row.allocation_pct || 0))}</td>
+      <td>${row.asset_class || '-'}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function renderAttribution(payload) {
+  const summary = byId('port-attribution-summary');
+  const contributors = byId('port-attribution-contributors');
+  const detractors = byId('port-attribution-detractors');
+
+  if (!payload || typeof payload !== 'object') {
+    summary.textContent = 'Attribution unavailable.';
+    contributors.innerHTML = '<tr><td colspan="5">No contributor data.</td></tr>';
+    detractors.innerHTML = '<tr><td colspan="5">No detractor data.</td></tr>';
+    return;
+  }
+
+  const totalReturn = Number(payload.summary?.portfolio_total_return_base || 0);
+  const accounted = Number(payload.summary?.accounted_return_base || 0);
+  const residual = Number(payload.summary?.residual_return_base || 0);
+  const engineStatus = payload.engine_status || 'unknown';
+  const fallback = payload.fallback_method ? ` (${payload.fallback_method})` : '';
+  summary.textContent = `Total return: ${fmtCurrency(totalReturn)} | Accounted: ${fmtCurrency(accounted)} | Residual: ${fmtCurrency(residual)} | Engine: ${engineStatus}${fallback}`;
+
+  renderAttributionRows(payload.contributors, 'port-attribution-contributors', 'No positive contributors in this window.');
+  renderAttributionRows(payload.detractors, 'port-attribution-detractors', 'No detractors in this window.');
+}
+
 function renderTransactions(txns) {
   const tbody = byId('port-txn-body');
   if (!txns.length) {
@@ -623,12 +688,13 @@ function renderTransactions(txns) {
 async function loadAll() {
   try {
     const benchmarkQuery = benchmarkSymbolsFilter ? `&symbols=${encodeURIComponent(benchmarkSymbolsFilter)}` : '';
-    const [holdingsResult, txnsResult, accountResult, historyResult, benchmarkResult] = await Promise.allSettled([
+    const [holdingsResult, txnsResult, accountResult, historyResult, benchmarkResult, attributionResult] = await Promise.allSettled([
       fetchJson('/api/portfolio/holdings'),
       fetchJson('/api/portfolio/transactions?limit=100'),
       fetchJson('/api/portfolio/accounts'),
       fetchJson('/api/snapshot/history?limit=120'),
       fetchJson(`/api/portfolio/benchmark?limit=120${benchmarkQuery}`),
+      fetchJson('/api/portfolio/attribution?top_n=6'),
     ]);
 
     if (holdingsResult.status !== 'fulfilled') throw holdingsResult.reason;
@@ -648,6 +714,7 @@ async function loadAll() {
     } else {
       renderHistory(null, null);
     }
+    renderAttribution(attributionResult.status === 'fulfilled' ? attributionResult.value : null);
     renderFxRates(holdings);
     renderHoldings(holdings);
     renderBreakdowns(holdings);

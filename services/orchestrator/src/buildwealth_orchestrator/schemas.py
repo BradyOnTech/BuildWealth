@@ -107,11 +107,97 @@ class PortfolioBenchmarkResponse(BaseModel):
     generated_at: datetime | None = None
 
 
+class PortfolioAttributionSummary(BaseModel):
+    portfolio_total_return_base: float
+    portfolio_total_value_base: float
+    accounted_return_base: float
+    residual_return_base: float
+    contributors_count: int
+    detractors_count: int
+
+
+class PortfolioAttributionPosition(BaseModel):
+    symbol: str
+    name: str | None = None
+    account_id: str | None = None
+    asset_class: str | None = None
+    current_value_base: float = 0.0
+    cost_basis_base: float = 0.0
+    price_return_base: float = 0.0
+    income_return_base: float = 0.0
+    total_return_base: float = 0.0
+    total_return_pct: float | None = None
+    contribution_pct: float = 0.0
+    allocation_pct: float = 0.0
+
+
+class PortfolioAttributionResponse(BaseModel):
+    request_id: str
+    contract_version: int
+    engine: str
+    engine_status: Literal["ok", "degraded"]
+    fallback_method: str | None = None
+    as_of: datetime | None = None
+    top_n: int = 5
+    summary: PortfolioAttributionSummary
+    contributors: list[PortfolioAttributionPosition] = Field(default_factory=list)
+    detractors: list[PortfolioAttributionPosition] = Field(default_factory=list)
+    positions: list[PortfolioAttributionPosition] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    generated_at: datetime | None = None
+
+
 class ScenarioRequest(BaseModel):
     current_portfolio_value_usd: float | None = None
     annual_contribution_usd: float | None = None
     years: int | None = None
     hsa_extra_contribution_usd: float | None = None
+
+
+class TaxEstimateRequest(BaseModel):
+    tax_year: int = Field(default=2026, ge=1900, le=2500)
+    filing_status: Literal[
+        "single",
+        "married_filing_jointly",
+        "married_filing_separately",
+        "head_of_household",
+    ] = "single"
+    earned_income_usd: float = 0.0
+    ordinary_income_usd: float = 0.0
+    short_term_capital_gains_usd: float = 0.0
+    long_term_capital_gains_usd: float = 0.0
+    qualified_dividends_usd: float = 0.0
+    interest_income_usd: float = 0.0
+    social_security_income_usd: float = 0.0
+    pre_tax_contributions_usd: float = Field(default=0.0, ge=0)
+    tax_withholding_usd: float = Field(default=0.0, ge=0)
+
+
+class TaxEstimateResponse(BaseModel):
+    tax_year: int
+    filing_status: str
+    gross_income_usd: float
+    adjusted_gross_income_usd: float
+    standard_deduction_usd: float
+    taxable_ordinary_income_usd: float
+    taxable_capital_gains_income_usd: float
+    taxable_social_security_income_usd: float
+    federal_income_tax_usd: float
+    capital_gains_tax_usd: float
+    niit_tax_usd: float
+    niit_income_subject_usd: float
+    niit_threshold_usd: float
+    fica_social_security_tax_usd: float
+    fica_medicare_tax_usd: float
+    total_fica_tax_usd: float
+    total_estimated_tax_usd: float
+    effective_tax_rate: float | None = None
+    top_marginal_federal_income_tax_rate: float
+    top_marginal_capital_gains_tax_rate: float
+    tax_withholding_usd: float
+    amount_due_usd: float
+    refund_usd: float
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ScenarioResult(BaseModel):

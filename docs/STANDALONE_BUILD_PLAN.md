@@ -87,6 +87,24 @@ These decisions refine the build plan based on the current repository and upstre
   - Ignidash self-hosting health checks use `GET /api/health` for app and `/version` for Convex backend
 - Benchmark and planning routes now increment degraded counters whenever sidecar execution falls back to local logic
 
+### 2026-04-11 (Completed - Engine Status UI)
+- Today dashboard now fetches `GET /api/engines/status` and renders engine telemetry cards (enabled, reachable, degraded events, probe age)
+- Added engine detail panel with per-engine health badge, contract version, degraded count, and last error visibility
+- Added explicit “Refresh Engine Status” action that triggers live probe refresh via `?refresh=true`
+
+### 2026-04-11 (Completed - Attribution Sidecar Foundation)
+- Added Ghostfolio attribution adapter service (`portfolio_attribution.py`) with request/response contracts and local degraded fallback
+- Added `GET /api/portfolio/attribution` endpoint plus engine degraded counter wiring under `ghostfolio_attribution`
+- Added v1 engine contracts for attribution (`ghostfolio.attribution.request/response.schema.json`)
+- Portfolio UI now fetches attribution payloads and renders top contributors/detractors with contribution and allocation context
+- Added unit coverage for sidecar disabled/success/failure paths in `test_portfolio_attribution.py`
+
+### 2026-04-11 (Completed - Tax Engine Foundation)
+- Added federal tax engine foundation (`tax_engine.py`) adapted from Ignidash tax calculators and tax-data tables
+- Implemented 2026 ordinary-income brackets, standard deduction, LTCG bracket stacking, NIIT, Social Security taxable-income handling, and FICA withholding estimates
+- Added planning endpoint `POST /api/planning/tax-estimate` for callable tax breakdowns
+- Added focused tax engine unit coverage in `test_tax_engine.py` (ordinary income, capital gains/NIIT, Social Security taxability, year-fallback behavior)
+
 ### 2026-04-09 (Completed)
 - Phase 1.1: BuildWealth-native TWR calculator integrated into local portfolio store
 - Phase 1.2: XIRR money-weighted return added and surfaced in portfolio snapshot/UI
@@ -171,8 +189,8 @@ These decisions refine the build plan based on the current repository and upstre
 | Multi-currency | Built (foundation + expansion) | ~55% |
 | Historical price backfill | Built (foundation) | ~35% |
 | Total return (incl. dividends) | Built (foundation) | ~45% |
-| Performance attribution | NOT BUILT | 0% |
-| Benchmark comparison | NOT BUILT | 0% |
+| Performance attribution | Built (foundation) | ~35% |
+| Benchmark comparison | Built (sidecar-backed + UI) | ~55% |
 | Activity types beyond buy/sell/div | Built (foundation) | ~40% |
 | Watchlists | NOT BUILT | 0% |
 | Custom asset types | Built (foundation) | ~40% |
@@ -197,10 +215,10 @@ These decisions refine the build plan based on the current repository and upstre
 | Debt payoff modeling | NOT BUILT | 0% |
 | Physical assets | NOT BUILT | 0% |
 | Timeline events on plans | NOT BUILT | 0% |
-| Federal tax brackets | NOT BUILT | 0% |
+| Federal tax brackets | Built (foundation) | ~35% |
 | State tax | NOT BUILT | 0% |
-| FICA / Social Security tax | NOT BUILT | 0% |
-| Capital gains (LTCG/STCG/NIIT) | NOT BUILT | 0% |
+| FICA / Social Security tax | Built (foundation) | ~30% |
+| Capital gains (LTCG/STCG/NIIT) | Built (foundation) | ~35% |
 | Social Security claiming optimization | NOT BUILT | 0% |
 | RMD calculations (age 73+) | NOT BUILT | 0% |
 | Withdrawal strategies (4% rule, dynamic, bond tent) | NOT BUILT | 0% |

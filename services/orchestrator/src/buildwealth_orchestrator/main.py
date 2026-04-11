@@ -43,8 +43,11 @@ from buildwealth_orchestrator.schemas import (
     PlanningResponse,
     PortfolioSnapshot,
     PortfolioBenchmarkResponse,
+    PortfolioAttributionResponse,
     ResearchResponse,
     ScenarioRequest,
+    TaxEstimateRequest,
+    TaxEstimateResponse,
     SnapshotHistoryResponse,
     SyncStatusResponse,
     RecommendationActionResponse,
@@ -99,8 +102,10 @@ from buildwealth_orchestrator.services.price_updater import (
 )
 from buildwealth_orchestrator.services.engine_adapter import SidecarAdapter
 from buildwealth_orchestrator.services.portfolio_benchmark import GhostfolioBenchmarkService
+from buildwealth_orchestrator.services.portfolio_attribution import GhostfolioAttributionService
 from buildwealth_orchestrator.services.planning_sidecar import IgnidashScenarioService
 from buildwealth_orchestrator.services.engine_status import EngineProbeConfig, EngineStatusTracker
+from buildwealth_orchestrator.services.tax_engine import estimate_federal_tax
 from buildwealth_orchestrator.services.today_dashboard import build_today_dashboard_payload
 from buildwealth_orchestrator.services.workflow_runner import WorkflowRunner
 from buildwealth_orchestrator.services.plan_workspace import (
@@ -186,6 +191,13 @@ benchmark_service = GhostfolioBenchmarkService(
     sidecar_path=settings.ghostfolio_benchmark_sidecar_path,
     base_currency=settings.app_currency,
 )
+attribution_service = GhostfolioAttributionService(
+    portfolio_store=portfolio_store,
+    sidecar_adapter=ghostfolio_sidecar_adapter,
+    sidecar_enabled=settings.enable_ghostfolio_attribution_sidecar,
+    sidecar_path=settings.ghostfolio_attribution_sidecar_path,
+    base_currency=settings.app_currency,
+)
 ignidash_sidecar_adapter = SidecarAdapter(
     base_url=settings.ignidash_sidecar_base_url,
     timeout_seconds=settings.engine_sidecar_timeout_seconds,
@@ -205,6 +217,19 @@ engine_status_tracker = EngineStatusTracker(
             name="ghostfolio_benchmark",
             base_url=settings.ghostfolio_sidecar_base_url,
             enabled=settings.enable_ghostfolio_benchmark_sidecar,
+            health_paths=parse_path_candidates(
+                settings.ghostfolio_sidecar_health_paths,
+                fallback=("/health", "/api/v1/health"),
+            ),
+            version_paths=parse_path_candidates(
+                settings.engine_sidecar_version_paths,
+                fallback=("/version",),
+            ),
+        ),
+        EngineProbeConfig(
+            name="ghostfolio_attribution",
+            base_url=settings.ghostfolio_sidecar_base_url,
+            enabled=settings.enable_ghostfolio_attribution_sidecar,
             health_paths=parse_path_candidates(
                 settings.ghostfolio_sidecar_health_paths,
                 fallback=("/health", "/api/v1/health"),
@@ -583,17 +608,29 @@ def build_scenario_engine_for_plan_settings(plan_settings: dict[str, Any]) -> Sc
     )
 
 
-def run_scenarios_for_plan_settings(
+def build_ignidash_service_for_plan_settings(plan_settings: dict[str, Any]) -> IgnidashScenarioService:
+    engine = build_scenario_engine_for_plan_settings(plan_settings)
+    return IgnidashScenarioService(
+        scenario_engine=engine,
+        sidecar_adapter=ignidash_sidecar_adapter,
+        sidecar_enabled=settings.enable_ignidash_scenario_sidecar,
+        sidecar_path=settings.ignidash_scenario_sidecar_path,
+        currency=settings.app_currency,
+        default_tax_rate=float(plan_settings.get("marginal_tax_rate") or settings.planner_marginal_tax_rate),
+    )
+
+
+async def run_scenarios_for_plan_settings(
     current_portfolio_value_usd: float,
     plan_settings: dict[str, Any],
 ) -> PlanningResponse:
     validate_plan_return_relationships(plan_settings)
-    engine = build_scenario_engine_for_plan_settings(plan_settings)
+    service = build_ignidash_service_for_plan_settings(plan_settings)
     annual_contribution = plan_settings.get("annual_contribution_usd")
     years = plan_settings.get("years")
     hsa_extra = plan_settings.get("hsa_extra_contribution_usd")
 
-    return engine.run(
+    result = await service.run(
         current_portfolio_value_usd=float(current_portfolio_value_usd),
         annual_contribution_usd=(
             float(annual_contribution) if annual_contribution is not None else None
@@ -601,6 +638,13 @@ def run_scenarios_for_plan_settings(
         years=int(years) if years is not None else None,
         hsa_extra_contribution_usd=(float(hsa_extra) if hsa_extra is not None else None),
     )
+    if result.engine_status == "degraded":
+        await engine_status_tracker.increment_degraded(
+            "ignidash_scenario",
+            reason=result.warnings[0] if result.warnings else None,
+        )
+
+    return result
 
 
 def resolve_portfolio_value(
@@ -1676,11 +1720,11 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         float(current_value_raw) if current_value_raw is not None else None
     )
 
-    base_result = run_scenarios_for_plan_settings(
+    base_result = await run_scenarios_for_plan_settings(
         current_portfolio_value_usd=current_value,
         plan_settings=base_settings,
     )
-    candidate_result = run_scenarios_for_plan_settings(
+    candidate_result = await run_scenarios_for_plan_settings(
         current_portfolio_value_usd=current_value,
         plan_settings=candidate_settings,
     )
@@ -2521,6 +2565,21 @@ async def get_portfolio_benchmark(symbols: str | None = None, limit: int = 180) 
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/api/portfolio/attribution", response_model=PortfolioAttributionResponse)
+async def get_portfolio_attribution(top_n: int = 5) -> PortfolioAttributionResponse:
+    bounded_top_n = max(1, min(int(top_n), 50))
+    try:
+        result = await attribution_service.analyze(top_n=bounded_top_n)
+        if result.engine_status == "degraded":
+            await engine_status_tracker.increment_degraded(
+                "ghostfolio_attribution",
+                reason=result.warnings[0] if result.warnings else None,
+            )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/api/portfolio/accounts")
 def get_portfolio_accounts() -> list[dict[str, Any]]:
     return portfolio_store.get_accounts()
@@ -2890,7 +2949,7 @@ def update_plan_settings(plan_id: str, request: PlanSettingsUpdateRequest) -> Pl
 
 
 @app.post("/api/plans/{plan_id}/scenario-diff", response_model=PlanScenarioDiffResponse)
-def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest) -> PlanScenarioDiffResponse:
+async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest) -> PlanScenarioDiffResponse:
     compare_updates = request.compare_settings.model_dump(exclude_unset=True)
 
     try:
@@ -2903,11 +2962,11 @@ def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest) -> Pl
 
     try:
         current_value = resolve_portfolio_value(request.current_portfolio_value_usd)
-        base_result = run_scenarios_for_plan_settings(
+        base_result = await run_scenarios_for_plan_settings(
             current_portfolio_value_usd=current_value,
             plan_settings=base_settings,
         )
-        candidate_result = run_scenarios_for_plan_settings(
+        candidate_result = await run_scenarios_for_plan_settings(
             current_portfolio_value_usd=current_value,
             plan_settings=candidate_settings,
         )
@@ -3223,6 +3282,25 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
             reason=result.warnings[0] if result.warnings else None,
         )
     return result
+
+
+@app.post("/api/planning/tax-estimate", response_model=TaxEstimateResponse)
+def planning_tax_estimate(request: TaxEstimateRequest) -> TaxEstimateResponse:
+    return TaxEstimateResponse(
+        **estimate_federal_tax(
+            tax_year=request.tax_year,
+            filing_status=request.filing_status,
+            earned_income_usd=request.earned_income_usd,
+            ordinary_income_usd=request.ordinary_income_usd,
+            short_term_capital_gains_usd=request.short_term_capital_gains_usd,
+            long_term_capital_gains_usd=request.long_term_capital_gains_usd,
+            qualified_dividends_usd=request.qualified_dividends_usd,
+            interest_income_usd=request.interest_income_usd,
+            social_security_income_usd=request.social_security_income_usd,
+            pre_tax_contributions_usd=request.pre_tax_contributions_usd,
+            tax_withholding_usd=request.tax_withholding_usd,
+        )
+    )
 
 
 @app.post("/api/research/options-chain", response_model=ResearchResponse)

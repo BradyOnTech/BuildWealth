@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://buildwealth.local/contracts/engine/v1/ghostfolio.attribution.request.schema.json",
+  "title": "Ghostfolio Attribution Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "request_id",
+    "portfolio_base_currency",
+    "top_n",
+    "portfolio_total_return_base",
+    "portfolio_total_value_base",
+    "positions"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "portfolio_base_currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "as_of": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "top_n": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50
+    },
+    "portfolio_total_return_base": {
+      "type": "number"
+    },
+    "portfolio_total_value_base": {
+      "type": "number"
+    },
+    "positions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "symbol",
+          "current_value_base",
+          "price_return_base",
+          "income_return_base",
+          "total_return_base",
+          "allocation_pct"
+        ],
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "account_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "asset_class": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "current_value_base": {
+            "type": "number"
+          },
+          "cost_basis_base": {
+            "type": "number"
+          },
+          "price_return_base": {
+            "type": "number"
+          },
+          "income_return_base": {
+            "type": "number"
+          },
+          "total_return_base": {
+            "type": "number"
+          },
+          "total_return_pct": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "allocation_pct": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

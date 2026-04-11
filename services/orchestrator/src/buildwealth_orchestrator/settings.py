@@ -41,9 +41,17 @@ class Settings(BaseSettings):
         default="/v1/benchmark/compare",
         alias="GHOSTFOLIO_BENCHMARK_SIDECAR_PATH",
     )
+    ghostfolio_attribution_sidecar_path: str = Field(
+        default="/v1/attribution/compute",
+        alias="GHOSTFOLIO_ATTRIBUTION_SIDECAR_PATH",
+    )
     enable_ghostfolio_benchmark_sidecar: bool = Field(
         default=False,
         alias="ENABLE_GHOSTFOLIO_BENCHMARK_SIDECAR",
+    )
+    enable_ghostfolio_attribution_sidecar: bool = Field(
+        default=False,
+        alias="ENABLE_GHOSTFOLIO_ATTRIBUTION_SIDECAR",
     )
     engine_sidecar_timeout_seconds: float = Field(default=3.0, alias="ENGINE_SIDECAR_TIMEOUT_SECONDS")
     engine_sidecar_retry_count: int = Field(default=1, alias="ENGINE_SIDECAR_RETRY_COUNT")

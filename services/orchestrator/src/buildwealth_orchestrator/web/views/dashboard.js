@@ -24,6 +24,12 @@ export function template() {
       <article class="kpi-card"><p class="kpi-label">Financial Health</p><p class="kpi-value" id="today-health-status">-</p></article>
       <article class="kpi-card"><p class="kpi-label">Active Plan</p><p class="kpi-value" id="today-active-plan">-</p></article>
     </div>
+    <div class="kpi-row">
+      <article class="kpi-card"><p class="kpi-label">Enabled Engines</p><p class="kpi-value" id="today-engine-enabled">-</p></article>
+      <article class="kpi-card"><p class="kpi-label">Reachable Engines</p><p class="kpi-value" id="today-engine-reachable">-</p></article>
+      <article class="kpi-card"><p class="kpi-label">Degraded Events</p><p class="kpi-value" id="today-engine-degraded">-</p></article>
+      <article class="kpi-card"><p class="kpi-label">Engine Probe Age</p><p class="kpi-value" id="today-engine-probe-age">-</p></article>
+    </div>
     <div class="three-col">
       <section class="panel">
         <h3 class="panel-title">Checklist</h3>
@@ -41,7 +47,15 @@ export function template() {
           <button class="primary small" id="today-ask-copilot" type="button">Ask Copilot Review</button>
         </div>
       </section>
-    </div>`;
+    </div>
+    <section class="panel">
+      <div class="panel-head-inline">
+        <h3 class="panel-title">Engine Status</h3>
+        <button class="ghost small" id="today-refresh-engines" type="button">Refresh Engine Status</button>
+      </div>
+      <p class="hint" id="today-engines-as-of">Loading engine status...</p>
+      <div id="today-engines-list" class="item-list"></div>
+    </section>`;
 }
 
 function render(payload) {
@@ -88,14 +102,102 @@ function render(payload) {
   else { for (const s of steps) { const li = document.createElement('li'); li.textContent = s; wl.appendChild(li); } }
 }
 
-export async function load() {
+function engineProbeAgeMinutes(asOf) {
+  if (!asOf) return null;
+  const parsed = new Date(asOf);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const deltaMs = Date.now() - parsed.getTime();
+  return Math.max(0, Math.floor(deltaMs / 60000));
+}
+
+function renderEngineStatus(payload, errorMessage = null) {
+  const enabledEl = byId('today-engine-enabled');
+  const reachableEl = byId('today-engine-reachable');
+  const degradedEl = byId('today-engine-degraded');
+  const probeAgeEl = byId('today-engine-probe-age');
+  const asOfEl = byId('today-engines-as-of');
+  const listEl = byId('today-engines-list');
+
+  if (!payload || !Array.isArray(payload.engines)) {
+    enabledEl.textContent = '-';
+    reachableEl.textContent = '-';
+    degradedEl.textContent = '-';
+    probeAgeEl.textContent = '-';
+    asOfEl.textContent = errorMessage ? `Engine status unavailable: ${errorMessage}` : 'Engine status unavailable.';
+    listEl.innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No engine telemetry available.</p></article>';
+    return;
+  }
+
+  const engines = payload.engines;
+  const enabled = engines.filter((item) => item.enabled).length;
+  const reachable = engines.filter((item) => item.enabled && item.reachable).length;
+  const degradedTotal = engines.reduce((acc, item) => acc + Number(item.degraded_count || 0), 0);
+  const probeAge = engineProbeAgeMinutes(payload.as_of);
+
+  enabledEl.textContent = String(enabled);
+  reachableEl.textContent = `${reachable}/${enabled}`;
+  reachableEl.className = `kpi-value ${enabled > 0 && reachable === enabled ? 'drift-pos' : enabled > 0 ? 'drift-neg' : ''}`;
+  degradedEl.textContent = String(degradedTotal);
+  degradedEl.className = `kpi-value ${degradedTotal > 0 ? 'drift-neg' : 'drift-pos'}`;
+  probeAgeEl.textContent = probeAge == null ? '-' : fmtAgeMinutes(probeAge);
+  asOfEl.textContent = `Last probe: ${fmtDate(payload.as_of)}`;
+
+  if (!engines.length) {
+    listEl.innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No engines configured.</p></article>';
+    return;
+  }
+
+  listEl.innerHTML = '';
+  for (const engine of engines) {
+    const row = document.createElement('article');
+    const statusLabel = !engine.enabled
+      ? 'DISABLED'
+      : engine.reachable
+        ? 'HEALTHY'
+        : 'UNREACHABLE';
+    const statusClass = !engine.enabled
+      ? 'attention'
+      : engine.reachable
+        ? 'complete'
+        : 'incomplete';
+    const engineName = String(engine.name || 'engine').replace(/_/g, ' ');
+    const versionText = engine.contract_version != null ? `v${engine.contract_version}` : 'n/a';
+    const checkedText = engine.last_checked_at ? fmtDate(engine.last_checked_at) : 'never';
+    row.className = `list-item ${statusClass}`;
+    row.innerHTML = `
+      <p class="list-item-title">${engineName} <span class="status-badge ${statusClass}">${statusLabel}</span></p>
+      <p class="list-item-meta">Version: ${versionText} • Degraded count: ${Number(engine.degraded_count || 0)} • Checked: ${checkedText}</p>
+      ${engine.last_error ? `<p class="list-item-meta">Last error: ${engine.last_error}</p>` : ''}
+    `;
+    listEl.appendChild(row);
+  }
+}
+
+export async function load(options = {}) {
+  const refreshEngines = Boolean(options.refreshEngines);
   try {
-    render(await fetchJson('/api/dashboard/today'));
+    const [dashboardResult, enginesResult] = await Promise.allSettled([
+      fetchJson('/api/dashboard/today'),
+      fetchJson(`/api/engines/status${refreshEngines ? '?refresh=true' : ''}`),
+    ]);
+
+    if (dashboardResult.status === 'fulfilled') {
+      render(dashboardResult.value);
+    } else {
+      throw dashboardResult.reason;
+    }
+
+    if (enginesResult.status === 'fulfilled') {
+      renderEngineStatus(enginesResult.value);
+    } else {
+      renderEngineStatus(null, enginesResult.reason?.message || 'unknown error');
+    }
   } catch (error) {
     byId('today-generated').textContent = `Dashboard unavailable: ${error.message}`;
     byId('today-context-banner').className = 'context-banner warning';
     byId('today-context-banner').textContent = 'Context readiness unavailable.';
     ['today-total-value', 'today-snapshot-freshness', 'today-concentration', 'today-active-plan'].forEach(id => { const el = byId(id); if (el) el.textContent = '-'; });
+    renderEngineStatus(null, error.message);
   }
 }
 
@@ -110,6 +212,7 @@ async function runSync() {
 
 export function init() {
   byId('reload-today').addEventListener('click', () => load().catch(e => writeLog(e.message, null, true)));
+  byId('today-refresh-engines').addEventListener('click', () => load({ refreshEngines: true }).catch(e => writeLog(e.message, null, true)));
   byId('today-run-sync').addEventListener('click', runSync);
   byId('today-ask-copilot').addEventListener('click', () => {
     location.hash = 'copilot?dailyReview=1';
