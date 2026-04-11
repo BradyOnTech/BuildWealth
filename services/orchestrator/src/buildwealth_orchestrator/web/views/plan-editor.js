@@ -76,10 +76,32 @@ function formatDiffOutput(diff) {
   const lines = [`Plan: ${diff?.plan_id || '-'}`, `Current Portfolio: ${fmtCurrency(diff?.current_portfolio_value_usd)}`, '', 'Scenario Delta (Candidate - Base):'];
   if (!rows.length) lines.push('- No deltas.');
   else for (const r of rows) lines.push(`- ${r.label}: Future ${fmtCurrency(r.delta_future_value_usd)}, Real ${fmtCurrency(r.delta_real_value_usd)}`);
+
+  const baseIncome = diff?.base_result?.income_projection;
+  const candidateIncome = diff?.candidate_result?.income_projection;
+  lines.push('', 'Income Projection Context:');
+  if (!baseIncome && !candidateIncome) {
+    lines.push('- Not available.');
+  } else {
+    lines.push(`- Base: ${describeIncomeProjection(baseIncome)}`);
+    lines.push(`- Candidate: ${describeIncomeProjection(candidateIncome)}`);
+  }
+
   const mc = diff?.monte_carlo_delta || {};
   lines.push('', 'Monte Carlo Delta:', `- P10: ${fmtCurrency(mc.delta_p10_future_value_usd)}`, `- P50: ${fmtCurrency(mc.delta_p50_future_value_usd)}`, `- P90: ${fmtCurrency(mc.delta_p90_future_value_usd)}`);
   lines.push('', 'Raw Payload:', JSON.stringify(diff, null, 2));
   return lines.join('\n');
+}
+
+function describeIncomeProjection(projection) {
+  if (!projection || typeof projection !== 'object') return 'Not available';
+  const firstYear = fmtCurrency(projection.first_year_gross_income_usd);
+  const finalYear = fmtCurrency(projection.final_year_gross_income_usd);
+  const years = Number(projection.years);
+  const yearsLabel = Number.isFinite(years) && years > 0 ? `${Math.trunc(years)}y` : 'n/a';
+  const growth = Number(projection.annualized_income_growth_rate);
+  const growthLabel = Number.isFinite(growth) ? `${(growth * 100).toFixed(2)}%` : 'n/a';
+  return `${firstYear} -> ${finalYear} (${yearsLabel}, annualized ${growthLabel})`;
 }
 
 export function initEditor(refreshPlans) {

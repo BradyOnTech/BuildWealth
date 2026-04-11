@@ -154,6 +154,44 @@ class ScenarioRequest(BaseModel):
     hsa_extra_contribution_usd: float | None = None
 
 
+class IncomeProjectionIncomeInput(BaseModel):
+    id: str = ""
+    label: str
+    monthly_amount_usd: float = Field(ge=0)
+    is_pre_tax: bool = False
+    annual_growth_rate: float | None = Field(default=None, ge=-1, le=1)
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+
+
+class IncomeProjectionRequest(BaseModel):
+    start_year: int | None = Field(default=None, ge=1900, le=2500)
+    years: int = Field(default=30, ge=1, le=80)
+    default_annual_growth_rate: float | None = Field(default=None, ge=-1, le=1)
+    income_items: list[IncomeProjectionIncomeInput] | None = None
+
+
+class IncomeProjectionYearPoint(BaseModel):
+    year: int
+    gross_income_usd: float
+    pre_tax_income_usd: float
+    post_tax_income_usd: float
+    active_income_items: int
+
+
+class IncomeProjectionResponse(BaseModel):
+    start_year: int
+    years: int
+    default_annual_growth_rate: float
+    income_items_count: int
+    first_year_gross_income_usd: float
+    final_year_gross_income_usd: float
+    cumulative_gross_income_usd: float
+    annualized_income_growth_rate: float | None = None
+    yearly_points: list[IncomeProjectionYearPoint] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class ContributionAllocationAccountInput(BaseModel):
     account_id: str
     account_name: str | None = None
@@ -267,6 +305,7 @@ class PlanningResponse(BaseModel):
     engine_status: Literal["ok", "degraded"] = "ok"
     fallback_method: str | None = None
     warnings: list[str] = Field(default_factory=list)
+    income_projection: IncomeProjectionResponse | None = None
     contribution_allocation: ContributionAllocationResponse | None = None
 
 

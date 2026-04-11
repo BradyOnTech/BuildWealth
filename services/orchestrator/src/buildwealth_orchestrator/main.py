@@ -46,6 +46,8 @@ from buildwealth_orchestrator.schemas import (
     PortfolioAttributionResponse,
     ResearchResponse,
     ScenarioRequest,
+    IncomeProjectionRequest,
+    IncomeProjectionResponse,
     ContributionAllocationRequest,
     ContributionAllocationResponse,
     TaxEstimateRequest,
@@ -104,6 +106,7 @@ from buildwealth_orchestrator.services.contribution_rules import (
     normalize_account_type,
     tax_treatment_for_account_type,
 )
+from buildwealth_orchestrator.services.income_projection import project_income_schedule
 from buildwealth_orchestrator.services.price_updater import (
     build_snapshot_from_holdings,
     refresh_portfolio,
@@ -779,9 +782,47 @@ def build_contribution_allocation_for_plan_settings(
     return ContributionAllocationResponse(**allocation_payload)
 
 
+def build_income_projection_from_profile(
+    *,
+    years: int,
+    start_year: int | None = None,
+    default_annual_growth_rate: float | None = None,
+) -> IncomeProjectionResponse | None:
+    profile_payload = get_financial_profile_payload()
+    income_rows = profile_payload.get("income_items")
+    if not isinstance(income_rows, list) or not income_rows:
+        return None
+
+    resolved_start_year = start_year or utc_now().year
+    resolved_years = max(1, min(_coerce_int(years, settings.planner_years_to_retirement), 80))
+    resolved_default_growth = (
+        settings.planner_inflation
+        if default_annual_growth_rate is None
+        else max(-1.0, min(1.0, _coerce_float(default_annual_growth_rate, settings.planner_inflation)))
+    )
+
+    payload = project_income_schedule(
+        income_rows,
+        start_year=resolved_start_year,
+        years=resolved_years,
+        default_annual_growth_rate=resolved_default_growth,
+    )
+    return IncomeProjectionResponse(**payload)
+
+
+def build_income_projection_for_plan_settings(plan_settings: dict[str, Any]) -> IncomeProjectionResponse | None:
+    years = _coerce_int(plan_settings.get("years"), settings.planner_years_to_retirement)
+    return build_income_projection_from_profile(
+        years=years,
+        start_year=utc_now().year,
+        default_annual_growth_rate=settings.planner_inflation,
+    )
+
+
 async def run_scenarios_for_plan_settings(
     current_portfolio_value_usd: float,
     plan_settings: dict[str, Any],
+    income_projection: IncomeProjectionResponse | None = None,
     contribution_allocation: ContributionAllocationResponse | None = None,
 ) -> PlanningResponse:
     validate_plan_return_relationships(plan_settings)
@@ -796,7 +837,11 @@ async def run_scenarios_for_plan_settings(
         else None
     )
     sidecar_accounts: list[dict[str, Any]] | None = None
+    income_projection_payload: dict[str, Any] | None = None
     contribution_allocation_payload: dict[str, Any] | None = None
+
+    if income_projection is not None:
+        income_projection_payload = income_projection.model_dump(mode="json")
 
     if contribution_allocation is not None:
         resolved_annual_contribution = float(contribution_allocation.total_contributions_usd)
@@ -819,6 +864,7 @@ async def run_scenarios_for_plan_settings(
         years=int(years) if years is not None else None,
         hsa_extra_contribution_usd=(float(hsa_extra) if hsa_extra is not None else None),
         accounts=sidecar_accounts,
+        income_projection=income_projection_payload,
         contribution_allocation=contribution_allocation_payload,
     )
     if result.engine_status == "degraded":
@@ -1782,6 +1828,39 @@ async def tool_run_planning(arguments: dict[str, object]) -> dict[str, object]:
     return result.model_dump(mode="json")
 
 
+async def tool_project_income(arguments: dict[str, object]) -> dict[str, object]:
+    years_raw = arguments.get("years")
+    years = _coerce_int(years_raw, settings.planner_years_to_retirement)
+    years = max(1, min(years, 80))
+
+    start_year_raw = arguments.get("start_year")
+    start_year = _coerce_int(start_year_raw, utc_now().year)
+    start_year = max(1900, min(start_year, 2500))
+
+    default_growth_raw = arguments.get("default_annual_growth_rate")
+    default_growth = settings.planner_inflation if default_growth_raw is None else _coerce_float(
+        default_growth_raw,
+        settings.planner_inflation,
+    )
+    default_growth = max(-1.0, min(1.0, default_growth))
+
+    income_items_raw = arguments.get("income_items")
+    if isinstance(income_items_raw, list):
+        income_items = [item for item in income_items_raw if isinstance(item, dict)]
+    else:
+        profile_payload = get_financial_profile_payload()
+        profile_items = profile_payload.get("income_items")
+        income_items = profile_items if isinstance(profile_items, list) else []
+
+    payload = project_income_schedule(
+        income_items,
+        start_year=start_year,
+        years=years,
+        default_annual_growth_rate=default_growth,
+    )
+    return IncomeProjectionResponse(**payload).model_dump(mode="json")
+
+
 async def tool_research_options_chain(arguments: dict[str, object]) -> dict[str, object]:
     symbol = str(arguments.get("symbol", "AAPL")).strip().upper()
     result = research_service.options_chain(symbol).model_dump(mode="json")
@@ -1898,6 +1977,8 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
     base_settings = detail.get("settings", {})
     compare_updates = extract_plan_settings_updates(arguments)
     candidate_settings = merge_plan_settings(base_settings, compare_updates)
+    base_income_projection = build_income_projection_for_plan_settings(base_settings)
+    candidate_income_projection = build_income_projection_for_plan_settings(candidate_settings)
     contribution_rules_payload = resolve_plan_contribution_rules(detail)
     base_contribution_allocation = build_contribution_allocation_for_plan_settings(
         plan_settings=base_settings,
@@ -1916,11 +1997,13 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
     base_result = await run_scenarios_for_plan_settings(
         current_portfolio_value_usd=current_value,
         plan_settings=base_settings,
+        income_projection=base_income_projection,
         contribution_allocation=base_contribution_allocation,
     )
     candidate_result = await run_scenarios_for_plan_settings(
         current_portfolio_value_usd=current_value,
         plan_settings=candidate_settings,
+        income_projection=candidate_income_projection,
         contribution_allocation=candidate_contribution_allocation,
     )
     scenario_deltas, monte_carlo_delta = build_scenario_diff_payload(base_result, candidate_result)
@@ -2277,6 +2360,24 @@ def configure_copilot_tools() -> None:
             "additionalProperties": False,
         },
         handler=tool_run_planning,
+    )
+    copilot.register_tool(
+        name="project_income_growth",
+        description=(
+            "Project annual income over time using income-item growth rates and optional start/end dates. "
+            "If income_items are omitted, uses the current financial profile."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "start_year": {"type": "integer"},
+                "years": {"type": "integer"},
+                "default_annual_growth_rate": {"type": "number"},
+                "income_items": {"type": "array", "items": {"type": "object"}},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_project_income,
     )
     copilot.register_tool(
         name="research_options_chain",
@@ -3155,6 +3256,8 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
 
     base_settings = dict(detail.get("settings", {}))
     candidate_settings = merge_plan_settings(base_settings, compare_updates)
+    base_income_projection = build_income_projection_for_plan_settings(base_settings)
+    candidate_income_projection = build_income_projection_for_plan_settings(candidate_settings)
     contribution_rules_payload = resolve_plan_contribution_rules(detail)
     base_contribution_allocation = build_contribution_allocation_for_plan_settings(
         plan_settings=base_settings,
@@ -3170,11 +3273,13 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
         base_result = await run_scenarios_for_plan_settings(
             current_portfolio_value_usd=current_value,
             plan_settings=base_settings,
+            income_projection=base_income_projection,
             contribution_allocation=base_contribution_allocation,
         )
         candidate_result = await run_scenarios_for_plan_settings(
             current_portfolio_value_usd=current_value,
             plan_settings=candidate_settings,
+            income_projection=candidate_income_projection,
             contribution_allocation=candidate_contribution_allocation,
         )
     except ValueError as exc:
@@ -3477,11 +3582,23 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
                 detail="Provide current_portfolio_value_usd or create a snapshot first",
             ) from exc
 
+    resolved_years = (
+        int(request.years)
+        if request.years is not None
+        else int(scenario_engine.years_to_retirement)
+    )
+    income_projection = build_income_projection_from_profile(
+        years=resolved_years,
+        start_year=utc_now().year,
+        default_annual_growth_rate=settings.planner_inflation,
+    )
+
     result = await ignidash_scenario_service.run(
         current_portfolio_value_usd=current_value,
         annual_contribution_usd=request.annual_contribution_usd,
         years=request.years,
         hsa_extra_contribution_usd=request.hsa_extra_contribution_usd,
+        income_projection=income_projection.model_dump(mode="json") if income_projection is not None else None,
     )
     if result.engine_status == "degraded":
         await engine_status_tracker.increment_degraded(
@@ -3489,6 +3606,28 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
             reason=result.warnings[0] if result.warnings else None,
         )
     return result
+
+
+@app.post("/api/planning/income-projection", response_model=IncomeProjectionResponse)
+def planning_income_projection(request: IncomeProjectionRequest) -> IncomeProjectionResponse:
+    if request.income_items is not None:
+        income_items = [item.model_dump(mode="json") for item in request.income_items]
+    else:
+        profile_payload = get_financial_profile_payload()
+        raw_items = profile_payload.get("income_items")
+        income_items = raw_items if isinstance(raw_items, list) else []
+
+    payload = project_income_schedule(
+        income_items,
+        start_year=request.start_year or utc_now().year,
+        years=request.years,
+        default_annual_growth_rate=(
+            settings.planner_inflation
+            if request.default_annual_growth_rate is None
+            else float(request.default_annual_growth_rate)
+        ),
+    )
+    return IncomeProjectionResponse(**payload)
 
 
 @app.post("/api/planning/tax-estimate", response_model=TaxEstimateResponse)

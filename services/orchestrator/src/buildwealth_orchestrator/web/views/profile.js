@@ -25,7 +25,7 @@ export function template() {
       <label class="field"><span>No Goals Yet</span><label class="inline-check"><input type="checkbox" id="profile-no-goals" /> Not tracking goals yet</label></label>
     </div>
     <label class="field"><span>Profile Notes</span><textarea id="profile-notes" rows="2" placeholder="Optional context for Copilot."></textarea></label>
-    ${section('Income', 'income', ['Label|text|income-label|Source label', 'Monthly USD|number|income-amount|0', 'Type|select|income-source-type|salary:Salary,bonus:Bonus,business:Business,rental:Rental,other:Other', 'Pre-tax|checkbox|income-pre-tax|'], ['Label', 'Monthly', 'Type', 'Pre-Tax'])}
+    ${section('Income', 'income', ['Label|text|income-label|Source label', 'Monthly USD|number|income-amount|0', 'Type|select|income-source-type|salary:Salary,bonus:Bonus,business:Business,rental:Rental,other:Other', 'Pre-tax|checkbox|income-pre-tax|', 'Growth %/Yr|number|income-growth-rate|Optional', 'Start Date|date|income-start-date|', 'End Date|date|income-end-date|'], ['Label', 'Monthly', 'Type', 'Pre-Tax', 'Growth', 'Start', 'End'])}
     ${section('Expenses', 'expense', ['Label|text|expense-label|Expense label', 'Monthly USD|number|expense-amount|0', 'Category|text|expense-category|Category', 'Fixed|checkbox|expense-fixed|checked'], ['Label', 'Monthly', 'Category', 'Fixed'])}
     ${section('Debt', 'debt', ['Label|text|debt-label|Debt label', 'Balance USD|number|debt-balance|0', 'Rate %|number|debt-rate|0', 'Min Payment|number|debt-min-payment|0'], ['Label', 'Balance', 'Rate', 'Min Payment'])}
     ${section('Goals', 'goal', ['Label|text|goal-label|Goal label', 'Target USD|number|goal-amount|0', 'Target Date|date|goal-date|', 'Priority|select|goal-priority|high:High,medium:Medium,low:Low'], ['Label', 'Target', 'Target Date', 'Priority'])}`;
@@ -39,7 +39,12 @@ function section(title, key, fields, headers) {
       return `<select id="${id}">${opts}</select>`;
     }
     if (type === 'checkbox') return `<label class="inline-check"><input type="checkbox" id="${id}" ${extra} /> ${label}</label>`;
-    return `<input type="${type}" id="${id}" step="0.01" min="0" placeholder="${extra || label}" />`;
+    if (type === 'number') {
+      const min = id.includes('growth-rate') ? '-100' : '0';
+      const maxAttr = id.includes('growth-rate') ? 'max="100"' : '';
+      return `<input type="number" id="${id}" step="0.01" min="${min}" ${maxAttr} placeholder="${extra || label}" />`;
+    }
+    return `<input type="${type}" id="${id}" placeholder="${extra || label}" />`;
   }).join('');
   const ths = headers.map(h => `<th>${h}</th>`).join('') + '<th>Action</th>';
   return `<h3 class="section-title">${title}</h3><div class="inline-builder">${inputs}<button class="ghost small" id="add-${key}" type="button">Add</button></div><div class="table-wrap"><table><thead><tr>${ths}</tr></thead><tbody id="profile-${key}-body"></tbody></table></div>`;
@@ -47,19 +52,45 @@ function section(title, key, fields, headers) {
 
 function ensure() { if (!state.financialProfile || typeof state.financialProfile !== 'object') state.financialProfile = emptyFinancialProfile(); }
 
+function fmtPercentOrDefault(value, defaultLabel = 'Default') {
+  if (typeof value !== 'number' || Number.isNaN(value)) return defaultLabel;
+  return `${(value * 100).toFixed(2)}%`;
+}
+
+function fmtDateOnly(value) {
+  if (!value) return '-';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString();
+}
+
 function renderTables() {
   ensure();
   const p = state.financialProfile;
-  tableRows('profile-income-body', p.income_items, i => [i.label, fmtCurrency(i.monthly_amount_usd), i.source_type, i.is_pre_tax ? 'Yes' : 'No'], 'income_items');
-  tableRows('profile-expense-body', p.expense_items, i => [i.label, fmtCurrency(i.monthly_amount_usd), i.category, i.is_fixed ? 'Yes' : 'No'], 'expense_items');
-  tableRows('profile-debt-body', p.debt_items, i => [i.label, fmtCurrency(i.balance_usd), typeof i.interest_rate === 'number' ? `${(i.interest_rate * 100).toFixed(2)}%` : '-', fmtCurrency(i.minimum_payment_usd)], 'debt_items');
-  tableRows('profile-goal-body', p.goal_items, i => [i.label, fmtCurrency(i.target_amount_usd), i.target_date ? fmtDate(i.target_date) : '-', i.priority], 'goal_items');
+  tableRows(
+    'profile-income-body',
+    p.income_items,
+    i => [
+      i.label,
+      fmtCurrency(i.monthly_amount_usd),
+      i.source_type,
+      i.is_pre_tax ? 'Yes' : 'No',
+      fmtPercentOrDefault(i.annual_growth_rate),
+      fmtDateOnly(i.start_date),
+      fmtDateOnly(i.end_date),
+    ],
+    'income_items',
+    8,
+  );
+  tableRows('profile-expense-body', p.expense_items, i => [i.label, fmtCurrency(i.monthly_amount_usd), i.category, i.is_fixed ? 'Yes' : 'No'], 'expense_items', 5);
+  tableRows('profile-debt-body', p.debt_items, i => [i.label, fmtCurrency(i.balance_usd), typeof i.interest_rate === 'number' ? `${(i.interest_rate * 100).toFixed(2)}%` : '-', fmtCurrency(i.minimum_payment_usd)], 'debt_items', 5);
+  tableRows('profile-goal-body', p.goal_items, i => [i.label, fmtCurrency(i.target_amount_usd), i.target_date ? fmtDate(i.target_date) : '-', i.priority], 'goal_items', 5);
 }
 
-function tableRows(tbodyId, items, cellsFn, stateKey) {
+function tableRows(tbodyId, items, cellsFn, stateKey, columnCount = 5) {
   const tbody = byId(tbodyId);
   tbody.innerHTML = '';
-  if (!Array.isArray(items) || !items.length) { tbody.innerHTML = `<tr><td colspan="5">No items yet.</td></tr>`; return; }
+  if (!Array.isArray(items) || !items.length) { tbody.innerHTML = `<tr><td colspan="${columnCount}">No items yet.</td></tr>`; return; }
   for (const item of items) {
     const tr = document.createElement('tr');
     for (const cell of cellsFn(item)) { const td = document.createElement('td'); td.textContent = cell || '-'; tr.appendChild(td); }
@@ -139,10 +170,40 @@ export function init() {
   byId('save-profile').addEventListener('click', save);
   byId('add-income').addEventListener('click', () => addItem('income_items', () => {
     const label = byId('income-label').value.trim(); if (!label) { writeLog('Income label required.', null, true); return null; }
-    let amt; try { amt = parseOptionalNumber(byId('income-amount').value, 'Amount'); } catch (e) { writeLog(e.message, null, true); return null; }
+    let amt; let growthRate; try { amt = parseOptionalNumber(byId('income-amount').value, 'Amount'); growthRate = parseOptionalNumber(byId('income-growth-rate').value, 'Growth rate'); } catch (e) { writeLog(e.message, null, true); return null; }
     if (amt === null || amt < 0) { writeLog('Amount must be >= 0.', null, true); return null; }
-    const item = { id: uid('income'), label, monthly_amount_usd: amt, source_type: byId('income-source-type').value || 'salary', is_pre_tax: byId('income-pre-tax').checked };
-    byId('income-label').value = ''; byId('income-amount').value = ''; byId('income-pre-tax').checked = false; return item;
+    if (growthRate !== null && (growthRate < -100 || growthRate > 100)) { writeLog('Growth rate must be between -100 and 100.', null, true); return null; }
+
+    const startRaw = byId('income-start-date').value.trim();
+    const endRaw = byId('income-end-date').value.trim();
+    const startDate = startRaw ? new Date(`${startRaw}T00:00:00.000Z`) : null;
+    const endDate = endRaw ? new Date(`${endRaw}T00:00:00.000Z`) : null;
+    if ((startDate && Number.isNaN(startDate.getTime())) || (endDate && Number.isNaN(endDate.getTime()))) {
+      writeLog('Income start/end dates must be valid dates.', null, true);
+      return null;
+    }
+    if (startDate && endDate && startDate > endDate) {
+      writeLog('Income start date must be before or equal to end date.', null, true);
+      return null;
+    }
+
+    const item = {
+      id: uid('income'),
+      label,
+      monthly_amount_usd: amt,
+      source_type: byId('income-source-type').value || 'salary',
+      is_pre_tax: byId('income-pre-tax').checked,
+      annual_growth_rate: growthRate === null ? null : growthRate / 100,
+      start_date: startDate ? startDate.toISOString() : null,
+      end_date: endDate ? endDate.toISOString() : null,
+    };
+    byId('income-label').value = '';
+    byId('income-amount').value = '';
+    byId('income-pre-tax').checked = false;
+    byId('income-growth-rate').value = '';
+    byId('income-start-date').value = '';
+    byId('income-end-date').value = '';
+    return item;
   }));
   byId('add-expense').addEventListener('click', () => addItem('expense_items', () => {
     const label = byId('expense-label').value.trim(); if (!label) { writeLog('Expense label required.', null, true); return null; }

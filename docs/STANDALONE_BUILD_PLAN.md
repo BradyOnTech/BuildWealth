@@ -119,6 +119,18 @@ These decisions refine the build plan based on the current repository and upstre
 - Added compatibility alias on financial profile store (`load()`) for existing API handlers
 - Added/updated focused tests in `test_financial_health.py` for physical-asset net-worth inclusion and response counts
 
+### 2026-04-11 (Completed - Income Modeling Foundation)
+- Added income projection service (`income_projection.py`) with growth-rate and active-date window handling for profile income items
+- Added planning endpoint `POST /api/planning/income-projection` to generate year-by-year income curves from either provided inputs or saved profile data
+- Planning scenario route now includes projected first-year income in Ignidash baseline assumptions and attaches projection payload in sidecar metadata
+- Plan scenario-diff flows now generate and pass base/candidate income projections so planning responses include model context for income assumptions
+- Added `income_projection` field on planning responses and focused coverage in `test_income_projection.py` and `test_planning_sidecar.py`
+
+### 2026-04-11 (Completed - Income Modeling UI Wiring)
+- Profile UI income builder now captures `annual_growth_rate`, `start_date`, and `end_date` for each income row
+- Profile income table now renders growth and active-window dates so modeled assumptions are visible after save/reload
+- Plan scenario-diff output now surfaces base/candidate income projection summaries (first-year, final-year, annualized growth) alongside scenario deltas
+
 ### 2026-04-09 (Completed)
 - Phase 1.1: BuildWealth-native TWR calculator integrated into local portfolio store
 - Phase 1.2: XIRR money-weighted return added and surfaced in portfolio snapshot/UI
@@ -224,7 +236,7 @@ These decisions refine the build plan based on the current repository and upstre
 | Scenario diff | Built | Basic |
 | Account contribution prioritization | Built (foundation) | ~35% |
 | Tax-aware account modeling | NOT BUILT | 0% |
-| Income modeling with growth rates | NOT BUILT | 0% |
+| Income modeling with growth rates | Built (foundation) | ~40% |
 | Expense modeling with inflation | NOT BUILT | 0% |
 | Debt payoff modeling | NOT BUILT | 0% |
 | Physical assets | Built (foundation) | ~35% |

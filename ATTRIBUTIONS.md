@@ -43,7 +43,11 @@ adapted from the following open source projects:
   `services/orchestrator/src/buildwealth_orchestrator/services/contribution_rules.py`
   (ranked contribution waterfall, shared-limit enforcement, and account-type annual
   limit helper structure adapted from `src/lib/calc/contribution-rules.ts` and
-  `src/lib/schemas/inputs/contribution-form-schema.ts`)
+  `src/lib/schemas/inputs/contribution-form-schema.ts`);
+  `services/orchestrator/src/buildwealth_orchestrator/services/income_projection.py`
+  (income growth and active-timeframe projection structure adapted from
+  `src/lib/calc/incomes.ts` plus related income/timeframe schema helpers in
+  `src/lib/schemas/inputs/{income-form-schema,income-expenses-shared-schemas}.ts`)
 
 ## OpenBB Platform
 

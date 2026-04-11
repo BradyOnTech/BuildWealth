@@ -150,10 +150,12 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
         payload = json.loads(request.content.decode("utf-8"))
         accounts = payload["accounts"]
         assert len(accounts) == 2
+        assert payload["baseline_assumptions"]["annual_income"] == 125000
         assert accounts[0]["account_id"] == "acct-401k"
         assert accounts[0]["account_type"] == "401k"
         assert accounts[0]["tax_treatment"] == "tax_deferred"
         assert accounts[0]["annual_contribution"] == 18000
+        assert payload["metadata"]["income_projection"]["first_year_gross_income_usd"] == 125000
         assert payload["metadata"]["contribution_allocation"]["total_contributions_usd"] == 22000
         return httpx.Response(
             status_code=200,
@@ -237,6 +239,18 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
                     "annual_contribution_usd": 4000,
                 },
             ],
+            income_projection={
+                "start_year": 2026,
+                "years": 30,
+                "default_annual_growth_rate": 0.03,
+                "income_items_count": 1,
+                "first_year_gross_income_usd": 125000,
+                "final_year_gross_income_usd": 280000,
+                "cumulative_gross_income_usd": 5800000,
+                "annualized_income_growth_rate": 0.028,
+                "yearly_points": [],
+                "warnings": [],
+            },
             contribution_allocation={
                 "profile_id": "tax_optimized_high_earner",
                 "base_rule_type": "save",
@@ -253,5 +267,7 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
     )
 
     assert result.engine == "ignidash"
+    assert result.income_projection is not None
+    assert result.income_projection.first_year_gross_income_usd == 125000
     assert result.contribution_allocation is not None
     assert result.contribution_allocation.total_contributions_usd == 22000

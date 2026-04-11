@@ -115,6 +115,7 @@ class IgnidashScenarioService:
         years: int | None = None,
         hsa_extra_contribution_usd: float | None = None,
         accounts: list[dict[str, Any]] | None = None,
+        income_projection: dict[str, Any] | None = None,
         contribution_allocation: dict[str, Any] | None = None,
     ) -> PlanningResponse:
         local_result = self.scenario_engine.run(
@@ -131,6 +132,7 @@ class IgnidashScenarioService:
                     "engine_status": "ok",
                     "fallback_method": None,
                     "warnings": [],
+                    "income_projection": income_projection,
                     "contribution_allocation": contribution_allocation,
                 }
             )
@@ -141,6 +143,7 @@ class IgnidashScenarioService:
             years=years,
             hsa_extra_contribution_usd=hsa_extra_contribution_usd,
             accounts=accounts,
+            income_projection=income_projection,
             contribution_allocation=contribution_allocation,
         )
 
@@ -162,6 +165,7 @@ class IgnidashScenarioService:
                 engine_status=response_payload.engine_status,
                 fallback_method=response_payload.fallback_method,
                 warnings=list(response_payload.warnings),
+                income_projection=income_projection,
                 contribution_allocation=contribution_allocation,
             )
         except SidecarAdapterError as exc:
@@ -171,6 +175,7 @@ class IgnidashScenarioService:
                     "engine_status": "degraded",
                     "fallback_method": "local_scenario_engine_fallback",
                     "warnings": [f"Ignidash scenario sidecar unavailable: {exc}"],
+                    "income_projection": income_projection,
                     "contribution_allocation": contribution_allocation,
                 }
             )
@@ -183,6 +188,7 @@ class IgnidashScenarioService:
         years: int | None,
         hsa_extra_contribution_usd: float | None,
         accounts: list[dict[str, Any]] | None,
+        income_projection: dict[str, Any] | None,
         contribution_allocation: dict[str, Any] | None,
     ) -> IgnidashScenarioRequestV1:
         resolved_years = int(self.scenario_engine.years_to_retirement if years is None else years)
@@ -197,11 +203,15 @@ class IgnidashScenarioService:
             else hsa_extra_contribution_usd
         )
 
+        first_year_income = 0.0
+        if income_projection:
+            first_year_income = float(income_projection.get("first_year_gross_income_usd") or 0.0)
+
         baseline_assumptions = {
             "annual_return_rate": float(self.scenario_engine.baseline_return),
             "annual_inflation_rate": float(self.scenario_engine.inflation),
             "effective_tax_rate": self.default_tax_rate,
-            "annual_income": 0.0,
+            "annual_income": first_year_income,
             "annual_expenses": 0.0,
         }
 
@@ -254,6 +264,8 @@ class IgnidashScenarioService:
             "source": "buildwealth_orchestrator",
             "annual_contribution_usd": resolved_contribution,
         }
+        if income_projection:
+            metadata["income_projection"] = income_projection
         if contribution_allocation:
             metadata["contribution_allocation"] = contribution_allocation
 
