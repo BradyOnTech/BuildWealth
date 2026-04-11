@@ -131,6 +131,14 @@ These decisions refine the build plan based on the current repository and upstre
 - Profile income table now renders growth and active-window dates so modeled assumptions are visible after save/reload
 - Plan scenario-diff output now surfaces base/candidate income projection summaries (first-year, final-year, annualized growth) alongside scenario deltas
 
+### 2026-04-11 (Completed - Expense Modeling Foundation)
+- Added expense projection service (`expense_projection.py`) with inflation-rate and active-date window handling for profile expense items
+- Added planning endpoint `POST /api/planning/expense-projection` to generate year-by-year expense curves from either provided inputs or saved profile data
+- Planning scenario route and plan scenario-diff flows now generate and pass base/candidate expense projections so sidecar baseline assumptions include first-year annual expenses
+- Planning responses now include `expense_projection` metadata, and scenario-diff output surfaces base/candidate expense projection summaries
+- Profile UI expense builder now captures `inflation_rate`, `start_date`, and `end_date` and renders those assumptions after save/reload
+- Added focused coverage in `test_expense_projection.py` and extended sidecar request coverage in `test_planning_sidecar.py`
+
 ### 2026-04-09 (Completed)
 - Phase 1.1: BuildWealth-native TWR calculator integrated into local portfolio store
 - Phase 1.2: XIRR money-weighted return added and surfaced in portfolio snapshot/UI
@@ -237,7 +245,7 @@ These decisions refine the build plan based on the current repository and upstre
 | Account contribution prioritization | Built (foundation) | ~35% |
 | Tax-aware account modeling | NOT BUILT | 0% |
 | Income modeling with growth rates | Built (foundation) | ~40% |
-| Expense modeling with inflation | NOT BUILT | 0% |
+| Expense modeling with inflation | Built (foundation) | ~35% |
 | Debt payoff modeling | NOT BUILT | 0% |
 | Physical assets | Built (foundation) | ~35% |
 | Timeline events on plans | NOT BUILT | 0% |

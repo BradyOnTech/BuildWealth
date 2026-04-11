@@ -192,6 +192,45 @@ class IncomeProjectionResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ExpenseProjectionExpenseInput(BaseModel):
+    id: str = ""
+    label: str
+    monthly_amount_usd: float = Field(ge=0)
+    category: str = "general"
+    is_fixed: bool = True
+    inflation_rate: float | None = Field(default=None, ge=-1, le=1)
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+
+
+class ExpenseProjectionRequest(BaseModel):
+    start_year: int | None = Field(default=None, ge=1900, le=2500)
+    years: int = Field(default=30, ge=1, le=80)
+    default_inflation_rate: float | None = Field(default=None, ge=-1, le=1)
+    expense_items: list[ExpenseProjectionExpenseInput] | None = None
+
+
+class ExpenseProjectionYearPoint(BaseModel):
+    year: int
+    total_expenses_usd: float
+    fixed_expenses_usd: float
+    variable_expenses_usd: float
+    active_expense_items: int
+
+
+class ExpenseProjectionResponse(BaseModel):
+    start_year: int
+    years: int
+    default_inflation_rate: float
+    expense_items_count: int
+    first_year_expenses_usd: float
+    final_year_expenses_usd: float
+    cumulative_expenses_usd: float
+    annualized_expense_growth_rate: float | None = None
+    yearly_points: list[ExpenseProjectionYearPoint] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class ContributionAllocationAccountInput(BaseModel):
     account_id: str
     account_name: str | None = None
@@ -306,6 +345,7 @@ class PlanningResponse(BaseModel):
     fallback_method: str | None = None
     warnings: list[str] = Field(default_factory=list)
     income_projection: IncomeProjectionResponse | None = None
+    expense_projection: ExpenseProjectionResponse | None = None
     contribution_allocation: ContributionAllocationResponse | None = None
 
 

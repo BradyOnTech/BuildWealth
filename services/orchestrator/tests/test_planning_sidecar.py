@@ -151,11 +151,13 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
         accounts = payload["accounts"]
         assert len(accounts) == 2
         assert payload["baseline_assumptions"]["annual_income"] == 125000
+        assert payload["baseline_assumptions"]["annual_expenses"] == 64000
         assert accounts[0]["account_id"] == "acct-401k"
         assert accounts[0]["account_type"] == "401k"
         assert accounts[0]["tax_treatment"] == "tax_deferred"
         assert accounts[0]["annual_contribution"] == 18000
         assert payload["metadata"]["income_projection"]["first_year_gross_income_usd"] == 125000
+        assert payload["metadata"]["expense_projection"]["first_year_expenses_usd"] == 64000
         assert payload["metadata"]["contribution_allocation"]["total_contributions_usd"] == 22000
         return httpx.Response(
             status_code=200,
@@ -251,6 +253,18 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
                 "yearly_points": [],
                 "warnings": [],
             },
+            expense_projection={
+                "start_year": 2026,
+                "years": 30,
+                "default_inflation_rate": 0.03,
+                "expense_items_count": 2,
+                "first_year_expenses_usd": 64000,
+                "final_year_expenses_usd": 130000,
+                "cumulative_expenses_usd": 2400000,
+                "annualized_expense_growth_rate": 0.024,
+                "yearly_points": [],
+                "warnings": [],
+            },
             contribution_allocation={
                 "profile_id": "tax_optimized_high_earner",
                 "base_rule_type": "save",
@@ -269,5 +283,7 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
     assert result.engine == "ignidash"
     assert result.income_projection is not None
     assert result.income_projection.first_year_gross_income_usd == 125000
+    assert result.expense_projection is not None
+    assert result.expense_projection.first_year_expenses_usd == 64000
     assert result.contribution_allocation is not None
     assert result.contribution_allocation.total_contributions_usd == 22000

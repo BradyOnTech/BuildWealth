@@ -26,7 +26,7 @@ export function template() {
     </div>
     <label class="field"><span>Profile Notes</span><textarea id="profile-notes" rows="2" placeholder="Optional context for Copilot."></textarea></label>
     ${section('Income', 'income', ['Label|text|income-label|Source label', 'Monthly USD|number|income-amount|0', 'Type|select|income-source-type|salary:Salary,bonus:Bonus,business:Business,rental:Rental,other:Other', 'Pre-tax|checkbox|income-pre-tax|', 'Growth %/Yr|number|income-growth-rate|Optional', 'Start Date|date|income-start-date|', 'End Date|date|income-end-date|'], ['Label', 'Monthly', 'Type', 'Pre-Tax', 'Growth', 'Start', 'End'])}
-    ${section('Expenses', 'expense', ['Label|text|expense-label|Expense label', 'Monthly USD|number|expense-amount|0', 'Category|text|expense-category|Category', 'Fixed|checkbox|expense-fixed|checked'], ['Label', 'Monthly', 'Category', 'Fixed'])}
+    ${section('Expenses', 'expense', ['Label|text|expense-label|Expense label', 'Monthly USD|number|expense-amount|0', 'Category|text|expense-category|Category', 'Fixed|checkbox|expense-fixed|checked', 'Inflation %/Yr|number|expense-inflation-rate|Optional', 'Start Date|date|expense-start-date|', 'End Date|date|expense-end-date|'], ['Label', 'Monthly', 'Category', 'Fixed', 'Inflation', 'Start', 'End'])}
     ${section('Debt', 'debt', ['Label|text|debt-label|Debt label', 'Balance USD|number|debt-balance|0', 'Rate %|number|debt-rate|0', 'Min Payment|number|debt-min-payment|0'], ['Label', 'Balance', 'Rate', 'Min Payment'])}
     ${section('Goals', 'goal', ['Label|text|goal-label|Goal label', 'Target USD|number|goal-amount|0', 'Target Date|date|goal-date|', 'Priority|select|goal-priority|high:High,medium:Medium,low:Low'], ['Label', 'Target', 'Target Date', 'Priority'])}`;
 }
@@ -40,8 +40,9 @@ function section(title, key, fields, headers) {
     }
     if (type === 'checkbox') return `<label class="inline-check"><input type="checkbox" id="${id}" ${extra} /> ${label}</label>`;
     if (type === 'number') {
-      const min = id.includes('growth-rate') ? '-100' : '0';
-      const maxAttr = id.includes('growth-rate') ? 'max="100"' : '';
+      const isRateField = id.includes('growth-rate') || id.includes('inflation-rate');
+      const min = isRateField ? '-100' : '0';
+      const maxAttr = isRateField ? 'max="100"' : '';
       return `<input type="number" id="${id}" step="0.01" min="${min}" ${maxAttr} placeholder="${extra || label}" />`;
     }
     return `<input type="${type}" id="${id}" placeholder="${extra || label}" />`;
@@ -82,7 +83,21 @@ function renderTables() {
     'income_items',
     8,
   );
-  tableRows('profile-expense-body', p.expense_items, i => [i.label, fmtCurrency(i.monthly_amount_usd), i.category, i.is_fixed ? 'Yes' : 'No'], 'expense_items', 5);
+  tableRows(
+    'profile-expense-body',
+    p.expense_items,
+    i => [
+      i.label,
+      fmtCurrency(i.monthly_amount_usd),
+      i.category,
+      i.is_fixed ? 'Yes' : 'No',
+      fmtPercentOrDefault(i.inflation_rate),
+      fmtDateOnly(i.start_date),
+      fmtDateOnly(i.end_date),
+    ],
+    'expense_items',
+    8,
+  );
   tableRows('profile-debt-body', p.debt_items, i => [i.label, fmtCurrency(i.balance_usd), typeof i.interest_rate === 'number' ? `${(i.interest_rate * 100).toFixed(2)}%` : '-', fmtCurrency(i.minimum_payment_usd)], 'debt_items', 5);
   tableRows('profile-goal-body', p.goal_items, i => [i.label, fmtCurrency(i.target_amount_usd), i.target_date ? fmtDate(i.target_date) : '-', i.priority], 'goal_items', 5);
 }
@@ -207,10 +222,41 @@ export function init() {
   }));
   byId('add-expense').addEventListener('click', () => addItem('expense_items', () => {
     const label = byId('expense-label').value.trim(); if (!label) { writeLog('Expense label required.', null, true); return null; }
-    let amt; try { amt = parseOptionalNumber(byId('expense-amount').value, 'Amount'); } catch (e) { writeLog(e.message, null, true); return null; }
+    let amt; let inflationRate; try { amt = parseOptionalNumber(byId('expense-amount').value, 'Amount'); inflationRate = parseOptionalNumber(byId('expense-inflation-rate').value, 'Inflation rate'); } catch (e) { writeLog(e.message, null, true); return null; }
     if (amt === null || amt < 0) { writeLog('Amount must be >= 0.', null, true); return null; }
-    const item = { id: uid('expense'), label, monthly_amount_usd: amt, category: byId('expense-category').value.trim() || 'general', is_fixed: byId('expense-fixed').checked };
-    byId('expense-label').value = ''; byId('expense-amount').value = ''; byId('expense-category').value = ''; byId('expense-fixed').checked = true; return item;
+    if (inflationRate !== null && (inflationRate < -100 || inflationRate > 100)) { writeLog('Inflation rate must be between -100 and 100.', null, true); return null; }
+
+    const startRaw = byId('expense-start-date').value.trim();
+    const endRaw = byId('expense-end-date').value.trim();
+    const startDate = startRaw ? new Date(`${startRaw}T00:00:00.000Z`) : null;
+    const endDate = endRaw ? new Date(`${endRaw}T00:00:00.000Z`) : null;
+    if ((startDate && Number.isNaN(startDate.getTime())) || (endDate && Number.isNaN(endDate.getTime()))) {
+      writeLog('Expense start/end dates must be valid dates.', null, true);
+      return null;
+    }
+    if (startDate && endDate && startDate > endDate) {
+      writeLog('Expense start date must be before or equal to end date.', null, true);
+      return null;
+    }
+
+    const item = {
+      id: uid('expense'),
+      label,
+      monthly_amount_usd: amt,
+      category: byId('expense-category').value.trim() || 'general',
+      is_fixed: byId('expense-fixed').checked,
+      inflation_rate: inflationRate === null ? null : inflationRate / 100,
+      start_date: startDate ? startDate.toISOString() : null,
+      end_date: endDate ? endDate.toISOString() : null,
+    };
+    byId('expense-label').value = '';
+    byId('expense-amount').value = '';
+    byId('expense-category').value = '';
+    byId('expense-fixed').checked = true;
+    byId('expense-inflation-rate').value = '';
+    byId('expense-start-date').value = '';
+    byId('expense-end-date').value = '';
+    return item;
   }));
   byId('add-debt').addEventListener('click', () => addItem('debt_items', () => {
     const label = byId('debt-label').value.trim(); if (!label) { writeLog('Debt label required.', null, true); return null; }

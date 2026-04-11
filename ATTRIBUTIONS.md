@@ -47,7 +47,11 @@ adapted from the following open source projects:
   `services/orchestrator/src/buildwealth_orchestrator/services/income_projection.py`
   (income growth and active-timeframe projection structure adapted from
   `src/lib/calc/incomes.ts` plus related income/timeframe schema helpers in
-  `src/lib/schemas/inputs/{income-form-schema,income-expenses-shared-schemas}.ts`)
+  `src/lib/schemas/inputs/{income-form-schema,income-expenses-shared-schemas}.ts`);
+  `services/orchestrator/src/buildwealth_orchestrator/services/expense_projection.py`
+  (expense inflation and active-timeframe projection structure adapted from
+  `src/lib/calc/expenses.ts` plus related expense/timeframe schema helpers in
+  `src/lib/schemas/inputs/{expense-form-schema,income-expenses-shared-schemas}.ts`)
 
 ## OpenBB Platform
 
