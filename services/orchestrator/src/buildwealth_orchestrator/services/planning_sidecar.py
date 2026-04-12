@@ -6,7 +6,11 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
-from buildwealth_orchestrator.schemas import PlanningResponse, ScenarioResult
+from buildwealth_orchestrator.schemas import (
+    PlanningResponse,
+    ScenarioResult,
+    ScenarioTimelinePoint,
+)
 from buildwealth_orchestrator.services.contribution_rules import (
     normalize_account_type,
     tax_treatment_for_account_type,
@@ -120,12 +124,24 @@ class IgnidashScenarioService:
         debt_projection: dict[str, Any] | None = None,
         timeline_projection: dict[str, Any] | None = None,
         contribution_allocation: dict[str, Any] | None = None,
+        filing_status: str | None = None,
+        start_year: int | None = None,
+        start_age: int = 35,
     ) -> PlanningResponse:
         local_result = self.scenario_engine.run(
             current_portfolio_value_usd=current_portfolio_value_usd,
             annual_contribution_usd=annual_contribution_usd,
             years=years,
             hsa_extra_contribution_usd=hsa_extra_contribution_usd,
+            accounts=accounts,
+            income_projection=income_projection,
+            expense_projection=expense_projection,
+            debt_projection=debt_projection,
+            timeline_projection=timeline_projection,
+            contribution_allocation=contribution_allocation,
+            filing_status=filing_status,
+            start_year=start_year,
+            start_age=start_age,
         )
 
         if not self.sidecar_enabled or self.sidecar_adapter is None:
@@ -154,6 +170,8 @@ class IgnidashScenarioService:
             debt_projection=debt_projection,
             timeline_projection=timeline_projection,
             contribution_allocation=contribution_allocation,
+            filing_status=filing_status,
+            start_year=start_year,
         )
 
         try:
@@ -208,6 +226,8 @@ class IgnidashScenarioService:
         debt_projection: dict[str, Any] | None,
         timeline_projection: dict[str, Any] | None,
         contribution_allocation: dict[str, Any] | None,
+        filing_status: str | None,
+        start_year: int | None,
     ) -> IgnidashScenarioRequestV1:
         resolved_years = int(self.scenario_engine.years_to_retirement if years is None else years)
         resolved_contribution = float(
@@ -311,11 +331,13 @@ class IgnidashScenarioService:
             metadata["timeline_projection"] = timeline_projection
         if contribution_allocation:
             metadata["contribution_allocation"] = contribution_allocation
+        if filing_status:
+            metadata["filing_status"] = filing_status
 
         return IgnidashScenarioRequestV1(
             request_id=uuid4().hex,
             currency=self.currency,
-            start_year=datetime.now(timezone.utc).year,
+            start_year=start_year or datetime.now(timezone.utc).year,
             horizon_years=resolved_years,
             household={"current_age": 35, "retirement_age": 35 + resolved_years},
             accounts=mapped_accounts,
@@ -409,12 +431,35 @@ class IgnidashScenarioService:
                 merged.append(local)
                 continue
 
+            timeline_points = [
+                ScenarioTimelinePoint(
+                    year=int(item.year),
+                    age=int(item.age),
+                    starting_balance_usd=round(float(item.starting_balance), 2),
+                    ending_balance_usd=round(float(item.ending_balance), 2),
+                    contributions_usd=round(float(item.contributions or 0.0), 2),
+                    income_usd=round(float(item.income or 0.0), 2),
+                    expenses_usd=round(float(item.expenses or 0.0), 2),
+                    taxes_usd=round(float(item.taxes or 0.0), 2),
+                    growth_usd=round(float(item.growth or 0.0), 2),
+                    withdrawals_usd=round(float(item.withdrawals or 0.0), 2),
+                    ending_balance_real_usd=(
+                        round(float(item.ending_balance_real), 2)
+                        if item.ending_balance_real is not None
+                        else None
+                    ),
+                )
+                for item in sidecar.timeline
+            ]
+
             merged.append(
                 ScenarioResult(
                     label=local.label,
                     future_value_usd=round(float(sidecar.summary.ending_balance_nominal), 2),
                     real_value_usd=round(float(sidecar.summary.ending_balance_real), 2),
                     assumptions=dict(local.assumptions),
+                    timeline_points=timeline_points,
+                    account_balance_points=list(local.account_balance_points),
                 )
             )
 

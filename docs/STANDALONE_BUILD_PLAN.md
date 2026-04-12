@@ -155,6 +155,14 @@ These decisions refine the build plan based on the current repository and upstre
 - Plan Workspace UI now includes timeline JSON editing/saving and scenario-diff output now surfaces base/candidate timeline impact summaries
 - Added focused coverage in `test_timeline_projection.py`, `test_plan_workspace.py`, and `test_planning_sidecar.py`
 
+### 2026-04-12 (Completed - Tax-Aware Scenario Engine Foundation)
+- Replaced the local planning fallback projection engine with a year-by-year tax-aware model (`scenario_engine.py`) that consumes income, expense, debt, timeline, and contribution-allocation inputs
+- Added per-scenario yearly cashflow/tax timeline outputs and per-account balance timeline outputs (contribution, withdrawal, growth, ending balance)
+- Implemented tax-aware withdrawal handling (taxable-first, then tax-deferred, then tax-free) plus tax-deferred withdrawal tax reconciliation
+- Planning sidecar local fallback now receives full projection inputs (accounts, income/expense/debt/timeline/contribution context, filing status) so degraded mode behavior remains meaningful
+- Plan and planning endpoints now pass account/filling-status context through to scenario execution and apply timeline first-year portfolio/contribution effects consistently
+- Added focused coverage for tax-aware timeline/account behavior in `test_scenario_engine.py` and extended integration coverage in `test_planning_sidecar.py`
+
 ### 2026-04-09 (Completed)
 - Phase 1.1: BuildWealth-native TWR calculator integrated into local portfolio store
 - Phase 1.2: XIRR money-weighted return added and surfaced in portfolio snapshot/UI
@@ -259,7 +267,7 @@ These decisions refine the build plan based on the current repository and upstre
 | Plan workspace (file-based) | Built | Functional |
 | Scenario diff | Built | Basic |
 | Account contribution prioritization | Built (foundation) | ~35% |
-| Tax-aware account modeling | NOT BUILT | 0% |
+| Tax-aware account modeling | Built (foundation) | ~35% |
 | Income modeling with growth rates | Built (foundation) | ~40% |
 | Expense modeling with inflation | Built (foundation) | ~35% |
 | Debt payoff modeling | Built (foundation) | ~35% |
@@ -275,9 +283,9 @@ These decisions refine the build plan based on the current repository and upstre
 | Multiple assumption sets | NOT BUILT | 0% |
 | Scenario branching (life events) | NOT BUILT | 0% |
 | Net worth charts over time | NOT BUILT | 0% |
-| Per-account balance projections | NOT BUILT | 0% |
+| Per-account balance projections | Built (foundation) | ~30% |
 
-**Honest assessment:** We're at ~20% feature parity with Ghostfolio and ~18% with Ignidash. There is substantial work ahead.
+**Honest assessment:** We're at ~20% feature parity with Ghostfolio and ~22% with Ignidash. There is substantial work ahead.
 
 ---
 

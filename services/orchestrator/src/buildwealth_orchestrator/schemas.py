@@ -421,11 +421,39 @@ class TaxEstimateResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ScenarioTimelinePoint(BaseModel):
+    year: int
+    age: int
+    starting_balance_usd: float
+    ending_balance_usd: float
+    contributions_usd: float = 0.0
+    income_usd: float = 0.0
+    expenses_usd: float = 0.0
+    taxes_usd: float = 0.0
+    growth_usd: float = 0.0
+    withdrawals_usd: float = 0.0
+    ending_balance_real_usd: float | None = None
+
+
+class ScenarioAccountBalancePoint(BaseModel):
+    year: int
+    account_id: str
+    account_type: str
+    tax_treatment: Literal["taxable", "tax_deferred", "tax_free"]
+    starting_balance_usd: float
+    contribution_usd: float = 0.0
+    withdrawal_usd: float = 0.0
+    growth_usd: float = 0.0
+    ending_balance_usd: float
+
+
 class ScenarioResult(BaseModel):
     label: Literal["baseline", "optimistic", "conservative", "hsa_delta"]
     future_value_usd: float
     real_value_usd: float
     assumptions: dict[str, float | int]
+    timeline_points: list[ScenarioTimelinePoint] = Field(default_factory=list)
+    account_balance_points: list[ScenarioAccountBalancePoint] = Field(default_factory=list)
 
 
 class PlanningResponse(BaseModel):

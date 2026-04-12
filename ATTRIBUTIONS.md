@@ -63,7 +63,11 @@ adapted from the following open source projects:
   `services/orchestrator/src/buildwealth_orchestrator/services/plan_workspace.py`
   (plan timeline persistence/validation structure aligned to Ignidash timeline schema
   conventions from `src/lib/schemas/inputs/timeline-form-schema.ts` and
-  `convex/validators/timeline_validator.ts`)
+  `convex/validators/timeline_validator.ts`);
+  `services/orchestrator/src/buildwealth_orchestrator/services/scenario_engine.py`
+  (tax-aware year-by-year scenario projection, account withdrawal ordering, and
+  phase-aware simulation structure adapted from `src/lib/calc/simulation-engine.ts`,
+  `src/lib/calc/portfolio.ts`, `src/lib/calc/account.ts`, and `src/lib/calc/phase.ts`)
 
 ## OpenBB Platform
 

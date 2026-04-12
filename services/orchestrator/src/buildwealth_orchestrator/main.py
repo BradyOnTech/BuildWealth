@@ -992,7 +992,7 @@ async def run_scenarios_for_plan_settings(
         else None
     )
     resolved_portfolio_value = float(current_portfolio_value_usd)
-    sidecar_accounts: list[dict[str, Any]] | None = None
+    sidecar_accounts: list[dict[str, Any]] | None = build_planning_accounts_from_portfolio() or None
     income_projection_payload: dict[str, Any] | None = None
     expense_projection_payload: dict[str, Any] | None = None
     debt_projection_payload: dict[str, Any] | None = None
@@ -1040,6 +1040,9 @@ async def run_scenarios_for_plan_settings(
             )
         contribution_allocation_payload = contribution_allocation.model_dump(mode="json")
 
+    filing_status = str(plan_settings.get("filing_status") or "").strip() or None
+    resolved_start_year = utc_now().year
+
     result = await service.run(
         current_portfolio_value_usd=resolved_portfolio_value,
         annual_contribution_usd=resolved_annual_contribution,
@@ -1051,6 +1054,8 @@ async def run_scenarios_for_plan_settings(
         debt_projection=debt_projection_payload,
         timeline_projection=timeline_projection_payload,
         contribution_allocation=contribution_allocation_payload,
+        filing_status=filing_status,
+        start_year=resolved_start_year,
     )
     if result.engine_status == "degraded":
         await engine_status_tracker.increment_degraded(
@@ -4011,27 +4016,67 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         start_date=utc_now().date().replace(day=1),
     )
     timeline_projection: TimelineImpactProjectionResponse | None = None
+    active_plan_detail: dict[str, Any] | None = None
     active_plan_id = plan_workspace.get_active_plan_id()
     if active_plan_id:
         try:
-            active_detail = plan_workspace.get_plan(active_plan_id)
-            active_timeline = resolve_plan_timeline_payload(active_detail)
+            active_plan_detail = plan_workspace.get_plan(active_plan_id)
+            active_timeline = resolve_plan_timeline_payload(active_plan_detail)
             timeline_projection = build_timeline_projection_for_plan_settings(
                 plan_settings={"years": resolved_years},
                 timeline_payload=active_timeline,
             )
         except PlanNotFoundError:
             timeline_projection = None
+            active_plan_detail = None
+
+    resolved_annual_contribution = (
+        float(request.annual_contribution_usd)
+        if request.annual_contribution_usd is not None
+        else float(scenario_engine.annual_contribution_usd)
+    )
+    resolved_current_value = float(current_value)
+    if timeline_projection is not None:
+        resolved_current_value = max(
+            0.0,
+            resolved_current_value + float(timeline_projection.first_year_portfolio_impact_usd),
+        )
+        resolved_annual_contribution = max(
+            0.0,
+            resolved_annual_contribution + float(timeline_projection.first_year_contribution_impact_usd),
+        )
+
+    contribution_rules_payload: dict[str, Any] | None = None
+    if active_plan_detail is not None:
+        contribution_rules_payload = resolve_plan_contribution_rules(active_plan_detail)
+    contribution_allocation = build_contribution_allocation_for_plan_settings(
+        plan_settings={"annual_contribution_usd": resolved_annual_contribution},
+        contribution_rules_payload=contribution_rules_payload,
+    )
+
+    profile_payload = get_financial_profile_payload()
+    tax_profile = profile_payload.get("tax_profile")
+    filing_status: str | None = None
+    if isinstance(tax_profile, dict):
+        filing_status = str(tax_profile.get("filing_status") or "").strip() or None
 
     result = await ignidash_scenario_service.run(
-        current_portfolio_value_usd=current_value,
-        annual_contribution_usd=request.annual_contribution_usd,
+        current_portfolio_value_usd=resolved_current_value,
+        annual_contribution_usd=resolved_annual_contribution,
         years=request.years,
         hsa_extra_contribution_usd=request.hsa_extra_contribution_usd,
+        accounts=build_planning_accounts_from_portfolio(),
         income_projection=income_projection.model_dump(mode="json") if income_projection is not None else None,
         expense_projection=expense_projection.model_dump(mode="json") if expense_projection is not None else None,
         debt_projection=debt_projection.model_dump(mode="json") if debt_projection is not None else None,
         timeline_projection=timeline_projection.model_dump(mode="json") if timeline_projection is not None else None,
+        contribution_allocation=(
+            contribution_allocation.model_dump(mode="json")
+            if contribution_allocation is not None
+            else None
+        ),
+        filing_status=filing_status,
+        start_year=utc_now().year,
     )
     if result.engine_status == "degraded":
         await engine_status_tracker.increment_degraded(
