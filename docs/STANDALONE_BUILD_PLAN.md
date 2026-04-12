@@ -57,6 +57,14 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-12 (Completed - Unified Context Package Foundation)
+- Added a unified context-package service (`buildwealth_context.py`) to normalize cross-domain symbols and generate compact, token-bounded context summaries for LLM workflows
+- Added `build_buildwealth_context_payload` orchestration in `main.py` to package financial picture (snapshot/history/dashboard/profile), planning context (plan tracking + assumptions/timeline/templates + optional baseline projection), OpenBB research highlights, and open recommendations/decisions into one payload
+- Added new Copilot tool `get_buildwealth_context` for on-demand cross-domain briefings with optional live snapshot, research enrichment, and projection toggles
+- Added `GET /api/copilot/context` endpoint for reusable context-package retrieval outside chat turns
+- Updated Copilot system prompt tool-selection guidance to call `get_buildwealth_context` for broad multi-domain decision support
+- Added focused unit coverage in `test_buildwealth_context.py` for research-symbol derivation and summary construction behavior
+
 ### 2026-04-10 (Completed - Architecture Draft)
 - Added architecture decision update in `docs/DECISIONS.md` selecting targeted sidecar reuse
 - Added `docs/SIDECAR_ADAPTER_ARCHITECTURE.md` blueprint for adapter boundaries, contracts, fallback, and rollout
@@ -626,7 +634,7 @@ These decisions refine the build plan based on the current repository and upstre
 - **Why:** Surface the new capabilities
 
 #### 3.5 Copilot Tool Updates
-- New tools: `get_account_balances`, `compute_tax`, `add_timeline_event`, `compare_withdrawal_strategies`, `get_asset_allocation`, `set_contribution_rules`
+- New tools: `get_account_balances`, `compute_tax`, `add_timeline_event`, `compare_withdrawal_strategies`, `get_asset_allocation`, `set_contribution_rules`, `get_buildwealth_context`
 - Update system prompt with new tool guide entries
 - **Why:** AI access to all new capabilities
 
@@ -635,6 +643,12 @@ These decisions refine the build plan based on the current repository and upstre
 - Document sidecar startup and contract compatibility guarantees
 - Document migration steps and compatibility windows
 - **Why:** The repo should describe the architecture we actually ship
+
+#### 3.7 Unified Context Packaging (BuildWealth Differentiator)
+- Build a single context package that unifies portfolio state, planning outputs, research highlights, and open decisions
+- Expose this package via Copilot tools and API endpoints so LLM workflows can start from grounded, structured context instead of ad-hoc multi-tool fan-out
+- Add token-bounded summary generation plus full structured payload to support both quick chat turns and deeper analysis
+- **Why:** This is the core BuildWealth advantage over standalone Ghostfolio/Ignidash parity work
 
 ---
 
@@ -698,6 +712,7 @@ These decisions refine the build plan based on the current repository and upstre
 5. Phase 1.18 — Broker-Specific CSV Templates
 6. Phase 3.3 — Sidecar Boundary Hardening
 7. Phase 3.6 — Documentation and Ops Cleanup
+8. Phase 3.7 — Unified Context Packaging
 
 ---
 

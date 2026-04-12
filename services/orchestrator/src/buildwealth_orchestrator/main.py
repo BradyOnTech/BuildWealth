@@ -140,6 +140,14 @@ from buildwealth_orchestrator.services.planning_sidecar import IgnidashScenarioS
 from buildwealth_orchestrator.services.engine_status import EngineProbeConfig, EngineStatusTracker
 from buildwealth_orchestrator.services.tax_engine import estimate_federal_tax
 from buildwealth_orchestrator.services.today_dashboard import build_today_dashboard_payload
+from buildwealth_orchestrator.services.buildwealth_context import (
+    DEFAULT_RESEARCH_SYMBOL_LIMIT,
+    DEFAULT_CONTEXT_SUMMARY_MAX_CHARS,
+    build_context_summary,
+    derive_research_symbols,
+    normalize_research_symbols,
+    utc_now_iso as context_utc_now_iso,
+)
 from buildwealth_orchestrator.services.workflow_runner import WorkflowRunner
 from buildwealth_orchestrator.services.plan_workspace import (
     PlanNotFoundError,
@@ -316,6 +324,7 @@ copilot = FinancialCopilot(
         "- Be explicit about assumptions and uncertainty.\n"
         "- Do not provide legal or tax advice; provide analytical insights and scenarios.\n\n"
         "TOOL SELECTION GUIDE:\n"
+        "- For a full cross-domain briefing (portfolio + plan + research + open decisions) → call get_buildwealth_context.\n"
         "- For 'how am I doing?' or 'what is my financial situation?' → call get_financial_health first.\n"
         "- For 'can I afford X?' → call assess_affordability with the monthly cost or purchase price. "
         "It computes the full impact on cash flow, savings rate, and DTI automatically.\n"
@@ -673,6 +682,19 @@ def _coerce_int(value: Any, fallback: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return fallback
+
+
+def _coerce_bool(value: Any, fallback: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return fallback
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    return fallback
 
 
 def _coerce_optional_date(value: Any) -> date | None:
@@ -2645,44 +2667,105 @@ def build_today_dashboard_response() -> TodayDashboardResponse:
     return dashboard
 
 
-async def build_contextual_brief(
+def _extract_numeric_field(payload: dict[str, Any], keys: tuple[str, ...]) -> float | None:
+    for key in keys:
+        if key not in payload:
+            continue
+        try:
+            return float(payload.get(key))
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _compute_price_history_change(records: list[dict[str, Any]]) -> tuple[float | None, float | None, float | None]:
+    closes: list[float] = []
+    for row in records:
+        close_value = _extract_numeric_field(row, ("close", "adj_close", "last", "price"))
+        if close_value is not None:
+            closes.append(close_value)
+    if len(closes) < 2:
+        return None, None, None
+
+    first_close = closes[0]
+    last_close = closes[-1]
+    if first_close == 0:
+        return first_close, last_close, None
+
+    return first_close, last_close, ((last_close - first_close) / first_close) * 100.0
+
+
+def _resolve_context_plan_detail(plan_id: str | None) -> tuple[dict[str, Any] | None, str | None]:
+    if plan_id:
+        detail = plan_workspace.get_plan(plan_id)
+        return detail, str(detail.get("id") or plan_id)
+
+    detail = resolve_active_plan_detail()
+    if not isinstance(detail, dict):
+        return None, None
+    return detail, str(detail.get("id") or "") or None
+
+
+async def build_buildwealth_context_payload(
+    *,
     use_live_snapshot: bool = False,
     plan_id: str | None = None,
-) -> str:
-    snapshot_payload: dict[str, object]
+    include_research: bool = True,
+    research_symbols: list[str] | None = None,
+    research_period: str = "6mo",
+    research_interval: str = "1d",
+    include_plan_projection: bool = True,
+    max_recommendations: int = 10,
+    max_plan_decisions: int = 8,
+    summary_max_chars: int = DEFAULT_CONTEXT_SUMMARY_MAX_CHARS,
+    research_symbol_limit: int = DEFAULT_RESEARCH_SYMBOL_LIMIT,
+) -> dict[str, Any]:
+    warnings: list[str] = []
+    resolved_snapshot: PortfolioSnapshot | None = None
+
+    snapshot_summary_payload: dict[str, Any]
     try:
         if use_live_snapshot:
-            snapshot_payload = summarize_snapshot(await build_live_snapshot())
+            resolved_snapshot = await build_live_snapshot()
         else:
-            snapshot_payload = summarize_snapshot(snapshot_store.latest())
+            resolved_snapshot = snapshot_store.latest()
+        snapshot_summary_payload = summarize_snapshot(resolved_snapshot)
     except FileNotFoundError:
-        snapshot_payload = {"note": "No local snapshot yet. Run sync or ask tool to fetch live snapshot."}
+        snapshot_summary_payload = {"note": "No local snapshot yet. Run sync or fetch live snapshot."}
     except Exception as exc:
-        snapshot_payload = {"note": f"Snapshot context unavailable: {exc}"}
+        snapshot_summary_payload = {"note": f"Snapshot context unavailable: {exc}"}
+        warnings.append(str(snapshot_summary_payload["note"]))
 
     try:
-        snapshot_history_payload = build_snapshot_history_payload(limit=14).model_dump(mode="json")
+        snapshot_history_payload = build_snapshot_history_payload(limit=30).model_dump(mode="json")
     except Exception as exc:
         snapshot_history_payload = {"note": f"Snapshot history context unavailable: {exc}"}
+        warnings.append(str(snapshot_history_payload["note"]))
 
     try:
         today_dashboard_payload = build_today_dashboard_response().model_dump(mode="json")
     except Exception as exc:
         today_dashboard_payload = {"note": f"Today dashboard context unavailable: {exc}"}
+        warnings.append(str(today_dashboard_payload["note"]))
 
     try:
-        profile_payload = FinancialProfileResponse(**get_financial_profile_payload()).model_dump(mode="json")
+        financial_profile_payload = FinancialProfileResponse(**get_financial_profile_payload()).model_dump(mode="json")
     except Exception as exc:
-        profile_payload = {"note": f"Financial profile context unavailable: {exc}"}
+        financial_profile_payload = {"note": f"Financial profile context unavailable: {exc}"}
+        warnings.append(str(financial_profile_payload["note"]))
 
     try:
         onboarding_payload = build_onboarding_status_response().model_dump(mode="json")
     except Exception as exc:
         onboarding_payload = {"note": f"Onboarding context unavailable: {exc}"}
+        warnings.append(str(onboarding_payload["note"]))
 
+    recommendation_limit = max(1, min(_coerce_int(max_recommendations, 10), 50))
+    recommendations_payload: dict[str, Any]
+    recommendation_rows: list[dict[str, Any]]
     try:
-        recommendation_rows = _recommendation_list(limit=20, status="proposed")
-        recommendation_payload = {
+        recommendation_rows = _recommendation_list(limit=recommendation_limit, status="proposed")
+        recommendations_payload = {
             "open_count": len(recommendation_rows),
             "high_priority_count": len(
                 [
@@ -2691,31 +2774,211 @@ async def build_contextual_brief(
                     if str(row.get("priority", "")).strip().lower() == "high"
                 ]
             ),
-            "items": recommendation_rows[:8],
+            "items": recommendation_rows,
         }
     except Exception as exc:
-        recommendation_payload = {"note": f"Recommendation context unavailable: {exc}"}
+        recommendation_rows = []
+        recommendations_payload = {"note": f"Recommendation context unavailable: {exc}", "items": []}
+        warnings.append(str(recommendations_payload["note"]))
+
+    resolved_plan_detail: dict[str, Any] | None = None
+    resolved_plan_id: str | None = None
+    plan_context_payload: dict[str, Any] = {"note": "No active plan is configured."}
+    plan_assumption_sets_payload: dict[str, Any] = {}
+    plan_timeline_payload: dict[str, Any] = {}
+    plan_branch_templates_payload: dict[str, Any] = {}
+    plan_tracking_payload: dict[str, Any] = {}
+    plan_decisions_payload: list[dict[str, Any]] = []
+    baseline_projection_payload: dict[str, Any] | None = None
 
     try:
-        plan_payload = plan_workspace.get_context_payload(plan_id=plan_id)
+        resolved_plan_detail, resolved_plan_id = _resolve_context_plan_detail(plan_id)
     except PlanNotFoundError as exc:
-        plan_payload = {"note": str(exc)}
+        warnings.append(str(exc))
     except Exception as exc:
-        plan_payload = {"note": f"Plan context unavailable: {exc}"}
+        warnings.append(f"Plan resolution failed: {exc}")
 
-    sync_payload = get_sync_status().model_dump(mode="json")
+    if isinstance(resolved_plan_detail, dict) and resolved_plan_id:
+        try:
+            plan_context_payload = plan_workspace.get_context_payload(plan_id=resolved_plan_id)
+        except Exception as exc:
+            plan_context_payload = {"note": f"Plan context unavailable: {exc}"}
+            warnings.append(str(plan_context_payload["note"]))
 
-    context = {
+        try:
+            plan_assumption_sets_payload = plan_workspace.get_plan_assumption_sets(resolved_plan_id)
+            plan_timeline_payload = plan_workspace.get_plan_timeline(resolved_plan_id)
+            plan_branch_templates_payload = plan_workspace.get_plan_branch_templates(resolved_plan_id)
+        except Exception as exc:
+            warnings.append(f"Plan model payload unavailable: {exc}")
+
+        planner_defaults = {
+            "annual_contribution_usd": settings.planner_annual_contribution_usd,
+            "expected_return_baseline": settings.planner_expected_return_baseline,
+            "hsa_extra_contribution_usd": settings.planner_hsa_delta_default,
+        }
+        try:
+            plan_settings = PlanSettings(**resolved_plan_detail.get("settings", {}))
+            tracking_response = compute_plan_tracking(
+                plan_id=resolved_plan_id,
+                plan_title=str(resolved_plan_detail.get("title") or ""),
+                plan_settings=plan_settings,
+                planner_defaults=planner_defaults,
+                snapshots=snapshot_store.recent(limit=90),
+                transactions=portfolio_store.list_transactions(limit=10_000),
+            )
+            plan_tracking_payload = tracking_response.model_dump(mode="json")
+        except Exception as exc:
+            plan_tracking_payload = {"note": f"Plan tracking context unavailable: {exc}"}
+            warnings.append(str(plan_tracking_payload["note"]))
+
+        decisions_limit = max(1, min(_coerce_int(max_plan_decisions, 8), 30))
+        raw_decisions = resolved_plan_detail.get("decisions")
+        if isinstance(raw_decisions, list):
+            for item in raw_decisions[:decisions_limit]:
+                if not isinstance(item, dict):
+                    continue
+                plan_decisions_payload.append(
+                    {
+                        "id": item.get("id"),
+                        "status": item.get("status"),
+                        "summary": item.get("summary"),
+                        "rationale": item.get("rationale"),
+                        "created_at": item.get("created_at"),
+                    }
+                )
+
+        if include_plan_projection and resolved_snapshot is not None:
+            try:
+                base_settings_raw = resolved_plan_detail.get("settings", {})
+                if not isinstance(base_settings_raw, dict):
+                    base_settings_raw = {}
+                assumption_sets_payload = resolve_plan_assumption_sets(resolved_plan_detail)
+                projection_settings, active_assumption_set = apply_assumption_set_to_settings(
+                    plan_settings=base_settings_raw,
+                    assumption_sets_payload=assumption_sets_payload,
+                )
+                timeline_payload = resolve_plan_timeline_payload(resolved_plan_detail)
+                timeline_retirement_age = resolve_timeline_retirement_age(timeline_payload)
+                timeline_withdrawal_strategy = resolve_timeline_withdrawal_strategy(timeline_payload)
+                income_projection = build_income_projection_for_plan_settings(projection_settings)
+                expense_projection = build_expense_projection_for_plan_settings(projection_settings)
+                debt_projection = build_debt_projection_for_plan_settings(projection_settings)
+                timeline_projection = build_timeline_projection_for_plan_settings(
+                    plan_settings=projection_settings,
+                    timeline_payload=timeline_payload,
+                )
+                contribution_allocation = build_contribution_allocation_for_plan_settings(
+                    plan_settings=projection_settings,
+                )
+                social_security_projection = build_social_security_projection_for_plan_settings(
+                    plan_settings=projection_settings,
+                    timeline_payload=timeline_payload,
+                    income_projection=income_projection,
+                    start_year=utc_now().year,
+                )
+                rmd_projection = build_rmd_projection_for_plan_settings(
+                    plan_settings=projection_settings,
+                    timeline_payload=timeline_payload,
+                    start_year=utc_now().year,
+                )
+                baseline_projection = await run_scenarios_for_plan_settings(
+                    current_portfolio_value_usd=float(resolved_snapshot.total_value_usd),
+                    plan_settings=projection_settings,
+                    income_projection=income_projection,
+                    expense_projection=expense_projection,
+                    debt_projection=debt_projection,
+                    timeline_projection=timeline_projection,
+                    contribution_allocation=contribution_allocation,
+                    social_security_projection=social_security_projection,
+                    rmd_projection=rmd_projection,
+                    assumption_set=active_assumption_set,
+                    retirement_age=timeline_retirement_age,
+                    timeline_withdrawal_strategy=timeline_withdrawal_strategy,
+                )
+                baseline_projection_payload = baseline_projection.model_dump(mode="json")
+            except Exception as exc:
+                warnings.append(f"Baseline projection context unavailable: {exc}")
+
+    research_period_value = str(research_period or "").strip() or "6mo"
+    research_interval_value = str(research_interval or "").strip() or "1d"
+    requested_symbols = normalize_research_symbols(
+        research_symbols or [],
+        max_symbols=max(0, min(_coerce_int(research_symbol_limit, DEFAULT_RESEARCH_SYMBOL_LIMIT), 20)),
+    )
+    research_symbols_for_context = derive_research_symbols(
+        requested_symbols=requested_symbols,
+        snapshot_summary=snapshot_summary_payload,
+        max_symbols=max(0, min(_coerce_int(research_symbol_limit, DEFAULT_RESEARCH_SYMBOL_LIMIT), 20)),
+    )
+    research_items: list[dict[str, Any]] = []
+    research_warnings: list[str] = []
+
+    if include_research:
+        for symbol in research_symbols_for_context:
+            quote_response = research_service.quote(symbol=symbol)
+            quote_row = quote_response.records[0] if quote_response.records else {}
+            if not isinstance(quote_row, dict):
+                quote_row = {}
+            quote_price = _extract_numeric_field(
+                quote_row,
+                (
+                    "last",
+                    "price",
+                    "close",
+                    "adj_close",
+                    "regular_market_price",
+                    "post_market_price",
+                ),
+            )
+            quote_change_pct = _extract_numeric_field(
+                quote_row,
+                (
+                    "change_percent",
+                    "change_pct",
+                    "percent_change",
+                    "regular_market_change_percent",
+                ),
+            )
+
+            history_response = research_service.price_history(
+                symbol=symbol,
+                period=research_period_value,
+                interval=research_interval_value,
+            )
+            history_records = [row for row in history_response.records if isinstance(row, dict)]
+            first_close, last_close, period_change_pct = _compute_price_history_change(history_records)
+            research_items.append(
+                {
+                    "symbol": symbol,
+                    "quote_available": quote_response.available,
+                    "quote_price": quote_price,
+                    "quote_change_pct": quote_change_pct,
+                    "quote_message": quote_response.message,
+                    "history_available": history_response.available,
+                    "history_message": history_response.message,
+                    "period_label": research_period_value,
+                    "period_first_close": first_close,
+                    "period_last_close": last_close,
+                    "period_change_pct": period_change_pct,
+                }
+            )
+            if not quote_response.available:
+                research_warnings.append(f"{symbol}: quote unavailable ({quote_response.message})")
+            if not history_response.available:
+                research_warnings.append(f"{symbol}: history unavailable ({history_response.message})")
+
+    context_payload: dict[str, Any] = {
+        "generated_at": context_utc_now_iso(),
+        "scope": {
+            "plan_id": resolved_plan_id,
+            "use_live_snapshot": bool(use_live_snapshot),
+            "include_research": bool(include_research),
+            "include_plan_projection": bool(include_plan_projection),
+        },
         "location_state": settings.app_state,
         "currency": settings.app_currency,
-        "sync_status": sync_payload,
-        "today_dashboard": today_dashboard_payload,
-        "financial_profile": profile_payload,
-        "onboarding_status": onboarding_payload,
-        "recommendations": recommendation_payload,
-        "snapshot_summary": snapshot_payload,
-        "snapshot_history": snapshot_history_payload,
-        "plan_context": plan_payload,
+        "warnings": [*warnings, *research_warnings],
         "planning_defaults": {
             "years_to_retirement": settings.planner_years_to_retirement,
             "annual_contribution_usd": settings.planner_annual_contribution_usd,
@@ -2728,8 +2991,66 @@ async def build_contextual_brief(
             "marginal_tax_rate": settings.planner_marginal_tax_rate,
             "hsa_delta_default": settings.planner_hsa_delta_default,
         },
+        "financial_picture": {
+            "sync_status": get_sync_status().model_dump(mode="json"),
+            "snapshot_summary": snapshot_summary_payload,
+            "snapshot_history": snapshot_history_payload,
+            "today_dashboard": today_dashboard_payload,
+            "financial_profile": financial_profile_payload,
+            "onboarding_status": onboarding_payload,
+        },
+        "planning": {
+            "active_plan": (
+                {
+                    "id": resolved_plan_id,
+                    "title": resolved_plan_detail.get("title"),
+                    "description": resolved_plan_detail.get("description"),
+                    "updated_at": resolved_plan_detail.get("updated_at"),
+                    "settings": resolved_plan_detail.get("settings", {}),
+                }
+                if isinstance(resolved_plan_detail, dict) and resolved_plan_id
+                else None
+            ),
+            "plan_context": plan_context_payload,
+            "tracking": plan_tracking_payload,
+            "assumption_sets": plan_assumption_sets_payload,
+            "timeline": plan_timeline_payload,
+            "branch_templates": plan_branch_templates_payload,
+            "baseline_projection": baseline_projection_payload,
+        },
+        "research": {
+            "provider": settings.openbb_provider,
+            "requested_symbols": requested_symbols,
+            "symbols": research_symbols_for_context,
+            "period": research_period_value,
+            "interval": research_interval_value,
+            "items": research_items,
+        },
+        "decisions": {
+            "recommendations": recommendations_payload,
+            "plan_decisions_recent": plan_decisions_payload,
+        },
     }
-    return json.dumps(context, indent=2, default=str)
+    context_payload["summary"] = build_context_summary(
+        context_payload=context_payload,
+        max_chars=summary_max_chars,
+    )
+    return context_payload
+
+
+async def build_contextual_brief(
+    use_live_snapshot: bool = False,
+    plan_id: str | None = None,
+) -> str:
+    payload = await build_buildwealth_context_payload(
+        use_live_snapshot=use_live_snapshot,
+        plan_id=plan_id,
+        include_research=False,
+        include_plan_projection=False,
+        max_recommendations=8,
+        summary_max_chars=1800,
+    )
+    return json.dumps(payload, indent=2, default=str)
 
 
 async def resolve_snapshots_for_workflow(
@@ -2776,6 +3097,48 @@ async def tool_get_snapshot_history(arguments: dict[str, object]) -> dict[str, o
 
 async def tool_get_today_dashboard(_: dict[str, object]) -> dict[str, object]:
     return build_today_dashboard_response().model_dump(mode="json")
+
+
+async def tool_get_buildwealth_context(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id_raw = arguments.get("plan_id")
+    plan_id = str(plan_id_raw).strip() if isinstance(plan_id_raw, str) else ""
+    use_live_snapshot = _coerce_bool(arguments.get("use_live_snapshot"), False)
+    include_research = _coerce_bool(arguments.get("include_research"), True)
+    include_plan_projection = _coerce_bool(arguments.get("include_plan_projection"), True)
+
+    symbol_limit = max(
+        0,
+        min(_coerce_int(arguments.get("research_symbol_limit"), DEFAULT_RESEARCH_SYMBOL_LIMIT), 20),
+    )
+    summary_max_chars = max(
+        300,
+        min(_coerce_int(arguments.get("summary_max_chars"), DEFAULT_CONTEXT_SUMMARY_MAX_CHARS), 12_000),
+    )
+    max_recommendations = max(1, min(_coerce_int(arguments.get("max_recommendations"), 10), 50))
+    max_plan_decisions = max(1, min(_coerce_int(arguments.get("max_plan_decisions"), 8), 30))
+
+    raw_symbols = arguments.get("research_symbols")
+    if isinstance(raw_symbols, list):
+        symbol_inputs = [str(item) for item in raw_symbols]
+    elif isinstance(raw_symbols, str):
+        symbol_inputs = [item.strip() for item in raw_symbols.split(",") if item.strip()]
+    else:
+        symbol_inputs = []
+
+    payload = await build_buildwealth_context_payload(
+        use_live_snapshot=use_live_snapshot,
+        plan_id=(plan_id or None),
+        include_research=include_research,
+        research_symbols=normalize_research_symbols(symbol_inputs, max_symbols=symbol_limit),
+        research_period=str(arguments.get("research_period") or "6mo"),
+        research_interval=str(arguments.get("research_interval") or "1d"),
+        include_plan_projection=include_plan_projection,
+        max_recommendations=max_recommendations,
+        max_plan_decisions=max_plan_decisions,
+        summary_max_chars=summary_max_chars,
+        research_symbol_limit=symbol_limit,
+    )
+    return payload
 
 
 async def tool_get_financial_profile(_: dict[str, object]) -> dict[str, object]:
@@ -3679,6 +4042,31 @@ def configure_copilot_tools() -> None:
         description="Read the daily dashboard summary, checklist, and prioritized recommendations.",
         parameters=empty_schema,
         handler=tool_get_today_dashboard,
+    )
+    copilot.register_tool(
+        name="get_buildwealth_context",
+        description=(
+            "Build a unified context package for LLM planning decisions across portfolio state, "
+            "plan tracking/projections, research highlights, and open recommendations."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                "use_live_snapshot": {"type": "boolean"},
+                "include_research": {"type": "boolean"},
+                "research_symbols": {"type": "array", "items": {"type": "string"}},
+                "research_period": {"type": "string"},
+                "research_interval": {"type": "string"},
+                "research_symbol_limit": {"type": "integer"},
+                "include_plan_projection": {"type": "boolean"},
+                "max_recommendations": {"type": "integer"},
+                "max_plan_decisions": {"type": "integer"},
+                "summary_max_chars": {"type": "integer"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_get_buildwealth_context,
     )
     copilot.register_tool(
         name="get_financial_profile",
@@ -5336,6 +5724,40 @@ async def run_workflow(request: WorkflowRunRequest) -> WorkflowRunResponse:
     else:
         result["recommendations"] = []
     return WorkflowRunResponse(**result)
+
+
+@app.get("/api/copilot/context")
+async def get_copilot_context(
+    use_live_snapshot: bool = False,
+    plan_id: str | None = None,
+    include_research: bool = True,
+    include_plan_projection: bool = True,
+    research_symbols: str | None = None,
+    research_period: str = "6mo",
+    research_interval: str = "1d",
+    research_symbol_limit: int = DEFAULT_RESEARCH_SYMBOL_LIMIT,
+    max_recommendations: int = 10,
+    max_plan_decisions: int = 8,
+    summary_max_chars: int = DEFAULT_CONTEXT_SUMMARY_MAX_CHARS,
+) -> dict[str, Any]:
+    symbols_input = [
+        item.strip()
+        for item in str(research_symbols or "").split(",")
+        if item.strip()
+    ]
+    return await build_buildwealth_context_payload(
+        use_live_snapshot=use_live_snapshot,
+        plan_id=plan_id,
+        include_research=include_research,
+        research_symbols=symbols_input,
+        research_period=research_period,
+        research_interval=research_interval,
+        include_plan_projection=include_plan_projection,
+        max_recommendations=max_recommendations,
+        max_plan_decisions=max_plan_decisions,
+        summary_max_chars=summary_max_chars,
+        research_symbol_limit=research_symbol_limit,
+    )
 
 
 @app.get("/api/copilot/conversations", response_model=list[CopilotConversationSummary])
