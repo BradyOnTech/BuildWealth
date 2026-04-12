@@ -57,6 +57,16 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-12 (Completed - Unified Context UX and Chat Wiring)
+- Extended Copilot chat request contract with `context_options` so conversations can explicitly request richer BuildWealth context (`include_research`, `include_plan_projection`, `research_symbols`)
+- `POST /api/copilot/chat` now builds contextual briefs from request-level context options instead of fixed lightweight defaults
+- Added Copilot view Unified Context panel with:
+  - Toggle for using unified context in chat
+  - Research/projection inclusion toggles and optional research symbol input
+  - `Refresh Context` action backed by `GET /api/copilot/context`
+  - In-UI context summary preview and warning/refresh metadata
+- This closes the workflow loop from standalone context packaging to end-user conversational planning workflows
+
 ### 2026-04-12 (Completed - Unified Context Package Foundation)
 - Added a unified context-package service (`buildwealth_context.py`) to normalize cross-domain symbols and generate compact, token-bounded context summaries for LLM workflows
 - Added `build_buildwealth_context_payload` orchestration in `main.py` to package financial picture (snapshot/history/dashboard/profile), planning context (plan tracking + assumptions/timeline/templates + optional baseline projection), OpenBB research highlights, and open recommendations/decisions into one payload

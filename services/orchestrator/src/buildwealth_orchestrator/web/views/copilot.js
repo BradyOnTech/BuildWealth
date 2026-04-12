@@ -3,6 +3,11 @@ import { state } from '../lib/state.js';
 import { byId, fmtDate, truncate, writeLog } from '../lib/utils.js';
 import { planSelectOptions } from '../lib/components.js';
 
+const DEFAULT_RESEARCH_PERIOD = '6mo';
+const DEFAULT_RESEARCH_INTERVAL = '1d';
+const DEFAULT_RESEARCH_SYMBOL_LIMIT = 5;
+const DEFAULT_SUMMARY_MAX_CHARS = 1800;
+
 export const id = 'copilot';
 export const label = 'Copilot';
 export const icon = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 5h12a1 1 0 011 1v7a1 1 0 01-1 1H8l-4 3V6a1 1 0 011-1z"/><circle cx="8" cy="10" r="0.8" fill="currentColor"/><circle cx="12" cy="10" r="0.8" fill="currentColor"/></svg>';
@@ -20,6 +25,20 @@ export function template() {
         <div id="conversation-list" class="sidebar-list"></div>
       </aside>
       <section class="main-panel">
+        <section class="copilot-context-card">
+          <div class="copilot-context-header">
+            <p class="sidebar-label">Unified Context</p>
+            <button class="ghost small" id="copilot-refresh-context" type="button">Refresh Context</button>
+          </div>
+          <div class="copilot-context-controls">
+            <label class="inline-check"><input type="checkbox" id="copilot-use-unified-context" /> Use unified context in chat</label>
+            <label class="inline-check"><input type="checkbox" id="copilot-include-research-context" /> Include research highlights</label>
+            <label class="inline-check"><input type="checkbox" id="copilot-include-projection-context" /> Include baseline projection</label>
+            <label class="field compact-field"><span>Research Symbols (optional)</span><input id="copilot-research-symbols" type="text" placeholder="AAPL, MSFT, VTI" /></label>
+          </div>
+          <p id="copilot-context-meta" class="hint copilot-context-meta">No context preview loaded yet.</p>
+          <pre id="copilot-context-summary" class="copilot-context-summary empty">Click "Refresh Context" to preview the package sent to Copilot.</pre>
+        </section>
         <div id="chat-messages" class="chat-messages"></div>
         <form id="copilot-form" class="copilot-form">
           <label class="field"><span>Question</span>
@@ -33,6 +52,142 @@ export function template() {
         </form>
       </section>
     </div>`;
+}
+
+function parseSymbolInput(rawValue) {
+  const seen = new Set();
+  const symbols = [];
+  for (const chunk of String(rawValue || '').split(',')) {
+    const symbol = chunk.trim().toUpperCase().replace(/[^A-Z0-9._-]+/g, '');
+    if (!symbol || seen.has(symbol)) continue;
+    seen.add(symbol);
+    symbols.push(symbol);
+    if (symbols.length >= DEFAULT_RESEARCH_SYMBOL_LIMIT) break;
+  }
+  return symbols;
+}
+
+function readContextControlsToState() {
+  state.copilotUseUnifiedContext = byId('copilot-use-unified-context').checked;
+  state.copilotIncludeResearchContext = byId('copilot-include-research-context').checked;
+  state.copilotIncludeProjectionContext = byId('copilot-include-projection-context').checked;
+  state.copilotResearchSymbols = byId('copilot-research-symbols').value || '';
+}
+
+function syncContextControlsFromState() {
+  byId('copilot-use-unified-context').checked = !!state.copilotUseUnifiedContext;
+  byId('copilot-include-research-context').checked = !!state.copilotIncludeResearchContext;
+  byId('copilot-include-projection-context').checked = !!state.copilotIncludeProjectionContext;
+  byId('copilot-research-symbols').value = state.copilotResearchSymbols || '';
+  setContextControlAvailability();
+}
+
+function setContextControlAvailability() {
+  const enabled = byId('copilot-use-unified-context').checked;
+  byId('copilot-include-research-context').disabled = !enabled;
+  byId('copilot-include-projection-context').disabled = !enabled;
+  byId('copilot-research-symbols').disabled = !enabled;
+}
+
+function buildContextOptionsFromState() {
+  const useUnifiedContext = !!state.copilotUseUnifiedContext;
+  const symbols = useUnifiedContext ? parseSymbolInput(state.copilotResearchSymbols) : [];
+  return {
+    include_research: useUnifiedContext && !!state.copilotIncludeResearchContext,
+    include_plan_projection: useUnifiedContext && !!state.copilotIncludeProjectionContext,
+    research_symbols: symbols,
+    research_period: DEFAULT_RESEARCH_PERIOD,
+    research_interval: DEFAULT_RESEARCH_INTERVAL,
+    research_symbol_limit: DEFAULT_RESEARCH_SYMBOL_LIMIT,
+    summary_max_chars: DEFAULT_SUMMARY_MAX_CHARS,
+  };
+}
+
+function renderContextSummary() {
+  const summaryEl = byId('copilot-context-summary');
+  const metaEl = byId('copilot-context-meta');
+  if (state.copilotContextLoading) {
+    metaEl.textContent = 'Refreshing unified context...';
+    summaryEl.classList.remove('empty');
+    summaryEl.textContent = 'Refreshing unified context...';
+    return;
+  }
+
+  if (!state.copilotContextPayload) {
+    metaEl.textContent = 'No context preview loaded yet.';
+    summaryEl.classList.add('empty');
+    summaryEl.textContent = 'Click "Refresh Context" to preview the package sent to Copilot.';
+    return;
+  }
+
+  const payload = state.copilotContextPayload;
+  const warnings = Array.isArray(payload.warnings) ? payload.warnings.length : 0;
+  const updatedAt = state.copilotContextUpdatedAt ? fmtDate(state.copilotContextUpdatedAt) : 'unknown time';
+  metaEl.textContent = `Last refreshed ${updatedAt}${warnings ? ` • ${warnings} warning(s)` : ''}`;
+
+  const summary = String(state.copilotContextSummary || '').trim();
+  if (summary) {
+    summaryEl.classList.remove('empty');
+    summaryEl.textContent = summary;
+  } else {
+    summaryEl.classList.add('empty');
+    summaryEl.textContent = 'Context summary is empty; open Dev Log for full payload details.';
+  }
+}
+
+function setContextBusy(busy) {
+  state.copilotContextLoading = busy;
+  const button = byId('copilot-refresh-context');
+  button.disabled = busy;
+  button.textContent = busy ? 'Refreshing...' : 'Refresh Context';
+  renderContextSummary();
+}
+
+async function refreshContextPreview() {
+  if (state.copilotContextLoading) return;
+  readContextControlsToState();
+  const selectedPlanId = byId('copilot-plan').value || null;
+  state.copilotPlanId = selectedPlanId || '';
+  const useLiveSnapshot = byId('copilot-live-context').checked;
+  const contextOptions = buildContextOptionsFromState();
+  const params = new URLSearchParams();
+  params.set('use_live_snapshot', useLiveSnapshot ? 'true' : 'false');
+  if (selectedPlanId) params.set('plan_id', selectedPlanId);
+  params.set('include_research', contextOptions.include_research ? 'true' : 'false');
+  params.set('include_plan_projection', contextOptions.include_plan_projection ? 'true' : 'false');
+  params.set('research_period', contextOptions.research_period);
+  params.set('research_interval', contextOptions.research_interval);
+  params.set('research_symbol_limit', String(contextOptions.research_symbol_limit));
+  params.set('summary_max_chars', String(contextOptions.summary_max_chars));
+  if (contextOptions.research_symbols.length) {
+    params.set('research_symbols', contextOptions.research_symbols.join(','));
+  }
+
+  setContextBusy(true);
+  writeLog('Refreshing unified context preview...', {
+    plan_id: selectedPlanId,
+    use_live_snapshot: useLiveSnapshot,
+    context_options: contextOptions,
+  });
+  try {
+    const payload = await fetchJson(`/api/copilot/context?${params.toString()}`);
+    state.copilotContextPayload = payload;
+    state.copilotContextSummary = String(payload.summary || '').trim();
+    state.copilotContextUpdatedAt = payload.generated_at || new Date().toISOString();
+    renderContextSummary();
+    writeLog('Unified context refreshed.', {
+      generated_at: payload.generated_at,
+      warnings: Array.isArray(payload.warnings) ? payload.warnings.length : 0,
+    });
+  } catch (error) {
+    writeLog(`Unified context refresh failed: ${error.message}`, null, true);
+    state.copilotContextSummary = '';
+    state.copilotContextPayload = null;
+    state.copilotContextUpdatedAt = null;
+    renderContextSummary();
+  } finally {
+    setContextBusy(false);
+  }
 }
 
 function renderConversationList() {
@@ -128,14 +283,24 @@ async function submit(event) {
   const input = byId('copilot-question');
   const question = input.value.trim();
   if (!question) return;
+  readContextControlsToState();
+  const contextOptions = buildContextOptionsFromState();
+  const useUnifiedContext = !!state.copilotUseUnifiedContext;
+
   state.currentMessages.push({ role: 'user', content: question, created_at: new Date().toISOString(), metadata: {} });
   renderMessages();
   input.value = '';
   const selectedPlanId = byId('copilot-plan').value || null;
   state.copilotPlanId = selectedPlanId || '';
-  const payload = { question, conversation_id: state.currentConversationId, use_live_snapshot: byId('copilot-live-context').checked, plan_id: selectedPlanId };
+  const payload = {
+    question,
+    conversation_id: state.currentConversationId,
+    use_live_snapshot: byId('copilot-live-context').checked,
+    plan_id: selectedPlanId,
+    context_options: contextOptions,
+  };
   setBusy(true);
-  writeLog('Sending Copilot request...', payload);
+  writeLog('Sending Copilot request...', { ...payload, use_unified_context: useUnifiedContext });
   try {
     const result = await fetchJson('/api/copilot/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
     state.currentConversationId = result.conversation_id;
@@ -153,12 +318,35 @@ async function submit(event) {
 
 export function init(params = {}) {
   planSelectOptions('copilot-plan', state.copilotPlanId);
+  syncContextControlsFromState();
+  renderContextSummary();
+
   byId('reload-conversations').addEventListener('click', () => loadConversations(false).catch(e => writeLog(e.message, null, true)));
   byId('new-conversation').addEventListener('click', startNew);
+  byId('copilot-refresh-context').addEventListener('click', () => refreshContextPreview().catch(e => writeLog(e.message, null, true)));
   byId('copilot-form').addEventListener('submit', submit);
-  byId('copilot-plan').addEventListener('change', (e) => { state.copilotPlanId = e.target.value || ''; });
+
+  byId('copilot-plan').addEventListener('change', (e) => {
+    state.copilotPlanId = e.target.value || '';
+  });
+  byId('copilot-use-unified-context').addEventListener('change', () => {
+    readContextControlsToState();
+    setContextControlAvailability();
+  });
+  byId('copilot-include-research-context').addEventListener('change', readContextControlsToState);
+  byId('copilot-include-projection-context').addEventListener('change', readContextControlsToState);
+  byId('copilot-research-symbols').addEventListener('change', readContextControlsToState);
+  byId('copilot-live-context').addEventListener('change', () => {
+    state.copilotContextUpdatedAt = null;
+  });
+
   loadConversations(true);
+  refreshContextPreview().catch(e => writeLog(e.message, null, true));
+
   if (params.dailyReview) {
+    byId('copilot-use-unified-context').checked = true;
+    state.copilotUseUnifiedContext = true;
+    setContextControlAvailability();
     const q = byId('copilot-question');
     q.value = 'Run my daily financial review using current context.\n1) Summarize top portfolio changes and concentration risk.\n2) Highlight the most important recommendation for today with assumptions.\n3) Suggest one workflow template I should run now.';
     q.focus();

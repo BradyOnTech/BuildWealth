@@ -599,6 +599,59 @@ textarea[readonly] { background: #f6f9f1; }
 
 .copilot-form .field { margin-bottom: 0; }
 
+.copilot-context-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #f9fcf5;
+  padding: 0.6rem 0.7rem;
+  margin-bottom: 0.55rem;
+}
+
+.copilot-context-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.copilot-context-header .sidebar-label {
+  margin: 0;
+}
+
+.copilot-context-controls {
+  margin-top: 0.45rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.55rem;
+  align-items: end;
+}
+
+.copilot-context-controls .field {
+  margin-bottom: 0;
+}
+
+.copilot-context-meta {
+  margin: 0.45rem 0 0;
+}
+
+.copilot-context-summary {
+  margin: 0.45rem 0 0;
+  border: 1px solid #d9e1d2;
+  border-radius: var(--radius-sm);
+  background: #f5f8f1;
+  padding: 0.5rem;
+  white-space: pre-wrap;
+  overflow: auto;
+  max-height: 210px;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  font-family: var(--mono);
+}
+
+.copilot-context-summary.empty {
+  color: var(--ink-soft);
+}
+
 .copilot-controls {
   margin-top: 0.5rem;
   display: flex;

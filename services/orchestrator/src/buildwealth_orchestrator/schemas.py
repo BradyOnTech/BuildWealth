@@ -852,11 +852,22 @@ class RecommendationActionResponse(BaseModel):
     message: str
 
 
+class CopilotContextOptions(BaseModel):
+    include_research: bool = False
+    include_plan_projection: bool = False
+    research_symbols: list[str] = Field(default_factory=list)
+    research_period: str = "6mo"
+    research_interval: str = "1d"
+    research_symbol_limit: int = Field(default=5, ge=0, le=20)
+    summary_max_chars: int = Field(default=1800, ge=300, le=12000)
+
+
 class CopilotChatRequest(BaseModel):
     question: str
     conversation_id: str | None = None
     use_live_snapshot: bool = False
     plan_id: str | None = None
+    context_options: CopilotContextOptions = Field(default_factory=CopilotContextOptions)
 
 
 class CopilotToolTrace(BaseModel):

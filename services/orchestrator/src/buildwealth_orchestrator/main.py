@@ -3041,14 +3041,25 @@ async def build_buildwealth_context_payload(
 async def build_contextual_brief(
     use_live_snapshot: bool = False,
     plan_id: str | None = None,
+    include_research: bool = False,
+    include_plan_projection: bool = False,
+    research_symbols: list[str] | None = None,
+    research_period: str = "6mo",
+    research_interval: str = "1d",
+    research_symbol_limit: int = DEFAULT_RESEARCH_SYMBOL_LIMIT,
+    summary_max_chars: int = 1800,
 ) -> str:
     payload = await build_buildwealth_context_payload(
         use_live_snapshot=use_live_snapshot,
         plan_id=plan_id,
-        include_research=False,
-        include_plan_projection=False,
+        include_research=include_research,
+        include_plan_projection=include_plan_projection,
+        research_symbols=research_symbols,
+        research_period=research_period,
+        research_interval=research_interval,
+        research_symbol_limit=research_symbol_limit,
         max_recommendations=8,
-        summary_max_chars=1800,
+        summary_max_chars=summary_max_chars,
     )
     return json.dumps(payload, indent=2, default=str)
 
@@ -5778,9 +5789,21 @@ def get_copilot_conversation(conversation_id: str) -> CopilotConversationRespons
 
 @app.post("/api/copilot/chat", response_model=CopilotChatResponse)
 async def copilot_chat(request: CopilotChatRequest) -> CopilotChatResponse:
+    context_options = request.context_options
+    context_symbols = normalize_research_symbols(
+        context_options.research_symbols,
+        max_symbols=context_options.research_symbol_limit,
+    )
     contextual_brief = await build_contextual_brief(
         use_live_snapshot=request.use_live_snapshot,
         plan_id=request.plan_id,
+        include_research=context_options.include_research,
+        include_plan_projection=context_options.include_plan_projection,
+        research_symbols=context_symbols,
+        research_period=context_options.research_period,
+        research_interval=context_options.research_interval,
+        research_symbol_limit=context_options.research_symbol_limit,
+        summary_max_chars=context_options.summary_max_chars,
     )
     try:
         result = await copilot.chat(
