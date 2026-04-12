@@ -152,12 +152,14 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
         assert len(accounts) == 2
         assert payload["baseline_assumptions"]["annual_income"] == 125000
         assert payload["baseline_assumptions"]["annual_expenses"] == 64000
+        assert payload["baseline_assumptions"]["annual_debt_payments"] == 10000
         assert accounts[0]["account_id"] == "acct-401k"
         assert accounts[0]["account_type"] == "401k"
         assert accounts[0]["tax_treatment"] == "tax_deferred"
         assert accounts[0]["annual_contribution"] == 18000
         assert payload["metadata"]["income_projection"]["first_year_gross_income_usd"] == 125000
         assert payload["metadata"]["expense_projection"]["first_year_expenses_usd"] == 64000
+        assert payload["metadata"]["debt_projection"]["selected_scenario"]["first_year_payments_usd"] == 10000
         assert payload["metadata"]["contribution_allocation"]["total_contributions_usd"] == 22000
         return httpx.Response(
             status_code=200,
@@ -265,6 +267,44 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
                 "yearly_points": [],
                 "warnings": [],
             },
+            debt_projection={
+                "start_date": "2026-01-01",
+                "max_years": 30,
+                "debt_items_count": 1,
+                "strategy": "avalanche",
+                "monthly_accelerated_payment_usd": 0,
+                "minimum_scenario": {
+                    "strategy": "minimum",
+                    "months_to_payoff": 48,
+                    "payoff_date": "2029-12-01",
+                    "paid_off": True,
+                    "remaining_balance_usd": 0,
+                    "total_interest_paid_usd": 2500,
+                    "total_principal_paid_usd": 20000,
+                    "total_paid_usd": 22500,
+                    "first_year_payments_usd": 9000,
+                    "month_points": [],
+                    "debt_summaries": [],
+                    "warnings": [],
+                },
+                "selected_scenario": {
+                    "strategy": "avalanche",
+                    "months_to_payoff": 42,
+                    "payoff_date": "2029-06-01",
+                    "paid_off": True,
+                    "remaining_balance_usd": 0,
+                    "total_interest_paid_usd": 2100,
+                    "total_principal_paid_usd": 20000,
+                    "total_paid_usd": 22100,
+                    "first_year_payments_usd": 10000,
+                    "month_points": [],
+                    "debt_summaries": [],
+                    "warnings": [],
+                },
+                "payoff_months_saved_vs_minimum": 6,
+                "interest_saved_vs_minimum_usd": 400,
+                "warnings": [],
+            },
             contribution_allocation={
                 "profile_id": "tax_optimized_high_earner",
                 "base_rule_type": "save",
@@ -285,5 +325,7 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
     assert result.income_projection.first_year_gross_income_usd == 125000
     assert result.expense_projection is not None
     assert result.expense_projection.first_year_expenses_usd == 64000
+    assert result.debt_projection is not None
+    assert result.debt_projection.selected_scenario.first_year_payments_usd == 10000
     assert result.contribution_allocation is not None
     assert result.contribution_allocation.total_contributions_usd == 22000

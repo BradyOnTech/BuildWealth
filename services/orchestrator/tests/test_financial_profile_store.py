@@ -58,4 +58,5 @@ def test_financial_profile_store_migrates_legacy_payload(tmp_path: Path) -> None
     assert payload["income_items"][0]["annual_growth_rate"] is None
     assert payload["expense_items"][0]["inflation_rate"] is None
     assert payload["debt_items"][0]["payoff_strategy"] == "minimum"
+    assert payload["debt_items"][0]["custom_monthly_payment_usd"] is None
     assert payload["physical_assets"] == []

@@ -97,6 +97,7 @@ class FinancialProfileStore:
         )
         for item in defaults["debt_items"]:
             item.setdefault("payoff_strategy", "minimum")
+            item.setdefault("custom_monthly_payment_usd", None)
 
         defaults["goal_items"] = self._ensure_id(
             [item for item in defaults.get("goal_items", []) if isinstance(item, dict)],

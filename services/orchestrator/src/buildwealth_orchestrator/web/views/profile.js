@@ -27,7 +27,7 @@ export function template() {
     <label class="field"><span>Profile Notes</span><textarea id="profile-notes" rows="2" placeholder="Optional context for Copilot."></textarea></label>
     ${section('Income', 'income', ['Label|text|income-label|Source label', 'Monthly USD|number|income-amount|0', 'Type|select|income-source-type|salary:Salary,bonus:Bonus,business:Business,rental:Rental,other:Other', 'Pre-tax|checkbox|income-pre-tax|', 'Growth %/Yr|number|income-growth-rate|Optional', 'Start Date|date|income-start-date|', 'End Date|date|income-end-date|'], ['Label', 'Monthly', 'Type', 'Pre-Tax', 'Growth', 'Start', 'End'])}
     ${section('Expenses', 'expense', ['Label|text|expense-label|Expense label', 'Monthly USD|number|expense-amount|0', 'Category|text|expense-category|Category', 'Fixed|checkbox|expense-fixed|checked', 'Inflation %/Yr|number|expense-inflation-rate|Optional', 'Start Date|date|expense-start-date|', 'End Date|date|expense-end-date|'], ['Label', 'Monthly', 'Category', 'Fixed', 'Inflation', 'Start', 'End'])}
-    ${section('Debt', 'debt', ['Label|text|debt-label|Debt label', 'Balance USD|number|debt-balance|0', 'Rate %|number|debt-rate|0', 'Min Payment|number|debt-min-payment|0'], ['Label', 'Balance', 'Rate', 'Min Payment'])}
+    ${section('Debt', 'debt', ['Label|text|debt-label|Debt label', 'Balance USD|number|debt-balance|0', 'Rate %|number|debt-rate|0', 'Min Payment|number|debt-min-payment|0', 'Strategy|select|debt-strategy|minimum:Minimum,snowball:Snowball,avalanche:Avalanche,custom:Custom', 'Custom Payment|number|debt-custom-payment|Optional'], ['Label', 'Balance', 'Rate', 'Min Payment', 'Strategy', 'Custom'])}
     ${section('Goals', 'goal', ['Label|text|goal-label|Goal label', 'Target USD|number|goal-amount|0', 'Target Date|date|goal-date|', 'Priority|select|goal-priority|high:High,medium:Medium,low:Low'], ['Label', 'Target', 'Target Date', 'Priority'])}`;
 }
 
@@ -98,7 +98,20 @@ function renderTables() {
     'expense_items',
     8,
   );
-  tableRows('profile-debt-body', p.debt_items, i => [i.label, fmtCurrency(i.balance_usd), typeof i.interest_rate === 'number' ? `${(i.interest_rate * 100).toFixed(2)}%` : '-', fmtCurrency(i.minimum_payment_usd)], 'debt_items', 5);
+  tableRows(
+    'profile-debt-body',
+    p.debt_items,
+    i => [
+      i.label,
+      fmtCurrency(i.balance_usd),
+      typeof i.interest_rate === 'number' ? `${(i.interest_rate * 100).toFixed(2)}%` : '-',
+      fmtCurrency(i.minimum_payment_usd),
+      i.payoff_strategy || 'minimum',
+      fmtCurrency(i.custom_monthly_payment_usd),
+    ],
+    'debt_items',
+    7,
+  );
   tableRows('profile-goal-body', p.goal_items, i => [i.label, fmtCurrency(i.target_amount_usd), i.target_date ? fmtDate(i.target_date) : '-', i.priority], 'goal_items', 5);
 }
 
@@ -260,10 +273,27 @@ export function init() {
   }));
   byId('add-debt').addEventListener('click', () => addItem('debt_items', () => {
     const label = byId('debt-label').value.trim(); if (!label) { writeLog('Debt label required.', null, true); return null; }
-    let bal, rate, min; try { bal = parseOptionalNumber(byId('debt-balance').value, 'Balance'); rate = parseOptionalNumber(byId('debt-rate').value, 'Rate'); min = parseOptionalNumber(byId('debt-min-payment').value, 'Min payment'); } catch (e) { writeLog(e.message, null, true); return null; }
+    let bal, rate, min, custom; try { bal = parseOptionalNumber(byId('debt-balance').value, 'Balance'); rate = parseOptionalNumber(byId('debt-rate').value, 'Rate'); min = parseOptionalNumber(byId('debt-min-payment').value, 'Min payment'); custom = parseOptionalNumber(byId('debt-custom-payment').value, 'Custom payment'); } catch (e) { writeLog(e.message, null, true); return null; }
     if (bal === null || bal < 0) { writeLog('Balance must be >= 0.', null, true); return null; }
-    const item = { id: uid('debt'), label, balance_usd: bal, interest_rate: rate === null ? null : rate / 100, minimum_payment_usd: min };
-    byId('debt-label').value = ''; byId('debt-balance').value = ''; byId('debt-rate').value = ''; byId('debt-min-payment').value = ''; return item;
+    if (min === null || min <= 0) { writeLog('Minimum payment must be > 0.', null, true); return null; }
+    if (custom !== null && custom < 0) { writeLog('Custom payment must be >= 0.', null, true); return null; }
+    const strategy = byId('debt-strategy').value || 'minimum';
+    const item = {
+      id: uid('debt'),
+      label,
+      balance_usd: bal,
+      interest_rate: rate === null ? null : rate / 100,
+      minimum_payment_usd: min,
+      payoff_strategy: strategy,
+      custom_monthly_payment_usd: custom,
+    };
+    byId('debt-label').value = '';
+    byId('debt-balance').value = '';
+    byId('debt-rate').value = '';
+    byId('debt-min-payment').value = '';
+    byId('debt-strategy').value = 'minimum';
+    byId('debt-custom-payment').value = '';
+    return item;
   }));
   byId('add-goal').addEventListener('click', () => addItem('goal_items', () => {
     const label = byId('goal-label').value.trim(); if (!label) { writeLog('Goal label required.', null, true); return null; }

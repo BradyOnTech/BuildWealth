@@ -50,6 +50,8 @@ from buildwealth_orchestrator.schemas import (
     IncomeProjectionResponse,
     ExpenseProjectionRequest,
     ExpenseProjectionResponse,
+    DebtProjectionRequest,
+    DebtProjectionResponse,
     ContributionAllocationRequest,
     ContributionAllocationResponse,
     TaxEstimateRequest,
@@ -110,6 +112,7 @@ from buildwealth_orchestrator.services.contribution_rules import (
 )
 from buildwealth_orchestrator.services.income_projection import project_income_schedule
 from buildwealth_orchestrator.services.expense_projection import project_expense_schedule
+from buildwealth_orchestrator.services.debt_projection import project_debt_payoff
 from buildwealth_orchestrator.services.price_updater import (
     build_snapshot_from_holdings,
     refresh_portfolio,
@@ -648,6 +651,25 @@ def _coerce_int(value: Any, fallback: int) -> int:
         return fallback
 
 
+def _coerce_optional_date(value: Any) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    text = text.replace("Z", "+00:00")
+    try:
+        if "T" in text:
+            return datetime.fromisoformat(text).date()
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
 def build_planning_accounts_from_portfolio() -> list[dict[str, Any]]:
     holdings_payload = portfolio_store.get_holdings()
     account_totals = holdings_payload.get("account_totals", {})
@@ -859,11 +881,52 @@ def build_expense_projection_for_plan_settings(plan_settings: dict[str, Any]) ->
     )
 
 
+def build_debt_projection_from_profile(
+    *,
+    max_years: int,
+    start_date: date | None = None,
+) -> DebtProjectionResponse | None:
+    profile_payload = get_financial_profile_payload()
+    debt_rows = profile_payload.get("debt_items")
+    if not isinstance(debt_rows, list) or not debt_rows:
+        return None
+
+    resolved_years = max(1, min(_coerce_int(max_years, settings.planner_years_to_retirement), 80))
+    resolved_start_date = start_date or utc_now().date().replace(day=1)
+
+    preferred_strategy = "minimum"
+    for debt in debt_rows:
+        if not isinstance(debt, dict):
+            continue
+        strategy = str(debt.get("payoff_strategy") or "minimum").strip().lower()
+        if strategy in {"snowball", "avalanche", "custom"}:
+            preferred_strategy = strategy
+            break
+
+    payload = project_debt_payoff(
+        debt_rows,
+        start_date=resolved_start_date,
+        max_years=resolved_years,
+        strategy=preferred_strategy,  # type: ignore[arg-type]
+        monthly_accelerated_payment_usd=0.0,
+    )
+    return DebtProjectionResponse(**payload)
+
+
+def build_debt_projection_for_plan_settings(plan_settings: dict[str, Any]) -> DebtProjectionResponse | None:
+    years = _coerce_int(plan_settings.get("years"), settings.planner_years_to_retirement)
+    return build_debt_projection_from_profile(
+        max_years=years,
+        start_date=utc_now().date().replace(day=1),
+    )
+
+
 async def run_scenarios_for_plan_settings(
     current_portfolio_value_usd: float,
     plan_settings: dict[str, Any],
     income_projection: IncomeProjectionResponse | None = None,
     expense_projection: ExpenseProjectionResponse | None = None,
+    debt_projection: DebtProjectionResponse | None = None,
     contribution_allocation: ContributionAllocationResponse | None = None,
 ) -> PlanningResponse:
     validate_plan_return_relationships(plan_settings)
@@ -880,6 +943,7 @@ async def run_scenarios_for_plan_settings(
     sidecar_accounts: list[dict[str, Any]] | None = None
     income_projection_payload: dict[str, Any] | None = None
     expense_projection_payload: dict[str, Any] | None = None
+    debt_projection_payload: dict[str, Any] | None = None
     contribution_allocation_payload: dict[str, Any] | None = None
 
     if income_projection is not None:
@@ -887,6 +951,9 @@ async def run_scenarios_for_plan_settings(
 
     if expense_projection is not None:
         expense_projection_payload = expense_projection.model_dump(mode="json")
+
+    if debt_projection is not None:
+        debt_projection_payload = debt_projection.model_dump(mode="json")
 
     if contribution_allocation is not None:
         resolved_annual_contribution = float(contribution_allocation.total_contributions_usd)
@@ -911,6 +978,7 @@ async def run_scenarios_for_plan_settings(
         accounts=sidecar_accounts,
         income_projection=income_projection_payload,
         expense_projection=expense_projection_payload,
+        debt_projection=debt_projection_payload,
         contribution_allocation=contribution_allocation_payload,
     )
     if result.engine_status == "degraded":
@@ -1940,6 +2008,39 @@ async def tool_project_expenses(arguments: dict[str, object]) -> dict[str, objec
     return ExpenseProjectionResponse(**payload).model_dump(mode="json")
 
 
+async def tool_project_debt_payoff(arguments: dict[str, object]) -> dict[str, object]:
+    max_years_raw = arguments.get("max_years")
+    max_years = _coerce_int(max_years_raw, settings.planner_years_to_retirement)
+    max_years = max(1, min(max_years, 80))
+
+    start_date_value = arguments.get("start_date")
+    start_date = _coerce_optional_date(start_date_value) or utc_now().date().replace(day=1)
+
+    strategy = str(arguments.get("strategy") or "minimum").strip().lower() or "minimum"
+    if strategy not in {"minimum", "snowball", "avalanche", "custom"}:
+        raise ValueError("strategy must be one of: minimum, snowball, avalanche, custom")
+
+    extra_payment = _coerce_float(arguments.get("monthly_accelerated_payment_usd"), 0.0)
+    extra_payment = max(0.0, extra_payment)
+
+    debt_items_raw = arguments.get("debt_items")
+    if isinstance(debt_items_raw, list):
+        debt_items = [item for item in debt_items_raw if isinstance(item, dict)]
+    else:
+        profile_payload = get_financial_profile_payload()
+        profile_items = profile_payload.get("debt_items")
+        debt_items = profile_items if isinstance(profile_items, list) else []
+
+    payload = project_debt_payoff(
+        debt_items,
+        start_date=start_date,
+        max_years=max_years,
+        strategy=strategy,  # type: ignore[arg-type]
+        monthly_accelerated_payment_usd=extra_payment,
+    )
+    return DebtProjectionResponse(**payload).model_dump(mode="json")
+
+
 async def tool_research_options_chain(arguments: dict[str, object]) -> dict[str, object]:
     symbol = str(arguments.get("symbol", "AAPL")).strip().upper()
     result = research_service.options_chain(symbol).model_dump(mode="json")
@@ -2060,6 +2161,8 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
     candidate_income_projection = build_income_projection_for_plan_settings(candidate_settings)
     base_expense_projection = build_expense_projection_for_plan_settings(base_settings)
     candidate_expense_projection = build_expense_projection_for_plan_settings(candidate_settings)
+    base_debt_projection = build_debt_projection_for_plan_settings(base_settings)
+    candidate_debt_projection = build_debt_projection_for_plan_settings(candidate_settings)
     contribution_rules_payload = resolve_plan_contribution_rules(detail)
     base_contribution_allocation = build_contribution_allocation_for_plan_settings(
         plan_settings=base_settings,
@@ -2080,6 +2183,7 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         plan_settings=base_settings,
         income_projection=base_income_projection,
         expense_projection=base_expense_projection,
+        debt_projection=base_debt_projection,
         contribution_allocation=base_contribution_allocation,
     )
     candidate_result = await run_scenarios_for_plan_settings(
@@ -2087,6 +2191,7 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         plan_settings=candidate_settings,
         income_projection=candidate_income_projection,
         expense_projection=candidate_expense_projection,
+        debt_projection=candidate_debt_projection,
         contribution_allocation=candidate_contribution_allocation,
     )
     scenario_deltas, monte_carlo_delta = build_scenario_diff_payload(base_result, candidate_result)
@@ -2479,6 +2584,25 @@ def configure_copilot_tools() -> None:
             "additionalProperties": False,
         },
         handler=tool_project_expenses,
+    )
+    copilot.register_tool(
+        name="project_debt_payoff",
+        description=(
+            "Project debt payoff schedules with minimum/snowball/avalanche/custom strategies. "
+            "If debt_items are omitted, uses the current financial profile."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "start_date": {"type": "string"},
+                "max_years": {"type": "integer"},
+                "strategy": {"type": "string"},
+                "monthly_accelerated_payment_usd": {"type": "number"},
+                "debt_items": {"type": "array", "items": {"type": "object"}},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_project_debt_payoff,
     )
     copilot.register_tool(
         name="research_options_chain",
@@ -3361,6 +3485,8 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
     candidate_income_projection = build_income_projection_for_plan_settings(candidate_settings)
     base_expense_projection = build_expense_projection_for_plan_settings(base_settings)
     candidate_expense_projection = build_expense_projection_for_plan_settings(candidate_settings)
+    base_debt_projection = build_debt_projection_for_plan_settings(base_settings)
+    candidate_debt_projection = build_debt_projection_for_plan_settings(candidate_settings)
     contribution_rules_payload = resolve_plan_contribution_rules(detail)
     base_contribution_allocation = build_contribution_allocation_for_plan_settings(
         plan_settings=base_settings,
@@ -3378,6 +3504,7 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
             plan_settings=base_settings,
             income_projection=base_income_projection,
             expense_projection=base_expense_projection,
+            debt_projection=base_debt_projection,
             contribution_allocation=base_contribution_allocation,
         )
         candidate_result = await run_scenarios_for_plan_settings(
@@ -3385,6 +3512,7 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
             plan_settings=candidate_settings,
             income_projection=candidate_income_projection,
             expense_projection=candidate_expense_projection,
+            debt_projection=candidate_debt_projection,
             contribution_allocation=candidate_contribution_allocation,
         )
     except ValueError as exc:
@@ -3702,6 +3830,10 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         start_year=utc_now().year,
         default_inflation_rate=settings.planner_inflation,
     )
+    debt_projection = build_debt_projection_from_profile(
+        max_years=resolved_years,
+        start_date=utc_now().date().replace(day=1),
+    )
 
     result = await ignidash_scenario_service.run(
         current_portfolio_value_usd=current_value,
@@ -3710,6 +3842,7 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         hsa_extra_contribution_usd=request.hsa_extra_contribution_usd,
         income_projection=income_projection.model_dump(mode="json") if income_projection is not None else None,
         expense_projection=expense_projection.model_dump(mode="json") if expense_projection is not None else None,
+        debt_projection=debt_projection.model_dump(mode="json") if debt_projection is not None else None,
     )
     if result.engine_status == "degraded":
         await engine_status_tracker.increment_degraded(
@@ -3761,6 +3894,25 @@ def planning_expense_projection(request: ExpenseProjectionRequest) -> ExpensePro
         ),
     )
     return ExpenseProjectionResponse(**payload)
+
+
+@app.post("/api/planning/debt-projection", response_model=DebtProjectionResponse)
+def planning_debt_projection(request: DebtProjectionRequest) -> DebtProjectionResponse:
+    if request.debt_items is not None:
+        debt_items = [item.model_dump(mode="json") for item in request.debt_items]
+    else:
+        profile_payload = get_financial_profile_payload()
+        raw_items = profile_payload.get("debt_items")
+        debt_items = raw_items if isinstance(raw_items, list) else []
+
+    payload = project_debt_payoff(
+        debt_items,
+        start_date=request.start_date or utc_now().date().replace(day=1),
+        max_years=request.max_years,
+        strategy=request.strategy,
+        monthly_accelerated_payment_usd=request.monthly_accelerated_payment_usd,
+    )
+    return DebtProjectionResponse(**payload)
 
 
 @app.post("/api/planning/tax-estimate", response_model=TaxEstimateResponse)

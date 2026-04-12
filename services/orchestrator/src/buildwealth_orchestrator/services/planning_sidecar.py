@@ -117,6 +117,7 @@ class IgnidashScenarioService:
         accounts: list[dict[str, Any]] | None = None,
         income_projection: dict[str, Any] | None = None,
         expense_projection: dict[str, Any] | None = None,
+        debt_projection: dict[str, Any] | None = None,
         contribution_allocation: dict[str, Any] | None = None,
     ) -> PlanningResponse:
         local_result = self.scenario_engine.run(
@@ -135,6 +136,7 @@ class IgnidashScenarioService:
                     "warnings": [],
                     "income_projection": income_projection,
                     "expense_projection": expense_projection,
+                    "debt_projection": debt_projection,
                     "contribution_allocation": contribution_allocation,
                 }
             )
@@ -147,6 +149,7 @@ class IgnidashScenarioService:
             accounts=accounts,
             income_projection=income_projection,
             expense_projection=expense_projection,
+            debt_projection=debt_projection,
             contribution_allocation=contribution_allocation,
         )
 
@@ -170,6 +173,7 @@ class IgnidashScenarioService:
                 warnings=list(response_payload.warnings),
                 income_projection=income_projection,
                 expense_projection=expense_projection,
+                debt_projection=debt_projection,
                 contribution_allocation=contribution_allocation,
             )
         except SidecarAdapterError as exc:
@@ -181,6 +185,7 @@ class IgnidashScenarioService:
                     "warnings": [f"Ignidash scenario sidecar unavailable: {exc}"],
                     "income_projection": income_projection,
                     "expense_projection": expense_projection,
+                    "debt_projection": debt_projection,
                     "contribution_allocation": contribution_allocation,
                 }
             )
@@ -195,6 +200,7 @@ class IgnidashScenarioService:
         accounts: list[dict[str, Any]] | None,
         income_projection: dict[str, Any] | None,
         expense_projection: dict[str, Any] | None,
+        debt_projection: dict[str, Any] | None,
         contribution_allocation: dict[str, Any] | None,
     ) -> IgnidashScenarioRequestV1:
         resolved_years = int(self.scenario_engine.years_to_retirement if years is None else years)
@@ -217,12 +223,19 @@ class IgnidashScenarioService:
         if expense_projection:
             first_year_expenses = float(expense_projection.get("first_year_expenses_usd") or 0.0)
 
+        first_year_debt_payments = 0.0
+        if debt_projection:
+            selected = debt_projection.get("selected_scenario")
+            if isinstance(selected, dict):
+                first_year_debt_payments = float(selected.get("first_year_payments_usd") or 0.0)
+
         baseline_assumptions = {
             "annual_return_rate": float(self.scenario_engine.baseline_return),
             "annual_inflation_rate": float(self.scenario_engine.inflation),
             "effective_tax_rate": self.default_tax_rate,
             "annual_income": first_year_income,
             "annual_expenses": first_year_expenses,
+            "annual_debt_payments": first_year_debt_payments,
         }
 
         scenario_overrides = [
@@ -278,6 +291,8 @@ class IgnidashScenarioService:
             metadata["income_projection"] = income_projection
         if expense_projection:
             metadata["expense_projection"] = expense_projection
+        if debt_projection:
+            metadata["debt_projection"] = debt_projection
         if contribution_allocation:
             metadata["contribution_allocation"] = contribution_allocation
 

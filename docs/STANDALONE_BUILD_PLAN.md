@@ -139,6 +139,14 @@ These decisions refine the build plan based on the current repository and upstre
 - Profile UI expense builder now captures `inflation_rate`, `start_date`, and `end_date` and renders those assumptions after save/reload
 - Added focused coverage in `test_expense_projection.py` and extended sidecar request coverage in `test_planning_sidecar.py`
 
+### 2026-04-11 (Completed - Debt Payoff Modeling Foundation)
+- Added debt payoff projection service (`debt_projection.py`) with minimum/snowball/avalanche/custom strategy handling and month-by-month amortization output
+- Added planning endpoint `POST /api/planning/debt-projection` plus Copilot tool `project_debt_payoff` for strategy and payoff comparisons from profile or explicit inputs
+- Planning scenario route and plan scenario-diff flows now generate and pass base/candidate debt projections; sidecar baseline assumptions now include first-year annual debt payments and debt projection metadata
+- Planning responses now include `debt_projection` metadata, and scenario-diff output surfaces base/candidate debt strategy/payoff summaries
+- Profile UI debt builder now captures payoff strategy and optional custom monthly payment per debt item
+- Added focused coverage in `test_debt_projection.py`, extended sidecar payload coverage in `test_planning_sidecar.py`, and profile migration coverage for new debt fields
+
 ### 2026-04-09 (Completed)
 - Phase 1.1: BuildWealth-native TWR calculator integrated into local portfolio store
 - Phase 1.2: XIRR money-weighted return added and surfaced in portfolio snapshot/UI
@@ -246,7 +254,7 @@ These decisions refine the build plan based on the current repository and upstre
 | Tax-aware account modeling | NOT BUILT | 0% |
 | Income modeling with growth rates | Built (foundation) | ~40% |
 | Expense modeling with inflation | Built (foundation) | ~35% |
-| Debt payoff modeling | NOT BUILT | 0% |
+| Debt payoff modeling | Built (foundation) | ~35% |
 | Physical assets | Built (foundation) | ~35% |
 | Timeline events on plans | NOT BUILT | 0% |
 | Federal tax brackets | Built (foundation) | ~35% |

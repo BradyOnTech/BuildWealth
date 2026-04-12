@@ -97,6 +97,16 @@ function formatDiffOutput(diff) {
     lines.push(`- Candidate: ${describeExpenseProjection(candidateExpenses)}`);
   }
 
+  const baseDebt = diff?.base_result?.debt_projection;
+  const candidateDebt = diff?.candidate_result?.debt_projection;
+  lines.push('', 'Debt Projection Context:');
+  if (!baseDebt && !candidateDebt) {
+    lines.push('- Not available.');
+  } else {
+    lines.push(`- Base: ${describeDebtProjection(baseDebt)}`);
+    lines.push(`- Candidate: ${describeDebtProjection(candidateDebt)}`);
+  }
+
   const mc = diff?.monte_carlo_delta || {};
   lines.push('', 'Monte Carlo Delta:', `- P10: ${fmtCurrency(mc.delta_p10_future_value_usd)}`, `- P50: ${fmtCurrency(mc.delta_p50_future_value_usd)}`, `- P90: ${fmtCurrency(mc.delta_p90_future_value_usd)}`);
   lines.push('', 'Raw Payload:', JSON.stringify(diff, null, 2));
@@ -123,6 +133,18 @@ function describeExpenseProjection(projection) {
   const growth = Number(projection.annualized_expense_growth_rate);
   const growthLabel = Number.isFinite(growth) ? `${(growth * 100).toFixed(2)}%` : 'n/a';
   return `${firstYear} -> ${finalYear} (${yearsLabel}, annualized ${growthLabel})`;
+}
+
+function describeDebtProjection(projection) {
+  if (!projection || typeof projection !== 'object') return 'Not available';
+  const selected = projection.selected_scenario || {};
+  const strategy = String(projection.strategy || selected.strategy || 'minimum');
+  const months = Number(selected.months_to_payoff);
+  const remaining = fmtCurrency(selected.remaining_balance_usd);
+  const interest = fmtCurrency(selected.total_interest_paid_usd);
+  const paidOffLabel = selected.paid_off ? 'paid off' : `remaining ${remaining}`;
+  const monthsLabel = Number.isFinite(months) && months > 0 ? `${Math.trunc(months)}m` : 'n/a';
+  return `${strategy} (${monthsLabel}, ${paidOffLabel}, interest ${interest})`;
 }
 
 export function initEditor(refreshPlans) {

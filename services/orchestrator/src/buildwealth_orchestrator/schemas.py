@@ -231,6 +231,72 @@ class ExpenseProjectionResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class DebtProjectionDebtInput(BaseModel):
+    id: str = ""
+    label: str
+    balance_usd: float = Field(ge=0)
+    interest_rate: float | None = Field(default=None, ge=0, le=1)
+    minimum_payment_usd: float = Field(gt=0)
+    payoff_strategy: Literal["minimum", "snowball", "avalanche", "custom"] = "minimum"
+    custom_monthly_payment_usd: float | None = Field(default=None, ge=0)
+
+
+class DebtProjectionRequest(BaseModel):
+    start_date: date | None = None
+    max_years: int = Field(default=40, ge=1, le=80)
+    strategy: Literal["minimum", "snowball", "avalanche", "custom"] = "minimum"
+    monthly_accelerated_payment_usd: float = Field(default=0.0, ge=0)
+    debt_items: list[DebtProjectionDebtInput] | None = None
+
+
+class DebtProjectionMonthPoint(BaseModel):
+    month_index: int
+    as_of: date
+    total_balance_usd: float
+    payment_usd: float
+    interest_paid_usd: float
+    principal_paid_usd: float
+    active_debts: int
+
+
+class DebtProjectionDebtSummary(BaseModel):
+    id: str
+    label: str
+    original_balance_usd: float
+    remaining_balance_usd: float
+    interest_paid_usd: float
+    principal_paid_usd: float
+    paid_off: bool
+
+
+class DebtProjectionScenario(BaseModel):
+    strategy: Literal["minimum", "snowball", "avalanche", "custom"]
+    months_to_payoff: int
+    payoff_date: date
+    paid_off: bool
+    remaining_balance_usd: float
+    total_interest_paid_usd: float
+    total_principal_paid_usd: float
+    total_paid_usd: float
+    first_year_payments_usd: float
+    month_points: list[DebtProjectionMonthPoint] = Field(default_factory=list)
+    debt_summaries: list[DebtProjectionDebtSummary] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class DebtProjectionResponse(BaseModel):
+    start_date: date
+    max_years: int
+    debt_items_count: int
+    strategy: Literal["minimum", "snowball", "avalanche", "custom"]
+    monthly_accelerated_payment_usd: float
+    minimum_scenario: DebtProjectionScenario
+    selected_scenario: DebtProjectionScenario
+    payoff_months_saved_vs_minimum: int | None = None
+    interest_saved_vs_minimum_usd: float
+    warnings: list[str] = Field(default_factory=list)
+
+
 class ContributionAllocationAccountInput(BaseModel):
     account_id: str
     account_name: str | None = None
@@ -346,6 +412,7 @@ class PlanningResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     income_projection: IncomeProjectionResponse | None = None
     expense_projection: ExpenseProjectionResponse | None = None
+    debt_projection: DebtProjectionResponse | None = None
     contribution_allocation: ContributionAllocationResponse | None = None
 
 
@@ -493,6 +560,7 @@ class DebtItem(BaseModel):
     interest_rate: float | None = Field(default=None, ge=0, le=1)
     minimum_payment_usd: float | None = Field(default=None, ge=0)
     payoff_strategy: Literal["minimum", "snowball", "avalanche", "custom"] = "minimum"
+    custom_monthly_payment_usd: float | None = Field(default=None, ge=0)
 
 
 class GoalItem(BaseModel):

@@ -51,7 +51,11 @@ adapted from the following open source projects:
   `services/orchestrator/src/buildwealth_orchestrator/services/expense_projection.py`
   (expense inflation and active-timeframe projection structure adapted from
   `src/lib/calc/expenses.ts` plus related expense/timeframe schema helpers in
-  `src/lib/schemas/inputs/{expense-form-schema,income-expenses-shared-schemas}.ts`)
+  `src/lib/schemas/inputs/{expense-form-schema,income-expenses-shared-schemas}.ts`);
+  `services/orchestrator/src/buildwealth_orchestrator/services/debt_projection.py`
+  (debt payoff strategy projection and amortization flow adapted from
+  `src/lib/calc/debts.ts` plus debt input schema/testing patterns from
+  `src/lib/schemas/inputs/debt-form-schema.ts` and `src/lib/calc/debts.test.ts`)
 
 ## OpenBB Platform
 
