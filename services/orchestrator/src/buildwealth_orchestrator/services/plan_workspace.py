@@ -187,6 +187,13 @@ class PlanWorkspace:
             "retirement": {
                 "target_retirement_age": None,
                 "withdrawal_strategy": None,
+                "social_security_birth_year": None,
+                "social_security_claiming_age": None,
+                "social_security_life_expectancy_age": None,
+                "social_security_fra_monthly_benefit_usd": None,
+                "social_security_estimated_annual_earnings_usd": None,
+                "rmd_birth_year": None,
+                "rmd_start_age": None,
             },
         }
 
@@ -370,12 +377,113 @@ class PlanWorkspace:
 
         withdrawal_strategy = str(retirement_payload.get("withdrawal_strategy") or "").strip() or None
 
+        social_security_birth_year = retirement_payload.get("social_security_birth_year")
+        if social_security_birth_year is None:
+            resolved_social_security_birth_year = None
+        else:
+            try:
+                resolved_social_security_birth_year = int(social_security_birth_year)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("timeline.retirement.social_security_birth_year must be an integer") from exc
+            if resolved_social_security_birth_year < 1900 or resolved_social_security_birth_year > 2500:
+                raise ValueError("timeline.retirement.social_security_birth_year must be between 1900 and 2500")
+
+        social_security_claiming_age = retirement_payload.get("social_security_claiming_age")
+        if social_security_claiming_age is None:
+            resolved_social_security_claiming_age = None
+        else:
+            try:
+                resolved_social_security_claiming_age = int(social_security_claiming_age)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("timeline.retirement.social_security_claiming_age must be an integer") from exc
+            if resolved_social_security_claiming_age < 62 or resolved_social_security_claiming_age > 70:
+                raise ValueError("timeline.retirement.social_security_claiming_age must be between 62 and 70")
+
+        social_security_life_expectancy_age = retirement_payload.get("social_security_life_expectancy_age")
+        if social_security_life_expectancy_age is None:
+            resolved_social_security_life_expectancy_age = None
+        else:
+            try:
+                resolved_social_security_life_expectancy_age = int(social_security_life_expectancy_age)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("timeline.retirement.social_security_life_expectancy_age must be an integer") from exc
+            if (
+                resolved_social_security_life_expectancy_age < 67
+                or resolved_social_security_life_expectancy_age > 120
+            ):
+                raise ValueError(
+                    "timeline.retirement.social_security_life_expectancy_age must be between 67 and 120"
+                )
+
+        social_security_fra_monthly_benefit_usd = retirement_payload.get("social_security_fra_monthly_benefit_usd")
+        if social_security_fra_monthly_benefit_usd is None:
+            resolved_social_security_fra_monthly_benefit_usd = None
+        else:
+            try:
+                resolved_social_security_fra_monthly_benefit_usd = float(social_security_fra_monthly_benefit_usd)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "timeline.retirement.social_security_fra_monthly_benefit_usd must be numeric"
+                ) from exc
+            if resolved_social_security_fra_monthly_benefit_usd < 0:
+                raise ValueError("timeline.retirement.social_security_fra_monthly_benefit_usd must be >= 0")
+
+        social_security_estimated_annual_earnings_usd = retirement_payload.get(
+            "social_security_estimated_annual_earnings_usd"
+        )
+        if social_security_estimated_annual_earnings_usd is None:
+            resolved_social_security_estimated_annual_earnings_usd = None
+        else:
+            try:
+                resolved_social_security_estimated_annual_earnings_usd = float(
+                    social_security_estimated_annual_earnings_usd
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "timeline.retirement.social_security_estimated_annual_earnings_usd must be numeric"
+                ) from exc
+            if resolved_social_security_estimated_annual_earnings_usd < 0:
+                raise ValueError(
+                    "timeline.retirement.social_security_estimated_annual_earnings_usd must be >= 0"
+                )
+
+        rmd_birth_year = retirement_payload.get("rmd_birth_year")
+        if rmd_birth_year is None:
+            resolved_rmd_birth_year = None
+        else:
+            try:
+                resolved_rmd_birth_year = int(rmd_birth_year)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("timeline.retirement.rmd_birth_year must be an integer") from exc
+            if resolved_rmd_birth_year < 1900 or resolved_rmd_birth_year > 2500:
+                raise ValueError("timeline.retirement.rmd_birth_year must be between 1900 and 2500")
+
+        rmd_start_age = retirement_payload.get("rmd_start_age")
+        if rmd_start_age is None:
+            resolved_rmd_start_age = None
+        else:
+            try:
+                resolved_rmd_start_age = int(rmd_start_age)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("timeline.retirement.rmd_start_age must be an integer") from exc
+            if resolved_rmd_start_age < 72 or resolved_rmd_start_age > 120:
+                raise ValueError("timeline.retirement.rmd_start_age must be between 72 and 120")
+
         return {
             "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
             "events": events,
             "retirement": {
                 "target_retirement_age": resolved_retirement_age,
                 "withdrawal_strategy": withdrawal_strategy,
+                "social_security_birth_year": resolved_social_security_birth_year,
+                "social_security_claiming_age": resolved_social_security_claiming_age,
+                "social_security_life_expectancy_age": resolved_social_security_life_expectancy_age,
+                "social_security_fra_monthly_benefit_usd": resolved_social_security_fra_monthly_benefit_usd,
+                "social_security_estimated_annual_earnings_usd": (
+                    resolved_social_security_estimated_annual_earnings_usd
+                ),
+                "rmd_birth_year": resolved_rmd_birth_year,
+                "rmd_start_age": resolved_rmd_start_age,
             },
         }
 

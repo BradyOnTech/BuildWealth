@@ -297,6 +297,111 @@ class DebtProjectionResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class SocialSecurityEarningsPoint(BaseModel):
+    year: int = Field(ge=1900, le=2500)
+    earnings_usd: float = Field(ge=0)
+
+
+class SocialSecurityProjectionRequest(BaseModel):
+    start_year: int | None = Field(default=None, ge=1900, le=2500)
+    years: int = Field(default=30, ge=1, le=80)
+    current_age: int = Field(default=35, ge=0, le=120)
+    birth_year: int | None = Field(default=None, ge=1900, le=2500)
+    claiming_age: int | None = Field(default=None, ge=62, le=70)
+    life_expectancy_age: int | None = Field(default=None, ge=67, le=120)
+    fra_monthly_benefit_usd: float | None = Field(default=None, ge=0)
+    estimated_annual_earnings_usd: float | None = Field(default=None, ge=0)
+    earnings_history: list[SocialSecurityEarningsPoint] | None = None
+    cola_rate: float = Field(default=0.02, ge=-0.2, le=0.2)
+    claim_age_options: list[int] | None = None
+    pia_bend_point_1_usd: float = Field(default=1226.0, gt=0)
+    pia_bend_point_2_usd: float = Field(default=7391.0, gt=0)
+
+
+class SocialSecurityProjectionClaimOption(BaseModel):
+    claiming_age: int
+    monthly_benefit_usd: float
+    annual_benefit_usd: float
+    cumulative_lifetime_benefits_usd: float
+
+
+class SocialSecurityProjectionYearPoint(BaseModel):
+    year: int
+    age: int
+    annual_benefit_usd: float
+    cumulative_benefits_usd: float
+
+
+class SocialSecurityProjectionResponse(BaseModel):
+    start_year: int
+    years: int
+    current_age: int
+    birth_year: int | None = None
+    fra_age: float
+    life_expectancy_age: int
+    selected_claiming_age: int
+    optimal_claiming_age: int
+    fra_monthly_benefit_usd: float
+    estimated_aime_usd: float
+    estimated_pia_monthly_usd: float
+    selected_monthly_benefit_usd: float
+    selected_annual_benefit_usd: float
+    cola_rate: float
+    pia_bend_point_1_usd: float
+    pia_bend_point_2_usd: float
+    claim_options: list[SocialSecurityProjectionClaimOption] = Field(default_factory=list)
+    yearly_points: list[SocialSecurityProjectionYearPoint] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class RmdProjectionAccountInput(BaseModel):
+    account_id: str
+    account_type: str = "ira"
+    balance_usd: float = Field(default=0.0, ge=0)
+
+
+class RmdProjectionRequest(BaseModel):
+    start_year: int | None = Field(default=None, ge=1900, le=2500)
+    years: int = Field(default=30, ge=1, le=80)
+    current_age: int = Field(default=35, ge=0, le=120)
+    birth_year: int | None = Field(default=None, ge=1900, le=2500)
+    expected_return: float = Field(default=0.04, ge=-0.95, le=1.0)
+    start_age_override: int | None = Field(default=None, ge=72, le=120)
+    accounts: list[RmdProjectionAccountInput] | None = None
+
+
+class RmdProjectionAccountDistribution(BaseModel):
+    account_id: str
+    account_type: str
+    starting_balance_usd: float
+    rmd_usd: float
+
+
+class RmdProjectionYearPoint(BaseModel):
+    year: int
+    age: int
+    lookup_age: int | None = None
+    life_expectancy_factor: float | None = None
+    total_eligible_balance_start_usd: float
+    total_rmd_usd: float
+    cumulative_rmds_usd: float
+    account_rmds: list[RmdProjectionAccountDistribution] = Field(default_factory=list)
+
+
+class RmdProjectionResponse(BaseModel):
+    start_year: int
+    years: int
+    current_age: int
+    birth_year: int | None = None
+    rmd_start_age: int
+    expected_return: float
+    eligible_account_count: int
+    total_initial_eligible_balance_usd: float
+    total_projected_rmds_usd: float
+    yearly_points: list[RmdProjectionYearPoint] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class TimelineImpactYearPoint(BaseModel):
     year: int
     income_impact_usd: float
@@ -428,10 +533,12 @@ class ScenarioTimelinePoint(BaseModel):
     ending_balance_usd: float
     contributions_usd: float = 0.0
     income_usd: float = 0.0
+    social_security_income_usd: float = 0.0
     expenses_usd: float = 0.0
     taxes_usd: float = 0.0
     growth_usd: float = 0.0
     withdrawals_usd: float = 0.0
+    rmds_usd: float = 0.0
     ending_balance_real_usd: float | None = None
 
 
@@ -443,6 +550,7 @@ class ScenarioAccountBalancePoint(BaseModel):
     starting_balance_usd: float
     contribution_usd: float = 0.0
     withdrawal_usd: float = 0.0
+    rmd_withdrawal_usd: float = 0.0
     growth_usd: float = 0.0
     ending_balance_usd: float
 
@@ -468,6 +576,8 @@ class PlanningResponse(BaseModel):
     debt_projection: DebtProjectionResponse | None = None
     timeline_projection: TimelineImpactProjectionResponse | None = None
     contribution_allocation: ContributionAllocationResponse | None = None
+    social_security_projection: SocialSecurityProjectionResponse | None = None
+    rmd_projection: RmdProjectionResponse | None = None
 
 
 class ChatRequest(BaseModel):
@@ -811,6 +921,13 @@ class PlanTimelineEvent(BaseModel):
 class PlanTimelineRetirement(BaseModel):
     target_retirement_age: int | None = Field(default=None, ge=18, le=100)
     withdrawal_strategy: str | None = None
+    social_security_birth_year: int | None = Field(default=None, ge=1900, le=2500)
+    social_security_claiming_age: int | None = Field(default=None, ge=62, le=70)
+    social_security_life_expectancy_age: int | None = Field(default=None, ge=67, le=120)
+    social_security_fra_monthly_benefit_usd: float | None = Field(default=None, ge=0)
+    social_security_estimated_annual_earnings_usd: float | None = Field(default=None, ge=0)
+    rmd_birth_year: int | None = Field(default=None, ge=1900, le=2500)
+    rmd_start_age: int | None = Field(default=None, ge=72, le=120)
 
 
 class PlanTimelineResponse(BaseModel):

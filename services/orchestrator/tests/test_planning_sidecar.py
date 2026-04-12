@@ -162,6 +162,8 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
         assert payload["metadata"]["debt_projection"]["selected_scenario"]["first_year_payments_usd"] == 10000
         assert payload["metadata"]["timeline_projection"]["first_year_income_impact_usd"] == 5000
         assert payload["metadata"]["contribution_allocation"]["total_contributions_usd"] == 22000
+        assert payload["metadata"]["social_security_projection"]["selected_annual_benefit_usd"] == 18000
+        assert payload["metadata"]["rmd_projection"]["rmd_start_age"] == 75
         assert payload["metadata"]["filing_status"] == "single"
         assert payload["metadata"]["withdrawal_strategy"] == "4_percent_rule"
         assert payload["metadata"]["retirement_age"] == 60
@@ -334,6 +336,47 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
                 "rule_results": [],
                 "warnings": [],
             },
+            social_security_projection={
+                "start_year": 2026,
+                "years": 30,
+                "current_age": 35,
+                "birth_year": None,
+                "fra_age": 67.0,
+                "life_expectancy_age": 90,
+                "selected_claiming_age": 67,
+                "optimal_claiming_age": 70,
+                "fra_monthly_benefit_usd": 1500,
+                "estimated_aime_usd": 4000,
+                "estimated_pia_monthly_usd": 1500,
+                "selected_monthly_benefit_usd": 1500,
+                "selected_annual_benefit_usd": 18000,
+                "cola_rate": 0.02,
+                "pia_bend_point_1_usd": 1226,
+                "pia_bend_point_2_usd": 7391,
+                "claim_options": [],
+                "yearly_points": [
+                    {
+                        "year": 2026,
+                        "age": 67,
+                        "annual_benefit_usd": 18000,
+                        "cumulative_benefits_usd": 18000,
+                    }
+                ],
+                "warnings": [],
+            },
+            rmd_projection={
+                "start_year": 2026,
+                "years": 30,
+                "current_age": 35,
+                "birth_year": 1960,
+                "rmd_start_age": 75,
+                "expected_return": 0.06,
+                "eligible_account_count": 1,
+                "total_initial_eligible_balance_usd": 120000,
+                "total_projected_rmds_usd": 350000,
+                "yearly_points": [],
+                "warnings": [],
+            },
             filing_status="single",
             withdrawal_strategy="4_percent_rule",
             retirement_age=60,
@@ -351,3 +394,7 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
     assert result.timeline_projection.first_year_income_impact_usd == 5000
     assert result.contribution_allocation is not None
     assert result.contribution_allocation.total_contributions_usd == 22000
+    assert result.social_security_projection is not None
+    assert result.social_security_projection.selected_annual_benefit_usd == 18000
+    assert result.rmd_projection is not None
+    assert result.rmd_projection.rmd_start_age == 75

@@ -124,6 +124,8 @@ class IgnidashScenarioService:
         debt_projection: dict[str, Any] | None = None,
         timeline_projection: dict[str, Any] | None = None,
         contribution_allocation: dict[str, Any] | None = None,
+        social_security_projection: dict[str, Any] | None = None,
+        rmd_projection: dict[str, Any] | None = None,
         filing_status: str | None = None,
         start_year: int | None = None,
         start_age: int = 35,
@@ -141,6 +143,8 @@ class IgnidashScenarioService:
             debt_projection=debt_projection,
             timeline_projection=timeline_projection,
             contribution_allocation=contribution_allocation,
+            social_security_projection=social_security_projection,
+            rmd_projection=rmd_projection,
             filing_status=filing_status,
             start_year=start_year,
             start_age=start_age,
@@ -160,6 +164,8 @@ class IgnidashScenarioService:
                     "debt_projection": debt_projection,
                     "timeline_projection": timeline_projection,
                     "contribution_allocation": contribution_allocation,
+                    "social_security_projection": social_security_projection,
+                    "rmd_projection": rmd_projection,
                 }
             )
 
@@ -174,6 +180,8 @@ class IgnidashScenarioService:
             debt_projection=debt_projection,
             timeline_projection=timeline_projection,
             contribution_allocation=contribution_allocation,
+            social_security_projection=social_security_projection,
+            rmd_projection=rmd_projection,
             filing_status=filing_status,
             start_year=start_year,
             withdrawal_strategy=withdrawal_strategy,
@@ -203,6 +211,8 @@ class IgnidashScenarioService:
                 debt_projection=debt_projection,
                 timeline_projection=timeline_projection,
                 contribution_allocation=contribution_allocation,
+                social_security_projection=social_security_projection,
+                rmd_projection=rmd_projection,
             )
         except SidecarAdapterError as exc:
             return local_result.model_copy(
@@ -216,6 +226,8 @@ class IgnidashScenarioService:
                     "debt_projection": debt_projection,
                     "timeline_projection": timeline_projection,
                     "contribution_allocation": contribution_allocation,
+                    "social_security_projection": social_security_projection,
+                    "rmd_projection": rmd_projection,
                 }
             )
 
@@ -232,6 +244,8 @@ class IgnidashScenarioService:
         debt_projection: dict[str, Any] | None,
         timeline_projection: dict[str, Any] | None,
         contribution_allocation: dict[str, Any] | None,
+        social_security_projection: dict[str, Any] | None,
+        rmd_projection: dict[str, Any] | None,
         filing_status: str | None,
         start_year: int | None,
         withdrawal_strategy: str | None,
@@ -339,6 +353,10 @@ class IgnidashScenarioService:
             metadata["timeline_projection"] = timeline_projection
         if contribution_allocation:
             metadata["contribution_allocation"] = contribution_allocation
+        if social_security_projection:
+            metadata["social_security_projection"] = social_security_projection
+        if rmd_projection:
+            metadata["rmd_projection"] = rmd_projection
         if filing_status:
             metadata["filing_status"] = filing_status
         if withdrawal_strategy:

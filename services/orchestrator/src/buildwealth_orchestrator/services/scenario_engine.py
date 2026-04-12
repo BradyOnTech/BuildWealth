@@ -27,6 +27,10 @@ from buildwealth_orchestrator.services.contribution_rules import (
     normalize_account_type,
     tax_treatment_for_account_type,
 )
+from buildwealth_orchestrator.services.rmd_projection import (
+    determine_rmd_start_age,
+    estimate_year_rmd_for_accounts,
+)
 from buildwealth_orchestrator.services.tax_engine import estimate_federal_tax
 
 
@@ -249,6 +253,39 @@ def _timeline_impacts_for_year(
         "expense": _safe_float(point.get("expense_impact_usd"), 0.0),
         "debt_payment": _safe_float(point.get("debt_payment_impact_usd"), 0.0),
     }
+
+
+def _social_security_income_for_year(
+    social_security_projection: dict[str, Any] | None,
+    *,
+    year: int,
+) -> float:
+    point = _projection_point_for_year(social_security_projection, year=year)
+    if point is not None:
+        return max(0.0, _safe_float(point.get("annual_benefit_usd"), 0.0))
+    if not isinstance(social_security_projection, dict):
+        return 0.0
+    return max(0.0, _safe_float(social_security_projection.get("selected_annual_benefit_usd"), 0.0))
+
+
+def _resolve_rmd_start_age(rmd_projection: dict[str, Any] | None) -> int:
+    if not isinstance(rmd_projection, dict):
+        return determine_rmd_start_age(birth_year=None)
+
+    birth_year_raw = rmd_projection.get("birth_year")
+    birth_year = None
+    if birth_year_raw is not None:
+        birth_year = max(1900, min(_safe_int(birth_year_raw, 0), 2500))
+
+    override_raw = rmd_projection.get("rmd_start_age")
+    override_start_age = None
+    if override_raw is not None:
+        override_start_age = max(72, min(_safe_int(override_raw, 73), 120))
+
+    return determine_rmd_start_age(
+        birth_year=birth_year,
+        override_start_age=override_start_age,
+    )
 
 
 class ScenarioEngine:
@@ -641,6 +678,54 @@ class ScenarioEngine:
         }
 
     @staticmethod
+    def _withdraw_from_account_targets(
+        *,
+        accounts: list[ProjectionAccount],
+        target_withdrawals: dict[str, float],
+    ) -> dict[str, Any]:
+        if not target_withdrawals:
+            return {
+                "total_withdrawn_usd": 0.0,
+                "shortfall_usd": 0.0,
+                "by_account": {},
+                "by_tax_treatment": {
+                    "taxable": 0.0,
+                    "tax_deferred": 0.0,
+                    "tax_free": 0.0,
+                },
+            }
+
+        by_id = {account.account_id: account for account in accounts}
+        by_account: dict[str, float] = {}
+        by_tax_treatment = {"taxable": 0.0, "tax_deferred": 0.0, "tax_free": 0.0}
+        total_withdrawn = 0.0
+        shortfall = 0.0
+
+        for account_id, requested in target_withdrawals.items():
+            amount = max(0.0, _safe_float(requested, 0.0))
+            if amount <= 0:
+                continue
+            account = by_id.get(account_id)
+            if account is None:
+                shortfall += amount
+                continue
+            available = max(0.0, account.balance_usd)
+            withdrawn = min(available, amount)
+            account.balance_usd = max(0.0, account.balance_usd - withdrawn)
+            total_withdrawn += withdrawn
+            by_account[account_id] = by_account.get(account_id, 0.0) + withdrawn
+            by_tax_treatment[account.tax_treatment] += withdrawn
+            if withdrawn < amount:
+                shortfall += amount - withdrawn
+
+        return {
+            "total_withdrawn_usd": total_withdrawn,
+            "shortfall_usd": max(0.0, shortfall),
+            "by_account": by_account,
+            "by_tax_treatment": by_tax_treatment,
+        }
+
+    @staticmethod
     def _apply_growth(
         *,
         account: ProjectionAccount,
@@ -666,6 +751,8 @@ class ScenarioEngine:
         expense_projection: dict[str, Any] | None,
         debt_projection: dict[str, Any] | None,
         timeline_projection: dict[str, Any] | None,
+        social_security_projection: dict[str, Any] | None,
+        rmd_projection: dict[str, Any] | None,
         filing_status: FilingStatus,
         start_year: int,
         start_age: int,
@@ -680,7 +767,10 @@ class ScenarioEngine:
         total_taxes_paid = 0.0
         total_contributions = 0.0
         total_withdrawals = 0.0
+        total_rmds = 0.0
+        total_social_security_income = 0.0
         tax_rates: list[float] = []
+        rmd_start_age = _resolve_rmd_start_age(rmd_projection)
 
         for offset in range(max(0, assumptions.years)):
             year = start_year + offset
@@ -693,6 +783,10 @@ class ScenarioEngine:
             starting_balance = sum(starting_by_account.values())
 
             annual_income = _income_for_year(income_projection, year=year)
+            annual_social_security_income = _social_security_income_for_year(
+                social_security_projection,
+                year=year,
+            )
             annual_expenses = _expenses_for_year(expense_projection, year=year)
             annual_debt = _debt_payments_for_year(
                 debt_projection,
@@ -729,15 +823,40 @@ class ScenarioEngine:
                 long_term_capital_gains_usd=0.0,
                 qualified_dividends_usd=0.0,
                 interest_income_usd=0.0,
-                social_security_income_usd=0.0,
+                social_security_income_usd=annual_social_security_income,
                 pre_tax_contributions_usd=pre_tax_contributions,
                 tax_withholding_usd=0.0,
             )
             taxes = max(0.0, _safe_float(initial_tax.get("total_estimated_tax_usd"), 0.0))
 
-            net_cash_after_planned = annual_income - annual_expenses - annual_debt - taxes - planned_contributions
+            net_cash_after_planned = (
+                annual_income
+                + annual_social_security_income
+                - annual_expenses
+                - annual_debt
+                - taxes
+                - planned_contributions
+            )
             discretionary_savings = max(0.0, net_cash_after_planned)
             base_required_withdrawals = max(0.0, -net_cash_after_planned)
+            year_rmd = estimate_year_rmd_for_accounts(
+                accounts=[
+                    {
+                        "account_id": account.account_id,
+                        "account_type": account.account_type,
+                        "balance_usd": _safe_float(starting_by_account.get(account.account_id), 0.0),
+                    }
+                    for account in accounts
+                ],
+                age=float(age),
+                rmd_start_age=rmd_start_age,
+            )
+            rmd_by_account = {
+                str(row.get("account_id")): max(0.0, _safe_float(row.get("rmd_usd"), 0.0))
+                for row in year_rmd.get("account_rmds", [])
+                if isinstance(row, dict) and str(row.get("account_id") or "").strip()
+            }
+
             strategy_withdrawal_target = self._strategy_withdrawal_target(
                 strategy=withdrawal_strategy,
                 state=withdrawal_state,
@@ -763,15 +882,28 @@ class ScenarioEngine:
                 contributions_by_account=contributions_by_account,
             )
 
+            rmd_withdrawals_result = self._withdraw_from_account_targets(
+                accounts=accounts,
+                target_withdrawals=rmd_by_account,
+            )
+            mandatory_rmd_withdrawn = _safe_float(rmd_withdrawals_result.get("total_withdrawn_usd"), 0.0)
+            total_rmds += mandatory_rmd_withdrawn
+
             withdrawals_result = self._withdraw_from_accounts(
                 accounts=accounts,
-                amount_usd=required_withdrawals,
+                amount_usd=max(0.0, required_withdrawals - mandatory_rmd_withdrawn),
                 age=float(age),
                 strategy=withdrawal_strategy,
             )
-            total_withdrawn = _safe_float(withdrawals_result.get("total_withdrawn_usd"), 0.0)
-            by_account_withdrawals: dict[str, float] = dict(withdrawals_result.get("by_account") or {})
-            by_treatment = withdrawals_result.get("by_tax_treatment") or {}
+            total_withdrawn = mandatory_rmd_withdrawn + _safe_float(withdrawals_result.get("total_withdrawn_usd"), 0.0)
+            by_account_withdrawals: dict[str, float] = dict(rmd_withdrawals_result.get("by_account") or {})
+            for account_id, amount in (withdrawals_result.get("by_account") or {}).items():
+                by_account_withdrawals[account_id] = by_account_withdrawals.get(account_id, 0.0) + float(amount)
+
+            by_treatment = rmd_withdrawals_result.get("by_tax_treatment") or {}
+            next_by_treatment = withdrawals_result.get("by_tax_treatment") or {}
+            for key in ("taxable", "tax_deferred", "tax_free"):
+                by_treatment[key] = _safe_float(by_treatment.get(key), 0.0) + _safe_float(next_by_treatment.get(key), 0.0)
             tax_deferred_withdrawals = _safe_float(by_treatment.get("tax_deferred"), 0.0)
 
             if tax_deferred_withdrawals > 0:
@@ -784,7 +916,7 @@ class ScenarioEngine:
                     long_term_capital_gains_usd=0.0,
                     qualified_dividends_usd=0.0,
                     interest_income_usd=0.0,
-                    social_security_income_usd=0.0,
+                    social_security_income_usd=annual_social_security_income,
                     pre_tax_contributions_usd=pre_tax_contributions,
                     tax_withholding_usd=0.0,
                 )
@@ -815,15 +947,16 @@ class ScenarioEngine:
                         long_term_capital_gains_usd=0.0,
                         qualified_dividends_usd=0.0,
                         interest_income_usd=0.0,
-                        social_security_income_usd=0.0,
+                        social_security_income_usd=annual_social_security_income,
                         pre_tax_contributions_usd=pre_tax_contributions,
                         tax_withholding_usd=0.0,
                     )
                     taxes = max(0.0, _safe_float(final_tax_payload.get("total_estimated_tax_usd"), 0.0))
 
             effective_tax_rate = 0.0
-            if annual_income > 0:
-                effective_tax_rate = max(0.0, min(1.0, taxes / annual_income))
+            total_taxable_income = annual_income + annual_social_security_income
+            if total_taxable_income > 0:
+                effective_tax_rate = max(0.0, min(1.0, taxes / total_taxable_income))
             else:
                 effective_tax_rate = max(
                     0.0,
@@ -836,6 +969,7 @@ class ScenarioEngine:
                 account_id = account.account_id
                 contribution = _safe_float(contributions_by_account.get(account_id), 0.0)
                 withdrawal = _safe_float(by_account_withdrawals.get(account_id), 0.0)
+                rmd_withdrawal = _safe_float(rmd_by_account.get(account_id), 0.0)
                 growth = self._apply_growth(
                     account=account,
                     expected_return=assumptions.expected_return,
@@ -852,6 +986,7 @@ class ScenarioEngine:
                         starting_balance_usd=round(_safe_float(starting_by_account.get(account_id)), 2),
                         contribution_usd=round(contribution, 2),
                         withdrawal_usd=round(withdrawal, 2),
+                        rmd_withdrawal_usd=round(rmd_withdrawal, 2),
                         growth_usd=round(growth, 2),
                         ending_balance_usd=round(account.balance_usd, 2),
                     )
@@ -871,11 +1006,13 @@ class ScenarioEngine:
                     starting_balance_usd=round(starting_balance, 2),
                     ending_balance_usd=round(ending_balance, 2),
                     contributions_usd=round(total_contribution_this_year, 2),
-                    income_usd=round(annual_income, 2),
+                    income_usd=round(annual_income + annual_social_security_income, 2),
+                    social_security_income_usd=round(annual_social_security_income, 2),
                     expenses_usd=round(annual_expenses + annual_debt, 2),
                     taxes_usd=round(taxes, 2),
                     growth_usd=round(total_growth, 2),
                     withdrawals_usd=round(total_withdrawn, 2),
+                    rmds_usd=round(mandatory_rmd_withdrawn, 2),
                     ending_balance_real_usd=round(ending_balance_real, 2),
                 )
             )
@@ -883,6 +1020,7 @@ class ScenarioEngine:
             total_taxes_paid += taxes
             total_contributions += total_contribution_this_year
             total_withdrawals += total_withdrawn
+            total_social_security_income += annual_social_security_income
             tax_rates.append(effective_tax_rate)
 
             if starting_balance > 0:
@@ -895,6 +1033,15 @@ class ScenarioEngine:
 
         ending_nominal = sum(max(0.0, account.balance_usd) for account in accounts)
         average_tax_rate = (sum(tax_rates) / len(tax_rates)) if tax_rates else 0.0
+        social_security_claiming_age: int | None = None
+        social_security_optimal_claiming_age: int | None = None
+        if isinstance(social_security_projection, dict):
+            claiming_age_raw = social_security_projection.get("selected_claiming_age")
+            optimal_age_raw = social_security_projection.get("optimal_claiming_age")
+            if claiming_age_raw is not None:
+                social_security_claiming_age = _safe_int(claiming_age_raw, 0)
+            if optimal_age_raw is not None:
+                social_security_optimal_claiming_age = _safe_int(optimal_age_raw, 0)
 
         return ScenarioResult(
             label=label,  # type: ignore[arg-type]
@@ -915,9 +1062,14 @@ class ScenarioEngine:
                 "account_count": len(accounts),
                 "withdrawal_strategy": withdrawal_strategy,
                 "retirement_age": retirement_age,
+                "rmd_start_age": rmd_start_age,
                 "total_taxes_paid_usd": round(total_taxes_paid, 2),
                 "total_contributions_usd": round(total_contributions, 2),
                 "total_withdrawals_usd": round(total_withdrawals, 2),
+                "total_rmds_usd": round(total_rmds, 2),
+                "total_social_security_income_usd": round(total_social_security_income, 2),
+                "social_security_claiming_age": social_security_claiming_age,
+                "social_security_optimal_claiming_age": social_security_optimal_claiming_age,
                 "average_effective_tax_rate": round(average_tax_rate, 6),
             },
             timeline_points=timeline_points,
@@ -970,6 +1122,8 @@ class ScenarioEngine:
         debt_projection: dict[str, Any] | None = None,
         timeline_projection: dict[str, Any] | None = None,
         contribution_allocation: dict[str, Any] | None = None,
+        social_security_projection: dict[str, Any] | None = None,
+        rmd_projection: dict[str, Any] | None = None,
         filing_status: str | None = None,
         start_year: int | None = None,
         start_age: int = 35,
@@ -1012,6 +1166,8 @@ class ScenarioEngine:
             expense_projection=expense_projection,
             debt_projection=debt_projection,
             timeline_projection=timeline_projection,
+            social_security_projection=social_security_projection,
+            rmd_projection=rmd_projection,
             filing_status=resolved_filing_status,
             start_year=resolved_start_year,
             start_age=resolved_start_age,
@@ -1032,6 +1188,8 @@ class ScenarioEngine:
             expense_projection=expense_projection,
             debt_projection=debt_projection,
             timeline_projection=timeline_projection,
+            social_security_projection=social_security_projection,
+            rmd_projection=rmd_projection,
             filing_status=resolved_filing_status,
             start_year=resolved_start_year,
             start_age=resolved_start_age,
@@ -1052,6 +1210,8 @@ class ScenarioEngine:
             expense_projection=expense_projection,
             debt_projection=debt_projection,
             timeline_projection=timeline_projection,
+            social_security_projection=social_security_projection,
+            rmd_projection=rmd_projection,
             filing_status=resolved_filing_status,
             start_year=resolved_start_year,
             start_age=resolved_start_age,
@@ -1072,6 +1232,8 @@ class ScenarioEngine:
             expense_projection=expense_projection,
             debt_projection=debt_projection,
             timeline_projection=timeline_projection,
+            social_security_projection=social_security_projection,
+            rmd_projection=rmd_projection,
             filing_status=resolved_filing_status,
             start_year=resolved_start_year,
             start_age=resolved_start_age,

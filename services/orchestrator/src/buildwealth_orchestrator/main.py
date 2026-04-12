@@ -54,6 +54,10 @@ from buildwealth_orchestrator.schemas import (
     ExpenseProjectionResponse,
     DebtProjectionRequest,
     DebtProjectionResponse,
+    SocialSecurityProjectionRequest,
+    SocialSecurityProjectionResponse,
+    RmdProjectionRequest,
+    RmdProjectionResponse,
     ContributionAllocationRequest,
     ContributionAllocationResponse,
     TaxEstimateRequest,
@@ -116,6 +120,8 @@ from buildwealth_orchestrator.services.contribution_rules import (
 from buildwealth_orchestrator.services.income_projection import project_income_schedule
 from buildwealth_orchestrator.services.expense_projection import project_expense_schedule
 from buildwealth_orchestrator.services.debt_projection import project_debt_payoff
+from buildwealth_orchestrator.services.social_security_projection import project_social_security_income
+from buildwealth_orchestrator.services.rmd_projection import project_rmd_schedule
 from buildwealth_orchestrator.services.timeline_projection import project_timeline_impacts
 from buildwealth_orchestrator.services.price_updater import (
     build_snapshot_from_holdings,
@@ -925,14 +931,153 @@ def build_debt_projection_for_plan_settings(plan_settings: dict[str, Any]) -> De
     )
 
 
+def build_social_security_projection_for_plan_settings(
+    *,
+    plan_settings: dict[str, Any],
+    timeline_payload: dict[str, Any],
+    income_projection: IncomeProjectionResponse | None,
+    start_year: int,
+    current_age: int = 35,
+) -> SocialSecurityProjectionResponse | None:
+    retirement_payload = timeline_payload.get("retirement")
+    if not isinstance(retirement_payload, dict):
+        return None
+
+    years = max(1, min(_coerce_int(plan_settings.get("years"), settings.planner_years_to_retirement), 80))
+    claiming_age_raw = retirement_payload.get("social_security_claiming_age")
+    birth_year_raw = retirement_payload.get("social_security_birth_year")
+    life_expectancy_raw = retirement_payload.get("social_security_life_expectancy_age")
+    fra_monthly_raw = retirement_payload.get("social_security_fra_monthly_benefit_usd")
+    estimated_earnings_raw = retirement_payload.get("social_security_estimated_annual_earnings_usd")
+
+    claiming_age = None if claiming_age_raw is None else max(62, min(_coerce_int(claiming_age_raw, 67), 70))
+    birth_year = None if birth_year_raw is None else max(1900, min(_coerce_int(birth_year_raw, 0), 2500))
+    life_expectancy_age = (
+        None if life_expectancy_raw is None else max(67, min(_coerce_int(life_expectancy_raw, 90), 120))
+    )
+
+    fra_monthly_benefit = (
+        None
+        if fra_monthly_raw is None
+        else max(0.0, _coerce_float(fra_monthly_raw, 0.0))
+    )
+    estimated_annual_earnings = (
+        None
+        if estimated_earnings_raw is None
+        else max(0.0, _coerce_float(estimated_earnings_raw, 0.0))
+    )
+
+    if estimated_annual_earnings is None and income_projection is not None:
+        estimated_annual_earnings = max(0.0, float(income_projection.first_year_gross_income_usd))
+
+    if (fra_monthly_benefit is None or fra_monthly_benefit <= 0) and (
+        estimated_annual_earnings is None or estimated_annual_earnings <= 0
+    ):
+        return None
+
+    payload = project_social_security_income(
+        start_year=start_year,
+        years=years,
+        current_age=current_age,
+        claiming_age=claiming_age,
+        life_expectancy_age=life_expectancy_age,
+        birth_year=birth_year,
+        fra_monthly_benefit_usd=fra_monthly_benefit,
+        estimated_annual_earnings_usd=estimated_annual_earnings,
+        claim_age_options=[62, 67, 70],
+        cola_rate=settings.planner_inflation,
+    )
+    return SocialSecurityProjectionResponse(**payload)
+
+
+def build_rmd_projection_for_plan_settings(
+    *,
+    plan_settings: dict[str, Any],
+    timeline_payload: dict[str, Any],
+    start_year: int,
+    current_age: int = 35,
+    accounts_override: list[dict[str, Any]] | None = None,
+) -> RmdProjectionResponse | None:
+    accounts = accounts_override if accounts_override is not None else build_planning_accounts_from_portfolio()
+    if not accounts:
+        return None
+
+    years = max(1, min(_coerce_int(plan_settings.get("years"), settings.planner_years_to_retirement), 80))
+    retirement_payload = timeline_payload.get("retirement")
+    if not isinstance(retirement_payload, dict):
+        retirement_payload = {}
+
+    rmd_birth_year_raw = retirement_payload.get("rmd_birth_year")
+    if rmd_birth_year_raw is None:
+        rmd_birth_year_raw = retirement_payload.get("social_security_birth_year")
+    rmd_birth_year = (
+        None
+        if rmd_birth_year_raw is None
+        else max(1900, min(_coerce_int(rmd_birth_year_raw, 0), 2500))
+    )
+
+    rmd_start_age_raw = retirement_payload.get("rmd_start_age")
+    rmd_start_age = (
+        None
+        if rmd_start_age_raw is None
+        else max(72, min(_coerce_int(rmd_start_age_raw, 73), 120))
+    )
+
+    expected_return_raw = plan_settings.get("expected_return_baseline")
+    expected_return = (
+        settings.planner_expected_return_baseline
+        if expected_return_raw is None
+        else max(-0.95, min(1.0, _coerce_float(expected_return_raw, settings.planner_expected_return_baseline)))
+    )
+
+    payload = project_rmd_schedule(
+        accounts=accounts,
+        start_year=start_year,
+        years=years,
+        current_age=max(0, min(_coerce_int(current_age, 35), 120)),
+        birth_year=rmd_birth_year,
+        expected_return=expected_return,
+        start_age_override=rmd_start_age,
+    )
+    return RmdProjectionResponse(**payload)
+
+
 def resolve_plan_timeline_payload(plan_detail: dict[str, Any]) -> dict[str, Any]:
     files_payload = plan_detail.get("files")
     if not isinstance(files_payload, dict):
-        return {"schema_version": 2, "events": [], "retirement": {"target_retirement_age": None, "withdrawal_strategy": None}}
+        return {
+            "schema_version": 2,
+            "events": [],
+            "retirement": {
+                "target_retirement_age": None,
+                "withdrawal_strategy": None,
+                "social_security_birth_year": None,
+                "social_security_claiming_age": None,
+                "social_security_life_expectancy_age": None,
+                "social_security_fra_monthly_benefit_usd": None,
+                "social_security_estimated_annual_earnings_usd": None,
+                "rmd_birth_year": None,
+                "rmd_start_age": None,
+            },
+        }
 
     raw_timeline = files_payload.get("timeline_json")
     if not isinstance(raw_timeline, str):
-        return {"schema_version": 2, "events": [], "retirement": {"target_retirement_age": None, "withdrawal_strategy": None}}
+        return {
+            "schema_version": 2,
+            "events": [],
+            "retirement": {
+                "target_retirement_age": None,
+                "withdrawal_strategy": None,
+                "social_security_birth_year": None,
+                "social_security_claiming_age": None,
+                "social_security_life_expectancy_age": None,
+                "social_security_fra_monthly_benefit_usd": None,
+                "social_security_estimated_annual_earnings_usd": None,
+                "rmd_birth_year": None,
+                "rmd_start_age": None,
+            },
+        }
 
     try:
         payload = json.loads(raw_timeline)
@@ -948,6 +1093,13 @@ def resolve_plan_timeline_payload(plan_detail: dict[str, Any]) -> dict[str, Any]
         {
             "target_retirement_age": None,
             "withdrawal_strategy": None,
+            "social_security_birth_year": None,
+            "social_security_claiming_age": None,
+            "social_security_life_expectancy_age": None,
+            "social_security_fra_monthly_benefit_usd": None,
+            "social_security_estimated_annual_earnings_usd": None,
+            "rmd_birth_year": None,
+            "rmd_start_age": None,
         },
     )
     return payload
@@ -1000,6 +1152,8 @@ async def run_scenarios_for_plan_settings(
     debt_projection: DebtProjectionResponse | None = None,
     timeline_projection: TimelineImpactProjectionResponse | None = None,
     contribution_allocation: ContributionAllocationResponse | None = None,
+    social_security_projection: SocialSecurityProjectionResponse | None = None,
+    rmd_projection: RmdProjectionResponse | None = None,
     retirement_age: int | None = None,
     timeline_withdrawal_strategy: str | None = None,
 ) -> PlanningResponse:
@@ -1021,6 +1175,8 @@ async def run_scenarios_for_plan_settings(
     debt_projection_payload: dict[str, Any] | None = None
     timeline_projection_payload: dict[str, Any] | None = None
     contribution_allocation_payload: dict[str, Any] | None = None
+    social_security_projection_payload: dict[str, Any] | None = None
+    rmd_projection_payload: dict[str, Any] | None = None
 
     if income_projection is not None:
         income_projection_payload = income_projection.model_dump(mode="json")
@@ -1062,6 +1218,10 @@ async def run_scenarios_for_plan_settings(
                 }
             )
         contribution_allocation_payload = contribution_allocation.model_dump(mode="json")
+    if social_security_projection is not None:
+        social_security_projection_payload = social_security_projection.model_dump(mode="json")
+    if rmd_projection is not None:
+        rmd_projection_payload = rmd_projection.model_dump(mode="json")
 
     filing_status = str(plan_settings.get("filing_status") or "").strip() or None
     withdrawal_strategy = str(plan_settings.get("withdrawal_strategy") or "").strip() or None
@@ -1080,6 +1240,8 @@ async def run_scenarios_for_plan_settings(
         debt_projection=debt_projection_payload,
         timeline_projection=timeline_projection_payload,
         contribution_allocation=contribution_allocation_payload,
+        social_security_projection=social_security_projection_payload,
+        rmd_projection=rmd_projection_payload,
         filing_status=filing_status,
         start_year=resolved_start_year,
         withdrawal_strategy=withdrawal_strategy,
@@ -2145,6 +2307,149 @@ async def tool_project_debt_payoff(arguments: dict[str, object]) -> dict[str, ob
     return DebtProjectionResponse(**payload).model_dump(mode="json")
 
 
+async def tool_project_social_security(arguments: dict[str, object]) -> dict[str, object]:
+    years_raw = arguments.get("years")
+    years = _coerce_int(years_raw, settings.planner_years_to_retirement)
+    years = max(1, min(years, 80))
+
+    start_year_raw = arguments.get("start_year")
+    start_year = _coerce_int(start_year_raw, utc_now().year)
+    start_year = max(1900, min(start_year, 2500))
+
+    current_age = _coerce_int(arguments.get("current_age"), 35)
+    current_age = max(0, min(current_age, 120))
+
+    claiming_age_raw = arguments.get("claiming_age")
+    claiming_age = (
+        None
+        if claiming_age_raw is None
+        else max(62, min(_coerce_int(claiming_age_raw, 67), 70))
+    )
+
+    birth_year_raw = arguments.get("birth_year")
+    birth_year = (
+        None
+        if birth_year_raw is None
+        else max(1900, min(_coerce_int(birth_year_raw, 0), 2500))
+    )
+
+    life_expectancy_raw = arguments.get("life_expectancy_age")
+    life_expectancy_age = (
+        None
+        if life_expectancy_raw is None
+        else max(67, min(_coerce_int(life_expectancy_raw, 90), 120))
+    )
+
+    fra_monthly_raw = arguments.get("fra_monthly_benefit_usd")
+    fra_monthly_benefit_usd = (
+        None
+        if fra_monthly_raw is None
+        else max(0.0, _coerce_float(fra_monthly_raw, 0.0))
+    )
+
+    estimated_earnings_raw = arguments.get("estimated_annual_earnings_usd")
+    estimated_annual_earnings_usd = (
+        None
+        if estimated_earnings_raw is None
+        else max(0.0, _coerce_float(estimated_earnings_raw, 0.0))
+    )
+
+    earnings_history_raw = arguments.get("earnings_history")
+    earnings_history = [item for item in earnings_history_raw if isinstance(item, dict)] if isinstance(
+        earnings_history_raw, list
+    ) else []
+
+    if estimated_annual_earnings_usd is None and not earnings_history:
+        profile_payload = get_financial_profile_payload()
+        income_rows = profile_payload.get("income_items")
+        if isinstance(income_rows, list):
+            estimated_annual_earnings_usd = max(
+                0.0,
+                sum(
+                    max(0.0, _coerce_float(item.get("monthly_amount_usd"), 0.0))
+                    for item in income_rows
+                    if isinstance(item, dict)
+                )
+                * 12.0,
+            )
+
+    claim_age_options_raw = arguments.get("claim_age_options")
+    claim_age_options = None
+    if isinstance(claim_age_options_raw, list):
+        claim_age_options = [max(62, min(_coerce_int(item, 67), 70)) for item in claim_age_options_raw]
+
+    cola_rate = _coerce_float(arguments.get("cola_rate"), settings.planner_inflation)
+    pia_bend_point_1_usd = max(1.0, _coerce_float(arguments.get("pia_bend_point_1_usd"), 1226.0))
+    pia_bend_point_2_usd = max(
+        pia_bend_point_1_usd,
+        _coerce_float(arguments.get("pia_bend_point_2_usd"), 7391.0),
+    )
+
+    payload = project_social_security_income(
+        start_year=start_year,
+        years=years,
+        current_age=current_age,
+        claiming_age=claiming_age,
+        life_expectancy_age=life_expectancy_age,
+        birth_year=birth_year,
+        fra_monthly_benefit_usd=fra_monthly_benefit_usd,
+        estimated_annual_earnings_usd=estimated_annual_earnings_usd,
+        earnings_history=earnings_history,
+        cola_rate=cola_rate,
+        claim_age_options=claim_age_options,
+        pia_bend_point_1_usd=pia_bend_point_1_usd,
+        pia_bend_point_2_usd=pia_bend_point_2_usd,
+    )
+    return SocialSecurityProjectionResponse(**payload).model_dump(mode="json")
+
+
+async def tool_project_rmd(arguments: dict[str, object]) -> dict[str, object]:
+    years_raw = arguments.get("years")
+    years = _coerce_int(years_raw, settings.planner_years_to_retirement)
+    years = max(1, min(years, 80))
+
+    start_year_raw = arguments.get("start_year")
+    start_year = _coerce_int(start_year_raw, utc_now().year)
+    start_year = max(1900, min(start_year, 2500))
+
+    current_age = _coerce_int(arguments.get("current_age"), 35)
+    current_age = max(0, min(current_age, 120))
+
+    birth_year_raw = arguments.get("birth_year")
+    birth_year = (
+        None
+        if birth_year_raw is None
+        else max(1900, min(_coerce_int(birth_year_raw, 0), 2500))
+    )
+
+    start_age_override_raw = arguments.get("start_age_override")
+    start_age_override = (
+        None
+        if start_age_override_raw is None
+        else max(72, min(_coerce_int(start_age_override_raw, 73), 120))
+    )
+
+    expected_return = _coerce_float(arguments.get("expected_return"), settings.planner_expected_return_baseline)
+    expected_return = max(-0.95, min(expected_return, 1.0))
+
+    accounts_raw = arguments.get("accounts")
+    if isinstance(accounts_raw, list):
+        accounts = [item for item in accounts_raw if isinstance(item, dict)]
+    else:
+        accounts = build_planning_accounts_from_portfolio()
+
+    payload = project_rmd_schedule(
+        accounts=accounts,
+        start_year=start_year,
+        years=years,
+        current_age=current_age,
+        birth_year=birth_year,
+        expected_return=expected_return,
+        start_age_override=start_age_override,
+    )
+    return RmdProjectionResponse(**payload).model_dump(mode="json")
+
+
 async def tool_research_options_chain(arguments: dict[str, object]) -> dict[str, object]:
     symbol = str(arguments.get("symbol", "AAPL")).strip().upper()
     result = research_service.options_chain(symbol).model_dump(mode="json")
@@ -2315,6 +2620,28 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         plan_settings=candidate_settings,
         contribution_rules_payload=contribution_rules_payload,
     )
+    base_social_security_projection = build_social_security_projection_for_plan_settings(
+        plan_settings=base_settings,
+        timeline_payload=timeline_payload,
+        income_projection=base_income_projection,
+        start_year=utc_now().year,
+    )
+    candidate_social_security_projection = build_social_security_projection_for_plan_settings(
+        plan_settings=candidate_settings,
+        timeline_payload=timeline_payload,
+        income_projection=candidate_income_projection,
+        start_year=utc_now().year,
+    )
+    base_rmd_projection = build_rmd_projection_for_plan_settings(
+        plan_settings=base_settings,
+        timeline_payload=timeline_payload,
+        start_year=utc_now().year,
+    )
+    candidate_rmd_projection = build_rmd_projection_for_plan_settings(
+        plan_settings=candidate_settings,
+        timeline_payload=timeline_payload,
+        start_year=utc_now().year,
+    )
 
     current_value_raw = arguments.get("current_portfolio_value_usd")
     current_value = resolve_portfolio_value(
@@ -2329,6 +2656,8 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         debt_projection=base_debt_projection,
         timeline_projection=base_timeline_projection,
         contribution_allocation=base_contribution_allocation,
+        social_security_projection=base_social_security_projection,
+        rmd_projection=base_rmd_projection,
         retirement_age=retirement_age,
         timeline_withdrawal_strategy=timeline_withdrawal_strategy,
     )
@@ -2340,6 +2669,8 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         debt_projection=candidate_debt_projection,
         timeline_projection=candidate_timeline_projection,
         contribution_allocation=candidate_contribution_allocation,
+        social_security_projection=candidate_social_security_projection,
+        rmd_projection=candidate_rmd_projection,
         retirement_age=retirement_age,
         timeline_withdrawal_strategy=timeline_withdrawal_strategy,
     )
@@ -2752,6 +3083,55 @@ def configure_copilot_tools() -> None:
             "additionalProperties": False,
         },
         handler=tool_project_debt_payoff,
+    )
+    copilot.register_tool(
+        name="project_social_security",
+        description=(
+            "Estimate Social Security retirement benefits and compare claiming ages (default 62/67/70). "
+            "Uses fra_monthly_benefit_usd directly when provided, otherwise estimates from earnings_history "
+            "or estimated_annual_earnings_usd/profile income."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "start_year": {"type": "integer"},
+                "years": {"type": "integer"},
+                "current_age": {"type": "integer"},
+                "birth_year": {"type": "integer"},
+                "claiming_age": {"type": "integer"},
+                "life_expectancy_age": {"type": "integer"},
+                "fra_monthly_benefit_usd": {"type": "number"},
+                "estimated_annual_earnings_usd": {"type": "number"},
+                "earnings_history": {"type": "array", "items": {"type": "object"}},
+                "cola_rate": {"type": "number"},
+                "claim_age_options": {"type": "array", "items": {"type": "integer"}},
+                "pia_bend_point_1_usd": {"type": "number"},
+                "pia_bend_point_2_usd": {"type": "number"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_project_social_security,
+    )
+    copilot.register_tool(
+        name="project_rmd_schedule",
+        description=(
+            "Project required minimum distributions (RMDs) for eligible tax-deferred accounts "
+            "(401k, 403b, IRA) using SECURE 2.0 start-age rules and IRS Uniform Lifetime factors."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "start_year": {"type": "integer"},
+                "years": {"type": "integer"},
+                "current_age": {"type": "integer"},
+                "birth_year": {"type": "integer"},
+                "start_age_override": {"type": "integer"},
+                "expected_return": {"type": "number"},
+                "accounts": {"type": "array", "items": {"type": "object"}},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_project_rmd,
     )
     copilot.register_tool(
         name="research_options_chain",
@@ -3711,6 +4091,28 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
         plan_settings=candidate_settings,
         contribution_rules_payload=contribution_rules_payload,
     )
+    base_social_security_projection = build_social_security_projection_for_plan_settings(
+        plan_settings=base_settings,
+        timeline_payload=timeline_payload,
+        income_projection=base_income_projection,
+        start_year=utc_now().year,
+    )
+    candidate_social_security_projection = build_social_security_projection_for_plan_settings(
+        plan_settings=candidate_settings,
+        timeline_payload=timeline_payload,
+        income_projection=candidate_income_projection,
+        start_year=utc_now().year,
+    )
+    base_rmd_projection = build_rmd_projection_for_plan_settings(
+        plan_settings=base_settings,
+        timeline_payload=timeline_payload,
+        start_year=utc_now().year,
+    )
+    candidate_rmd_projection = build_rmd_projection_for_plan_settings(
+        plan_settings=candidate_settings,
+        timeline_payload=timeline_payload,
+        start_year=utc_now().year,
+    )
 
     try:
         current_value = resolve_portfolio_value(request.current_portfolio_value_usd)
@@ -3722,6 +4124,8 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
             debt_projection=base_debt_projection,
             timeline_projection=base_timeline_projection,
             contribution_allocation=base_contribution_allocation,
+            social_security_projection=base_social_security_projection,
+            rmd_projection=base_rmd_projection,
             retirement_age=retirement_age,
             timeline_withdrawal_strategy=timeline_withdrawal_strategy,
         )
@@ -3733,6 +4137,8 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
             debt_projection=candidate_debt_projection,
             timeline_projection=candidate_timeline_projection,
             contribution_allocation=candidate_contribution_allocation,
+            social_security_projection=candidate_social_security_projection,
+            rmd_projection=candidate_rmd_projection,
             retirement_age=retirement_age,
             timeline_withdrawal_strategy=timeline_withdrawal_strategy,
         )
@@ -4056,6 +4462,7 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         start_date=utc_now().date().replace(day=1),
     )
     timeline_projection: TimelineImpactProjectionResponse | None = None
+    active_timeline_payload: dict[str, Any] | None = None
     active_withdrawal_strategy: str | None = None
     active_retirement_age: int | None = None
     active_plan_detail: dict[str, Any] | None = None
@@ -4064,6 +4471,7 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         try:
             active_plan_detail = plan_workspace.get_plan(active_plan_id)
             active_timeline = resolve_plan_timeline_payload(active_plan_detail)
+            active_timeline_payload = active_timeline
             active_retirement_age = resolve_timeline_retirement_age(active_timeline)
             timeline_strategy = resolve_timeline_withdrawal_strategy(active_timeline)
             active_settings = active_plan_detail.get("settings")
@@ -4078,6 +4486,7 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         except PlanNotFoundError:
             timeline_projection = None
             active_plan_detail = None
+            active_timeline_payload = None
             active_withdrawal_strategy = None
             active_retirement_age = None
 
@@ -4104,6 +4513,21 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         plan_settings={"annual_contribution_usd": resolved_annual_contribution},
         contribution_rules_payload=contribution_rules_payload,
     )
+    social_security_projection: SocialSecurityProjectionResponse | None = None
+    rmd_projection: RmdProjectionResponse | None = None
+    if active_timeline_payload is not None:
+        social_security_projection = build_social_security_projection_for_plan_settings(
+            plan_settings={"years": resolved_years},
+            timeline_payload=active_timeline_payload,
+            income_projection=income_projection,
+            start_year=utc_now().year,
+        )
+        rmd_projection = build_rmd_projection_for_plan_settings(
+            plan_settings={"years": resolved_years},
+            timeline_payload=active_timeline_payload,
+            start_year=utc_now().year,
+            accounts_override=build_planning_accounts_from_portfolio(),
+        )
 
     profile_payload = get_financial_profile_payload()
     tax_profile = profile_payload.get("tax_profile")
@@ -4124,6 +4548,16 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         contribution_allocation=(
             contribution_allocation.model_dump(mode="json")
             if contribution_allocation is not None
+            else None
+        ),
+        social_security_projection=(
+            social_security_projection.model_dump(mode="json")
+            if social_security_projection is not None
+            else None
+        ),
+        rmd_projection=(
+            rmd_projection.model_dump(mode="json")
+            if rmd_projection is not None
             else None
         ),
         filing_status=filing_status,
@@ -4200,6 +4634,68 @@ def planning_debt_projection(request: DebtProjectionRequest) -> DebtProjectionRe
         monthly_accelerated_payment_usd=request.monthly_accelerated_payment_usd,
     )
     return DebtProjectionResponse(**payload)
+
+
+@app.post("/api/planning/social-security-projection", response_model=SocialSecurityProjectionResponse)
+def planning_social_security_projection(
+    request: SocialSecurityProjectionRequest,
+) -> SocialSecurityProjectionResponse:
+    earnings_history = (
+        [item.model_dump(mode="json") for item in request.earnings_history]
+        if request.earnings_history is not None
+        else []
+    )
+
+    estimated_annual_earnings_usd = request.estimated_annual_earnings_usd
+    if estimated_annual_earnings_usd is None and not earnings_history:
+        profile_payload = get_financial_profile_payload()
+        income_rows = profile_payload.get("income_items")
+        if isinstance(income_rows, list):
+            estimated_annual_earnings_usd = max(
+                0.0,
+                sum(
+                    max(0.0, _coerce_float(item.get("monthly_amount_usd"), 0.0))
+                    for item in income_rows
+                    if isinstance(item, dict)
+                )
+                * 12.0,
+            )
+
+    payload = project_social_security_income(
+        start_year=request.start_year or utc_now().year,
+        years=request.years,
+        current_age=request.current_age,
+        birth_year=request.birth_year,
+        claiming_age=request.claiming_age,
+        life_expectancy_age=request.life_expectancy_age,
+        fra_monthly_benefit_usd=request.fra_monthly_benefit_usd,
+        estimated_annual_earnings_usd=estimated_annual_earnings_usd,
+        earnings_history=earnings_history,
+        cola_rate=request.cola_rate,
+        claim_age_options=request.claim_age_options,
+        pia_bend_point_1_usd=request.pia_bend_point_1_usd,
+        pia_bend_point_2_usd=request.pia_bend_point_2_usd,
+    )
+    return SocialSecurityProjectionResponse(**payload)
+
+
+@app.post("/api/planning/rmd-projection", response_model=RmdProjectionResponse)
+def planning_rmd_projection(request: RmdProjectionRequest) -> RmdProjectionResponse:
+    if request.accounts is not None:
+        accounts = [item.model_dump(mode="json") for item in request.accounts]
+    else:
+        accounts = build_planning_accounts_from_portfolio()
+
+    payload = project_rmd_schedule(
+        accounts=accounts,
+        start_year=request.start_year or utc_now().year,
+        years=request.years,
+        current_age=request.current_age,
+        birth_year=request.birth_year,
+        expected_return=request.expected_return,
+        start_age_override=request.start_age_override,
+    )
+    return RmdProjectionResponse(**payload)
 
 
 @app.post("/api/planning/tax-estimate", response_model=TaxEstimateResponse)

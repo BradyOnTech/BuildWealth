@@ -64,6 +64,15 @@ adapted from the following open source projects:
   (plan timeline persistence/validation structure aligned to Ignidash timeline schema
   conventions from `src/lib/schemas/inputs/timeline-form-schema.ts` and
   `convex/validators/timeline_validator.ts`);
+  `services/orchestrator/src/buildwealth_orchestrator/services/social_security_projection.py`
+  (timeline age/retirement framing and claim-age comparison structure aligned to
+  `src/lib/schemas/inputs/timeline-form-schema.ts` and `src/lib/calc/phase.ts`;
+  benefit formula implementation is a BuildWealth extension);
+  `services/orchestrator/src/buildwealth_orchestrator/services/rmd_projection.py`
+  (RMD start-age policy, IRS Uniform Lifetime table usage, and per-account
+  distribution projection structure adapted from
+  `src/lib/calc/historical-data/rmd-table.ts`,
+  `src/lib/calc/simulation-engine.ts`, and `src/lib/calc/portfolio.ts`);
   `services/orchestrator/src/buildwealth_orchestrator/services/scenario_engine.py`
   (tax-aware year-by-year scenario projection, account withdrawal ordering, and
   phase-aware simulation structure adapted from `src/lib/calc/simulation-engine.ts`,

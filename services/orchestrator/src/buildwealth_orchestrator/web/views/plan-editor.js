@@ -118,6 +118,26 @@ function formatDiffOutput(diff) {
     lines.push(`- Candidate: ${describeTimelineProjection(candidateTimeline)}`);
   }
 
+  const baseSocialSecurity = diff?.base_result?.social_security_projection;
+  const candidateSocialSecurity = diff?.candidate_result?.social_security_projection;
+  lines.push('', 'Social Security Context:');
+  if (!baseSocialSecurity && !candidateSocialSecurity) {
+    lines.push('- Not available.');
+  } else {
+    lines.push(`- Base: ${describeSocialSecurityProjection(baseSocialSecurity)}`);
+    lines.push(`- Candidate: ${describeSocialSecurityProjection(candidateSocialSecurity)}`);
+  }
+
+  const baseRmd = diff?.base_result?.rmd_projection;
+  const candidateRmd = diff?.candidate_result?.rmd_projection;
+  lines.push('', 'RMD Context:');
+  if (!baseRmd && !candidateRmd) {
+    lines.push('- Not available.');
+  } else {
+    lines.push(`- Base: ${describeRmdProjection(baseRmd)}`);
+    lines.push(`- Candidate: ${describeRmdProjection(candidateRmd)}`);
+  }
+
   const mc = diff?.monte_carlo_delta || {};
   lines.push('', 'Monte Carlo Delta:', `- P10: ${fmtCurrency(mc.delta_p10_future_value_usd)}`, `- P50: ${fmtCurrency(mc.delta_p50_future_value_usd)}`, `- P90: ${fmtCurrency(mc.delta_p90_future_value_usd)}`);
   lines.push('', 'Raw Payload:', JSON.stringify(diff, null, 2));
@@ -167,6 +187,28 @@ function describeTimelineProjection(projection) {
   const eventsLabel = Number.isFinite(eventsCount) ? `${Math.trunc(eventsCount)} event(s)` : 'n/a events';
   const yearsLabel = Number.isFinite(years) ? `${Math.trunc(years)}y` : 'n/a';
   return `${eventsLabel}, first-year net ${firstYearNet}, cumulative net ${cumulative} (${yearsLabel})`;
+}
+
+function describeSocialSecurityProjection(projection) {
+  if (!projection || typeof projection !== 'object') return 'Not available';
+  const selectedAge = Number(projection.selected_claiming_age);
+  const optimalAge = Number(projection.optimal_claiming_age);
+  const annual = fmtCurrency(projection.selected_annual_benefit_usd);
+  const fraMonthly = fmtCurrency(projection.fra_monthly_benefit_usd);
+  const selectedAgeLabel = Number.isFinite(selectedAge) ? `age ${Math.trunc(selectedAge)}` : 'n/a';
+  const optimalAgeLabel = Number.isFinite(optimalAge) ? `optimal ${Math.trunc(optimalAge)}` : 'optimal n/a';
+  return `${selectedAgeLabel} (${optimalAgeLabel}), annual ${annual}, FRA monthly ${fraMonthly}`;
+}
+
+function describeRmdProjection(projection) {
+  if (!projection || typeof projection !== 'object') return 'Not available';
+  const startAge = Number(projection.rmd_start_age);
+  const totalProjected = fmtCurrency(projection.total_projected_rmds_usd);
+  const firstYear = fmtCurrency(projection.yearly_points?.[0]?.total_rmd_usd);
+  const eligibleAccounts = Number(projection.eligible_account_count);
+  const startAgeLabel = Number.isFinite(startAge) ? `start age ${Math.trunc(startAge)}` : 'start age n/a';
+  const accountLabel = Number.isFinite(eligibleAccounts) ? `${Math.trunc(eligibleAccounts)} account(s)` : 'n/a account(s)';
+  return `${startAgeLabel}, first-year ${firstYear}, projected total ${totalProjected}, ${accountLabel}`;
 }
 
 export function initEditor(refreshPlans) {

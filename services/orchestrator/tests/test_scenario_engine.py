@@ -1,3 +1,5 @@
+import pytest
+
 from buildwealth_orchestrator.services.scenario_engine import ScenarioEngine
 
 
@@ -388,3 +390,162 @@ def test_scenario_engine_bond_tent_strategy_increases_withdrawal_rate_over_time(
     assert len(rates) == 3
     assert rates[1] > rates[0]
     assert rates[2] > rates[1]
+
+
+def test_scenario_engine_uses_social_security_projection_for_cashflow() -> None:
+    engine = ScenarioEngine(
+        years_to_retirement=1,
+        annual_contribution_usd=0,
+        baseline_return=0.0,
+        optimistic_return=0.0,
+        conservative_return=0.0,
+        return_volatility=0.0,
+        inflation=0.0,
+        monte_carlo_runs=10,
+        hsa_delta_default=0,
+        marginal_tax_rate=0.25,
+    )
+
+    without_ss = engine.run(
+        current_portfolio_value_usd=100000,
+        annual_contribution_usd=0,
+        years=1,
+        accounts=[
+            {
+                "account_id": "taxable",
+                "account_type": "taxableBrokerage",
+                "tax_treatment": "taxable",
+                "balance_usd": 100000,
+            }
+        ],
+        income_projection={"yearly_points": [{"year": 2026, "gross_income_usd": 0}]},
+        expense_projection={"yearly_points": [{"year": 2026, "total_expenses_usd": 50000}]},
+        start_year=2026,
+        start_age=67,
+        retirement_age=65,
+    )
+
+    with_ss = engine.run(
+        current_portfolio_value_usd=100000,
+        annual_contribution_usd=0,
+        years=1,
+        accounts=[
+            {
+                "account_id": "taxable",
+                "account_type": "taxableBrokerage",
+                "tax_treatment": "taxable",
+                "balance_usd": 100000,
+            }
+        ],
+        income_projection={"yearly_points": [{"year": 2026, "gross_income_usd": 0}]},
+        expense_projection={"yearly_points": [{"year": 2026, "total_expenses_usd": 50000}]},
+        social_security_projection={
+            "yearly_points": [
+                {"year": 2026, "age": 67, "annual_benefit_usd": 24000.0},
+            ],
+            "selected_claiming_age": 67,
+            "optimal_claiming_age": 70,
+        },
+        start_year=2026,
+        start_age=67,
+        retirement_age=65,
+    )
+
+    without_baseline = next(item for item in without_ss.scenarios if item.label == "baseline")
+    with_baseline = next(item for item in with_ss.scenarios if item.label == "baseline")
+
+    assert with_baseline.timeline_points[0].social_security_income_usd == pytest.approx(24000.0, abs=0.01)
+    assert with_baseline.timeline_points[0].withdrawals_usd < without_baseline.timeline_points[0].withdrawals_usd
+    assert with_baseline.assumptions["total_social_security_income_usd"] == pytest.approx(24000.0, abs=0.01)
+    assert with_baseline.assumptions["social_security_claiming_age"] == 67
+
+
+def test_scenario_engine_forces_rmd_withdrawals_for_eligible_accounts() -> None:
+    engine = ScenarioEngine(
+        years_to_retirement=1,
+        annual_contribution_usd=0,
+        baseline_return=0.0,
+        optimistic_return=0.0,
+        conservative_return=0.0,
+        return_volatility=0.0,
+        inflation=0.0,
+        monte_carlo_runs=10,
+        hsa_delta_default=0,
+        marginal_tax_rate=0.25,
+    )
+
+    result = engine.run(
+        current_portfolio_value_usd=1_000_000,
+        annual_contribution_usd=0,
+        years=1,
+        accounts=[
+            {
+                "account_id": "deferred",
+                "account_type": "401k",
+                "tax_treatment": "tax_deferred",
+                "balance_usd": 1_000_000,
+            }
+        ],
+        income_projection={"yearly_points": [{"year": 2026, "gross_income_usd": 0}]},
+        expense_projection={"yearly_points": [{"year": 2026, "total_expenses_usd": 0}]},
+        rmd_projection={"birth_year": 1955, "rmd_start_age": 73},
+        start_year=2026,
+        start_age=73,
+        retirement_age=65,
+        withdrawal_strategy="cashflow_only",
+    )
+
+    baseline = next(item for item in result.scenarios if item.label == "baseline")
+    timeline = baseline.timeline_points[0]
+    account_point = baseline.account_balance_points[0]
+    assert timeline.rmds_usd == pytest.approx(37735.85, abs=0.02)
+    assert timeline.withdrawals_usd > timeline.rmds_usd
+    assert account_point.rmd_withdrawal_usd == pytest.approx(37735.85, abs=0.02)
+    assert baseline.assumptions["total_rmds_usd"] == pytest.approx(37735.85, abs=0.02)
+    assert baseline.assumptions["rmd_start_age"] == 73
+    assert timeline.taxes_usd > 0
+
+
+def test_scenario_engine_honors_rmd_start_age_override() -> None:
+    engine = ScenarioEngine(
+        years_to_retirement=1,
+        annual_contribution_usd=0,
+        baseline_return=0.0,
+        optimistic_return=0.0,
+        conservative_return=0.0,
+        return_volatility=0.0,
+        inflation=0.0,
+        monte_carlo_runs=10,
+        hsa_delta_default=0,
+        marginal_tax_rate=0.25,
+    )
+
+    result = engine.run(
+        current_portfolio_value_usd=1_000_000,
+        annual_contribution_usd=0,
+        years=1,
+        accounts=[
+            {
+                "account_id": "deferred",
+                "account_type": "401k",
+                "tax_treatment": "tax_deferred",
+                "balance_usd": 1_000_000,
+            }
+        ],
+        income_projection={"yearly_points": [{"year": 2026, "gross_income_usd": 0}]},
+        expense_projection={"yearly_points": [{"year": 2026, "total_expenses_usd": 0}]},
+        rmd_projection={"birth_year": 1960, "rmd_start_age": 75},
+        start_year=2026,
+        start_age=73,
+        retirement_age=65,
+        withdrawal_strategy="cashflow_only",
+    )
+
+    baseline = next(item for item in result.scenarios if item.label == "baseline")
+    timeline = baseline.timeline_points[0]
+    account_point = baseline.account_balance_points[0]
+    assert timeline.rmds_usd == 0
+    assert timeline.withdrawals_usd == 0
+    assert account_point.rmd_withdrawal_usd == 0
+    assert baseline.assumptions["total_rmds_usd"] == 0
+    assert baseline.assumptions["rmd_start_age"] == 75

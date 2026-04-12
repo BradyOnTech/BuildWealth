@@ -170,6 +170,24 @@ These decisions refine the build plan based on the current repository and upstre
 - Plan scenario APIs now resolve strategy from plan settings with timeline retirement fallback and pass it through scenario execution (`main.py`)
 - Added focused coverage in `test_scenario_engine.py` and `test_planning_sidecar.py` for strategy normalization, guardrail behavior, bucket ordering, and strategy metadata propagation
 
+### 2026-04-12 (Completed - Social Security Modeling Foundation)
+- Added Social Security projection service (`social_security_projection.py`) with FRA-benefit estimation from earnings, claim-age comparisons (`62/67/70`), and year-by-year benefit projection output
+- Added planning endpoint `POST /api/planning/social-security-projection` plus Copilot tool `project_social_security` for explicit SS benefit estimation workflows
+- Extended plan timeline retirement schema/sanitization to carry SS planning assumptions (birth year, claiming age, life expectancy, FRA monthly benefit override, estimated earnings)
+- Planning and scenario-diff flows now generate and pass Social Security projections into scenario execution; sidecar metadata and local fallback now both carry `social_security_projection`
+- Local tax-aware scenario engine now applies Social Security income in annual cashflow and federal tax calculations (`social_security_income_usd`) instead of hardcoded zero
+- Plan scenario-diff UI output now includes Social Security context summaries for base/candidate comparisons
+- Added focused coverage in `test_social_security_projection.py`, `test_scenario_engine.py`, `test_planning_sidecar.py`, and `test_plan_workspace.py`
+
+### 2026-04-12 (Completed - RMD Modeling Foundation)
+- Added RMD projection service (`rmd_projection.py`) adapted from Ignidash RMD table/simulation patterns (`src/lib/calc/historical-data/rmd-table.ts`, `src/lib/calc/simulation-engine.ts`, `src/lib/calc/portfolio.ts`)
+- Added planning endpoint `POST /api/planning/rmd-projection` plus Copilot tool `project_rmd_schedule` for explicit required-minimum-distribution projections
+- Extended plan timeline retirement schema/sanitization to carry RMD assumptions (`rmd_birth_year`, `rmd_start_age`) with SECURE 2.0 start-age handling
+- Planning and scenario-diff flows now generate/pass `rmd_projection` metadata into sidecar/local execution and return it in planning responses
+- Local tax-aware scenario engine now enforces per-account RMD withdrawals for eligible tax-deferred accounts (401k/403b/IRA), tracks yearly `rmds_usd`, and reconciles tax impact from forced distributions
+- Plan scenario-diff UI output now includes RMD context summaries for base/candidate comparisons
+- Added focused coverage in `test_rmd_projection.py`, `test_scenario_engine.py`, `test_planning_sidecar.py`, and `test_plan_workspace.py`
+
 ### 2026-04-09 (Completed)
 - Phase 1.1: BuildWealth-native TWR calculator integrated into local portfolio store
 - Phase 1.2: XIRR money-weighted return added and surfaced in portfolio snapshot/UI
@@ -284,15 +302,15 @@ These decisions refine the build plan based on the current repository and upstre
 | State tax | NOT BUILT | 0% |
 | FICA / Social Security tax | Built (foundation) | ~30% |
 | Capital gains (LTCG/STCG/NIIT) | Built (foundation) | ~35% |
-| Social Security claiming optimization | NOT BUILT | 0% |
-| RMD calculations (age 73+) | NOT BUILT | 0% |
+| Social Security claiming optimization | Built (foundation) | ~30% |
+| RMD calculations (age 73+) | Built (foundation) | ~30% |
 | Withdrawal strategies (4% rule, dynamic, bond tent) | Built (foundation) | ~35% |
 | Multiple assumption sets | NOT BUILT | 0% |
 | Scenario branching (life events) | NOT BUILT | 0% |
 | Net worth charts over time | NOT BUILT | 0% |
 | Per-account balance projections | Built (foundation) | ~30% |
 
-**Honest assessment:** We're at ~20% feature parity with Ghostfolio and ~24% with Ignidash. There is substantial work ahead.
+**Honest assessment:** We're at ~20% feature parity with Ghostfolio and ~28% with Ignidash. There is substantial work ahead.
 
 ---
 

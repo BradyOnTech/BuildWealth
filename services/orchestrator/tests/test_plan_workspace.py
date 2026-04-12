@@ -189,6 +189,10 @@ def test_plan_workspace_updates_timeline(tmp_path: Path) -> None:
             "retirement": {
                 "target_retirement_age": 60,
                 "withdrawal_strategy": "4_percent_rule",
+                "social_security_claiming_age": 67,
+                "social_security_fra_monthly_benefit_usd": 2800,
+                "rmd_birth_year": 1960,
+                "rmd_start_age": 75,
             },
         },
     )
@@ -196,6 +200,10 @@ def test_plan_workspace_updates_timeline(tmp_path: Path) -> None:
     assert len(updated_timeline["events"]) == 1
     assert updated_timeline["events"][0]["label"] == "Buy House"
     assert updated_timeline["retirement"]["target_retirement_age"] == 60
+    assert updated_timeline["retirement"]["social_security_claiming_age"] == 67
+    assert updated_timeline["retirement"]["social_security_fra_monthly_benefit_usd"] == 2800.0
+    assert updated_timeline["retirement"]["rmd_birth_year"] == 1960
+    assert updated_timeline["retirement"]["rmd_start_age"] == 75
 
     loaded = workspace.get_plan_timeline(detail["id"])
     assert len(loaded["events"]) == 1
