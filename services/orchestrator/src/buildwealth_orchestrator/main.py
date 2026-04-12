@@ -953,6 +953,27 @@ def resolve_plan_timeline_payload(plan_detail: dict[str, Any]) -> dict[str, Any]
     return payload
 
 
+def resolve_timeline_retirement_age(timeline_payload: dict[str, Any]) -> int | None:
+    retirement = timeline_payload.get("retirement")
+    if not isinstance(retirement, dict):
+        return None
+    raw_age = retirement.get("target_retirement_age")
+    if raw_age is None:
+        return None
+    age = _coerce_int(raw_age, -1)
+    if age < 18 or age > 100:
+        return None
+    return age
+
+
+def resolve_timeline_withdrawal_strategy(timeline_payload: dict[str, Any]) -> str | None:
+    retirement = timeline_payload.get("retirement")
+    if not isinstance(retirement, dict):
+        return None
+    strategy = str(retirement.get("withdrawal_strategy") or "").strip()
+    return strategy or None
+
+
 def build_timeline_projection_for_plan_settings(
     *,
     plan_settings: dict[str, Any],
@@ -979,6 +1000,8 @@ async def run_scenarios_for_plan_settings(
     debt_projection: DebtProjectionResponse | None = None,
     timeline_projection: TimelineImpactProjectionResponse | None = None,
     contribution_allocation: ContributionAllocationResponse | None = None,
+    retirement_age: int | None = None,
+    timeline_withdrawal_strategy: str | None = None,
 ) -> PlanningResponse:
     validate_plan_return_relationships(plan_settings)
     service = build_ignidash_service_for_plan_settings(plan_settings)
@@ -1041,6 +1064,9 @@ async def run_scenarios_for_plan_settings(
         contribution_allocation_payload = contribution_allocation.model_dump(mode="json")
 
     filing_status = str(plan_settings.get("filing_status") or "").strip() or None
+    withdrawal_strategy = str(plan_settings.get("withdrawal_strategy") or "").strip() or None
+    if not withdrawal_strategy:
+        withdrawal_strategy = str(timeline_withdrawal_strategy or "").strip() or None
     resolved_start_year = utc_now().year
 
     result = await service.run(
@@ -1056,6 +1082,8 @@ async def run_scenarios_for_plan_settings(
         contribution_allocation=contribution_allocation_payload,
         filing_status=filing_status,
         start_year=resolved_start_year,
+        withdrawal_strategy=withdrawal_strategy,
+        retirement_age=retirement_age,
     )
     if result.engine_status == "degraded":
         await engine_status_tracker.increment_degraded(
@@ -2259,6 +2287,8 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
     detail = plan_workspace.get_plan(plan_id)
     timeline_payload = resolve_plan_timeline_payload(detail)
+    retirement_age = resolve_timeline_retirement_age(timeline_payload)
+    timeline_withdrawal_strategy = resolve_timeline_withdrawal_strategy(timeline_payload)
     base_settings = detail.get("settings", {})
     compare_updates = extract_plan_settings_updates(arguments)
     candidate_settings = merge_plan_settings(base_settings, compare_updates)
@@ -2299,6 +2329,8 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         debt_projection=base_debt_projection,
         timeline_projection=base_timeline_projection,
         contribution_allocation=base_contribution_allocation,
+        retirement_age=retirement_age,
+        timeline_withdrawal_strategy=timeline_withdrawal_strategy,
     )
     candidate_result = await run_scenarios_for_plan_settings(
         current_portfolio_value_usd=current_value,
@@ -2308,6 +2340,8 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         debt_projection=candidate_debt_projection,
         timeline_projection=candidate_timeline_projection,
         contribution_allocation=candidate_contribution_allocation,
+        retirement_age=retirement_age,
+        timeline_withdrawal_strategy=timeline_withdrawal_strategy,
     )
     scenario_deltas, monte_carlo_delta = build_scenario_diff_payload(base_result, candidate_result)
 
@@ -3650,6 +3684,8 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     timeline_payload = resolve_plan_timeline_payload(detail)
+    retirement_age = resolve_timeline_retirement_age(timeline_payload)
+    timeline_withdrawal_strategy = resolve_timeline_withdrawal_strategy(timeline_payload)
     base_settings = dict(detail.get("settings", {}))
     candidate_settings = merge_plan_settings(base_settings, compare_updates)
     base_income_projection = build_income_projection_for_plan_settings(base_settings)
@@ -3686,6 +3722,8 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
             debt_projection=base_debt_projection,
             timeline_projection=base_timeline_projection,
             contribution_allocation=base_contribution_allocation,
+            retirement_age=retirement_age,
+            timeline_withdrawal_strategy=timeline_withdrawal_strategy,
         )
         candidate_result = await run_scenarios_for_plan_settings(
             current_portfolio_value_usd=current_value,
@@ -3695,6 +3733,8 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
             debt_projection=candidate_debt_projection,
             timeline_projection=candidate_timeline_projection,
             contribution_allocation=candidate_contribution_allocation,
+            retirement_age=retirement_age,
+            timeline_withdrawal_strategy=timeline_withdrawal_strategy,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -4016,12 +4056,21 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         start_date=utc_now().date().replace(day=1),
     )
     timeline_projection: TimelineImpactProjectionResponse | None = None
+    active_withdrawal_strategy: str | None = None
+    active_retirement_age: int | None = None
     active_plan_detail: dict[str, Any] | None = None
     active_plan_id = plan_workspace.get_active_plan_id()
     if active_plan_id:
         try:
             active_plan_detail = plan_workspace.get_plan(active_plan_id)
             active_timeline = resolve_plan_timeline_payload(active_plan_detail)
+            active_retirement_age = resolve_timeline_retirement_age(active_timeline)
+            timeline_strategy = resolve_timeline_withdrawal_strategy(active_timeline)
+            active_settings = active_plan_detail.get("settings")
+            if isinstance(active_settings, dict):
+                active_withdrawal_strategy = str(active_settings.get("withdrawal_strategy") or "").strip() or None
+            if not active_withdrawal_strategy:
+                active_withdrawal_strategy = timeline_strategy
             timeline_projection = build_timeline_projection_for_plan_settings(
                 plan_settings={"years": resolved_years},
                 timeline_payload=active_timeline,
@@ -4029,6 +4078,8 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         except PlanNotFoundError:
             timeline_projection = None
             active_plan_detail = None
+            active_withdrawal_strategy = None
+            active_retirement_age = None
 
     resolved_annual_contribution = (
         float(request.annual_contribution_usd)
@@ -4077,6 +4128,8 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         ),
         filing_status=filing_status,
         start_year=utc_now().year,
+        withdrawal_strategy=active_withdrawal_strategy,
+        retirement_age=active_retirement_age,
     )
     if result.engine_status == "degraded":
         await engine_status_tracker.increment_degraded(

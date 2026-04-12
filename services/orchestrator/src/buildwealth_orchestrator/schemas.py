@@ -451,7 +451,7 @@ class ScenarioResult(BaseModel):
     label: Literal["baseline", "optimistic", "conservative", "hsa_delta"]
     future_value_usd: float
     real_value_usd: float
-    assumptions: dict[str, float | int]
+    assumptions: dict[str, float | int | str | bool | None]
     timeline_points: list[ScenarioTimelinePoint] = Field(default_factory=list)
     account_balance_points: list[ScenarioAccountBalancePoint] = Field(default_factory=list)
 

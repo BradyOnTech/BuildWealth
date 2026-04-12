@@ -162,6 +162,9 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
         assert payload["metadata"]["debt_projection"]["selected_scenario"]["first_year_payments_usd"] == 10000
         assert payload["metadata"]["timeline_projection"]["first_year_income_impact_usd"] == 5000
         assert payload["metadata"]["contribution_allocation"]["total_contributions_usd"] == 22000
+        assert payload["metadata"]["filing_status"] == "single"
+        assert payload["metadata"]["withdrawal_strategy"] == "4_percent_rule"
+        assert payload["metadata"]["retirement_age"] == 60
         return httpx.Response(
             status_code=200,
             json={
@@ -331,6 +334,9 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
                 "rule_results": [],
                 "warnings": [],
             },
+            filing_status="single",
+            withdrawal_strategy="4_percent_rule",
+            retirement_age=60,
         )
     )
 

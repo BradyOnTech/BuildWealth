@@ -44,6 +44,32 @@ VALID_FILING_STATUSES: set[str] = {
     "head_of_household",
 }
 
+WithdrawalStrategy = Literal[
+    "cashflow_only",
+    "four_percent_rule",
+    "dynamic_guardrails",
+    "bond_tent",
+    "bucket_strategy",
+]
+
+STRATEGY_ALIASES: dict[str, WithdrawalStrategy] = {
+    "": "cashflow_only",
+    "cashflow_only": "cashflow_only",
+    "none": "cashflow_only",
+    "default": "cashflow_only",
+    "4_percent_rule": "four_percent_rule",
+    "4percent_rule": "four_percent_rule",
+    "four_percent_rule": "four_percent_rule",
+    "4_percent": "four_percent_rule",
+    "dynamic_withdrawal": "dynamic_guardrails",
+    "dynamic_guardrails": "dynamic_guardrails",
+    "guyton_klinger": "dynamic_guardrails",
+    "guyton_klinger_guardrails": "dynamic_guardrails",
+    "bond_tent": "bond_tent",
+    "bucket_strategy": "bucket_strategy",
+    "bucket": "bucket_strategy",
+}
+
 
 @dataclass
 class ScenarioAssumptions:
@@ -60,6 +86,13 @@ class ProjectionAccount:
     tax_treatment: Literal["taxable", "tax_deferred", "tax_free"]
     balance_usd: float
     contribution_hint_usd: float = 0.0
+
+
+@dataclass
+class WithdrawalStrategyState:
+    previous_withdrawal_target_usd: float | None = None
+    previous_growth_rate: float | None = None
+    retirement_years_elapsed: int = 0
 
 
 def _safe_float(value: Any, fallback: float = 0.0) -> float:
@@ -100,6 +133,24 @@ def _normalize_filing_status(value: Any) -> FilingStatus:
     if text in VALID_FILING_STATUSES:
         return text  # type: ignore[return-value]
     return "single"
+
+
+def _normalize_withdrawal_strategy(value: Any) -> WithdrawalStrategy:
+    text = str(value or "").strip().lower()
+    return STRATEGY_ALIASES.get(text, "cashflow_only")
+
+
+def _normalize_retirement_age(value: Any) -> int:
+    age = _safe_int(value, 65)
+    return max(35, min(age, 100))
+
+
+def _is_roth_account_type(account_type: str) -> bool:
+    return account_type in {"roth401k", "roth403b", "rothIra"}
+
+
+def _is_cash_account_type(account_type: str) -> bool:
+    return account_type in {"savings"}
 
 
 def _projection_point_for_year(
@@ -414,10 +465,135 @@ class ScenarioEngine:
         return total
 
     @staticmethod
+    def _account_withdrawal_priority(
+        account: ProjectionAccount,
+        *,
+        age: float,
+        strategy: WithdrawalStrategy,
+    ) -> tuple[int, str]:
+        account_type = account.account_type
+
+        # Bucket strategy approximation:
+        # cash bucket -> bond-like/tax-deferred bucket -> equity-like/taxable -> tax-free.
+        if strategy == "bucket_strategy":
+            if _is_cash_account_type(account_type):
+                return (1, account.account_id)
+            if account.tax_treatment == "tax_deferred":
+                return (2, account.account_id)
+            if account.tax_treatment == "taxable":
+                return (3, account.account_id)
+            return (4, account.account_id)
+
+        # Ignidash-inspired age-aware withdrawal ordering.
+        if age < 59.5:
+            if _is_cash_account_type(account_type):
+                return (1, account.account_id)
+            if account_type == "taxableBrokerage":
+                return (2, account.account_id)
+            if _is_roth_account_type(account_type):
+                return (3, account.account_id)
+            if account_type in {"401k", "403b", "ira"}:
+                return (4, account.account_id)
+            if account_type == "hsa":
+                return (5, account.account_id)
+        else:
+            if _is_cash_account_type(account_type):
+                return (1, account.account_id)
+            if account_type in {"401k", "403b", "ira"}:
+                return (2, account.account_id)
+            if account_type == "taxableBrokerage":
+                return (3, account.account_id)
+            if _is_roth_account_type(account_type):
+                return (4, account.account_id)
+            if account_type == "hsa":
+                return (5, account.account_id)
+
+        # Fallback to tax-treatment ordering if the account type is unknown.
+        if account.tax_treatment == "taxable":
+            return (10, account.account_id)
+        if account.tax_treatment == "tax_deferred":
+            return (11, account.account_id)
+        return (12, account.account_id)
+
+    @staticmethod
+    def _strategy_withdrawal_target(
+        *,
+        strategy: WithdrawalStrategy,
+        state: WithdrawalStrategyState,
+        age: int,
+        retirement_age: int,
+        starting_balance: float,
+        base_required_withdrawals: float,
+        inflation: float,
+    ) -> float:
+        if age < retirement_age:
+            return 0.0
+        if base_required_withdrawals <= 0:
+            return 0.0
+
+        safe_starting_balance = max(0.0, starting_balance)
+        if safe_starting_balance <= 0:
+            return 0.0
+
+        if strategy == "cashflow_only":
+            return 0.0
+
+        inflation_factor = 1.0 + max(-1.0, inflation)
+
+        if strategy == "four_percent_rule":
+            if state.previous_withdrawal_target_usd is None:
+                target = safe_starting_balance * 0.04
+            else:
+                target = state.previous_withdrawal_target_usd * inflation_factor
+            return max(0.0, target)
+
+        if strategy == "dynamic_guardrails":
+            if state.previous_withdrawal_target_usd is None:
+                target = safe_starting_balance * 0.04
+            else:
+                prior_growth = state.previous_growth_rate
+                # Guyton-Klinger-inspired inflation adjustment:
+                # skip inflation step-up after down years.
+                if prior_growth is not None and prior_growth < 0:
+                    target = state.previous_withdrawal_target_usd
+                else:
+                    target = state.previous_withdrawal_target_usd * inflation_factor
+
+            current_rate = target / safe_starting_balance if safe_starting_balance > 0 else 0.0
+            lower_guardrail = 0.032  # 4% * 0.8
+            upper_guardrail = 0.048  # 4% * 1.2
+            if current_rate > upper_guardrail:
+                target *= 0.90
+            elif current_rate < lower_guardrail:
+                target *= 1.10
+            return max(0.0, target)
+
+        if strategy == "bond_tent":
+            # Glide from a conservative early-retirement withdrawal rate
+            # toward a higher long-run rate as the tent unwinds.
+            start_rate = 0.0325
+            end_rate = 0.045
+            tent_years = 15
+            progress = min(1.0, max(0.0, state.retirement_years_elapsed / max(1, tent_years - 1)))
+            rate = start_rate + ((end_rate - start_rate) * progress)
+            return max(0.0, safe_starting_balance * rate)
+
+        if strategy == "bucket_strategy":
+            if state.previous_withdrawal_target_usd is None:
+                target = max(base_required_withdrawals, safe_starting_balance * 0.035)
+            else:
+                target = state.previous_withdrawal_target_usd * inflation_factor
+            return max(0.0, target)
+
+        return 0.0
+
+    @staticmethod
     def _withdraw_from_accounts(
         *,
         accounts: list[ProjectionAccount],
         amount_usd: float,
+        age: float,
+        strategy: WithdrawalStrategy,
     ) -> dict[str, Any]:
         requested = max(0.0, float(amount_usd))
         if requested <= 0:
@@ -432,19 +608,14 @@ class ScenarioEngine:
                 },
             }
 
-        buckets: dict[str, list[ProjectionAccount]] = {
-            "taxable": [],
-            "tax_deferred": [],
-            "tax_free": [],
-        }
-        for account in accounts:
-            buckets[account.tax_treatment].append(account)
-
-        ordered_accounts = [
-            *buckets["taxable"],
-            *buckets["tax_deferred"],
-            *buckets["tax_free"],
-        ]
+        ordered_accounts = sorted(
+            accounts,
+            key=lambda account: ScenarioEngine._account_withdrawal_priority(
+                account,
+                age=age,
+                strategy=strategy,
+            ),
+        )
 
         remaining = requested
         by_account: dict[str, float] = {}
@@ -498,10 +669,13 @@ class ScenarioEngine:
         filing_status: FilingStatus,
         start_year: int,
         start_age: int,
+        withdrawal_strategy: WithdrawalStrategy,
+        retirement_age: int,
     ) -> ScenarioResult:
         accounts = self._copy_accounts(projection_accounts)
         timeline_points: list[ScenarioTimelinePoint] = []
         account_points: list[ScenarioAccountBalancePoint] = []
+        withdrawal_state = WithdrawalStrategyState()
 
         total_taxes_paid = 0.0
         total_contributions = 0.0
@@ -563,7 +737,21 @@ class ScenarioEngine:
 
             net_cash_after_planned = annual_income - annual_expenses - annual_debt - taxes - planned_contributions
             discretionary_savings = max(0.0, net_cash_after_planned)
-            required_withdrawals = max(0.0, -net_cash_after_planned)
+            base_required_withdrawals = max(0.0, -net_cash_after_planned)
+            strategy_withdrawal_target = self._strategy_withdrawal_target(
+                strategy=withdrawal_strategy,
+                state=withdrawal_state,
+                age=age,
+                retirement_age=retirement_age,
+                starting_balance=starting_balance,
+                base_required_withdrawals=base_required_withdrawals,
+                inflation=assumptions.inflation,
+            )
+            required_withdrawals = max(base_required_withdrawals, strategy_withdrawal_target)
+            strategy_extra_spending = max(0.0, required_withdrawals - base_required_withdrawals)
+            if strategy_extra_spending > 0:
+                annual_expenses += strategy_extra_spending
+                discretionary_savings = max(0.0, discretionary_savings - strategy_extra_spending)
 
             self._add_extra_savings(
                 accounts=accounts,
@@ -578,6 +766,8 @@ class ScenarioEngine:
             withdrawals_result = self._withdraw_from_accounts(
                 accounts=accounts,
                 amount_usd=required_withdrawals,
+                age=float(age),
+                strategy=withdrawal_strategy,
             )
             total_withdrawn = _safe_float(withdrawals_result.get("total_withdrawn_usd"), 0.0)
             by_account_withdrawals: dict[str, float] = dict(withdrawals_result.get("by_account") or {})
@@ -606,6 +796,8 @@ class ScenarioEngine:
                     extra_withdrawals = self._withdraw_from_accounts(
                         accounts=accounts,
                         amount_usd=additional_tax_due,
+                        age=float(age),
+                        strategy=withdrawal_strategy,
                     )
                     total_withdrawn += _safe_float(extra_withdrawals.get("total_withdrawn_usd"), 0.0)
                     extra_by_account = extra_withdrawals.get("by_account") or {}
@@ -693,6 +885,14 @@ class ScenarioEngine:
             total_withdrawals += total_withdrawn
             tax_rates.append(effective_tax_rate)
 
+            if starting_balance > 0:
+                withdrawal_state.previous_growth_rate = total_growth / starting_balance
+            else:
+                withdrawal_state.previous_growth_rate = 0.0
+            if age >= retirement_age:
+                withdrawal_state.retirement_years_elapsed += 1
+            withdrawal_state.previous_withdrawal_target_usd = required_withdrawals
+
         ending_nominal = sum(max(0.0, account.balance_usd) for account in accounts)
         average_tax_rate = (sum(tax_rates) / len(tax_rates)) if tax_rates else 0.0
 
@@ -713,6 +913,8 @@ class ScenarioEngine:
                 "expected_return": assumptions.expected_return,
                 "inflation": assumptions.inflation,
                 "account_count": len(accounts),
+                "withdrawal_strategy": withdrawal_strategy,
+                "retirement_age": retirement_age,
                 "total_taxes_paid_usd": round(total_taxes_paid, 2),
                 "total_contributions_usd": round(total_contributions, 2),
                 "total_withdrawals_usd": round(total_withdrawals, 2),
@@ -771,6 +973,8 @@ class ScenarioEngine:
         filing_status: str | None = None,
         start_year: int | None = None,
         start_age: int = 35,
+        withdrawal_strategy: str | None = None,
+        retirement_age: int | None = None,
     ) -> PlanningResponse:
         resolved_years = max(1, _safe_int(years, self.years_to_retirement))
         resolved_contribution = max(
@@ -784,6 +988,8 @@ class ScenarioEngine:
         resolved_start_year = _safe_int(start_year, datetime.now().year)
         resolved_start_age = max(0, _safe_int(start_age, 35))
         resolved_filing_status = _normalize_filing_status(filing_status)
+        resolved_withdrawal_strategy = _normalize_withdrawal_strategy(withdrawal_strategy)
+        resolved_retirement_age = _normalize_retirement_age(retirement_age)
 
         base_accounts = self._build_projection_accounts(
             accounts=accounts,
@@ -809,6 +1015,8 @@ class ScenarioEngine:
             filing_status=resolved_filing_status,
             start_year=resolved_start_year,
             start_age=resolved_start_age,
+            withdrawal_strategy=resolved_withdrawal_strategy,
+            retirement_age=resolved_retirement_age,
         )
         optimistic = self._scenario(
             label="optimistic",
@@ -827,6 +1035,8 @@ class ScenarioEngine:
             filing_status=resolved_filing_status,
             start_year=resolved_start_year,
             start_age=resolved_start_age,
+            withdrawal_strategy=resolved_withdrawal_strategy,
+            retirement_age=resolved_retirement_age,
         )
         conservative = self._scenario(
             label="conservative",
@@ -845,6 +1055,8 @@ class ScenarioEngine:
             filing_status=resolved_filing_status,
             start_year=resolved_start_year,
             start_age=resolved_start_age,
+            withdrawal_strategy=resolved_withdrawal_strategy,
+            retirement_age=resolved_retirement_age,
         )
         hsa_delta = self._scenario(
             label="hsa_delta",
@@ -863,6 +1075,8 @@ class ScenarioEngine:
             filing_status=resolved_filing_status,
             start_year=resolved_start_year,
             start_age=resolved_start_age,
+            withdrawal_strategy=resolved_withdrawal_strategy,
+            retirement_age=resolved_retirement_age,
         )
 
         monte_carlo = self._monte_carlo(

@@ -127,6 +127,8 @@ class IgnidashScenarioService:
         filing_status: str | None = None,
         start_year: int | None = None,
         start_age: int = 35,
+        withdrawal_strategy: str | None = None,
+        retirement_age: int | None = None,
     ) -> PlanningResponse:
         local_result = self.scenario_engine.run(
             current_portfolio_value_usd=current_portfolio_value_usd,
@@ -142,6 +144,8 @@ class IgnidashScenarioService:
             filing_status=filing_status,
             start_year=start_year,
             start_age=start_age,
+            withdrawal_strategy=withdrawal_strategy,
+            retirement_age=retirement_age,
         )
 
         if not self.sidecar_enabled or self.sidecar_adapter is None:
@@ -172,6 +176,8 @@ class IgnidashScenarioService:
             contribution_allocation=contribution_allocation,
             filing_status=filing_status,
             start_year=start_year,
+            withdrawal_strategy=withdrawal_strategy,
+            retirement_age=retirement_age,
         )
 
         try:
@@ -228,6 +234,8 @@ class IgnidashScenarioService:
         contribution_allocation: dict[str, Any] | None,
         filing_status: str | None,
         start_year: int | None,
+        withdrawal_strategy: str | None,
+        retirement_age: int | None,
     ) -> IgnidashScenarioRequestV1:
         resolved_years = int(self.scenario_engine.years_to_retirement if years is None else years)
         resolved_contribution = float(
@@ -333,6 +341,10 @@ class IgnidashScenarioService:
             metadata["contribution_allocation"] = contribution_allocation
         if filing_status:
             metadata["filing_status"] = filing_status
+        if withdrawal_strategy:
+            metadata["withdrawal_strategy"] = withdrawal_strategy
+        if retirement_age is not None:
+            metadata["retirement_age"] = int(retirement_age)
 
         return IgnidashScenarioRequestV1(
             request_id=uuid4().hex,

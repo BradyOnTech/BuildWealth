@@ -163,6 +163,13 @@ These decisions refine the build plan based on the current repository and upstre
 - Plan and planning endpoints now pass account/filling-status context through to scenario execution and apply timeline first-year portfolio/contribution effects consistently
 - Added focused coverage for tax-aware timeline/account behavior in `test_scenario_engine.py` and extended integration coverage in `test_planning_sidecar.py`
 
+### 2026-04-12 (Completed - Withdrawal Strategies Foundation)
+- Added strategy-aware retirement withdrawals in local planning simulation (`scenario_engine.py`) with `cashflow_only`, `four_percent_rule`, `dynamic_guardrails`, `bond_tent`, and `bucket_strategy`
+- Reused Ignidash planning patterns from `src/lib/calc/{portfolio,simulation-engine,account,phase}.ts` for age-aware withdrawal ordering and phase-aware retirement behavior
+- Planning sidecar/local fallback wiring now carries `withdrawal_strategy` and `retirement_age` (`planning_sidecar.py`) so degraded mode and sidecar mode share the same strategy assumptions
+- Plan scenario APIs now resolve strategy from plan settings with timeline retirement fallback and pass it through scenario execution (`main.py`)
+- Added focused coverage in `test_scenario_engine.py` and `test_planning_sidecar.py` for strategy normalization, guardrail behavior, bucket ordering, and strategy metadata propagation
+
 ### 2026-04-09 (Completed)
 - Phase 1.1: BuildWealth-native TWR calculator integrated into local portfolio store
 - Phase 1.2: XIRR money-weighted return added and surfaced in portfolio snapshot/UI
@@ -279,13 +286,13 @@ These decisions refine the build plan based on the current repository and upstre
 | Capital gains (LTCG/STCG/NIIT) | Built (foundation) | ~35% |
 | Social Security claiming optimization | NOT BUILT | 0% |
 | RMD calculations (age 73+) | NOT BUILT | 0% |
-| Withdrawal strategies (4% rule, dynamic, bond tent) | NOT BUILT | 0% |
+| Withdrawal strategies (4% rule, dynamic, bond tent) | Built (foundation) | ~35% |
 | Multiple assumption sets | NOT BUILT | 0% |
 | Scenario branching (life events) | NOT BUILT | 0% |
 | Net worth charts over time | NOT BUILT | 0% |
 | Per-account balance projections | Built (foundation) | ~30% |
 
-**Honest assessment:** We're at ~20% feature parity with Ghostfolio and ~22% with Ignidash. There is substantial work ahead.
+**Honest assessment:** We're at ~20% feature parity with Ghostfolio and ~24% with Ignidash. There is substantial work ahead.
 
 ---
 
