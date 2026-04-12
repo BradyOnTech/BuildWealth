@@ -71,7 +71,14 @@ adapted from the following open source projects:
   (assumption-set selection and scenario wiring patterns aligned to Ignidash
   market-assumptions input and template conventions from
   `convex/market_assumptions.ts`, `convex/templates/basic.ts`, and
-  `convex/templates/early_retirement.ts`);
+  `convex/templates/early_retirement.ts`; life-event branch shaping and timeline
+  impact wiring aligned to `src/lib/schemas/inputs/timeline-form-schema.ts`,
+  `convex/timeline.ts`, and `convex/validators/timeline_validator.ts`);
+  `services/orchestrator/src/buildwealth_orchestrator/web/views/plan-editor.js`
+  (single-simulation net-worth chart data shaping, debt/asset overlay framing,
+  and metric-driven projection view selection patterns aligned to
+  `src/lib/calc/data-extractors/chart-data-extractor.ts` and
+  `src/app/dashboard/simulator/[planId]/components/outputs/charts/single-simulation/single-simulation-net-worth-area-chart.tsx`);
   `services/orchestrator/src/buildwealth_orchestrator/services/social_security_projection.py`
   (timeline age/retirement framing and claim-age comparison structure aligned to
   `src/lib/schemas/inputs/timeline-form-schema.ts` and `src/lib/calc/phase.ts`;

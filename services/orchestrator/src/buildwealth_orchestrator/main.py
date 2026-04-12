@@ -35,6 +35,8 @@ from buildwealth_orchestrator.schemas import (
     PlanDetailResponse,
     PlanScenarioDiffRequest,
     PlanScenarioDiffResponse,
+    PlanScenarioBranchRequest,
+    PlanScenarioBranchResponse,
     PlanSettings,
     PlanSettingsUpdateRequest,
     PlanTimelineResponse,
@@ -318,6 +320,7 @@ copilot = FinancialCopilot(
         "- For 'am I on track?' → call get_plan_tracking for plan assumptions, or get_goal_progress for specific goals.\n"
         "- For 'when will I reach my goal?' or 'what do I need to save?' → call get_goal_progress.\n"
         "- For 'what if I change my contributions?' → call run_plan_scenario_diff.\n"
+        "- For life-event what-ifs (job loss, raise, new recurring costs) → call run_plan_scenario_branch.\n"
         "- For 'what should I do?' → call get_today_dashboard and list_recommendations.\n"
         "- For stock/investment research → call research_quote or research_price_history, "
         "then call simulate_trade to show how buying it would affect portfolio allocation.\n"
@@ -1360,6 +1363,110 @@ def resolve_timeline_withdrawal_strategy(timeline_payload: dict[str, Any]) -> st
     return strategy or None
 
 
+def _add_months(anchor: date, months: int) -> date:
+    safe_months = max(0, months)
+    month_index = (anchor.year * 12) + (anchor.month - 1) + safe_months
+    year = month_index // 12
+    month = (month_index % 12) + 1
+    return date(year, month, 1)
+
+
+def normalize_branch_events_payload(
+    *,
+    raw_branch_events: list[dict[str, Any]] | None,
+    start_year: int,
+) -> list[dict[str, Any]]:
+    if not raw_branch_events:
+        return []
+
+    normalized_events: list[dict[str, Any]] = []
+    for index, raw in enumerate(raw_branch_events, start=1):
+        if not isinstance(raw, dict):
+            continue
+
+        label = str(raw.get("label") or "").strip()
+        if not label:
+            continue
+
+        event_type = str(raw.get("event_type") or "milestone").strip().lower()
+        if event_type not in {"purchase", "windfall", "job_change", "retirement", "milestone"}:
+            event_type = "milestone"
+
+        impact_type = str(raw.get("impact_type") or "expense").strip().lower()
+        if impact_type not in {"income", "expense", "portfolio", "contribution", "debt_payment"}:
+            impact_type = "expense"
+
+        recurring_frequency = str(raw.get("recurring_frequency") or "yearly").strip().lower()
+        if recurring_frequency not in {"one_time", "monthly", "yearly"}:
+            recurring_frequency = "yearly"
+
+        amount_usd = _coerce_float(raw.get("amount_usd"), 0.0)
+        if amount_usd == 0:
+            continue
+
+        start_year_offset = max(0, min(_coerce_int(raw.get("start_year_offset"), 0), 80))
+        start_date = date(start_year + start_year_offset, 1, 1)
+
+        duration_months_raw = raw.get("duration_months")
+        duration_months: int | None = None
+        if duration_months_raw is not None:
+            resolved_duration_months = _coerce_int(duration_months_raw, 0)
+            if resolved_duration_months > 0:
+                duration_months = min(resolved_duration_months, 80 * 12)
+
+        end_date: date | None = None
+        if recurring_frequency != "one_time" and duration_months is not None:
+            end_date = _add_months(start_date, duration_months - 1)
+
+        event_id = str(raw.get("id") or f"branch-event-{index}").strip() or f"branch-event-{index}"
+        normalized_events.append(
+            {
+                "id": event_id,
+                "date": start_date.isoformat(),
+                "label": label,
+                "event_type": event_type,
+                "impact_type": impact_type,
+                "amount_usd": amount_usd,
+                "recurring_frequency": recurring_frequency,
+                "end_date": end_date.isoformat() if end_date is not None else None,
+                "account_id": str(raw.get("account_id") or "").strip() or None,
+                "notes": str(raw.get("notes") or "").strip(),
+            }
+        )
+
+    return normalized_events
+
+
+def build_branch_timeline_payload(
+    *,
+    base_timeline_payload: dict[str, Any],
+    raw_branch_events: list[dict[str, Any]] | None,
+    start_year: int,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    normalized_branch_events = normalize_branch_events_payload(
+        raw_branch_events=raw_branch_events,
+        start_year=start_year,
+    )
+
+    base_events = base_timeline_payload.get("events")
+    if not isinstance(base_events, list):
+        base_events = []
+    merged_events = [item for item in base_events if isinstance(item, dict)] + normalized_branch_events
+
+    retirement_payload = base_timeline_payload.get("retirement")
+    if not isinstance(retirement_payload, dict):
+        retirement_payload = {}
+
+    return (
+        {
+            "schema_version": 2,
+            "events": merged_events,
+            "retirement": retirement_payload,
+        },
+        normalized_branch_events,
+    )
+
+
 def build_timeline_projection_for_plan_settings(
     *,
     plan_settings: dict[str, Any],
@@ -1560,6 +1667,135 @@ def build_scenario_diff_payload(
             monte_delta[f"delta_{key}"] = round(candidate_float - base_float, 2)
 
     return scenario_deltas, monte_delta
+
+
+async def compute_plan_scenario_branch(
+    *,
+    plan_id: str,
+    branch_name: str,
+    current_portfolio_value_usd: float | None,
+    assumption_set_id: str | None,
+    compare_updates: dict[str, Any],
+    raw_branch_events: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    detail = plan_workspace.get_plan(plan_id)
+    timeline_payload = resolve_plan_timeline_payload(detail)
+    retirement_age = resolve_timeline_retirement_age(timeline_payload)
+    timeline_withdrawal_strategy = resolve_timeline_withdrawal_strategy(timeline_payload)
+    assumption_sets_payload = resolve_plan_assumption_sets(detail)
+
+    base_settings_raw = detail.get("settings", {})
+    if not isinstance(base_settings_raw, dict):
+        base_settings_raw = {}
+    base_settings, active_assumption_set = apply_assumption_set_to_settings(
+        plan_settings=base_settings_raw,
+        assumption_sets_payload=assumption_sets_payload,
+        assumption_set_id=assumption_set_id,
+    )
+    branch_settings = merge_plan_settings(base_settings, compare_updates)
+
+    start_year = utc_now().year
+    branch_timeline_payload, normalized_branch_events = build_branch_timeline_payload(
+        base_timeline_payload=timeline_payload,
+        raw_branch_events=raw_branch_events,
+        start_year=start_year,
+    )
+    if not normalized_branch_events and not compare_updates:
+        raise ValueError("Scenario branch requires branch_events and/or compare_settings overrides.")
+
+    base_income_projection = build_income_projection_for_plan_settings(base_settings)
+    branch_income_projection = build_income_projection_for_plan_settings(branch_settings)
+    base_expense_projection = build_expense_projection_for_plan_settings(base_settings)
+    branch_expense_projection = build_expense_projection_for_plan_settings(branch_settings)
+    base_debt_projection = build_debt_projection_for_plan_settings(base_settings)
+    branch_debt_projection = build_debt_projection_for_plan_settings(branch_settings)
+    base_timeline_projection = build_timeline_projection_for_plan_settings(
+        plan_settings=base_settings,
+        timeline_payload=timeline_payload,
+    )
+    branch_timeline_projection = build_timeline_projection_for_plan_settings(
+        plan_settings=branch_settings,
+        timeline_payload=branch_timeline_payload,
+    )
+
+    contribution_rules_payload = resolve_plan_contribution_rules(detail)
+    base_contribution_allocation = build_contribution_allocation_for_plan_settings(
+        plan_settings=base_settings,
+        contribution_rules_payload=contribution_rules_payload,
+    )
+    branch_contribution_allocation = build_contribution_allocation_for_plan_settings(
+        plan_settings=branch_settings,
+        contribution_rules_payload=contribution_rules_payload,
+    )
+
+    base_social_security_projection = build_social_security_projection_for_plan_settings(
+        plan_settings=base_settings,
+        timeline_payload=timeline_payload,
+        income_projection=base_income_projection,
+        start_year=start_year,
+    )
+    branch_social_security_projection = build_social_security_projection_for_plan_settings(
+        plan_settings=branch_settings,
+        timeline_payload=branch_timeline_payload,
+        income_projection=branch_income_projection,
+        start_year=start_year,
+    )
+
+    base_rmd_projection = build_rmd_projection_for_plan_settings(
+        plan_settings=base_settings,
+        timeline_payload=timeline_payload,
+        start_year=start_year,
+    )
+    branch_rmd_projection = build_rmd_projection_for_plan_settings(
+        plan_settings=branch_settings,
+        timeline_payload=branch_timeline_payload,
+        start_year=start_year,
+    )
+
+    current_value = resolve_portfolio_value(current_portfolio_value_usd)
+    base_result = await run_scenarios_for_plan_settings(
+        current_portfolio_value_usd=current_value,
+        plan_settings=base_settings,
+        income_projection=base_income_projection,
+        expense_projection=base_expense_projection,
+        debt_projection=base_debt_projection,
+        timeline_projection=base_timeline_projection,
+        contribution_allocation=base_contribution_allocation,
+        social_security_projection=base_social_security_projection,
+        rmd_projection=base_rmd_projection,
+        assumption_set=active_assumption_set,
+        retirement_age=retirement_age,
+        timeline_withdrawal_strategy=timeline_withdrawal_strategy,
+    )
+    branch_result = await run_scenarios_for_plan_settings(
+        current_portfolio_value_usd=current_value,
+        plan_settings=branch_settings,
+        income_projection=branch_income_projection,
+        expense_projection=branch_expense_projection,
+        debt_projection=branch_debt_projection,
+        timeline_projection=branch_timeline_projection,
+        contribution_allocation=branch_contribution_allocation,
+        social_security_projection=branch_social_security_projection,
+        rmd_projection=branch_rmd_projection,
+        assumption_set=active_assumption_set,
+        retirement_age=retirement_age,
+        timeline_withdrawal_strategy=timeline_withdrawal_strategy,
+    )
+    scenario_deltas, monte_carlo_delta = build_scenario_diff_payload(base_result, branch_result)
+
+    return {
+        "plan_id": plan_id,
+        "branch_name": branch_name,
+        "current_portfolio_value_usd": current_value,
+        "base_settings": base_settings,
+        "branch_settings": branch_settings,
+        "assumption_set": active_assumption_set,
+        "branch_events": normalized_branch_events,
+        "base_result": base_result.model_dump(mode="json"),
+        "branch_result": branch_result.model_dump(mode="json"),
+        "scenario_deltas": scenario_deltas,
+        "monte_carlo_delta": monte_carlo_delta,
+    }
 
 
 def resolve_plan_id_or_active(requested_plan_id: object | None) -> str:
@@ -2993,6 +3229,33 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
     }
 
 
+async def tool_run_plan_scenario_branch(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+    branch_name = str(arguments.get("branch_name") or "What-If Branch").strip() or "What-If Branch"
+    assumption_set_id = str(arguments.get("assumption_set_id") or "").strip() or None
+    compare_updates = extract_plan_settings_updates(arguments)
+
+    raw_branch_events = arguments.get("branch_events")
+    if raw_branch_events is None:
+        branch_events: list[dict[str, Any]] = []
+    elif isinstance(raw_branch_events, list):
+        branch_events = [item for item in raw_branch_events if isinstance(item, dict)]
+    else:
+        raise ValueError("branch_events must be a list of branch event objects.")
+
+    current_value_raw = arguments.get("current_portfolio_value_usd")
+    current_value = float(current_value_raw) if current_value_raw is not None else None
+
+    return await compute_plan_scenario_branch(
+        plan_id=plan_id,
+        branch_name=branch_name,
+        current_portfolio_value_usd=current_value,
+        assumption_set_id=assumption_set_id,
+        compare_updates=compare_updates,
+        raw_branch_events=branch_events,
+    )
+
+
 async def tool_append_plan_decision(arguments: dict[str, object]) -> dict[str, object]:
     plan_id = str(arguments.get("plan_id") or "").strip()
     summary = str(arguments.get("summary") or "").strip()
@@ -3608,6 +3871,44 @@ def configure_copilot_tools() -> None:
             "additionalProperties": False,
         },
         handler=tool_run_plan_scenario_diff,
+    )
+    copilot.register_tool(
+        name="run_plan_scenario_branch",
+        description=(
+            "Run a life-event branch from current plan assumptions (e.g., temporary job loss, raise, child costs) "
+            "and compare branch outcomes versus the base plan."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                "branch_name": {"type": "string"},
+                "current_portfolio_value_usd": {"type": "number"},
+                "assumption_set_id": {"type": "string"},
+                **plan_settings_properties,
+                "branch_events": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "label": {"type": "string"},
+                            "event_type": {"type": "string"},
+                            "impact_type": {"type": "string"},
+                            "amount_usd": {"type": "number"},
+                            "recurring_frequency": {"type": "string"},
+                            "start_year_offset": {"type": "integer"},
+                            "duration_months": {"type": "integer"},
+                            "account_id": {"type": "string"},
+                            "notes": {"type": "string"},
+                        },
+                        "required": ["label", "impact_type", "amount_usd"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_run_plan_scenario_branch,
     )
     copilot.register_tool(
         name="append_plan_decision",
@@ -4526,6 +4827,28 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
         scenario_deltas=[ScenarioComparisonRow(**item) for item in scenario_deltas],
         monte_carlo_delta=monte_carlo_delta,
     )
+
+
+@app.post("/api/plans/{plan_id}/scenario-branch", response_model=PlanScenarioBranchResponse)
+async def run_plan_scenario_branch(plan_id: str, request: PlanScenarioBranchRequest) -> PlanScenarioBranchResponse:
+    compare_updates = request.compare_settings.model_dump(exclude_unset=True)
+    raw_branch_events = [item.model_dump(mode="json") for item in request.branch_events]
+
+    try:
+        payload = await compute_plan_scenario_branch(
+            plan_id=plan_id,
+            branch_name=str(request.branch_name or "").strip() or "What-If Branch",
+            current_portfolio_value_usd=request.current_portfolio_value_usd,
+            assumption_set_id=str(request.assumption_set_id or "").strip() or None,
+            compare_updates=compare_updates,
+            raw_branch_events=raw_branch_events,
+        )
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return PlanScenarioBranchResponse(**payload)
 
 
 @app.get("/api/plans/{plan_id}/tracking", response_model=PlanTrackingResponse)

@@ -1047,6 +1047,40 @@ class PlanScenarioDiffResponse(BaseModel):
     monte_carlo_delta: dict[str, float | int | None] = Field(default_factory=dict)
 
 
+class PlanScenarioBranchEvent(BaseModel):
+    label: str
+    event_type: Literal["purchase", "windfall", "job_change", "retirement", "milestone"] = "milestone"
+    impact_type: Literal["income", "expense", "portfolio", "contribution", "debt_payment"] = "expense"
+    amount_usd: float
+    recurring_frequency: Literal["one_time", "monthly", "yearly"] = "yearly"
+    start_year_offset: int = Field(default=0, ge=0, le=80)
+    duration_months: int | None = Field(default=None, ge=1, le=960)
+    account_id: str | None = None
+    notes: str = ""
+
+
+class PlanScenarioBranchRequest(BaseModel):
+    branch_name: str = "What-If Branch"
+    current_portfolio_value_usd: float | None = None
+    assumption_set_id: str | None = None
+    compare_settings: PlanSettingsUpdateRequest = Field(default_factory=PlanSettingsUpdateRequest)
+    branch_events: list[PlanScenarioBranchEvent] = Field(default_factory=list)
+
+
+class PlanScenarioBranchResponse(BaseModel):
+    plan_id: str
+    branch_name: str
+    current_portfolio_value_usd: float
+    base_settings: PlanSettings
+    branch_settings: PlanSettings
+    assumption_set: PlanAssumptionSet | None = None
+    branch_events: list[PlanTimelineEvent] = Field(default_factory=list)
+    base_result: PlanningResponse
+    branch_result: PlanningResponse
+    scenario_deltas: list[ScenarioComparisonRow] = Field(default_factory=list)
+    monte_carlo_delta: dict[str, float | int | None] = Field(default_factory=dict)
+
+
 class PlanArtifactSummary(BaseModel):
     id: str
     file_name: str

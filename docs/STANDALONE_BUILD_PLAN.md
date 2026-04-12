@@ -196,6 +196,21 @@ These decisions refine the build plan based on the current repository and upstre
 - Plan Workspace UI now includes assumption-set JSON editing/saving and scenario-diff base/candidate assumption-set selectors
 - Added focused coverage in `test_plan_workspace.py`, `test_plan_assumption_sets.py`, `test_scenario_engine.py`, and `test_planning_sidecar.py`
 
+### 2026-04-12 (Completed - Scenario Branching Foundation)
+- Added life-event scenario branch API (`POST /api/plans/{plan_id}/scenario-branch`) and Copilot tool (`run_plan_scenario_branch`) for branch-vs-base comparisons
+- Added branch-event modeling contract with offset-based scheduling and temporary duration support (`start_year_offset`, `duration_months`, recurring frequency)
+- Branch execution now reuses timeline projection wiring so temporary income/expense/contribution/debt/portfolio impacts are applied using the same recurrence logic as plan timeline events
+- Branch runs support optional assumption-set selection and optional settings overrides, then return full scenario deltas + Monte Carlo deltas against the base plan
+- Plan Workspace UI now includes a dedicated “Scenario Branch (Life Events)” panel with branch-name, assumption-set selection, branch-events JSON editing, and branch output rendering
+- Added focused coverage in `test_plan_scenario_branching.py` for branch-event normalization and timeline merge behavior
+
+### 2026-04-12 (Completed - Projection Visualization Foundation)
+- Added a new Plan Workspace “Projection Visuals” section that consumes existing scenario outputs and renders long-horizon visuals without introducing new simulation pathways
+- Implemented net-worth-over-time charting from scenario timeline points with explicit debt trajectory overlays and physical-asset appreciation overlays (using profile `physical_assets` growth assumptions)
+- Implemented account-type stacked projection charting with a metric toggle (`ending_balance_usd`, `contribution_usd`, `growth_usd`) for contribution-vs-growth inspection
+- Added per-account projection summary table (final balance, cumulative contributions, cumulative growth, cumulative withdrawals) to support account-level interpretation
+- Visualization wiring now updates directly from scenario-diff and scenario-branch runs, enabling side-by-side source switching across base/candidate/branch outputs
+
 ### 2026-04-09 (Completed)
 - Phase 1.1: BuildWealth-native TWR calculator integrated into local portfolio store
 - Phase 1.2: XIRR money-weighted return added and surfaced in portfolio snapshot/UI
@@ -314,11 +329,11 @@ These decisions refine the build plan based on the current repository and upstre
 | RMD calculations (age 73+) | Built (foundation) | ~30% |
 | Withdrawal strategies (4% rule, dynamic, bond tent) | Built (foundation) | ~35% |
 | Multiple assumption sets | Built (foundation) | ~35% |
-| Scenario branching (life events) | NOT BUILT | 0% |
-| Net worth charts over time | NOT BUILT | 0% |
-| Per-account balance projections | Built (foundation) | ~30% |
+| Scenario branching (life events) | Built (foundation) | ~30% |
+| Net worth charts over time | Built (foundation + UI) | ~35% |
+| Per-account balance projections | Built (foundation + visualization expansion) | ~45% |
 
-**Honest assessment:** We're at ~20% feature parity with Ghostfolio and ~30% with Ignidash. There is substantial work ahead.
+**Honest assessment:** We're at ~20% feature parity with Ghostfolio and ~33% with Ignidash. There is substantial work ahead.
 
 ---
 

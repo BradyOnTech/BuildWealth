@@ -49,6 +49,34 @@ export function template() {
         <div class="settings-grid">${settingsGridHtml(DIFF_SETTING_FIELDS)}</div>
         <p class="hint tight" id="scenario-diff-summary">No scenario diff run yet.</p>
         <label class="field"><span>Scenario Diff Output</span><textarea id="scenario-diff-output" rows="8" readonly></textarea></label>
+        <div class="view-header"><h3>Scenario Branch (Life Events)</h3><div class="header-actions"><button class="primary small" id="run-scenario-branch" disabled>Run Branch</button></div></div>
+        <p class="hint tight">Model uncertain life events and compare branch outcomes against the base plan.</p>
+        <div class="settings-grid">
+          <label class="field"><span>Branch Name</span><input type="text" id="scenario-branch-name" placeholder="e.g. Job Loss 6 Months" disabled /></label>
+          <label class="field"><span>Assumption Set</span><select id="branch-assumption-set-id" disabled></select></label>
+        </div>
+        <label class="field"><span>Branch Events JSON</span><textarea id="scenario-branch-events" rows="8" placeholder='[{"label":"Job Loss","event_type":"job_change","impact_type":"income","amount_usd":-7500,"recurring_frequency":"monthly","start_year_offset":0,"duration_months":6}]' disabled></textarea></label>
+        <p class="hint tight" id="scenario-branch-summary">No scenario branch run yet.</p>
+        <label class="field"><span>Scenario Branch Output</span><textarea id="scenario-branch-output" rows="8" readonly></textarea></label>
+        <div class="view-header"><h3>Projection Visuals</h3><div class="header-actions"><button class="ghost small" id="refresh-projection-profile" disabled>Refresh Profile Inputs</button></div></div>
+        <p class="hint tight">Visualize long-range net worth and account-level balance projections from the latest scenario run.</p>
+        <div class="settings-grid">
+          <label class="field"><span>Projection Source</span><select id="projection-source" disabled><option value="">No scenario data yet</option></select></label>
+          <label class="field"><span>Scenario Label</span><select id="projection-scenario-label" disabled><option value="baseline">Baseline</option><option value="optimistic">Optimistic</option><option value="conservative">Conservative</option><option value="hsa_delta">HSA Delta</option></select></label>
+          <label class="field"><span>Account Metric</span><select id="projection-account-metric" disabled><option value="ending_balance_usd">Ending Balance</option><option value="contribution_usd">Contributions</option><option value="growth_usd">Growth</option></select></label>
+        </div>
+        <p class="hint tight" id="projection-summary">Run a scenario diff or branch to populate projection visuals.</p>
+        <div class="history-chart-card projection-chart-card">
+          <p class="hint tight">Net worth view includes portfolio balance, debt trajectory, and projected physical asset value.</p>
+          <svg id="plan-net-worth-chart" viewBox="0 0 760 220" role="img" aria-label="Plan net worth projection chart"></svg>
+        </div>
+        <div class="history-chart-card projection-chart-card">
+          <p class="hint tight">Stacked account-type projections by selected metric.</p>
+          <svg id="plan-account-type-chart" viewBox="0 0 760 220" role="img" aria-label="Plan account-type projection chart"></svg>
+          <div id="plan-account-type-legend" class="projection-legend"></div>
+        </div>
+        <h3 class="section-title">Per-Account Projection Summary</h3>
+        <div class="table-wrap"><table><thead><tr><th>Account</th><th>Type</th><th>Final Balance</th><th>Contributions</th><th>Growth</th><th>Withdrawals</th></tr></thead><tbody id="projection-account-body"><tr><td colspan="6">No projection data yet.</td></tr></tbody></table></div>
         <h3 class="section-title">Decisions</h3>
         <div class="decision-form">
           <label class="field"><span>Decision</span><input type="text" id="decision-summary" placeholder="Decision summary" disabled /></label>
