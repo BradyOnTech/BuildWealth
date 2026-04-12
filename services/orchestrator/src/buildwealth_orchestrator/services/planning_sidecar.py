@@ -118,6 +118,7 @@ class IgnidashScenarioService:
         income_projection: dict[str, Any] | None = None,
         expense_projection: dict[str, Any] | None = None,
         debt_projection: dict[str, Any] | None = None,
+        timeline_projection: dict[str, Any] | None = None,
         contribution_allocation: dict[str, Any] | None = None,
     ) -> PlanningResponse:
         local_result = self.scenario_engine.run(
@@ -137,6 +138,7 @@ class IgnidashScenarioService:
                     "income_projection": income_projection,
                     "expense_projection": expense_projection,
                     "debt_projection": debt_projection,
+                    "timeline_projection": timeline_projection,
                     "contribution_allocation": contribution_allocation,
                 }
             )
@@ -150,6 +152,7 @@ class IgnidashScenarioService:
             income_projection=income_projection,
             expense_projection=expense_projection,
             debt_projection=debt_projection,
+            timeline_projection=timeline_projection,
             contribution_allocation=contribution_allocation,
         )
 
@@ -174,6 +177,7 @@ class IgnidashScenarioService:
                 income_projection=income_projection,
                 expense_projection=expense_projection,
                 debt_projection=debt_projection,
+                timeline_projection=timeline_projection,
                 contribution_allocation=contribution_allocation,
             )
         except SidecarAdapterError as exc:
@@ -186,6 +190,7 @@ class IgnidashScenarioService:
                     "income_projection": income_projection,
                     "expense_projection": expense_projection,
                     "debt_projection": debt_projection,
+                    "timeline_projection": timeline_projection,
                     "contribution_allocation": contribution_allocation,
                 }
             )
@@ -201,6 +206,7 @@ class IgnidashScenarioService:
         income_projection: dict[str, Any] | None,
         expense_projection: dict[str, Any] | None,
         debt_projection: dict[str, Any] | None,
+        timeline_projection: dict[str, Any] | None,
         contribution_allocation: dict[str, Any] | None,
     ) -> IgnidashScenarioRequestV1:
         resolved_years = int(self.scenario_engine.years_to_retirement if years is None else years)
@@ -229,13 +235,21 @@ class IgnidashScenarioService:
             if isinstance(selected, dict):
                 first_year_debt_payments = float(selected.get("first_year_payments_usd") or 0.0)
 
+        timeline_income_impact = 0.0
+        timeline_expense_impact = 0.0
+        timeline_debt_impact = 0.0
+        if timeline_projection:
+            timeline_income_impact = float(timeline_projection.get("first_year_income_impact_usd") or 0.0)
+            timeline_expense_impact = float(timeline_projection.get("first_year_expense_impact_usd") or 0.0)
+            timeline_debt_impact = float(timeline_projection.get("first_year_debt_payment_impact_usd") or 0.0)
+
         baseline_assumptions = {
             "annual_return_rate": float(self.scenario_engine.baseline_return),
             "annual_inflation_rate": float(self.scenario_engine.inflation),
             "effective_tax_rate": self.default_tax_rate,
-            "annual_income": first_year_income,
-            "annual_expenses": first_year_expenses,
-            "annual_debt_payments": first_year_debt_payments,
+            "annual_income": first_year_income + timeline_income_impact,
+            "annual_expenses": first_year_expenses + timeline_expense_impact,
+            "annual_debt_payments": first_year_debt_payments + timeline_debt_impact,
         }
 
         scenario_overrides = [
@@ -293,6 +307,8 @@ class IgnidashScenarioService:
             metadata["expense_projection"] = expense_projection
         if debt_projection:
             metadata["debt_projection"] = debt_projection
+        if timeline_projection:
+            metadata["timeline_projection"] = timeline_projection
         if contribution_allocation:
             metadata["contribution_allocation"] = contribution_allocation
 

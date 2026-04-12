@@ -37,6 +37,8 @@ from buildwealth_orchestrator.schemas import (
     PlanScenarioDiffResponse,
     PlanSettings,
     PlanSettingsUpdateRequest,
+    PlanTimelineResponse,
+    PlanTimelineUpdateRequest,
     ScenarioComparisonRow,
     PlanSummary,
     PlanUpdateRequest,
@@ -56,6 +58,7 @@ from buildwealth_orchestrator.schemas import (
     ContributionAllocationResponse,
     TaxEstimateRequest,
     TaxEstimateResponse,
+    TimelineImpactProjectionResponse,
     SnapshotHistoryResponse,
     SyncStatusResponse,
     RecommendationActionResponse,
@@ -113,6 +116,7 @@ from buildwealth_orchestrator.services.contribution_rules import (
 from buildwealth_orchestrator.services.income_projection import project_income_schedule
 from buildwealth_orchestrator.services.expense_projection import project_expense_schedule
 from buildwealth_orchestrator.services.debt_projection import project_debt_payoff
+from buildwealth_orchestrator.services.timeline_projection import project_timeline_impacts
 from buildwealth_orchestrator.services.price_updater import (
     build_snapshot_from_holdings,
     refresh_portfolio,
@@ -921,12 +925,59 @@ def build_debt_projection_for_plan_settings(plan_settings: dict[str, Any]) -> De
     )
 
 
+def resolve_plan_timeline_payload(plan_detail: dict[str, Any]) -> dict[str, Any]:
+    files_payload = plan_detail.get("files")
+    if not isinstance(files_payload, dict):
+        return {"schema_version": 2, "events": [], "retirement": {"target_retirement_age": None, "withdrawal_strategy": None}}
+
+    raw_timeline = files_payload.get("timeline_json")
+    if not isinstance(raw_timeline, str):
+        return {"schema_version": 2, "events": [], "retirement": {"target_retirement_age": None, "withdrawal_strategy": None}}
+
+    try:
+        payload = json.loads(raw_timeline)
+    except json.JSONDecodeError:
+        payload = {}
+
+    if not isinstance(payload, dict):
+        payload = {}
+    payload.setdefault("schema_version", 2)
+    payload.setdefault("events", [])
+    payload.setdefault(
+        "retirement",
+        {
+            "target_retirement_age": None,
+            "withdrawal_strategy": None,
+        },
+    )
+    return payload
+
+
+def build_timeline_projection_for_plan_settings(
+    *,
+    plan_settings: dict[str, Any],
+    timeline_payload: dict[str, Any],
+) -> TimelineImpactProjectionResponse | None:
+    events = timeline_payload.get("events")
+    if not isinstance(events, list) or not events:
+        return None
+
+    years = max(1, min(_coerce_int(plan_settings.get("years"), settings.planner_years_to_retirement), 80))
+    payload = project_timeline_impacts(
+        [item for item in events if isinstance(item, dict)],
+        start_year=utc_now().year,
+        years=years,
+    )
+    return TimelineImpactProjectionResponse(**payload)
+
+
 async def run_scenarios_for_plan_settings(
     current_portfolio_value_usd: float,
     plan_settings: dict[str, Any],
     income_projection: IncomeProjectionResponse | None = None,
     expense_projection: ExpenseProjectionResponse | None = None,
     debt_projection: DebtProjectionResponse | None = None,
+    timeline_projection: TimelineImpactProjectionResponse | None = None,
     contribution_allocation: ContributionAllocationResponse | None = None,
 ) -> PlanningResponse:
     validate_plan_return_relationships(plan_settings)
@@ -940,10 +991,12 @@ async def run_scenarios_for_plan_settings(
         if annual_contribution is not None
         else None
     )
+    resolved_portfolio_value = float(current_portfolio_value_usd)
     sidecar_accounts: list[dict[str, Any]] | None = None
     income_projection_payload: dict[str, Any] | None = None
     expense_projection_payload: dict[str, Any] | None = None
     debt_projection_payload: dict[str, Any] | None = None
+    timeline_projection_payload: dict[str, Any] | None = None
     contribution_allocation_payload: dict[str, Any] | None = None
 
     if income_projection is not None:
@@ -954,6 +1007,23 @@ async def run_scenarios_for_plan_settings(
 
     if debt_projection is not None:
         debt_projection_payload = debt_projection.model_dump(mode="json")
+
+    if timeline_projection is not None:
+        timeline_projection_payload = timeline_projection.model_dump(mode="json")
+        resolved_portfolio_value = max(
+            0.0,
+            resolved_portfolio_value + float(timeline_projection.first_year_portfolio_impact_usd),
+        )
+        if resolved_annual_contribution is None:
+            resolved_annual_contribution = float(
+                annual_contribution
+                if annual_contribution is not None
+                else service.scenario_engine.annual_contribution_usd
+            )
+        resolved_annual_contribution = max(
+            0.0,
+            float(resolved_annual_contribution) + float(timeline_projection.first_year_contribution_impact_usd),
+        )
 
     if contribution_allocation is not None:
         resolved_annual_contribution = float(contribution_allocation.total_contributions_usd)
@@ -971,7 +1041,7 @@ async def run_scenarios_for_plan_settings(
         contribution_allocation_payload = contribution_allocation.model_dump(mode="json")
 
     result = await service.run(
-        current_portfolio_value_usd=float(current_portfolio_value_usd),
+        current_portfolio_value_usd=resolved_portfolio_value,
         annual_contribution_usd=resolved_annual_contribution,
         years=int(years) if years is not None else None,
         hsa_extra_contribution_usd=(float(hsa_extra) if hsa_extra is not None else None),
@@ -979,6 +1049,7 @@ async def run_scenarios_for_plan_settings(
         income_projection=income_projection_payload,
         expense_projection=expense_projection_payload,
         debt_projection=debt_projection_payload,
+        timeline_projection=timeline_projection_payload,
         contribution_allocation=contribution_allocation_payload,
     )
     if result.engine_status == "degraded":
@@ -2129,6 +2200,34 @@ async def tool_update_plan_settings(arguments: dict[str, object]) -> dict[str, o
     }
 
 
+async def tool_get_plan_timeline(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+    timeline = plan_workspace.get_plan_timeline(plan_id)
+    return {
+        "plan_id": plan_id,
+        "timeline": timeline,
+    }
+
+
+async def tool_update_plan_timeline(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+    timeline_raw = arguments.get("timeline")
+    if not isinstance(timeline_raw, dict):
+        raise ValueError("timeline must be an object with events and optional retirement fields.")
+
+    timeline = plan_workspace.update_plan_timeline(
+        plan_id=plan_id,
+        timeline_payload=timeline_raw,
+        rationale=str(arguments.get("rationale") or "").strip() or "Updated via copilot tool.",
+        status=str(arguments.get("status") or "accepted").strip().lower() or "accepted",
+        log_decision=True,
+    )
+    return {
+        "plan_id": plan_id,
+        "timeline": timeline,
+    }
+
+
 async def tool_get_plan_tracking(arguments: dict[str, object]) -> dict[str, object]:
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
     detail = plan_workspace.get_plan(plan_id)
@@ -2154,6 +2253,7 @@ async def tool_get_plan_tracking(arguments: dict[str, object]) -> dict[str, obje
 async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str, object]:
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
     detail = plan_workspace.get_plan(plan_id)
+    timeline_payload = resolve_plan_timeline_payload(detail)
     base_settings = detail.get("settings", {})
     compare_updates = extract_plan_settings_updates(arguments)
     candidate_settings = merge_plan_settings(base_settings, compare_updates)
@@ -2163,6 +2263,14 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
     candidate_expense_projection = build_expense_projection_for_plan_settings(candidate_settings)
     base_debt_projection = build_debt_projection_for_plan_settings(base_settings)
     candidate_debt_projection = build_debt_projection_for_plan_settings(candidate_settings)
+    base_timeline_projection = build_timeline_projection_for_plan_settings(
+        plan_settings=base_settings,
+        timeline_payload=timeline_payload,
+    )
+    candidate_timeline_projection = build_timeline_projection_for_plan_settings(
+        plan_settings=candidate_settings,
+        timeline_payload=timeline_payload,
+    )
     contribution_rules_payload = resolve_plan_contribution_rules(detail)
     base_contribution_allocation = build_contribution_allocation_for_plan_settings(
         plan_settings=base_settings,
@@ -2184,6 +2292,7 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         income_projection=base_income_projection,
         expense_projection=base_expense_projection,
         debt_projection=base_debt_projection,
+        timeline_projection=base_timeline_projection,
         contribution_allocation=base_contribution_allocation,
     )
     candidate_result = await run_scenarios_for_plan_settings(
@@ -2192,6 +2301,7 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         income_projection=candidate_income_projection,
         expense_projection=candidate_expense_projection,
         debt_projection=candidate_debt_projection,
+        timeline_projection=candidate_timeline_projection,
         contribution_allocation=candidate_contribution_allocation,
     )
     scenario_deltas, monte_carlo_delta = build_scenario_diff_payload(base_result, candidate_result)
@@ -2681,6 +2791,16 @@ def configure_copilot_tools() -> None:
         handler=tool_get_plan_settings,
     )
     copilot.register_tool(
+        name="get_plan_timeline",
+        description="Read timeline events and retirement timeline settings for a plan or active plan by default.",
+        parameters={
+            "type": "object",
+            "properties": {"plan_id": {"type": "string"}},
+            "additionalProperties": False,
+        },
+        handler=tool_get_plan_timeline,
+    )
+    copilot.register_tool(
         name="get_plan_tracking",
         description=(
             "Compare plan assumptions against actual portfolio performance. "
@@ -2712,6 +2832,25 @@ def configure_copilot_tools() -> None:
             "additionalProperties": False,
         },
         handler=tool_update_plan_settings,
+    )
+    copilot.register_tool(
+        name="update_plan_timeline",
+        description=(
+            "Update timeline events and retirement timeline settings for a plan and record a decision trail. "
+            "Provide timeline as an object with events plus optional retirement fields."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                "timeline": {"type": "object"},
+                "rationale": {"type": "string"},
+                "status": {"type": "string"},
+            },
+            "required": ["timeline"],
+            "additionalProperties": False,
+        },
+        handler=tool_update_plan_timeline,
     )
     copilot.register_tool(
         name="run_plan_scenario_diff",
@@ -3470,6 +3609,32 @@ def update_plan_settings(plan_id: str, request: PlanSettingsUpdateRequest) -> Pl
     return PlanDetailResponse(**detail)
 
 
+@app.get("/api/plans/{plan_id}/timeline", response_model=PlanTimelineResponse)
+def get_plan_timeline(plan_id: str) -> PlanTimelineResponse:
+    try:
+        timeline = plan_workspace.get_plan_timeline(plan_id)
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return PlanTimelineResponse(**timeline)
+
+
+@app.put("/api/plans/{plan_id}/timeline", response_model=PlanTimelineResponse)
+def update_plan_timeline(plan_id: str, request: PlanTimelineUpdateRequest) -> PlanTimelineResponse:
+    try:
+        timeline = plan_workspace.update_plan_timeline(
+            plan_id=plan_id,
+            timeline_payload=request.model_dump(mode="json"),
+            rationale="Updated via Plan Workspace timeline editor.",
+            status="accepted",
+            log_decision=True,
+        )
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PlanTimelineResponse(**timeline)
+
+
 @app.post("/api/plans/{plan_id}/scenario-diff", response_model=PlanScenarioDiffResponse)
 async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest) -> PlanScenarioDiffResponse:
     compare_updates = request.compare_settings.model_dump(exclude_unset=True)
@@ -3479,6 +3644,7 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
     except PlanNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    timeline_payload = resolve_plan_timeline_payload(detail)
     base_settings = dict(detail.get("settings", {}))
     candidate_settings = merge_plan_settings(base_settings, compare_updates)
     base_income_projection = build_income_projection_for_plan_settings(base_settings)
@@ -3487,6 +3653,14 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
     candidate_expense_projection = build_expense_projection_for_plan_settings(candidate_settings)
     base_debt_projection = build_debt_projection_for_plan_settings(base_settings)
     candidate_debt_projection = build_debt_projection_for_plan_settings(candidate_settings)
+    base_timeline_projection = build_timeline_projection_for_plan_settings(
+        plan_settings=base_settings,
+        timeline_payload=timeline_payload,
+    )
+    candidate_timeline_projection = build_timeline_projection_for_plan_settings(
+        plan_settings=candidate_settings,
+        timeline_payload=timeline_payload,
+    )
     contribution_rules_payload = resolve_plan_contribution_rules(detail)
     base_contribution_allocation = build_contribution_allocation_for_plan_settings(
         plan_settings=base_settings,
@@ -3505,6 +3679,7 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
             income_projection=base_income_projection,
             expense_projection=base_expense_projection,
             debt_projection=base_debt_projection,
+            timeline_projection=base_timeline_projection,
             contribution_allocation=base_contribution_allocation,
         )
         candidate_result = await run_scenarios_for_plan_settings(
@@ -3513,6 +3688,7 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
             income_projection=candidate_income_projection,
             expense_projection=candidate_expense_projection,
             debt_projection=candidate_debt_projection,
+            timeline_projection=candidate_timeline_projection,
             contribution_allocation=candidate_contribution_allocation,
         )
     except ValueError as exc:
@@ -3834,6 +4010,18 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         max_years=resolved_years,
         start_date=utc_now().date().replace(day=1),
     )
+    timeline_projection: TimelineImpactProjectionResponse | None = None
+    active_plan_id = plan_workspace.get_active_plan_id()
+    if active_plan_id:
+        try:
+            active_detail = plan_workspace.get_plan(active_plan_id)
+            active_timeline = resolve_plan_timeline_payload(active_detail)
+            timeline_projection = build_timeline_projection_for_plan_settings(
+                plan_settings={"years": resolved_years},
+                timeline_payload=active_timeline,
+            )
+        except PlanNotFoundError:
+            timeline_projection = None
 
     result = await ignidash_scenario_service.run(
         current_portfolio_value_usd=current_value,
@@ -3843,6 +4031,7 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         income_projection=income_projection.model_dump(mode="json") if income_projection is not None else None,
         expense_projection=expense_projection.model_dump(mode="json") if expense_projection is not None else None,
         debt_projection=debt_projection.model_dump(mode="json") if debt_projection is not None else None,
+        timeline_projection=timeline_projection.model_dump(mode="json") if timeline_projection is not None else None,
     )
     if result.engine_status == "degraded":
         await engine_status_tracker.increment_degraded(

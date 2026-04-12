@@ -3,11 +3,18 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
 PLAN_WORKSPACE_SCHEMA_VERSION = 2
+TIMELINE_DEFAULT_IMPACT_BY_EVENT: dict[str, str] = {
+    "purchase": "expense",
+    "windfall": "income",
+    "job_change": "income",
+    "retirement": "contribution",
+    "milestone": "portfolio",
+}
 
 
 def utc_now() -> datetime:
@@ -266,6 +273,111 @@ class PlanWorkspace:
         settings_payload = dict(settings_payload)
         settings_payload["updated_at"] = utc_now_iso()
         path.write_text(json.dumps(settings_payload, indent=2), encoding="utf-8")
+
+    @staticmethod
+    def _parse_optional_date(raw_value: Any) -> date | None:
+        if raw_value is None:
+            return None
+        if isinstance(raw_value, datetime):
+            return raw_value.date()
+        if isinstance(raw_value, date):
+            return raw_value
+        text = str(raw_value).strip()
+        if not text:
+            return None
+        text = text.replace("Z", "+00:00")
+        try:
+            if "T" in text:
+                return datetime.fromisoformat(text).date()
+            return date.fromisoformat(text[:10])
+        except ValueError:
+            return None
+
+    def _sanitize_timeline_payload(self, timeline_payload: dict[str, Any]) -> dict[str, Any]:
+        raw_events = timeline_payload.get("events")
+        if raw_events is None:
+            raw_events = []
+        if not isinstance(raw_events, list):
+            raise ValueError("timeline.events must be a list")
+
+        events: list[dict[str, Any]] = []
+        for index, raw in enumerate(raw_events, start=1):
+            if not isinstance(raw, dict):
+                raise ValueError(f"timeline.events[{index}] must be an object")
+
+            event_date = self._parse_optional_date(raw.get("date"))
+            if event_date is None:
+                raise ValueError(f"timeline.events[{index}].date must be YYYY-MM-DD")
+
+            event_type = str(raw.get("event_type") or "milestone").strip().lower()
+            if event_type not in {"purchase", "windfall", "job_change", "retirement", "milestone"}:
+                raise ValueError(f"timeline.events[{index}].event_type is invalid")
+
+            impact_raw = raw.get("impact_type")
+            impact_type = str(impact_raw).strip().lower() if impact_raw is not None else ""
+            if not impact_type:
+                impact_type = TIMELINE_DEFAULT_IMPACT_BY_EVENT.get(event_type, "portfolio")
+            if impact_type not in {"income", "expense", "portfolio", "contribution", "debt_payment"}:
+                raise ValueError(f"timeline.events[{index}].impact_type is invalid")
+
+            recurring_frequency = str(raw.get("recurring_frequency") or "one_time").strip().lower()
+            if recurring_frequency not in {"one_time", "monthly", "yearly"}:
+                raise ValueError(f"timeline.events[{index}].recurring_frequency is invalid")
+
+            try:
+                amount_usd = float(raw.get("amount_usd") or 0.0)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"timeline.events[{index}].amount_usd must be numeric") from exc
+
+            end_date = self._parse_optional_date(raw.get("end_date"))
+            if end_date and end_date < event_date:
+                raise ValueError(f"timeline.events[{index}].end_date must be on or after date")
+
+            label = str(raw.get("label") or "").strip()
+            if not label:
+                raise ValueError(f"timeline.events[{index}].label is required")
+
+            event_id = str(raw.get("id") or "").strip() or f"event-{uuid.uuid4().hex[:10]}"
+            events.append(
+                {
+                    "id": event_id,
+                    "date": event_date.isoformat(),
+                    "label": label,
+                    "event_type": event_type,
+                    "impact_type": impact_type,
+                    "amount_usd": amount_usd,
+                    "recurring_frequency": recurring_frequency,
+                    "end_date": end_date.isoformat() if end_date else None,
+                    "account_id": (str(raw.get("account_id") or "").strip() or None),
+                    "notes": str(raw.get("notes") or "").strip(),
+                }
+            )
+
+        retirement_payload = timeline_payload.get("retirement")
+        if not isinstance(retirement_payload, dict):
+            retirement_payload = {}
+
+        target_retirement_age = retirement_payload.get("target_retirement_age")
+        if target_retirement_age is None:
+            resolved_retirement_age = None
+        else:
+            try:
+                resolved_retirement_age = int(target_retirement_age)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("timeline.retirement.target_retirement_age must be an integer") from exc
+            if resolved_retirement_age < 18 or resolved_retirement_age > 100:
+                raise ValueError("timeline.retirement.target_retirement_age must be between 18 and 100")
+
+        withdrawal_strategy = str(retirement_payload.get("withdrawal_strategy") or "").strip() or None
+
+        return {
+            "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
+            "events": events,
+            "retirement": {
+                "target_retirement_age": resolved_retirement_age,
+                "withdrawal_strategy": withdrawal_strategy,
+            },
+        }
 
     def _sanitize_settings_update(self, updates: dict[str, Any]) -> dict[str, Any]:
         allowed_fields = {
@@ -677,6 +789,44 @@ class PlanWorkspace:
         self.refresh_context(plan_id)
         return self.get_plan(plan_id)
 
+    def get_plan_timeline(self, plan_id: str) -> dict[str, Any]:
+        plan_dir = self._plan_dir(plan_id)
+        if not plan_dir.exists():
+            raise PlanNotFoundError(f"Plan not found: {plan_id}")
+        return self._read_or_initialize_json(self._timeline_path(plan_id), self._default_timeline())
+
+    def update_plan_timeline(
+        self,
+        plan_id: str,
+        timeline_payload: dict[str, Any],
+        rationale: str | None = None,
+        status: str = "accepted",
+        log_decision: bool = True,
+    ) -> dict[str, Any]:
+        plan_dir = self._plan_dir(plan_id)
+        if not plan_dir.exists():
+            raise PlanNotFoundError(f"Plan not found: {plan_id}")
+
+        sanitized = self._sanitize_timeline_payload(timeline_payload)
+        self._timeline_path(plan_id).write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
+
+        index_payload = self._load_index()
+        self._touch_plan(index_payload, plan_id)
+        self._save_index(index_payload)
+
+        if log_decision:
+            event_count = len(sanitized.get("events", []))
+            self.append_decision(
+                plan_id=plan_id,
+                summary=f"Updated plan timeline: {event_count} event(s).",
+                rationale=(rationale or "Timeline events/retirement milestones were updated."),
+                status=status,
+            )
+        else:
+            self.refresh_context(plan_id)
+
+        return sanitized
+
     def refresh_context(self, plan_id: str) -> str:
         plan_dir = self._plan_dir(plan_id)
         if not plan_dir.exists():
@@ -713,6 +863,24 @@ class PlanWorkspace:
             f"- Withdrawal strategy: {settings_payload.get('withdrawal_strategy') or 'not set'}",
         ]
 
+        timeline_events = timeline_payload.get("events", [])
+        if not isinstance(timeline_events, list):
+            timeline_events = []
+        preview_events = []
+        for item in timeline_events[:5]:
+            if not isinstance(item, dict):
+                continue
+            try:
+                amount = float(item.get("amount_usd") or 0.0)
+            except (TypeError, ValueError):
+                amount = 0.0
+            preview_events.append(
+                f"- {item.get('date', '?')}: {item.get('label', 'Event')} "
+                f"({item.get('event_type', 'milestone')}, {item.get('impact_type', 'portfolio')}, "
+                f"{amount:,.2f} USD)"
+            )
+        timeline_preview = "\n".join(preview_events) if preview_events else "- No timeline events configured."
+
         context_lines = [
             f"# Plan Context: {metadata.get('title', 'Untitled Plan')}",
             "",
@@ -732,6 +900,10 @@ class PlanWorkspace:
             "",
             f"- Timeline events: {len(timeline_payload.get('events', []))}",
             f"- Contribution rules: {len(contribution_rules_payload.get('rules', []))}",
+            "",
+            "## Timeline Preview",
+            "",
+            timeline_preview,
             "",
             "## Recent Decisions",
             "",

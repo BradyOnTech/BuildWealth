@@ -55,7 +55,15 @@ adapted from the following open source projects:
   `services/orchestrator/src/buildwealth_orchestrator/services/debt_projection.py`
   (debt payoff strategy projection and amortization flow adapted from
   `src/lib/calc/debts.ts` plus debt input schema/testing patterns from
-  `src/lib/schemas/inputs/debt-form-schema.ts` and `src/lib/calc/debts.test.ts`)
+  `src/lib/schemas/inputs/debt-form-schema.ts` and `src/lib/calc/debts.test.ts`);
+  `services/orchestrator/src/buildwealth_orchestrator/services/timeline_projection.py`
+  (timeline event normalization, date-window recurrence, and impact-shaping structure
+  adapted from `src/lib/schemas/inputs/timeline-form-schema.ts`,
+  `convex/timeline.ts`, and `convex/validators/timeline_validator.ts`);
+  `services/orchestrator/src/buildwealth_orchestrator/services/plan_workspace.py`
+  (plan timeline persistence/validation structure aligned to Ignidash timeline schema
+  conventions from `src/lib/schemas/inputs/timeline-form-schema.ts` and
+  `convex/validators/timeline_validator.ts`)
 
 ## OpenBB Platform
 

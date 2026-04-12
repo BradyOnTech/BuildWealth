@@ -150,9 +150,9 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
         payload = json.loads(request.content.decode("utf-8"))
         accounts = payload["accounts"]
         assert len(accounts) == 2
-        assert payload["baseline_assumptions"]["annual_income"] == 125000
-        assert payload["baseline_assumptions"]["annual_expenses"] == 64000
-        assert payload["baseline_assumptions"]["annual_debt_payments"] == 10000
+        assert payload["baseline_assumptions"]["annual_income"] == 130000
+        assert payload["baseline_assumptions"]["annual_expenses"] == 66000
+        assert payload["baseline_assumptions"]["annual_debt_payments"] == 11000
         assert accounts[0]["account_id"] == "acct-401k"
         assert accounts[0]["account_type"] == "401k"
         assert accounts[0]["tax_treatment"] == "tax_deferred"
@@ -160,6 +160,7 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
         assert payload["metadata"]["income_projection"]["first_year_gross_income_usd"] == 125000
         assert payload["metadata"]["expense_projection"]["first_year_expenses_usd"] == 64000
         assert payload["metadata"]["debt_projection"]["selected_scenario"]["first_year_payments_usd"] == 10000
+        assert payload["metadata"]["timeline_projection"]["first_year_income_impact_usd"] == 5000
         assert payload["metadata"]["contribution_allocation"]["total_contributions_usd"] == 22000
         return httpx.Response(
             status_code=200,
@@ -305,6 +306,19 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
                 "interest_saved_vs_minimum_usd": 400,
                 "warnings": [],
             },
+            timeline_projection={
+                "start_year": 2026,
+                "years": 30,
+                "events_count": 2,
+                "first_year_income_impact_usd": 5000,
+                "first_year_expense_impact_usd": 2000,
+                "first_year_portfolio_impact_usd": -10000,
+                "first_year_contribution_impact_usd": 1000,
+                "first_year_debt_payment_impact_usd": 1000,
+                "cumulative_net_cashflow_impact_usd": -40000,
+                "yearly_points": [],
+                "warnings": [],
+            },
             contribution_allocation={
                 "profile_id": "tax_optimized_high_earner",
                 "base_rule_type": "save",
@@ -327,5 +341,7 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
     assert result.expense_projection.first_year_expenses_usd == 64000
     assert result.debt_projection is not None
     assert result.debt_projection.selected_scenario.first_year_payments_usd == 10000
+    assert result.timeline_projection is not None
+    assert result.timeline_projection.first_year_income_impact_usd == 5000
     assert result.contribution_allocation is not None
     assert result.contribution_allocation.total_contributions_usd == 22000

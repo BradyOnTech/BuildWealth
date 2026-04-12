@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class Holding(BaseModel):
@@ -297,6 +297,31 @@ class DebtProjectionResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class TimelineImpactYearPoint(BaseModel):
+    year: int
+    income_impact_usd: float
+    expense_impact_usd: float
+    portfolio_impact_usd: float
+    contribution_impact_usd: float
+    debt_payment_impact_usd: float
+    net_cashflow_impact_usd: float
+    events_applied: int
+
+
+class TimelineImpactProjectionResponse(BaseModel):
+    start_year: int
+    years: int
+    events_count: int
+    first_year_income_impact_usd: float
+    first_year_expense_impact_usd: float
+    first_year_portfolio_impact_usd: float
+    first_year_contribution_impact_usd: float
+    first_year_debt_payment_impact_usd: float
+    cumulative_net_cashflow_impact_usd: float
+    yearly_points: list[TimelineImpactYearPoint] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class ContributionAllocationAccountInput(BaseModel):
     account_id: str
     account_name: str | None = None
@@ -413,6 +438,7 @@ class PlanningResponse(BaseModel):
     income_projection: IncomeProjectionResponse | None = None
     expense_projection: ExpenseProjectionResponse | None = None
     debt_projection: DebtProjectionResponse | None = None
+    timeline_projection: TimelineImpactProjectionResponse | None = None
     contribution_allocation: ContributionAllocationResponse | None = None
 
 
@@ -724,6 +750,50 @@ class CopilotConversationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     messages: list[dict[str, Any]] = Field(default_factory=list)
+
+
+TIMELINE_DEFAULT_IMPACT_BY_EVENT: dict[str, str] = {
+    "purchase": "expense",
+    "windfall": "income",
+    "job_change": "income",
+    "retirement": "contribution",
+    "milestone": "portfolio",
+}
+
+
+class PlanTimelineEvent(BaseModel):
+    id: str = ""
+    date: date
+    label: str
+    event_type: Literal["purchase", "windfall", "job_change", "retirement", "milestone"] = "milestone"
+    impact_type: Literal["income", "expense", "portfolio", "contribution", "debt_payment"] | None = None
+    amount_usd: float = 0.0
+    recurring_frequency: Literal["one_time", "monthly", "yearly"] = "one_time"
+    end_date: date | None = None
+    account_id: str | None = None
+    notes: str = ""
+
+    @model_validator(mode="after")
+    def _apply_default_impact_type(self) -> "PlanTimelineEvent":
+        if self.impact_type is None:
+            self.impact_type = TIMELINE_DEFAULT_IMPACT_BY_EVENT.get(self.event_type, "portfolio")
+        return self
+
+
+class PlanTimelineRetirement(BaseModel):
+    target_retirement_age: int | None = Field(default=None, ge=18, le=100)
+    withdrawal_strategy: str | None = None
+
+
+class PlanTimelineResponse(BaseModel):
+    schema_version: int = 2
+    events: list[PlanTimelineEvent] = Field(default_factory=list)
+    retirement: PlanTimelineRetirement = Field(default_factory=PlanTimelineRetirement)
+
+
+class PlanTimelineUpdateRequest(BaseModel):
+    events: list[PlanTimelineEvent] = Field(default_factory=list)
+    retirement: PlanTimelineRetirement = Field(default_factory=PlanTimelineRetirement)
 
 
 class PlanSummary(BaseModel):

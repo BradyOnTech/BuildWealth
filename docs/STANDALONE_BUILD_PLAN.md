@@ -147,6 +147,14 @@ These decisions refine the build plan based on the current repository and upstre
 - Profile UI debt builder now captures payoff strategy and optional custom monthly payment per debt item
 - Added focused coverage in `test_debt_projection.py`, extended sidecar payload coverage in `test_planning_sidecar.py`, and profile migration coverage for new debt fields
 
+### 2026-04-12 (Completed - Plan Timeline Events Foundation)
+- Added timeline impact projection service (`timeline_projection.py`) with support for dated `purchase`, `windfall`, `job_change`, `retirement`, and `milestone` events, including one-time/monthly/yearly recurrence and year-by-year impact aggregation
+- Plan Workspace now persists validated plan timelines in `timeline.json`, supports read/update operations, and includes timeline previews in generated plan context output
+- Added plan timeline API endpoints (`GET/PUT /api/plans/{plan_id}/timeline`) plus Copilot tools (`get_plan_timeline`, `update_plan_timeline`) for timeline modeling workflows
+- Planning and scenario-diff flows now compute and pass timeline projections into Ignidash sidecar metadata and baseline assumptions; first-year portfolio/contribution impacts are applied to scenario setup and income/expense/debt impacts are applied to sidecar assumptions
+- Plan Workspace UI now includes timeline JSON editing/saving and scenario-diff output now surfaces base/candidate timeline impact summaries
+- Added focused coverage in `test_timeline_projection.py`, `test_plan_workspace.py`, and `test_planning_sidecar.py`
+
 ### 2026-04-09 (Completed)
 - Phase 1.1: BuildWealth-native TWR calculator integrated into local portfolio store
 - Phase 1.2: XIRR money-weighted return added and surfaced in portfolio snapshot/UI
@@ -256,7 +264,7 @@ These decisions refine the build plan based on the current repository and upstre
 | Expense modeling with inflation | Built (foundation) | ~35% |
 | Debt payoff modeling | Built (foundation) | ~35% |
 | Physical assets | Built (foundation) | ~35% |
-| Timeline events on plans | NOT BUILT | 0% |
+| Timeline events on plans | Built (foundation) | ~35% |
 | Federal tax brackets | Built (foundation) | ~35% |
 | State tax | NOT BUILT | 0% |
 | FICA / Social Security tax | Built (foundation) | ~30% |
@@ -269,7 +277,7 @@ These decisions refine the build plan based on the current repository and upstre
 | Net worth charts over time | NOT BUILT | 0% |
 | Per-account balance projections | NOT BUILT | 0% |
 
-**Honest assessment:** We're at ~20% feature parity with Ghostfolio and ~15% with Ignidash. There is substantial work ahead.
+**Honest assessment:** We're at ~20% feature parity with Ghostfolio and ~18% with Ignidash. There is substantial work ahead.
 
 ---
 

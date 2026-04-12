@@ -4,7 +4,7 @@ import { byId, fmtCurrency, fmtDate, writeLog } from '../lib/utils.js';
 import { collectSettingsPayload, setSettingsInputs } from '../lib/components.js';
 
 function setControlsEnabled(enabled) {
-  ['activate-plan', 'refresh-plan-context', 'save-plan', 'save-plan-settings', 'run-scenario-diff', 'apply-scenario-overrides', 'add-decision', 'plan-markdown', 'plan-tasks', 'decision-summary', 'decision-rationale', 'decision-status'].forEach(id => { const el = byId(id); if (el) el.disabled = !enabled; });
+  ['activate-plan', 'refresh-plan-context', 'save-plan', 'save-plan-timeline', 'save-plan-settings', 'run-scenario-diff', 'apply-scenario-overrides', 'add-decision', 'plan-markdown', 'plan-tasks', 'plan-timeline', 'decision-summary', 'decision-rationale', 'decision-status'].forEach(id => { const el = byId(id); if (el) el.disabled = !enabled; });
   for (const f of [...PLAN_SETTING_FIELDS, ...DIFF_SETTING_FIELDS]) { const el = byId(f.inputId); if (el) el.disabled = !enabled; }
 }
 
@@ -12,7 +12,7 @@ export function clearDetail() {
   state.currentPlanDetail = null;
   byId('plan-meta').textContent = 'Select a plan to view details.';
   byId('plan-settings-meta').textContent = 'Blank values use global defaults from planner configuration.';
-  ['plan-markdown', 'plan-tasks', 'plan-context', 'scenario-diff-output', 'artifact-content'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
+  ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-context', 'scenario-diff-output', 'artifact-content'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
   byId('scenario-diff-summary').textContent = 'No scenario diff run yet.';
   byId('plan-decisions-body').innerHTML = '<tr><td colspan="4">No decisions yet.</td></tr>';
   byId('plan-artifacts-body').innerHTML = '<tr><td colspan="4">No artifacts yet.</td></tr>';
@@ -27,6 +27,7 @@ export function renderDetail() {
   byId('plan-meta').textContent = `${d.title || 'Untitled'} \u2022 ${d.is_active ? 'Active Plan' : 'Inactive'} \u2022 Updated ${fmtDate(d.updated_at)}`;
   byId('plan-markdown').value = d.files?.plan_markdown || '';
   byId('plan-tasks').value = d.files?.tasks_markdown || '';
+  byId('plan-timeline').value = d.files?.timeline_json || '';
   byId('plan-context').value = d.files?.context_markdown || '';
   byId('scenario-diff-summary').textContent = 'No scenario diff run yet.';
   byId('scenario-diff-output').value = '';
@@ -107,6 +108,16 @@ function formatDiffOutput(diff) {
     lines.push(`- Candidate: ${describeDebtProjection(candidateDebt)}`);
   }
 
+  const baseTimeline = diff?.base_result?.timeline_projection;
+  const candidateTimeline = diff?.candidate_result?.timeline_projection;
+  lines.push('', 'Timeline Impact Context:');
+  if (!baseTimeline && !candidateTimeline) {
+    lines.push('- Not available.');
+  } else {
+    lines.push(`- Base: ${describeTimelineProjection(baseTimeline)}`);
+    lines.push(`- Candidate: ${describeTimelineProjection(candidateTimeline)}`);
+  }
+
   const mc = diff?.monte_carlo_delta || {};
   lines.push('', 'Monte Carlo Delta:', `- P10: ${fmtCurrency(mc.delta_p10_future_value_usd)}`, `- P50: ${fmtCurrency(mc.delta_p50_future_value_usd)}`, `- P90: ${fmtCurrency(mc.delta_p90_future_value_usd)}`);
   lines.push('', 'Raw Payload:', JSON.stringify(diff, null, 2));
@@ -147,6 +158,17 @@ function describeDebtProjection(projection) {
   return `${strategy} (${monthsLabel}, ${paidOffLabel}, interest ${interest})`;
 }
 
+function describeTimelineProjection(projection) {
+  if (!projection || typeof projection !== 'object') return 'Not available';
+  const eventsCount = Number(projection.events_count);
+  const years = Number(projection.years);
+  const firstYearNet = fmtCurrency(projection.yearly_points?.[0]?.net_cashflow_impact_usd);
+  const cumulative = fmtCurrency(projection.cumulative_net_cashflow_impact_usd);
+  const eventsLabel = Number.isFinite(eventsCount) ? `${Math.trunc(eventsCount)} event(s)` : 'n/a events';
+  const yearsLabel = Number.isFinite(years) ? `${Math.trunc(years)}y` : 'n/a';
+  return `${eventsLabel}, first-year net ${firstYearNet}, cumulative net ${cumulative} (${yearsLabel})`;
+}
+
 export function initEditor(refreshPlans) {
   byId('save-plan').addEventListener('click', async () => {
     if (!state.currentPlanId) { writeLog('Select a plan first.', null, true); return; }
@@ -155,6 +177,32 @@ export function initEditor(refreshPlans) {
       state.currentPlanDetail = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ plan_markdown: byId('plan-markdown').value, tasks_markdown: byId('plan-tasks').value }) });
       await refreshPlans(); renderDetail(); writeLog('Plan saved.');
     } catch (e) { writeLog(`Save failed: ${e.message}`, null, true); }
+  });
+
+  byId('save-plan-timeline').addEventListener('click', async () => {
+    if (!state.currentPlanId) { writeLog('Select a plan first.', null, true); return; }
+    const raw = byId('plan-timeline').value.trim();
+    let payload;
+    try {
+      payload = raw ? JSON.parse(raw) : { events: [], retirement: {} };
+    } catch (e) {
+      writeLog(`Timeline JSON is invalid: ${e.message}`, null, true);
+      return;
+    }
+    writeLog('Saving timeline...', payload);
+    try {
+      await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/timeline`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      state.currentPlanDetail = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}`);
+      renderDetail();
+      await refreshPlans();
+      writeLog('Timeline saved.');
+    } catch (e) {
+      writeLog(`Save timeline failed: ${e.message}`, null, true);
+    }
   });
 
   byId('save-plan-settings').addEventListener('click', async () => {

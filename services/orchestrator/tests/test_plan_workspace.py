@@ -1,7 +1,9 @@
 from pathlib import Path
+import json
 
 import pytest
 
+from buildwealth_orchestrator.schemas import PlanTimelineUpdateRequest
 from buildwealth_orchestrator.services.plan_workspace import PlanWorkspace
 
 
@@ -164,3 +166,93 @@ def test_plan_workspace_migrates_legacy_index_and_settings(tmp_path: Path) -> No
     assert detail["settings"]["annual_contribution_usd"] == 10000
     assert '"events": []' in detail["files"]["timeline_json"]
     assert '"rules": []' in detail["files"]["contribution_rules_json"]
+
+
+def test_plan_workspace_updates_timeline(tmp_path: Path) -> None:
+    workspace = PlanWorkspace(tmp_path)
+    detail = workspace.create_plan(title="Timeline Plan")
+
+    updated_timeline = workspace.update_plan_timeline(
+        plan_id=detail["id"],
+        timeline_payload={
+            "events": [
+                {
+                    "id": "event-1",
+                    "date": "2028-06-01",
+                    "label": "Buy House",
+                    "event_type": "purchase",
+                    "impact_type": "expense",
+                    "amount_usd": 80000,
+                    "recurring_frequency": "one_time",
+                }
+            ],
+            "retirement": {
+                "target_retirement_age": 60,
+                "withdrawal_strategy": "4_percent_rule",
+            },
+        },
+    )
+
+    assert len(updated_timeline["events"]) == 1
+    assert updated_timeline["events"][0]["label"] == "Buy House"
+    assert updated_timeline["retirement"]["target_retirement_age"] == 60
+
+    loaded = workspace.get_plan_timeline(detail["id"])
+    assert len(loaded["events"]) == 1
+    assert loaded["events"][0]["event_type"] == "purchase"
+
+    refreshed = workspace.get_plan(detail["id"])
+    timeline_json = json.loads(refreshed["files"]["timeline_json"])
+    assert len(timeline_json["events"]) == 1
+    assert refreshed["decisions"]
+    assert "Updated plan timeline" in refreshed["decisions"][0]["summary"]
+
+
+def test_plan_workspace_timeline_defaults_impact_type_by_event(tmp_path: Path) -> None:
+    workspace = PlanWorkspace(tmp_path)
+    detail = workspace.create_plan(title="Timeline Defaults")
+
+    updated_timeline = workspace.update_plan_timeline(
+        plan_id=detail["id"],
+        timeline_payload={
+            "events": [
+                {
+                    "id": "event-purchase",
+                    "date": "2029-01-01",
+                    "label": "Home Down Payment",
+                    "event_type": "purchase",
+                    "amount_usd": 50000,
+                },
+                {
+                    "id": "event-windfall",
+                    "date": "2030-01-01",
+                    "label": "Inheritance",
+                    "event_type": "windfall",
+                    "amount_usd": 25000,
+                },
+            ],
+        },
+    )
+
+    assert len(updated_timeline["events"]) == 2
+    assert updated_timeline["events"][0]["impact_type"] == "expense"
+    assert updated_timeline["events"][1]["impact_type"] == "income"
+
+
+def test_timeline_schema_defaults_impact_type_by_event() -> None:
+    parsed = PlanTimelineUpdateRequest.model_validate(
+        {
+            "events": [
+                {
+                    "id": "event-retire",
+                    "date": "2055-01-01",
+                    "label": "Retire",
+                    "event_type": "retirement",
+                    "amount_usd": 12000,
+                }
+            ]
+        }
+    )
+
+    assert parsed.events
+    assert parsed.events[0].impact_type == "contribution"
