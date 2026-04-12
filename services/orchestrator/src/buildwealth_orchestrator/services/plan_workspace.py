@@ -85,6 +85,9 @@ class PlanWorkspace:
     def _assumption_sets_path(self, plan_id: str) -> Path:
         return self._plan_dir(plan_id) / "assumption_sets.json"
 
+    def _branch_templates_path(self, plan_id: str) -> Path:
+        return self._plan_dir(plan_id) / "branch_templates.json"
+
     @staticmethod
     def _slug(value: str, default: str = "artifact") -> str:
         cleaned = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
@@ -257,6 +260,91 @@ class PlanWorkspace:
                     "inflation_rate": 0.005,
                     "marginal_tax_rate": None,
                 }
+            ],
+        }
+
+    @staticmethod
+    def _default_branch_templates() -> dict[str, Any]:
+        # Preset catalog shape aligns with Ignidash template-listing conventions
+        # (named, reusable planning templates) while using BuildWealth branch-event schema.
+        return {
+            "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
+            "default_template_id": "job_loss_6_months",
+            "templates": [
+                {
+                    "id": "job_loss_6_months",
+                    "name": "Job Loss (6 Months)",
+                    "description": "Temporary income interruption for six months.",
+                    "branch_name": "Job Loss 6 Months",
+                    "assumption_set_id": None,
+                    "compare_settings": {},
+                    "branch_events": [
+                        {
+                            "label": "Temporary Job Loss",
+                            "event_type": "job_change",
+                            "impact_type": "income",
+                            "amount_usd": -7500.0,
+                            "recurring_frequency": "monthly",
+                            "start_year_offset": 0,
+                            "duration_months": 6,
+                            "account_id": None,
+                            "notes": "Modeled as gross monthly income loss.",
+                        }
+                    ],
+                },
+                {
+                    "id": "raise_20_percent",
+                    "name": "Raise (20%)",
+                    "description": "Ongoing promotion raise scenario.",
+                    "branch_name": "Raise 20 Percent",
+                    "assumption_set_id": None,
+                    "compare_settings": {},
+                    "branch_events": [
+                        {
+                            "label": "Promotion Raise",
+                            "event_type": "job_change",
+                            "impact_type": "income",
+                            "amount_usd": 18000.0,
+                            "recurring_frequency": "yearly",
+                            "start_year_offset": 0,
+                            "duration_months": None,
+                            "account_id": None,
+                            "notes": "Annualized salary lift.",
+                        }
+                    ],
+                },
+                {
+                    "id": "new_child_costs",
+                    "name": "New Child Costs",
+                    "description": "One-time setup plus long-duration monthly childcare costs.",
+                    "branch_name": "Have a Kid",
+                    "assumption_set_id": None,
+                    "compare_settings": {},
+                    "branch_events": [
+                        {
+                            "label": "Childcare Setup Costs",
+                            "event_type": "purchase",
+                            "impact_type": "expense",
+                            "amount_usd": 15000.0,
+                            "recurring_frequency": "one_time",
+                            "start_year_offset": 0,
+                            "duration_months": None,
+                            "account_id": None,
+                            "notes": "",
+                        },
+                        {
+                            "label": "Ongoing Childcare Costs",
+                            "event_type": "milestone",
+                            "impact_type": "expense",
+                            "amount_usd": 1200.0,
+                            "recurring_frequency": "monthly",
+                            "start_year_offset": 0,
+                            "duration_months": 216,
+                            "account_id": None,
+                            "notes": "",
+                        },
+                    ],
+                },
             ],
         }
 
@@ -646,6 +734,181 @@ class PlanWorkspace:
             "sets": sets,
         }
 
+    def _sanitize_branch_template_event(
+        self,
+        *,
+        raw: dict[str, Any],
+        template_index: int,
+        event_index: int,
+    ) -> dict[str, Any]:
+        label = str(raw.get("label") or "").strip()
+        if not label:
+            raise ValueError(
+                f"branch_templates.templates[{template_index}].branch_events[{event_index}].label is required"
+            )
+
+        event_type = str(raw.get("event_type") or "milestone").strip().lower()
+        if event_type not in {"purchase", "windfall", "job_change", "retirement", "milestone"}:
+            raise ValueError(
+                f"branch_templates.templates[{template_index}].branch_events[{event_index}].event_type is invalid"
+            )
+
+        impact_raw = raw.get("impact_type")
+        impact_type = str(impact_raw).strip().lower() if impact_raw is not None else ""
+        if not impact_type:
+            impact_type = TIMELINE_DEFAULT_IMPACT_BY_EVENT.get(event_type, "portfolio")
+        if impact_type not in {"income", "expense", "portfolio", "contribution", "debt_payment"}:
+            raise ValueError(
+                f"branch_templates.templates[{template_index}].branch_events[{event_index}].impact_type is invalid"
+            )
+
+        recurring_frequency = str(raw.get("recurring_frequency") or "one_time").strip().lower()
+        if recurring_frequency not in {"one_time", "monthly", "yearly"}:
+            raise ValueError(
+                f"branch_templates.templates[{template_index}].branch_events[{event_index}].recurring_frequency is invalid"
+            )
+
+        try:
+            amount_usd = float(raw.get("amount_usd"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"branch_templates.templates[{template_index}].branch_events[{event_index}].amount_usd must be numeric"
+            ) from exc
+
+        try:
+            start_year_offset = int(raw.get("start_year_offset") or 0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"branch_templates.templates[{template_index}].branch_events[{event_index}].start_year_offset must be an integer"
+            ) from exc
+        if start_year_offset < 0 or start_year_offset > 80:
+            raise ValueError(
+                f"branch_templates.templates[{template_index}].branch_events[{event_index}].start_year_offset must be between 0 and 80"
+            )
+
+        duration_raw = raw.get("duration_months")
+        if duration_raw is None:
+            duration_months = None
+        else:
+            try:
+                duration_months = int(duration_raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"branch_templates.templates[{template_index}].branch_events[{event_index}].duration_months must be an integer"
+                ) from exc
+            if duration_months < 1 or duration_months > 960:
+                raise ValueError(
+                    f"branch_templates.templates[{template_index}].branch_events[{event_index}].duration_months must be between 1 and 960"
+                )
+
+        return {
+            "label": label,
+            "event_type": event_type,
+            "impact_type": impact_type,
+            "amount_usd": amount_usd,
+            "recurring_frequency": recurring_frequency,
+            "start_year_offset": start_year_offset,
+            "duration_months": duration_months,
+            "account_id": (str(raw.get("account_id") or "").strip() or None),
+            "notes": str(raw.get("notes") or "").strip(),
+        }
+
+    def _sanitize_branch_templates_payload(self, raw_payload: dict[str, Any]) -> dict[str, Any]:
+        default_payload = self._default_branch_templates()
+        input_payload = raw_payload if isinstance(raw_payload, dict) else {}
+
+        raw_templates = input_payload.get("templates")
+        if raw_templates is None:
+            raw_templates = default_payload.get("templates", [])
+        if not isinstance(raw_templates, list):
+            raise ValueError("branch_templates.templates must be a list")
+
+        templates: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        for index, raw in enumerate(raw_templates, start=1):
+            if not isinstance(raw, dict):
+                raise ValueError(f"branch_templates.templates[{index}] must be an object")
+
+            template_id = str(raw.get("id") or "").strip()
+            if not template_id:
+                template_id = f"branch-template-{uuid.uuid4().hex[:10]}"
+            template_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", template_id).strip("-").lower() or f"branch-template-{index}"
+            if template_id in seen_ids:
+                raise ValueError(f"branch_templates.templates[{index}].id must be unique")
+            seen_ids.add(template_id)
+
+            branch_name = str(raw.get("branch_name") or "").strip()
+            name = str(raw.get("name") or "").strip()
+            if not name:
+                name = branch_name or template_id.replace("_", " ").replace("-", " ").title()
+            if not branch_name:
+                branch_name = name
+
+            description = str(raw.get("description") or "").strip()
+            assumption_set_id = str(raw.get("assumption_set_id") or "").strip().lower() or None
+
+            compare_raw = raw.get("compare_settings")
+            if compare_raw is None:
+                compare_raw = {}
+            if not isinstance(compare_raw, dict):
+                raise ValueError(f"branch_templates.templates[{index}].compare_settings must be an object")
+            compare_settings = self._sanitize_settings_update(compare_raw)
+            self._validate_return_relationships(compare_settings)
+
+            events_raw = raw.get("branch_events")
+            if events_raw is None:
+                events_raw = []
+            if not isinstance(events_raw, list):
+                raise ValueError(f"branch_templates.templates[{index}].branch_events must be a list")
+            branch_events: list[dict[str, Any]] = []
+            for event_index, event_raw in enumerate(events_raw, start=1):
+                if not isinstance(event_raw, dict):
+                    raise ValueError(
+                        f"branch_templates.templates[{index}].branch_events[{event_index}] must be an object"
+                    )
+                branch_events.append(
+                    self._sanitize_branch_template_event(
+                        raw=event_raw,
+                        template_index=index,
+                        event_index=event_index,
+                    )
+                )
+
+            if not branch_events and not compare_settings:
+                raise ValueError(
+                    f"branch_templates.templates[{index}] must include branch_events and/or compare_settings"
+                )
+
+            templates.append(
+                {
+                    "id": template_id,
+                    "name": name,
+                    "description": description,
+                    "branch_name": branch_name,
+                    "assumption_set_id": assumption_set_id,
+                    "compare_settings": compare_settings,
+                    "branch_events": branch_events,
+                }
+            )
+
+        if not templates:
+            templates = list(default_payload.get("templates", []))
+            seen_ids = {str(item.get("id") or "").strip() for item in templates if isinstance(item, dict)}
+
+        default_template_id = str(
+            input_payload.get("default_template_id")
+            or default_payload.get("default_template_id")
+            or ""
+        ).strip().lower()
+        if not default_template_id or default_template_id not in seen_ids:
+            default_template_id = str(templates[0].get("id") or "")
+
+        return {
+            "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
+            "default_template_id": default_template_id or None,
+            "templates": templates,
+        }
+
     def _sanitize_settings_update(self, updates: dict[str, Any]) -> dict[str, Any]:
         allowed_fields = {
             "annual_contribution_usd",
@@ -745,6 +1008,10 @@ class PlanWorkspace:
         )
         self._assumption_sets_path(plan_id).write_text(
             json.dumps(self._default_assumption_sets(), indent=2),
+            encoding="utf-8",
+        )
+        self._branch_templates_path(plan_id).write_text(
+            json.dumps(self._default_branch_templates(), indent=2),
             encoding="utf-8",
         )
 
@@ -927,6 +1194,13 @@ class PlanWorkspace:
                     self._read_or_initialize_json(
                         self._assumption_sets_path(plan_id),
                         self._default_assumption_sets(),
+                    ),
+                    indent=2,
+                ),
+                "branch_templates_json": json.dumps(
+                    self._read_or_initialize_json(
+                        self._branch_templates_path(plan_id),
+                        self._default_branch_templates(),
                     ),
                     indent=2,
                 ),
@@ -1145,6 +1419,54 @@ class PlanWorkspace:
 
         return sanitized
 
+    def get_plan_branch_templates(self, plan_id: str) -> dict[str, Any]:
+        plan_dir = self._plan_dir(plan_id)
+        if not plan_dir.exists():
+            raise PlanNotFoundError(f"Plan not found: {plan_id}")
+
+        payload = self._read_or_initialize_json(
+            self._branch_templates_path(plan_id),
+            self._default_branch_templates(),
+        )
+        sanitized = self._sanitize_branch_templates_payload(payload)
+        self._branch_templates_path(plan_id).write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
+        return sanitized
+
+    def update_plan_branch_templates(
+        self,
+        plan_id: str,
+        branch_templates_payload: dict[str, Any],
+        rationale: str | None = None,
+        status: str = "accepted",
+        log_decision: bool = True,
+    ) -> dict[str, Any]:
+        plan_dir = self._plan_dir(plan_id)
+        if not plan_dir.exists():
+            raise PlanNotFoundError(f"Plan not found: {plan_id}")
+
+        sanitized = self._sanitize_branch_templates_payload(branch_templates_payload)
+        self._branch_templates_path(plan_id).write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
+
+        index_payload = self._load_index()
+        self._touch_plan(index_payload, plan_id)
+        self._save_index(index_payload)
+
+        if log_decision:
+            self.append_decision(
+                plan_id=plan_id,
+                summary=(
+                    "Updated branch templates: "
+                    f"{len(sanitized.get('templates', []))} template(s), "
+                    f"default={sanitized.get('default_template_id')}"
+                ),
+                rationale=(rationale or "Scenario branch templates/presets were updated."),
+                status=status,
+            )
+        else:
+            self.refresh_context(plan_id)
+
+        return sanitized
+
     def refresh_context(self, plan_id: str) -> str:
         plan_dir = self._plan_dir(plan_id)
         if not plan_dir.exists():
@@ -1164,6 +1486,10 @@ class PlanWorkspace:
         assumption_sets_payload = self._read_or_initialize_json(
             self._assumption_sets_path(plan_id),
             self._default_assumption_sets(),
+        )
+        branch_templates_payload = self._read_or_initialize_json(
+            self._branch_templates_path(plan_id),
+            self._default_branch_templates(),
         )
         decisions = self._load_decisions(plan_id, limit=8)
 
@@ -1225,6 +1551,8 @@ class PlanWorkspace:
             f"- Contribution rules: {len(contribution_rules_payload.get('rules', []))}",
             f"- Assumption sets: {len(assumption_sets_payload.get('sets', []))}",
             f"- Active assumption set: {assumption_sets_payload.get('active_assumption_set_id') or 'default'}",
+            f"- Branch templates: {len(branch_templates_payload.get('templates', []))}",
+            f"- Default branch template: {branch_templates_payload.get('default_template_id') or 'none'}",
             "",
             "## Timeline Preview",
             "",

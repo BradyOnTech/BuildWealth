@@ -962,6 +962,27 @@ class PlanAssumptionSetsUpdateRequest(BaseModel):
     sets: list[PlanAssumptionSet] = Field(default_factory=list)
 
 
+class PlanScenarioBranchTemplate(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    branch_name: str = "What-If Branch"
+    assumption_set_id: str | None = None
+    compare_settings: dict[str, Any] = Field(default_factory=dict)
+    branch_events: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class PlanScenarioBranchTemplatesResponse(BaseModel):
+    schema_version: int = 2
+    default_template_id: str | None = None
+    templates: list[PlanScenarioBranchTemplate] = Field(default_factory=list)
+
+
+class PlanScenarioBranchTemplatesUpdateRequest(BaseModel):
+    default_template_id: str | None = None
+    templates: list[PlanScenarioBranchTemplate] = Field(default_factory=list)
+
+
 class PlanSummary(BaseModel):
     id: str
     title: str
@@ -987,6 +1008,7 @@ class PlanFiles(BaseModel):
     timeline_json: str = ""
     contribution_rules_json: str = ""
     assumption_sets_json: str = ""
+    branch_templates_json: str = ""
 
 
 class PlanSettings(BaseModel):
@@ -1063,6 +1085,7 @@ class PlanScenarioBranchRequest(BaseModel):
     branch_name: str = "What-If Branch"
     current_portfolio_value_usd: float | None = None
     assumption_set_id: str | None = None
+    branch_template_id: str | None = None
     compare_settings: PlanSettingsUpdateRequest = Field(default_factory=PlanSettingsUpdateRequest)
     branch_events: list[PlanScenarioBranchEvent] = Field(default_factory=list)
 
@@ -1070,6 +1093,8 @@ class PlanScenarioBranchRequest(BaseModel):
 class PlanScenarioBranchResponse(BaseModel):
     plan_id: str
     branch_name: str
+    branch_template_id: str | None = None
+    branch_template_name: str | None = None
     current_portfolio_value_usd: float
     base_settings: PlanSettings
     branch_settings: PlanSettings

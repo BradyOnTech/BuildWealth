@@ -43,6 +43,8 @@ from buildwealth_orchestrator.schemas import (
     PlanTimelineUpdateRequest,
     PlanAssumptionSetsResponse,
     PlanAssumptionSetsUpdateRequest,
+    PlanScenarioBranchTemplatesResponse,
+    PlanScenarioBranchTemplatesUpdateRequest,
     ScenarioComparisonRow,
     PlanSummary,
     PlanUpdateRequest,
@@ -321,6 +323,7 @@ copilot = FinancialCopilot(
         "- For 'when will I reach my goal?' or 'what do I need to save?' → call get_goal_progress.\n"
         "- For 'what if I change my contributions?' → call run_plan_scenario_diff.\n"
         "- For life-event what-ifs (job loss, raise, new recurring costs) → call run_plan_scenario_branch.\n"
+        "- For reusable life-event presets/templates → call get_plan_branch_templates or update_plan_branch_templates.\n"
         "- For 'what should I do?' → call get_today_dashboard and list_recommendations.\n"
         "- For stock/investment research → call research_quote or research_price_history, "
         "then call simulate_trade to show how buying it would affect portfolio allocation.\n"
@@ -941,6 +944,208 @@ def resolve_plan_assumption_sets(detail: dict[str, Any]) -> dict[str, Any]:
     files = detail.get("files", {})
     raw_payload = files.get("assumption_sets_json") if isinstance(files, dict) else None
     return parse_assumption_sets_payload(raw_payload)
+
+
+def parse_branch_templates_payload(raw_payload: Any) -> dict[str, Any]:
+    fallback_templates = [
+        {
+            "id": "job_loss_6_months",
+            "name": "Job Loss (6 Months)",
+            "description": "Temporary income interruption for six months.",
+            "branch_name": "Job Loss 6 Months",
+            "assumption_set_id": None,
+            "compare_settings": {},
+            "branch_events": [
+                {
+                    "label": "Temporary Job Loss",
+                    "event_type": "job_change",
+                    "impact_type": "income",
+                    "amount_usd": -7500.0,
+                    "recurring_frequency": "monthly",
+                    "start_year_offset": 0,
+                    "duration_months": 6,
+                    "account_id": None,
+                    "notes": "Modeled as gross monthly income loss.",
+                }
+            ],
+        },
+        {
+            "id": "raise_20_percent",
+            "name": "Raise (20%)",
+            "description": "Ongoing promotion raise scenario.",
+            "branch_name": "Raise 20 Percent",
+            "assumption_set_id": None,
+            "compare_settings": {},
+            "branch_events": [
+                {
+                    "label": "Promotion Raise",
+                    "event_type": "job_change",
+                    "impact_type": "income",
+                    "amount_usd": 18000.0,
+                    "recurring_frequency": "yearly",
+                    "start_year_offset": 0,
+                    "duration_months": None,
+                    "account_id": None,
+                    "notes": "Annualized salary lift.",
+                }
+            ],
+        },
+        {
+            "id": "new_child_costs",
+            "name": "New Child Costs",
+            "description": "One-time setup plus long-duration monthly childcare costs.",
+            "branch_name": "Have a Kid",
+            "assumption_set_id": None,
+            "compare_settings": {},
+            "branch_events": [
+                {
+                    "label": "Childcare Setup Costs",
+                    "event_type": "purchase",
+                    "impact_type": "expense",
+                    "amount_usd": 15000.0,
+                    "recurring_frequency": "one_time",
+                    "start_year_offset": 0,
+                    "duration_months": None,
+                    "account_id": None,
+                    "notes": "",
+                },
+                {
+                    "label": "Ongoing Childcare Costs",
+                    "event_type": "milestone",
+                    "impact_type": "expense",
+                    "amount_usd": 1200.0,
+                    "recurring_frequency": "monthly",
+                    "start_year_offset": 0,
+                    "duration_months": 216,
+                    "account_id": None,
+                    "notes": "",
+                },
+            ],
+        },
+    ]
+
+    if isinstance(raw_payload, str):
+        text = raw_payload.strip()
+        if not text:
+            payload: Any = {}
+        else:
+            try:
+                payload = json.loads(text)
+            except json.JSONDecodeError:
+                payload = {}
+    elif isinstance(raw_payload, dict):
+        payload = raw_payload
+    else:
+        payload = {}
+
+    if not isinstance(payload, dict):
+        payload = {}
+
+    templates_raw = payload.get("templates")
+    if not isinstance(templates_raw, list):
+        templates_raw = fallback_templates
+
+    templates: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for index, raw in enumerate(templates_raw, start=1):
+        if not isinstance(raw, dict):
+            continue
+        template_id = str(raw.get("id") or "").strip().lower()
+        if not template_id:
+            template_id = f"branch-template-{index}"
+        template_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", template_id).strip("-").lower() or f"branch-template-{index}"
+        if template_id in seen_ids:
+            continue
+        seen_ids.add(template_id)
+
+        compare_settings_raw = raw.get("compare_settings")
+        compare_settings = compare_settings_raw if isinstance(compare_settings_raw, dict) else {}
+        try:
+            sanitized_compare_settings = plan_workspace._sanitize_settings_update(compare_settings)  # noqa: SLF001
+        except ValueError:
+            sanitized_compare_settings = {}
+        try:
+            validate_plan_return_relationships(sanitized_compare_settings)
+        except ValueError:
+            sanitized_compare_settings = {}
+
+        branch_events_raw = raw.get("branch_events")
+        branch_events = [
+            item for item in branch_events_raw
+            if isinstance(item, dict)
+        ] if isinstance(branch_events_raw, list) else []
+        if not branch_events and not sanitized_compare_settings:
+            continue
+
+        templates.append(
+            {
+                "id": template_id,
+                "name": str(raw.get("name") or template_id).strip() or template_id,
+                "description": str(raw.get("description") or "").strip(),
+                "branch_name": str(raw.get("branch_name") or raw.get("name") or "What-If Branch").strip() or "What-If Branch",
+                "assumption_set_id": (str(raw.get("assumption_set_id") or "").strip().lower() or None),
+                "compare_settings": sanitized_compare_settings,
+                "branch_events": branch_events,
+            }
+        )
+
+    if not templates:
+        templates = list(fallback_templates)
+        seen_ids = {str(item.get("id") or "").strip() for item in templates if isinstance(item, dict)}
+
+    default_template_id = str(payload.get("default_template_id") or "").strip().lower()
+    if not default_template_id or default_template_id not in seen_ids:
+        default_template_id = str(templates[0].get("id") or "") if templates else ""
+
+    return {
+        "schema_version": 2,
+        "default_template_id": default_template_id or None,
+        "templates": templates,
+    }
+
+
+def resolve_plan_branch_templates(detail: dict[str, Any]) -> dict[str, Any]:
+    files = detail.get("files", {})
+    raw_payload = files.get("branch_templates_json") if isinstance(files, dict) else None
+    return parse_branch_templates_payload(raw_payload)
+
+
+def select_branch_template(
+    *,
+    branch_templates_payload: dict[str, Any] | None,
+    branch_template_id: str | None,
+) -> dict[str, Any] | None:
+    if not isinstance(branch_templates_payload, dict):
+        return None
+    templates = branch_templates_payload.get("templates")
+    if not isinstance(templates, list) or not templates:
+        return None
+
+    target_id = str(
+        branch_template_id
+        or branch_templates_payload.get("default_template_id")
+        or ""
+    ).strip().lower()
+
+    selected: dict[str, Any] | None = None
+    if target_id:
+        for raw in templates:
+            if not isinstance(raw, dict):
+                continue
+            candidate_id = str(raw.get("id") or "").strip().lower()
+            if candidate_id and candidate_id == target_id:
+                selected = raw
+                break
+        if selected is None:
+            return None
+
+    if selected is None:
+        for raw in templates:
+            if isinstance(raw, dict):
+                selected = raw
+                break
+
+    return selected
 
 
 def apply_assumption_set_to_settings(
@@ -1675,6 +1880,7 @@ async def compute_plan_scenario_branch(
     branch_name: str,
     current_portfolio_value_usd: float | None,
     assumption_set_id: str | None,
+    branch_template_id: str | None,
     compare_updates: dict[str, Any],
     raw_branch_events: list[dict[str, Any]] | None,
 ) -> dict[str, Any]:
@@ -1683,25 +1889,83 @@ async def compute_plan_scenario_branch(
     retirement_age = resolve_timeline_retirement_age(timeline_payload)
     timeline_withdrawal_strategy = resolve_timeline_withdrawal_strategy(timeline_payload)
     assumption_sets_payload = resolve_plan_assumption_sets(detail)
+    branch_templates_payload = resolve_plan_branch_templates(detail)
+    selected_branch_template = (
+        select_branch_template(
+            branch_templates_payload=branch_templates_payload,
+            branch_template_id=branch_template_id,
+        )
+        if branch_template_id
+        else None
+    )
+    if branch_template_id and selected_branch_template is None:
+        raise ValueError(f"Unknown branch_template_id: {branch_template_id}")
+
+    template_assumption_set_id = None
+    template_compare_settings: dict[str, Any] = {}
+    template_branch_events: list[dict[str, Any]] = []
+    template_branch_name = None
+    if isinstance(selected_branch_template, dict):
+        template_assumption_set_id = (
+            str(selected_branch_template.get("assumption_set_id") or "").strip() or None
+        )
+        template_branch_name = str(selected_branch_template.get("branch_name") or "").strip() or None
+        raw_template_compare = selected_branch_template.get("compare_settings")
+        if isinstance(raw_template_compare, dict):
+            template_compare_settings = extract_plan_settings_updates(raw_template_compare)
+        raw_template_events = selected_branch_template.get("branch_events")
+        if isinstance(raw_template_events, list):
+            template_branch_events = [item for item in raw_template_events if isinstance(item, dict)]
 
     base_settings_raw = detail.get("settings", {})
     if not isinstance(base_settings_raw, dict):
         base_settings_raw = {}
+    resolved_assumption_set_id = assumption_set_id or template_assumption_set_id
     base_settings, active_assumption_set = apply_assumption_set_to_settings(
         plan_settings=base_settings_raw,
         assumption_sets_payload=assumption_sets_payload,
-        assumption_set_id=assumption_set_id,
+        assumption_set_id=resolved_assumption_set_id,
     )
-    branch_settings = merge_plan_settings(base_settings, compare_updates)
+    merged_compare_updates = dict(template_compare_settings)
+    merged_compare_updates.update(compare_updates)
+    branch_settings = merge_plan_settings(base_settings, merged_compare_updates)
 
     start_year = utc_now().year
+    merged_branch_events = [*template_branch_events]
+    if raw_branch_events:
+        merged_branch_events.extend(raw_branch_events)
+    deduped_branch_events: list[dict[str, Any]] = []
+    seen_branch_event_keys: set[str] = set()
+    for item in merged_branch_events:
+        if not isinstance(item, dict):
+            continue
+        dedupe_payload = {
+            "label": item.get("label"),
+            "event_type": item.get("event_type"),
+            "impact_type": item.get("impact_type"),
+            "amount_usd": item.get("amount_usd"),
+            "recurring_frequency": item.get("recurring_frequency"),
+            "start_year_offset": item.get("start_year_offset"),
+            "duration_months": item.get("duration_months"),
+            "account_id": item.get("account_id"),
+            "notes": item.get("notes"),
+        }
+        dedupe_key = json.dumps(dedupe_payload, sort_keys=True, default=str)
+        if dedupe_key in seen_branch_event_keys:
+            continue
+        seen_branch_event_keys.add(dedupe_key)
+        deduped_branch_events.append(item)
     branch_timeline_payload, normalized_branch_events = build_branch_timeline_payload(
         base_timeline_payload=timeline_payload,
-        raw_branch_events=raw_branch_events,
+        raw_branch_events=deduped_branch_events,
         start_year=start_year,
     )
-    if not normalized_branch_events and not compare_updates:
+    if not normalized_branch_events and not merged_compare_updates:
         raise ValueError("Scenario branch requires branch_events and/or compare_settings overrides.")
+
+    resolved_branch_name = str(branch_name or "").strip() or "What-If Branch"
+    if resolved_branch_name == "What-If Branch" and template_branch_name:
+        resolved_branch_name = template_branch_name
 
     base_income_projection = build_income_projection_for_plan_settings(base_settings)
     branch_income_projection = build_income_projection_for_plan_settings(branch_settings)
@@ -1785,7 +2049,17 @@ async def compute_plan_scenario_branch(
 
     return {
         "plan_id": plan_id,
-        "branch_name": branch_name,
+        "branch_name": resolved_branch_name,
+        "branch_template_id": (
+            str(selected_branch_template.get("id"))
+            if isinstance(selected_branch_template, dict) and selected_branch_template.get("id")
+            else None
+        ),
+        "branch_template_name": (
+            str(selected_branch_template.get("name"))
+            if isinstance(selected_branch_template, dict) and selected_branch_template.get("name")
+            else None
+        ),
         "current_portfolio_value_usd": current_value,
         "base_settings": base_settings,
         "branch_settings": branch_settings,
@@ -3067,6 +3341,34 @@ async def tool_update_plan_assumption_sets(arguments: dict[str, object]) -> dict
     }
 
 
+async def tool_get_plan_branch_templates(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+    branch_templates = plan_workspace.get_plan_branch_templates(plan_id)
+    return {
+        "plan_id": plan_id,
+        "branch_templates": branch_templates,
+    }
+
+
+async def tool_update_plan_branch_templates(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+    payload_raw = arguments.get("branch_templates")
+    if not isinstance(payload_raw, dict):
+        raise ValueError("branch_templates must be an object with default_template_id and templates.")
+
+    branch_templates = plan_workspace.update_plan_branch_templates(
+        plan_id=plan_id,
+        branch_templates_payload=payload_raw,
+        rationale=str(arguments.get("rationale") or "").strip() or "Updated via copilot tool.",
+        status=str(arguments.get("status") or "accepted").strip().lower() or "accepted",
+        log_decision=True,
+    )
+    return {
+        "plan_id": plan_id,
+        "branch_templates": branch_templates,
+    }
+
+
 async def tool_get_plan_tracking(arguments: dict[str, object]) -> dict[str, object]:
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
     detail = plan_workspace.get_plan(plan_id)
@@ -3233,6 +3535,7 @@ async def tool_run_plan_scenario_branch(arguments: dict[str, object]) -> dict[st
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
     branch_name = str(arguments.get("branch_name") or "What-If Branch").strip() or "What-If Branch"
     assumption_set_id = str(arguments.get("assumption_set_id") or "").strip() or None
+    branch_template_id = str(arguments.get("branch_template_id") or "").strip() or None
     compare_updates = extract_plan_settings_updates(arguments)
 
     raw_branch_events = arguments.get("branch_events")
@@ -3251,6 +3554,7 @@ async def tool_run_plan_scenario_branch(arguments: dict[str, object]) -> dict[st
         branch_name=branch_name,
         current_portfolio_value_usd=current_value,
         assumption_set_id=assumption_set_id,
+        branch_template_id=branch_template_id,
         compare_updates=compare_updates,
         raw_branch_events=branch_events,
     )
@@ -3781,6 +4085,16 @@ def configure_copilot_tools() -> None:
         handler=tool_get_plan_assumption_sets,
     )
     copilot.register_tool(
+        name="get_plan_branch_templates",
+        description="Read saved scenario branch templates/presets for a plan or active plan by default.",
+        parameters={
+            "type": "object",
+            "properties": {"plan_id": {"type": "string"}},
+            "additionalProperties": False,
+        },
+        handler=tool_get_plan_branch_templates,
+    )
+    copilot.register_tool(
         name="get_plan_tracking",
         description=(
             "Compare plan assumptions against actual portfolio performance. "
@@ -3851,6 +4165,25 @@ def configure_copilot_tools() -> None:
         handler=tool_update_plan_assumption_sets,
     )
     copilot.register_tool(
+        name="update_plan_branch_templates",
+        description=(
+            "Update saved scenario branch templates/presets (default template id + template list) "
+            "for a plan and record a decision trail."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                "branch_templates": {"type": "object"},
+                "rationale": {"type": "string"},
+                "status": {"type": "string"},
+            },
+            "required": ["branch_templates"],
+            "additionalProperties": False,
+        },
+        handler=tool_update_plan_branch_templates,
+    )
+    copilot.register_tool(
         name="run_plan_scenario_diff",
         description=(
             "Run scenario diff between current plan settings and provided overrides. "
@@ -3885,6 +4218,7 @@ def configure_copilot_tools() -> None:
                 "branch_name": {"type": "string"},
                 "current_portfolio_value_usd": {"type": "number"},
                 "assumption_set_id": {"type": "string"},
+                "branch_template_id": {"type": "string"},
                 **plan_settings_properties,
                 "branch_events": {
                     "type": "array",
@@ -4704,6 +5038,37 @@ def update_plan_assumption_sets(
     return PlanAssumptionSetsResponse(**payload)
 
 
+@app.get("/api/plans/{plan_id}/branch-templates", response_model=PlanScenarioBranchTemplatesResponse)
+def get_plan_branch_templates(plan_id: str) -> PlanScenarioBranchTemplatesResponse:
+    try:
+        payload = plan_workspace.get_plan_branch_templates(plan_id)
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PlanScenarioBranchTemplatesResponse(**payload)
+
+
+@app.put("/api/plans/{plan_id}/branch-templates", response_model=PlanScenarioBranchTemplatesResponse)
+def update_plan_branch_templates(
+    plan_id: str,
+    request: PlanScenarioBranchTemplatesUpdateRequest,
+) -> PlanScenarioBranchTemplatesResponse:
+    try:
+        payload = plan_workspace.update_plan_branch_templates(
+            plan_id=plan_id,
+            branch_templates_payload=request.model_dump(mode="json"),
+            rationale="Updated via Plan Workspace branch templates editor.",
+            status="accepted",
+            log_decision=True,
+        )
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PlanScenarioBranchTemplatesResponse(**payload)
+
+
 @app.post("/api/plans/{plan_id}/scenario-diff", response_model=PlanScenarioDiffResponse)
 async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest) -> PlanScenarioDiffResponse:
     compare_updates = request.compare_settings.model_dump(exclude_unset=True)
@@ -4840,6 +5205,7 @@ async def run_plan_scenario_branch(plan_id: str, request: PlanScenarioBranchRequ
             branch_name=str(request.branch_name or "").strip() or "What-If Branch",
             current_portfolio_value_usd=request.current_portfolio_value_usd,
             assumption_set_id=str(request.assumption_set_id or "").strip() or None,
+            branch_template_id=str(request.branch_template_id or "").strip() or None,
             compare_updates=compare_updates,
             raw_branch_events=raw_branch_events,
         )

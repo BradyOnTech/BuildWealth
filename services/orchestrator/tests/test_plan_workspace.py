@@ -22,6 +22,7 @@ def test_plan_workspace_create_and_get_context(tmp_path: Path) -> None:
     assert detail["files"]["plan_yaml"].startswith("currency: USD")
     assert '"events": []' in detail["files"]["timeline_json"]
     assert '"rules": []' in detail["files"]["contribution_rules_json"]
+    assert '"templates": [' in detail["files"]["branch_templates_json"]
     assert detail["settings"]["annual_contribution_usd"] is None
     assert detail["settings"]["schema_version"] == 2
 
@@ -166,6 +167,7 @@ def test_plan_workspace_migrates_legacy_index_and_settings(tmp_path: Path) -> No
     assert detail["settings"]["annual_contribution_usd"] == 10000
     assert '"events": []' in detail["files"]["timeline_json"]
     assert '"rules": []' in detail["files"]["contribution_rules_json"]
+    assert '"templates": [' in detail["files"]["branch_templates_json"]
 
 
 def test_plan_workspace_updates_timeline(tmp_path: Path) -> None:
@@ -367,6 +369,119 @@ def test_plan_workspace_assumption_sets_validation(tmp_path: Path) -> None:
                         "expected_return_conservative": 0.05,
                         "inflation_rate": 0.03,
                         "marginal_tax_rate": 0.24,
+                    }
+                ],
+            },
+        )
+
+
+def test_plan_workspace_branch_templates_round_trip(tmp_path: Path) -> None:
+    workspace = PlanWorkspace(tmp_path)
+    detail = workspace.create_plan(title="Branch Templates Plan")
+
+    defaults = workspace.get_plan_branch_templates(detail["id"])
+    assert defaults["default_template_id"] == "job_loss_6_months"
+    default_ids = {item["id"] for item in defaults["templates"]}
+    assert {"job_loss_6_months", "raise_20_percent", "new_child_costs"} <= default_ids
+
+    updated = workspace.update_plan_branch_templates(
+        plan_id=detail["id"],
+        branch_templates_payload={
+            "default_template_id": "custom_branch",
+            "templates": [
+                {
+                    "id": "custom_branch",
+                    "name": "Custom Branch",
+                    "description": "Custom what-if setup",
+                    "branch_name": "Custom Branch Run",
+                    "assumption_set_id": "conservative",
+                    "compare_settings": {
+                        "annual_contribution_usd": 18000,
+                        "expected_return_baseline": 0.06,
+                        "expected_return_optimistic": 0.075,
+                        "expected_return_conservative": 0.045,
+                    },
+                    "branch_events": [
+                        {
+                            "label": "Temporary Cost Spike",
+                            "event_type": "milestone",
+                            "impact_type": "expense",
+                            "amount_usd": 950.0,
+                            "recurring_frequency": "monthly",
+                            "start_year_offset": 1,
+                            "duration_months": 18,
+                        }
+                    ],
+                }
+            ],
+        },
+        rationale="Preset branch templates for rapid scenario analysis.",
+    )
+    assert updated["default_template_id"] == "custom_branch"
+    assert len(updated["templates"]) == 1
+    template = updated["templates"][0]
+    assert template["id"] == "custom_branch"
+    assert template["compare_settings"]["annual_contribution_usd"] == 18000
+    assert template["branch_events"][0]["start_year_offset"] == 1
+
+    refreshed = workspace.get_plan(detail["id"])
+    assert refreshed["decisions"]
+    assert refreshed["decisions"][0]["summary"].startswith("Updated branch templates:")
+    branch_templates_json = json.loads(refreshed["files"]["branch_templates_json"])
+    assert branch_templates_json["default_template_id"] == "custom_branch"
+
+
+def test_plan_workspace_branch_templates_validation(tmp_path: Path) -> None:
+    workspace = PlanWorkspace(tmp_path)
+    detail = workspace.create_plan(title="Branch Template Validation Plan")
+
+    with pytest.raises(ValueError, match="must be unique"):
+        workspace.update_plan_branch_templates(
+            plan_id=detail["id"],
+            branch_templates_payload={
+                "default_template_id": "dup",
+                "templates": [
+                    {
+                        "id": "dup",
+                        "name": "Dup A",
+                        "branch_events": [
+                            {
+                                "label": "Event A",
+                                "event_type": "milestone",
+                                "impact_type": "expense",
+                                "amount_usd": 100.0,
+                                "start_year_offset": 0,
+                            }
+                        ],
+                    },
+                    {
+                        "id": "dup",
+                        "name": "Dup B",
+                        "branch_events": [
+                            {
+                                "label": "Event B",
+                                "event_type": "milestone",
+                                "impact_type": "expense",
+                                "amount_usd": 200.0,
+                                "start_year_offset": 0,
+                            }
+                        ],
+                    },
+                ],
+            },
+        )
+
+    with pytest.raises(ValueError, match="must include branch_events and/or compare_settings"):
+        workspace.update_plan_branch_templates(
+            plan_id=detail["id"],
+            branch_templates_payload={
+                "default_template_id": "empty-template",
+                "templates": [
+                    {
+                        "id": "empty-template",
+                        "name": "Empty",
+                        "branch_events": [],
+                        "compare_settings": {},
                     }
                 ],
             },

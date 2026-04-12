@@ -66,14 +66,18 @@ adapted from the following open source projects:
   `convex/validators/timeline_validator.ts`; assumption-set persistence/validation
   patterns aligned to `convex/market_assumptions.ts`,
   `convex/validators/market_assumptions_validator.ts`, and
-  `src/lib/schemas/inputs/market-assumptions-form-schema.ts`);
+  `src/lib/schemas/inputs/market-assumptions-form-schema.ts`; saved branch-template
+  catalog persistence patterns aligned to Ignidash named-template conventions in
+  `convex/templates/{basic,early_retirement}.ts`);
   `services/orchestrator/src/buildwealth_orchestrator/main.py`
   (assumption-set selection and scenario wiring patterns aligned to Ignidash
   market-assumptions input and template conventions from
   `convex/market_assumptions.ts`, `convex/templates/basic.ts`, and
   `convex/templates/early_retirement.ts`; life-event branch shaping and timeline
   impact wiring aligned to `src/lib/schemas/inputs/timeline-form-schema.ts`,
-  `convex/timeline.ts`, and `convex/validators/timeline_validator.ts`);
+  `convex/timeline.ts`, and `convex/validators/timeline_validator.ts`; saved
+  branch-template catalog wiring and default-template fallback patterns aligned
+  to Ignidash named-template usage in `convex/templates/{basic,early_retirement}.ts`);
   `services/orchestrator/src/buildwealth_orchestrator/web/views/plan-editor.js`
   (single-simulation net-worth chart data shaping, debt/asset overlay framing,
   and metric-driven projection view selection patterns aligned to

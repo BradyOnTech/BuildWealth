@@ -211,6 +211,13 @@ These decisions refine the build plan based on the current repository and upstre
 - Added per-account projection summary table (final balance, cumulative contributions, cumulative growth, cumulative withdrawals) to support account-level interpretation
 - Visualization wiring now updates directly from scenario-diff and scenario-branch runs, enabling side-by-side source switching across base/candidate/branch outputs
 
+### 2026-04-12 (Completed - Scenario Branch Templates Follow-up)
+- Added persisted plan-level branch template catalog (`branch_templates.json`) with defaults for common life-event what-ifs (job loss, raise, new child costs)
+- Added branch-template APIs (`GET/PUT /api/plans/{plan_id}/branch-templates`) plus Copilot tools (`get_plan_branch_templates`, `update_plan_branch_templates`)
+- Extended scenario-branch execution to optionally run from `branch_template_id`, layering template compare-settings/events with request overrides and deduplicating duplicate events
+- Added Plan Workspace UI support for template selection/loading, branch-template JSON editing/saving, and template-aware branch execution
+- Added focused coverage in `test_plan_workspace.py` and `test_plan_scenario_branching.py` for template round-trip, validation, and parsing/selection behavior
+
 ### 2026-04-09 (Completed)
 - Phase 1.1: BuildWealth-native TWR calculator integrated into local portfolio store
 - Phase 1.2: XIRR money-weighted return added and surfaced in portfolio snapshot/UI
@@ -329,11 +336,11 @@ These decisions refine the build plan based on the current repository and upstre
 | RMD calculations (age 73+) | Built (foundation) | ~30% |
 | Withdrawal strategies (4% rule, dynamic, bond tent) | Built (foundation) | ~35% |
 | Multiple assumption sets | Built (foundation) | ~35% |
-| Scenario branching (life events) | Built (foundation) | ~30% |
+| Scenario branching (life events) | Built (foundation + saved templates) | ~45% |
 | Net worth charts over time | Built (foundation + UI) | ~35% |
 | Per-account balance projections | Built (foundation + visualization expansion) | ~45% |
 
-**Honest assessment:** We're at ~20% feature parity with Ghostfolio and ~33% with Ignidash. There is substantial work ahead.
+**Honest assessment:** We're at ~20% feature parity with Ghostfolio and ~34% with Ignidash. There is substantial work ahead.
 
 ---
 

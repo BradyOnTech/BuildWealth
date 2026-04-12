@@ -38,7 +38,7 @@ const projectionState = {
 };
 
 function setControlsEnabled(enabled) {
-  ['activate-plan', 'refresh-plan-context', 'save-plan', 'save-plan-timeline', 'save-plan-assumption-sets', 'save-plan-settings', 'run-scenario-diff', 'apply-scenario-overrides', 'run-scenario-branch', 'refresh-projection-profile', 'projection-source', 'projection-scenario-label', 'projection-account-metric', 'add-decision', 'plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'diff-assumption-set-id', 'diff-candidate-assumption-set-id', 'scenario-branch-name', 'branch-assumption-set-id', 'scenario-branch-events', 'decision-summary', 'decision-rationale', 'decision-status'].forEach(id => { const el = byId(id); if (el) el.disabled = !enabled; });
+  ['activate-plan', 'refresh-plan-context', 'save-plan', 'save-plan-timeline', 'save-plan-assumption-sets', 'save-plan-branch-templates', 'save-plan-settings', 'run-scenario-diff', 'apply-scenario-overrides', 'load-branch-template', 'run-scenario-branch', 'refresh-projection-profile', 'projection-source', 'projection-scenario-label', 'projection-account-metric', 'add-decision', 'plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-branch-templates', 'diff-assumption-set-id', 'diff-candidate-assumption-set-id', 'branch-template-id', 'scenario-branch-name', 'branch-assumption-set-id', 'scenario-branch-events', 'decision-summary', 'decision-rationale', 'decision-status'].forEach(id => { const el = byId(id); if (el) el.disabled = !enabled; });
   for (const f of [...PLAN_SETTING_FIELDS, ...DIFF_SETTING_FIELDS]) { const el = byId(f.inputId); if (el) el.disabled = !enabled; }
 }
 
@@ -112,6 +112,99 @@ function setAssumptionSetOptions(rawPayload) {
   baseSelect.value = baseValue;
   candidateSelect.value = candidateValue;
   branchSelect.value = branchValue;
+}
+
+function parseBranchTemplates(rawPayload) {
+  let payload = {};
+  if (typeof rawPayload === 'string') {
+    const text = rawPayload.trim();
+    if (text) {
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = {};
+      }
+    }
+  } else if (rawPayload && typeof rawPayload === 'object') {
+    payload = rawPayload;
+  }
+
+  const rawTemplates = Array.isArray(payload.templates) ? payload.templates : [];
+  const templates = [];
+  const seen = new Set();
+  for (const item of rawTemplates) {
+    if (!item || typeof item !== 'object') continue;
+    const id = String(item.id || '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    templates.push({
+      id,
+      name: String(item.name || id).trim() || id,
+      description: String(item.description || '').trim(),
+      branch_name: String(item.branch_name || '').trim(),
+      assumption_set_id: String(item.assumption_set_id || '').trim(),
+      compare_settings: item.compare_settings && typeof item.compare_settings === 'object' ? item.compare_settings : {},
+      branch_events: Array.isArray(item.branch_events) ? item.branch_events : [],
+    });
+  }
+
+  const defaultTemplateId = String(payload.default_template_id || '').trim();
+  return { defaultTemplateId, templates };
+}
+
+function setBranchTemplateOptions(rawPayload, preferredId = '') {
+  const select = byId('branch-template-id');
+  if (!select) return '';
+
+  const parsed = parseBranchTemplates(rawPayload);
+  const current = String(select.value || '').trim();
+  select.innerHTML = '<option value="">None</option>';
+  for (const template of parsed.templates) {
+    const option = document.createElement('option');
+    option.value = template.id;
+    option.textContent = `${template.name} (${template.id})`;
+    select.appendChild(option);
+  }
+
+  const validIds = new Set(parsed.templates.map(item => item.id));
+  const nextValue = validIds.has(preferredId)
+    ? preferredId
+    : validIds.has(current)
+      ? current
+      : validIds.has(parsed.defaultTemplateId)
+        ? parsed.defaultTemplateId
+        : '';
+  select.value = nextValue;
+  return nextValue;
+}
+
+function selectedBranchTemplateFromEditor() {
+  const selectedId = String(byId('branch-template-id')?.value || '').trim();
+  if (!selectedId) return null;
+  const parsed = parseBranchTemplates(String(byId('plan-branch-templates')?.value || '').trim());
+  return parsed.templates.find(item => item.id === selectedId) || null;
+}
+
+function applyBranchTemplateToEditor(template) {
+  if (!template || typeof template !== 'object') return false;
+  const branchName = String(template.branch_name || template.name || '').trim();
+  if (branchName) byId('scenario-branch-name').value = branchName;
+
+  const assumptionSetId = String(template.assumption_set_id || '').trim();
+  const assumptionSelect = byId('branch-assumption-set-id');
+  if (assumptionSelect) {
+    assumptionSelect.value = assumptionSetId;
+    if (assumptionSetId && assumptionSelect.value !== assumptionSetId) assumptionSelect.value = '';
+  }
+
+  const branchEvents = Array.isArray(template.branch_events) ? template.branch_events : [];
+  byId('scenario-branch-events').value = branchEvents.length ? JSON.stringify(branchEvents, null, 2) : '';
+
+  const compareSettings = template.compare_settings && typeof template.compare_settings === 'object'
+    ? template.compare_settings
+    : {};
+  setSettingsInputs(DIFF_SETTING_FIELDS, compareSettings);
+  return true;
 }
 
 function extractAssumptionSetSummary(resultPayload) {
@@ -648,7 +741,7 @@ export function clearDetail() {
   state.currentPlanDetail = null;
   byId('plan-meta').textContent = 'Select a plan to view details.';
   byId('plan-settings-meta').textContent = 'Blank values use global defaults from planner configuration.';
-  ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-context', 'scenario-diff-output', 'scenario-branch-name', 'scenario-branch-events', 'scenario-branch-output', 'artifact-content'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
+  ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-branch-templates', 'plan-context', 'scenario-diff-output', 'scenario-branch-name', 'scenario-branch-events', 'scenario-branch-output', 'artifact-content'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
   byId('scenario-diff-summary').textContent = 'No scenario diff run yet.';
   byId('scenario-branch-summary').textContent = 'No scenario branch run yet.';
   byId('projection-summary').textContent = 'Run a scenario diff or branch to populate projection visuals.';
@@ -663,6 +756,7 @@ export function clearDetail() {
   if (metricSelect) metricSelect.value = 'ending_balance_usd';
   resetProjectionState();
   setAssumptionSetOptions({});
+  setBranchTemplateOptions({});
   setProjectionSourceOptions();
   renderNetWorthChart([]);
   renderAccountTypeChart([], 'ending_balance_usd');
@@ -678,7 +772,9 @@ export function renderDetail() {
   byId('plan-tasks').value = d.files?.tasks_markdown || '';
   byId('plan-timeline').value = d.files?.timeline_json || '';
   byId('plan-assumption-sets').value = d.files?.assumption_sets_json || '';
+  byId('plan-branch-templates').value = d.files?.branch_templates_json || '';
   setAssumptionSetOptions(d.files?.assumption_sets_json || '');
+  setBranchTemplateOptions(d.files?.branch_templates_json || '');
   byId('plan-context').value = d.files?.context_markdown || '';
   byId('scenario-diff-summary').textContent = 'No scenario diff run yet.';
   byId('scenario-diff-output').value = '';
@@ -823,6 +919,7 @@ function formatBranchOutput(branch) {
   const lines = [
     `Plan: ${branch?.plan_id || '-'}`,
     `Branch: ${branch?.branch_name || '-'}`,
+    `Template: ${branch?.branch_template_name || branch?.branch_template_id || 'None'}`,
     `Current Portfolio: ${fmtCurrency(branch?.current_portfolio_value_usd)}`,
     '',
     'Scenario Delta (Branch - Base):',
@@ -935,6 +1032,47 @@ export function initEditor(refreshPlans) {
     maybeLoadProjectionProfile(true);
     renderProjectionVisuals();
   });
+  byId('branch-template-id').addEventListener('change', () => {
+    const selected = selectedBranchTemplateFromEditor();
+    if (selected) writeLog(`Selected branch template: ${selected.name}`, { id: selected.id });
+  });
+  byId('load-branch-template').addEventListener('click', () => {
+    const selected = selectedBranchTemplateFromEditor();
+    if (!selected) {
+      writeLog('Select a branch template first.', null, true);
+      return;
+    }
+    if (applyBranchTemplateToEditor(selected)) {
+      writeLog(`Loaded branch template ${selected.id}.`);
+    }
+  });
+
+  byId('save-plan-branch-templates').addEventListener('click', async () => {
+    if (!state.currentPlanId) { writeLog('Select a plan first.', null, true); return; }
+    const raw = String(byId('plan-branch-templates')?.value || '').trim();
+    let payload;
+    try {
+      payload = raw ? JSON.parse(raw) : {};
+    } catch (e) {
+      writeLog(`Branch templates JSON is invalid: ${e.message}`, null, true);
+      return;
+    }
+    writeLog('Saving branch templates...', payload);
+    try {
+      const result = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/branch-templates`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      byId('plan-branch-templates').value = JSON.stringify(result, null, 2);
+      setBranchTemplateOptions(result);
+      state.currentPlanDetail = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}`);
+      await refreshPlans();
+      writeLog('Branch templates saved.');
+    } catch (e) {
+      writeLog(`Save branch templates failed: ${e.message}`, null, true);
+    }
+  });
 
   byId('save-plan').addEventListener('click', async () => {
     if (!state.currentPlanId) { writeLog('Select a plan first.', null, true); return; }
@@ -1033,6 +1171,7 @@ export function initEditor(refreshPlans) {
 
     const branchName = String(byId('scenario-branch-name')?.value || '').trim() || 'What-If Branch';
     const assumptionSetId = String(byId('branch-assumption-set-id')?.value || '').trim();
+    const branchTemplateId = String(byId('branch-template-id')?.value || '').trim();
     const branchEventsRaw = String(byId('scenario-branch-events')?.value || '').trim();
 
     let branchEvents = [];
@@ -1057,8 +1196,8 @@ export function initEditor(refreshPlans) {
       return;
     }
 
-    if (!branchEvents.length && !Object.keys(compareSettings).length) {
-      writeLog('Provide at least one branch event or override field.', null, true);
+    if (!branchTemplateId && !branchEvents.length && !Object.keys(compareSettings).length) {
+      writeLog('Provide a branch template, at least one branch event, or at least one override field.', null, true);
       return;
     }
 
@@ -1067,6 +1206,7 @@ export function initEditor(refreshPlans) {
       branch_events: branchEvents,
     };
     if (assumptionSetId) payload.assumption_set_id = assumptionSetId;
+    if (branchTemplateId) payload.branch_template_id = branchTemplateId;
     if (Object.keys(compareSettings).length) payload.compare_settings = compareSettings;
 
     writeLog('Running scenario branch...', payload);
@@ -1074,6 +1214,7 @@ export function initEditor(refreshPlans) {
       const result = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/scenario-branch`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
       const bl = (result.scenario_deltas || []).find(r => r.label === 'baseline');
       byId('scenario-branch-summary').textContent = bl ? `Baseline delta: ${fmtCurrency(bl.delta_future_value_usd)} (real: ${fmtCurrency(bl.delta_real_value_usd)})` : 'Branch completed.';
+      if (result?.branch_template_id) setBranchTemplateOptions(String(byId('plan-branch-templates')?.value || ''), String(result.branch_template_id));
       byId('scenario-branch-output').value = formatBranchOutput(result);
       projectionState.branchResult = result;
       setProjectionSourceOptions('branch_branch');

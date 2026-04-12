@@ -49,13 +49,17 @@ export function template() {
         <div class="settings-grid">${settingsGridHtml(DIFF_SETTING_FIELDS)}</div>
         <p class="hint tight" id="scenario-diff-summary">No scenario diff run yet.</p>
         <label class="field"><span>Scenario Diff Output</span><textarea id="scenario-diff-output" rows="8" readonly></textarea></label>
-        <div class="view-header"><h3>Scenario Branch (Life Events)</h3><div class="header-actions"><button class="primary small" id="run-scenario-branch" disabled>Run Branch</button></div></div>
+        <div class="view-header"><h3>Scenario Branch (Life Events)</h3><div class="header-actions"><button class="ghost small" id="load-branch-template" disabled>Load Template</button><button class="primary small" id="run-scenario-branch" disabled>Run Branch</button></div></div>
         <p class="hint tight">Model uncertain life events and compare branch outcomes against the base plan.</p>
         <div class="settings-grid">
+          <label class="field"><span>Saved Template</span><select id="branch-template-id" disabled><option value="">None</option></select></label>
           <label class="field"><span>Branch Name</span><input type="text" id="scenario-branch-name" placeholder="e.g. Job Loss 6 Months" disabled /></label>
           <label class="field"><span>Assumption Set</span><select id="branch-assumption-set-id" disabled></select></label>
         </div>
         <label class="field"><span>Branch Events JSON</span><textarea id="scenario-branch-events" rows="8" placeholder='[{"label":"Job Loss","event_type":"job_change","impact_type":"income","amount_usd":-7500,"recurring_frequency":"monthly","start_year_offset":0,"duration_months":6}]' disabled></textarea></label>
+        <div class="view-header"><h4>Branch Templates</h4><button class="primary small" id="save-plan-branch-templates" disabled>Save Branch Templates</button></div>
+        <p class="hint tight">Persist reusable branch presets to avoid retyping common life-event scenarios.</p>
+        <label class="field"><span>Branch Templates JSON</span><textarea id="plan-branch-templates" rows="10" placeholder='{"default_template_id":"job_loss_6_months","templates":[...]}' disabled></textarea></label>
         <p class="hint tight" id="scenario-branch-summary">No scenario branch run yet.</p>
         <label class="field"><span>Scenario Branch Output</span><textarea id="scenario-branch-output" rows="8" readonly></textarea></label>
         <div class="view-header"><h3>Projection Visuals</h3><div class="header-actions"><button class="ghost small" id="refresh-projection-profile" disabled>Refresh Profile Inputs</button></div></div>
