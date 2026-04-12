@@ -398,3 +398,85 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
     assert result.social_security_projection.selected_annual_benefit_usd == 18000
     assert result.rmd_projection is not None
     assert result.rmd_projection.rmd_start_age == 75
+
+
+def test_ignidash_sidecar_service_forwards_assumption_set_metadata() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode("utf-8"))
+        assert payload["metadata"]["assumption_set_id"] == "stagflation"
+        assert payload["metadata"]["assumption_set_name"] == "Stagflation"
+        return httpx.Response(
+            status_code=200,
+            json={
+                "contract_version": 1,
+                "request_id": payload["request_id"],
+                "engine": "ignidash",
+                "engine_status": "ok",
+                "fallback_method": None,
+                "scenarios": [
+                    {
+                        "scenario_id": "baseline",
+                        "label": "baseline",
+                        "summary": {
+                            "ending_balance_nominal": 1000000,
+                            "ending_balance_real": 700000,
+                        },
+                        "timeline": [],
+                    },
+                    {
+                        "scenario_id": "optimistic",
+                        "label": "optimistic",
+                        "summary": {
+                            "ending_balance_nominal": 1200000,
+                            "ending_balance_real": 850000,
+                        },
+                        "timeline": [],
+                    },
+                    {
+                        "scenario_id": "conservative",
+                        "label": "conservative",
+                        "summary": {
+                            "ending_balance_nominal": 800000,
+                            "ending_balance_real": 560000,
+                        },
+                        "timeline": [],
+                    },
+                    {
+                        "scenario_id": "hsa_delta",
+                        "label": "hsa_delta",
+                        "summary": {
+                            "ending_balance_nominal": 1030000,
+                            "ending_balance_real": 721000,
+                        },
+                        "timeline": [],
+                    },
+                ],
+                "warnings": [],
+                "generated_at": "2026-04-10T13:00:00Z",
+            },
+        )
+
+    adapter = SidecarAdapter(
+        base_url="http://localhost:8412",
+        max_retries=0,
+        transport=httpx.MockTransport(handler),
+    )
+    service = IgnidashScenarioService(
+        scenario_engine=_build_scenario_engine(),
+        sidecar_adapter=adapter,
+        sidecar_enabled=True,
+        sidecar_path="/v1/scenario/simulate",
+        currency="USD",
+    )
+
+    result = asyncio.run(
+        service.run(
+            current_portfolio_value_usd=100000,
+            assumption_set_id="stagflation",
+            assumption_set_name="Stagflation",
+        )
+    )
+
+    baseline = next(item for item in result.scenarios if item.label == "baseline")
+    assert baseline.assumptions["assumption_set_id"] == "stagflation"
+    assert baseline.assumptions["assumption_set_name"] == "Stagflation"

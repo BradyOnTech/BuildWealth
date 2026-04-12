@@ -264,3 +264,110 @@ def test_timeline_schema_defaults_impact_type_by_event() -> None:
 
     assert parsed.events
     assert parsed.events[0].impact_type == "contribution"
+
+
+def test_plan_workspace_assumption_sets_round_trip(tmp_path: Path) -> None:
+    workspace = PlanWorkspace(tmp_path)
+    detail = workspace.create_plan(title="Assumption Sets Plan")
+
+    defaults = workspace.get_plan_assumption_sets(detail["id"])
+    default_ids = {item["id"] for item in defaults["sets"]}
+    assert defaults["active_assumption_set_id"] == "default"
+    assert {"default", "historical_average", "conservative", "stagflation", "japan_scenario"} <= default_ids
+
+    updated = workspace.update_plan_assumption_sets(
+        plan_id=detail["id"],
+        assumption_sets_payload={
+            "active_assumption_set_id": "StagFlation",
+            "sets": [
+                {
+                    "id": "default",
+                    "name": "Default",
+                    "expected_return_baseline": None,
+                    "expected_return_optimistic": None,
+                    "expected_return_conservative": None,
+                    "inflation_rate": None,
+                    "marginal_tax_rate": None,
+                },
+                {
+                    "id": "stagflation",
+                    "name": "Stagflation",
+                    "expected_return_baseline": 0.04,
+                    "expected_return_optimistic": 0.05,
+                    "expected_return_conservative": 0.02,
+                    "inflation_rate": 0.05,
+                    "marginal_tax_rate": 0.27,
+                },
+                {
+                    "id": "custom_growth",
+                    "name": "Custom Growth",
+                    "expected_return_baseline": 0.065,
+                    "expected_return_optimistic": 0.08,
+                    "expected_return_conservative": 0.045,
+                    "inflation_rate": 0.028,
+                    "marginal_tax_rate": 0.24,
+                },
+            ],
+        },
+        rationale="Assumption set calibration for plan sensitivity analysis.",
+    )
+
+    assert updated["active_assumption_set_id"] == "stagflation"
+    assert len(updated["sets"]) == 3
+    custom = next(item for item in updated["sets"] if item["id"] == "custom_growth")
+    assert custom["expected_return_baseline"] == pytest.approx(0.065)
+    assert custom["inflation_rate"] == pytest.approx(0.028)
+
+    refreshed = workspace.get_plan(detail["id"])
+    assert refreshed["decisions"]
+    assert refreshed["decisions"][0]["summary"].startswith("Updated assumption sets:")
+    assumption_sets_json = json.loads(refreshed["files"]["assumption_sets_json"])
+    assert assumption_sets_json["active_assumption_set_id"] == "stagflation"
+
+
+def test_plan_workspace_assumption_sets_validation(tmp_path: Path) -> None:
+    workspace = PlanWorkspace(tmp_path)
+    detail = workspace.create_plan(title="Assumption Validation Plan")
+
+    with pytest.raises(ValueError, match="must be unique"):
+        workspace.update_plan_assumption_sets(
+            plan_id=detail["id"],
+            assumption_sets_payload={
+                "active_assumption_set_id": "duplicate",
+                "sets": [
+                    {
+                        "id": "duplicate",
+                        "name": "Duplicate A",
+                        "expected_return_baseline": 0.06,
+                        "expected_return_optimistic": 0.08,
+                        "expected_return_conservative": 0.04,
+                    },
+                    {
+                        "id": "duplicate",
+                        "name": "Duplicate B",
+                        "expected_return_baseline": 0.05,
+                        "expected_return_optimistic": 0.06,
+                        "expected_return_conservative": 0.03,
+                    },
+                ],
+            },
+        )
+
+    with pytest.raises(ValueError, match="optimistic return must be >= baseline return"):
+        workspace.update_plan_assumption_sets(
+            plan_id=detail["id"],
+            assumption_sets_payload={
+                "active_assumption_set_id": "broken",
+                "sets": [
+                    {
+                        "id": "broken",
+                        "name": "Broken",
+                        "expected_return_baseline": 0.07,
+                        "expected_return_optimistic": 0.06,
+                        "expected_return_conservative": 0.05,
+                        "inflation_rate": 0.03,
+                        "marginal_tax_rate": 0.24,
+                    }
+                ],
+            },
+        )

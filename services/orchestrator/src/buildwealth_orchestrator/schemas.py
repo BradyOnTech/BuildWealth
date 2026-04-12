@@ -941,6 +941,27 @@ class PlanTimelineUpdateRequest(BaseModel):
     retirement: PlanTimelineRetirement = Field(default_factory=PlanTimelineRetirement)
 
 
+class PlanAssumptionSet(BaseModel):
+    id: str
+    name: str
+    expected_return_baseline: float | None = Field(default=None, ge=-0.95, le=1)
+    expected_return_optimistic: float | None = Field(default=None, ge=-0.95, le=1)
+    expected_return_conservative: float | None = Field(default=None, ge=-0.95, le=1)
+    inflation_rate: float | None = Field(default=None, ge=-1, le=1)
+    marginal_tax_rate: float | None = Field(default=None, ge=0, le=1)
+
+
+class PlanAssumptionSetsResponse(BaseModel):
+    schema_version: int = 2
+    active_assumption_set_id: str = "default"
+    sets: list[PlanAssumptionSet] = Field(default_factory=list)
+
+
+class PlanAssumptionSetsUpdateRequest(BaseModel):
+    active_assumption_set_id: str | None = None
+    sets: list[PlanAssumptionSet] = Field(default_factory=list)
+
+
 class PlanSummary(BaseModel):
     id: str
     title: str
@@ -974,6 +995,7 @@ class PlanSettings(BaseModel):
     years: int | None = None
     hsa_extra_contribution_usd: float | None = None
     marginal_tax_rate: float | None = None
+    inflation_rate: float | None = None
     expected_return_baseline: float | None = None
     expected_return_optimistic: float | None = None
     expected_return_conservative: float | None = None
@@ -987,6 +1009,7 @@ class PlanSettingsUpdateRequest(BaseModel):
     years: int | None = None
     hsa_extra_contribution_usd: float | None = None
     marginal_tax_rate: float | None = None
+    inflation_rate: float | None = None
     expected_return_baseline: float | None = None
     expected_return_optimistic: float | None = None
     expected_return_conservative: float | None = None
@@ -996,6 +1019,8 @@ class PlanSettingsUpdateRequest(BaseModel):
 
 class PlanScenarioDiffRequest(BaseModel):
     current_portfolio_value_usd: float | None = None
+    assumption_set_id: str | None = None
+    candidate_assumption_set_id: str | None = None
     compare_settings: PlanSettingsUpdateRequest = Field(default_factory=PlanSettingsUpdateRequest)
 
 
@@ -1014,6 +1039,8 @@ class PlanScenarioDiffResponse(BaseModel):
     current_portfolio_value_usd: float
     base_settings: PlanSettings
     candidate_settings: PlanSettings
+    base_assumption_set: PlanAssumptionSet | None = None
+    candidate_assumption_set: PlanAssumptionSet | None = None
     base_result: PlanningResponse
     candidate_result: PlanningResponse
     scenario_deltas: list[ScenarioComparisonRow] = Field(default_factory=list)

@@ -31,6 +31,9 @@ export function template() {
         <div class="view-header"><h3>Timeline Events</h3><button class="primary small" id="save-plan-timeline" disabled>Save Timeline</button></div>
         <p class="hint tight">Edit timeline JSON to model dated events (purchase, windfall, job change, retirement, milestone).</p>
         <label class="field"><span>Timeline JSON</span><textarea id="plan-timeline" rows="10" placeholder='{"events":[...],"retirement":{...}}' disabled></textarea></label>
+        <div class="view-header"><h3>Assumption Sets</h3><button class="primary small" id="save-plan-assumption-sets" disabled>Save Assumption Sets</button></div>
+        <p class="hint tight">Edit named assumption sets JSON. Active set is applied by default when running scenarios.</p>
+        <label class="field"><span>Assumption Sets JSON</span><textarea id="plan-assumption-sets" rows="10" placeholder='{"active_assumption_set_id":"default","sets":[...]}' disabled></textarea></label>
         <label class="field"><span>Context Snapshot</span><textarea id="plan-context" rows="6" readonly></textarea></label>
         <div class="view-header"><h3>Plan Settings</h3><button class="primary small" id="save-plan-settings" disabled>Save Settings</button></div>
         <p class="hint tight" id="plan-settings-meta">Blank values use global defaults from planner configuration.</p>
@@ -39,6 +42,10 @@ export function template() {
           <div class="header-actions"><button class="primary small" id="run-scenario-diff" disabled>Run Diff</button><button class="ghost small" id="apply-scenario-overrides" disabled>Apply Overrides</button></div>
         </div>
         <p class="hint tight">Enter only fields you want to compare. Overrides do not persist unless applied.</p>
+        <div class="settings-grid">
+          <label class="field"><span>Base Assumption Set</span><select id="diff-assumption-set-id" disabled></select></label>
+          <label class="field"><span>Candidate Assumption Set</span><select id="diff-candidate-assumption-set-id" disabled></select></label>
+        </div>
         <div class="settings-grid">${settingsGridHtml(DIFF_SETTING_FIELDS)}</div>
         <p class="hint tight" id="scenario-diff-summary">No scenario diff run yet.</p>
         <label class="field"><span>Scenario Diff Output</span><textarea id="scenario-diff-output" rows="8" readonly></textarea></label>

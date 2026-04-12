@@ -188,6 +188,14 @@ These decisions refine the build plan based on the current repository and upstre
 - Plan scenario-diff UI output now includes RMD context summaries for base/candidate comparisons
 - Added focused coverage in `test_rmd_projection.py`, `test_scenario_engine.py`, `test_planning_sidecar.py`, and `test_plan_workspace.py`
 
+### 2026-04-12 (Completed - Multiple Assumption Sets Foundation)
+- Added plan assumption-set schema and APIs (`GET/PUT /api/plans/{plan_id}/assumption-sets`) with validation and decision-log integration in Plan Workspace
+- Added default named assumption presets aligned to Ignidash market-assumption patterns (`default`, `historical_average`, `conservative`, `stagflation`, `japan_scenario`)
+- Plan scenario execution now applies the active assumption set by default; scenario-diff now supports separate base/candidate assumption-set selection
+- Planning and sidecar execution now propagate assumption-set identity (`assumption_set_id`, `assumption_set_name`) into scenario assumptions and sidecar metadata for traceability
+- Plan Workspace UI now includes assumption-set JSON editing/saving and scenario-diff base/candidate assumption-set selectors
+- Added focused coverage in `test_plan_workspace.py`, `test_plan_assumption_sets.py`, `test_scenario_engine.py`, and `test_planning_sidecar.py`
+
 ### 2026-04-09 (Completed)
 - Phase 1.1: BuildWealth-native TWR calculator integrated into local portfolio store
 - Phase 1.2: XIRR money-weighted return added and surfaced in portfolio snapshot/UI
@@ -305,12 +313,12 @@ These decisions refine the build plan based on the current repository and upstre
 | Social Security claiming optimization | Built (foundation) | ~30% |
 | RMD calculations (age 73+) | Built (foundation) | ~30% |
 | Withdrawal strategies (4% rule, dynamic, bond tent) | Built (foundation) | ~35% |
-| Multiple assumption sets | NOT BUILT | 0% |
+| Multiple assumption sets | Built (foundation) | ~35% |
 | Scenario branching (life events) | NOT BUILT | 0% |
 | Net worth charts over time | NOT BUILT | 0% |
 | Per-account balance projections | Built (foundation) | ~30% |
 
-**Honest assessment:** We're at ~20% feature parity with Ghostfolio and ~28% with Ignidash. There is substantial work ahead.
+**Honest assessment:** We're at ~20% feature parity with Ghostfolio and ~30% with Ignidash. There is substantial work ahead.
 
 ---
 

@@ -50,6 +50,31 @@ def test_scenario_engine_respects_explicit_zero_hsa_delta() -> None:
     assert hsa_delta.assumptions["annual_contribution_usd"] == baseline.assumptions["annual_contribution_usd"]
 
 
+def test_scenario_engine_propagates_assumption_set_metadata() -> None:
+    engine = ScenarioEngine(
+        years_to_retirement=5,
+        annual_contribution_usd=12000,
+        baseline_return=0.06,
+        optimistic_return=0.08,
+        conservative_return=0.04,
+        return_volatility=0.12,
+        inflation=0.025,
+        monte_carlo_runs=100,
+        hsa_delta_default=1000,
+        marginal_tax_rate=0.25,
+    )
+
+    result = engine.run(
+        current_portfolio_value_usd=100000,
+        assumption_set_id="stagflation",
+        assumption_set_name="Stagflation",
+    )
+
+    for scenario in result.scenarios:
+        assert scenario.assumptions["assumption_set_id"] == "stagflation"
+        assert scenario.assumptions["assumption_set_name"] == "Stagflation"
+
+
 def test_scenario_engine_projects_tax_and_account_timelines() -> None:
     engine = ScenarioEngine(
         years_to_retirement=3,

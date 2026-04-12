@@ -171,6 +171,7 @@ class PlanWorkspace:
             "years": None,
             "hsa_extra_contribution_usd": None,
             "marginal_tax_rate": None,
+            "inflation_rate": None,
             "expected_return_baseline": None,
             "expected_return_optimistic": None,
             "expected_return_conservative": None,
@@ -218,6 +219,43 @@ class PlanWorkspace:
                     "expected_return_optimistic": None,
                     "expected_return_conservative": None,
                     "inflation_rate": None,
+                    "marginal_tax_rate": None,
+                },
+                {
+                    "id": "historical_average",
+                    "name": "Historical Average",
+                    "expected_return_baseline": 0.07,
+                    "expected_return_optimistic": 0.09,
+                    "expected_return_conservative": 0.05,
+                    "inflation_rate": 0.03,
+                    "marginal_tax_rate": None,
+                },
+                {
+                    "id": "conservative",
+                    "name": "Conservative",
+                    "expected_return_baseline": 0.05,
+                    "expected_return_optimistic": 0.06,
+                    "expected_return_conservative": 0.04,
+                    "inflation_rate": 0.025,
+                    "marginal_tax_rate": None,
+                },
+                {
+                    "id": "stagflation",
+                    "name": "Stagflation",
+                    "expected_return_baseline": 0.04,
+                    "expected_return_optimistic": 0.05,
+                    "expected_return_conservative": 0.02,
+                    "inflation_rate": 0.05,
+                    "marginal_tax_rate": None,
+                },
+                {
+                    "id": "japan_scenario",
+                    "name": "Japan Scenario",
+                    "expected_return_baseline": 0.02,
+                    "expected_return_optimistic": 0.035,
+                    "expected_return_conservative": 0.0,
+                    "inflation_rate": 0.005,
+                    "marginal_tax_rate": None,
                 }
             ],
         }
@@ -233,6 +271,7 @@ class PlanWorkspace:
             return f"{int(value)} years"
         if key in {
             "marginal_tax_rate",
+            "inflation_rate",
             "expected_return_baseline",
             "expected_return_optimistic",
             "expected_return_conservative",
@@ -487,12 +526,133 @@ class PlanWorkspace:
             },
         }
 
+    def _sanitize_assumption_sets_payload(self, raw_payload: dict[str, Any]) -> dict[str, Any]:
+        default_payload = self._default_assumption_sets()
+        input_payload = raw_payload if isinstance(raw_payload, dict) else {}
+
+        raw_sets = input_payload.get("sets")
+        if raw_sets is None:
+            raw_sets = default_payload.get("sets", [])
+        if not isinstance(raw_sets, list):
+            raise ValueError("assumption_sets.sets must be a list")
+
+        def _normalize_optional_rate(
+            *,
+            raw_value: Any,
+            field: str,
+            minimum: float,
+            maximum: float,
+        ) -> float | None:
+            if raw_value is None:
+                return None
+            if isinstance(raw_value, str) and not raw_value.strip():
+                return None
+            try:
+                value = float(raw_value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"assumption_sets.{field} must be numeric") from exc
+            if value < minimum or value > maximum:
+                raise ValueError(
+                    f"assumption_sets.{field} must be between {minimum} and {maximum}"
+                )
+            return value
+
+        sets: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        for index, raw in enumerate(raw_sets, start=1):
+            if not isinstance(raw, dict):
+                raise ValueError(f"assumption_sets.sets[{index}] must be an object")
+
+            set_id = str(raw.get("id") or "").strip()
+            if not set_id:
+                set_id = f"set-{uuid.uuid4().hex[:10]}"
+            set_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", set_id).strip("-").lower() or f"set-{index}"
+            if set_id in seen_ids:
+                raise ValueError(f"assumption_sets.sets[{index}].id must be unique")
+            seen_ids.add(set_id)
+
+            name = str(raw.get("name") or "").strip() or set_id.replace("_", " ").replace("-", " ").title()
+            baseline = _normalize_optional_rate(
+                raw_value=raw.get("expected_return_baseline"),
+                field=f"sets[{index}].expected_return_baseline",
+                minimum=-0.95,
+                maximum=1.0,
+            )
+            optimistic = _normalize_optional_rate(
+                raw_value=raw.get("expected_return_optimistic"),
+                field=f"sets[{index}].expected_return_optimistic",
+                minimum=-0.95,
+                maximum=1.0,
+            )
+            conservative = _normalize_optional_rate(
+                raw_value=raw.get("expected_return_conservative"),
+                field=f"sets[{index}].expected_return_conservative",
+                minimum=-0.95,
+                maximum=1.0,
+            )
+            inflation = _normalize_optional_rate(
+                raw_value=raw.get("inflation_rate"),
+                field=f"sets[{index}].inflation_rate",
+                minimum=-1.0,
+                maximum=1.0,
+            )
+            marginal_tax_rate = _normalize_optional_rate(
+                raw_value=raw.get("marginal_tax_rate"),
+                field=f"sets[{index}].marginal_tax_rate",
+                minimum=0.0,
+                maximum=1.0,
+            )
+
+            if baseline is not None and optimistic is not None and optimistic < baseline:
+                raise ValueError(
+                    f"assumption_sets.sets[{index}] optimistic return must be >= baseline return"
+                )
+            if baseline is not None and conservative is not None and conservative > baseline:
+                raise ValueError(
+                    f"assumption_sets.sets[{index}] conservative return must be <= baseline return"
+                )
+            if optimistic is not None and conservative is not None and conservative > optimistic:
+                raise ValueError(
+                    f"assumption_sets.sets[{index}] conservative return must be <= optimistic return"
+                )
+
+            sets.append(
+                {
+                    "id": set_id,
+                    "name": name,
+                    "expected_return_baseline": baseline,
+                    "expected_return_optimistic": optimistic,
+                    "expected_return_conservative": conservative,
+                    "inflation_rate": inflation,
+                    "marginal_tax_rate": marginal_tax_rate,
+                }
+            )
+
+        if not sets:
+            sets = list(default_payload.get("sets", []))
+
+        valid_ids = {str(item.get("id") or "").strip() for item in sets if isinstance(item, dict)}
+        active_assumption_set_id = str(
+            input_payload.get("active_assumption_set_id")
+            or default_payload.get("active_assumption_set_id")
+            or ""
+        ).strip().lower()
+        if not active_assumption_set_id or active_assumption_set_id not in valid_ids:
+            active_assumption_set_id = str(sets[0].get("id") or "default")
+
+        return {
+            "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
+            "active_assumption_set_id": active_assumption_set_id,
+            "sets": sets,
+        }
+
     def _sanitize_settings_update(self, updates: dict[str, Any]) -> dict[str, Any]:
         allowed_fields = {
             "annual_contribution_usd",
             "years",
             "hsa_extra_contribution_usd",
             "marginal_tax_rate",
+            "inflation_rate",
             "expected_return_baseline",
             "expected_return_optimistic",
             "expected_return_conservative",
@@ -534,6 +694,9 @@ class PlanWorkspace:
 
             if key == "marginal_tax_rate" and not (0 <= value <= 1):
                 raise ValueError("marginal_tax_rate must be between 0 and 1")
+
+            if key == "inflation_rate" and not (-1 <= value <= 1):
+                raise ValueError("inflation_rate must be between -1 and 1")
 
             if key.startswith("expected_return_") and not (-0.95 <= value <= 1):
                 raise ValueError(f"{key} must be between -0.95 and 1")
@@ -935,6 +1098,53 @@ class PlanWorkspace:
 
         return sanitized
 
+    def get_plan_assumption_sets(self, plan_id: str) -> dict[str, Any]:
+        plan_dir = self._plan_dir(plan_id)
+        if not plan_dir.exists():
+            raise PlanNotFoundError(f"Plan not found: {plan_id}")
+
+        payload = self._read_or_initialize_json(
+            self._assumption_sets_path(plan_id),
+            self._default_assumption_sets(),
+        )
+        sanitized = self._sanitize_assumption_sets_payload(payload)
+        self._assumption_sets_path(plan_id).write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
+        return sanitized
+
+    def update_plan_assumption_sets(
+        self,
+        plan_id: str,
+        assumption_sets_payload: dict[str, Any],
+        rationale: str | None = None,
+        status: str = "accepted",
+        log_decision: bool = True,
+    ) -> dict[str, Any]:
+        plan_dir = self._plan_dir(plan_id)
+        if not plan_dir.exists():
+            raise PlanNotFoundError(f"Plan not found: {plan_id}")
+
+        sanitized = self._sanitize_assumption_sets_payload(assumption_sets_payload)
+        self._assumption_sets_path(plan_id).write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
+
+        index_payload = self._load_index()
+        self._touch_plan(index_payload, plan_id)
+        self._save_index(index_payload)
+
+        if log_decision:
+            self.append_decision(
+                plan_id=plan_id,
+                summary=(
+                    "Updated assumption sets: "
+                    f"{len(sanitized.get('sets', []))} set(s), active={sanitized.get('active_assumption_set_id')}"
+                ),
+                rationale=(rationale or "Planning assumption sets were updated."),
+                status=status,
+            )
+        else:
+            self.refresh_context(plan_id)
+
+        return sanitized
+
     def refresh_context(self, plan_id: str) -> str:
         plan_dir = self._plan_dir(plan_id)
         if not plan_dir.exists():
@@ -951,6 +1161,10 @@ class PlanWorkspace:
             self._contribution_rules_path(plan_id),
             self._default_contribution_rules(),
         )
+        assumption_sets_payload = self._read_or_initialize_json(
+            self._assumption_sets_path(plan_id),
+            self._default_assumption_sets(),
+        )
         decisions = self._load_decisions(plan_id, limit=8)
 
         decision_lines: list[str] = []
@@ -964,6 +1178,7 @@ class PlanWorkspace:
             f"- Horizon: {self._format_setting_value('years', settings_payload.get('years'))}",
             f"- HSA extra contribution: {self._format_setting_value('hsa_extra_contribution_usd', settings_payload.get('hsa_extra_contribution_usd'))}",
             f"- Marginal tax rate: {self._format_setting_value('marginal_tax_rate', settings_payload.get('marginal_tax_rate'))}",
+            f"- Inflation rate: {self._format_setting_value('inflation_rate', settings_payload.get('inflation_rate'))}",
             f"- Baseline return: {self._format_setting_value('expected_return_baseline', settings_payload.get('expected_return_baseline'))}",
             f"- Optimistic return: {self._format_setting_value('expected_return_optimistic', settings_payload.get('expected_return_optimistic'))}",
             f"- Conservative return: {self._format_setting_value('expected_return_conservative', settings_payload.get('expected_return_conservative'))}",
@@ -1008,6 +1223,8 @@ class PlanWorkspace:
             "",
             f"- Timeline events: {len(timeline_payload.get('events', []))}",
             f"- Contribution rules: {len(contribution_rules_payload.get('rules', []))}",
+            f"- Assumption sets: {len(assumption_sets_payload.get('sets', []))}",
+            f"- Active assumption set: {assumption_sets_payload.get('active_assumption_set_id') or 'default'}",
             "",
             "## Timeline Preview",
             "",

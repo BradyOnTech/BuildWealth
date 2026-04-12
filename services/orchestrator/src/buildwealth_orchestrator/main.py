@@ -39,6 +39,8 @@ from buildwealth_orchestrator.schemas import (
     PlanSettingsUpdateRequest,
     PlanTimelineResponse,
     PlanTimelineUpdateRequest,
+    PlanAssumptionSetsResponse,
+    PlanAssumptionSetsUpdateRequest,
     ScenarioComparisonRow,
     PlanSummary,
     PlanUpdateRequest,
@@ -564,6 +566,7 @@ PLAN_SETTINGS_FIELDS = (
     "years",
     "hsa_extra_contribution_usd",
     "marginal_tax_rate",
+    "inflation_rate",
     "expected_return_baseline",
     "expected_return_optimistic",
     "expected_return_conservative",
@@ -604,6 +607,7 @@ def build_scenario_engine_for_plan_settings(plan_settings: dict[str, Any]) -> Sc
     optimistic_return = plan_settings.get("expected_return_optimistic")
     conservative_return = plan_settings.get("expected_return_conservative")
     marginal_tax_rate = plan_settings.get("marginal_tax_rate")
+    inflation_rate = plan_settings.get("inflation_rate")
 
     return ScenarioEngine(
         years_to_retirement=settings.planner_years_to_retirement,
@@ -624,7 +628,11 @@ def build_scenario_engine_for_plan_settings(plan_settings: dict[str, Any]) -> Sc
             else settings.planner_expected_return_conservative
         ),
         return_volatility=settings.planner_return_volatility,
-        inflation=settings.planner_inflation,
+        inflation=(
+            float(inflation_rate)
+            if inflation_rate is not None
+            else settings.planner_inflation
+        ),
         monte_carlo_runs=settings.planner_monte_carlo_runs,
         hsa_delta_default=settings.planner_hsa_delta_default,
         marginal_tax_rate=(
@@ -769,6 +777,218 @@ def resolve_plan_contribution_rules(detail: dict[str, Any]) -> dict[str, Any]:
     return parse_contribution_rules_payload(raw_payload)
 
 
+def parse_assumption_sets_payload(raw_payload: Any) -> dict[str, Any]:
+    fallback_sets = [
+        {
+            "id": "default",
+            "name": "Default",
+            "expected_return_baseline": None,
+            "expected_return_optimistic": None,
+            "expected_return_conservative": None,
+            "inflation_rate": None,
+            "marginal_tax_rate": None,
+        },
+        {
+            "id": "historical_average",
+            "name": "Historical Average",
+            "expected_return_baseline": 0.07,
+            "expected_return_optimistic": 0.09,
+            "expected_return_conservative": 0.05,
+            "inflation_rate": 0.03,
+            "marginal_tax_rate": None,
+        },
+        {
+            "id": "conservative",
+            "name": "Conservative",
+            "expected_return_baseline": 0.05,
+            "expected_return_optimistic": 0.06,
+            "expected_return_conservative": 0.04,
+            "inflation_rate": 0.025,
+            "marginal_tax_rate": None,
+        },
+        {
+            "id": "stagflation",
+            "name": "Stagflation",
+            "expected_return_baseline": 0.04,
+            "expected_return_optimistic": 0.05,
+            "expected_return_conservative": 0.02,
+            "inflation_rate": 0.05,
+            "marginal_tax_rate": None,
+        },
+        {
+            "id": "japan_scenario",
+            "name": "Japan Scenario",
+            "expected_return_baseline": 0.02,
+            "expected_return_optimistic": 0.035,
+            "expected_return_conservative": 0.0,
+            "inflation_rate": 0.005,
+            "marginal_tax_rate": None,
+        },
+    ]
+
+    if isinstance(raw_payload, str):
+        text = raw_payload.strip()
+        if not text:
+            payload: Any = {}
+        else:
+            try:
+                payload = json.loads(text)
+            except json.JSONDecodeError:
+                payload = {}
+    elif isinstance(raw_payload, dict):
+        payload = raw_payload
+    else:
+        payload = {}
+
+    if not isinstance(payload, dict):
+        payload = {}
+
+    def _normalize_optional_rate(
+        raw_value: Any,
+        *,
+        minimum: float,
+        maximum: float,
+    ) -> float | None:
+        if raw_value is None:
+            return None
+        if isinstance(raw_value, str) and not raw_value.strip():
+            return None
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError):
+            return None
+        if value < minimum or value > maximum:
+            return None
+        return value
+
+    sets_raw = payload.get("sets")
+    if not isinstance(sets_raw, list):
+        sets_raw = fallback_sets
+
+    sets: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for index, raw in enumerate(sets_raw, start=1):
+        if not isinstance(raw, dict):
+            continue
+        set_id = str(raw.get("id") or "").strip().lower()
+        if not set_id:
+            set_id = f"set-{index}"
+        if set_id in seen_ids:
+            continue
+        seen_ids.add(set_id)
+        baseline = _normalize_optional_rate(
+            raw.get("expected_return_baseline"),
+            minimum=-0.95,
+            maximum=1.0,
+        )
+        optimistic = _normalize_optional_rate(
+            raw.get("expected_return_optimistic"),
+            minimum=-0.95,
+            maximum=1.0,
+        )
+        conservative = _normalize_optional_rate(
+            raw.get("expected_return_conservative"),
+            minimum=-0.95,
+            maximum=1.0,
+        )
+        inflation_rate = _normalize_optional_rate(
+            raw.get("inflation_rate"),
+            minimum=-1.0,
+            maximum=1.0,
+        )
+        marginal_tax_rate = _normalize_optional_rate(
+            raw.get("marginal_tax_rate"),
+            minimum=0.0,
+            maximum=1.0,
+        )
+        if baseline is not None and optimistic is not None and optimistic < baseline:
+            optimistic = baseline
+        if baseline is not None and conservative is not None and conservative > baseline:
+            conservative = baseline
+        if optimistic is not None and conservative is not None and conservative > optimistic:
+            conservative = optimistic
+        sets.append(
+            {
+                "id": set_id,
+                "name": str(raw.get("name") or set_id).strip() or set_id,
+                "expected_return_baseline": baseline,
+                "expected_return_optimistic": optimistic,
+                "expected_return_conservative": conservative,
+                "inflation_rate": inflation_rate,
+                "marginal_tax_rate": marginal_tax_rate,
+            }
+        )
+
+    if not sets:
+        sets = list(fallback_sets)
+        seen_ids = {str(item.get("id") or "").strip() for item in sets}
+
+    active_id = str(payload.get("active_assumption_set_id") or "default").strip().lower()
+    if active_id not in seen_ids:
+        active_id = str(sets[0].get("id") or "default")
+
+    return {
+        "schema_version": 2,
+        "active_assumption_set_id": active_id,
+        "sets": sets,
+    }
+
+
+def resolve_plan_assumption_sets(detail: dict[str, Any]) -> dict[str, Any]:
+    files = detail.get("files", {})
+    raw_payload = files.get("assumption_sets_json") if isinstance(files, dict) else None
+    return parse_assumption_sets_payload(raw_payload)
+
+
+def apply_assumption_set_to_settings(
+    *,
+    plan_settings: dict[str, Any],
+    assumption_sets_payload: dict[str, Any] | None,
+    assumption_set_id: str | None = None,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    merged = dict(plan_settings)
+    if not isinstance(assumption_sets_payload, dict):
+        return merged, None
+
+    sets = assumption_sets_payload.get("sets")
+    if not isinstance(sets, list) or not sets:
+        return merged, None
+
+    target_id = str(assumption_set_id or assumption_sets_payload.get("active_assumption_set_id") or "").strip().lower()
+    selected: dict[str, Any] | None = None
+    for raw in sets:
+        if not isinstance(raw, dict):
+            continue
+        candidate_id = str(raw.get("id") or "").strip().lower()
+        if candidate_id and candidate_id == target_id:
+            selected = raw
+            break
+
+    if selected is None:
+        for raw in sets:
+            if isinstance(raw, dict):
+                selected = raw
+                break
+    if selected is None:
+        return merged, None
+
+    for key in (
+        "expected_return_baseline",
+        "expected_return_optimistic",
+        "expected_return_conservative",
+        "inflation_rate",
+        "marginal_tax_rate",
+    ):
+        value = selected.get(key)
+        if value is None:
+            continue
+        merged[key] = value
+
+    merged["assumption_set_id"] = str(selected.get("id") or "").strip() or None
+    merged["assumption_set_name"] = str(selected.get("name") or "").strip() or None
+    return merged, selected
+
+
 def build_contribution_allocation_for_plan_settings(
     *,
     plan_settings: dict[str, Any],
@@ -847,10 +1067,15 @@ def build_income_projection_from_profile(
 
 def build_income_projection_for_plan_settings(plan_settings: dict[str, Any]) -> IncomeProjectionResponse | None:
     years = _coerce_int(plan_settings.get("years"), settings.planner_years_to_retirement)
+    inflation_rate = (
+        settings.planner_inflation
+        if plan_settings.get("inflation_rate") is None
+        else max(-1.0, min(1.0, _coerce_float(plan_settings.get("inflation_rate"), settings.planner_inflation)))
+    )
     return build_income_projection_from_profile(
         years=years,
         start_year=utc_now().year,
-        default_annual_growth_rate=settings.planner_inflation,
+        default_annual_growth_rate=inflation_rate,
     )
 
 
@@ -884,10 +1109,15 @@ def build_expense_projection_from_profile(
 
 def build_expense_projection_for_plan_settings(plan_settings: dict[str, Any]) -> ExpenseProjectionResponse | None:
     years = _coerce_int(plan_settings.get("years"), settings.planner_years_to_retirement)
+    inflation_rate = (
+        settings.planner_inflation
+        if plan_settings.get("inflation_rate") is None
+        else max(-1.0, min(1.0, _coerce_float(plan_settings.get("inflation_rate"), settings.planner_inflation)))
+    )
     return build_expense_projection_from_profile(
         years=years,
         start_year=utc_now().year,
-        default_inflation_rate=settings.planner_inflation,
+        default_inflation_rate=inflation_rate,
     )
 
 
@@ -985,7 +1215,11 @@ def build_social_security_projection_for_plan_settings(
         fra_monthly_benefit_usd=fra_monthly_benefit,
         estimated_annual_earnings_usd=estimated_annual_earnings,
         claim_age_options=[62, 67, 70],
-        cola_rate=settings.planner_inflation,
+        cola_rate=(
+            settings.planner_inflation
+            if plan_settings.get("inflation_rate") is None
+            else max(-0.2, min(0.2, _coerce_float(plan_settings.get("inflation_rate"), settings.planner_inflation)))
+        ),
     )
     return SocialSecurityProjectionResponse(**payload)
 
@@ -1154,6 +1388,7 @@ async def run_scenarios_for_plan_settings(
     contribution_allocation: ContributionAllocationResponse | None = None,
     social_security_projection: SocialSecurityProjectionResponse | None = None,
     rmd_projection: RmdProjectionResponse | None = None,
+    assumption_set: dict[str, Any] | None = None,
     retirement_age: int | None = None,
     timeline_withdrawal_strategy: str | None = None,
 ) -> PlanningResponse:
@@ -1246,6 +1481,8 @@ async def run_scenarios_for_plan_settings(
         start_year=resolved_start_year,
         withdrawal_strategy=withdrawal_strategy,
         retirement_age=retirement_age,
+        assumption_set_id=(str(assumption_set.get("id")) if isinstance(assumption_set, dict) and assumption_set.get("id") else None),
+        assumption_set_name=(str(assumption_set.get("name")) if isinstance(assumption_set, dict) and assumption_set.get("name") else None),
     )
     if result.engine_status == "degraded":
         await engine_status_tracker.increment_degraded(
@@ -2566,6 +2803,34 @@ async def tool_update_plan_timeline(arguments: dict[str, object]) -> dict[str, o
     }
 
 
+async def tool_get_plan_assumption_sets(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+    assumption_sets = plan_workspace.get_plan_assumption_sets(plan_id)
+    return {
+        "plan_id": plan_id,
+        "assumption_sets": assumption_sets,
+    }
+
+
+async def tool_update_plan_assumption_sets(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+    payload_raw = arguments.get("assumption_sets")
+    if not isinstance(payload_raw, dict):
+        raise ValueError("assumption_sets must be an object with active_assumption_set_id and sets.")
+
+    assumption_sets = plan_workspace.update_plan_assumption_sets(
+        plan_id=plan_id,
+        assumption_sets_payload=payload_raw,
+        rationale=str(arguments.get("rationale") or "").strip() or "Updated via copilot tool.",
+        status=str(arguments.get("status") or "accepted").strip().lower() or "accepted",
+        log_decision=True,
+    )
+    return {
+        "plan_id": plan_id,
+        "assumption_sets": assumption_sets,
+    }
+
+
 async def tool_get_plan_tracking(arguments: dict[str, object]) -> dict[str, object]:
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
     detail = plan_workspace.get_plan(plan_id)
@@ -2594,9 +2859,27 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
     timeline_payload = resolve_plan_timeline_payload(detail)
     retirement_age = resolve_timeline_retirement_age(timeline_payload)
     timeline_withdrawal_strategy = resolve_timeline_withdrawal_strategy(timeline_payload)
-    base_settings = detail.get("settings", {})
+    assumption_sets_payload = resolve_plan_assumption_sets(detail)
+    requested_assumption_set_id = str(arguments.get("assumption_set_id") or "").strip() or None
+    requested_candidate_assumption_set_id = (
+        str(arguments.get("candidate_assumption_set_id") or "").strip() or None
+    )
+    base_settings_raw = detail.get("settings", {})
+    if not isinstance(base_settings_raw, dict):
+        base_settings_raw = {}
+    base_settings, base_assumption_set = apply_assumption_set_to_settings(
+        plan_settings=base_settings_raw,
+        assumption_sets_payload=assumption_sets_payload,
+        assumption_set_id=requested_assumption_set_id,
+    )
     compare_updates = extract_plan_settings_updates(arguments)
-    candidate_settings = merge_plan_settings(base_settings, compare_updates)
+    candidate_set_id = requested_candidate_assumption_set_id or requested_assumption_set_id
+    candidate_base_settings, candidate_assumption_set = apply_assumption_set_to_settings(
+        plan_settings=base_settings_raw,
+        assumption_sets_payload=assumption_sets_payload,
+        assumption_set_id=candidate_set_id,
+    )
+    candidate_settings = merge_plan_settings(candidate_base_settings, compare_updates)
     base_income_projection = build_income_projection_for_plan_settings(base_settings)
     candidate_income_projection = build_income_projection_for_plan_settings(candidate_settings)
     base_expense_projection = build_expense_projection_for_plan_settings(base_settings)
@@ -2658,6 +2941,7 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         contribution_allocation=base_contribution_allocation,
         social_security_projection=base_social_security_projection,
         rmd_projection=base_rmd_projection,
+        assumption_set=base_assumption_set,
         retirement_age=retirement_age,
         timeline_withdrawal_strategy=timeline_withdrawal_strategy,
     )
@@ -2671,6 +2955,7 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         contribution_allocation=candidate_contribution_allocation,
         social_security_projection=candidate_social_security_projection,
         rmd_projection=candidate_rmd_projection,
+        assumption_set=candidate_assumption_set,
         retirement_age=retirement_age,
         timeline_withdrawal_strategy=timeline_withdrawal_strategy,
     )
@@ -2698,6 +2983,8 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         "current_portfolio_value_usd": current_value,
         "base_settings": base_settings,
         "candidate_settings": candidate_settings,
+        "base_assumption_set": base_assumption_set,
+        "candidate_assumption_set": candidate_assumption_set,
         "base_result": base_result.model_dump(mode="json"),
         "candidate_result": candidate_result.model_dump(mode="json"),
         "scenario_deltas": scenario_deltas,
@@ -2792,6 +3079,7 @@ def configure_copilot_tools() -> None:
         "years": {"type": "integer"},
         "hsa_extra_contribution_usd": {"type": "number"},
         "marginal_tax_rate": {"type": "number"},
+        "inflation_rate": {"type": "number"},
         "expected_return_baseline": {"type": "number"},
         "expected_return_optimistic": {"type": "number"},
         "expected_return_conservative": {"type": "number"},
@@ -3220,6 +3508,16 @@ def configure_copilot_tools() -> None:
         handler=tool_get_plan_timeline,
     )
     copilot.register_tool(
+        name="get_plan_assumption_sets",
+        description="Read assumption sets for a plan (active set + named sets) or active plan by default.",
+        parameters={
+            "type": "object",
+            "properties": {"plan_id": {"type": "string"}},
+            "additionalProperties": False,
+        },
+        handler=tool_get_plan_assumption_sets,
+    )
+    copilot.register_tool(
         name="get_plan_tracking",
         description=(
             "Compare plan assumptions against actual portfolio performance. "
@@ -3272,6 +3570,24 @@ def configure_copilot_tools() -> None:
         handler=tool_update_plan_timeline,
     )
     copilot.register_tool(
+        name="update_plan_assumption_sets",
+        description=(
+            "Update named assumption sets (active set id + set list) for a plan and record a decision trail."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                "assumption_sets": {"type": "object"},
+                "rationale": {"type": "string"},
+                "status": {"type": "string"},
+            },
+            "required": ["assumption_sets"],
+            "additionalProperties": False,
+        },
+        handler=tool_update_plan_assumption_sets,
+    )
+    copilot.register_tool(
         name="run_plan_scenario_diff",
         description=(
             "Run scenario diff between current plan settings and provided overrides. "
@@ -3282,6 +3598,8 @@ def configure_copilot_tools() -> None:
             "properties": {
                 "plan_id": {"type": "string"},
                 "current_portfolio_value_usd": {"type": "number"},
+                "assumption_set_id": {"type": "string"},
+                "candidate_assumption_set_id": {"type": "string"},
                 **plan_settings_properties,
                 "apply_to_plan": {"type": "boolean"},
                 "rationale": {"type": "string"},
@@ -4054,6 +4372,37 @@ def update_plan_timeline(plan_id: str, request: PlanTimelineUpdateRequest) -> Pl
     return PlanTimelineResponse(**timeline)
 
 
+@app.get("/api/plans/{plan_id}/assumption-sets", response_model=PlanAssumptionSetsResponse)
+def get_plan_assumption_sets(plan_id: str) -> PlanAssumptionSetsResponse:
+    try:
+        payload = plan_workspace.get_plan_assumption_sets(plan_id)
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PlanAssumptionSetsResponse(**payload)
+
+
+@app.put("/api/plans/{plan_id}/assumption-sets", response_model=PlanAssumptionSetsResponse)
+def update_plan_assumption_sets(
+    plan_id: str,
+    request: PlanAssumptionSetsUpdateRequest,
+) -> PlanAssumptionSetsResponse:
+    try:
+        payload = plan_workspace.update_plan_assumption_sets(
+            plan_id=plan_id,
+            assumption_sets_payload=request.model_dump(mode="json"),
+            rationale="Updated via Plan Workspace assumption sets editor.",
+            status="accepted",
+            log_decision=True,
+        )
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PlanAssumptionSetsResponse(**payload)
+
+
 @app.post("/api/plans/{plan_id}/scenario-diff", response_model=PlanScenarioDiffResponse)
 async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest) -> PlanScenarioDiffResponse:
     compare_updates = request.compare_settings.model_dump(exclude_unset=True)
@@ -4066,8 +4415,24 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
     timeline_payload = resolve_plan_timeline_payload(detail)
     retirement_age = resolve_timeline_retirement_age(timeline_payload)
     timeline_withdrawal_strategy = resolve_timeline_withdrawal_strategy(timeline_payload)
-    base_settings = dict(detail.get("settings", {}))
-    candidate_settings = merge_plan_settings(base_settings, compare_updates)
+    assumption_sets_payload = resolve_plan_assumption_sets(detail)
+    requested_assumption_set_id = str(request.assumption_set_id or "").strip() or None
+    requested_candidate_assumption_set_id = str(request.candidate_assumption_set_id or "").strip() or None
+    base_settings_raw = detail.get("settings", {})
+    if not isinstance(base_settings_raw, dict):
+        base_settings_raw = {}
+    base_settings, base_assumption_set = apply_assumption_set_to_settings(
+        plan_settings=base_settings_raw,
+        assumption_sets_payload=assumption_sets_payload,
+        assumption_set_id=requested_assumption_set_id,
+    )
+    candidate_set_id = requested_candidate_assumption_set_id or requested_assumption_set_id
+    candidate_base_settings, candidate_assumption_set = apply_assumption_set_to_settings(
+        plan_settings=base_settings_raw,
+        assumption_sets_payload=assumption_sets_payload,
+        assumption_set_id=candidate_set_id,
+    )
+    candidate_settings = merge_plan_settings(candidate_base_settings, compare_updates)
     base_income_projection = build_income_projection_for_plan_settings(base_settings)
     candidate_income_projection = build_income_projection_for_plan_settings(candidate_settings)
     base_expense_projection = build_expense_projection_for_plan_settings(base_settings)
@@ -4126,6 +4491,7 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
             contribution_allocation=base_contribution_allocation,
             social_security_projection=base_social_security_projection,
             rmd_projection=base_rmd_projection,
+            assumption_set=base_assumption_set,
             retirement_age=retirement_age,
             timeline_withdrawal_strategy=timeline_withdrawal_strategy,
         )
@@ -4139,6 +4505,7 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
             contribution_allocation=candidate_contribution_allocation,
             social_security_projection=candidate_social_security_projection,
             rmd_projection=candidate_rmd_projection,
+            assumption_set=candidate_assumption_set,
             retirement_age=retirement_age,
             timeline_withdrawal_strategy=timeline_withdrawal_strategy,
         )
@@ -4152,6 +4519,8 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
         current_portfolio_value_usd=current_value,
         base_settings=PlanSettings(**base_settings),
         candidate_settings=PlanSettings(**candidate_settings),
+        base_assumption_set=base_assumption_set,
+        candidate_assumption_set=candidate_assumption_set,
         base_result=base_result,
         candidate_result=candidate_result,
         scenario_deltas=[ScenarioComparisonRow(**item) for item in scenario_deltas],
@@ -4447,20 +4816,9 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         if request.years is not None
         else int(scenario_engine.years_to_retirement)
     )
-    income_projection = build_income_projection_from_profile(
-        years=resolved_years,
-        start_year=utc_now().year,
-        default_annual_growth_rate=settings.planner_inflation,
-    )
-    expense_projection = build_expense_projection_from_profile(
-        years=resolved_years,
-        start_year=utc_now().year,
-        default_inflation_rate=settings.planner_inflation,
-    )
-    debt_projection = build_debt_projection_from_profile(
-        max_years=resolved_years,
-        start_date=utc_now().date().replace(day=1),
-    )
+    planning_settings_for_run: dict[str, Any] = {"years": resolved_years}
+    active_assumption_set: dict[str, Any] | None = None
+    service = ignidash_scenario_service
     timeline_projection: TimelineImpactProjectionResponse | None = None
     active_timeline_payload: dict[str, Any] | None = None
     active_withdrawal_strategy: str | None = None
@@ -4477,10 +4835,19 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
             active_settings = active_plan_detail.get("settings")
             if isinstance(active_settings, dict):
                 active_withdrawal_strategy = str(active_settings.get("withdrawal_strategy") or "").strip() or None
+                planning_settings_for_run.update(active_settings)
+            planning_settings_for_run["years"] = resolved_years
+            assumption_sets_payload = resolve_plan_assumption_sets(active_plan_detail)
+            planning_settings_for_run, active_assumption_set = apply_assumption_set_to_settings(
+                plan_settings=planning_settings_for_run,
+                assumption_sets_payload=assumption_sets_payload,
+                assumption_set_id=None,
+            )
+            service = build_ignidash_service_for_plan_settings(planning_settings_for_run)
             if not active_withdrawal_strategy:
                 active_withdrawal_strategy = timeline_strategy
             timeline_projection = build_timeline_projection_for_plan_settings(
-                plan_settings={"years": resolved_years},
+                plan_settings=planning_settings_for_run,
                 timeline_payload=active_timeline,
             )
         except PlanNotFoundError:
@@ -4490,10 +4857,14 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
             active_withdrawal_strategy = None
             active_retirement_age = None
 
+    income_projection = build_income_projection_for_plan_settings(planning_settings_for_run)
+    expense_projection = build_expense_projection_for_plan_settings(planning_settings_for_run)
+    debt_projection = build_debt_projection_for_plan_settings(planning_settings_for_run)
+
     resolved_annual_contribution = (
         float(request.annual_contribution_usd)
         if request.annual_contribution_usd is not None
-        else float(scenario_engine.annual_contribution_usd)
+        else float(service.scenario_engine.annual_contribution_usd)
     )
     resolved_current_value = float(current_value)
     if timeline_projection is not None:
@@ -4510,20 +4881,23 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
     if active_plan_detail is not None:
         contribution_rules_payload = resolve_plan_contribution_rules(active_plan_detail)
     contribution_allocation = build_contribution_allocation_for_plan_settings(
-        plan_settings={"annual_contribution_usd": resolved_annual_contribution},
+        plan_settings={
+            **planning_settings_for_run,
+            "annual_contribution_usd": resolved_annual_contribution,
+        },
         contribution_rules_payload=contribution_rules_payload,
     )
     social_security_projection: SocialSecurityProjectionResponse | None = None
     rmd_projection: RmdProjectionResponse | None = None
     if active_timeline_payload is not None:
         social_security_projection = build_social_security_projection_for_plan_settings(
-            plan_settings={"years": resolved_years},
+            plan_settings=planning_settings_for_run,
             timeline_payload=active_timeline_payload,
             income_projection=income_projection,
             start_year=utc_now().year,
         )
         rmd_projection = build_rmd_projection_for_plan_settings(
-            plan_settings={"years": resolved_years},
+            plan_settings=planning_settings_for_run,
             timeline_payload=active_timeline_payload,
             start_year=utc_now().year,
             accounts_override=build_planning_accounts_from_portfolio(),
@@ -4535,7 +4909,10 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
     if isinstance(tax_profile, dict):
         filing_status = str(tax_profile.get("filing_status") or "").strip() or None
 
-    result = await ignidash_scenario_service.run(
+    if planning_settings_for_run.get("filing_status"):
+        filing_status = str(planning_settings_for_run.get("filing_status") or "").strip() or filing_status
+
+    result = await service.run(
         current_portfolio_value_usd=resolved_current_value,
         annual_contribution_usd=resolved_annual_contribution,
         years=request.years,
@@ -4564,6 +4941,16 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         start_year=utc_now().year,
         withdrawal_strategy=active_withdrawal_strategy,
         retirement_age=active_retirement_age,
+        assumption_set_id=(
+            str(active_assumption_set.get("id"))
+            if isinstance(active_assumption_set, dict) and active_assumption_set.get("id")
+            else None
+        ),
+        assumption_set_name=(
+            str(active_assumption_set.get("name"))
+            if isinstance(active_assumption_set, dict) and active_assumption_set.get("name")
+            else None
+        ),
     )
     if result.engine_status == "degraded":
         await engine_status_tracker.increment_degraded(

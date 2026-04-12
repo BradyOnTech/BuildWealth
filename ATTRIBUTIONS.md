@@ -63,7 +63,15 @@ adapted from the following open source projects:
   `services/orchestrator/src/buildwealth_orchestrator/services/plan_workspace.py`
   (plan timeline persistence/validation structure aligned to Ignidash timeline schema
   conventions from `src/lib/schemas/inputs/timeline-form-schema.ts` and
-  `convex/validators/timeline_validator.ts`);
+  `convex/validators/timeline_validator.ts`; assumption-set persistence/validation
+  patterns aligned to `convex/market_assumptions.ts`,
+  `convex/validators/market_assumptions_validator.ts`, and
+  `src/lib/schemas/inputs/market-assumptions-form-schema.ts`);
+  `services/orchestrator/src/buildwealth_orchestrator/main.py`
+  (assumption-set selection and scenario wiring patterns aligned to Ignidash
+  market-assumptions input and template conventions from
+  `convex/market_assumptions.ts`, `convex/templates/basic.ts`, and
+  `convex/templates/early_retirement.ts`);
   `services/orchestrator/src/buildwealth_orchestrator/services/social_security_projection.py`
   (timeline age/retirement framing and claim-age comparison structure aligned to
   `src/lib/schemas/inputs/timeline-form-schema.ts` and `src/lib/calc/phase.ts`;

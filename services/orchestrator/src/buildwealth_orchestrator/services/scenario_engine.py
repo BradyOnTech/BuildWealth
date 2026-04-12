@@ -758,6 +758,8 @@ class ScenarioEngine:
         start_age: int,
         withdrawal_strategy: WithdrawalStrategy,
         retirement_age: int,
+        assumption_set_id: str | None = None,
+        assumption_set_name: str | None = None,
     ) -> ScenarioResult:
         accounts = self._copy_accounts(projection_accounts)
         timeline_points: list[ScenarioTimelinePoint] = []
@@ -1071,6 +1073,8 @@ class ScenarioEngine:
                 "social_security_claiming_age": social_security_claiming_age,
                 "social_security_optimal_claiming_age": social_security_optimal_claiming_age,
                 "average_effective_tax_rate": round(average_tax_rate, 6),
+                "assumption_set_id": (str(assumption_set_id).strip() or None),
+                "assumption_set_name": (str(assumption_set_name).strip() or None),
             },
             timeline_points=timeline_points,
             account_balance_points=account_points,
@@ -1129,6 +1133,8 @@ class ScenarioEngine:
         start_age: int = 35,
         withdrawal_strategy: str | None = None,
         retirement_age: int | None = None,
+        assumption_set_id: str | None = None,
+        assumption_set_name: str | None = None,
     ) -> PlanningResponse:
         resolved_years = max(1, _safe_int(years, self.years_to_retirement))
         resolved_contribution = max(
@@ -1173,6 +1179,8 @@ class ScenarioEngine:
             start_age=resolved_start_age,
             withdrawal_strategy=resolved_withdrawal_strategy,
             retirement_age=resolved_retirement_age,
+            assumption_set_id=assumption_set_id,
+            assumption_set_name=assumption_set_name,
         )
         optimistic = self._scenario(
             label="optimistic",
@@ -1195,6 +1203,8 @@ class ScenarioEngine:
             start_age=resolved_start_age,
             withdrawal_strategy=resolved_withdrawal_strategy,
             retirement_age=resolved_retirement_age,
+            assumption_set_id=assumption_set_id,
+            assumption_set_name=assumption_set_name,
         )
         conservative = self._scenario(
             label="conservative",
@@ -1217,6 +1227,8 @@ class ScenarioEngine:
             start_age=resolved_start_age,
             withdrawal_strategy=resolved_withdrawal_strategy,
             retirement_age=resolved_retirement_age,
+            assumption_set_id=assumption_set_id,
+            assumption_set_name=assumption_set_name,
         )
         hsa_delta = self._scenario(
             label="hsa_delta",
@@ -1239,6 +1251,8 @@ class ScenarioEngine:
             start_age=resolved_start_age,
             withdrawal_strategy=resolved_withdrawal_strategy,
             retirement_age=resolved_retirement_age,
+            assumption_set_id=assumption_set_id,
+            assumption_set_name=assumption_set_name,
         )
 
         monte_carlo = self._monte_carlo(

@@ -4,20 +4,105 @@ import { byId, fmtCurrency, fmtDate, writeLog } from '../lib/utils.js';
 import { collectSettingsPayload, setSettingsInputs } from '../lib/components.js';
 
 function setControlsEnabled(enabled) {
-  ['activate-plan', 'refresh-plan-context', 'save-plan', 'save-plan-timeline', 'save-plan-settings', 'run-scenario-diff', 'apply-scenario-overrides', 'add-decision', 'plan-markdown', 'plan-tasks', 'plan-timeline', 'decision-summary', 'decision-rationale', 'decision-status'].forEach(id => { const el = byId(id); if (el) el.disabled = !enabled; });
+  ['activate-plan', 'refresh-plan-context', 'save-plan', 'save-plan-timeline', 'save-plan-assumption-sets', 'save-plan-settings', 'run-scenario-diff', 'apply-scenario-overrides', 'add-decision', 'plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'diff-assumption-set-id', 'diff-candidate-assumption-set-id', 'decision-summary', 'decision-rationale', 'decision-status'].forEach(id => { const el = byId(id); if (el) el.disabled = !enabled; });
   for (const f of [...PLAN_SETTING_FIELDS, ...DIFF_SETTING_FIELDS]) { const el = byId(f.inputId); if (el) el.disabled = !enabled; }
+}
+
+function parseAssumptionSets(rawPayload) {
+  let payload = {};
+  if (typeof rawPayload === 'string') {
+    const text = rawPayload.trim();
+    if (text) {
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = {};
+      }
+    }
+  } else if (rawPayload && typeof rawPayload === 'object') {
+    payload = rawPayload;
+  }
+
+  const rawSets = Array.isArray(payload.sets) ? payload.sets : [];
+  const sets = [];
+  const seen = new Set();
+  for (const item of rawSets) {
+    if (!item || typeof item !== 'object') continue;
+    const id = String(item.id || '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    sets.push({ id, name: String(item.name || id).trim() || id });
+  }
+
+  return {
+    activeId: String(payload.active_assumption_set_id || '').trim(),
+    sets,
+  };
+}
+
+function setAssumptionSetOptions(rawPayload) {
+  const baseSelect = byId('diff-assumption-set-id');
+  const candidateSelect = byId('diff-candidate-assumption-set-id');
+  if (!baseSelect || !candidateSelect) return;
+
+  const prevBase = String(baseSelect.value || '').trim();
+  const prevCandidate = String(candidateSelect.value || '').trim();
+  const parsed = parseAssumptionSets(rawPayload);
+
+  baseSelect.innerHTML = '<option value="">Active plan set (default)</option>';
+  candidateSelect.innerHTML = '<option value="">Same as base</option>';
+  for (const set of parsed.sets) {
+    const baseOption = document.createElement('option');
+    baseOption.value = set.id;
+    baseOption.textContent = `${set.name} (${set.id})`;
+    baseSelect.appendChild(baseOption);
+
+    const candidateOption = document.createElement('option');
+    candidateOption.value = set.id;
+    candidateOption.textContent = `${set.name} (${set.id})`;
+    candidateSelect.appendChild(candidateOption);
+  }
+
+  const validIds = new Set(parsed.sets.map(s => s.id));
+  const baseValue = validIds.has(prevBase) ? prevBase : (validIds.has(parsed.activeId) ? parsed.activeId : '');
+  const candidateValue = validIds.has(prevCandidate) ? prevCandidate : '';
+  baseSelect.value = baseValue;
+  candidateSelect.value = candidateValue;
+}
+
+function extractAssumptionSetSummary(resultPayload) {
+  if (!resultPayload || typeof resultPayload !== 'object') return null;
+  const scenarios = Array.isArray(resultPayload.scenarios) ? resultPayload.scenarios : [];
+  const baseline = scenarios.find(item => item && item.label === 'baseline') || scenarios[0];
+  const assumptions = baseline && typeof baseline === 'object' ? baseline.assumptions : null;
+  if (!assumptions || typeof assumptions !== 'object') return null;
+  const id = String(assumptions.assumption_set_id || '').trim() || null;
+  const name = String(assumptions.assumption_set_name || '').trim() || null;
+  if (!id && !name) return null;
+  return { id, name };
+}
+
+function describeAssumptionSetSummary(summary) {
+  if (!summary || typeof summary !== 'object') return 'Not available';
+  const id = String(summary.id || '').trim();
+  const name = String(summary.name || '').trim();
+  if (id && name) return `${name} (${id})`;
+  if (name) return name;
+  if (id) return id;
+  return 'Not available';
 }
 
 export function clearDetail() {
   state.currentPlanDetail = null;
   byId('plan-meta').textContent = 'Select a plan to view details.';
   byId('plan-settings-meta').textContent = 'Blank values use global defaults from planner configuration.';
-  ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-context', 'scenario-diff-output', 'artifact-content'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
+  ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-context', 'scenario-diff-output', 'artifact-content'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
   byId('scenario-diff-summary').textContent = 'No scenario diff run yet.';
   byId('plan-decisions-body').innerHTML = '<tr><td colspan="4">No decisions yet.</td></tr>';
   byId('plan-artifacts-body').innerHTML = '<tr><td colspan="4">No artifacts yet.</td></tr>';
   setSettingsInputs(PLAN_SETTING_FIELDS, {});
   setSettingsInputs(DIFF_SETTING_FIELDS, {});
+  setAssumptionSetOptions({});
   setControlsEnabled(false);
 }
 
@@ -28,6 +113,8 @@ export function renderDetail() {
   byId('plan-markdown').value = d.files?.plan_markdown || '';
   byId('plan-tasks').value = d.files?.tasks_markdown || '';
   byId('plan-timeline').value = d.files?.timeline_json || '';
+  byId('plan-assumption-sets').value = d.files?.assumption_sets_json || '';
+  setAssumptionSetOptions(d.files?.assumption_sets_json || '');
   byId('plan-context').value = d.files?.context_markdown || '';
   byId('scenario-diff-summary').textContent = 'No scenario diff run yet.';
   byId('scenario-diff-output').value = '';
@@ -77,6 +164,16 @@ function formatDiffOutput(diff) {
   const lines = [`Plan: ${diff?.plan_id || '-'}`, `Current Portfolio: ${fmtCurrency(diff?.current_portfolio_value_usd)}`, '', 'Scenario Delta (Candidate - Base):'];
   if (!rows.length) lines.push('- No deltas.');
   else for (const r of rows) lines.push(`- ${r.label}: Future ${fmtCurrency(r.delta_future_value_usd)}, Real ${fmtCurrency(r.delta_real_value_usd)}`);
+
+  const baseAssumptionSet = diff?.base_assumption_set || extractAssumptionSetSummary(diff?.base_result);
+  const candidateAssumptionSet = diff?.candidate_assumption_set || extractAssumptionSetSummary(diff?.candidate_result);
+  lines.push('', 'Assumption Set Context:');
+  if (!baseAssumptionSet && !candidateAssumptionSet) {
+    lines.push('- Not available.');
+  } else {
+    lines.push(`- Base: ${describeAssumptionSetSummary(baseAssumptionSet)}`);
+    lines.push(`- Candidate: ${describeAssumptionSetSummary(candidateAssumptionSet)}`);
+  }
 
   const baseIncome = diff?.base_result?.income_projection;
   const candidateIncome = diff?.candidate_result?.income_projection;
@@ -247,6 +344,32 @@ export function initEditor(refreshPlans) {
     }
   });
 
+  byId('save-plan-assumption-sets').addEventListener('click', async () => {
+    if (!state.currentPlanId) { writeLog('Select a plan first.', null, true); return; }
+    const raw = byId('plan-assumption-sets').value.trim();
+    let payload;
+    try {
+      payload = raw ? JSON.parse(raw) : {};
+    } catch (e) {
+      writeLog(`Assumption sets JSON is invalid: ${e.message}`, null, true);
+      return;
+    }
+    writeLog('Saving assumption sets...', payload);
+    try {
+      await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/assumption-sets`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      state.currentPlanDetail = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}`);
+      renderDetail();
+      await refreshPlans();
+      writeLog('Assumption sets saved.');
+    } catch (e) {
+      writeLog(`Save assumption sets failed: ${e.message}`, null, true);
+    }
+  });
+
   byId('save-plan-settings').addEventListener('click', async () => {
     if (!state.currentPlanId) { writeLog('Select a plan first.', null, true); return; }
     let payload; try { payload = collectSettingsPayload(PLAN_SETTING_FIELDS, { includeNulls: true }); } catch (e) { writeLog(e.message, null, true); return; }
@@ -260,9 +383,14 @@ export function initEditor(refreshPlans) {
   byId('run-scenario-diff').addEventListener('click', async () => {
     if (!state.currentPlanId) { writeLog('Select a plan first.', null, true); return; }
     let compare; try { compare = collectSettingsPayload(DIFF_SETTING_FIELDS, { includeNulls: false }); } catch (e) { writeLog(e.message, null, true); return; }
-    writeLog(`Running scenario diff...`, compare);
+    const assumptionSetId = String(byId('diff-assumption-set-id')?.value || '').trim();
+    const candidateAssumptionSetId = String(byId('diff-candidate-assumption-set-id')?.value || '').trim();
+    const payload = { compare_settings: compare };
+    if (assumptionSetId) payload.assumption_set_id = assumptionSetId;
+    if (candidateAssumptionSetId) payload.candidate_assumption_set_id = candidateAssumptionSetId;
+    writeLog('Running scenario diff...', payload);
     try {
-      const result = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/scenario-diff`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ compare_settings: compare }) });
+      const result = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/scenario-diff`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
       const bl = (result.scenario_deltas || []).find(r => r.label === 'baseline');
       byId('scenario-diff-summary').textContent = bl ? `Baseline delta: ${fmtCurrency(bl.delta_future_value_usd)} (real: ${fmtCurrency(bl.delta_real_value_usd)})` : 'Diff completed.';
       byId('scenario-diff-output').value = formatDiffOutput(result);
