@@ -459,7 +459,7 @@ function resetContributionRuleInputs() {
 
 function setControlsEnabled(enabled) {
   [
-    'activate-plan', 'refresh-plan-context', 'open-plan-recommendations', 'generate-plan-closure-summary', 'save-plan', 'save-plan-timeline', 'save-plan-assumption-sets',
+    'activate-plan', 'refresh-plan-context', 'open-plan-recommendations', 'generate-plan-closure-summary', 'refresh-plan-closure-trend', 'save-plan', 'save-plan-timeline', 'save-plan-assumption-sets',
     'save-plan-contribution-rules', 'save-plan-branch-templates', 'save-plan-settings', 'run-scenario-diff',
     'run-withdrawal-strategy-compare', 'apply-scenario-overrides', 'load-branch-template', 'run-scenario-branch',
     'pin-watchlist-branch-template', 'open-latest-research-bridge-artifact',
@@ -1289,12 +1289,88 @@ function renderPlanClosureSummary(result) {
     : '<article class="list-item"><p class="list-item-title">No calibration rows available yet.</p></article>';
 }
 
+function formatTrendPct(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? `${num.toFixed(1)}%` : 'n/a';
+}
+
+function renderPlanClosureTrend(payload) {
+  const summaryEl = byId('plan-closure-trend-status');
+  const detailsEl = byId('plan-closure-trend-details');
+  if (!summaryEl || !detailsEl) return;
+
+  if (!payload || typeof payload !== 'object') {
+    summaryEl.textContent = 'Select a plan to load recommendation quality trend.';
+    detailsEl.innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No trend data loaded yet.</p></article>';
+    return;
+  }
+
+  const windows = Array.isArray(payload.calibration_windows) ? payload.calibration_windows : [];
+  const row30 = windows.find((row) => row && row.window === '30d') || {};
+  const row90 = windows.find((row) => row && row.window === '90d') || {};
+  const rowAll = windows.find((row) => row && row.window === 'all') || {};
+
+  const rowText = (row) => {
+    const measured = Number(row.measured_count || 0);
+    const count = Number(row.count || 0);
+    return `measured ${measured}/${count} • coverage ${formatTrendPct(row.realized_coverage_pct)} • match ${formatTrendPct(row.future_value_direction_match_rate_pct)} • MAE ${Number.isFinite(Number(row.mean_future_value_abs_error_usd)) ? fmtCurrency(Number(row.mean_future_value_abs_error_usd)) : 'n/a'}`;
+  };
+
+  summaryEl.textContent = [
+    `Closed ${Number(payload.count || 0)}`,
+    `30d ${rowText(row30)}`,
+    `90d ${rowText(row90)}`,
+  ].join(' • ');
+
+  detailsEl.innerHTML = `
+    <article class="list-item">
+      <p class="list-item-title">30 Day Trend</p>
+      <p class="list-item-meta">${rowText(row30)}</p>
+    </article>
+    <article class="list-item">
+      <p class="list-item-title">90 Day Trend</p>
+      <p class="list-item-meta">${rowText(row90)}</p>
+    </article>
+    <article class="list-item">
+      <p class="list-item-title">All-Time Baseline</p>
+      <p class="list-item-meta">${rowText(rowAll)}</p>
+    </article>
+  `;
+}
+
+async function loadPlanClosureTrend({ silent = true } = {}) {
+  const planId = String(state.currentPlanId || '').trim();
+  if (!planId) {
+    state.planClosureTrend = null;
+    renderPlanClosureTrend(null);
+    return;
+  }
+  try {
+    const params = new URLSearchParams();
+    params.set('limit', '300');
+    params.set('statuses', 'applied,rejected');
+    params.set('include_pending_realized', 'true');
+    params.set('plan_id', planId);
+    const payload = await fetchJson(`/api/recommendations/closure-analytics?${params.toString()}`);
+    state.planClosureTrend = payload && typeof payload === 'object' ? payload : null;
+    if (state.currentPlanId === planId) {
+      renderPlanClosureTrend(state.planClosureTrend);
+    }
+  } catch (error) {
+    state.planClosureTrend = null;
+    renderPlanClosureTrend(null);
+    if (!silent) writeLog(`Plan closure trend load failed: ${error.message}`, null, true);
+  }
+}
+
 export function clearDetail() {
   state.currentPlanDetail = null;
   state.planClosureSummary = null;
+  state.planClosureTrend = null;
   byId('plan-meta').textContent = 'Select a plan to view details.';
   byId('plan-next-actions-summary').textContent = 'Select a plan to load ranked next actions.';
   byId('plan-closure-summary-status').textContent = 'Select a plan to generate recommendation closure analytics.';
+  byId('plan-closure-trend-status').textContent = 'Select a plan to load recommendation quality trend.';
   byId('plan-settings-meta').textContent = 'Blank values use global defaults from planner configuration.';
   ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-contribution-rules', 'plan-branch-templates', 'plan-context', 'scenario-diff-output', 'withdrawal-current-portfolio-value', 'withdrawal-strategies', 'withdrawal-strategy-compare-output', 'scenario-branch-name', 'scenario-branch-events', 'scenario-branch-output', 'research-bridge-symbols', 'artifact-content'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
   writeTimelinePayloadToEditor({ events: [], retirement: {} }, { preferFormValues: false });
@@ -1311,6 +1387,7 @@ export function clearDetail() {
   byId('projection-summary').textContent = 'Run a scenario diff or branch to populate projection visuals.';
   byId('plan-next-actions').innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No plan selected.</p></article>';
   byId('plan-closure-summary-details').innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No closure summary generated yet.</p></article>';
+  byId('plan-closure-trend-details').innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No trend data loaded yet.</p></article>';
   byId('plan-decisions-body').innerHTML = '<tr><td colspan="4">No decisions yet.</td></tr>';
   byId('plan-artifacts-body').innerHTML = '<tr><td colspan="4">No artifacts yet.</td></tr>';
   byId('projection-account-body').innerHTML = '<tr><td colspan="6">No projection data yet.</td></tr>';
@@ -1386,6 +1463,12 @@ export function renderDetail() {
     renderPlanClosureSummary(state.planClosureSummary);
   } else {
     renderPlanClosureSummary(null);
+  }
+  if (state.planClosureTrend && state.planClosureTrend.plan_id === d.id) {
+    renderPlanClosureTrend(state.planClosureTrend);
+  } else {
+    renderPlanClosureTrend(null);
+    void loadPlanClosureTrend({ silent: true });
   }
   renderDecisions(Array.isArray(d.decisions) ? d.decisions : []);
   renderArtifacts(Array.isArray(d.artifacts) ? d.artifacts : []);
@@ -1766,6 +1849,7 @@ export function initEditor(refreshPlans) {
       if (state.planClosureSummary && state.planClosureSummary.plan_id === state.currentPlanId) {
         renderPlanClosureSummary(state.planClosureSummary);
       }
+      await loadPlanClosureTrend({ silent: true });
       writeLog(
         'Plan closure analytics artifact generated.',
         {
@@ -1777,6 +1861,21 @@ export function initEditor(refreshPlans) {
       );
     } catch (e) {
       writeLog(`Generate closure summary failed: ${e.message}`, null, true);
+    }
+  });
+  byId('refresh-plan-closure-trend').addEventListener('click', async () => {
+    if (!state.currentPlanId) {
+      writeLog('Select a plan first.', null, true);
+      return;
+    }
+    writeLog('Refreshing plan closure trend...');
+    await loadPlanClosureTrend({ silent: false });
+    if (state.planClosureTrend && state.planClosureTrend.plan_id === state.currentPlanId) {
+      writeLog('Plan closure trend refreshed.', {
+        plan_id: state.currentPlanId,
+        closed_count: state.planClosureTrend.count || 0,
+        measured_count: state.planClosureTrend.summary?.measured_count || 0,
+      });
     }
   });
   byId('plan-timeline').addEventListener('change', () => {

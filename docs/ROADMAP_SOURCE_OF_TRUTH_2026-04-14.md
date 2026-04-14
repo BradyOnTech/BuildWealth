@@ -10,6 +10,24 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-14 (Completed - Phase 4.2 Follow-up, Recommendation Quality Trend Views)
+1. Added Recommendation Quality Trend panel to Today Dashboard:
+- one-click `Refresh Trend` control
+- global (`all`) and rolling (`30d`, `90d`) closure calibration summaries
+- active-plan scoped trend row when an active plan exists.
+2. Added Plan Workspace closure trend panel:
+- new “Closure Trend (30/90d)” section in plan editor
+- one-click `Refresh Trend` control
+- per-window measured coverage, directional match rate, and MAE visibility.
+3. Wired trend state and refresh lifecycle:
+- added `dashboardClosureTrend` and `planClosureTrend` state nodes
+- plan trend automatically refreshes after closure-summary artifact generation
+- plan detail render path now lazy-loads plan-scoped trend when cache is stale or missing.
+4. Source-provenance note:
+- trend/calibration window packaging reuses the previously added closure analytics model (Ignidash-style quality windows)
+- actionability and explainability surfaces remain aligned with Ghostfolio-style transparent dashboard conventions.
+5. Verification: `pytest -q services/orchestrator/tests` passes (`413 passed`).
+
 ### 2026-04-14 (Completed - Phase 4.2 Follow-up, Plan Workspace Closure-Analytics Artifacts)
 1. Added plan-scoped closure analytics summaries for longitudinal review workflows:
 - closure analytics now supports `plan_id` scoping in both API and Copilot tool surfaces.
@@ -436,9 +454,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Add recommendation quality trend views in dashboard/plan workspace (rolling 30/90-day directional match and coverage rates).
-2. Start Phase 5.0 Slice 1: add state tax and IRMAA modeling surfaces in tax engine and scenario outputs.
-3. Start Phase 5.0 Slice 2: add Roth conversion plan controls and scenario-aware conversion simulation.
+1. Start Phase 5.0 Slice 1: add state tax and IRMAA modeling surfaces in tax engine and scenario outputs.
+2. Start Phase 5.0 Slice 2: add Roth conversion plan controls and scenario-aware conversion simulation.
+3. Start Phase 5.0 Slice 3: add configurable drawdown ordering in withdrawal strategies.
 
 ## Guardrails
 1. Do not fork or embed full Ghostfolio/Ignidash apps into BuildWealth runtime path.

@@ -32,6 +32,9 @@ export function template() {
         <div class="view-header"><h3>Closure Calibration Summary</h3><button class="ghost small" id="generate-plan-closure-summary" disabled>Generate Artifact</button></div>
         <p class="hint tight" id="plan-closure-summary-status">Select a plan to generate recommendation closure analytics.</p>
         <div id="plan-closure-summary-details" class="item-list"></div>
+        <div class="view-header"><h3>Closure Trend (30/90d)</h3><button class="ghost small" id="refresh-plan-closure-trend" disabled>Refresh Trend</button></div>
+        <p class="hint tight" id="plan-closure-trend-status">Select a plan to load recommendation quality trend.</p>
+        <div id="plan-closure-trend-details" class="item-list"></div>
         <label class="field"><span>Plan Markdown</span><textarea id="plan-markdown" rows="12" placeholder="Plan markdown will appear here." disabled></textarea></label>
         <label class="field"><span>Tasks Markdown</span><textarea id="plan-tasks" rows="6" placeholder="Task checklist markdown." disabled></textarea></label>
         <div class="view-header"><h3>Timeline Events</h3><button class="primary small" id="save-plan-timeline" disabled>Save Timeline</button></div>

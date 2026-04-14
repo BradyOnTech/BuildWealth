@@ -30,6 +30,14 @@ export function template() {
       <article class="kpi-card"><p class="kpi-label">Degraded Events</p><p class="kpi-value" id="today-engine-degraded">-</p></article>
       <article class="kpi-card"><p class="kpi-label">Engine Probe Age</p><p class="kpi-value" id="today-engine-probe-age">-</p></article>
     </div>
+    <section class="panel">
+      <div class="panel-head-inline">
+        <h3 class="panel-title">Recommendation Quality Trend</h3>
+        <button class="ghost small" id="today-refresh-recommendation-trend" type="button">Refresh Trend</button>
+      </div>
+      <p class="hint" id="today-recommendation-trend-summary">Trend data unavailable.</p>
+      <div id="today-recommendation-trend-list" class="item-list"></div>
+    </section>
     <div class="three-col">
       <section class="panel">
         <h3 class="panel-title">Checklist</h3>
@@ -117,6 +125,76 @@ function render(payload) {
   const steps = Array.isArray(payload.workflow_steps) ? payload.workflow_steps : [];
   if (!steps.length) { wl.innerHTML = '<li>No workflow steps available.</li>'; }
   else { for (const s of steps) { const li = document.createElement('li'); li.textContent = s; wl.appendChild(li); } }
+}
+
+function formatPct(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 'n/a';
+  return `${num.toFixed(1)}%`;
+}
+
+function windowRowText(row) {
+  if (!row || typeof row !== 'object') return 'n/a';
+  const measured = Number(row.measured_count || 0);
+  const count = Number(row.count || 0);
+  return `${row.window || row.key || '-'}: measured ${measured}/${count}, coverage ${formatPct(row.realized_coverage_pct)}, match ${formatPct(row.future_value_direction_match_rate_pct)}`;
+}
+
+function renderRecommendationTrend(payload, { activePlanTitle = '' } = {}) {
+  state.dashboardClosureTrend = payload && typeof payload === 'object' ? payload : null;
+  const summaryEl = byId('today-recommendation-trend-summary');
+  const listEl = byId('today-recommendation-trend-list');
+  const globalPayload = payload?.global && typeof payload.global === 'object' ? payload.global : null;
+  const planPayload = payload?.plan && typeof payload.plan === 'object' ? payload.plan : null;
+  const planLabel = activePlanTitle || 'active plan';
+  if (!globalPayload) {
+    summaryEl.textContent = 'Recommendation trend data unavailable.';
+    listEl.innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No trend analytics available.</p></article>';
+    return;
+  }
+
+  const globalWindows = Array.isArray(globalPayload.calibration_windows) ? globalPayload.calibration_windows : [];
+  const global30 = globalWindows.find((row) => row && row.window === '30d') || {};
+  const global90 = globalWindows.find((row) => row && row.window === '90d') || {};
+  const globalSummaryParts = [
+    `Global closed ${Number(globalPayload.count || 0)}`,
+    windowRowText(global30),
+    windowRowText(global90),
+  ];
+  summaryEl.textContent = globalSummaryParts.join(' • ');
+
+  const cards = [];
+  cards.push(`<article class="list-item"><p class="list-item-title">Global Trend</p><p class="list-item-meta">${windowRowText(global30)} • ${windowRowText(global90)}</p></article>`);
+
+  if (planPayload) {
+    const planWindows = Array.isArray(planPayload.calibration_windows) ? planPayload.calibration_windows : [];
+    const plan30 = planWindows.find((row) => row && row.window === '30d') || {};
+    const plan90 = planWindows.find((row) => row && row.window === '90d') || {};
+    cards.push(`<article class="list-item"><p class="list-item-title">${planLabel} Trend</p><p class="list-item-meta">${windowRowText(plan30)} • ${windowRowText(plan90)}</p></article>`);
+  } else {
+    cards.push('<article class="list-item"><p class="list-item-title">Plan Trend</p><p class="list-item-meta">No active plan selected for plan-scoped trend analytics.</p></article>');
+  }
+
+  listEl.innerHTML = cards.join('');
+}
+
+async function loadRecommendationTrend(dashboardPayload) {
+  const activePlanId = String(dashboardPayload?.active_plan?.id || '').trim();
+  const activePlanTitle = String(dashboardPayload?.active_plan?.title || '').trim();
+  const baseParams = new URLSearchParams();
+  baseParams.set('limit', '300');
+  baseParams.set('statuses', 'applied,rejected');
+  baseParams.set('include_pending_realized', 'true');
+  const globalUrl = `/api/recommendations/closure-analytics?${baseParams.toString()}`;
+  const globalPromise = fetchJson(globalUrl);
+  const planPromise = activePlanId
+    ? fetchJson(`${globalUrl}&plan_id=${encodeURIComponent(activePlanId)}`)
+    : Promise.resolve(null);
+
+  const [globalResult, planResult] = await Promise.allSettled([globalPromise, planPromise]);
+  const globalPayload = globalResult.status === 'fulfilled' ? globalResult.value : null;
+  const planPayload = planResult.status === 'fulfilled' ? planResult.value : null;
+  renderRecommendationTrend({ global: globalPayload, plan: planPayload }, { activePlanTitle });
 }
 
 function engineProbeAgeMinutes(asOf) {
@@ -209,6 +287,7 @@ export async function load(options = {}) {
 
     if (dashboardResult.status === 'fulfilled') {
       render(dashboardResult.value);
+      await loadRecommendationTrend(dashboardResult.value);
     } else {
       throw dashboardResult.reason;
     }
@@ -223,6 +302,7 @@ export async function load(options = {}) {
     byId('today-context-banner').className = 'context-banner warning';
     byId('today-context-banner').textContent = 'Context readiness unavailable.';
     ['today-total-value', 'today-snapshot-freshness', 'today-concentration', 'today-active-plan'].forEach(id => { const el = byId(id); if (el) el.textContent = '-'; });
+    renderRecommendationTrend(null);
     renderEngineStatus(null, error.message);
   }
 }
@@ -239,6 +319,7 @@ async function runSync() {
 export function init() {
   byId('reload-today').addEventListener('click', () => load().catch(e => writeLog(e.message, null, true)));
   byId('today-refresh-engines').addEventListener('click', () => load({ refreshEngines: true }).catch(e => writeLog(e.message, null, true)));
+  byId('today-refresh-recommendation-trend').addEventListener('click', () => load().catch(e => writeLog(e.message, null, true)));
   byId('today-run-sync').addEventListener('click', runSync);
   byId('today-open-recommendations').addEventListener('click', () => {
     location.hash = 'recommendations';
