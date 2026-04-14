@@ -855,6 +855,7 @@ class RecommendationActionResponse(BaseModel):
 class CopilotContextOptions(BaseModel):
     include_research: bool = False
     include_plan_projection: bool = False
+    force_refresh: bool = False
     research_symbols: list[str] = Field(default_factory=list)
     research_period: str = "6mo"
     research_interval: str = "1d"

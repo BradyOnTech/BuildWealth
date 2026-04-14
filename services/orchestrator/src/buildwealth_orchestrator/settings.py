@@ -110,6 +110,16 @@ class Settings(BaseSettings):
     openai_base_url: str = Field(default="https://api.openai.com/v1", alias="OPENAI_BASE_URL")
     copilot_max_history_messages: int = Field(default=24, alias="COPILOT_MAX_HISTORY_MESSAGES")
     copilot_max_tool_rounds: int = Field(default=6, alias="COPILOT_MAX_TOOL_ROUNDS")
+    copilot_context_cache_enabled: bool = Field(default=True, alias="COPILOT_CONTEXT_CACHE_ENABLED")
+    copilot_context_cache_max_entries: int = Field(default=128, alias="COPILOT_CONTEXT_CACHE_MAX_ENTRIES")
+    copilot_context_research_cache_ttl_seconds: float = Field(
+        default=180.0,
+        alias="COPILOT_CONTEXT_RESEARCH_CACHE_TTL_SECONDS",
+    )
+    copilot_context_projection_cache_ttl_seconds: float = Field(
+        default=120.0,
+        alias="COPILOT_CONTEXT_PROJECTION_CACHE_TTL_SECONDS",
+    )
 
     openbb_provider: str = Field(default="yfinance", alias="OPENBB_PROVIDER")
 

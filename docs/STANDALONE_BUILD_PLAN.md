@@ -57,6 +57,35 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-12 (Completed - Copilot Tool Coverage Expansion)
+- Added new Copilot tools backed by existing BuildWealth engines/data:
+  - `get_account_balances` (account-level value/cash/cost basis/performance with optional per-account top holdings)
+  - `get_asset_allocation` (asset class/sector/region allocation breakdown retrieval)
+  - `compute_tax` (federal tax estimate using the existing tax engine inputs/outputs)
+- Updated Copilot tool-selection guidance to explicitly route:
+  - account balance questions to `get_account_balances`
+  - allocation/rebalancing questions to `get_asset_allocation`
+  - federal tax estimate questions to `compute_tax`
+- This advances Phase 3.5 ("Copilot Tool Updates") without introducing duplicate calculation paths
+
+### 2026-04-12 (Completed - Unified Context Cache and Refresh Controls)
+- Added lightweight in-memory TTL cache service (`context_cache.py`) for reusable Copilot context sub-payloads
+- Added configurable cache controls in settings:
+  - `COPILOT_CONTEXT_CACHE_ENABLED`
+  - `COPILOT_CONTEXT_CACHE_MAX_ENTRIES`
+  - `COPILOT_CONTEXT_RESEARCH_CACHE_TTL_SECONDS`
+  - `COPILOT_CONTEXT_PROJECTION_CACHE_TTL_SECONDS`
+- `build_buildwealth_context_payload` now caches:
+  - Research bundle results by provider/period/interval/symbol set
+  - Baseline projection results by plan/snapshot context (non-live snapshots)
+- Unified context payload now includes cache metadata (`enabled`, `force_refresh`, research/projection hit status, TTL values) for observability
+- Added explicit `force_refresh` propagation across:
+  - Copilot tool input (`get_buildwealth_context`)
+  - `GET /api/copilot/context`
+  - `POST /api/copilot/chat` via `context_options.force_refresh`
+- Copilot UI `Refresh Context` now always requests `force_refresh=true` and displays cache hit/miss metadata in preview status text
+- Added focused unit coverage for cache behavior in `test_context_cache.py`
+
 ### 2026-04-12 (Completed - Unified Context UX and Chat Wiring)
 - Extended Copilot chat request contract with `context_options` so conversations can explicitly request richer BuildWealth context (`include_research`, `include_plan_projection`, `research_symbols`)
 - `POST /api/copilot/chat` now builds contextual briefs from request-level context options instead of fixed lightweight defaults

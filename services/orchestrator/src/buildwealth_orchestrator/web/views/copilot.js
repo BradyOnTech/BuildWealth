@@ -95,6 +95,7 @@ function buildContextOptionsFromState() {
   return {
     include_research: useUnifiedContext && !!state.copilotIncludeResearchContext,
     include_plan_projection: useUnifiedContext && !!state.copilotIncludeProjectionContext,
+    force_refresh: false,
     research_symbols: symbols,
     research_period: DEFAULT_RESEARCH_PERIOD,
     research_interval: DEFAULT_RESEARCH_INTERVAL,
@@ -123,7 +124,18 @@ function renderContextSummary() {
   const payload = state.copilotContextPayload;
   const warnings = Array.isArray(payload.warnings) ? payload.warnings.length : 0;
   const updatedAt = state.copilotContextUpdatedAt ? fmtDate(state.copilotContextUpdatedAt) : 'unknown time';
-  metaEl.textContent = `Last refreshed ${updatedAt}${warnings ? ` • ${warnings} warning(s)` : ''}`;
+  const cache = payload && typeof payload.cache === 'object' ? payload.cache : null;
+  const cacheDetails = [];
+  if (cache?.enabled) {
+    if (typeof cache?.research?.hit === 'boolean') {
+      cacheDetails.push(`research cache ${cache.research.hit ? 'hit' : 'miss'}`);
+    }
+    if (typeof cache?.baseline_projection?.hit === 'boolean') {
+      cacheDetails.push(`projection cache ${cache.baseline_projection.hit ? 'hit' : 'miss'}`);
+    }
+  }
+  const cacheSummary = cacheDetails.length ? ` • ${cacheDetails.join(', ')}` : '';
+  metaEl.textContent = `Last refreshed ${updatedAt}${warnings ? ` • ${warnings} warning(s)` : ''}${cacheSummary}`;
 
   const summary = String(state.copilotContextSummary || '').trim();
   if (summary) {
@@ -150,24 +162,26 @@ async function refreshContextPreview() {
   state.copilotPlanId = selectedPlanId || '';
   const useLiveSnapshot = byId('copilot-live-context').checked;
   const contextOptions = buildContextOptionsFromState();
+  const refreshContextOptions = { ...contextOptions, force_refresh: true };
   const params = new URLSearchParams();
   params.set('use_live_snapshot', useLiveSnapshot ? 'true' : 'false');
   if (selectedPlanId) params.set('plan_id', selectedPlanId);
-  params.set('include_research', contextOptions.include_research ? 'true' : 'false');
-  params.set('include_plan_projection', contextOptions.include_plan_projection ? 'true' : 'false');
-  params.set('research_period', contextOptions.research_period);
-  params.set('research_interval', contextOptions.research_interval);
-  params.set('research_symbol_limit', String(contextOptions.research_symbol_limit));
-  params.set('summary_max_chars', String(contextOptions.summary_max_chars));
-  if (contextOptions.research_symbols.length) {
-    params.set('research_symbols', contextOptions.research_symbols.join(','));
+  params.set('include_research', refreshContextOptions.include_research ? 'true' : 'false');
+  params.set('include_plan_projection', refreshContextOptions.include_plan_projection ? 'true' : 'false');
+  params.set('force_refresh', 'true');
+  params.set('research_period', refreshContextOptions.research_period);
+  params.set('research_interval', refreshContextOptions.research_interval);
+  params.set('research_symbol_limit', String(refreshContextOptions.research_symbol_limit));
+  params.set('summary_max_chars', String(refreshContextOptions.summary_max_chars));
+  if (refreshContextOptions.research_symbols.length) {
+    params.set('research_symbols', refreshContextOptions.research_symbols.join(','));
   }
 
   setContextBusy(true);
   writeLog('Refreshing unified context preview...', {
     plan_id: selectedPlanId,
     use_live_snapshot: useLiveSnapshot,
-    context_options: contextOptions,
+    context_options: refreshContextOptions,
   });
   try {
     const payload = await fetchJson(`/api/copilot/context?${params.toString()}`);

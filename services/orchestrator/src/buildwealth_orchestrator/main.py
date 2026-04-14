@@ -148,6 +148,7 @@ from buildwealth_orchestrator.services.buildwealth_context import (
     normalize_research_symbols,
     utc_now_iso as context_utc_now_iso,
 )
+from buildwealth_orchestrator.services.context_cache import ExpiringCache
 from buildwealth_orchestrator.services.workflow_runner import WorkflowRunner
 from buildwealth_orchestrator.services.plan_workspace import (
     PlanNotFoundError,
@@ -326,10 +327,13 @@ copilot = FinancialCopilot(
         "TOOL SELECTION GUIDE:\n"
         "- For a full cross-domain briefing (portfolio + plan + research + open decisions) → call get_buildwealth_context.\n"
         "- For 'how am I doing?' or 'what is my financial situation?' → call get_financial_health first.\n"
+        "- For account-level balances/cash breakdowns → call get_account_balances.\n"
+        "- For allocation mix or rebalancing discussions → call get_asset_allocation.\n"
         "- For 'can I afford X?' → call assess_affordability with the monthly cost or purchase price. "
         "It computes the full impact on cash flow, savings rate, and DTI automatically.\n"
         "- For 'am I on track?' → call get_plan_tracking for plan assumptions, or get_goal_progress for specific goals.\n"
         "- For 'when will I reach my goal?' or 'what do I need to save?' → call get_goal_progress.\n"
+        "- For federal tax estimates (income, capital gains, withholding) → call compute_tax.\n"
         "- For 'what if I change my contributions?' → call run_plan_scenario_diff.\n"
         "- For life-event what-ifs (job loss, raise, new recurring costs) → call run_plan_scenario_branch.\n"
         "- For reusable life-event presets/templates → call get_plan_branch_templates or update_plan_branch_templates.\n"
@@ -346,6 +350,8 @@ copilot = FinancialCopilot(
         "- Proactively flag risks you discover (high concentration, low emergency fund, negative cash flow)."
     ),
 )
+copilot_context_research_cache = ExpiringCache(max_entries=settings.copilot_context_cache_max_entries)
+copilot_context_projection_cache = ExpiringCache(max_entries=settings.copilot_context_cache_max_entries)
 
 sync_lock = asyncio.Lock()
 scheduler_task: asyncio.Task | None = None
@@ -2695,6 +2701,11 @@ def _compute_price_history_change(records: list[dict[str, Any]]) -> tuple[float 
     return first_close, last_close, ((last_close - first_close) / first_close) * 100.0
 
 
+def _build_context_cache_key(prefix: str, payload: dict[str, Any]) -> str:
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return f"{prefix}:{serialized}"
+
+
 def _resolve_context_plan_detail(plan_id: str | None) -> tuple[dict[str, Any] | None, str | None]:
     if plan_id:
         detail = plan_workspace.get_plan(plan_id)
@@ -2711,6 +2722,7 @@ async def build_buildwealth_context_payload(
     use_live_snapshot: bool = False,
     plan_id: str | None = None,
     include_research: bool = True,
+    force_refresh: bool = False,
     research_symbols: list[str] | None = None,
     research_period: str = "6mo",
     research_interval: str = "1d",
@@ -2722,6 +2734,9 @@ async def build_buildwealth_context_payload(
 ) -> dict[str, Any]:
     warnings: list[str] = []
     resolved_snapshot: PortfolioSnapshot | None = None
+    cache_enabled = bool(settings.copilot_context_cache_enabled) and not force_refresh
+    research_cache_hit = False
+    projection_cache_hit = False
 
     snapshot_summary_payload: dict[str, Any]
     try:
@@ -2849,56 +2864,85 @@ async def build_buildwealth_context_payload(
                 )
 
         if include_plan_projection and resolved_snapshot is not None:
-            try:
-                base_settings_raw = resolved_plan_detail.get("settings", {})
-                if not isinstance(base_settings_raw, dict):
-                    base_settings_raw = {}
-                assumption_sets_payload = resolve_plan_assumption_sets(resolved_plan_detail)
-                projection_settings, active_assumption_set = apply_assumption_set_to_settings(
-                    plan_settings=base_settings_raw,
-                    assumption_sets_payload=assumption_sets_payload,
+            projection_cache_key: str | None = None
+            if cache_enabled and resolved_plan_id and not use_live_snapshot:
+                projection_cache_key = _build_context_cache_key(
+                    "baseline_projection",
+                    {
+                        "plan_id": resolved_plan_id,
+                        "plan_updated_at": resolved_plan_detail.get("updated_at"),
+                        "snapshot_as_of": resolved_snapshot.as_of.isoformat(),
+                        "snapshot_total_value_usd": round(float(resolved_snapshot.total_value_usd), 2),
+                        "currency": settings.app_currency,
+                    },
                 )
-                timeline_payload = resolve_plan_timeline_payload(resolved_plan_detail)
-                timeline_retirement_age = resolve_timeline_retirement_age(timeline_payload)
-                timeline_withdrawal_strategy = resolve_timeline_withdrawal_strategy(timeline_payload)
-                income_projection = build_income_projection_for_plan_settings(projection_settings)
-                expense_projection = build_expense_projection_for_plan_settings(projection_settings)
-                debt_projection = build_debt_projection_for_plan_settings(projection_settings)
-                timeline_projection = build_timeline_projection_for_plan_settings(
-                    plan_settings=projection_settings,
-                    timeline_payload=timeline_payload,
+                projection_cache_hit, cached_projection_payload = copilot_context_projection_cache.lookup(
+                    projection_cache_key
                 )
-                contribution_allocation = build_contribution_allocation_for_plan_settings(
-                    plan_settings=projection_settings,
-                )
-                social_security_projection = build_social_security_projection_for_plan_settings(
-                    plan_settings=projection_settings,
-                    timeline_payload=timeline_payload,
-                    income_projection=income_projection,
-                    start_year=utc_now().year,
-                )
-                rmd_projection = build_rmd_projection_for_plan_settings(
-                    plan_settings=projection_settings,
-                    timeline_payload=timeline_payload,
-                    start_year=utc_now().year,
-                )
-                baseline_projection = await run_scenarios_for_plan_settings(
-                    current_portfolio_value_usd=float(resolved_snapshot.total_value_usd),
-                    plan_settings=projection_settings,
-                    income_projection=income_projection,
-                    expense_projection=expense_projection,
-                    debt_projection=debt_projection,
-                    timeline_projection=timeline_projection,
-                    contribution_allocation=contribution_allocation,
-                    social_security_projection=social_security_projection,
-                    rmd_projection=rmd_projection,
-                    assumption_set=active_assumption_set,
-                    retirement_age=timeline_retirement_age,
-                    timeline_withdrawal_strategy=timeline_withdrawal_strategy,
-                )
-                baseline_projection_payload = baseline_projection.model_dump(mode="json")
-            except Exception as exc:
-                warnings.append(f"Baseline projection context unavailable: {exc}")
+                if projection_cache_hit and isinstance(cached_projection_payload, dict):
+                    baseline_projection_payload = cached_projection_payload
+
+            if baseline_projection_payload is None:
+                try:
+                    base_settings_raw = resolved_plan_detail.get("settings", {})
+                    if not isinstance(base_settings_raw, dict):
+                        base_settings_raw = {}
+                    assumption_sets_payload = resolve_plan_assumption_sets(resolved_plan_detail)
+                    projection_settings, active_assumption_set = apply_assumption_set_to_settings(
+                        plan_settings=base_settings_raw,
+                        assumption_sets_payload=assumption_sets_payload,
+                    )
+                    timeline_payload = resolve_plan_timeline_payload(resolved_plan_detail)
+                    timeline_retirement_age = resolve_timeline_retirement_age(timeline_payload)
+                    timeline_withdrawal_strategy = resolve_timeline_withdrawal_strategy(timeline_payload)
+                    income_projection = build_income_projection_for_plan_settings(projection_settings)
+                    expense_projection = build_expense_projection_for_plan_settings(projection_settings)
+                    debt_projection = build_debt_projection_for_plan_settings(projection_settings)
+                    timeline_projection = build_timeline_projection_for_plan_settings(
+                        plan_settings=projection_settings,
+                        timeline_payload=timeline_payload,
+                    )
+                    contribution_allocation = build_contribution_allocation_for_plan_settings(
+                        plan_settings=projection_settings,
+                    )
+                    social_security_projection = build_social_security_projection_for_plan_settings(
+                        plan_settings=projection_settings,
+                        timeline_payload=timeline_payload,
+                        income_projection=income_projection,
+                        start_year=utc_now().year,
+                    )
+                    rmd_projection = build_rmd_projection_for_plan_settings(
+                        plan_settings=projection_settings,
+                        timeline_payload=timeline_payload,
+                        start_year=utc_now().year,
+                    )
+                    baseline_projection = await run_scenarios_for_plan_settings(
+                        current_portfolio_value_usd=float(resolved_snapshot.total_value_usd),
+                        plan_settings=projection_settings,
+                        income_projection=income_projection,
+                        expense_projection=expense_projection,
+                        debt_projection=debt_projection,
+                        timeline_projection=timeline_projection,
+                        contribution_allocation=contribution_allocation,
+                        social_security_projection=social_security_projection,
+                        rmd_projection=rmd_projection,
+                        assumption_set=active_assumption_set,
+                        retirement_age=timeline_retirement_age,
+                        timeline_withdrawal_strategy=timeline_withdrawal_strategy,
+                    )
+                    baseline_projection_payload = baseline_projection.model_dump(mode="json")
+                    if (
+                        cache_enabled
+                        and projection_cache_key
+                        and isinstance(baseline_projection_payload, dict)
+                    ):
+                        copilot_context_projection_cache.set(
+                            projection_cache_key,
+                            baseline_projection_payload,
+                            ttl_seconds=settings.copilot_context_projection_cache_ttl_seconds,
+                        )
+                except Exception as exc:
+                    warnings.append(f"Baseline projection context unavailable: {exc}")
 
     research_period_value = str(research_period or "").strip() or "6mo"
     research_interval_value = str(research_interval or "").strip() or "1d"
@@ -2913,60 +2957,93 @@ async def build_buildwealth_context_payload(
     )
     research_items: list[dict[str, Any]] = []
     research_warnings: list[str] = []
+    research_cache_key: str | None = None
 
     if include_research:
-        for symbol in research_symbols_for_context:
-            quote_response = research_service.quote(symbol=symbol)
-            quote_row = quote_response.records[0] if quote_response.records else {}
-            if not isinstance(quote_row, dict):
-                quote_row = {}
-            quote_price = _extract_numeric_field(
-                quote_row,
-                (
-                    "last",
-                    "price",
-                    "close",
-                    "adj_close",
-                    "regular_market_price",
-                    "post_market_price",
-                ),
+        research_cache_key = _build_context_cache_key(
+            "research",
+            {
+                "provider": settings.openbb_provider,
+                "period": research_period_value,
+                "interval": research_interval_value,
+                "symbols": research_symbols_for_context,
+            },
+        )
+        if cache_enabled:
+            research_cache_hit, cached_research_payload = copilot_context_research_cache.lookup(
+                research_cache_key
             )
-            quote_change_pct = _extract_numeric_field(
-                quote_row,
-                (
-                    "change_percent",
-                    "change_pct",
-                    "percent_change",
-                    "regular_market_change_percent",
-                ),
-            )
+            if research_cache_hit and isinstance(cached_research_payload, dict):
+                cached_items = cached_research_payload.get("items")
+                cached_warnings = cached_research_payload.get("warnings")
+                if isinstance(cached_items, list):
+                    research_items = [item for item in cached_items if isinstance(item, dict)]
+                if isinstance(cached_warnings, list):
+                    research_warnings = [str(item) for item in cached_warnings]
 
-            history_response = research_service.price_history(
-                symbol=symbol,
-                period=research_period_value,
-                interval=research_interval_value,
-            )
-            history_records = [row for row in history_response.records if isinstance(row, dict)]
-            first_close, last_close, period_change_pct = _compute_price_history_change(history_records)
-            research_items.append(
-                {
-                    "symbol": symbol,
-                    "quote_available": quote_response.available,
-                    "quote_price": quote_price,
-                    "quote_change_pct": quote_change_pct,
-                    "quote_message": quote_response.message,
-                    "history_available": history_response.available,
-                    "history_message": history_response.message,
-                    "period_label": research_period_value,
-                    "period_first_close": first_close,
-                    "period_last_close": last_close,
-                    "period_change_pct": period_change_pct,
-                }
-            )
-            if not quote_response.available:
-                research_warnings.append(f"{symbol}: quote unavailable ({quote_response.message})")
-            if not history_response.available:
-                research_warnings.append(f"{symbol}: history unavailable ({history_response.message})")
+        if not research_cache_hit:
+            for symbol in research_symbols_for_context:
+                quote_response = research_service.quote(symbol=symbol)
+                quote_row = quote_response.records[0] if quote_response.records else {}
+                if not isinstance(quote_row, dict):
+                    quote_row = {}
+                quote_price = _extract_numeric_field(
+                    quote_row,
+                    (
+                        "last",
+                        "price",
+                        "close",
+                        "adj_close",
+                        "regular_market_price",
+                        "post_market_price",
+                    ),
+                )
+                quote_change_pct = _extract_numeric_field(
+                    quote_row,
+                    (
+                        "change_percent",
+                        "change_pct",
+                        "percent_change",
+                        "regular_market_change_percent",
+                    ),
+                )
+
+                history_response = research_service.price_history(
+                    symbol=symbol,
+                    period=research_period_value,
+                    interval=research_interval_value,
+                )
+                history_records = [row for row in history_response.records if isinstance(row, dict)]
+                first_close, last_close, period_change_pct = _compute_price_history_change(history_records)
+                research_items.append(
+                    {
+                        "symbol": symbol,
+                        "quote_available": quote_response.available,
+                        "quote_price": quote_price,
+                        "quote_change_pct": quote_change_pct,
+                        "quote_message": quote_response.message,
+                        "history_available": history_response.available,
+                        "history_message": history_response.message,
+                        "period_label": research_period_value,
+                        "period_first_close": first_close,
+                        "period_last_close": last_close,
+                        "period_change_pct": period_change_pct,
+                    }
+                )
+                if not quote_response.available:
+                    research_warnings.append(f"{symbol}: quote unavailable ({quote_response.message})")
+                if not history_response.available:
+                    research_warnings.append(f"{symbol}: history unavailable ({history_response.message})")
+
+            if cache_enabled and research_cache_key:
+                copilot_context_research_cache.set(
+                    research_cache_key,
+                    {
+                        "items": research_items,
+                        "warnings": research_warnings,
+                    },
+                    ttl_seconds=settings.copilot_context_research_cache_ttl_seconds,
+                )
 
     context_payload: dict[str, Any] = {
         "generated_at": context_utc_now_iso(),
@@ -2975,6 +3052,18 @@ async def build_buildwealth_context_payload(
             "use_live_snapshot": bool(use_live_snapshot),
             "include_research": bool(include_research),
             "include_plan_projection": bool(include_plan_projection),
+        },
+        "cache": {
+            "enabled": bool(settings.copilot_context_cache_enabled),
+            "force_refresh": bool(force_refresh),
+            "research": {
+                "hit": bool(research_cache_hit),
+                "ttl_seconds": float(settings.copilot_context_research_cache_ttl_seconds),
+            },
+            "baseline_projection": {
+                "hit": bool(projection_cache_hit),
+                "ttl_seconds": float(settings.copilot_context_projection_cache_ttl_seconds),
+            },
         },
         "location_state": settings.app_state,
         "currency": settings.app_currency,
@@ -3043,6 +3132,7 @@ async def build_contextual_brief(
     plan_id: str | None = None,
     include_research: bool = False,
     include_plan_projection: bool = False,
+    force_refresh: bool = False,
     research_symbols: list[str] | None = None,
     research_period: str = "6mo",
     research_interval: str = "1d",
@@ -3054,6 +3144,7 @@ async def build_contextual_brief(
         plan_id=plan_id,
         include_research=include_research,
         include_plan_projection=include_plan_projection,
+        force_refresh=force_refresh,
         research_symbols=research_symbols,
         research_period=research_period,
         research_interval=research_interval,
@@ -3116,6 +3207,7 @@ async def tool_get_buildwealth_context(arguments: dict[str, object]) -> dict[str
     use_live_snapshot = _coerce_bool(arguments.get("use_live_snapshot"), False)
     include_research = _coerce_bool(arguments.get("include_research"), True)
     include_plan_projection = _coerce_bool(arguments.get("include_plan_projection"), True)
+    force_refresh = _coerce_bool(arguments.get("force_refresh"), False)
 
     symbol_limit = max(
         0,
@@ -3140,6 +3232,7 @@ async def tool_get_buildwealth_context(arguments: dict[str, object]) -> dict[str
         use_live_snapshot=use_live_snapshot,
         plan_id=(plan_id or None),
         include_research=include_research,
+        force_refresh=force_refresh,
         research_symbols=normalize_research_symbols(symbol_inputs, max_symbols=symbol_limit),
         research_period=str(arguments.get("research_period") or "6mo"),
         research_interval=str(arguments.get("research_interval") or "1d"),
@@ -3607,6 +3700,178 @@ async def tool_research_price_history(arguments: dict[str, object]) -> dict[str,
     return result
 
 
+def _normalize_account_total_rows(payload: Any) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]]
+    if isinstance(payload, dict):
+        rows = [item for item in payload.values() if isinstance(item, dict)]
+    elif isinstance(payload, list):
+        rows = [item for item in payload if isinstance(item, dict)]
+    else:
+        rows = []
+
+    normalized: list[dict[str, Any]] = []
+    for row in rows:
+        account_id = str(row.get("account_id") or row.get("id") or "").strip()
+        if not account_id:
+            continue
+        normalized.append(
+            {
+                "account_id": account_id,
+                "name": str(row.get("name") or account_id),
+                "type": str(row.get("type") or "unknown"),
+                "currency": str(row.get("currency") or settings.app_currency),
+                "market_value": round(_coerce_float(row.get("market_value"), 0.0), 2),
+                "cash_balance": round(_coerce_float(row.get("cash_balance"), 0.0), 2),
+                "cost_basis": round(_coerce_float(row.get("cost_basis"), 0.0), 2),
+                "total_value": round(_coerce_float(row.get("total_value"), 0.0), 2),
+                "net_performance": round(_coerce_float(row.get("net_performance"), 0.0), 2),
+                "net_performance_pct": round(_coerce_float(row.get("net_performance_pct"), 0.0), 2),
+                "holdings_count": max(0, _coerce_int(row.get("holdings_count"), 0)),
+            }
+        )
+
+    normalized.sort(key=lambda item: _coerce_float(item.get("total_value"), 0.0), reverse=True)
+    return normalized
+
+
+def _normalize_allocation_rows(rows: Any, *, top_n: int) -> list[dict[str, Any]]:
+    if not isinstance(rows, list):
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key") or "").strip()
+        if not key:
+            continue
+        normalized.append(
+            {
+                "key": key,
+                "value": round(_coerce_float(item.get("value"), 0.0), 2),
+                "allocation_pct": round(_coerce_float(item.get("allocation_pct"), 0.0), 2),
+            }
+        )
+
+    normalized.sort(key=lambda item: _coerce_float(item.get("value"), 0.0), reverse=True)
+    return normalized[:top_n]
+
+
+async def tool_get_account_balances(arguments: dict[str, object]) -> dict[str, object]:
+    use_live_snapshot = _coerce_bool(arguments.get("use_live_snapshot"), False)
+    include_holdings = _coerce_bool(arguments.get("include_holdings"), False)
+    holdings_limit_per_account = max(1, min(_coerce_int(arguments.get("holdings_limit_per_account"), 8), 25))
+
+    if use_live_snapshot:
+        await build_live_snapshot()
+
+    holdings_payload = portfolio_store.get_holdings()
+    account_rows = _normalize_account_total_rows(holdings_payload.get("account_totals"))
+
+    response: dict[str, Any] = {
+        "as_of": holdings_payload.get("updated_at"),
+        "base_currency": str(holdings_payload.get("base_currency") or settings.app_currency),
+        "count": len(account_rows),
+        "total_portfolio_value": round(_coerce_float(holdings_payload.get("total_portfolio_value"), 0.0), 2),
+        "total_cash": round(_coerce_float(holdings_payload.get("total_cash"), 0.0), 2),
+        "accounts": account_rows,
+    }
+
+    if not include_holdings:
+        return response
+
+    holdings_by_account: dict[str, list[dict[str, Any]]] = {}
+    holdings_rows = holdings_payload.get("holdings")
+    if isinstance(holdings_rows, dict):
+        for row in holdings_rows.values():
+            if not isinstance(row, dict):
+                continue
+            account_id = str(row.get("account") or "").strip()
+            symbol = str(row.get("symbol") or "").strip().upper()
+            if not account_id or not symbol:
+                continue
+            holdings_by_account.setdefault(account_id, []).append(
+                {
+                    "symbol": symbol,
+                    "name": row.get("name"),
+                    "quantity": round(_coerce_float(row.get("quantity"), 0.0), 8),
+                    "current_value": round(_coerce_float(row.get("current_value"), 0.0), 2),
+                    "allocation_percent": round(_coerce_float(row.get("allocation_percent"), 0.0), 2),
+                    "net_performance": round(_coerce_float(row.get("net_performance"), 0.0), 2),
+                    "asset_class": row.get("asset_class"),
+                    "sector": row.get("sector"),
+                    "region": row.get("region"),
+                }
+            )
+
+    for account_id, rows in holdings_by_account.items():
+        rows.sort(key=lambda item: _coerce_float(item.get("current_value"), 0.0), reverse=True)
+        holdings_by_account[account_id] = rows[:holdings_limit_per_account]
+
+    response["holdings_by_account"] = holdings_by_account
+    return response
+
+
+async def tool_get_asset_allocation(arguments: dict[str, object]) -> dict[str, object]:
+    use_live_snapshot = _coerce_bool(arguments.get("use_live_snapshot"), False)
+    dimension = str(arguments.get("dimension") or "asset_class").strip().lower()
+    if dimension not in {"asset_class", "sector", "region", "all"}:
+        raise ValueError("dimension must be one of: asset_class, sector, region, all")
+    top_n = max(1, min(_coerce_int(arguments.get("top_n"), 10), 100))
+
+    if use_live_snapshot:
+        await build_live_snapshot()
+
+    holdings_payload = portfolio_store.get_holdings()
+    breakdowns_raw = holdings_payload.get("allocation_breakdowns")
+    if not isinstance(breakdowns_raw, dict):
+        breakdowns_raw = {}
+
+    dimensions = ("asset_class", "sector", "region") if dimension == "all" else (dimension,)
+    breakdowns: dict[str, list[dict[str, Any]]] = {}
+    for key in dimensions:
+        breakdowns[key] = _normalize_allocation_rows(breakdowns_raw.get(key), top_n=top_n)
+
+    return {
+        "as_of": holdings_payload.get("updated_at"),
+        "base_currency": str(holdings_payload.get("base_currency") or settings.app_currency),
+        "dimension": dimension,
+        "top_n": top_n,
+        "breakdowns": breakdowns,
+    }
+
+
+async def tool_compute_tax(arguments: dict[str, object]) -> dict[str, object]:
+    filing_status = str(arguments.get("filing_status") or "single").strip().lower() or "single"
+    if filing_status not in {
+        "single",
+        "married_filing_jointly",
+        "married_filing_separately",
+        "head_of_household",
+    }:
+        raise ValueError(
+            "filing_status must be one of: single, married_filing_jointly, "
+            "married_filing_separately, head_of_household"
+        )
+
+    tax_year = max(1900, min(_coerce_int(arguments.get("tax_year"), utc_now().year), 2500))
+
+    payload = estimate_federal_tax(
+        tax_year=tax_year,
+        filing_status=filing_status,
+        earned_income_usd=_coerce_float(arguments.get("earned_income_usd"), 0.0),
+        ordinary_income_usd=_coerce_float(arguments.get("ordinary_income_usd"), 0.0),
+        short_term_capital_gains_usd=_coerce_float(arguments.get("short_term_capital_gains_usd"), 0.0),
+        long_term_capital_gains_usd=_coerce_float(arguments.get("long_term_capital_gains_usd"), 0.0),
+        qualified_dividends_usd=_coerce_float(arguments.get("qualified_dividends_usd"), 0.0),
+        interest_income_usd=_coerce_float(arguments.get("interest_income_usd"), 0.0),
+        social_security_income_usd=_coerce_float(arguments.get("social_security_income_usd"), 0.0),
+        pre_tax_contributions_usd=max(0.0, _coerce_float(arguments.get("pre_tax_contributions_usd"), 0.0)),
+        tax_withholding_usd=max(0.0, _coerce_float(arguments.get("tax_withholding_usd"), 0.0)),
+    )
+    return TaxEstimateResponse(**payload).model_dump(mode="json")
+
+
 async def tool_list_accounts(_: dict[str, object]) -> dict[str, object]:
     accounts = portfolio_store.get_accounts()
     return {"count": len(accounts), "accounts": accounts}
@@ -4066,6 +4331,7 @@ def configure_copilot_tools() -> None:
                 "plan_id": {"type": "string"},
                 "use_live_snapshot": {"type": "boolean"},
                 "include_research": {"type": "boolean"},
+                "force_refresh": {"type": "boolean"},
                 "research_symbols": {"type": "array", "items": {"type": "string"}},
                 "research_period": {"type": "string"},
                 "research_interval": {"type": "string"},
@@ -4284,6 +4550,31 @@ def configure_copilot_tools() -> None:
         handler=tool_run_planning,
     )
     copilot.register_tool(
+        name="compute_tax",
+        description=(
+            "Compute a federal tax estimate (including ordinary income, capital gains, NIIT, and FICA) "
+            "for a given tax-year and filing-status assumption."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "tax_year": {"type": "integer"},
+                "filing_status": {"type": "string"},
+                "earned_income_usd": {"type": "number"},
+                "ordinary_income_usd": {"type": "number"},
+                "short_term_capital_gains_usd": {"type": "number"},
+                "long_term_capital_gains_usd": {"type": "number"},
+                "qualified_dividends_usd": {"type": "number"},
+                "interest_income_usd": {"type": "number"},
+                "social_security_income_usd": {"type": "number"},
+                "pre_tax_contributions_usd": {"type": "number"},
+                "tax_withholding_usd": {"type": "number"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_compute_tax,
+    )
+    copilot.register_tool(
         name="project_income_growth",
         description=(
             "Project annual income over time using income-item growth rates and optional start/end dates. "
@@ -4432,6 +4723,39 @@ def configure_copilot_tools() -> None:
         description="List known Ghostfolio accounts with balances and metadata.",
         parameters=empty_schema,
         handler=tool_list_accounts,
+    )
+    copilot.register_tool(
+        name="get_account_balances",
+        description=(
+            "Read account-level balances (market value, cash, cost basis, performance). "
+            "Optional: include per-account top holdings and refresh prices first."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "use_live_snapshot": {"type": "boolean"},
+                "include_holdings": {"type": "boolean"},
+                "holdings_limit_per_account": {"type": "integer"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_get_account_balances,
+    )
+    copilot.register_tool(
+        name="get_asset_allocation",
+        description=(
+            "Read allocation breakdowns by asset_class, sector, or region from local holdings metadata."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "use_live_snapshot": {"type": "boolean"},
+                "dimension": {"type": "string"},
+                "top_n": {"type": "integer"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_get_asset_allocation,
     )
     copilot.register_tool(
         name="list_plans",
@@ -5743,6 +6067,7 @@ async def get_copilot_context(
     plan_id: str | None = None,
     include_research: bool = True,
     include_plan_projection: bool = True,
+    force_refresh: bool = False,
     research_symbols: str | None = None,
     research_period: str = "6mo",
     research_interval: str = "1d",
@@ -5760,6 +6085,7 @@ async def get_copilot_context(
         use_live_snapshot=use_live_snapshot,
         plan_id=plan_id,
         include_research=include_research,
+        force_refresh=force_refresh,
         research_symbols=symbols_input,
         research_period=research_period,
         research_interval=research_interval,
@@ -5799,6 +6125,7 @@ async def copilot_chat(request: CopilotChatRequest) -> CopilotChatResponse:
         plan_id=request.plan_id,
         include_research=context_options.include_research,
         include_plan_projection=context_options.include_plan_projection,
+        force_refresh=context_options.force_refresh,
         research_symbols=context_symbols,
         research_period=context_options.research_period,
         research_interval=context_options.research_interval,
