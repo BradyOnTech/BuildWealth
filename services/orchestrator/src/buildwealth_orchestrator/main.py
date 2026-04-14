@@ -51,6 +51,9 @@ from buildwealth_orchestrator.schemas import (
     PlanAssumptionSetsUpdateRequest,
     PlanScenarioBranchTemplatesResponse,
     PlanScenarioBranchTemplatesUpdateRequest,
+    PlanResearchBridgeRequest,
+    PlanResearchBridgeResponse,
+    PlanResearchBridgePinnedItem,
     ScenarioComparisonRow,
     PlanSummary,
     PlanUpdateRequest,
@@ -365,6 +368,7 @@ copilot = FinancialCopilot(
         "- For 'what if I change my contributions?' → call run_plan_scenario_diff.\n"
         "- For life-event what-ifs (job loss, raise, new recurring costs) → call run_plan_scenario_branch.\n"
         "- For reusable life-event presets/templates → call get_plan_branch_templates or update_plan_branch_templates.\n"
+        "- To move research watchlist thesis into planning branches → call pin_watchlist_research_to_plan.\n"
         "- For 'what should I do?' → call get_today_dashboard and list_recommendations.\n"
         "- For stock/investment research → call research_quote or research_price_history, "
         "then call simulate_trade to show how buying it would affect portfolio allocation.\n"
@@ -1225,6 +1229,138 @@ def parse_branch_templates_payload(raw_payload: Any) -> dict[str, Any]:
         "default_template_id": default_template_id or None,
         "templates": templates,
     }
+
+
+RESEARCH_BRIDGE_TEMPLATE_ID = "research_watchlist_bridge"
+RESEARCH_BRIDGE_TEMPLATE_NAME = "Research Watchlist Thesis"
+RESEARCH_BRIDGE_NOTE_PREFIX = "[research-bridge]"
+
+
+def _sanitize_branch_template_id(raw_template_id: Any, fallback: str = RESEARCH_BRIDGE_TEMPLATE_ID) -> str:
+    template_id = str(raw_template_id or "").strip().lower()
+    if not template_id:
+        template_id = fallback
+    template_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", template_id).strip("-").lower()
+    return template_id or fallback
+
+
+def _extract_watchlist_item_for_research_bridge(raw_item: dict[str, Any]) -> dict[str, Any] | None:
+    symbol = str(raw_item.get("symbol") or "").strip().upper()
+    if not symbol:
+        return None
+
+    tags_raw = raw_item.get("tags")
+    tags: list[str] = []
+    if isinstance(tags_raw, list):
+        seen_tags: set[str] = set()
+        for raw_tag in tags_raw:
+            tag = str(raw_tag or "").strip()
+            if not tag:
+                continue
+            normalized_tag = tag.lower()
+            if normalized_tag in seen_tags:
+                continue
+            seen_tags.add(normalized_tag)
+            tags.append(tag)
+
+    target_price = raw_item.get("target_price_usd")
+    target_price_usd: float | None
+    if target_price is None:
+        target_price_usd = None
+    else:
+        try:
+            target_price_usd = float(target_price)
+        except (TypeError, ValueError):
+            target_price_usd = None
+        if target_price_usd is not None and target_price_usd <= 0:
+            target_price_usd = None
+
+    return {
+        "symbol": symbol,
+        "data_source": str(raw_item.get("data_source") or "OPENBB").strip().upper() or "OPENBB",
+        "thesis": str(raw_item.get("thesis") or "").strip(),
+        "note": str(raw_item.get("note") or "").strip(),
+        "target_price_usd": target_price_usd,
+        "tags": tags,
+    }
+
+
+def select_research_bridge_watchlist_items(
+    *,
+    watchlist_items: list[dict[str, Any]] | None,
+    requested_symbols: list[str] | None = None,
+    max_symbols: int = 5,
+) -> list[dict[str, Any]]:
+    normalized_requested = normalize_research_symbols(requested_symbols or [], max_symbols=20)
+    bounded_max_symbols = max(1, min(int(max_symbols), 20))
+
+    by_symbol: dict[str, dict[str, Any]] = {}
+    for raw in watchlist_items or []:
+        if not isinstance(raw, dict):
+            continue
+        normalized_item = _extract_watchlist_item_for_research_bridge(raw)
+        if not normalized_item:
+            continue
+        symbol = normalized_item["symbol"]
+        if symbol not in by_symbol:
+            by_symbol[symbol] = normalized_item
+
+    if not by_symbol:
+        return []
+
+    if normalized_requested:
+        selected = [by_symbol[symbol] for symbol in normalized_requested if symbol in by_symbol]
+    else:
+        selected = [by_symbol[symbol] for symbol in sorted(by_symbol.keys())]
+
+    return selected[:bounded_max_symbols]
+
+
+def _format_research_bridge_note(item: dict[str, Any]) -> str:
+    parts = [f"{RESEARCH_BRIDGE_NOTE_PREFIX} symbol={item.get('symbol', '')}"]
+    thesis = str(item.get("thesis") or "").strip()
+    note = str(item.get("note") or "").strip()
+    target_price_usd = item.get("target_price_usd")
+    tags = item.get("tags")
+
+    if thesis:
+        parts.append(f"thesis: {thesis}")
+    if note:
+        parts.append(f"note: {note}")
+    if target_price_usd is not None:
+        parts.append(f"target_price_usd: {float(target_price_usd):.4f}")
+    if isinstance(tags, list) and tags:
+        parts.append("tags: " + ", ".join(str(tag) for tag in tags))
+    return " | ".join(parts)
+
+
+def build_research_bridge_branch_events(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    # Preserve Ignidash-compatible branch event structure: the bridge uses
+    # zero-impact milestone events to attach research context to scenario branches.
+    events: list[dict[str, Any]] = []
+    for item in items:
+        symbol = str(item.get("symbol") or "").strip().upper()
+        if not symbol:
+            continue
+        events.append(
+            {
+                "label": f"Research Thesis: {symbol}",
+                "event_type": "milestone",
+                "impact_type": "portfolio",
+                "amount_usd": 0.0,
+                "recurring_frequency": "one_time",
+                "start_year_offset": 0,
+                "duration_months": None,
+                "account_id": None,
+                "notes": _format_research_bridge_note(item),
+            }
+        )
+    return events
+
+
+def _is_research_bridge_event(raw_event: dict[str, Any]) -> bool:
+    notes = str(raw_event.get("notes") or "").strip().lower()
+    return RESEARCH_BRIDGE_NOTE_PREFIX in notes
 
 
 def resolve_plan_branch_templates(detail: dict[str, Any]) -> dict[str, Any]:
@@ -2471,6 +2607,138 @@ def _extract_decision_packet_symbols(
     return normalize_research_symbols(candidates, max_symbols=16)
 
 
+def _extract_recommendation_plan_settings_updates(
+    recommendation: dict[str, Any],
+    request_updates: dict[str, Any] | None = None,
+) -> dict[str, object]:
+    action_payload = recommendation.get("action_payload")
+    payload_updates_raw = (
+        action_payload.get("plan_settings_updates")
+        if isinstance(action_payload, dict)
+        else None
+    )
+    payload_updates = payload_updates_raw if isinstance(payload_updates_raw, dict) else {}
+    merged_updates: dict[str, object] = {
+        key: value
+        for key, value in payload_updates.items()
+        if isinstance(key, str)
+    }
+    if isinstance(request_updates, dict):
+        merged_updates.update(
+            {
+                key: value
+                for key, value in request_updates.items()
+                if isinstance(key, str)
+            }
+        )
+    return extract_plan_settings_updates(merged_updates)
+
+
+def _summarize_recommendation_scenario_diff_preview(
+    *,
+    diff_payload: dict[str, Any],
+    compare_updates: dict[str, object],
+    assumption_set_id: str | None = None,
+    candidate_assumption_set_id: str | None = None,
+) -> dict[str, Any]:
+    deltas_raw = diff_payload.get("scenario_deltas")
+    summarized_deltas: list[dict[str, Any]] = []
+    if isinstance(deltas_raw, list):
+        for row in deltas_raw:
+            if not isinstance(row, dict):
+                continue
+            summarized_deltas.append(
+                {
+                    "label": row.get("label"),
+                    "delta_future_value_usd": row.get("delta_future_value_usd"),
+                    "delta_real_value_usd": row.get("delta_real_value_usd"),
+                }
+            )
+
+    monte_raw = diff_payload.get("monte_carlo_delta")
+    monte_carlo_delta = monte_raw if isinstance(monte_raw, dict) else {}
+    return {
+        "status": "captured",
+        "captured_at": context_utc_now_iso(),
+        "plan_id": diff_payload.get("plan_id"),
+        "current_portfolio_value_usd": diff_payload.get("current_portfolio_value_usd"),
+        "compare_settings": compare_updates,
+        "assumption_set_id": assumption_set_id,
+        "candidate_assumption_set_id": candidate_assumption_set_id,
+        "scenario_deltas": summarized_deltas,
+        "monte_carlo_delta": monte_carlo_delta,
+    }
+
+
+async def build_recommendation_scenario_diff_preview(
+    recommendation: dict[str, Any],
+    *,
+    requested_plan_id: str | None = None,
+    request_updates: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    recommendation_type = str(recommendation.get("recommendation_type") or "").strip().lower()
+    if recommendation_type != "plan_settings_update":
+        return None
+
+    compare_updates = _extract_recommendation_plan_settings_updates(
+        recommendation,
+        request_updates=request_updates,
+    )
+    if not compare_updates:
+        return {
+            "status": "skipped",
+            "captured_at": context_utc_now_iso(),
+            "reason": "No plan settings updates were available for scenario diff capture.",
+        }
+
+    try:
+        plan_id = _resolve_recommendation_plan_id(recommendation, requested_plan_id)
+    except ValueError as exc:
+        return {
+            "status": "skipped",
+            "captured_at": context_utc_now_iso(),
+            "reason": str(exc),
+        }
+
+    action_payload = recommendation.get("action_payload")
+    assumption_set_id = None
+    candidate_assumption_set_id = None
+    if isinstance(action_payload, dict):
+        assumption_set_id = str(action_payload.get("assumption_set_id") or "").strip() or None
+        candidate_assumption_set_id = (
+            str(action_payload.get("candidate_assumption_set_id") or "").strip() or None
+        )
+
+    arguments: dict[str, object] = {
+        "plan_id": plan_id,
+        **compare_updates,
+    }
+    if assumption_set_id:
+        arguments["assumption_set_id"] = assumption_set_id
+    if candidate_assumption_set_id:
+        arguments["candidate_assumption_set_id"] = candidate_assumption_set_id
+
+    try:
+        diff_payload = await tool_run_plan_scenario_diff(arguments)
+    except Exception as exc:
+        return {
+            "status": "error",
+            "captured_at": context_utc_now_iso(),
+            "plan_id": plan_id,
+            "compare_settings": compare_updates,
+            "assumption_set_id": assumption_set_id,
+            "candidate_assumption_set_id": candidate_assumption_set_id,
+            "reason": str(exc),
+        }
+
+    return _summarize_recommendation_scenario_diff_preview(
+        diff_payload=diff_payload,
+        compare_updates=compare_updates,
+        assumption_set_id=assumption_set_id,
+        candidate_assumption_set_id=candidate_assumption_set_id,
+    )
+
+
 def _build_decision_packet_assumptions(
     plan_id: str,
     plan_detail: PlanDetailResponse | None,
@@ -2651,92 +2919,164 @@ async def apply_recommendation_with_decision_packet(
     recommendation_id: str,
     request: RecommendationApplyRequest,
 ) -> RecommendationActionResponse:
-    result = apply_recommendation(recommendation_id, request)
-    if not request.create_decision_packet or result.plan is None:
-        return result
+    pre_apply_recommendation = recommendation_inbox.get(recommendation_id)
+    scenario_diff_preview: dict[str, Any] | None = None
+    if request.capture_scenario_diff:
+        scenario_diff_preview = await build_recommendation_scenario_diff_preview(
+            pre_apply_recommendation,
+            requested_plan_id=request.plan_id,
+            request_updates=request.plan_settings_updates,
+        )
 
+    result = apply_recommendation(recommendation_id, request)
     recommendation_payload = result.recommendation.model_dump(mode="json")
-    plan_id = str(result.plan.id)
+    plan_id = str(result.plan.id) if result.plan is not None else ""
 
     context_payload: dict[str, Any] | None = None
     context_error: str | None = None
     requested_symbols = normalize_research_symbols(request.decision_packet_research_symbols, max_symbols=12)
-    try:
-        context_payload = await build_buildwealth_context_payload(
-            use_live_snapshot=False,
-            plan_id=plan_id,
-            include_research=True,
-            include_plan_projection=False,
-            force_refresh=False,
-            research_symbols=requested_symbols,
-            max_recommendations=10,
-            max_plan_decisions=8,
-            summary_max_chars=1800,
-            research_symbol_limit=max(DEFAULT_RESEARCH_SYMBOL_LIMIT, len(requested_symbols) or 0),
-            detail_level="light",
-        )
-    except Exception as exc:
-        context_error = str(exc)
+    if request.create_decision_packet and plan_id:
+        try:
+            context_payload = await build_buildwealth_context_payload(
+                use_live_snapshot=False,
+                plan_id=plan_id,
+                include_research=True,
+                include_plan_projection=False,
+                force_refresh=False,
+                research_symbols=requested_symbols,
+                max_recommendations=10,
+                max_plan_decisions=8,
+                summary_max_chars=1800,
+                research_symbol_limit=max(DEFAULT_RESEARCH_SYMBOL_LIMIT, len(requested_symbols) or 0),
+                detail_level="light",
+            )
+        except Exception as exc:
+            context_error = str(exc)
 
     cited_symbols = _extract_decision_packet_symbols(
         recommendation_payload,
         request_symbols=requested_symbols,
         context_payload=context_payload,
     )
-    assumptions_payload = _build_decision_packet_assumptions(plan_id, result.plan)
-    decision_status = str(request.decision_status or "accepted").strip() or "accepted"
-    rationale = request.rationale.strip() if request.rationale else str(recommendation_payload.get("detail") or "")
-    markdown = _build_decision_packet_markdown(
-        recommendation=recommendation_payload,
-        plan_id=plan_id,
-        rationale=rationale,
-        decision_status=decision_status,
-        cited_symbols=cited_symbols,
-        assumptions_payload=assumptions_payload,
-        context_payload=context_payload,
-        context_error=context_error,
-    )
+    suggested_symbols = normalize_research_symbols(cited_symbols, max_symbols=12)
+    decision_closure_payload: dict[str, Any] = {
+        "applied_at": context_utc_now_iso(),
+        "decision_status": str(request.decision_status or "accepted").strip() or "accepted",
+        "rationale": request.rationale.strip() if request.rationale else "",
+    }
+    if scenario_diff_preview:
+        decision_closure_payload["scenario_diff_preview"] = scenario_diff_preview
 
-    try:
-        artifact_payload = plan_workspace.write_artifact(
+    research_bridge_payload: dict[str, Any] = {}
+    research_bridge_message_suffix = ""
+    if result.plan is not None and request.pin_research_bridge:
+        requested_bridge_symbols = normalize_research_symbols(request.research_bridge_symbols, max_symbols=12)
+        candidate_bridge_symbols = requested_bridge_symbols or suggested_symbols
+        try:
+            research_bridge_response = pin_watchlist_research_bridge(
+                plan_id=plan_id,
+                request=PlanResearchBridgeRequest(
+                    branch_template_id=request.research_bridge_template_id,
+                    assumption_set_id=request.research_bridge_assumption_set_id,
+                    symbols=candidate_bridge_symbols,
+                    max_symbols=max(1, min(max(len(candidate_bridge_symbols), 5), 20)),
+                ),
+            )
+            pinned_symbols = normalize_research_symbols(research_bridge_response.pinned_symbols, max_symbols=12)
+            if pinned_symbols:
+                suggested_symbols = pinned_symbols
+            research_bridge_payload = {
+                "status": "pinned",
+                "template_id": research_bridge_response.template_id,
+                "template_name": research_bridge_response.template_name,
+                "pinned_symbols": pinned_symbols,
+                "requested_symbols": candidate_bridge_symbols,
+                "updated_at": context_utc_now_iso(),
+            }
+            research_bridge_message_suffix = (
+                f" Pinned {len(pinned_symbols)} research symbol(s) into template "
+                f"{research_bridge_response.template_id}."
+            )
+        except (PlanNotFoundError, ValueError) as exc:
+            research_bridge_payload = {
+                "status": "skipped",
+                "reason": str(exc),
+                "requested_symbols": candidate_bridge_symbols,
+                "updated_at": context_utc_now_iso(),
+            }
+            research_bridge_message_suffix = f" Research bridge skipped: {exc}."
+
+    artifact_summary: PlanArtifactSummary | None = None
+    decision_packet_message_suffix = ""
+    assumptions_payload: dict[str, Any] = {}
+    if request.create_decision_packet and result.plan is not None:
+        assumptions_payload = _build_decision_packet_assumptions(plan_id, result.plan)
+        decision_status = str(request.decision_status or "accepted").strip() or "accepted"
+        rationale = request.rationale.strip() if request.rationale else str(recommendation_payload.get("detail") or "")
+        markdown = _build_decision_packet_markdown(
+            recommendation=recommendation_payload,
             plan_id=plan_id,
-            title=f"Decision Packet - {recommendation_payload.get('title') or recommendation_id}",
-            markdown=markdown,
-            kind="decision_packet",
+            rationale=rationale,
+            decision_status=decision_status,
+            cited_symbols=suggested_symbols,
+            assumptions_payload=assumptions_payload,
+            context_payload=context_payload,
+            context_error=context_error,
         )
-        artifact_summary = PlanArtifactSummary(**artifact_payload)
-    except Exception as exc:
-        return RecommendationActionResponse(
-            recommendation=result.recommendation,
-            plan=result.plan,
-            decision_packet_artifact=None,
-            message=f"{result.message} Decision packet could not be written: {exc}",
-        )
+
+        try:
+            artifact_payload = plan_workspace.write_artifact(
+                plan_id=plan_id,
+                title=f"Decision Packet - {recommendation_payload.get('title') or recommendation_id}",
+                markdown=markdown,
+                kind="decision_packet",
+            )
+            artifact_summary = PlanArtifactSummary(**artifact_payload)
+            decision_packet_message_suffix = " Decision packet saved to plan artifacts."
+        except Exception as exc:
+            decision_packet_message_suffix = f" Decision packet could not be written: {exc}"
 
     action_payload_raw = recommendation_payload.get("action_payload")
     action_payload = dict(action_payload_raw) if isinstance(action_payload_raw, dict) else {}
-    action_payload["decision_packet"] = {
-        "artifact_id": artifact_summary.id,
-        "file_name": artifact_summary.file_name,
-        "plan_id": plan_id,
-        "created_at": artifact_summary.created_at.isoformat(),
-        "decision_status": decision_status,
-        "cited_research_symbols": cited_symbols,
-        "context_generated_at": context_payload.get("generated_at") if isinstance(context_payload, dict) else None,
-        "assumption_set_id": assumptions_payload.get("active_assumption_set_id"),
-    }
+    if suggested_symbols:
+        action_payload["suggested_research_symbols"] = suggested_symbols
+    if research_bridge_payload:
+        action_payload["research_bridge"] = research_bridge_payload
+    if decision_closure_payload:
+        action_payload["decision_closure"] = decision_closure_payload
+    if artifact_summary is not None:
+        decision_status = str(request.decision_status or "accepted").strip() or "accepted"
+        action_payload["decision_packet"] = {
+            "artifact_id": artifact_summary.id,
+            "file_name": artifact_summary.file_name,
+            "plan_id": plan_id,
+            "created_at": artifact_summary.created_at.isoformat(),
+            "decision_status": decision_status,
+            "cited_research_symbols": suggested_symbols,
+            "context_generated_at": context_payload.get("generated_at") if isinstance(context_payload, dict) else None,
+            "assumption_set_id": assumptions_payload.get("active_assumption_set_id"),
+        }
 
-    updated_recommendation = recommendation_inbox.update(
-        recommendation_id,
-        updates={"action_payload": action_payload},
+    updated_recommendation_payload = recommendation_payload
+    if action_payload:
+        updated_recommendation_payload = recommendation_inbox.update(
+            recommendation_id,
+            updates={"action_payload": action_payload},
+        )
+    refreshed_plan = (
+        PlanDetailResponse(**plan_workspace.get_plan(plan_id))
+        if result.plan is not None
+        else None
     )
-    refreshed_plan = PlanDetailResponse(**plan_workspace.get_plan(plan_id))
 
     return RecommendationActionResponse(
-        recommendation=RecommendationItem(**updated_recommendation),
+        recommendation=RecommendationItem(**updated_recommendation_payload),
         plan=refreshed_plan,
         decision_packet_artifact=artifact_summary,
-        message=f"{result.message} Decision packet saved to plan artifacts.",
+        suggested_research_symbols=suggested_symbols,
+        research_bridge=research_bridge_payload,
+        decision_closure=decision_closure_payload,
+        message=f"{result.message}{decision_packet_message_suffix}{research_bridge_message_suffix}",
     )
 
 
@@ -2794,27 +3134,65 @@ def apply_recommendation(
         status="applied",
         resolution_note=request.rationale.strip() if request.rationale else "",
     )
+    suggested_symbols = _extract_decision_packet_symbols(recommendation, request_symbols=request.decision_packet_research_symbols)
     return RecommendationActionResponse(
         recommendation=RecommendationItem(**recommendation),
         plan=plan_detail,
+        suggested_research_symbols=suggested_symbols,
         message=message,
     )
 
 
-def reject_recommendation(recommendation_id: str, reason: str = "") -> RecommendationActionResponse:
+async def reject_recommendation(
+    recommendation_id: str,
+    reason: str = "",
+    *,
+    capture_scenario_diff: bool = True,
+) -> RecommendationActionResponse:
     recommendation = recommendation_inbox.get(recommendation_id)
     current_status = str(recommendation.get("status", "proposed")).strip().lower()
     if current_status in {"applied", "rejected"}:
         raise ValueError(f"Recommendation status is '{current_status}' and cannot be rejected.")
+
+    scenario_diff_preview: dict[str, Any] | None = None
+    if capture_scenario_diff:
+        scenario_diff_preview = await build_recommendation_scenario_diff_preview(recommendation)
 
     updated = recommendation_inbox.set_status(
         recommendation_id,
         status="rejected",
         resolution_note=reason,
     )
+    action_payload_raw = updated.get("action_payload")
+    action_payload = dict(action_payload_raw) if isinstance(action_payload_raw, dict) else {}
+    if scenario_diff_preview is not None:
+        decision_closure_raw = action_payload.get("decision_closure")
+        decision_closure = (
+            dict(decision_closure_raw)
+            if isinstance(decision_closure_raw, dict)
+            else {}
+        )
+        decision_closure["rejected_at"] = context_utc_now_iso()
+        decision_closure["decision_status"] = "rejected"
+        decision_closure["reason"] = reason
+        decision_closure["scenario_diff_preview"] = scenario_diff_preview
+        action_payload["decision_closure"] = decision_closure
+        updated = recommendation_inbox.update(
+            recommendation_id,
+            updates={"action_payload": action_payload},
+        )
+
+    suggested_symbols = _extract_decision_packet_symbols(updated)
+    decision_closure_payload = (
+        action_payload.get("decision_closure")
+        if isinstance(action_payload.get("decision_closure"), dict)
+        else {}
+    )
     return RecommendationActionResponse(
         recommendation=RecommendationItem(**updated),
         plan=None,
+        suggested_research_symbols=suggested_symbols,
+        decision_closure=decision_closure_payload,
         message="Recommendation rejected.",
     )
 
@@ -4072,10 +4450,21 @@ async def tool_apply_recommendation(arguments: dict[str, object]) -> dict[str, o
         rationale=str(arguments.get("rationale") or ""),
         decision_status=str(arguments.get("decision_status") or "accepted"),
         create_decision_packet=_coerce_bool(arguments.get("create_decision_packet"), True),
+        capture_scenario_diff=_coerce_bool(arguments.get("capture_scenario_diff"), True),
         decision_packet_research_symbols=(
             [str(item) for item in arguments.get("decision_packet_research_symbols")]
             if isinstance(arguments.get("decision_packet_research_symbols"), list)
             else []
+        ),
+        pin_research_bridge=_coerce_bool(arguments.get("pin_research_bridge"), True),
+        research_bridge_symbols=(
+            [str(item) for item in arguments.get("research_bridge_symbols")]
+            if isinstance(arguments.get("research_bridge_symbols"), list)
+            else []
+        ),
+        research_bridge_template_id=(str(arguments.get("research_bridge_template_id") or "").strip() or None),
+        research_bridge_assumption_set_id=(
+            str(arguments.get("research_bridge_assumption_set_id") or "").strip() or None
         ),
     )
     result = await apply_recommendation_with_decision_packet(recommendation_id, payload)
@@ -4087,8 +4476,37 @@ async def tool_reject_recommendation(arguments: dict[str, object]) -> dict[str, 
     if not recommendation_id:
         raise ValueError("recommendation_id is required")
     reason = str(arguments.get("reason") or "").strip()
-    result = reject_recommendation(recommendation_id, reason=reason)
+    result = await reject_recommendation(
+        recommendation_id,
+        reason=reason,
+        capture_scenario_diff=_coerce_bool(arguments.get("capture_scenario_diff"), True),
+    )
     return result.model_dump(mode="json")
+
+
+async def tool_pin_watchlist_research_to_plan(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+    raw_symbols = arguments.get("symbols")
+    symbols: list[str]
+    if isinstance(raw_symbols, list):
+        symbols = [str(item) for item in raw_symbols]
+    elif isinstance(raw_symbols, str):
+        symbols = [item.strip() for item in raw_symbols.split(",") if item.strip()]
+    else:
+        symbols = []
+
+    response = pin_watchlist_research_bridge(
+        plan_id=plan_id,
+        request=PlanResearchBridgeRequest(
+            branch_template_id=(str(arguments.get("branch_template_id") or "").strip() or None),
+            template_name=(str(arguments.get("template_name") or "").strip() or None),
+            branch_name=(str(arguments.get("branch_name") or "").strip() or None),
+            assumption_set_id=(str(arguments.get("assumption_set_id") or "").strip() or None),
+            symbols=symbols,
+            max_symbols=max(1, min(_coerce_int(arguments.get("max_symbols"), 5), 20)),
+        ),
+    )
+    return response.model_dump(mode="json")
 
 
 async def tool_run_sync(_: dict[str, object]) -> dict[str, object]:
@@ -5549,7 +5967,8 @@ def configure_copilot_tools() -> None:
         name="apply_recommendation",
         description=(
             "Apply a recommendation. For plan_settings_update recommendations, may include plan_settings_updates overrides. "
-            "By default this also writes a decision packet artifact with context, assumptions, and cited research symbols."
+            "By default this also writes a decision packet artifact with context, assumptions, and cited research symbols, "
+            "and attempts to pin research symbols into branch templates."
         ),
         parameters={
             "type": "object",
@@ -5560,7 +5979,12 @@ def configure_copilot_tools() -> None:
                 "rationale": {"type": "string"},
                 "decision_status": {"type": "string"},
                 "create_decision_packet": {"type": "boolean"},
+                "capture_scenario_diff": {"type": "boolean"},
                 "decision_packet_research_symbols": {"type": "array", "items": {"type": "string"}},
+                "pin_research_bridge": {"type": "boolean"},
+                "research_bridge_symbols": {"type": "array", "items": {"type": "string"}},
+                "research_bridge_template_id": {"type": "string"},
+                "research_bridge_assumption_set_id": {"type": "string"},
             },
             "required": ["recommendation_id"],
             "additionalProperties": False,
@@ -5569,12 +5993,16 @@ def configure_copilot_tools() -> None:
     )
     copilot.register_tool(
         name="reject_recommendation",
-        description="Reject a recommendation inbox item with an optional reason.",
+        description=(
+            "Reject a recommendation inbox item with an optional reason. "
+            "By default captures a scenario-diff preview for plan-setting recommendations."
+        ),
         parameters={
             "type": "object",
             "properties": {
                 "recommendation_id": {"type": "string"},
                 "reason": {"type": "string"},
+                "capture_scenario_diff": {"type": "boolean"},
             },
             "required": ["recommendation_id"],
             "additionalProperties": False,
@@ -6031,6 +6459,27 @@ def configure_copilot_tools() -> None:
             "additionalProperties": False,
         },
         handler=tool_update_plan_branch_templates,
+    )
+    copilot.register_tool(
+        name="pin_watchlist_research_to_plan",
+        description=(
+            "Pin watchlist thesis/target/tags into a plan branch template so research context is "
+            "available in scenario branch workflows."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                "branch_template_id": {"type": "string"},
+                "template_name": {"type": "string"},
+                "branch_name": {"type": "string"},
+                "assumption_set_id": {"type": "string"},
+                "symbols": {"type": "array", "items": {"type": "string"}},
+                "max_symbols": {"type": "integer"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_pin_watchlist_research_to_plan,
     )
     copilot.register_tool(
         name="run_plan_scenario_diff",
@@ -6802,12 +7251,16 @@ async def apply_recommendation_route(
 
 
 @app.post("/api/recommendations/{recommendation_id}/reject", response_model=RecommendationActionResponse)
-def reject_recommendation_route(
+async def reject_recommendation_route(
     recommendation_id: str,
     request: RecommendationRejectRequest,
 ) -> RecommendationActionResponse:
     try:
-        return reject_recommendation(recommendation_id, reason=request.reason)
+        return await reject_recommendation(
+            recommendation_id,
+            reason=request.reason,
+            capture_scenario_diff=request.capture_scenario_diff,
+        )
     except RecommendationNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -7021,6 +7474,155 @@ def update_plan_branch_templates(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return PlanScenarioBranchTemplatesResponse(**payload)
+
+
+def pin_watchlist_research_bridge(
+    plan_id: str,
+    request: PlanResearchBridgeRequest,
+) -> PlanResearchBridgeResponse:
+    branch_templates_payload = plan_workspace.get_plan_branch_templates(plan_id)
+
+    selected_items = select_research_bridge_watchlist_items(
+        watchlist_items=portfolio_store.list_watchlist(),
+        requested_symbols=request.symbols,
+        max_symbols=request.max_symbols,
+    )
+
+    requested_symbols = normalize_research_symbols(request.symbols, max_symbols=20)
+    if requested_symbols and not selected_items:
+        raise ValueError(
+            "None of the requested symbols are present in the watchlist. "
+            "Add them to watchlist first or omit symbols to pin current watchlist entries."
+        )
+    if not selected_items:
+        raise ValueError(
+            "Watchlist is empty. Add watchlist items before pinning research into plan branch templates."
+        )
+
+    resolved_template_id = _sanitize_branch_template_id(request.branch_template_id)
+    assumption_set_id = str(request.assumption_set_id or "").strip().lower() or None
+    if assumption_set_id:
+        assumption_sets_payload = plan_workspace.get_plan_assumption_sets(plan_id)
+        valid_assumption_set_ids = {
+            str(item.get("id") or "").strip().lower()
+            for item in assumption_sets_payload.get("sets", [])
+            if isinstance(item, dict)
+        }
+        if assumption_set_id not in valid_assumption_set_ids:
+            raise ValueError(
+                f"Unknown assumption_set_id '{assumption_set_id}'. "
+                f"Valid IDs: {', '.join(sorted(valid_assumption_set_ids)) or 'none'}."
+            )
+
+    templates_raw = branch_templates_payload.get("templates")
+    templates = [item for item in templates_raw if isinstance(item, dict)] if isinstance(templates_raw, list) else []
+
+    existing_index = None
+    existing_template: dict[str, Any] = {}
+    for index, item in enumerate(templates):
+        candidate_id = _sanitize_branch_template_id(item.get("id"), fallback="")
+        if candidate_id == resolved_template_id:
+            existing_index = index
+            existing_template = item
+            break
+
+    existing_events_raw = existing_template.get("branch_events")
+    existing_events = [event for event in existing_events_raw if isinstance(event, dict)] if isinstance(existing_events_raw, list) else []
+    retained_events = [event for event in existing_events if not _is_research_bridge_event(event)]
+    generated_events = build_research_bridge_branch_events(selected_items)
+
+    template_name = (
+        str(request.template_name or "").strip()
+        or str(existing_template.get("name") or "").strip()
+        or RESEARCH_BRIDGE_TEMPLATE_NAME
+    )
+    branch_name = (
+        str(request.branch_name or "").strip()
+        or str(existing_template.get("branch_name") or "").strip()
+        or "Research Thesis Branch"
+    )
+    description_prefix = (
+        str(existing_template.get("description") or "").strip()
+        or "Watchlist research symbols and thesis notes pinned for scenario branch analysis."
+    )
+    description = (
+        f"{description_prefix} Last pinned {len(generated_events)} symbol(s) on {context_utc_now_iso()}."
+    )
+
+    compare_settings_raw = existing_template.get("compare_settings")
+    compare_settings = compare_settings_raw if isinstance(compare_settings_raw, dict) else {}
+    resolved_assumption_set_id = (
+        assumption_set_id
+        or str(existing_template.get("assumption_set_id") or "").strip().lower()
+        or None
+    )
+
+    next_template = {
+        "id": resolved_template_id,
+        "name": template_name,
+        "description": description,
+        "branch_name": branch_name,
+        "assumption_set_id": resolved_assumption_set_id,
+        "compare_settings": compare_settings,
+        "branch_events": [*retained_events, *generated_events],
+    }
+
+    if existing_index is None:
+        templates.append(next_template)
+    else:
+        templates[existing_index] = next_template
+
+    default_template_id = str(branch_templates_payload.get("default_template_id") or "").strip().lower() or None
+    if not default_template_id:
+        default_template_id = resolved_template_id
+    update_payload = {
+        "default_template_id": default_template_id,
+        "templates": templates,
+    }
+
+    updated_templates_payload = plan_workspace.update_plan_branch_templates(
+        plan_id=plan_id,
+        branch_templates_payload=update_payload,
+        rationale=(
+            "Pinned watchlist research symbols/thesis notes into scenario branch templates "
+            "(research-to-planning bridge)."
+        ),
+        status="accepted",
+        log_decision=True,
+    )
+
+    updated_templates = updated_templates_payload.get("templates")
+    if isinstance(updated_templates, list):
+        for item in updated_templates:
+            if not isinstance(item, dict):
+                continue
+            candidate_id = str(item.get("id") or "").strip().lower()
+            if candidate_id == resolved_template_id:
+                template_name = str(item.get("name") or template_name).strip() or template_name
+                break
+
+    pinned_items = [PlanResearchBridgePinnedItem(**item) for item in selected_items]
+    return PlanResearchBridgeResponse(
+        plan_id=plan_id,
+        template_id=resolved_template_id,
+        template_name=template_name,
+        pinned_symbols=[item.symbol for item in pinned_items],
+        pinned_items=pinned_items,
+        branch_templates=PlanScenarioBranchTemplatesResponse(**updated_templates_payload),
+    )
+
+
+@app.post("/api/plans/{plan_id}/branch-templates/pin-watchlist", response_model=PlanResearchBridgeResponse)
+def pin_watchlist_research_to_plan_branch_template(
+    plan_id: str,
+    request: PlanResearchBridgeRequest,
+) -> PlanResearchBridgeResponse:
+    try:
+        return pin_watchlist_research_bridge(plan_id=plan_id, request=request)
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/plans/{plan_id}/scenario-diff", response_model=PlanScenarioDiffResponse)

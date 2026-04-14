@@ -854,17 +854,26 @@ class RecommendationApplyRequest(BaseModel):
     rationale: str = ""
     decision_status: str = "accepted"
     create_decision_packet: bool = True
+    capture_scenario_diff: bool = True
     decision_packet_research_symbols: list[str] = Field(default_factory=list)
+    pin_research_bridge: bool = True
+    research_bridge_symbols: list[str] = Field(default_factory=list)
+    research_bridge_template_id: str | None = None
+    research_bridge_assumption_set_id: str | None = None
 
 
 class RecommendationRejectRequest(BaseModel):
     reason: str = ""
+    capture_scenario_diff: bool = True
 
 
 class RecommendationActionResponse(BaseModel):
     recommendation: RecommendationItem
     plan: PlanDetailResponse | None = None
     decision_packet_artifact: PlanArtifactSummary | None = None
+    suggested_research_symbols: list[str] = Field(default_factory=list)
+    research_bridge: dict[str, Any] = Field(default_factory=dict)
+    decision_closure: dict[str, Any] = Field(default_factory=dict)
     message: str
 
 
@@ -1119,6 +1128,33 @@ class PlanScenarioBranchTemplatesResponse(BaseModel):
 class PlanScenarioBranchTemplatesUpdateRequest(BaseModel):
     default_template_id: str | None = None
     templates: list[PlanScenarioBranchTemplate] = Field(default_factory=list)
+
+
+class PlanResearchBridgeRequest(BaseModel):
+    branch_template_id: str | None = None
+    template_name: str | None = None
+    branch_name: str | None = None
+    assumption_set_id: str | None = None
+    symbols: list[str] = Field(default_factory=list)
+    max_symbols: int = Field(default=5, ge=1, le=20)
+
+
+class PlanResearchBridgePinnedItem(BaseModel):
+    symbol: str
+    data_source: str = "OPENBB"
+    thesis: str = ""
+    note: str = ""
+    target_price_usd: float | None = None
+    tags: list[str] = Field(default_factory=list)
+
+
+class PlanResearchBridgeResponse(BaseModel):
+    plan_id: str
+    template_id: str
+    template_name: str
+    pinned_symbols: list[str] = Field(default_factory=list)
+    pinned_items: list[PlanResearchBridgePinnedItem] = Field(default_factory=list)
+    branch_templates: PlanScenarioBranchTemplatesResponse
 
 
 class PlanSummary(BaseModel):

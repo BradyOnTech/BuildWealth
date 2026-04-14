@@ -51,9 +51,13 @@ def test_apply_recommendation_writes_decision_packet_artifact(
             },
         }
 
+    async def fake_preview(*_: object, **__: object) -> dict[str, object]:
+        return {"status": "captured", "scenario_deltas": [{"label": "baseline", "delta_future_value_usd": 1000.0}]}
+
     monkeypatch.setattr(main, "plan_workspace", workspace)
     monkeypatch.setattr(main, "recommendation_inbox", inbox)
     monkeypatch.setattr(main, "build_buildwealth_context_payload", fake_context_payload)
+    monkeypatch.setattr(main, "build_recommendation_scenario_diff_preview", fake_preview)
 
     response = asyncio.run(
         main.apply_recommendation_with_decision_packet(
@@ -81,6 +85,8 @@ def test_apply_recommendation_writes_decision_packet_artifact(
     packet_meta = updated_recommendation["action_payload"].get("decision_packet", {})
     assert packet_meta.get("artifact_id") == response.decision_packet_artifact.id
     assert "AAPL" in packet_meta.get("cited_research_symbols", [])
+    closure = updated_recommendation["action_payload"].get("decision_closure", {})
+    assert closure.get("scenario_diff_preview", {}).get("status") == "captured"
 
 
 def test_apply_recommendation_can_skip_decision_packet(
@@ -100,9 +106,13 @@ def test_apply_recommendation_can_skip_decision_packet(
     async def should_not_run(**_: object) -> dict[str, object]:
         raise AssertionError("context payload should not be built when packet creation is disabled")
 
+    async def fake_preview(*_: object, **__: object) -> dict[str, object]:
+        return {"status": "captured"}
+
     monkeypatch.setattr(main, "plan_workspace", workspace)
     monkeypatch.setattr(main, "recommendation_inbox", inbox)
     monkeypatch.setattr(main, "build_buildwealth_context_payload", should_not_run)
+    monkeypatch.setattr(main, "build_recommendation_scenario_diff_preview", fake_preview)
 
     response = asyncio.run(
         main.apply_recommendation_with_decision_packet(
@@ -115,6 +125,103 @@ def test_apply_recommendation_can_skip_decision_packet(
 
     assert response.recommendation.status == "applied"
     assert response.decision_packet_artifact is None
+    assert response.decision_closure.get("scenario_diff_preview", {}).get("status") == "captured"
 
     artifacts = workspace.get_plan(plan["id"]).get("artifacts", [])
     assert artifacts == []
+
+
+def test_apply_recommendation_updates_research_bridge_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = PlanWorkspace(tmp_path / "plans")
+    plan = workspace.create_plan(title="Bridge Plan")
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    recommendation = inbox.create(
+        title="Evaluate tech concentration",
+        detail="Run a branch with watchlist research context.",
+        recommendation_type="general",
+        plan_id=plan["id"],
+        action_payload={"research_symbols": ["VTI"]},
+    )
+
+    async def should_not_run(**_: object) -> dict[str, object]:
+        raise AssertionError("context payload should not be built when decision packet creation is disabled")
+
+    async def fake_preview(*_: object, **__: object) -> dict[str, object]:
+        return {"status": "captured"}
+
+    def fake_pin(plan_id: str, request: main.PlanResearchBridgeRequest) -> main.PlanResearchBridgeResponse:
+        assert plan_id == plan["id"]
+        assert request.symbols == ["VTI"]
+        return main.PlanResearchBridgeResponse(
+            plan_id=plan_id,
+            template_id="research_watchlist_bridge",
+            template_name="Research Watchlist Thesis",
+            pinned_symbols=["VTI"],
+            pinned_items=[
+                main.PlanResearchBridgePinnedItem(
+                    symbol="VTI",
+                    data_source="OPENBB",
+                    thesis="Core market thesis",
+                )
+            ],
+            branch_templates=main.PlanScenarioBranchTemplatesResponse(
+                schema_version=2,
+                default_template_id="research_watchlist_bridge",
+                templates=[],
+            ),
+        )
+
+    monkeypatch.setattr(main, "plan_workspace", workspace)
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    monkeypatch.setattr(main, "build_buildwealth_context_payload", should_not_run)
+    monkeypatch.setattr(main, "pin_watchlist_research_bridge", fake_pin)
+    monkeypatch.setattr(main, "build_recommendation_scenario_diff_preview", fake_preview)
+
+    response = asyncio.run(
+        main.apply_recommendation_with_decision_packet(
+            recommendation["id"],
+            main.RecommendationApplyRequest(
+                create_decision_packet=False,
+                pin_research_bridge=True,
+            ),
+        )
+    )
+
+    assert response.recommendation.status == "applied"
+    assert response.decision_packet_artifact is None
+    assert response.research_bridge.get("status") == "pinned"
+    assert response.suggested_research_symbols == ["VTI"]
+    assert response.decision_closure.get("scenario_diff_preview", {}).get("status") == "captured"
+
+    updated_recommendation = inbox.get(recommendation["id"])
+    bridge_meta = updated_recommendation["action_payload"].get("research_bridge", {})
+    assert bridge_meta.get("status") == "pinned"
+    assert bridge_meta.get("template_id") == "research_watchlist_bridge"
+    assert bridge_meta.get("pinned_symbols") == ["VTI"]
+
+
+def test_reject_recommendation_returns_suggested_research_symbols(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    recommendation = inbox.create(
+        title="Pause momentum trade",
+        detail="Reject this for now.",
+        recommendation_type="general",
+        action_payload={"research_symbols": ["qqq", "VTI", "QQQ"]},
+    )
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    async def fake_preview(*_: object, **__: object) -> dict[str, object]:
+        return {"status": "captured", "scenario_deltas": []}
+
+    monkeypatch.setattr(main, "build_recommendation_scenario_diff_preview", fake_preview)
+    response = asyncio.run(main.reject_recommendation(recommendation["id"], reason="Not aligned this month."))
+
+    assert response.recommendation.status == "rejected"
+    assert response.suggested_research_symbols == ["QQQ", "VTI"]
+    assert response.decision_closure.get("scenario_diff_preview", {}).get("status") == "captured"

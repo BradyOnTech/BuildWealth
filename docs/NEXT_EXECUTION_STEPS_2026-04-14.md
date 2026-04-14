@@ -143,16 +143,29 @@ Why:
 
 ## Post-3.7 Recommended Next Workstream
 1. Decision intelligence loop:
-- Status: Completed (Decision Packet v1)
+- Status: In Progress (Decision Packet + Bridge + Closure Diff Capture)
 - Recommendation application now writes a decision packet artifact by default, including unified context snapshot metadata, selected assumptions, and cited research symbols.
 - Apply flows now support `create_decision_packet` and `decision_packet_research_symbols` controls.
+- Apply/reject responses now return `suggested_research_symbols`, and apply flow can auto-pin research context into planning branch templates.
+- Apply/reject flows now support optional scenario-diff capture and persist `decision_closure` metadata with status/rationale + preview deltas.
+- Remaining:
+  - expand rejection flow with optional decision-packet style rationale artifacts.
+  - add plan/recommendation UI surfaces that render closure deltas/rationale without raw JSON inspection.
 
 2. Research-to-planning bridge:
-- Add UI/API flow to pin research symbols and thesis notes directly into plan branches/scenario assumptions.
+- Status: Completed (v1 + recommendation/tool integration)
+- Added `POST /api/plans/{plan_id}/branch-templates/pin-watchlist` plus Plan Workspace UI action to pin watchlist symbols/thesis notes into branch templates.
+- Bridge pins are idempotent (replaces prior bridge-generated events) and preserve existing non-bridge branch events/compare settings.
+- Added recommendation-loop integration (auto-pin + suggested symbols) and Copilot bridge tool (`pin_watchlist_research_to_plan`).
+- Remaining follow-on:
+  - surface bridge pin outcomes more prominently in plan/recommendation UI summaries.
 - Goal: reduce friction between market research and planning model inputs.
 
 3. Copilot action closure:
-- Expand recommendation application/rejection loops with explicit before/after scenario diffs and captured decision rationale.
+- Status: In Progress
+- Core API/tool plumbing now captures before/after scenario-diff previews and decision closure metadata.
+- Recommendation Inbox now surfaces closure deltas/rationale/bridge metadata inline.
+- Remaining UI/UX slice: surface closure outcomes in plan workspace artifacts/decision views (not inbox only).
 - Goal: tighten the feedback loop between conversation, simulation, and committed plan changes.
 
 ## Guardrails

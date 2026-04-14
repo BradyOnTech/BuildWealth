@@ -57,6 +57,53 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-14 (Completed - Post-3.7 Slice 5, Recommendation Closure UX Surface)
+- Recommendation Inbox UI now renders decision-closure details from recommendation action payloads:
+  - apply/reject timestamps/status and rationale/reason summaries
+  - scenario preview status and baseline future-value delta when captured
+  - research bridge status/template/symbol summaries
+  - suggested research symbols surfaced inline for follow-up planning/research loops.
+- Updated apply/reject UI action logs to include closure/bridge payload metadata returned by action APIs for easier local operator debugging.
+
+### 2026-04-14 (Completed - Post-3.7 Slice 4, Decision Closure Scenario-Diff Capture)
+- Added recommendation action closure capture with before/after planning deltas:
+  - apply/reject flows now optionally capture a scenario-diff preview for `plan_settings_update` recommendations before status transition.
+  - closure payload records compare settings, scenario deltas, Monte Carlo delta, and capture status (`captured`/`skipped`/`error`).
+- Added first-class closure metadata fields in recommendation action responses:
+  - `decision_closure` now returns apply/reject rationale/status timestamps plus optional scenario-diff preview.
+  - `suggested_research_symbols` continues to carry research context for bridge and follow-up actions.
+- Extended recommendation contracts/tooling:
+  - `RecommendationApplyRequest` and `RecommendationRejectRequest` now include `capture_scenario_diff` controls (default enabled).
+  - Copilot tool schemas for `apply_recommendation` and `reject_recommendation` now expose scenario-capture controls.
+- `reject_recommendation` was upgraded to async so rejection closures can capture scenario previews without blocking architecture consistency.
+- Added focused regression coverage in `test_recommendation_actions.py` and `test_copilot_tool_updates.py` for closure metadata, async reject behavior, and tool contract updates.
+
+### 2026-04-14 (Completed - Post-3.7 Slice 3, Recommendation/Tool Bridge Integration)
+- Recommendation apply flows now bridge research into planning by default:
+  - `RecommendationApplyRequest` adds research-bridge controls (`pin_research_bridge`, symbol/template/assumption overrides).
+  - `apply_recommendation_with_decision_packet` now attempts watchlist bridge pinning even when decision packet creation is disabled.
+- Recommendation action responses now expose structured bridge/symbol hints:
+  - `suggested_research_symbols` on apply/reject responses
+  - `research_bridge` status payload for pinned/skipped outcomes.
+- Added reusable bridge helper (`pin_watchlist_research_bridge`) and wired it to:
+  - API route `POST /api/plans/{plan_id}/branch-templates/pin-watchlist`
+  - new Copilot tool `pin_watchlist_research_to_plan`.
+- Expanded Copilot recommendation tool contract so `apply_recommendation` can control research-bridge behavior directly.
+- Added focused regression coverage:
+  - `test_recommendation_actions.py` now covers bridge metadata persistence and reject-symbol suggestions
+  - `test_copilot_tool_updates.py` now covers new bridge tool registration/invocation and expanded apply tool schema.
+
+### 2026-04-14 (Completed - Post-3.7 Slice 2, Research-to-Planning Bridge v1)
+- Added first-class watchlist-to-planning bridge API:
+  - `POST /api/plans/{plan_id}/branch-templates/pin-watchlist`
+  - pins watchlist symbols/thesis/target/tags into scenario branch templates as idempotent bridge events.
+- Bridge events are modeled as zero-impact milestone events so they remain Ignidash-compatible with existing scenario-branch execution paths while carrying research context into branch workflows.
+- Added assumption-set validation and template upsert behavior:
+  - updates selected template (or creates `research_watchlist_bridge`)
+  - replaces prior bridge-generated research events while preserving non-bridge branch events and compare settings.
+- Plan Workspace UI now includes a `Pin Watchlist Research` action in the branch templates section (with optional symbol filter input).
+- Added focused regression coverage in `test_plan_research_bridge.py` for bridge selection, template update/idempotency, and error handling.
+
 ### 2026-04-14 (Completed - Post-3.7 Slice 1, Decision Packet v1)
 - Added first-class decision packet generation on recommendation application:
   - recommendation apply flows (API + Copilot tool) now generate a decision packet artifact by default.

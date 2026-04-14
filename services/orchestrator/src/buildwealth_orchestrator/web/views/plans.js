@@ -146,6 +146,11 @@ export function template() {
         <label class="field"><span>Branch Events JSON</span><textarea id="scenario-branch-events" rows="8" placeholder='[{"label":"Job Loss","event_type":"job_change","impact_type":"income","amount_usd":-7500,"recurring_frequency":"monthly","start_year_offset":0,"duration_months":6}]' disabled></textarea></label>
         <div class="view-header"><h4>Branch Templates</h4><button class="primary small" id="save-plan-branch-templates" disabled>Save Branch Templates</button></div>
         <p class="hint tight">Persist reusable branch presets to avoid retyping common life-event scenarios.</p>
+        <div class="inline-builder">
+          <input type="text" id="research-bridge-symbols" placeholder="Optional symbols (e.g. NVDA,VTI)" disabled />
+          <button class="ghost small" id="pin-watchlist-branch-template" type="button" disabled>Pin Watchlist Research</button>
+        </div>
+        <p class="hint tight">Pins watchlist thesis, target-price, and tag context into the selected branch template (or a research bridge template).</p>
         <label class="field"><span>Branch Templates JSON</span><textarea id="plan-branch-templates" rows="10" placeholder='{"default_template_id":"job_loss_6_months","templates":[...]}' disabled></textarea></label>
         <p class="hint tight" id="scenario-branch-summary">No scenario branch run yet.</p>
         <label class="field"><span>Scenario Branch Output</span><textarea id="scenario-branch-output" rows="8" readonly></textarea></label>

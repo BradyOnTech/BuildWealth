@@ -16,6 +16,7 @@ def test_copilot_registry_includes_phase_3_5_tools() -> None:
         "get_asset_allocation",
         "set_contribution_rules",
         "get_buildwealth_context",
+        "pin_watchlist_research_to_plan",
     }
     assert required_tools <= set(main.copilot.tools.keys())
 
@@ -38,7 +39,65 @@ def test_apply_recommendation_tool_supports_decision_packet_controls() -> None:
     tool = main.copilot.tools["apply_recommendation"]
     properties = tool.parameters.get("properties", {})
     assert "create_decision_packet" in properties
+    assert "capture_scenario_diff" in properties
     assert "decision_packet_research_symbols" in properties
+    assert "pin_research_bridge" in properties
+    assert "research_bridge_symbols" in properties
+    assert "research_bridge_template_id" in properties
+
+
+def test_reject_recommendation_tool_supports_scenario_capture_control() -> None:
+    tool = main.copilot.tools["reject_recommendation"]
+    properties = tool.parameters.get("properties", {})
+    assert "capture_scenario_diff" in properties
+
+
+def test_pin_watchlist_research_tool_contract() -> None:
+    tool = main.copilot.tools["pin_watchlist_research_to_plan"]
+    properties = tool.parameters.get("properties", {})
+    assert "plan_id" in properties
+    assert "branch_template_id" in properties
+    assert "symbols" in properties
+    assert "max_symbols" in properties
+
+
+def test_tool_pin_watchlist_research_to_plan_calls_bridge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_pin(
+        *,
+        plan_id: str,
+        request: main.PlanResearchBridgeRequest,
+    ) -> main.PlanResearchBridgeResponse:
+        assert plan_id == "plan-abc"
+        assert request.symbols == ["NVDA", "VTI"]
+        return main.PlanResearchBridgeResponse(
+            plan_id=plan_id,
+            template_id="research_watchlist_bridge",
+            template_name="Research Watchlist Thesis",
+            pinned_symbols=["NVDA", "VTI"],
+            pinned_items=[],
+            branch_templates=main.PlanScenarioBranchTemplatesResponse(
+                schema_version=2,
+                default_template_id="research_watchlist_bridge",
+                templates=[],
+            ),
+        )
+
+    monkeypatch.setattr(main, "pin_watchlist_research_bridge", fake_pin)
+    payload = asyncio.run(
+        main.tool_pin_watchlist_research_to_plan(
+            {
+                "plan_id": "plan-abc",
+                "symbols": ["NVDA", "VTI"],
+                "max_symbols": 4,
+            }
+        )
+    )
+
+    assert payload["plan_id"] == "plan-abc"
+    assert payload["template_id"] == "research_watchlist_bridge"
+    assert payload["pinned_symbols"] == ["NVDA", "VTI"]
 
 
 def test_tool_add_timeline_event_appends_event_and_preserves_retirement_payload(

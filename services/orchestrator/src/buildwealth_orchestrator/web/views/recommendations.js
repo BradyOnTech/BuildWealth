@@ -1,6 +1,6 @@
 import { fetchJson } from '../lib/api.js';
 import { state } from '../lib/state.js';
-import { byId, fmtDate, writeLog } from '../lib/utils.js';
+import { byId, fmtCurrency, fmtDate, writeLog } from '../lib/utils.js';
 import { recommendationStatusClass, planSelectOptions } from '../lib/components.js';
 
 export const id = 'recommendations';
@@ -76,6 +76,52 @@ function renderTable() {
       if (Array.isArray(evidence.data_keys) && evidence.data_keys.length) parts.push(`Data: ${evidence.data_keys.slice(0, 4).join(', ')}`);
       if (parts.length) recHtml += `<p class="rec-detail">Evidence: ${parts.join(' \u2022 ')}</p>`;
     }
+    const suggestedSymbols = Array.isArray(r.action_payload?.suggested_research_symbols)
+      ? r.action_payload.suggested_research_symbols
+      : [];
+    if (suggestedSymbols.length) {
+      recHtml += `<p class="rec-detail">Suggested symbols: ${suggestedSymbols.join(', ')}</p>`;
+    }
+    const researchBridge = r.action_payload?.research_bridge;
+    if (researchBridge && typeof researchBridge === 'object') {
+      const bridgeStatus = String(researchBridge.status || '').trim() || 'unknown';
+      const bridgeTemplate = String(researchBridge.template_id || '').trim();
+      const pinnedSymbols = Array.isArray(researchBridge.pinned_symbols) ? researchBridge.pinned_symbols : [];
+      const bridgeParts = [`Research bridge ${bridgeStatus}`];
+      if (bridgeTemplate) bridgeParts.push(`template ${bridgeTemplate}`);
+      if (pinnedSymbols.length) bridgeParts.push(`symbols ${pinnedSymbols.join(', ')}`);
+      if (researchBridge.reason) bridgeParts.push(`reason: ${researchBridge.reason}`);
+      recHtml += `<p class="rec-detail">${bridgeParts.join(' \u2022 ')}</p>`;
+    }
+    const decisionClosure = r.action_payload?.decision_closure;
+    if (decisionClosure && typeof decisionClosure === 'object') {
+      const closureWhen = decisionClosure.applied_at || decisionClosure.rejected_at;
+      const closureStatus = String(decisionClosure.decision_status || r.status || '').toUpperCase();
+      const closureParts = [];
+      if (closureStatus) closureParts.push(closureStatus);
+      if (closureWhen) closureParts.push(fmtDate(closureWhen));
+      if (decisionClosure.rationale) closureParts.push(`rationale: ${decisionClosure.rationale}`);
+      if (decisionClosure.reason) closureParts.push(`reason: ${decisionClosure.reason}`);
+      if (closureParts.length) recHtml += `<p class="rec-detail">Closure: ${closureParts.join(' \u2022 ')}</p>`;
+
+      const scenarioPreview = decisionClosure.scenario_diff_preview;
+      if (scenarioPreview && typeof scenarioPreview === 'object') {
+        const previewStatus = String(scenarioPreview.status || 'unknown');
+        if (previewStatus === 'captured') {
+          const deltas = Array.isArray(scenarioPreview.scenario_deltas) ? scenarioPreview.scenario_deltas : [];
+          const baseline = deltas.find((item) => item && item.label === 'baseline') || deltas[0];
+          if (baseline && typeof baseline === 'object') {
+            recHtml += `<p class="rec-detail">Scenario preview: ${fmtCurrency(Number(baseline.delta_future_value_usd || 0))} future-value delta (${baseline.label || 'baseline'})</p>`;
+          } else {
+            recHtml += '<p class="rec-detail">Scenario preview: captured.</p>';
+          }
+        } else if (scenarioPreview.reason) {
+          recHtml += `<p class="rec-detail">Scenario preview: ${previewStatus} (${scenarioPreview.reason})</p>`;
+        } else {
+          recHtml += `<p class="rec-detail">Scenario preview: ${previewStatus}</p>`;
+        }
+      }
+    }
     const actionsCell = document.createElement('td');
     const wrap = document.createElement('div');
     wrap.className = 'table-actions';
@@ -143,14 +189,14 @@ async function applyItem(r) {
   const payload = { plan_id: r.plan_id || byId('recommendation-plan').value || state.currentPlanId || null, rationale: rationale.trim(), decision_status: 'accepted' };
   const result = await fetchJson(`/api/recommendations/${encodeURIComponent(r.id)}/apply`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
   if (result.plan?.id === state.currentPlanId) state.currentPlanDetail = result.plan;
-  writeLog('Applied.', { id: r.id }); await load();
+  writeLog('Applied.', { id: r.id, decision_closure: result.decision_closure || null, research_bridge: result.research_bridge || null }); await load();
 }
 
 async function rejectItem(r) {
   const reason = window.prompt('Reason (optional):', '');
   if (reason === null) return;
-  await fetchJson(`/api/recommendations/${encodeURIComponent(r.id)}/reject`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reason: reason.trim() }) });
-  writeLog('Rejected.', { id: r.id }); await load();
+  const result = await fetchJson(`/api/recommendations/${encodeURIComponent(r.id)}/reject`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reason: reason.trim() }) });
+  writeLog('Rejected.', { id: r.id, decision_closure: result.decision_closure || null }); await load();
 }
 
 async function archiveItem(r) {

@@ -462,11 +462,13 @@ function setControlsEnabled(enabled) {
     'activate-plan', 'refresh-plan-context', 'save-plan', 'save-plan-timeline', 'save-plan-assumption-sets',
     'save-plan-contribution-rules', 'save-plan-branch-templates', 'save-plan-settings', 'run-scenario-diff',
     'run-withdrawal-strategy-compare', 'apply-scenario-overrides', 'load-branch-template', 'run-scenario-branch',
+    'pin-watchlist-branch-template',
     'refresh-projection-profile', 'projection-source', 'projection-scenario-label', 'projection-account-metric',
     'add-decision', 'plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets',
     'plan-contribution-rules', 'plan-branch-templates', 'diff-assumption-set-id',
     'diff-candidate-assumption-set-id', 'withdrawal-assumption-set-id', 'withdrawal-current-portfolio-value',
     'withdrawal-strategies', 'withdrawal-include-raw-results', 'branch-template-id', 'scenario-branch-name',
+    'research-bridge-symbols',
     'branch-assumption-set-id', 'scenario-branch-events', 'decision-summary', 'decision-rationale',
     'decision-status', 'timeline-event-date', 'timeline-event-label', 'timeline-event-type',
     'timeline-event-impact-type', 'timeline-event-amount', 'timeline-event-frequency', 'timeline-event-end-date',
@@ -1194,7 +1196,7 @@ export function clearDetail() {
   state.currentPlanDetail = null;
   byId('plan-meta').textContent = 'Select a plan to view details.';
   byId('plan-settings-meta').textContent = 'Blank values use global defaults from planner configuration.';
-  ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-contribution-rules', 'plan-branch-templates', 'plan-context', 'scenario-diff-output', 'withdrawal-current-portfolio-value', 'withdrawal-strategies', 'withdrawal-strategy-compare-output', 'scenario-branch-name', 'scenario-branch-events', 'scenario-branch-output', 'artifact-content'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
+  ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-contribution-rules', 'plan-branch-templates', 'plan-context', 'scenario-diff-output', 'withdrawal-current-portfolio-value', 'withdrawal-strategies', 'withdrawal-strategy-compare-output', 'scenario-branch-name', 'scenario-branch-events', 'scenario-branch-output', 'research-bridge-symbols', 'artifact-content'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
   writeTimelinePayloadToEditor({ events: [], retirement: {} }, { preferFormValues: false });
   resetTimelineEventInputs();
   writeContributionRulesPayloadToEditor({}, { preferFormValues: false });
@@ -1262,6 +1264,7 @@ export function renderDetail() {
   byId('scenario-branch-output').value = '';
   byId('scenario-branch-name').value = '';
   byId('scenario-branch-events').value = '';
+  byId('research-bridge-symbols').value = '';
   byId('projection-summary').textContent = 'Run a scenario diff or branch to populate projection visuals.';
   byId('projection-account-body').innerHTML = '<tr><td colspan="6">No projection data yet.</td></tr>';
   const scenarioLabelSelect = byId('projection-scenario-label');
@@ -1410,6 +1413,21 @@ function parseWithdrawalStrategyInput(rawValue) {
     strategies.push(item);
   }
   return strategies;
+}
+
+function parseResearchBridgeSymbols(rawValue) {
+  const tokens = String(rawValue || '')
+    .split(',')
+    .map((item) => item.trim().toUpperCase())
+    .filter(Boolean);
+  const unique = [];
+  for (const token of tokens) {
+    if (!/^[A-Z0-9._-]{1,24}$/.test(token)) continue;
+    if (unique.includes(token)) continue;
+    unique.push(token);
+    if (unique.length >= 20) break;
+  }
+  return unique;
 }
 
 function formatWithdrawalStrategyCompareOutput(result) {
@@ -1735,6 +1753,47 @@ export function initEditor(refreshPlans) {
     }
     if (applyBranchTemplateToEditor(selected)) {
       writeLog(`Loaded branch template ${selected.id}.`);
+    }
+  });
+
+  byId('pin-watchlist-branch-template').addEventListener('click', async () => {
+    if (!state.currentPlanId) {
+      writeLog('Select a plan first.', null, true);
+      return;
+    }
+
+    const branchTemplateId = String(byId('branch-template-id')?.value || '').trim();
+    const assumptionSetId = String(byId('branch-assumption-set-id')?.value || '').trim();
+    const branchName = String(byId('scenario-branch-name')?.value || '').trim();
+    const symbols = parseResearchBridgeSymbols(byId('research-bridge-symbols')?.value);
+    const payload = {};
+    if (branchTemplateId) payload.branch_template_id = branchTemplateId;
+    if (assumptionSetId) payload.assumption_set_id = assumptionSetId;
+    if (branchName) payload.branch_name = branchName;
+    if (symbols.length) payload.symbols = symbols;
+
+    writeLog('Pinning watchlist research into branch template...', payload);
+    try {
+      const result = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/branch-templates/pin-watchlist`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const templatesPayload = result?.branch_templates || {};
+      byId('plan-branch-templates').value = JSON.stringify(templatesPayload, null, 2);
+      const templateId = String(result?.template_id || '');
+      setBranchTemplateOptions(templatesPayload, templateId);
+      const selected = selectedBranchTemplateFromEditor();
+      if (selected) applyBranchTemplateToEditor(selected);
+      state.currentPlanDetail = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}`);
+      await refreshPlans();
+      const pinnedSymbols = Array.isArray(result?.pinned_symbols) ? result.pinned_symbols : [];
+      writeLog(
+        `Pinned ${pinnedSymbols.length} watchlist symbol(s) into template ${templateId || '(unknown)'}.`,
+        { pinned_symbols: pinnedSymbols },
+      );
+    } catch (e) {
+      writeLog(`Research bridge pin failed: ${e.message}`, null, true);
     }
   });
 
