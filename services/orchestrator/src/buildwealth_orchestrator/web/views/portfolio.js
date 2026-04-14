@@ -182,6 +182,20 @@ export function template() {
       <button class="primary" type="submit">Add Custom Asset</button>
     </form>
 
+    <h3 class="section-title">Watchlist</h3>
+    <p class="hint" id="port-watchlist-summary">No watchlist items yet.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Symbol</th><th>Last</th><th>Day</th><th>Window</th><th>Trend 50d</th><th>Trend 200d</th><th>Condition</th><th>Target</th><th>Tags</th><th>Note</th><th></th></tr></thead>
+      <tbody id="port-watchlist-body"><tr><td colspan="11">No watchlist items yet.</td></tr></tbody>
+    </table></div>
+    <form id="port-watchlist-form" class="txn-form">
+      <label class="field"><span>Symbol</span><input type="text" id="watchlist-symbol" placeholder="NVDA" required /></label>
+      <label class="field"><span>Target Price</span><input type="number" id="watchlist-target-price" step="0.01" min="0" placeholder="Optional" /></label>
+      <label class="field"><span>Tags</span><input type="text" id="watchlist-tags" placeholder="ai, quality, dividend" /></label>
+      <label class="field"><span>Note</span><input type="text" id="watchlist-note" placeholder="Entry thesis" /></label>
+      <button class="primary" type="submit">Add / Update Watchlist Item</button>
+    </form>
+
     <h3 class="section-title">Record Transaction</h3>
     <form id="port-txn-form" class="txn-form">
       <label class="field"><span>Date</span><input type="date" id="txn-date" required /></label>
@@ -472,6 +486,50 @@ function renderCustomAssets(data) {
   }
 }
 
+function renderWatchlist(payload) {
+  const summary = byId('port-watchlist-summary');
+  const tbody = byId('port-watchlist-body');
+  const rows = Array.isArray(payload?.items) ? payload.items : [];
+  const warnings = Array.isArray(payload?.warnings) ? payload.warnings : [];
+  const periodLabel = String(payload?.period || '').trim();
+  const warningLabel = warnings.length ? ` | Warnings: ${warnings.length}` : '';
+
+  if (!rows.length) {
+    summary.textContent = warnings.length ? `No watchlist items yet.${warningLabel}` : 'No watchlist items yet.';
+    tbody.innerHTML = '<tr><td colspan="11">No watchlist items yet.</td></tr>';
+    return;
+  }
+
+  summary.textContent = `Items: ${rows.length}${periodLabel ? ` | Window: ${periodLabel}` : ''}${warningLabel}`;
+  tbody.innerHTML = '';
+  for (const row of rows) {
+    const quotePrice = Number(row.quote_price);
+    const quoteChange = Number(row.quote_change_pct);
+    const periodChange = Number(row.period_change_pct);
+    const quoteClass = Number.isFinite(quoteChange) ? (quoteChange >= 0 ? 'drift-pos' : 'drift-neg') : '';
+    const periodClass = Number.isFinite(periodChange) ? (periodChange >= 0 ? 'drift-pos' : 'drift-neg') : '';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${row.symbol || '-'}</strong></td>
+      <td>${Number.isFinite(quotePrice) ? fmtCurrency(quotePrice) : '-'}</td>
+      <td class="${quoteClass}">${Number.isFinite(quoteChange) ? `${quoteChange >= 0 ? '+' : ''}${fmtPct(quoteChange)}` : '-'}</td>
+      <td class="${periodClass}">${Number.isFinite(periodChange) ? `${periodChange >= 0 ? '+' : ''}${fmtPct(periodChange)}` : '-'}</td>
+      <td>${row.trend50d || 'UNKNOWN'}</td>
+      <td>${row.trend200d || 'UNKNOWN'}</td>
+      <td>${row.market_condition || 'UNKNOWN'}</td>
+      <td>${Number.isFinite(Number(row.target_price_usd)) ? fmtCurrency(Number(row.target_price_usd)) : '-'}</td>
+      <td>${Array.isArray(row.tags) && row.tags.length ? row.tags.join(', ') : '-'}</td>
+      <td>${row.note || '-'}</td>
+      <td></td>`;
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'ghost small';
+    removeBtn.textContent = 'Remove';
+    removeBtn.addEventListener('click', () => deleteWatchlistItem(row.symbol));
+    tr.lastElementChild.appendChild(removeBtn);
+    tbody.appendChild(tr);
+  }
+}
+
 function renderHistory(historyPayload, benchmarkPayload = null) {
   const summary = byId('port-history-summary');
   const benchmarkSummary = byId('port-benchmark-summary');
@@ -688,13 +746,14 @@ function renderTransactions(txns) {
 async function loadAll() {
   try {
     const benchmarkQuery = benchmarkSymbolsFilter ? `&symbols=${encodeURIComponent(benchmarkSymbolsFilter)}` : '';
-    const [holdingsResult, txnsResult, accountResult, historyResult, benchmarkResult, attributionResult] = await Promise.allSettled([
+    const [holdingsResult, txnsResult, accountResult, historyResult, benchmarkResult, attributionResult, watchlistResult] = await Promise.allSettled([
       fetchJson('/api/portfolio/holdings'),
       fetchJson('/api/portfolio/transactions?limit=100'),
       fetchJson('/api/portfolio/accounts'),
       fetchJson('/api/snapshot/history?limit=120'),
       fetchJson(`/api/portfolio/benchmark?limit=120${benchmarkQuery}`),
       fetchJson('/api/portfolio/attribution?top_n=6'),
+      fetchJson('/api/portfolio/watchlist?period=2y&interval=1d'),
     ]);
 
     if (holdingsResult.status !== 'fulfilled') throw holdingsResult.reason;
@@ -719,6 +778,7 @@ async function loadAll() {
     renderHoldings(holdings);
     renderBreakdowns(holdings);
     renderCustomAssets(holdings);
+    renderWatchlist(watchlistResult.status === 'fulfilled' ? watchlistResult.value : null);
     renderTransactions(txns);
   } catch (e) {
     writeLog(`Portfolio load failed: ${e.message}`, null, true);
@@ -834,6 +894,56 @@ async function addCustomAsset(event) {
     await loadAll();
   } catch (e) {
     writeLog(`Add custom asset failed: ${e.message}`, null, true);
+  }
+}
+
+async function addWatchlistItem(event) {
+  event.preventDefault();
+  const symbol = (byId('watchlist-symbol').value || '').trim().toUpperCase();
+  const targetPriceRaw = (byId('watchlist-target-price').value || '').trim();
+  const tagsRaw = (byId('watchlist-tags').value || '').trim();
+  const note = (byId('watchlist-note').value || '').trim();
+  if (!symbol) return;
+
+  const payload = { symbol, note };
+  if (targetPriceRaw) {
+    const target = parseFloat(targetPriceRaw);
+    if (!Number.isFinite(target) || target <= 0) {
+      writeLog('Target price must be a positive number.', null, true);
+      return;
+    }
+    payload.target_price_usd = target;
+  }
+  if (tagsRaw) {
+    payload.tags = tagsRaw.split(',').map(tag => tag.trim()).filter(Boolean);
+  }
+
+  try {
+    await fetchJson('/api/portfolio/watchlist', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    byId('watchlist-symbol').value = '';
+    byId('watchlist-target-price').value = '';
+    byId('watchlist-tags').value = '';
+    byId('watchlist-note').value = '';
+    writeLog(`Watchlist item upserted: ${symbol}`);
+    await loadAll();
+  } catch (e) {
+    writeLog(`Watchlist update failed: ${e.message}`, null, true);
+  }
+}
+
+async function deleteWatchlistItem(symbol) {
+  const normalized = String(symbol || '').trim().toUpperCase();
+  if (!normalized) return;
+  try {
+    await fetchJson(`/api/portfolio/watchlist/${encodeURIComponent(normalized)}`, { method: 'DELETE' });
+    writeLog(`Watchlist item removed: ${normalized}`);
+    await loadAll();
+  } catch (e) {
+    writeLog(`Watchlist remove failed: ${e.message}`, null, true);
   }
 }
 
@@ -978,6 +1088,7 @@ export function init() {
   byId('port-account-form').addEventListener('submit', addAccount);
   byId('port-fx-form').addEventListener('submit', setFxRate);
   byId('port-custom-asset-form').addEventListener('submit', addCustomAsset);
+  byId('port-watchlist-form').addEventListener('submit', addWatchlistItem);
   syncTxnFieldRequirements();
   loadAll();
 }

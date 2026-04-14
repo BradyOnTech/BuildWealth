@@ -4,6 +4,8 @@ from __future__ import annotations
 
 # Exchange-rate payload and rate-normalization flow adapted from Ghostfolio (MIT):
 # apps/api/src/services/exchange-rate-data/exchange-rate-data.service.ts
+# Watchlist item identity pattern (symbol + data source) adapted from Ghostfolio (MIT):
+# apps/api/src/app/endpoints/watchlist/watchlist.service.ts
 
 import json
 import re
@@ -22,6 +24,7 @@ COST_BASIS_METHODS_SCHEMA_VERSION = 1
 MANUAL_PRICES_SCHEMA_VERSION = 1
 FX_RATES_SCHEMA_VERSION = 1
 FX_RATES_HISTORY_SCHEMA_VERSION = 1
+WATCHLIST_SCHEMA_VERSION = 1
 DEFAULT_ACCOUNT_ID = "default"
 DEFAULT_ACCOUNT_NAME = "Default Brokerage"
 DEFAULT_CURRENCY = "USD"
@@ -115,6 +118,7 @@ class PortfolioStore:
         self._manual_prices_path = portfolio_dir / "manual_prices.json"
         self._fx_rates_path = portfolio_dir / "fx_rates.json"
         self._fx_rates_history_path = portfolio_dir / "fx_rates_history.json"
+        self._watchlist_path = portfolio_dir / "watchlist.json"
         self._initialize()
 
     @staticmethod
@@ -233,6 +237,14 @@ class PortfolioStore:
             "updated_at": _utc_now(),
         }
 
+    @staticmethod
+    def _default_watchlist_payload() -> dict[str, Any]:
+        return {
+            "schema_version": WATCHLIST_SCHEMA_VERSION,
+            "items": [],
+            "updated_at": _utc_now(),
+        }
+
     def _initialize(self) -> None:
         if not self._accounts_path.exists():
             self._write_json(self._accounts_path, self._default_accounts_payload())
@@ -267,6 +279,11 @@ class PortfolioStore:
             self._write_json(self._fx_rates_history_path, self._default_fx_rates_history_payload())
         else:
             self._read_fx_rates_history_payload()
+
+        if not self._watchlist_path.exists():
+            self._write_json(self._watchlist_path, self._default_watchlist_payload())
+        else:
+            self._read_watchlist_payload()
 
         if not self._holdings_path.exists():
             self._write_json(self._holdings_path, self._default_holdings_payload())
@@ -678,6 +695,87 @@ class PortfolioStore:
         payload = self._migrate_fx_rates_history_payload(original)
         if payload != original:
             self._write_json(self._fx_rates_history_path, payload)
+        return payload
+
+    @staticmethod
+    def _normalize_watchlist_tags(raw_tags: Any) -> list[str]:
+        tags_source: list[Any]
+        if isinstance(raw_tags, str):
+            tags_source = [tag.strip() for tag in raw_tags.split(",")]
+        elif isinstance(raw_tags, list):
+            tags_source = list(raw_tags)
+        else:
+            tags_source = []
+
+        tags: list[str] = []
+        seen: set[str] = set()
+        for raw in tags_source:
+            tag = str(raw or "").strip().lower()
+            if not tag or tag in seen:
+                continue
+            seen.add(tag)
+            tags.append(tag)
+            if len(tags) >= 20:
+                break
+        return tags
+
+    def _migrate_watchlist_payload(self, payload: Any) -> dict[str, Any]:
+        default_payload = self._default_watchlist_payload()
+        if isinstance(payload, list):
+            payload = {"items": payload}
+        if not isinstance(payload, dict):
+            return default_payload
+
+        raw_items = payload.get("items") if isinstance(payload.get("items"), list) else []
+        items_by_key: dict[str, dict[str, Any]] = {}
+        now = _utc_now()
+
+        for raw_item in raw_items:
+            if isinstance(raw_item, str):
+                raw_item = {"symbol": raw_item}
+            if not isinstance(raw_item, dict):
+                continue
+
+            symbol = self._normalize_symbol(raw_item.get("symbol") or raw_item.get("ticker"))
+            if not symbol:
+                continue
+
+            data_source = str(raw_item.get("data_source") or raw_item.get("dataSource") or "OPENBB").strip().upper()
+            if not data_source:
+                data_source = "OPENBB"
+
+            target_price_raw = raw_item.get("target_price_usd", raw_item.get("target_price"))
+            target_price = _safe_float(target_price_raw, None)
+            if target_price is not None and target_price <= 0:
+                target_price = None
+
+            created_at = str(raw_item.get("created_at") or raw_item.get("createdAt") or now)
+            updated_at = str(raw_item.get("updated_at") or raw_item.get("updatedAt") or created_at)
+            key = f"{data_source}:{symbol}"
+            items_by_key[key] = {
+                "symbol": symbol,
+                "data_source": data_source,
+                "note": str(raw_item.get("note") or ""),
+                "thesis": str(raw_item.get("thesis") or ""),
+                "target_price_usd": round(float(target_price), 4) if target_price is not None else None,
+                "tags": self._normalize_watchlist_tags(raw_item.get("tags")),
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+
+        items = list(items_by_key.values())
+        items.sort(key=lambda item: (str(item.get("symbol") or ""), str(item.get("data_source") or "")))
+        return {
+            "schema_version": WATCHLIST_SCHEMA_VERSION,
+            "items": items,
+            "updated_at": str(payload.get("updated_at") or now),
+        }
+
+    def _read_watchlist_payload(self) -> dict[str, Any]:
+        original = self._read_json(self._watchlist_path)
+        payload = self._migrate_watchlist_payload(original)
+        if payload != original:
+            self._write_json(self._watchlist_path, payload)
         return payload
 
     def get_asset_metadata_map(self) -> dict[str, dict[str, Any]]:
@@ -2125,6 +2223,137 @@ class PortfolioStore:
         data = self._read_accounts_payload()
         accounts = data.get("accounts", [])
         return accounts if isinstance(accounts, list) else []
+
+    # ---- Watchlist ----
+
+    def get_watchlist(self) -> dict[str, Any]:
+        return self._read_watchlist_payload()
+
+    def list_watchlist(self) -> list[dict[str, Any]]:
+        payload = self._read_watchlist_payload()
+        items = payload.get("items")
+        return items if isinstance(items, list) else []
+
+    def list_watchlist_symbols(self, limit: int = 30) -> list[str]:
+        max_items = max(1, min(int(limit), 200))
+        symbols: list[str] = []
+        seen: set[str] = set()
+        for item in self.list_watchlist():
+            if not isinstance(item, dict):
+                continue
+            symbol = self._normalize_symbol(item.get("symbol"))
+            if not symbol or symbol in seen:
+                continue
+            seen.add(symbol)
+            symbols.append(symbol)
+            if len(symbols) >= max_items:
+                break
+        return symbols
+
+    def upsert_watchlist_item(
+        self,
+        *,
+        symbol: str,
+        data_source: str = "OPENBB",
+        note: str | None = None,
+        thesis: str | None = None,
+        target_price_usd: float | None = None,
+        tags: list[str] | str | None = None,
+    ) -> dict[str, Any]:
+        normalized_symbol = self._normalize_symbol(symbol)
+        if not normalized_symbol:
+            raise ValueError("symbol is required")
+
+        normalized_data_source = str(data_source or "OPENBB").strip().upper() or "OPENBB"
+
+        normalized_target: float | None = None
+        if target_price_usd is not None:
+            normalized_target = float(target_price_usd)
+            if normalized_target <= 0:
+                raise ValueError("target_price_usd must be greater than 0")
+
+        payload = self._read_watchlist_payload()
+        items = payload.get("items") if isinstance(payload.get("items"), list) else []
+        now = _utc_now()
+
+        index = None
+        for item_index, item in enumerate(items):
+            if not isinstance(item, dict):
+                continue
+            if (
+                self._normalize_symbol(item.get("symbol")) == normalized_symbol
+                and str(item.get("data_source") or "OPENBB").strip().upper() == normalized_data_source
+            ):
+                index = item_index
+                break
+
+        if index is None:
+            entry = {
+                "symbol": normalized_symbol,
+                "data_source": normalized_data_source,
+                "note": str(note or ""),
+                "thesis": str(thesis or ""),
+                "target_price_usd": round(float(normalized_target), 4) if normalized_target is not None else None,
+                "tags": self._normalize_watchlist_tags(tags),
+                "created_at": now,
+                "updated_at": now,
+            }
+            items.append(entry)
+        else:
+            existing = items[index] if isinstance(items[index], dict) else {}
+            entry = {
+                "symbol": normalized_symbol,
+                "data_source": normalized_data_source,
+                "note": str(note if note is not None else existing.get("note") or ""),
+                "thesis": str(thesis if thesis is not None else existing.get("thesis") or ""),
+                "target_price_usd": (
+                    round(float(normalized_target), 4)
+                    if normalized_target is not None
+                    else existing.get("target_price_usd")
+                ),
+                "tags": self._normalize_watchlist_tags(tags if tags is not None else existing.get("tags")),
+                "created_at": str(existing.get("created_at") or now),
+                "updated_at": now,
+            }
+            items[index] = entry
+
+        items.sort(key=lambda item: (str(item.get("symbol") or ""), str(item.get("data_source") or "")))
+        payload["schema_version"] = WATCHLIST_SCHEMA_VERSION
+        payload["items"] = items
+        payload["updated_at"] = now
+        self._write_json(self._watchlist_path, payload)
+        return entry
+
+    def delete_watchlist_item(self, symbol: str, *, data_source: str | None = None) -> bool:
+        normalized_symbol = self._normalize_symbol(symbol)
+        if not normalized_symbol:
+            return False
+
+        normalized_data_source = str(data_source or "").strip().upper() or None
+        payload = self._read_watchlist_payload()
+        items = payload.get("items") if isinstance(payload.get("items"), list) else []
+        retained: list[dict[str, Any]] = []
+        removed = False
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            item_symbol = self._normalize_symbol(item.get("symbol"))
+            item_data_source = str(item.get("data_source") or "OPENBB").strip().upper()
+            matches_symbol = item_symbol == normalized_symbol
+            matches_source = normalized_data_source is None or item_data_source == normalized_data_source
+            if matches_symbol and matches_source:
+                removed = True
+                continue
+            retained.append(item)
+
+        if not removed:
+            return False
+
+        payload["schema_version"] = WATCHLIST_SCHEMA_VERSION
+        payload["items"] = retained
+        payload["updated_at"] = _utc_now()
+        self._write_json(self._watchlist_path, payload)
+        return True
 
     # ---- Cost basis methods ----
 

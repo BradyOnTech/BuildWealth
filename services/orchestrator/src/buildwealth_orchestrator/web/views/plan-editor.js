@@ -9,6 +9,7 @@ const PROJECTION_SOURCE_OPTIONS = [
   { value: 'branch_base', label: 'Scenario Branch - Base' },
   { value: 'branch_branch', label: 'Scenario Branch - Branch' },
 ];
+const DEFAULT_WITHDRAWAL_STRATEGIES = ['cashflow_only', 'four_percent_rule', 'dynamic_guardrails', 'bond_tent', 'bucket_strategy'];
 
 const ACCOUNT_TYPE_COLORS = {
   brokerage: '#2f6e47',
@@ -38,7 +39,7 @@ const projectionState = {
 };
 
 function setControlsEnabled(enabled) {
-  ['activate-plan', 'refresh-plan-context', 'save-plan', 'save-plan-timeline', 'save-plan-assumption-sets', 'save-plan-contribution-rules', 'save-plan-branch-templates', 'save-plan-settings', 'run-scenario-diff', 'apply-scenario-overrides', 'load-branch-template', 'run-scenario-branch', 'refresh-projection-profile', 'projection-source', 'projection-scenario-label', 'projection-account-metric', 'add-decision', 'plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-contribution-rules', 'plan-branch-templates', 'diff-assumption-set-id', 'diff-candidate-assumption-set-id', 'branch-template-id', 'scenario-branch-name', 'branch-assumption-set-id', 'scenario-branch-events', 'decision-summary', 'decision-rationale', 'decision-status'].forEach(id => { const el = byId(id); if (el) el.disabled = !enabled; });
+  ['activate-plan', 'refresh-plan-context', 'save-plan', 'save-plan-timeline', 'save-plan-assumption-sets', 'save-plan-contribution-rules', 'save-plan-branch-templates', 'save-plan-settings', 'run-scenario-diff', 'run-withdrawal-strategy-compare', 'apply-scenario-overrides', 'load-branch-template', 'run-scenario-branch', 'refresh-projection-profile', 'projection-source', 'projection-scenario-label', 'projection-account-metric', 'add-decision', 'plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-contribution-rules', 'plan-branch-templates', 'diff-assumption-set-id', 'diff-candidate-assumption-set-id', 'withdrawal-assumption-set-id', 'withdrawal-current-portfolio-value', 'withdrawal-strategies', 'withdrawal-include-raw-results', 'branch-template-id', 'scenario-branch-name', 'branch-assumption-set-id', 'scenario-branch-events', 'decision-summary', 'decision-rationale', 'decision-status'].forEach(id => { const el = byId(id); if (el) el.disabled = !enabled; });
   for (const f of [...PLAN_SETTING_FIELDS, ...DIFF_SETTING_FIELDS]) { const el = byId(f.inputId); if (el) el.disabled = !enabled; }
 }
 
@@ -78,16 +79,19 @@ function setAssumptionSetOptions(rawPayload) {
   const baseSelect = byId('diff-assumption-set-id');
   const candidateSelect = byId('diff-candidate-assumption-set-id');
   const branchSelect = byId('branch-assumption-set-id');
-  if (!baseSelect || !candidateSelect || !branchSelect) return;
+  const withdrawalSelect = byId('withdrawal-assumption-set-id');
+  if (!baseSelect || !candidateSelect || !branchSelect || !withdrawalSelect) return;
 
   const prevBase = String(baseSelect.value || '').trim();
   const prevCandidate = String(candidateSelect.value || '').trim();
   const prevBranch = String(branchSelect.value || '').trim();
+  const prevWithdrawal = String(withdrawalSelect.value || '').trim();
   const parsed = parseAssumptionSets(rawPayload);
 
   baseSelect.innerHTML = '<option value="">Active plan set (default)</option>';
   candidateSelect.innerHTML = '<option value="">Same as base</option>';
   branchSelect.innerHTML = '<option value="">Active plan set (default)</option>';
+  withdrawalSelect.innerHTML = '<option value="">Active plan set (default)</option>';
   for (const set of parsed.sets) {
     const baseOption = document.createElement('option');
     baseOption.value = set.id;
@@ -103,15 +107,22 @@ function setAssumptionSetOptions(rawPayload) {
     branchOption.value = set.id;
     branchOption.textContent = `${set.name} (${set.id})`;
     branchSelect.appendChild(branchOption);
+
+    const withdrawalOption = document.createElement('option');
+    withdrawalOption.value = set.id;
+    withdrawalOption.textContent = `${set.name} (${set.id})`;
+    withdrawalSelect.appendChild(withdrawalOption);
   }
 
   const validIds = new Set(parsed.sets.map(s => s.id));
   const baseValue = validIds.has(prevBase) ? prevBase : (validIds.has(parsed.activeId) ? parsed.activeId : '');
   const candidateValue = validIds.has(prevCandidate) ? prevCandidate : '';
   const branchValue = validIds.has(prevBranch) ? prevBranch : '';
+  const withdrawalValue = validIds.has(prevWithdrawal) ? prevWithdrawal : '';
   baseSelect.value = baseValue;
   candidateSelect.value = candidateValue;
   branchSelect.value = branchValue;
+  withdrawalSelect.value = withdrawalValue;
 }
 
 function parseBranchTemplates(rawPayload) {
@@ -741,8 +752,11 @@ export function clearDetail() {
   state.currentPlanDetail = null;
   byId('plan-meta').textContent = 'Select a plan to view details.';
   byId('plan-settings-meta').textContent = 'Blank values use global defaults from planner configuration.';
-  ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-contribution-rules', 'plan-branch-templates', 'plan-context', 'scenario-diff-output', 'scenario-branch-name', 'scenario-branch-events', 'scenario-branch-output', 'artifact-content'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
+  ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-contribution-rules', 'plan-branch-templates', 'plan-context', 'scenario-diff-output', 'withdrawal-current-portfolio-value', 'withdrawal-strategies', 'withdrawal-strategy-compare-output', 'scenario-branch-name', 'scenario-branch-events', 'scenario-branch-output', 'artifact-content'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
+  const includeRawCheckbox = byId('withdrawal-include-raw-results');
+  if (includeRawCheckbox) includeRawCheckbox.checked = false;
   byId('scenario-diff-summary').textContent = 'No scenario diff run yet.';
+  byId('withdrawal-strategy-compare-summary').textContent = 'No withdrawal strategy comparison run yet.';
   byId('scenario-branch-summary').textContent = 'No scenario branch run yet.';
   byId('projection-summary').textContent = 'Run a scenario diff or branch to populate projection visuals.';
   byId('plan-decisions-body').innerHTML = '<tr><td colspan="4">No decisions yet.</td></tr>';
@@ -779,6 +793,12 @@ export function renderDetail() {
   byId('plan-context').value = d.files?.context_markdown || '';
   byId('scenario-diff-summary').textContent = 'No scenario diff run yet.';
   byId('scenario-diff-output').value = '';
+  byId('withdrawal-strategy-compare-summary').textContent = 'No withdrawal strategy comparison run yet.';
+  byId('withdrawal-current-portfolio-value').value = '';
+  byId('withdrawal-strategies').value = DEFAULT_WITHDRAWAL_STRATEGIES.join(', ');
+  byId('withdrawal-strategy-compare-output').value = '';
+  const includeRawCheckbox = byId('withdrawal-include-raw-results');
+  if (includeRawCheckbox) includeRawCheckbox.checked = false;
   byId('scenario-branch-summary').textContent = 'No scenario branch run yet.';
   byId('scenario-branch-output').value = '';
   byId('scenario-branch-name').value = '';
@@ -912,6 +932,80 @@ function formatDiffOutput(diff) {
   const mc = diff?.monte_carlo_delta || {};
   lines.push('', 'Monte Carlo Delta:', `- P10: ${fmtCurrency(mc.delta_p10_future_value_usd)}`, `- P50: ${fmtCurrency(mc.delta_p50_future_value_usd)}`, `- P90: ${fmtCurrency(mc.delta_p90_future_value_usd)}`);
   lines.push('', 'Raw Payload:', JSON.stringify(diff, null, 2));
+  return lines.join('\n');
+}
+
+function parseWithdrawalStrategyInput(rawValue) {
+  const text = String(rawValue || '').trim();
+  if (!text) return [...DEFAULT_WITHDRAWAL_STRATEGIES];
+  const parts = text
+    .split(/[\n,]+/)
+    .map(item => item.trim())
+    .filter(Boolean);
+  if (!parts.length) return [...DEFAULT_WITHDRAWAL_STRATEGIES];
+  const seen = new Set();
+  const strategies = [];
+  for (const item of parts) {
+    if (seen.has(item)) continue;
+    seen.add(item);
+    strategies.push(item);
+  }
+  return strategies;
+}
+
+function formatWithdrawalStrategyCompareOutput(result) {
+  const comparisons = Array.isArray(result?.comparisons) ? result.comparisons : [];
+  const best = result?.best_strategy_by_metric && typeof result.best_strategy_by_metric === 'object'
+    ? result.best_strategy_by_metric
+    : {};
+  const warnings = Array.isArray(result?.warnings) ? result.warnings : [];
+  const assumptionSet = result?.assumption_set && typeof result.assumption_set === 'object' ? result.assumption_set : null;
+
+  const lines = [
+    `Plan: ${result?.plan_id || '-'}`,
+    `Current Portfolio: ${fmtCurrency(result?.current_portfolio_value_usd)}`,
+    `Assumption Set: ${describeAssumptionSetSummary(assumptionSet)}`,
+    '',
+    'Best Strategy By Metric:',
+    `- Future value: ${best.future_value || 'n/a'}`,
+    `- Real value: ${best.real_value || 'n/a'}`,
+    `- Monte Carlo P50: ${best.monte_carlo_p50 || 'n/a'}`,
+    '',
+    'Strategy Results:',
+  ];
+
+  if (!comparisons.length) {
+    lines.push('- No strategy comparisons returned.');
+  } else {
+    for (const row of comparisons) {
+      const strategy = String(row?.strategy || 'unknown');
+      const engine = String(row?.engine || 'local');
+      const status = String(row?.engine_status || 'ok');
+      lines.push(
+        `- ${strategy}: future ${fmtCurrency(row?.baseline_future_value_usd)}, real ${fmtCurrency(row?.baseline_real_value_usd)}, `
+        + `terminal ${fmtCurrency(row?.terminal_balance_usd)} @ age ${row?.terminal_age ?? 'n/a'}`
+      );
+      lines.push(
+        `  withdrawals ${fmtCurrency(row?.total_withdrawals_usd)}, taxes ${fmtCurrency(row?.total_taxes_usd)}, `
+        + `RMDs ${fmtCurrency(row?.total_rmds_usd)}, MC P50 ${fmtCurrency(row?.monte_carlo_p50_future_value_usd)}`
+      );
+      lines.push(`  engine ${engine}/${status}${row?.fallback_method ? ` (fallback: ${row.fallback_method})` : ''}`);
+      if (Array.isArray(row?.warnings) && row.warnings.length) {
+        lines.push(`  warnings: ${row.warnings.join(' | ')}`);
+      }
+    }
+  }
+
+  if (warnings.length) {
+    lines.push('', 'Warnings:');
+    for (const warning of warnings) lines.push(`- ${warning}`);
+  }
+
+  if (result?.raw_results && typeof result.raw_results === 'object' && Object.keys(result.raw_results).length) {
+    lines.push('', 'Raw Results:', JSON.stringify(result.raw_results, null, 2));
+  }
+
+  lines.push('', 'Raw Payload:', JSON.stringify(result, null, 2));
   return lines.join('\n');
 }
 
@@ -1191,6 +1285,45 @@ export function initEditor(refreshPlans) {
       renderProjectionVisuals();
       writeLog('Scenario diff completed.');
     } catch (e) { writeLog(`Diff failed: ${e.message}`, null, true); byId('scenario-diff-summary').textContent = `Failed: ${e.message}`; }
+  });
+
+  byId('run-withdrawal-strategy-compare').addEventListener('click', async () => {
+    if (!state.currentPlanId) { writeLog('Select a plan first.', null, true); return; }
+    const assumptionSetId = String(byId('withdrawal-assumption-set-id')?.value || '').trim();
+    const currentPortfolioValueRaw = String(byId('withdrawal-current-portfolio-value')?.value || '').trim();
+    const includeRawResults = !!byId('withdrawal-include-raw-results')?.checked;
+    const strategies = parseWithdrawalStrategyInput(byId('withdrawal-strategies')?.value);
+    if (!strategies.length) {
+      writeLog('Provide at least one withdrawal strategy.', null, true);
+      return;
+    }
+
+    const payload = { strategies, include_raw_results: includeRawResults };
+    if (assumptionSetId) payload.assumption_set_id = assumptionSetId;
+    if (currentPortfolioValueRaw) {
+      const currentPortfolioValue = Number(currentPortfolioValueRaw);
+      if (!Number.isFinite(currentPortfolioValue) || currentPortfolioValue < 0) {
+        writeLog('Portfolio value override must be a non-negative number.', null, true);
+        return;
+      }
+      payload.current_portfolio_value_usd = currentPortfolioValue;
+    }
+
+    writeLog('Running withdrawal strategy comparison...', payload);
+    try {
+      const result = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/withdrawal-strategy-compare`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const best = result?.best_strategy_by_metric || {};
+      byId('withdrawal-strategy-compare-summary').textContent = `Best future value: ${best.future_value || 'n/a'} • Best real value: ${best.real_value || 'n/a'} • Best MC P50: ${best.monte_carlo_p50 || 'n/a'}`;
+      byId('withdrawal-strategy-compare-output').value = formatWithdrawalStrategyCompareOutput(result);
+      writeLog('Withdrawal strategy comparison completed.');
+    } catch (e) {
+      writeLog(`Withdrawal strategy comparison failed: ${e.message}`, null, true);
+      byId('withdrawal-strategy-compare-summary').textContent = `Failed: ${e.message}`;
+    }
   });
 
   byId('run-scenario-branch').addEventListener('click', async () => {

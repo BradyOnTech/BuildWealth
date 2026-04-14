@@ -1098,6 +1098,43 @@ class PlanScenarioDiffResponse(BaseModel):
     monte_carlo_delta: dict[str, float | int | None] = Field(default_factory=dict)
 
 
+class PlanWithdrawalStrategyCompareRequest(BaseModel):
+    current_portfolio_value_usd: float | None = None
+    assumption_set_id: str | None = None
+    strategies: list[str] = Field(default_factory=list)
+    include_raw_results: bool = False
+
+
+class PlanWithdrawalStrategyComparisonRow(BaseModel):
+    strategy: str
+    baseline_future_value_usd: float | None = None
+    baseline_real_value_usd: float | None = None
+    total_withdrawals_usd: float = 0.0
+    total_taxes_usd: float = 0.0
+    total_rmds_usd: float = 0.0
+    terminal_age: int | None = None
+    terminal_balance_usd: float | None = None
+    monte_carlo_p10_future_value_usd: float = 0.0
+    monte_carlo_p50_future_value_usd: float = 0.0
+    monte_carlo_p90_future_value_usd: float = 0.0
+    average_effective_tax_rate: float | None = None
+    engine: Literal["local", "ignidash"] = "local"
+    engine_status: Literal["ok", "degraded"] = "ok"
+    fallback_method: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
+class PlanWithdrawalStrategyCompareResponse(BaseModel):
+    plan_id: str
+    current_portfolio_value_usd: float
+    assumption_set: PlanAssumptionSet | None = None
+    strategies: list[str] = Field(default_factory=list)
+    comparisons: list[PlanWithdrawalStrategyComparisonRow] = Field(default_factory=list)
+    best_strategy_by_metric: dict[str, str | None] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+    raw_results: dict[str, Any] = Field(default_factory=dict)
+
+
 class PlanScenarioBranchEvent(BaseModel):
     label: str
     event_type: Literal["purchase", "windfall", "job_change", "retirement", "milestone"] = "milestone"

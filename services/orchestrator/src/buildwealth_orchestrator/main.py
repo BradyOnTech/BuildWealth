@@ -35,6 +35,8 @@ from buildwealth_orchestrator.schemas import (
     PlanDetailResponse,
     PlanScenarioDiffRequest,
     PlanScenarioDiffResponse,
+    PlanWithdrawalStrategyCompareRequest,
+    PlanWithdrawalStrategyCompareResponse,
     PlanScenarioBranchRequest,
     PlanScenarioBranchResponse,
     PlanSettings,
@@ -816,18 +818,31 @@ def resolve_plan_contribution_rules(detail: dict[str, Any]) -> dict[str, Any]:
     return parse_contribution_rules_payload(raw_payload)
 
 
+DEFAULT_WITHDRAWAL_STRATEGIES = [
+    "cashflow_only",
+    "four_percent_rule",
+    "dynamic_guardrails",
+    "bond_tent",
+    "bucket_strategy",
+]
+
+
+def normalize_withdrawal_strategy_value(
+    raw_value: Any,
+    *,
+    fallback: str | None = None,
+) -> str | None:
+    text = str(raw_value or "").strip().lower()
+    if not text:
+        return fallback
+    return STRATEGY_ALIASES.get(text, fallback)
+
+
 def normalize_withdrawal_strategies(
     raw_values: Any,
 ) -> tuple[list[str], list[str]]:
-    default_strategies = [
-        "cashflow_only",
-        "four_percent_rule",
-        "dynamic_guardrails",
-        "bond_tent",
-        "bucket_strategy",
-    ]
     if raw_values is None:
-        return default_strategies, []
+        return DEFAULT_WITHDRAWAL_STRATEGIES, []
 
     raw_items: list[str]
     if isinstance(raw_values, str):
@@ -838,7 +853,7 @@ def normalize_withdrawal_strategies(
         raw_items = []
 
     if not raw_items:
-        return default_strategies, []
+        return DEFAULT_WITHDRAWAL_STRATEGIES, []
 
     resolved: list[str] = []
     invalid: list[str] = []
@@ -854,7 +869,7 @@ def normalize_withdrawal_strategies(
         resolved.append(normalized)
 
     if not resolved:
-        return default_strategies, invalid
+        return DEFAULT_WITHDRAWAL_STRATEGIES, invalid
     return resolved, invalid
 
 
@@ -2748,6 +2763,157 @@ def _compute_price_history_change(records: list[dict[str, Any]]) -> tuple[float 
     return first_close, last_close, ((last_close - first_close) / first_close) * 100.0
 
 
+def _extract_history_date_key(payload: dict[str, Any]) -> str:
+    for key in ("date", "datetime", "timestamp", "as_of"):
+        raw = payload.get(key)
+        if raw is None:
+            continue
+        text = str(raw).strip()
+        if not text:
+            continue
+        return text[:10]
+    return ""
+
+
+def _history_close_series_desc(records: list[dict[str, Any]]) -> list[float]:
+    rows: list[tuple[str, float]] = []
+    for row in records:
+        close_value = _extract_numeric_field(row, ("close", "adj_close", "last", "price"))
+        if close_value is None:
+            continue
+        rows.append((_extract_history_date_key(row), close_value))
+
+    rows.sort(key=lambda item: item[0], reverse=True)
+    return [item[1] for item in rows]
+
+
+# Trend and market-condition rules adapted from Ghostfolio (MIT):
+# apps/api/src/services/benchmark/benchmark.service.ts
+# libs/common/src/lib/helper.ts (calculateBenchmarkTrend)
+def _calculate_benchmark_trend(*, closes_desc: list[float], days: int) -> str:
+    if len(closes_desc) < 2 * days:
+        return "UNKNOWN"
+    recent_avg = sum(closes_desc[:days]) / float(days)
+    past_avg = sum(closes_desc[days : 2 * days]) / float(days)
+    if recent_avg > past_avg:
+        return "UP"
+    if recent_avg < past_avg:
+        return "DOWN"
+    return "NEUTRAL"
+
+
+def _market_condition_from_all_time_high(performance_percent: float | None) -> str:
+    if performance_percent is None:
+        return "UNKNOWN"
+    if performance_percent >= 0:
+        return "ALL_TIME_HIGH"
+    if performance_percent <= -20.0:
+        return "BEAR_MARKET"
+    return "NEUTRAL_MARKET"
+
+
+def build_portfolio_watchlist_payload(
+    *,
+    period: str = "2y",
+    interval: str = "1d",
+) -> dict[str, Any]:
+    period_value = str(period or "2y").strip() or "2y"
+    interval_value = str(interval or "1d").strip() or "1d"
+    items_payload = portfolio_store.list_watchlist()
+    rows: list[dict[str, Any]] = []
+    warnings: list[str] = []
+
+    for item in items_payload:
+        if not isinstance(item, dict):
+            continue
+        symbol = str(item.get("symbol") or "").strip().upper()
+        if not symbol:
+            continue
+
+        quote_response = research_service.quote(symbol=symbol)
+        quote_row = quote_response.records[0] if quote_response.records else {}
+        if not isinstance(quote_row, dict):
+            quote_row = {}
+        quote_price = _extract_numeric_field(
+            quote_row,
+            (
+                "last",
+                "price",
+                "close",
+                "adj_close",
+                "regular_market_price",
+                "post_market_price",
+            ),
+        )
+        quote_change_pct = _extract_numeric_field(
+            quote_row,
+            (
+                "change_percent",
+                "change_pct",
+                "percent_change",
+                "regular_market_change_percent",
+            ),
+        )
+
+        history_response = research_service.price_history(
+            symbol=symbol,
+            period=period_value,
+            interval=interval_value,
+        )
+        history_records = [row for row in history_response.records if isinstance(row, dict)]
+        first_close, last_close, period_change_pct = _compute_price_history_change(history_records)
+        close_series_desc = _history_close_series_desc(history_records)
+        trend_50d = _calculate_benchmark_trend(closes_desc=close_series_desc, days=50)
+        trend_200d = _calculate_benchmark_trend(closes_desc=close_series_desc, days=200)
+        all_time_high = max(close_series_desc) if close_series_desc else None
+        performance_from_high_pct = None
+        if all_time_high and quote_price is not None and all_time_high > 0:
+            performance_from_high_pct = ((quote_price - all_time_high) / all_time_high) * 100.0
+
+        if not quote_response.available:
+            warnings.append(f"{symbol}: quote unavailable ({quote_response.message})")
+        if not history_response.available:
+            warnings.append(f"{symbol}: history unavailable ({history_response.message})")
+
+        rows.append(
+            {
+                "symbol": symbol,
+                "data_source": str(item.get("data_source") or "OPENBB").strip().upper() or "OPENBB",
+                "note": str(item.get("note") or ""),
+                "thesis": str(item.get("thesis") or ""),
+                "target_price_usd": item.get("target_price_usd"),
+                "tags": item.get("tags") if isinstance(item.get("tags"), list) else [],
+                "created_at": item.get("created_at"),
+                "updated_at": item.get("updated_at"),
+                "quote_available": quote_response.available,
+                "quote_message": quote_response.message,
+                "quote_price": quote_price,
+                "quote_change_pct": quote_change_pct,
+                "history_available": history_response.available,
+                "history_message": history_response.message,
+                "period_label": period_value,
+                "period_first_close": first_close,
+                "period_last_close": last_close,
+                "period_change_pct": period_change_pct,
+                "all_time_high": all_time_high,
+                "performance_from_high_pct": performance_from_high_pct,
+                "market_condition": _market_condition_from_all_time_high(performance_from_high_pct),
+                "trend50d": trend_50d,
+                "trend200d": trend_200d,
+            }
+        )
+
+    rows.sort(key=lambda item: str(item.get("symbol") or ""))
+    return {
+        "period": period_value,
+        "interval": interval_value,
+        "count": len(rows),
+        "items": rows,
+        "warnings": warnings,
+        "updated_at": context_utc_now_iso(),
+    }
+
+
 def _build_context_cache_key(prefix: str, payload: dict[str, Any]) -> str:
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return f"{prefix}:{serialized}"
@@ -2822,6 +2988,22 @@ async def build_buildwealth_context_payload(
         onboarding_payload = {"note": f"Onboarding context unavailable: {exc}"}
         warnings.append(str(onboarding_payload["note"]))
 
+    try:
+        watchlist_items = portfolio_store.list_watchlist()
+        watchlist_payload = {
+            "count": len(watchlist_items),
+            "symbols_preview": [
+                str(item.get("symbol") or "").strip().upper()
+                for item in watchlist_items[:8]
+                if isinstance(item, dict) and str(item.get("symbol") or "").strip()
+            ],
+            "items": watchlist_items,
+            "updated_at": context_utc_now_iso(),
+        }
+    except Exception as exc:
+        watchlist_payload = {"note": f"Watchlist context unavailable: {exc}", "items": []}
+        warnings.append(str(watchlist_payload["note"]))
+
     recommendation_limit = max(1, min(_coerce_int(max_recommendations, 10), 50))
     recommendations_payload: dict[str, Any]
     recommendation_rows: list[dict[str, Any]]
@@ -2848,7 +3030,14 @@ async def build_buildwealth_context_payload(
     plan_context_payload: dict[str, Any] = {"note": "No active plan is configured."}
     plan_assumption_sets_payload: dict[str, Any] = {}
     plan_timeline_payload: dict[str, Any] = {}
+    plan_contribution_rules_payload: dict[str, Any] = {}
+    plan_contribution_allocation_preview_payload: dict[str, Any] | None = None
     plan_branch_templates_payload: dict[str, Any] = {}
+    plan_withdrawal_strategy_payload: dict[str, Any] = {
+        "active": "cashflow_only",
+        "source": "default",
+        "options": DEFAULT_WITHDRAWAL_STRATEGIES,
+    }
     plan_tracking_payload: dict[str, Any] = {}
     plan_decisions_payload: list[dict[str, Any]] = []
     baseline_projection_payload: dict[str, Any] | None = None
@@ -2870,9 +3059,38 @@ async def build_buildwealth_context_payload(
         try:
             plan_assumption_sets_payload = plan_workspace.get_plan_assumption_sets(resolved_plan_id)
             plan_timeline_payload = plan_workspace.get_plan_timeline(resolved_plan_id)
+            plan_contribution_rules_payload = plan_workspace.get_plan_contribution_rules(resolved_plan_id)
             plan_branch_templates_payload = plan_workspace.get_plan_branch_templates(resolved_plan_id)
         except Exception as exc:
             warnings.append(f"Plan model payload unavailable: {exc}")
+
+        try:
+            raw_settings = resolved_plan_detail.get("settings", {})
+            if not isinstance(raw_settings, dict):
+                raw_settings = {}
+            settings_strategy = normalize_withdrawal_strategy_value(raw_settings.get("withdrawal_strategy"))
+            timeline_retirement_payload = (
+                plan_timeline_payload.get("retirement")
+                if isinstance(plan_timeline_payload.get("retirement"), dict)
+                else {}
+            )
+            timeline_strategy = normalize_withdrawal_strategy_value(
+                timeline_retirement_payload.get("withdrawal_strategy")
+            )
+            active_strategy = (
+                settings_strategy
+                or timeline_strategy
+                or normalize_withdrawal_strategy_value(None, fallback="cashflow_only")
+                or "cashflow_only"
+            )
+            source = "settings" if settings_strategy else ("timeline" if timeline_strategy else "default")
+            plan_withdrawal_strategy_payload = {
+                "active": active_strategy,
+                "source": source,
+                "options": DEFAULT_WITHDRAWAL_STRATEGIES,
+            }
+        except Exception as exc:
+            warnings.append(f"Withdrawal strategy context unavailable: {exc}")
 
         planner_defaults = {
             "annual_contribution_usd": settings.planner_annual_contribution_usd,
@@ -2909,6 +3127,19 @@ async def build_buildwealth_context_payload(
                         "created_at": item.get("created_at"),
                     }
                 )
+
+        try:
+            raw_settings = resolved_plan_detail.get("settings", {})
+            if not isinstance(raw_settings, dict):
+                raw_settings = {}
+            preview = build_contribution_allocation_for_plan_settings(
+                plan_settings=raw_settings,
+                contribution_rules_payload=plan_contribution_rules_payload,
+            )
+            if preview is not None:
+                plan_contribution_allocation_preview_payload = preview.model_dump(mode="json")
+        except Exception as exc:
+            warnings.append(f"Contribution allocation preview unavailable: {exc}")
 
         if include_plan_projection and resolved_snapshot is not None:
             projection_cache_key: str | None = None
@@ -2997,9 +3228,15 @@ async def build_buildwealth_context_payload(
         research_symbols or [],
         max_symbols=max(0, min(_coerce_int(research_symbol_limit, DEFAULT_RESEARCH_SYMBOL_LIMIT), 20)),
     )
+    watchlist_symbols_for_context = []
+    if isinstance(watchlist_payload, dict):
+        symbols_preview = watchlist_payload.get("symbols_preview")
+        if isinstance(symbols_preview, list):
+            watchlist_symbols_for_context = symbols_preview
     research_symbols_for_context = derive_research_symbols(
         requested_symbols=requested_symbols,
         snapshot_summary=snapshot_summary_payload,
+        watchlist_symbols=watchlist_symbols_for_context,
         max_symbols=max(0, min(_coerce_int(research_symbol_limit, DEFAULT_RESEARCH_SYMBOL_LIMIT), 20)),
     )
     research_items: list[dict[str, Any]] = []
@@ -3134,6 +3371,7 @@ async def build_buildwealth_context_payload(
             "today_dashboard": today_dashboard_payload,
             "financial_profile": financial_profile_payload,
             "onboarding_status": onboarding_payload,
+            "watchlist": watchlist_payload,
         },
         "planning": {
             "active_plan": (
@@ -3151,6 +3389,9 @@ async def build_buildwealth_context_payload(
             "tracking": plan_tracking_payload,
             "assumption_sets": plan_assumption_sets_payload,
             "timeline": plan_timeline_payload,
+            "contribution_rules": plan_contribution_rules_payload,
+            "contribution_allocation_preview": plan_contribution_allocation_preview_payload,
+            "withdrawal_strategy": plan_withdrawal_strategy_payload,
             "branch_templates": plan_branch_templates_payload,
             "baseline_projection": baseline_projection_payload,
         },
@@ -5711,6 +5952,51 @@ def add_portfolio_account(request: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+@app.get("/api/portfolio/watchlist")
+def get_portfolio_watchlist(period: str = "2y", interval: str = "1d") -> dict[str, Any]:
+    return build_portfolio_watchlist_payload(period=period, interval=interval)
+
+
+@app.post("/api/portfolio/watchlist")
+def upsert_portfolio_watchlist_item(request: dict[str, Any]) -> dict[str, Any]:
+    symbol = str(request.get("symbol") or "").strip().upper()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="symbol is required")
+
+    target_price_raw = request.get("target_price_usd")
+    target_price_value: float | None = None
+    if target_price_raw not in (None, "", "null"):
+        try:
+            target_price_value = float(target_price_raw)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="target_price_usd must be a number") from exc
+
+    try:
+        item = portfolio_store.upsert_watchlist_item(
+            symbol=symbol,
+            data_source=str(request.get("data_source") or "OPENBB"),
+            note=request.get("note"),
+            thesis=request.get("thesis"),
+            target_price_usd=target_price_value,
+            tags=request.get("tags"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"item": item}
+
+
+@app.delete("/api/portfolio/watchlist/{symbol}")
+def delete_portfolio_watchlist_item(symbol: str, data_source: str | None = None) -> dict[str, Any]:
+    deleted = portfolio_store.delete_watchlist_item(symbol, data_source=data_source)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Watchlist item not found.")
+    return {
+        "deleted": True,
+        "symbol": str(symbol or "").strip().upper(),
+        "data_source": str(data_source or "").strip().upper() or None,
+    }
+
+
 @app.get("/api/portfolio/cost-basis-methods")
 def get_portfolio_cost_basis_methods() -> dict[str, Any]:
     return portfolio_store.get_cost_basis_methods()
@@ -6304,6 +6590,37 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
         scenario_deltas=[ScenarioComparisonRow(**item) for item in scenario_deltas],
         monte_carlo_delta=monte_carlo_delta,
     )
+
+
+@app.post(
+    "/api/plans/{plan_id}/withdrawal-strategy-compare",
+    response_model=PlanWithdrawalStrategyCompareResponse,
+)
+async def compare_plan_withdrawal_strategies(
+    plan_id: str,
+    request: PlanWithdrawalStrategyCompareRequest,
+) -> PlanWithdrawalStrategyCompareResponse:
+    arguments: dict[str, Any] = {
+        "plan_id": plan_id,
+        "current_portfolio_value_usd": request.current_portfolio_value_usd,
+        "assumption_set_id": request.assumption_set_id,
+        "strategies": request.strategies,
+        "include_raw_results": request.include_raw_results,
+    }
+    try:
+        payload = await tool_compare_withdrawal_strategies(arguments)
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Withdrawal strategy comparison failed: {exc}",
+        ) from exc
+    return PlanWithdrawalStrategyCompareResponse(**payload)
 
 
 @app.post("/api/plans/{plan_id}/scenario-branch", response_model=PlanScenarioBranchResponse)

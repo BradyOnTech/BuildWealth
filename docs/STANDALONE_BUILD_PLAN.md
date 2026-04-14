@@ -57,6 +57,41 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-14 (Completed - Watchlist Foundation, Ghostfolio-Inspired)
+- Added local watchlist persistence in portfolio storage (`watchlist.json`) with migration-safe payload handling and schema normalization:
+  - symbol/data-source identity, note/thesis fields, target price, tags, timestamps
+- Added watchlist portfolio APIs:
+  - `GET /api/portfolio/watchlist`
+  - `POST /api/portfolio/watchlist`
+  - `DELETE /api/portfolio/watchlist/{symbol}`
+- Watchlist response enrichment now reuses Ghostfolio benchmark/watchlist patterns:
+  - market condition via all-time-high drawdown thresholds (`ALL_TIME_HIGH`, `NEUTRAL_MARKET`, `BEAR_MARKET`)
+  - 50d/200d trend states (`UP`, `DOWN`, `NEUTRAL`, `UNKNOWN`) based on moving-average comparison windows
+- Portfolio UI now includes a dedicated Watchlist section with:
+  - add/update form (symbol, target price, tags, note)
+  - enriched market table (price, day/window move, trends, market condition, remove action)
+- Unified BuildWealth context now includes watchlist context in `financial_picture` and uses watchlist symbols as research-symbol candidates ahead of holdings fallback, improving LLM research grounding
+- Added focused coverage in:
+  - `test_portfolio_store.py` (watchlist CRUD + legacy migration)
+  - `test_portfolio_watchlist.py` (market condition/trend payload behavior)
+  - `test_buildwealth_context.py` (watchlist symbol derivation + summary output)
+
+### 2026-04-14 (Completed - Withdrawal Strategy Compare API + Planning Context Enrichment)
+- Added plan-level withdrawal strategy comparison API:
+  - `POST /api/plans/{plan_id}/withdrawal-strategy-compare`
+  - Request/response contracts added in `schemas.py` for strategy list input and structured comparison output rows
+- Plan Workspace now includes a dedicated “Withdrawal Strategy Compare” panel:
+  - assumption-set selector, optional portfolio-value override, strategy list input, and raw-result toggle
+  - strategy comparison output now renders best-strategy picks and per-strategy totals (future/real value, withdrawals, taxes, RMDs, Monte Carlo)
+- Unified BuildWealth context payload planning bundle now carries:
+  - `contribution_rules`
+  - `contribution_allocation_preview`
+  - `withdrawal_strategy`
+  and context summary text now explicitly reports those planning controls for Copilot grounding
+- Added focused coverage:
+  - `test_withdrawal_strategy_compare.py` for strategy normalization and compare ranking/summarization behavior
+  - `test_buildwealth_context.py` assertions for planning-control lines in the unified context summary
+
 ### 2026-04-14 (Completed - Planning Control Surface Expansion)
 - Added plan-level contribution-rules model management in Plan Workspace with validation + decision logging:
   - `GET/PUT /api/plans/{plan_id}/contribution-rules`

@@ -74,6 +74,7 @@ def derive_research_symbols(
     *,
     requested_symbols: list[Any] | None,
     snapshot_summary: dict[str, Any] | None,
+    watchlist_symbols: list[Any] | None = None,
     max_symbols: int = DEFAULT_RESEARCH_SYMBOL_LIMIT,
 ) -> list[str]:
     resolved_limit = max(0, min(int(max_symbols), 20))
@@ -83,6 +84,19 @@ def derive_research_symbols(
     requested = normalize_research_symbols(requested_symbols, max_symbols=resolved_limit)
     if len(requested) >= resolved_limit:
         return requested
+
+    watchlist = normalize_research_symbols(watchlist_symbols, max_symbols=resolved_limit)
+    if len(requested) + len(watchlist) >= resolved_limit:
+        merged: list[str] = []
+        seen: set[str] = set()
+        for symbol in [*requested, *watchlist]:
+            if symbol in seen:
+                continue
+            seen.add(symbol)
+            merged.append(symbol)
+            if len(merged) >= resolved_limit:
+                break
+        return merged
 
     holdings_symbols: list[Any] = []
     if isinstance(snapshot_summary, dict):
@@ -97,7 +111,7 @@ def derive_research_symbols(
     from_holdings = normalize_research_symbols(holdings_symbols, max_symbols=resolved_limit)
     merged: list[str] = []
     seen: set[str] = set()
-    for symbol in [*requested, *from_holdings]:
+    for symbol in [*requested, *watchlist, *from_holdings]:
         if symbol in seen:
             continue
         seen.add(symbol)
@@ -119,6 +133,9 @@ def build_context_summary(
     snapshot_summary = financial_picture.get("snapshot_summary")
     if not isinstance(snapshot_summary, dict):
         snapshot_summary = {}
+    watchlist = financial_picture.get("watchlist")
+    if not isinstance(watchlist, dict):
+        watchlist = {}
     dashboard = financial_picture.get("today_dashboard")
     if not isinstance(dashboard, dict):
         dashboard = {}
@@ -132,6 +149,15 @@ def build_context_summary(
     tracking = planning.get("tracking")
     if not isinstance(tracking, dict):
         tracking = {}
+    contribution_rules = planning.get("contribution_rules")
+    if not isinstance(contribution_rules, dict):
+        contribution_rules = {}
+    contribution_allocation_preview = planning.get("contribution_allocation_preview")
+    if not isinstance(contribution_allocation_preview, dict):
+        contribution_allocation_preview = {}
+    withdrawal_strategy = planning.get("withdrawal_strategy")
+    if not isinstance(withdrawal_strategy, dict):
+        withdrawal_strategy = {}
     baseline_projection = planning.get("baseline_projection")
     if not isinstance(baseline_projection, dict):
         baseline_projection = {}
@@ -155,6 +181,12 @@ def build_context_summary(
         warnings = []
 
     generated_at = str(context_payload.get("generated_at") or "").strip() or utc_now_iso()
+    raw_watchlist_symbols_preview = watchlist.get("symbols_preview")
+    watchlist_symbols_preview = (
+        [str(item).strip().upper() for item in raw_watchlist_symbols_preview if str(item).strip()]
+        if isinstance(raw_watchlist_symbols_preview, list)
+        else []
+    )
 
     lines: list[str] = [
         "BuildWealth Unified Context",
@@ -171,6 +203,14 @@ def build_context_summary(
             f"monthly surplus {_format_currency(dashboard.get('monthly_surplus_usd'))}, "
             f"savings rate {_format_percent(dashboard.get('savings_rate_pct'), digits=1)}."
         ),
+        (
+            f"- Watchlist: {int(_safe_float(watchlist.get('count')) or 0)} item(s)"
+            + (
+                f" ({', '.join(watchlist_symbols_preview)})."
+                if watchlist_symbols_preview
+                else "."
+            )
+        ),
         "",
         "Planning",
         (
@@ -181,6 +221,21 @@ def build_context_summary(
             f"- Tracking status: {str(tracking.get('status') or 'n/a')} "
             f"with actual return {_format_percent(tracking.get('actual_annualized_return_pct'), digits=2)} "
             f"vs expected {_format_percent(tracking.get('expected_annualized_return_pct'), digits=2)}."
+        ),
+        (
+            f"- Contribution rules: {int(_safe_float(len(contribution_rules.get('rules', []))) or 0)} rule(s), "
+            f"base {str((contribution_rules.get('base_rule') or {}).get('type') or 'save')}, "
+            f"profile {str(contribution_rules.get('profile_id') or 'n/a')}."
+        ),
+        (
+            f"- Contribution allocation preview: total "
+            f"{_format_currency(contribution_allocation_preview.get('total_contributions_usd'))} "
+            f"(employee {_format_currency(contribution_allocation_preview.get('employee_contributions_usd'))}, "
+            f"employer match {_format_currency(contribution_allocation_preview.get('employer_match_usd'))})."
+        ),
+        (
+            f"- Withdrawal strategy: {str(withdrawal_strategy.get('active') or 'cashflow_only')} "
+            f"(source: {str(withdrawal_strategy.get('source') or 'default')})."
         ),
     ]
 

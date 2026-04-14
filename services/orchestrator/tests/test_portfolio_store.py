@@ -409,6 +409,70 @@ class TestCustomAssets:
             store.create_custom_asset(name="Invalid Asset", value=0)
 
 
+class TestWatchlist:
+    def test_watchlist_upsert_and_delete(self, store):
+        created = store.upsert_watchlist_item(
+            symbol="nvda",
+            note="AI compute beneficiary",
+            target_price_usd=1200,
+            tags=["ai", "semis", "ai"],
+        )
+        assert created["symbol"] == "NVDA"
+        assert created["data_source"] == "OPENBB"
+        assert created["target_price_usd"] == pytest.approx(1200.0, abs=1e-6)
+        assert created["tags"] == ["ai", "semis"]
+
+        updated = store.upsert_watchlist_item(
+            symbol="NVDA",
+            note="Updated thesis",
+            target_price_usd=1250,
+            tags="ai, quality",
+        )
+        assert updated["symbol"] == "NVDA"
+        assert updated["note"] == "Updated thesis"
+        assert updated["target_price_usd"] == pytest.approx(1250.0, abs=1e-6)
+        assert updated["tags"] == ["ai", "quality"]
+
+        rows = store.list_watchlist()
+        assert len(rows) == 1
+        assert rows[0]["symbol"] == "NVDA"
+        assert store.list_watchlist_symbols() == ["NVDA"]
+
+        assert store.delete_watchlist_item("NVDA") is True
+        assert store.delete_watchlist_item("NVDA") is False
+        assert store.list_watchlist() == []
+
+    def test_watchlist_payload_migrates_from_legacy_list(self, tmp_path):
+        portfolio_dir = tmp_path / "portfolio"
+        portfolio_dir.mkdir(parents=True)
+        (portfolio_dir / "transactions.json").write_text("[]", encoding="utf-8")
+        (portfolio_dir / "accounts.json").write_text(
+            json.dumps({"accounts": [{"id": "default", "name": "Default Brokerage", "type": "taxable"}]}),
+            encoding="utf-8",
+        )
+        (portfolio_dir / "holdings.json").write_text(json.dumps(PortfolioStore._default_holdings_payload()), encoding="utf-8")
+        (portfolio_dir / "asset_metadata.json").write_text(json.dumps(PortfolioStore._default_asset_metadata_payload()), encoding="utf-8")
+        (portfolio_dir / "cost_basis_methods.json").write_text(
+            json.dumps(PortfolioStore._default_cost_basis_methods_payload()),
+            encoding="utf-8",
+        )
+        (portfolio_dir / "manual_prices.json").write_text(json.dumps(PortfolioStore._default_manual_prices_payload()), encoding="utf-8")
+        (portfolio_dir / "fx_rates.json").write_text(json.dumps(PortfolioStore._default_fx_rates_payload()), encoding="utf-8")
+        (portfolio_dir / "fx_rates_history.json").write_text(
+            json.dumps(PortfolioStore._default_fx_rates_history_payload()),
+            encoding="utf-8",
+        )
+        (portfolio_dir / "watchlist.json").write_text(
+            json.dumps(["aapl", {"symbol": "msft", "tags": "quality,megacap"}]),
+            encoding="utf-8",
+        )
+
+        store = PortfolioStore(portfolio_dir)
+        rows = store.list_watchlist()
+        assert [row["symbol"] for row in rows] == ["AAPL", "MSFT"]
+        assert rows[1]["tags"] == ["quality", "megacap"]
+
+
 class TestCostBasisMethods:
     def test_lifo_method_changes_realized_gain(self, store):
         store.set_cost_basis_method(method="LIFO", account="default", symbol="AAPL")

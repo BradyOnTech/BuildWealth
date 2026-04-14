@@ -52,6 +52,16 @@ export function template() {
         <div class="settings-grid">${settingsGridHtml(DIFF_SETTING_FIELDS)}</div>
         <p class="hint tight" id="scenario-diff-summary">No scenario diff run yet.</p>
         <label class="field"><span>Scenario Diff Output</span><textarea id="scenario-diff-output" rows="8" readonly></textarea></label>
+        <div class="view-header"><h3>Withdrawal Strategy Compare</h3><button class="primary small" id="run-withdrawal-strategy-compare" disabled>Run Compare</button></div>
+        <p class="hint tight">Compare retirement withdrawal strategies using the active plan settings, timeline, and selected assumption set.</p>
+        <div class="settings-grid">
+          <label class="field"><span>Assumption Set</span><select id="withdrawal-assumption-set-id" disabled></select></label>
+          <label class="field"><span>Portfolio Value Override</span><input type="number" id="withdrawal-current-portfolio-value" step="0.01" placeholder="Optional current portfolio value" disabled /></label>
+          <label class="field"><span>Strategies</span><input type="text" id="withdrawal-strategies" placeholder="cashflow_only,four_percent_rule,dynamic_guardrails,bond_tent,bucket_strategy" disabled /></label>
+        </div>
+        <label class="field"><span>Include Raw Scenario Payloads</span><input type="checkbox" id="withdrawal-include-raw-results" disabled /></label>
+        <p class="hint tight" id="withdrawal-strategy-compare-summary">No withdrawal strategy comparison run yet.</p>
+        <label class="field"><span>Withdrawal Strategy Compare Output</span><textarea id="withdrawal-strategy-compare-output" rows="8" readonly></textarea></label>
         <div class="view-header"><h3>Scenario Branch (Life Events)</h3><div class="header-actions"><button class="ghost small" id="load-branch-template" disabled>Load Template</button><button class="primary small" id="run-scenario-branch" disabled>Run Branch</button></div></div>
         <p class="hint tight">Model uncertain life events and compare branch outcomes against the base plan.</p>
         <div class="settings-grid">
