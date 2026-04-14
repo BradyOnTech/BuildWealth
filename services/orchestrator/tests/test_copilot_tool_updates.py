@@ -19,6 +19,7 @@ def test_copilot_registry_includes_phase_3_5_tools() -> None:
         "pin_watchlist_research_to_plan",
         "research_compare",
         "research_dossier",
+        "preview_recommendation",
     }
     assert required_tools <= set(main.copilot.tools.keys())
 
@@ -55,6 +56,16 @@ def test_reject_recommendation_tool_supports_decision_packet_controls() -> None:
     assert "capture_scenario_diff" in properties
     assert "create_decision_packet" in properties
     assert "decision_packet_research_symbols" in properties
+
+
+def test_preview_recommendation_tool_contract() -> None:
+    tool = main.copilot.tools["preview_recommendation"]
+    properties = tool.parameters.get("properties", {})
+    assert "recommendation_id" in properties
+    assert "plan_id" in properties
+    assert "plan_settings_updates" in properties
+    assert "capture_scenario_diff" in properties
+    assert "decision_status" in properties
 
 
 def test_list_recommendations_tool_contract_includes_sort() -> None:
@@ -274,6 +285,58 @@ def test_tool_research_dossier_calls_research_service(
     assert payload["headline"] == "MSFT leads."
     assert payload["freshness"]["status"] == "fresh"
     assert [item["symbol"] for item in payload["compare"]["items"]] == ["MSFT", "AAPL"]
+
+
+def test_tool_preview_recommendation_calls_preview_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_preview(
+        recommendation_id: str,
+        request: main.RecommendationPreviewRequest,
+    ) -> main.RecommendationPreviewResponse:
+        assert recommendation_id == "rec-123"
+        assert request.plan_id == "plan-abc"
+        assert request.plan_settings_updates == {"annual_contribution_usd": 22000}
+        assert request.capture_scenario_diff is True
+        assert request.decision_status == "accepted"
+        return main.RecommendationPreviewResponse(
+            recommendation=main.RecommendationItem(
+                id="rec-123",
+                created_at="2026-04-14T00:00:00+00:00",
+                updated_at="2026-04-14T00:00:00+00:00",
+                title="Increase contributions",
+                detail="Raise annual contributions.",
+                priority="high",
+                status="proposed",
+                recommendation_type="plan_settings_update",
+                source="workflow:plan_review",
+                plan_id="plan-abc",
+                action_payload={"plan_settings_updates": {"annual_contribution_usd": 22000}},
+            ),
+            preview={
+                "status": "captured",
+                "scenario_diff_preview": {"status": "captured"},
+            },
+            suggested_research_symbols=["VTI"],
+            message="Pre-apply preview captured with scenario diff deltas.",
+        )
+
+    monkeypatch.setattr(main, "preview_recommendation", fake_preview)
+    payload = asyncio.run(
+        main.tool_preview_recommendation(
+            {
+                "recommendation_id": "rec-123",
+                "plan_id": "plan-abc",
+                "plan_settings_updates": {"annual_contribution_usd": 22000},
+                "capture_scenario_diff": True,
+                "decision_status": "accepted",
+            }
+        )
+    )
+
+    assert payload["recommendation"]["id"] == "rec-123"
+    assert payload["preview"]["status"] == "captured"
+    assert payload["suggested_research_symbols"] == ["VTI"]
 
 
 def test_tool_add_timeline_event_appends_event_and_preserves_retirement_payload(

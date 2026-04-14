@@ -23,6 +23,11 @@ export function template() {
     </div>
     <div class="table-wrap"><table><thead><tr><th>When</th><th>Status</th><th>Score</th><th>Priority</th><th>Type</th><th>Recommendation</th><th>Plan</th><th>Source</th><th>Actions</th></tr></thead><tbody id="recommendation-body"></tbody></table></div>
     <div class="form-section">
+      <div class="view-header"><h3>Pre-Apply Preview</h3></div>
+      <p class="hint" id="recommendation-preview-summary">Select a proposed recommendation and click Preview.</p>
+      <div id="recommendation-preview-details" class="item-list"></div>
+    </div>
+    <div class="form-section">
       <div class="view-header"><h3 id="recommendation-form-title">Create Recommendation</h3>
         <div class="header-actions"><button class="ghost small" id="recommendation-cancel-edit" hidden>Cancel</button><button class="primary small" id="recommendation-save">Save</button></div>
       </div>
@@ -50,6 +55,58 @@ function resetForm() {
   byId('recommendation-source').value = 'manual-ui';
   byId('recommendation-action-payload').value = '';
   byId('recommendation-plan').value = '';
+}
+
+function resetPreview() {
+  state.recommendationPreview = null;
+  byId('recommendation-preview-summary').textContent = 'Select a proposed recommendation and click Preview.';
+  byId('recommendation-preview-details').innerHTML = '';
+}
+
+function renderPreview(result) {
+  state.recommendationPreview = result;
+  const preview = result && typeof result.preview === 'object' ? result.preview : {};
+  const recommendation = result && typeof result.recommendation === 'object' ? result.recommendation : {};
+  const actionPreview = preview && typeof preview.action_preview === 'object' ? preview.action_preview : {};
+  const scenarioPreview = preview && typeof preview.scenario_diff_preview === 'object' ? preview.scenario_diff_preview : {};
+  const warnings = Array.isArray(preview?.warnings) ? preview.warnings : [];
+  const suggestedSymbols = Array.isArray(result?.suggested_research_symbols) ? result.suggested_research_symbols : [];
+
+  const status = String(preview.status || 'unknown');
+  const recommendationType = String(preview.recommendation_type || recommendation.recommendation_type || 'general');
+  const title = String(recommendation.title || recommendation.id || 'Recommendation');
+  byId('recommendation-preview-summary').textContent = `${title} • ${recommendationType} • preview status ${status}.`;
+
+  const cards = [];
+  if (actionPreview?.decision_log_summary) {
+    cards.push(`<article class="list-item"><p class="list-item-title">Action Preview</p><p class="list-item-meta">${actionPreview.decision_log_summary}</p></article>`);
+  }
+
+  if (scenarioPreview && typeof scenarioPreview === 'object') {
+    const scenarioStatus = String(scenarioPreview.status || 'unknown');
+    const deltas = Array.isArray(scenarioPreview.scenario_deltas) ? scenarioPreview.scenario_deltas : [];
+    const baseline = deltas.find((item) => item && item.label === 'baseline') || deltas[0];
+    if (scenarioStatus === 'captured' && baseline && typeof baseline === 'object') {
+      cards.push(`<article class="list-item"><p class="list-item-title">Scenario Delta</p><p class="list-item-meta">Baseline future-value delta ${fmtCurrency(Number(baseline.delta_future_value_usd || 0))}, real-value delta ${fmtCurrency(Number(baseline.delta_real_value_usd || 0))}.</p></article>`);
+    } else {
+      const reason = String(scenarioPreview.reason || '').trim();
+      cards.push(`<article class="list-item"><p class="list-item-title">Scenario Preview</p><p class="list-item-meta">${scenarioStatus}${reason ? ` • ${reason}` : ''}</p></article>`);
+    }
+  }
+
+  if (suggestedSymbols.length) {
+    cards.push(`<article class="list-item"><p class="list-item-title">Suggested Research Symbols</p><p class="list-item-meta">${suggestedSymbols.join(', ')}</p></article>`);
+  }
+
+  if (warnings.length) {
+    for (const warning of warnings.slice(0, 5)) {
+      cards.push(`<article class="list-item attention"><p class="list-item-title">Warning</p><p class="list-item-meta">${warning}</p></article>`);
+    }
+  }
+
+  byId('recommendation-preview-details').innerHTML = cards.length
+    ? cards.join('')
+    : '<article class="list-item"><p class="list-item-title">No preview details.</p></article>';
 }
 
 function formPayload() {
@@ -142,7 +199,8 @@ function renderTable() {
     const wrap = document.createElement('div');
     wrap.className = 'table-actions';
     if (r.status === 'proposed') {
-      wrap.innerHTML = `<button class="primary small" data-action="apply">Apply</button><button class="ghost small" data-action="reject">Reject</button>`;
+      wrap.innerHTML = `<button class="ghost small" data-action="preview">Preview</button><button class="primary small" data-action="apply">Apply</button><button class="ghost small" data-action="reject">Reject</button>`;
+      wrap.querySelector('[data-action="preview"]').addEventListener('click', () => previewItem(r));
       wrap.querySelector('[data-action="apply"]').addEventListener('click', () => applyItem(r));
       wrap.querySelector('[data-action="reject"]').addEventListener('click', () => rejectItem(r));
     }
@@ -208,13 +266,26 @@ async function applyItem(r) {
   const payload = { plan_id: r.plan_id || byId('recommendation-plan').value || state.currentPlanId || null, rationale: rationale.trim(), decision_status: 'accepted' };
   const result = await fetchJson(`/api/recommendations/${encodeURIComponent(r.id)}/apply`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
   if (result.plan?.id === state.currentPlanId) state.currentPlanDetail = result.plan;
+  resetPreview();
   writeLog('Applied.', { id: r.id, decision_closure: result.decision_closure || null, research_bridge: result.research_bridge || null }); await load();
+}
+
+async function previewItem(r) {
+  const payload = {
+    plan_id: r.plan_id || byId('recommendation-plan').value || state.currentPlanId || null,
+    capture_scenario_diff: true,
+    decision_status: 'accepted',
+  };
+  const result = await fetchJson(`/api/recommendations/${encodeURIComponent(r.id)}/preview`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+  renderPreview(result);
+  writeLog('Recommendation preview generated.', { id: r.id, status: result?.preview?.status, scenario_status: result?.preview?.scenario_diff_preview?.status || null });
 }
 
 async function rejectItem(r) {
   const reason = window.prompt('Reason (optional):', '');
   if (reason === null) return;
   const result = await fetchJson(`/api/recommendations/${encodeURIComponent(r.id)}/reject`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reason: reason.trim() }) });
+  resetPreview();
   writeLog('Rejected.', { id: r.id, decision_closure: result.decision_closure || null }); await load();
 }
 
@@ -242,6 +313,7 @@ function populatePlanFilters() {
 export function init() {
   populatePlanFilters();
   resetForm();
+  resetPreview();
   if ([...byId('recommendation-status-filter').options].some((option) => option.value === state.recommendationFilterStatus)) {
     byId('recommendation-status-filter').value = state.recommendationFilterStatus;
   }

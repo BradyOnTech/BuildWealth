@@ -88,6 +88,8 @@ from buildwealth_orchestrator.schemas import (
     RecommendationApplyRequest,
     RecommendationCreateRequest,
     RecommendationItem,
+    RecommendationPreviewRequest,
+    RecommendationPreviewResponse,
     RecommendationRejectRequest,
     RecommendationUpdateRequest,
     AffordabilityRequest,
@@ -378,6 +380,7 @@ copilot = FinancialCopilot(
         "- For reusable life-event presets/templates → call get_plan_branch_templates or update_plan_branch_templates.\n"
         "- To move research watchlist thesis into planning branches → call pin_watchlist_research_to_plan.\n"
         "- For 'what should I do?' → call get_today_dashboard and list_recommendations.\n"
+        "- Before applying a high-impact recommendation → call preview_recommendation to inspect scenario and action effects.\n"
         "- For stock/investment research on one ticker → call research_quote or research_price_history.\n"
         "- For comparing multiple investment candidates → call research_compare, "
         "then call simulate_trade to show how a chosen trade would affect portfolio allocation.\n"
@@ -2971,6 +2974,152 @@ async def build_recommendation_scenario_diff_preview(
     )
 
 
+def _build_pre_apply_action_preview(
+    *,
+    recommendation: dict[str, Any],
+    recommendation_type: str,
+    resolved_plan_id: str | None,
+    decision_status: str,
+    compare_updates: dict[str, object],
+) -> dict[str, Any]:
+    title = str(recommendation.get("title") or "Recommendation").strip() or "Recommendation"
+    detail = str(recommendation.get("detail") or "").strip()
+    action_payload = recommendation.get("action_payload")
+    payload = action_payload if isinstance(action_payload, dict) else {}
+
+    if recommendation_type == "plan_settings_update":
+        return {
+            "kind": "plan_settings_update",
+            "plan_id": resolved_plan_id,
+            "decision_status": decision_status,
+            "updates_count": len(compare_updates),
+            "proposed_plan_settings_updates": compare_updates,
+            "decision_log_summary": (
+                f"Would apply plan settings updates to plan `{resolved_plan_id}` "
+                f"and append decision status `{decision_status}`."
+                if resolved_plan_id
+                else "Would apply plan settings updates, but no plan_id is currently resolved."
+            ),
+        }
+
+    if recommendation_type == "workflow_action":
+        workflow_id = str(payload.get("workflow_id") or "").strip() or None
+        suggested_action = str(payload.get("suggested_action") or detail).strip()
+        return {
+            "kind": "workflow_action",
+            "plan_id": resolved_plan_id,
+            "decision_status": decision_status,
+            "workflow_id": workflow_id,
+            "suggested_action": suggested_action,
+            "decision_log_summary": (
+                f"Would append workflow recommendation decision `{title}` to plan `{resolved_plan_id}` "
+                f"with status `{decision_status}`."
+                if resolved_plan_id
+                else f"Would append workflow recommendation decision `{title}`, but no plan_id is currently resolved."
+            ),
+        }
+
+    return {
+        "kind": "general",
+        "plan_id": resolved_plan_id,
+        "decision_status": decision_status,
+        "decision_log_summary": (
+            f"Would append recommendation decision `{title}` to plan `{resolved_plan_id}` with status `{decision_status}`."
+            if resolved_plan_id
+            else f"Would append recommendation decision `{title}`, but no plan_id is currently resolved."
+        ),
+        "detail_preview": detail,
+    }
+
+
+async def preview_recommendation(
+    recommendation_id: str,
+    request: RecommendationPreviewRequest,
+) -> RecommendationPreviewResponse:
+    recommendation = recommendation_inbox.get(recommendation_id)
+    current_status = str(recommendation.get("status", "proposed")).strip().lower()
+    if current_status != "proposed":
+        raise ValueError("Only proposed recommendations can be previewed before apply/reject.")
+
+    recommendation_type = str(recommendation.get("recommendation_type") or "general").strip().lower() or "general"
+    decision_status = str(request.decision_status or "accepted").strip() or "accepted"
+    compare_updates = _extract_recommendation_plan_settings_updates(
+        recommendation,
+        request_updates=request.plan_settings_updates,
+    )
+
+    resolved_plan_id: str | None = None
+    warnings: list[str] = []
+    try:
+        resolved_plan_id = _resolve_recommendation_plan_id(recommendation, request.plan_id)
+    except ValueError as exc:
+        warnings.append(str(exc))
+
+    scenario_diff_preview: dict[str, Any]
+    if request.capture_scenario_diff:
+        captured = await build_recommendation_scenario_diff_preview(
+            recommendation,
+            requested_plan_id=request.plan_id,
+            request_updates=request.plan_settings_updates,
+        )
+        if isinstance(captured, dict):
+            scenario_diff_preview = captured
+        else:
+            scenario_diff_preview = {
+                "status": "skipped",
+                "captured_at": context_utc_now_iso(),
+                "reason": "Scenario preview is available for plan_settings_update recommendations.",
+            }
+    else:
+        scenario_diff_preview = {
+            "status": "skipped",
+            "captured_at": context_utc_now_iso(),
+            "reason": "Scenario preview capture disabled by request.",
+        }
+
+    if recommendation_type == "plan_settings_update" and not compare_updates:
+        warnings.append("No plan settings updates were found in recommendation payload or request overrides.")
+
+    action_preview = _build_pre_apply_action_preview(
+        recommendation=recommendation,
+        recommendation_type=recommendation_type,
+        resolved_plan_id=resolved_plan_id,
+        decision_status=decision_status,
+        compare_updates=compare_updates,
+    )
+
+    suggested_symbols = _extract_decision_packet_symbols(recommendation)
+    preview_status = str(scenario_diff_preview.get("status") or "advisory").strip().lower() or "advisory"
+    if recommendation_type != "plan_settings_update" and preview_status == "skipped":
+        preview_status = "advisory"
+
+    preview_payload: dict[str, Any] = {
+        "status": preview_status,
+        "captured_at": context_utc_now_iso(),
+        "recommendation_id": recommendation_id,
+        "recommendation_type": recommendation_type,
+        "current_status": current_status,
+        "decision_status": decision_status,
+        "plan_id": resolved_plan_id,
+        "action_preview": action_preview,
+        "scenario_diff_preview": scenario_diff_preview,
+        "warnings": warnings,
+    }
+
+    message = "Pre-apply preview generated."
+    if recommendation_type == "plan_settings_update" and preview_status == "captured":
+        message = "Pre-apply preview captured with scenario diff deltas."
+    elif recommendation_type != "plan_settings_update":
+        message = "Pre-apply advisory preview generated for non-plan-settings recommendation."
+
+    return RecommendationPreviewResponse(
+        recommendation=_recommendation_item_from_row(recommendation),
+        preview=preview_payload,
+        suggested_research_symbols=suggested_symbols,
+        message=message,
+    )
+
+
 def _build_decision_packet_assumptions(
     plan_id: str,
     plan_detail: PlanDetailResponse | None,
@@ -4846,6 +4995,25 @@ async def tool_apply_recommendation(arguments: dict[str, object]) -> dict[str, o
     return result.model_dump(mode="json")
 
 
+async def tool_preview_recommendation(arguments: dict[str, object]) -> dict[str, object]:
+    recommendation_id = str(arguments.get("recommendation_id") or "").strip()
+    if not recommendation_id:
+        raise ValueError("recommendation_id is required")
+
+    payload = RecommendationPreviewRequest(
+        plan_id=(str(arguments.get("plan_id") or "").strip() or None),
+        plan_settings_updates=(
+            arguments.get("plan_settings_updates")
+            if isinstance(arguments.get("plan_settings_updates"), dict)
+            else {}
+        ),
+        capture_scenario_diff=_coerce_bool(arguments.get("capture_scenario_diff"), True),
+        decision_status=str(arguments.get("decision_status") or "accepted").strip() or "accepted",
+    )
+    result = await preview_recommendation(recommendation_id, payload)
+    return result.model_dump(mode="json")
+
+
 async def tool_reject_recommendation(arguments: dict[str, object]) -> dict[str, object]:
     recommendation_id = str(arguments.get("recommendation_id") or "").strip()
     if not recommendation_id:
@@ -6553,6 +6721,26 @@ def configure_copilot_tools() -> None:
         handler=tool_apply_recommendation,
     )
     copilot.register_tool(
+        name="preview_recommendation",
+        description=(
+            "Preview a recommendation before apply/reject. Returns action summary and "
+            "scenario-diff preview when applicable."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "recommendation_id": {"type": "string"},
+                "plan_id": {"type": "string"},
+                "plan_settings_updates": {"type": "object"},
+                "capture_scenario_diff": {"type": "boolean"},
+                "decision_status": {"type": "string"},
+            },
+            "required": ["recommendation_id"],
+            "additionalProperties": False,
+        },
+        handler=tool_preview_recommendation,
+    )
+    copilot.register_tool(
         name="reject_recommendation",
         description=(
             "Reject a recommendation inbox item with an optional reason. "
@@ -7844,6 +8032,19 @@ def update_recommendation(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return _recommendation_item_from_row(recommendation)
+
+
+@app.post("/api/recommendations/{recommendation_id}/preview", response_model=RecommendationPreviewResponse)
+async def preview_recommendation_route(
+    recommendation_id: str,
+    request: RecommendationPreviewRequest,
+) -> RecommendationPreviewResponse:
+    try:
+        return await preview_recommendation(recommendation_id, request)
+    except RecommendationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/recommendations/{recommendation_id}/apply", response_model=RecommendationActionResponse)

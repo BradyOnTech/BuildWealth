@@ -999,6 +999,13 @@ class RecommendationApplyRequest(BaseModel):
     research_bridge_assumption_set_id: str | None = None
 
 
+class RecommendationPreviewRequest(BaseModel):
+    plan_id: str | None = None
+    plan_settings_updates: dict[str, Any] = Field(default_factory=dict)
+    capture_scenario_diff: bool = True
+    decision_status: str = "accepted"
+
+
 class RecommendationRejectRequest(BaseModel):
     plan_id: str | None = None
     reason: str = ""
@@ -1015,6 +1022,13 @@ class RecommendationActionResponse(BaseModel):
     suggested_research_symbols: list[str] = Field(default_factory=list)
     research_bridge: dict[str, Any] = Field(default_factory=dict)
     decision_closure: dict[str, Any] = Field(default_factory=dict)
+    message: str
+
+
+class RecommendationPreviewResponse(BaseModel):
+    recommendation: RecommendationItem
+    preview: dict[str, Any] = Field(default_factory=dict)
+    suggested_research_symbols: list[str] = Field(default_factory=list)
     message: str
 
 

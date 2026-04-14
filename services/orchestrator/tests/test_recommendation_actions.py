@@ -366,3 +366,70 @@ def test_reject_recommendation_can_write_decision_packet_artifact(
     assert packet_meta.get("artifact_id") == response.decision_packet_artifact.id
     assert packet_meta.get("decision_status") == "rejected"
     assert "AAPL" in packet_meta.get("cited_research_symbols", [])
+
+
+def test_preview_recommendation_plan_settings_update_captures_scenario(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = PlanWorkspace(tmp_path / "plans")
+    plan = workspace.create_plan(title="Preview Plan")
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    recommendation = inbox.create(
+        title="Increase savings",
+        detail="Raise annual contributions.",
+        recommendation_type="plan_settings_update",
+        plan_id=plan["id"],
+        action_payload={"plan_settings_updates": {"annual_contribution_usd": 26000.0}},
+    )
+    monkeypatch.setattr(main, "plan_workspace", workspace)
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    async def fake_preview(*_: object, **__: object) -> dict[str, object]:
+        return {
+            "status": "captured",
+            "scenario_deltas": [{"label": "baseline", "delta_future_value_usd": 1500.0}],
+        }
+
+    monkeypatch.setattr(main, "build_recommendation_scenario_diff_preview", fake_preview)
+    response = asyncio.run(
+        main.preview_recommendation(
+            recommendation["id"],
+            main.RecommendationPreviewRequest(),
+        )
+    )
+
+    assert response.recommendation.status == "proposed"
+    assert response.preview["status"] == "captured"
+    assert response.preview["scenario_diff_preview"]["status"] == "captured"
+    assert response.preview["action_preview"]["kind"] == "plan_settings_update"
+    assert response.preview["action_preview"]["updates_count"] == 1
+    assert response.preview["plan_id"] == plan["id"]
+
+    unchanged = inbox.get(recommendation["id"])
+    assert unchanged["status"] == "proposed"
+
+
+def test_preview_recommendation_general_returns_advisory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    recommendation = inbox.create(
+        title="Review spending categories",
+        detail="Quick housekeeping recommendation.",
+        recommendation_type="general",
+    )
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    response = asyncio.run(
+        main.preview_recommendation(
+            recommendation["id"],
+            main.RecommendationPreviewRequest(),
+        )
+    )
+
+    assert response.recommendation.status == "proposed"
+    assert response.preview["status"] == "advisory"
+    assert response.preview["action_preview"]["kind"] == "general"
+    assert response.preview["scenario_diff_preview"]["status"] == "skipped"

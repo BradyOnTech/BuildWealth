@@ -10,6 +10,23 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-14 (Completed - Phase 4.2 Slice 2, Pre-Apply Recommendation Preview)
+1. Added first-class pre-apply recommendation preview contract:
+- `POST /api/recommendations/{recommendation_id}/preview`
+- request supports `plan_id`, `plan_settings_updates`, `capture_scenario_diff`, and `decision_status`.
+2. Added orchestration path `preview_recommendation(...)`:
+- enforces pre-apply status (`proposed` only)
+- returns action preview by recommendation type (`plan_settings_update`, `workflow_action`, `general`)
+- reuses scenario-diff capture flow for plan-setting recommendations before mutation.
+3. Added Copilot tool `preview_recommendation` with matching argument surface.
+4. Added Inbox one-click Preview UX:
+- proposed rows now include a `Preview` action
+- added preview panel showing action summary, scenario delta when captured, and warnings.
+5. Added regression coverage:
+- preview behavior tests in `test_recommendation_actions.py`
+- tool contract + invocation coverage in `test_copilot_tool_updates.py`.
+6. Verification: `pytest -q services/orchestrator/tests` passes (`389 passed`).
+
 ### 2026-04-14 (Completed - Phase 4.2 Slice 1, Recommendation Scoring Engine)
 1. Added a dedicated recommendation scoring service (`recommendation_scoring.py`) with transparent factor outputs:
 - impact
@@ -284,7 +301,7 @@ Use this scoring when selecting the next slice:
 ## Immediate Next 3 Slices
 1. Watchlist ranking endpoint + UI score surfacing (Phase 4.1 Slice 3).
 2. Copilot recommendation evidence-citation enforcement using dossier context (Phase 4.1 Slice 4).
-3. One-click pre-apply simulation previews for recommendation types in Inbox UI/API flows (Phase 4.2 Slice 2).
+3. Persist expected-vs-realized recommendation outcomes and closure analytics surfaces (Phase 4.2 Slice 3).
 
 ## Guardrails
 1. Do not fork or embed full Ghostfolio/Ignidash apps into BuildWealth runtime path.
