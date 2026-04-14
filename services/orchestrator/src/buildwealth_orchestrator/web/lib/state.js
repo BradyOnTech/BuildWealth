@@ -25,6 +25,7 @@ export const state = {
   recommendationSort: 'ranked',
   recommendationEditingId: null,
   recommendationPreview: null,
+  recommendationClosureAnalytics: null,
   researchCompare: null,
   researchDossier: null,
 };

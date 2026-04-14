@@ -10,6 +10,33 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-14 (Completed - Phase 4.2 Slice 3, Expected-vs-Realized Outcomes and Closure Analytics)
+1. Added first-class expected-vs-realized outcome tracking on recommendation closure:
+- apply/reject flows now persist `expected_outcome` and `expected_vs_realized` metadata in `decision_closure`
+- expected values are derived from scenario-diff baseline deltas when available.
+2. Added realized-outcome update surface for closed recommendations:
+- `POST /api/recommendations/{recommendation_id}/outcome`
+- records realized deltas, observation metadata, and recomputed expected-vs-realized metrics
+- writes refreshed closure artifacts when plan context is available.
+3. Added closure analytics API and Copilot retrieval surface:
+- `GET /api/recommendations/closure-analytics`
+- Copilot tool `get_recommendation_closure_analytics`
+- analytics summarize coverage, measured counts, directional match rate, and outcome deltas by status/type/source.
+4. Added Copilot outcome logging tool:
+- `update_recommendation_outcome` for one-call realized-outcome capture.
+5. Expanded Inbox UI outcome visibility:
+- Closure Analytics panel with summary and grouped counts
+- closed recommendations now surface expected outcomes, realized outcomes, and expected-vs-realized gap details
+- added one-click `Log Outcome` action for applied/rejected rows.
+6. Source-provenance note:
+- outcome packaging follows Ignidash-style analyzer/calibration summary patterns
+- closure artifact persistence remains consistent with Ghostfolio-style auditability and decision traceability.
+7. Added regression coverage:
+- outcome update and analytics behavior in `test_recommendation_closure_analytics.py`
+- updated closure expectations in `test_recommendation_actions.py`
+- Copilot tool contract/invocation coverage in `test_copilot_tool_updates.py`.
+8. Verification: `pytest -q services/orchestrator/tests` passes (`406 passed`).
+
 ### 2026-04-14 (Completed - Phase 4.1 Slice 4, Copilot Recommendation Evidence-Citation Enforcement)
 1. Added research dossier retrieval surfaces for recommendation evidence workflows:
 - `GET /api/research/dossiers` (plan-scoped dossier artifact lookup)
@@ -346,9 +373,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Persist expected-vs-realized recommendation outcomes and closure analytics surfaces (Phase 4.2 Slice 3).
-2. Add "Top 3 Next Actions" surfaces in dashboard and plan workspace (Phase 4.2 Slice 4).
-3. Add recommendation calibration reporting (by recommendation class/source) to improve decision loop quality (Phase 4.2 follow-up).
+1. Add "Top 3 Next Actions" surfaces in dashboard and plan workspace (Phase 4.2 Slice 4).
+2. Add recommendation calibration reporting (by recommendation class/source) to improve decision loop quality (Phase 4.2 follow-up).
+3. Extend closure analytics into plan workspace artifact summaries for longitudinal decision-review workflows.
 
 ## Guardrails
 1. Do not fork or embed full Ghostfolio/Ignidash apps into BuildWealth runtime path.

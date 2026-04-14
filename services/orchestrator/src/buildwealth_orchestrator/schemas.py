@@ -1074,6 +1074,16 @@ class RecommendationRejectRequest(BaseModel):
     decision_packet_research_symbols: list[str] = Field(default_factory=list)
 
 
+class RecommendationOutcomeUpdateRequest(BaseModel):
+    plan_id: str | None = None
+    realized_delta_future_value_usd: float | None = None
+    realized_delta_real_value_usd: float | None = None
+    observed_at: datetime | None = None
+    observation_window_days: int | None = Field(default=None, ge=0, le=3650)
+    measurement_source: str = ""
+    note: str = ""
+
+
 class RecommendationActionResponse(BaseModel):
     recommendation: RecommendationItem
     plan: PlanDetailResponse | None = None
@@ -1090,6 +1100,18 @@ class RecommendationPreviewResponse(BaseModel):
     preview: dict[str, Any] = Field(default_factory=dict)
     suggested_research_symbols: list[str] = Field(default_factory=list)
     message: str
+
+
+class RecommendationClosureAnalyticsResponse(BaseModel):
+    generated_at: datetime
+    count: int = 0
+    statuses: list[str] = Field(default_factory=list)
+    include_pending_realized: bool = True
+    summary: dict[str, Any] = Field(default_factory=dict)
+    by_status: list[dict[str, Any]] = Field(default_factory=list)
+    by_type: list[dict[str, Any]] = Field(default_factory=list)
+    by_source: list[dict[str, Any]] = Field(default_factory=list)
+    items: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class CopilotContextOptions(BaseModel):

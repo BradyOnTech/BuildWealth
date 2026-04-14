@@ -21,6 +21,8 @@ def test_copilot_registry_includes_phase_3_5_tools() -> None:
         "research_dossier",
         "research_dossier_lookup",
         "research_watchlist_rank",
+        "update_recommendation_outcome",
+        "get_recommendation_closure_analytics",
         "preview_recommendation",
     }
     assert required_tools <= set(main.copilot.tools.keys())
@@ -58,6 +60,27 @@ def test_reject_recommendation_tool_supports_decision_packet_controls() -> None:
     assert "capture_scenario_diff" in properties
     assert "create_decision_packet" in properties
     assert "decision_packet_research_symbols" in properties
+
+
+def test_update_recommendation_outcome_tool_contract() -> None:
+    tool = main.copilot.tools["update_recommendation_outcome"]
+    properties = tool.parameters.get("properties", {})
+    assert "recommendation_id" in properties
+    assert "plan_id" in properties
+    assert "realized_delta_future_value_usd" in properties
+    assert "realized_delta_real_value_usd" in properties
+    assert "observed_at" in properties
+    assert "observation_window_days" in properties
+    assert "measurement_source" in properties
+    assert "note" in properties
+
+
+def test_get_recommendation_closure_analytics_tool_contract() -> None:
+    tool = main.copilot.tools["get_recommendation_closure_analytics"]
+    properties = tool.parameters.get("properties", {})
+    assert "limit" in properties
+    assert "statuses" in properties
+    assert "include_pending_realized" in properties
 
 
 def test_preview_recommendation_tool_contract() -> None:
@@ -442,6 +465,100 @@ def test_tool_preview_recommendation_calls_preview_service(
     assert payload["recommendation"]["id"] == "rec-123"
     assert payload["preview"]["status"] == "captured"
     assert payload["suggested_research_symbols"] == ["VTI"]
+
+
+def test_tool_update_recommendation_outcome_calls_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_update(
+        recommendation_id: str,
+        request: main.RecommendationOutcomeUpdateRequest,
+    ) -> main.RecommendationActionResponse:
+        assert recommendation_id == "rec-123"
+        assert request.plan_id == "plan-abc"
+        assert request.realized_delta_future_value_usd == 1200.0
+        assert request.realized_delta_real_value_usd == 900.0
+        assert request.observation_window_days == 30
+        assert request.measurement_source == "manual-review"
+        assert request.note == "Outcome stabilized"
+        return main.RecommendationActionResponse(
+            recommendation=main.RecommendationItem(
+                id="rec-123",
+                created_at="2026-04-14T00:00:00+00:00",
+                updated_at="2026-04-14T00:00:00+00:00",
+                title="Increase contributions",
+                detail="Raise annual contributions.",
+                priority="high",
+                status="applied",
+                recommendation_type="plan_settings_update",
+                source="workflow:plan_review",
+                plan_id="plan-abc",
+                action_payload={
+                    "decision_closure": {
+                        "expected_vs_realized": {"status": "measured"},
+                    }
+                },
+            ),
+            message="Recommendation outcome recorded.",
+            decision_closure={"expected_vs_realized": {"status": "measured"}},
+        )
+
+    monkeypatch.setattr(main, "update_recommendation_outcome", fake_update)
+    payload = asyncio.run(
+        main.tool_update_recommendation_outcome(
+            {
+                "recommendation_id": "rec-123",
+                "plan_id": "plan-abc",
+                "realized_delta_future_value_usd": 1200.0,
+                "realized_delta_real_value_usd": 900.0,
+                "observation_window_days": 30,
+                "measurement_source": "manual-review",
+                "note": "Outcome stabilized",
+            }
+        )
+    )
+
+    assert payload["recommendation"]["id"] == "rec-123"
+    assert payload["decision_closure"]["expected_vs_realized"]["status"] == "measured"
+
+
+def test_tool_get_recommendation_closure_analytics_calls_payload_builder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_build(
+        *,
+        limit: int,
+        statuses,
+        include_pending_realized: bool,
+    ) -> dict[str, object]:
+        assert limit == 120
+        assert statuses == ["applied", "rejected"]
+        assert include_pending_realized is False
+        return {
+            "generated_at": "2026-04-14T00:00:00+00:00",
+            "count": 2,
+            "statuses": ["applied", "rejected"],
+            "include_pending_realized": False,
+            "summary": {"measured_count": 1},
+            "by_status": [{"key": "applied", "count": 1}],
+            "by_type": [{"key": "plan_settings_update", "count": 1}],
+            "by_source": [{"key": "copilot", "count": 1}],
+            "items": [],
+        }
+
+    monkeypatch.setattr(main, "build_recommendation_closure_analytics_payload", fake_build)
+    payload = asyncio.run(
+        main.tool_get_recommendation_closure_analytics(
+            {
+                "limit": 120,
+                "statuses": ["applied", "rejected"],
+                "include_pending_realized": False,
+            }
+        )
+    )
+
+    assert payload["count"] == 2
+    assert payload["summary"]["measured_count"] == 1
 
 
 def test_tool_add_timeline_event_appends_event_and_preserves_retirement_payload(

@@ -21,6 +21,11 @@ export function template() {
         <option value="created_at">Newest</option>
       </select></label>
     </div>
+    <div class="form-section">
+      <div class="view-header"><h3>Closure Analytics</h3><button class="ghost small" id="reload-recommendation-analytics">Refresh Analytics</button></div>
+      <p class="hint" id="recommendation-analytics-summary">No closure analytics loaded yet.</p>
+      <div id="recommendation-analytics-details" class="item-list"></div>
+    </div>
     <div class="table-wrap"><table><thead><tr><th>When</th><th>Status</th><th>Score</th><th>Priority</th><th>Type</th><th>Recommendation</th><th>Plan</th><th>Source</th><th>Actions</th></tr></thead><tbody id="recommendation-body"></tbody></table></div>
     <div class="form-section">
       <div class="view-header"><h3>Pre-Apply Preview</h3></div>
@@ -61,6 +66,49 @@ function resetPreview() {
   state.recommendationPreview = null;
   byId('recommendation-preview-summary').textContent = 'Select a proposed recommendation and click Preview.';
   byId('recommendation-preview-details').innerHTML = '';
+}
+
+function resetClosureAnalytics() {
+  state.recommendationClosureAnalytics = null;
+  byId('recommendation-analytics-summary').textContent = 'No closure analytics loaded yet.';
+  byId('recommendation-analytics-details').innerHTML = '';
+}
+
+function renderClosureAnalytics(payload) {
+  state.recommendationClosureAnalytics = payload && typeof payload === 'object' ? payload : null;
+  const summary = payload && typeof payload.summary === 'object' ? payload.summary : {};
+  const count = Number(payload?.count || 0);
+  const measured = Number(summary?.measured_count || 0);
+  const coverage = Number(summary?.realized_coverage_pct || 0);
+  const directionRate = Number(summary?.future_value_direction_match_rate_pct);
+  const meanAbsError = Number(summary?.mean_future_value_abs_error_usd);
+  const coverageLabel = Number.isFinite(coverage) ? coverage.toFixed(1) : '0.0';
+  const summaryParts = [
+    `Closed tracked: ${count}`,
+    `Measured: ${measured}`,
+    `Realized coverage: ${coverageLabel}%`,
+  ];
+  if (Number.isFinite(directionRate)) summaryParts.push(`Direction match: ${directionRate.toFixed(1)}%`);
+  if (Number.isFinite(meanAbsError)) summaryParts.push(`Mean abs error: ${fmtCurrency(meanAbsError)}`);
+  byId('recommendation-analytics-summary').textContent = summaryParts.join(' • ');
+
+  const cards = [];
+  const byStatus = Array.isArray(payload?.by_status) ? payload.by_status : [];
+  if (byStatus.length) {
+    cards.push(`<article class="list-item"><p class="list-item-title">By Status</p><p class="list-item-meta">${byStatus.slice(0, 4).map((row) => `${row.key}: ${row.count}`).join(' • ')}</p></article>`);
+  }
+  const byType = Array.isArray(payload?.by_type) ? payload.by_type : [];
+  if (byType.length) {
+    cards.push(`<article class="list-item"><p class="list-item-title">By Type</p><p class="list-item-meta">${byType.slice(0, 4).map((row) => `${row.key}: ${row.count}`).join(' • ')}</p></article>`);
+  }
+  const bySource = Array.isArray(payload?.by_source) ? payload.by_source : [];
+  if (bySource.length) {
+    cards.push(`<article class="list-item"><p class="list-item-title">By Source</p><p class="list-item-meta">${bySource.slice(0, 4).map((row) => `${row.key}: ${row.count}`).join(' • ')}</p></article>`);
+  }
+
+  byId('recommendation-analytics-details').innerHTML = cards.length
+    ? cards.join('')
+    : '<article class="list-item"><p class="list-item-title">No closure analytics yet.</p></article>';
 }
 
 function renderPreview(result) {
@@ -188,6 +236,47 @@ function renderTable() {
       if (decisionClosure.reason) closureParts.push(`reason: ${decisionClosure.reason}`);
       if (closureParts.length) recHtml += `<p class="rec-detail">Closure: ${closureParts.join(' \u2022 ')}</p>`;
 
+      const expectedOutcome = decisionClosure.expected_outcome && typeof decisionClosure.expected_outcome === 'object'
+        ? decisionClosure.expected_outcome
+        : null;
+      if (expectedOutcome) {
+        const expectedFuture = Number(expectedOutcome.expected_delta_future_value_usd);
+        const expectedReal = Number(expectedOutcome.expected_delta_real_value_usd);
+        const expectedParts = [];
+        if (Number.isFinite(expectedFuture)) expectedParts.push(`future ${fmtCurrency(expectedFuture)}`);
+        if (Number.isFinite(expectedReal)) expectedParts.push(`real ${fmtCurrency(expectedReal)}`);
+        if (expectedParts.length) recHtml += `<p class="rec-detail">Expected outcome: ${expectedParts.join(' • ')}</p>`;
+      }
+      const realizedOutcome = decisionClosure.realized_outcome && typeof decisionClosure.realized_outcome === 'object'
+        ? decisionClosure.realized_outcome
+        : null;
+      if (realizedOutcome) {
+        const realizedFuture = Number(realizedOutcome.realized_delta_future_value_usd);
+        const realizedReal = Number(realizedOutcome.realized_delta_real_value_usd);
+        const realizedParts = [];
+        if (Number.isFinite(realizedFuture)) realizedParts.push(`future ${fmtCurrency(realizedFuture)}`);
+        if (Number.isFinite(realizedReal)) realizedParts.push(`real ${fmtCurrency(realizedReal)}`);
+        if (realizedOutcome.observed_at) realizedParts.push(`observed ${fmtDate(realizedOutcome.observed_at)}`);
+        if (realizedOutcome.measurement_source) realizedParts.push(`source ${realizedOutcome.measurement_source}`);
+        if (realizedParts.length) recHtml += `<p class="rec-detail">Realized outcome: ${realizedParts.join(' • ')}</p>`;
+      }
+      const expectedVsRealized = decisionClosure.expected_vs_realized && typeof decisionClosure.expected_vs_realized === 'object'
+        ? decisionClosure.expected_vs_realized
+        : null;
+      if (expectedVsRealized) {
+        const trackingStatus = String(expectedVsRealized.status || '').trim();
+        const gapFuture = Number(expectedVsRealized.future_value_gap_usd);
+        const gapReal = Number(expectedVsRealized.real_value_gap_usd);
+        const trackingParts = [];
+        if (trackingStatus) trackingParts.push(trackingStatus);
+        if (Number.isFinite(gapFuture)) trackingParts.push(`future gap ${fmtCurrency(gapFuture)}`);
+        if (Number.isFinite(gapReal)) trackingParts.push(`real gap ${fmtCurrency(gapReal)}`);
+        if (typeof expectedVsRealized.future_value_direction_match === 'boolean') {
+          trackingParts.push(`direction ${expectedVsRealized.future_value_direction_match ? 'match' : 'mismatch'}`);
+        }
+        if (trackingParts.length) recHtml += `<p class="rec-detail">Outcome tracking: ${trackingParts.join(' • ')}</p>`;
+      }
+
       const scenarioPreview = decisionClosure.scenario_diff_preview;
       if (scenarioPreview && typeof scenarioPreview === 'object') {
         const previewStatus = String(scenarioPreview.status || 'unknown');
@@ -216,6 +305,10 @@ function renderTable() {
       wrap.querySelector('[data-action="reject"]').addEventListener('click', () => rejectItem(r));
     }
     if (r.status !== 'archived') {
+      if (r.status === 'applied' || r.status === 'rejected') {
+        const outcomeBtn = document.createElement('button'); outcomeBtn.className = 'ghost small'; outcomeBtn.textContent = 'Log Outcome';
+        outcomeBtn.addEventListener('click', () => logOutcomeItem(r)); wrap.appendChild(outcomeBtn);
+      }
       const editBtn = document.createElement('button'); editBtn.className = 'ghost small'; editBtn.textContent = 'Edit';
       editBtn.addEventListener('click', () => editItem(r)); wrap.appendChild(editBtn);
       const archBtn = document.createElement('button'); archBtn.className = 'ghost small'; archBtn.textContent = 'Archive';
@@ -226,6 +319,11 @@ function renderTable() {
     tr.appendChild(actionsCell);
     tbody.appendChild(tr);
   }
+}
+
+async function loadClosureAnalytics() {
+  const payload = await fetchJson('/api/recommendations/closure-analytics?limit=200&statuses=applied,rejected&include_pending_realized=true');
+  renderClosureAnalytics(payload && typeof payload === 'object' ? payload : {});
 }
 
 async function load() {
@@ -241,7 +339,12 @@ async function load() {
   if (status === 'all') params.set('include_archived', 'true');
   else params.set('status', status);
   if (plan) params.set('plan_id', plan);
-  state.recommendations = await fetchJson(`/api/recommendations?${params}`).then(r => Array.isArray(r) ? r : []);
+  const [recommendationsPayload, analyticsPayload] = await Promise.all([
+    fetchJson(`/api/recommendations?${params}`),
+    fetchJson('/api/recommendations/closure-analytics?limit=200&statuses=applied,rejected&include_pending_realized=true'),
+  ]);
+  state.recommendations = Array.isArray(recommendationsPayload) ? recommendationsPayload : [];
+  renderClosureAnalytics(analyticsPayload && typeof analyticsPayload === 'object' ? analyticsPayload : {});
   renderTable();
 }
 
@@ -300,6 +403,39 @@ async function rejectItem(r) {
   writeLog('Rejected.', { id: r.id, decision_closure: result.decision_closure || null }); await load();
 }
 
+async function logOutcomeItem(r) {
+  const futureRaw = window.prompt('Realized future-value delta USD (optional):', '');
+  if (futureRaw === null) return;
+  const realRaw = window.prompt('Realized real-value delta USD (optional):', '');
+  if (realRaw === null) return;
+  const sourceRaw = window.prompt('Measurement source (optional):', 'manual-review');
+  if (sourceRaw === null) return;
+  const noteRaw = window.prompt('Outcome note (optional):', '');
+  if (noteRaw === null) return;
+
+  const payload = {
+    plan_id: r.plan_id || byId('recommendation-plan').value || state.currentPlanId || null,
+    measurement_source: sourceRaw.trim(),
+    note: noteRaw.trim(),
+  };
+  const futureVal = Number(futureRaw);
+  const realVal = Number(realRaw);
+  if (futureRaw.trim() && Number.isFinite(futureVal)) payload.realized_delta_future_value_usd = futureVal;
+  if (realRaw.trim() && Number.isFinite(realVal)) payload.realized_delta_real_value_usd = realVal;
+
+  const result = await fetchJson(`/api/recommendations/${encodeURIComponent(r.id)}/outcome`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (result.plan?.id === state.currentPlanId) state.currentPlanDetail = result.plan;
+  writeLog('Outcome recorded.', {
+    id: r.id,
+    expected_vs_realized: result?.decision_closure?.expected_vs_realized || null,
+  });
+  await load();
+}
+
 async function archiveItem(r) {
   const reason = window.prompt('Archive note (optional):', '');
   if (reason === null) return;
@@ -325,6 +461,7 @@ export function init() {
   populatePlanFilters();
   resetForm();
   resetPreview();
+  resetClosureAnalytics();
   if ([...byId('recommendation-status-filter').options].some((option) => option.value === state.recommendationFilterStatus)) {
     byId('recommendation-status-filter').value = state.recommendationFilterStatus;
   }
@@ -332,6 +469,7 @@ export function init() {
     byId('recommendation-sort-filter').value = state.recommendationSort;
   }
   byId('reload-recommendations').addEventListener('click', () => load().catch(e => writeLog(e.message, null, true)));
+  byId('reload-recommendation-analytics').addEventListener('click', () => loadClosureAnalytics().catch(e => writeLog(e.message, null, true)));
   byId('recommendation-status-filter').addEventListener('change', () => load().catch(e => writeLog(e.message, null, true)));
   byId('recommendation-plan-filter').addEventListener('change', () => load().catch(e => writeLog(e.message, null, true)));
   byId('recommendation-sort-filter').addEventListener('change', () => load().catch(e => writeLog(e.message, null, true)));

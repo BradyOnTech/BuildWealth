@@ -94,6 +94,8 @@ def test_apply_recommendation_writes_decision_packet_artifact(
     assert closure_artifact_meta.get("artifact_id") == response.decision_closure_artifact.id
     closure = updated_recommendation["action_payload"].get("decision_closure", {})
     assert closure.get("scenario_diff_preview", {}).get("status") == "captured"
+    assert closure.get("expected_outcome", {}).get("status") == "captured"
+    assert closure.get("expected_vs_realized", {}).get("status") == "pending_realized"
 
 
 def test_apply_recommendation_can_skip_decision_packet(
@@ -134,6 +136,8 @@ def test_apply_recommendation_can_skip_decision_packet(
     assert response.decision_packet_artifact is None
     assert response.decision_closure_artifact is not None
     assert response.decision_closure.get("scenario_diff_preview", {}).get("status") == "captured"
+    assert response.decision_closure.get("expected_outcome", {}).get("status") in {"captured", "unavailable"}
+    assert response.decision_closure.get("expected_vs_realized", {}).get("status") in {"pending_realized", "unavailable"}
 
     artifacts = workspace.get_plan(plan["id"]).get("artifacts", [])
     assert len(artifacts) == 1
@@ -237,6 +241,8 @@ def test_reject_recommendation_returns_suggested_research_symbols(
     assert response.recommendation.status == "rejected"
     assert response.suggested_research_symbols == ["QQQ", "VTI"]
     assert response.decision_closure.get("scenario_diff_preview", {}).get("status") == "captured"
+    assert response.decision_closure.get("expected_outcome", {}).get("status") in {"captured", "unavailable"}
+    assert response.decision_closure.get("expected_vs_realized", {}).get("status") in {"pending_realized", "unavailable"}
 
 
 def test_reject_recommendation_persists_closure_artifact_when_plan_available(

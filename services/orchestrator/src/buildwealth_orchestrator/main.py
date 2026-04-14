@@ -88,8 +88,10 @@ from buildwealth_orchestrator.schemas import (
     SyncStatusResponse,
     RecommendationActionResponse,
     RecommendationApplyRequest,
+    RecommendationClosureAnalyticsResponse,
     RecommendationCreateRequest,
     RecommendationItem,
+    RecommendationOutcomeUpdateRequest,
     RecommendationPreviewRequest,
     RecommendationPreviewResponse,
     RecommendationRejectRequest,
@@ -383,6 +385,8 @@ copilot = FinancialCopilot(
         "- To move research watchlist thesis into planning branches → call pin_watchlist_research_to_plan.\n"
         "- For 'what should I do?' → call get_today_dashboard and list_recommendations.\n"
         "- Before applying a high-impact recommendation → call preview_recommendation to inspect scenario and action effects.\n"
+        "- After recommendations are applied/rejected, record realized outcomes → call update_recommendation_outcome.\n"
+        "- For recommendation calibration and closure tracking quality → call get_recommendation_closure_analytics.\n"
         "- For stock/investment research on one ticker → call research_quote or research_price_history.\n"
         "- For comparing multiple investment candidates → call research_compare, "
         "then call simulate_trade to show how a chosen trade would affect portfolio allocation.\n"
@@ -3080,6 +3084,139 @@ def _scenario_diff_preview_summary_text(preview_payload: dict[str, Any] | None) 
     )
 
 
+def _coerce_optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed != parsed:
+        return None
+    return parsed
+
+
+def _extract_scenario_baseline_delta(preview_payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(preview_payload, dict):
+        return None
+    status = str(preview_payload.get("status") or "").strip().lower()
+    if status != "captured":
+        return None
+    deltas_raw = preview_payload.get("scenario_deltas")
+    deltas = [item for item in deltas_raw if isinstance(item, dict)] if isinstance(deltas_raw, list) else []
+    if not deltas:
+        return None
+    baseline = next((item for item in deltas if str(item.get("label") or "").strip().lower() == "baseline"), None)
+    if isinstance(baseline, dict):
+        return baseline
+    candidate = deltas[0]
+    return candidate if isinstance(candidate, dict) else None
+
+
+def _build_expected_outcome_from_preview(preview_payload: dict[str, Any] | None) -> dict[str, Any]:
+    baseline = _extract_scenario_baseline_delta(preview_payload)
+    if not isinstance(preview_payload, dict):
+        preview_payload = {}
+    if baseline is None:
+        return {
+            "status": "unavailable",
+            "source": "scenario_diff_preview",
+            "captured_at": context_utc_now_iso(),
+            "preview_status": str(preview_payload.get("status") or "unknown").strip().lower() or "unknown",
+            "expected_delta_future_value_usd": None,
+            "expected_delta_real_value_usd": None,
+            "baseline_label": None,
+        }
+
+    return {
+        "status": "captured",
+        "source": "scenario_diff_preview",
+        "captured_at": str(preview_payload.get("captured_at") or context_utc_now_iso()),
+        "preview_status": "captured",
+        "baseline_label": str(baseline.get("label") or "baseline"),
+        "expected_delta_future_value_usd": _coerce_optional_float(baseline.get("delta_future_value_usd")),
+        "expected_delta_real_value_usd": _coerce_optional_float(baseline.get("delta_real_value_usd")),
+    }
+
+
+def _same_direction(expected: float, realized: float) -> bool:
+    if expected == 0.0 or realized == 0.0:
+        return expected == realized
+    return (expected > 0 and realized > 0) or (expected < 0 and realized < 0)
+
+
+def _build_expected_vs_realized_metrics(
+    *,
+    expected_outcome: dict[str, Any] | None,
+    realized_outcome: dict[str, Any] | None,
+) -> dict[str, Any]:
+    expected = expected_outcome if isinstance(expected_outcome, dict) else {}
+    realized = realized_outcome if isinstance(realized_outcome, dict) else {}
+    expected_future = _coerce_optional_float(expected.get("expected_delta_future_value_usd"))
+    expected_real = _coerce_optional_float(expected.get("expected_delta_real_value_usd"))
+    realized_future = _coerce_optional_float(realized.get("realized_delta_future_value_usd"))
+    realized_real = _coerce_optional_float(realized.get("realized_delta_real_value_usd"))
+
+    has_expected = expected_future is not None or expected_real is not None
+    has_realized = realized_future is not None or realized_real is not None
+
+    future_gap: float | None = None
+    future_abs_error: float | None = None
+    future_direction_match: bool | None = None
+    if expected_future is not None and realized_future is not None:
+        future_gap = realized_future - expected_future
+        future_abs_error = abs(future_gap)
+        future_direction_match = _same_direction(expected_future, realized_future)
+
+    real_gap: float | None = None
+    real_abs_error: float | None = None
+    real_direction_match: bool | None = None
+    if expected_real is not None and realized_real is not None:
+        real_gap = realized_real - expected_real
+        real_abs_error = abs(real_gap)
+        real_direction_match = _same_direction(expected_real, realized_real)
+
+    status = "unavailable"
+    if has_expected and not has_realized:
+        status = "pending_realized"
+    elif has_expected and has_realized:
+        status = "measured"
+    elif (not has_expected) and has_realized:
+        status = "realized_only"
+
+    return {
+        "status": status,
+        "has_expected": has_expected,
+        "has_realized": has_realized,
+        "future_value_gap_usd": future_gap,
+        "future_value_abs_error_usd": future_abs_error,
+        "future_value_direction_match": future_direction_match,
+        "real_value_gap_usd": real_gap,
+        "real_value_abs_error_usd": real_abs_error,
+        "real_value_direction_match": real_direction_match,
+        "updated_at": context_utc_now_iso(),
+    }
+
+
+def _expected_vs_realized_summary_text(metrics: dict[str, Any] | None) -> str:
+    if not isinstance(metrics, dict):
+        return "Outcome tracking unavailable."
+    status = str(metrics.get("status") or "unavailable").strip().lower() or "unavailable"
+    if status == "measured":
+        return (
+            "Outcome measured: "
+            f"future gap {_format_currency_amount(metrics.get('future_value_gap_usd'))}, "
+            f"real gap {_format_currency_amount(metrics.get('real_value_gap_usd'))}."
+        )
+    if status == "pending_realized":
+        return "Expected outcome captured; realized outcome pending."
+    if status == "realized_only":
+        return "Realized outcome captured without expected baseline."
+    return "Expected vs realized outcome unavailable."
+
+
 def _build_recommendation_closure_markdown(
     *,
     recommendation: dict[str, Any],
@@ -3088,6 +3225,21 @@ def _build_recommendation_closure_markdown(
     preview_payload = (
         decision_closure.get("scenario_diff_preview")
         if isinstance(decision_closure.get("scenario_diff_preview"), dict)
+        else {}
+    )
+    expected_outcome = (
+        decision_closure.get("expected_outcome")
+        if isinstance(decision_closure.get("expected_outcome"), dict)
+        else {}
+    )
+    realized_outcome = (
+        decision_closure.get("realized_outcome")
+        if isinstance(decision_closure.get("realized_outcome"), dict)
+        else {}
+    )
+    expected_vs_realized = (
+        decision_closure.get("expected_vs_realized")
+        if isinstance(decision_closure.get("expected_vs_realized"), dict)
         else {}
     )
     title = str(recommendation.get("title") or "Recommendation").strip() or "Recommendation"
@@ -3113,6 +3265,35 @@ def _build_recommendation_closure_markdown(
         lines.append(f"- Rationale: {decision_closure.get('rationale')}")
     if decision_closure.get("reason"):
         lines.append(f"- Reason: {decision_closure.get('reason')}")
+
+    lines.extend(["", "## Outcome Tracking", ""])
+    if expected_outcome:
+        lines.append(
+            f"- Expected future-value delta: {_format_currency_amount(expected_outcome.get('expected_delta_future_value_usd'))}"
+        )
+        lines.append(
+            f"- Expected real-value delta: {_format_currency_amount(expected_outcome.get('expected_delta_real_value_usd'))}"
+        )
+    else:
+        lines.append("- Expected outcome: unavailable")
+    if realized_outcome:
+        lines.append(
+            f"- Realized future-value delta: {_format_currency_amount(realized_outcome.get('realized_delta_future_value_usd'))}"
+        )
+        lines.append(
+            f"- Realized real-value delta: {_format_currency_amount(realized_outcome.get('realized_delta_real_value_usd'))}"
+        )
+        if realized_outcome.get("observed_at"):
+            lines.append(f"- Observed at: `{realized_outcome.get('observed_at')}`")
+        if realized_outcome.get("observation_window_days") is not None:
+            lines.append(f"- Observation window days: `{realized_outcome.get('observation_window_days')}`")
+        if realized_outcome.get("measurement_source"):
+            lines.append(f"- Measurement source: `{realized_outcome.get('measurement_source')}`")
+        if realized_outcome.get("note"):
+            lines.append(f"- Outcome note: {realized_outcome.get('note')}")
+    else:
+        lines.append("- Realized outcome: pending")
+    lines.append(f"- {_expected_vs_realized_summary_text(expected_vs_realized)}")
 
     lines.extend(
         [
@@ -3154,8 +3335,11 @@ def persist_recommendation_closure_to_plan(
         if isinstance(decision_closure.get("scenario_diff_preview"), dict)
         else None
     )
-    if preview_payload is None:
-        return None
+    expected_vs_realized = (
+        decision_closure.get("expected_vs_realized")
+        if isinstance(decision_closure.get("expected_vs_realized"), dict)
+        else {}
+    )
 
     decision_status = str(decision_closure.get("decision_status") or "accepted").strip().lower() or "accepted"
     title = str(recommendation.get("title") or "Recommendation").strip() or "Recommendation"
@@ -3165,7 +3349,9 @@ def persist_recommendation_closure_to_plan(
         rationale_parts.append(str(decision_closure.get("rationale")))
     if decision_closure.get("reason"):
         rationale_parts.append(f"Reason: {decision_closure.get('reason')}")
-    rationale_parts.append(_scenario_diff_preview_summary_text(preview_payload))
+    rationale_parts.append(_expected_vs_realized_summary_text(expected_vs_realized))
+    if preview_payload is not None:
+        rationale_parts.append(_scenario_diff_preview_summary_text(preview_payload))
     plan_workspace.append_decision(
         plan_id=plan_id,
         summary=summary,
@@ -3627,6 +3813,12 @@ async def apply_recommendation_with_decision_packet(
     }
     if scenario_diff_preview:
         decision_closure_payload["scenario_diff_preview"] = scenario_diff_preview
+    expected_outcome = _build_expected_outcome_from_preview(scenario_diff_preview)
+    decision_closure_payload["expected_outcome"] = expected_outcome
+    decision_closure_payload["expected_vs_realized"] = _build_expected_vs_realized_metrics(
+        expected_outcome=expected_outcome,
+        realized_outcome={},
+    )
 
     research_bridge_payload: dict[str, Any] = {}
     research_bridge_message_suffix = ""
@@ -3868,6 +4060,22 @@ async def reject_recommendation(
     decision_closure["reason"] = reason
     if scenario_diff_preview is not None:
         decision_closure["scenario_diff_preview"] = scenario_diff_preview
+    expected_outcome_raw = decision_closure.get("expected_outcome")
+    expected_outcome = (
+        dict(expected_outcome_raw)
+        if isinstance(expected_outcome_raw, dict)
+        else _build_expected_outcome_from_preview(scenario_diff_preview)
+    )
+    decision_closure["expected_outcome"] = expected_outcome
+    realized_outcome = (
+        decision_closure.get("realized_outcome")
+        if isinstance(decision_closure.get("realized_outcome"), dict)
+        else {}
+    )
+    decision_closure["expected_vs_realized"] = _build_expected_vs_realized_metrics(
+        expected_outcome=expected_outcome,
+        realized_outcome=realized_outcome,
+    )
     action_payload["decision_closure"] = decision_closure
 
     resolved_plan_id: str | None = None
@@ -3997,6 +4205,279 @@ async def reject_recommendation(
         decision_closure=decision_closure_payload,
         message=f"Recommendation rejected.{decision_packet_message_suffix}{closure_message_suffix}",
     )
+
+
+def _normalize_recommendation_closure_statuses(raw_statuses: list[str] | str | None) -> list[str]:
+    valid = {"applied", "rejected"}
+    normalized: list[str] = []
+    if isinstance(raw_statuses, str):
+        values = [item.strip().lower() for item in raw_statuses.split(",")]
+    elif isinstance(raw_statuses, list):
+        values = [str(item or "").strip().lower() for item in raw_statuses]
+    else:
+        values = []
+    for value in values:
+        if value in valid and value not in normalized:
+            normalized.append(value)
+    return normalized or ["applied", "rejected"]
+
+
+def update_recommendation_outcome(
+    recommendation_id: str,
+    request: RecommendationOutcomeUpdateRequest,
+) -> RecommendationActionResponse:
+    recommendation = recommendation_inbox.get(recommendation_id)
+    current_status = str(recommendation.get("status", "proposed")).strip().lower()
+    if current_status not in {"applied", "rejected"}:
+        raise ValueError("Only applied/rejected recommendations can record realized outcomes.")
+
+    realized_future = _coerce_optional_float(request.realized_delta_future_value_usd)
+    realized_real = _coerce_optional_float(request.realized_delta_real_value_usd)
+    observed_at_value = request.observed_at.isoformat() if isinstance(request.observed_at, datetime) else None
+    note = str(request.note or "").strip()
+    measurement_source = str(request.measurement_source or "").strip()
+    if (
+        realized_future is None
+        and realized_real is None
+        and not observed_at_value
+        and not note
+        and not measurement_source
+        and request.observation_window_days is None
+    ):
+        raise ValueError("Provide at least one realized outcome field (delta, date, source, note, or window).")
+
+    action_payload_raw = recommendation.get("action_payload")
+    action_payload = dict(action_payload_raw) if isinstance(action_payload_raw, dict) else {}
+    decision_closure_raw = action_payload.get("decision_closure")
+    decision_closure = dict(decision_closure_raw) if isinstance(decision_closure_raw, dict) else {}
+    if "decision_status" not in decision_closure:
+        decision_closure["decision_status"] = current_status
+
+    expected_outcome_raw = decision_closure.get("expected_outcome")
+    expected_outcome = (
+        dict(expected_outcome_raw)
+        if isinstance(expected_outcome_raw, dict)
+        else _build_expected_outcome_from_preview(
+            decision_closure.get("scenario_diff_preview")
+            if isinstance(decision_closure.get("scenario_diff_preview"), dict)
+            else None
+        )
+    )
+    decision_closure["expected_outcome"] = expected_outcome
+
+    realized_outcome = {
+        "recorded_at": context_utc_now_iso(),
+        "observed_at": observed_at_value,
+        "observation_window_days": request.observation_window_days,
+        "measurement_source": measurement_source,
+        "note": note,
+        "realized_delta_future_value_usd": realized_future,
+        "realized_delta_real_value_usd": realized_real,
+    }
+    decision_closure["realized_outcome"] = realized_outcome
+    decision_closure["expected_vs_realized"] = _build_expected_vs_realized_metrics(
+        expected_outcome=expected_outcome,
+        realized_outcome=realized_outcome,
+    )
+    action_payload["decision_closure"] = decision_closure
+
+    resolved_plan_id = str(request.plan_id or "").strip() or str(recommendation.get("plan_id") or "").strip() or None
+    if not resolved_plan_id:
+        active_plan_id = plan_workspace.get_active_plan_id()
+        resolved_plan_id = str(active_plan_id).strip() if active_plan_id else None
+
+    closure_artifact_summary: PlanArtifactSummary | None = None
+    closure_message_suffix = ""
+    plan_detail: PlanDetailResponse | None = None
+    if resolved_plan_id:
+        try:
+            closure_artifact_summary = persist_recommendation_closure_to_plan(
+                plan_id=resolved_plan_id,
+                recommendation=recommendation,
+                decision_closure=decision_closure,
+            )
+            if closure_artifact_summary is not None:
+                action_payload["decision_closure_artifact"] = {
+                    "artifact_id": closure_artifact_summary.id,
+                    "file_name": closure_artifact_summary.file_name,
+                    "plan_id": resolved_plan_id,
+                    "created_at": closure_artifact_summary.created_at.isoformat(),
+                }
+                plan_detail = PlanDetailResponse(**plan_workspace.get_plan(resolved_plan_id))
+                closure_message_suffix = " Outcome snapshot saved to plan artifacts."
+        except (PlanNotFoundError, ValueError) as exc:
+            closure_message_suffix = f" Outcome snapshot could not be written: {exc}"
+
+    updated = recommendation_inbox.update(
+        recommendation_id,
+        updates={"action_payload": action_payload},
+    )
+
+    if plan_detail is None and resolved_plan_id:
+        with suppress(Exception):
+            plan_detail = PlanDetailResponse(**plan_workspace.get_plan(resolved_plan_id))
+
+    return RecommendationActionResponse(
+        recommendation=_recommendation_item_from_row(updated),
+        plan=plan_detail,
+        decision_closure_artifact=closure_artifact_summary,
+        suggested_research_symbols=_extract_decision_packet_symbols(updated),
+        decision_closure=decision_closure,
+        message=f"Recommendation outcome recorded.{closure_message_suffix}",
+    )
+
+
+def build_recommendation_closure_analytics_payload(
+    *,
+    limit: int = 200,
+    statuses: list[str] | str | None = None,
+    include_pending_realized: bool = True,
+) -> dict[str, Any]:
+    status_filters = _normalize_recommendation_closure_statuses(statuses)
+    rows = recommendation_inbox.list(
+        limit=None,
+        status=None,
+        include_archived=True,
+        sort="none",
+    )
+    closed_rows = [
+        row
+        for row in rows
+        if str(row.get("status") or "").strip().lower() in set(status_filters)
+    ]
+    closed_rows.sort(
+        key=lambda row: (
+            str(row.get("resolved_at") or row.get("updated_at") or ""),
+            str(row.get("id") or ""),
+        ),
+        reverse=True,
+    )
+
+    selected_rows: list[dict[str, Any]] = []
+    max_rows = max(1, min(int(limit), 1000))
+    for row in closed_rows:
+        action_payload = row.get("action_payload")
+        payload = action_payload if isinstance(action_payload, dict) else {}
+        decision_closure = payload.get("decision_closure")
+        closure = decision_closure if isinstance(decision_closure, dict) else {}
+        expected_outcome = closure.get("expected_outcome") if isinstance(closure.get("expected_outcome"), dict) else {}
+        realized_outcome = closure.get("realized_outcome") if isinstance(closure.get("realized_outcome"), dict) else {}
+        expected_vs_realized = (
+            closure.get("expected_vs_realized")
+            if isinstance(closure.get("expected_vs_realized"), dict)
+            else _build_expected_vs_realized_metrics(expected_outcome=expected_outcome, realized_outcome=realized_outcome)
+        )
+        if (not include_pending_realized) and (str(expected_vs_realized.get("status") or "").strip().lower() != "measured"):
+            continue
+
+        expected_future = _coerce_optional_float(expected_outcome.get("expected_delta_future_value_usd"))
+        expected_real = _coerce_optional_float(expected_outcome.get("expected_delta_real_value_usd"))
+        realized_future = _coerce_optional_float(realized_outcome.get("realized_delta_future_value_usd"))
+        realized_real = _coerce_optional_float(realized_outcome.get("realized_delta_real_value_usd"))
+        selected_rows.append(
+            {
+                "id": row.get("id"),
+                "title": row.get("title"),
+                "status": str(row.get("status") or "unknown"),
+                "recommendation_type": str(row.get("recommendation_type") or "general"),
+                "source": str(row.get("source") or "manual"),
+                "plan_id": row.get("plan_id"),
+                "resolved_at": row.get("resolved_at") or row.get("updated_at"),
+                "expected_delta_future_value_usd": expected_future,
+                "expected_delta_real_value_usd": expected_real,
+                "realized_delta_future_value_usd": realized_future,
+                "realized_delta_real_value_usd": realized_real,
+                "future_value_gap_usd": _coerce_optional_float(expected_vs_realized.get("future_value_gap_usd")),
+                "real_value_gap_usd": _coerce_optional_float(expected_vs_realized.get("real_value_gap_usd")),
+                "future_value_direction_match": expected_vs_realized.get("future_value_direction_match"),
+                "real_value_direction_match": expected_vs_realized.get("real_value_direction_match"),
+                "tracking_status": expected_vs_realized.get("status"),
+                "observation_window_days": realized_outcome.get("observation_window_days"),
+                "measurement_source": realized_outcome.get("measurement_source"),
+            }
+        )
+        if len(selected_rows) >= max_rows:
+            break
+
+    status_counts: dict[str, int] = {}
+    type_counts: dict[str, int] = {}
+    source_counts: dict[str, int] = {}
+    with_expected_count = 0
+    with_realized_count = 0
+    measured_count = 0
+    direction_match_count = 0
+    expected_future_total = 0.0
+    realized_future_total = 0.0
+    future_gap_total = 0.0
+    future_abs_error_total = 0.0
+
+    for row in selected_rows:
+        status_key = str(row.get("status") or "unknown").strip().lower() or "unknown"
+        type_key = str(row.get("recommendation_type") or "general").strip().lower() or "general"
+        source_key = str(row.get("source") or "manual").strip().lower() or "manual"
+        status_counts[status_key] = status_counts.get(status_key, 0) + 1
+        type_counts[type_key] = type_counts.get(type_key, 0) + 1
+        source_counts[source_key] = source_counts.get(source_key, 0) + 1
+
+        expected_future = _coerce_optional_float(row.get("expected_delta_future_value_usd"))
+        expected_real = _coerce_optional_float(row.get("expected_delta_real_value_usd"))
+        realized_future = _coerce_optional_float(row.get("realized_delta_future_value_usd"))
+        realized_real = _coerce_optional_float(row.get("realized_delta_real_value_usd"))
+        has_expected = expected_future is not None or expected_real is not None
+        has_realized = realized_future is not None or realized_real is not None
+        if has_expected:
+            with_expected_count += 1
+        if has_realized:
+            with_realized_count += 1
+
+        if expected_future is not None:
+            expected_future_total += expected_future
+        if realized_future is not None:
+            realized_future_total += realized_future
+
+        future_gap = _coerce_optional_float(row.get("future_value_gap_usd"))
+        if future_gap is not None:
+            measured_count += 1
+            future_gap_total += future_gap
+            future_abs_error_total += abs(future_gap)
+            if bool(row.get("future_value_direction_match")):
+                direction_match_count += 1
+
+    count = len(selected_rows)
+    coverage_pct = round((with_realized_count / count) * 100.0, 2) if count else 0.0
+    direction_match_rate_pct = round((direction_match_count / measured_count) * 100.0, 2) if measured_count else None
+    mean_abs_error = round((future_abs_error_total / measured_count), 2) if measured_count else None
+
+    def _counter_to_rows(counter: dict[str, int]) -> list[dict[str, Any]]:
+        return [
+            {"key": key, "count": value}
+            for key, value in sorted(counter.items(), key=lambda item: (-item[1], item[0]))
+        ]
+
+    return {
+        "generated_at": context_utc_now_iso(),
+        "count": count,
+        "statuses": status_filters,
+        "include_pending_realized": include_pending_realized,
+        "summary": {
+            "closed_count": count,
+            "with_expected_count": with_expected_count,
+            "with_realized_count": with_realized_count,
+            "measured_count": measured_count,
+            "pending_realized_count": max(0, with_expected_count - measured_count),
+            "realized_coverage_pct": coverage_pct,
+            "expected_future_value_total_usd": round(expected_future_total, 2),
+            "realized_future_value_total_usd": round(realized_future_total, 2),
+            "future_value_gap_total_usd": round(future_gap_total, 2),
+            "future_value_abs_error_total_usd": round(future_abs_error_total, 2),
+            "mean_future_value_abs_error_usd": mean_abs_error,
+            "future_value_direction_match_rate_pct": direction_match_rate_pct,
+        },
+        "by_status": _counter_to_rows(status_counts),
+        "by_type": _counter_to_rows(type_counts),
+        "by_source": _counter_to_rows(source_counts),
+        "items": selected_rows,
+    }
 
 
 def archive_recommendation(recommendation_id: str, note: str = "") -> RecommendationActionResponse:
@@ -5482,6 +5963,50 @@ async def tool_reject_recommendation(arguments: dict[str, object]) -> dict[str, 
         ),
     )
     return result.model_dump(mode="json")
+
+
+async def tool_update_recommendation_outcome(arguments: dict[str, object]) -> dict[str, object]:
+    recommendation_id = str(arguments.get("recommendation_id") or "").strip()
+    if not recommendation_id:
+        raise ValueError("recommendation_id is required")
+
+    request = RecommendationOutcomeUpdateRequest(
+        plan_id=(str(arguments.get("plan_id") or "").strip() or None),
+        realized_delta_future_value_usd=_coerce_optional_float(arguments.get("realized_delta_future_value_usd")),
+        realized_delta_real_value_usd=_coerce_optional_float(arguments.get("realized_delta_real_value_usd")),
+        observed_at=(
+            datetime.fromisoformat(str(arguments.get("observed_at")).replace("Z", "+00:00"))
+            if arguments.get("observed_at")
+            else None
+        ),
+        observation_window_days=(
+            _coerce_int(arguments.get("observation_window_days"), 0)
+            if arguments.get("observation_window_days") is not None
+            else None
+        ),
+        measurement_source=str(arguments.get("measurement_source") or ""),
+        note=str(arguments.get("note") or ""),
+    )
+    result = update_recommendation_outcome(recommendation_id, request)
+    return result.model_dump(mode="json")
+
+
+async def tool_get_recommendation_closure_analytics(arguments: dict[str, object]) -> dict[str, object]:
+    limit = max(1, min(_coerce_int(arguments.get("limit"), 200), 1000))
+    raw_statuses = arguments.get("statuses")
+    statuses: list[str] | str | None
+    if isinstance(raw_statuses, list):
+        statuses = [str(item or "") for item in raw_statuses]
+    elif isinstance(raw_statuses, str):
+        statuses = raw_statuses
+    else:
+        statuses = None
+    include_pending_realized = _coerce_bool(arguments.get("include_pending_realized"), True)
+    return build_recommendation_closure_analytics_payload(
+        limit=limit,
+        statuses=statuses,
+        include_pending_realized=include_pending_realized,
+    )
 
 
 async def tool_pin_watchlist_research_to_plan(arguments: dict[str, object]) -> dict[str, object]:
@@ -7239,6 +7764,44 @@ def configure_copilot_tools() -> None:
         handler=tool_reject_recommendation,
     )
     copilot.register_tool(
+        name="update_recommendation_outcome",
+        description=(
+            "Record realized outcomes for an applied/rejected recommendation and compute expected-vs-realized deltas."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "recommendation_id": {"type": "string"},
+                "plan_id": {"type": "string"},
+                "realized_delta_future_value_usd": {"type": "number"},
+                "realized_delta_real_value_usd": {"type": "number"},
+                "observed_at": {"type": "string"},
+                "observation_window_days": {"type": "integer"},
+                "measurement_source": {"type": "string"},
+                "note": {"type": "string"},
+            },
+            "required": ["recommendation_id"],
+            "additionalProperties": False,
+        },
+        handler=tool_update_recommendation_outcome,
+    )
+    copilot.register_tool(
+        name="get_recommendation_closure_analytics",
+        description=(
+            "Summarize expected-vs-realized outcome calibration across closed recommendations."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer"},
+                "statuses": {"type": "array", "items": {"type": "string"}},
+                "include_pending_realized": {"type": "boolean"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_get_recommendation_closure_analytics,
+    )
+    copilot.register_tool(
         name="run_sync",
         description="Run a full portfolio sync pipeline and regenerate downstream payloads.",
         parameters=empty_schema,
@@ -8528,6 +9091,20 @@ def list_recommendations(
     return [RecommendationItem(**row) for row in rows]
 
 
+@app.get("/api/recommendations/closure-analytics", response_model=RecommendationClosureAnalyticsResponse)
+def get_recommendation_closure_analytics(
+    limit: int = 200,
+    statuses: str = "applied,rejected",
+    include_pending_realized: bool = True,
+) -> RecommendationClosureAnalyticsResponse:
+    payload = build_recommendation_closure_analytics_payload(
+        limit=limit,
+        statuses=statuses,
+        include_pending_realized=include_pending_realized,
+    )
+    return RecommendationClosureAnalyticsResponse(**payload)
+
+
 @app.post("/api/recommendations", response_model=RecommendationItem)
 def create_recommendation(request: RecommendationCreateRequest) -> RecommendationItem:
     try:
@@ -8621,6 +9198,21 @@ async def reject_recommendation_route(
             decision_packet_research_symbols=request.decision_packet_research_symbols,
         )
     except RecommendationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/recommendations/{recommendation_id}/outcome", response_model=RecommendationActionResponse)
+def update_recommendation_outcome_route(
+    recommendation_id: str,
+    request: RecommendationOutcomeUpdateRequest,
+) -> RecommendationActionResponse:
+    try:
+        return update_recommendation_outcome(recommendation_id, request)
+    except RecommendationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PlanNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
