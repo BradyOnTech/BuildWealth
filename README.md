@@ -1,77 +1,117 @@
 # BuildWealth
 
-BuildWealth is a single-entrypoint, local-first financial application that combines:
-- portfolio state and analytics
-- long-horizon planning and scenario modeling
-- investment research data
+BuildWealth is a local-first financial command center that combines:
+- Portfolio tracking and analytics
+- Long-horizon planning and scenario modeling
+- Investment research context
 - Copilot workflows grounded in your own data
 
-The orchestrator (`services/orchestrator`) is the control plane and system of record.
-High-complexity calculations can run through local contract-bound sidecars adapted from Ghostfolio and Ignidash.
+The Python orchestrator (`services/orchestrator`) is the system of record.
+Ghostfolio/Ignidash logic is reused through optional, contract-bound sidecars for high-complexity compute domains.
 
-## Architecture (Current)
-- Python orchestrator owns persistence, APIs, migrations, and Copilot orchestration.
-- Sidecars are optional local engines behind versioned contracts (`/v{n}/...`).
-- Sidecar health and contract compatibility are probed and exposed via `/api/engines/status`.
-- On sidecar failure or contract mismatch, orchestrator returns explicit degraded-mode metadata and uses local fallback paths where available.
+## Standalone Runtime Modes
 
-## Repository Layout
-- `infra/docker-compose.yml`: local stack
-- `infra/env/*.env.example`: environment templates
-- `scripts/init-env.sh`: generate local env files
-- `services/orchestrator`: FastAPI app + web UI
-- `contracts/engine/v1`: sidecar contract schemas
-- `docs/`: architecture/roadmap/decision docs
+1. **Orchestrator only (default)**
+- Runs BuildWealth as a single local app entrypoint.
+- Uses local calculations and local JSON stores.
+- Does not require Ghostfolio/Ignidash app containers.
 
-## Quick Start
-1. Initialize env files:
+2. **Orchestrator + sidecars (optional)**
+- Enables benchmark/attribution/planning sidecar calls through versioned `/v{n}/...` contracts.
+- Sidecars are stateless compute engines; orchestrator still owns all persistence.
+
+3. **Legacy upstream app stack (optional profile)**
+- For upstream reference/debug workflows only.
+- Not required for normal BuildWealth standalone operation.
+
+## Quick Start (Standalone Default)
+
+1. Initialize environment files:
 ```bash
 ./scripts/init-env.sh
 ```
 
-2. Review orchestrator runtime config in `infra/env/orchestrator.env`:
-- sidecar base URLs and paths
-- sidecar enable flags
-- OpenAI/OpenBB settings
+2. Review `infra/env/orchestrator.env`.
+- Sidecars are disabled by default.
+- Configure OpenAI/OpenBB as needed.
 
-3. Start services:
+3. Start BuildWealth:
 ```bash
-docker compose -f infra/docker-compose.yml up -d
+docker compose -f infra/docker-compose.yml up -d orchestrator
 ```
 
-4. Open BuildWealth:
+4. Open app + health:
 - UI: `http://localhost:8090`
 - Health: `http://localhost:8090/health`
 
-5. Optional sync/import:
+5. Optional first snapshot sync:
 ```bash
 curl -s -X POST http://localhost:8090/api/snapshot/sync | jq
 ```
 
+## Optional Sidecar Mode
+
+1. Start your Ghostfolio/Ignidash sidecar services so they expose:
+- health endpoint(s): `/health` (or configured alternates)
+- version endpoint: `/version` returning `contract_version`
+- versioned API paths: `/v1/...`
+
+2. Set `infra/env/orchestrator.env`:
+- `ENABLE_GHOSTFOLIO_BENCHMARK_SIDECAR=true`
+- `ENABLE_GHOSTFOLIO_ATTRIBUTION_SIDECAR=true`
+- `ENABLE_IGNIDASH_SCENARIO_SIDECAR=true`
+- Ensure base URLs and sidecar paths are correct.
+
+3. Restart orchestrator and verify engine state:
+```bash
+curl -s http://localhost:8090/api/engines/status | jq
+```
+
+Look for `reachable=true` and `contract_compatible=true` for enabled engines.
+
+## Optional Legacy Upstream App Profile
+
+Start the full Ghostfolio/Ignidash app containers only when needed:
+```bash
+docker compose -f infra/docker-compose.yml --profile legacy-upstream up -d
+```
+
 ## Key API Endpoints
+
 - `GET /health`
 - `GET /api/engines/status`
-- `GET /api/snapshot/latest`
 - `POST /api/snapshot/sync`
+- `GET /api/snapshot/latest`
 - `GET /api/portfolio/benchmark`
 - `GET /api/portfolio/attribution`
 - `POST /api/planning/scenarios`
 - `GET /api/copilot/context`
 - `POST /api/copilot/chat`
 
-## Local Tests (Orchestrator)
+## Local Testing
+
 ```bash
 cd services/orchestrator
 python3 -m pip install -e .[dev]
 pytest -q
 ```
 
-## Operations
+## Make Targets
+
 ```bash
 make init-env
 make up
+make up-legacy
 make ps
 make logs
 make sync
 make down
 ```
+
+## Docs
+
+- [Architecture](./docs/ARCHITECTURE.md)
+- [Sidecar Adapter Architecture](./docs/SIDECAR_ADAPTER_ARCHITECTURE.md)
+- [Standalone Operations](./docs/OPERATIONS_STANDALONE.md)
+- [Migration and Compatibility](./docs/MIGRATION_AND_COMPATIBILITY.md)
+- [Standalone Build Plan](./docs/STANDALONE_BUILD_PLAN.md)

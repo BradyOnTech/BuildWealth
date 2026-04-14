@@ -2,20 +2,22 @@ SHELL := /bin/zsh
 
 COMPOSE := docker compose -f infra/docker-compose.yml
 
-.PHONY: init-env up down restart ps logs sync sync-status import-csv test
+.PHONY: init-env up up-legacy down restart ps logs sync sync-status engine-status import-csv test
 
 init-env:
 	./scripts/init-env.sh
 
 up:
-	$(COMPOSE) up -d
+	$(COMPOSE) up -d orchestrator
+
+up-legacy:
+	$(COMPOSE) --profile legacy-upstream up -d
 
 down:
 	$(COMPOSE) down
 
 restart:
-	$(COMPOSE) down
-	$(COMPOSE) up -d
+	$(COMPOSE) restart orchestrator
 
 ps:
 	$(COMPOSE) ps
@@ -28,6 +30,9 @@ sync:
 
 sync-status:
 	curl -s http://localhost:8090/api/sync/status | jq
+
+engine-status:
+	curl -s http://localhost:8090/api/engines/status | jq
 
 import-csv:
 	@echo "Usage: make import-csv FILE=broker.csv DRY_RUN=true"

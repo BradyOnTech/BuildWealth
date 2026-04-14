@@ -9,7 +9,9 @@ Concrete follow-on work after Phase 1.18 completion, ordered by leverage and dep
 - Phase 3.1 asset metadata database expansion is complete (seeded catalog + deterministic fallback + schema/UI plumbing + tests).
 - Phase 3.3 sidecar boundary hardening is complete.
 - Phase 3.4 UI updates are complete (portfolio account filter + allocation charts, guided plan timeline/contribution editors, profile physical assets).
-- Primary remaining work is Copilot tool completion, docs/ops cleanup, and unified context productionization.
+- Phase 3.5 Copilot tool updates are complete.
+- Phase 3.6 docs/ops cleanup is complete (standalone-first README/runbook, migration/compatibility docs, compose/make standalone defaults).
+- Primary remaining work is unified context productionization and quality hardening (Phase 3.7).
 
 ## Priority Order
 
@@ -79,8 +81,8 @@ Completed:
 Why:
 - BuildWealth’s differentiation depends on using portfolio + planning + research context in chat reliably.
 
-### 5) Phase 3.6 Documentation + Ops Cleanup (Next)
-Status: Pending
+### 5) Phase 3.6 Documentation + Ops Cleanup
+Status: Completed
 
 Scope:
 1. Reconcile roadmap docs to current truth (capability audit is stale).
@@ -89,6 +91,18 @@ Scope:
 
 Why:
 - Keeps execution aligned and prevents drift in future slices.
+
+### 6) Phase 3.7 Unified Context Packaging (Next)
+Status: Pending
+
+Scope:
+1. Productionize context payload quality controls (freshness/evidence coverage, warning consistency, token-budget behavior).
+2. Harden API/tool contracts for context retrieval and force-refresh paths under higher-load chat workflows.
+3. Expand focused test coverage for context composition correctness across portfolio/planning/research permutations.
+4. Improve operator visibility into context cache behavior and stale-context decision paths.
+
+Why:
+- This is the BuildWealth differentiator and the main remaining leverage point after parity foundations.
 
 ## Guardrails
 1. Keep using Ghostfolio and Ignidash upstream logic/code patterns when beneficial.

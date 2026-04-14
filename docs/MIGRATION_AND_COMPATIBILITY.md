@@ -1,0 +1,78 @@
+# Migration and Compatibility
+
+## Scope
+BuildWealth uses file-backed local stores with schema-versioned payloads. Migrations are handled inside orchestrator services during read/write flows.
+
+## Current Schema and Contract Versions (2026-04-14)
+
+### Data Stores
+- Portfolio holdings payload: `schema_version = 6`
+- Accounts payload: `schema_version = 2`
+- Asset metadata payload: `schema_version = 1`
+- Cost basis methods payload: `schema_version = 1`
+- Manual prices payload: `schema_version = 1`
+- FX rates payload: `schema_version = 1`
+- FX history payload: `schema_version = 1`
+- Watchlist payload: `schema_version = 1`
+- Financial profile payload: `schema_version = 2`
+- Plan workspace payloads (index/settings/timeline/contribution rules/assumption sets/branch templates): `schema_version = 2`
+
+### Sidecar Contracts
+- Ghostfolio benchmark contract: `v1`
+- Ghostfolio attribution contract: `v1`
+- Ignidash scenario contract: `v1`
+
+## Migration Behavior
+
+### 1) Portfolio Store
+On initialization/read, portfolio payloads are normalized and upgraded in place.
+
+Key upgrade behaviors:
+- Legacy transactions normalized (ids, action normalization, symbol/account defaults, lot method defaults).
+- Legacy holdings upgraded to account-scoped records with canonical lot structures.
+- Legacy holdings without lots receive synthesized legacy lots to preserve position continuity.
+- Existing marked/manual prices are preserved through rebuild/migration paths.
+- Account cash, totals, and allocation breakdowns are recalculated into current schema shape.
+- Watchlist payloads are normalized to symbol+source identity shape.
+
+### 2) Financial Profile Store
+On read/write, payload is migrated to schema v2 with defaults and item-id normalization.
+
+Key upgrade behaviors:
+- Ensures `income_items`, `expense_items`, `debt_items`, `goal_items`, `physical_assets` arrays exist.
+- Ensures stable generated ids for items that previously had none.
+- Adds/normalizes newer fields (`annual_growth_rate`, `inflation_rate`, debt payoff strategy fields, physical asset fields).
+
+### 3) Plan Workspace Store
+Plan workspace index/files are normalized to schema v2.
+
+Key upgrade behaviors:
+- Ensures canonical plan index shape and timestamps.
+- Ensures timeline payload includes retirement block defaults.
+- Ensures contribution rules / assumption sets / branch templates files use current payload envelopes and defaults.
+
+### 4) Sidecar Compatibility
+Engine probes and adapter guards enforce runtime contract compatibility:
+- Sidecars must expose versioned endpoints and compatible contract major version.
+- On mismatch/unverified version, orchestrator avoids unsafe sidecar calls and degrades safely.
+
+## Compatibility Window Policy
+
+1. Forward upgrades
+- Current orchestrator is expected to auto-upgrade known legacy payload shapes when files are read.
+- Upgrades are persisted back to disk after normalization.
+
+2. Backward compatibility
+- Downgrade compatibility is not guaranteed after migration writes current schema versions.
+
+3. Contract compatibility
+- Sidecar contract compatibility is major-version based.
+- Breaking sidecar changes require new contract version folders and adapter updates.
+
+## Operational Guidance
+
+Before upgrading BuildWealth:
+1. Back up `data/` (especially `data/portfolio`, `data/plans`, `data/profile`).
+2. Upgrade and start orchestrator.
+3. Trigger a read path (for example `/api/snapshot/latest`, `/api/financial-profile`, plan APIs) so migrations run.
+4. Validate engine compatibility via `/api/engines/status` when sidecars are enabled.

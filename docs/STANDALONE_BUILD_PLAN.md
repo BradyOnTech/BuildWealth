@@ -57,6 +57,20 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-14 (Completed - Phase 3.6 Documentation and Ops Cleanup)
+- Rewrote root README for standalone-first operation with explicit runtime modes (orchestrator-only default, optional sidecars, optional legacy-upstream profile).
+- Added dedicated operator runbook in `docs/OPERATIONS_STANDALONE.md` covering startup paths, sidecar enablement, contract compatibility checks, degraded-mode behavior, and triage commands.
+- Added `docs/MIGRATION_AND_COMPATIBILITY.md` documenting current schema versions, on-read migration behavior, compatibility window policy, and upgrade guidance.
+- Updated architecture docs to reflect current shipped boundaries and removed stale near-term language.
+- Reconciled roadmap/planning docs that had pre-standalone assumptions:
+  - marked `NEXT_STEPS_PLAN.md` as superseded and redirected to active plan docs
+  - refreshed `PRODUCT_BACKLOG.md` to align with standalone current workstreams
+  - marked `FEATURE_GAPS.md` as a historical snapshot with pointers to active execution documents
+- Updated local ops defaults to match standalone mode:
+  - `infra/docker-compose.yml` now starts orchestrator by default and moves full Ghostfolio/Ignidash app stack under `legacy-upstream` profile
+  - `Makefile` updated with `up` (orchestrator default), `up-legacy`, and `engine-status` targets
+  - `scripts/init-env.sh` post-init guidance updated for standalone-first startup
+
 ### 2026-04-14 (Completed - Phase 3.5 Copilot Tool Updates)
 - Added first-class Copilot tool `add_timeline_event` for appending a single validated timeline event without replacing the full timeline payload.
 - `add_timeline_event` reuses Plan Workspace timeline sanitization/decision logging and preserves existing retirement timeline assumptions when appending events.

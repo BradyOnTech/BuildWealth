@@ -1,7 +1,27 @@
 name: buildwealth
 
 services:
+  orchestrator:
+    build:
+      context: ../services/orchestrator
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./env/orchestrator.env
+    ports:
+      - "8090:8090"
+    volumes:
+      - ../data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform
+
   ghostfolio:
+    profiles: ["legacy-upstream"]
     image: docker.io/ghostfolio/ghostfolio:latest
     restart: unless-stopped
     env_file:
@@ -22,6 +42,7 @@ services:
       - platform
 
   ghostfolio-postgres:
+    profiles: ["legacy-upstream"]
     image: docker.io/library/postgres:15-alpine
     restart: unless-stopped
     env_file:
@@ -37,6 +58,7 @@ services:
       - platform
 
   ghostfolio-redis:
+    profiles: ["legacy-upstream"]
     image: docker.io/library/redis:alpine
     restart: unless-stopped
     env_file:
@@ -54,6 +76,7 @@ services:
       - platform
 
   ignidash-convex-backend:
+    profiles: ["legacy-upstream"]
     image: ghcr.io/get-convex/convex-backend:latest
     restart: unless-stopped
     ports:
@@ -75,6 +98,7 @@ services:
       - platform
 
   ignidash-convex-dashboard:
+    profiles: ["legacy-upstream"]
     image: ghcr.io/get-convex/convex-dashboard:latest
     restart: unless-stopped
     ports:
@@ -89,6 +113,7 @@ services:
       - platform
 
   ignidash:
+    profiles: ["legacy-upstream"]
     image: ghcr.io/schelskedevco/ignidash:stable
     restart: unless-stopped
     ports:
@@ -108,30 +133,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-    networks:
-      - platform
-
-  orchestrator:
-    build:
-      context: ../services/orchestrator
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    env_file:
-      - ./env/orchestrator.env
-    ports:
-      - "8090:8090"
-    depends_on:
-      ghostfolio:
-        condition: service_healthy
-      ignidash:
-        condition: service_healthy
-    volumes:
-      - ../data:/app/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
     networks:
       - platform
 

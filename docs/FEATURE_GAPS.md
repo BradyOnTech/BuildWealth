@@ -2,6 +2,12 @@
 
 ## Date: 2026-04-08
 
+## Status
+Historical snapshot from early pre-standalone planning. Many items in this file have been implemented.
+For current execution priority and status, use:
+- [STANDALONE_BUILD_PLAN.md](./STANDALONE_BUILD_PLAN.md)
+- [NEXT_EXECUTION_STEPS_2026-04-14.md](./NEXT_EXECUTION_STEPS_2026-04-14.md)
+
 ## Context
 
 This analysis walks through the product as a real user trying to accomplish five core goals:

@@ -1,5 +1,19 @@
 # Decision Log
 
+## 2026-04-14 Standalone Documentation/Ops Reconciliation
+
+1. Canonical source of truth update
+- Decision: supersede early assumptions that Ghostfolio is the canonical ledger source for runtime operations.
+- Rationale: BuildWealth orchestrator now owns persistent state (portfolio/profile/plans) as the single source of truth.
+
+2. Default runtime mode
+- Decision: default local run mode is orchestrator-only standalone operation.
+- Rationale: matches shipped architecture and avoids coupling day-to-day operation to full upstream app stacks.
+
+3. Legacy upstream app stack handling
+- Decision: keep full Ghostfolio/Ignidash app containers as optional `legacy-upstream` profile only.
+- Rationale: preserves reference/debug workflows without making them required for standalone BuildWealth operation.
+
 ## 2026-04-07 Baseline Decisions
 
 1. Deployment model
@@ -20,7 +34,7 @@
 - Rationale: clean trust boundaries and easier rotation.
 
 5. Data source priority
-- Decision: Ghostfolio as source of truth; start with CSV/API ingestion into Ghostfolio, then fan out.
+- Decision: Ghostfolio as source of truth; start with CSV/API ingestion into Ghostfolio, then fan out. (Superseded by 2026-04-14 standalone data-ownership decision.)
 - Rationale: single canonical ledger minimizes drift.
 
 6. Historical import depth
@@ -44,7 +58,7 @@
 - Rationale: provides durable context immediately and supports replay/debug.
 
 11. Ingestion strategy
-- Decision: standardize on a canonical CSV transaction schema with alias mapping, then translate to Ghostfolio import payloads.
+- Decision: standardize on a canonical CSV transaction schema with alias mapping, then translate to Ghostfolio import payloads. (Superseded by orchestrator-owned standalone import model.)
 - Rationale: gets reliable ingestion live quickly while broker-specific adapters are added incrementally.
 
 ## 2026-04-10 Architecture Update
