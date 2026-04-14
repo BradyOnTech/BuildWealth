@@ -63,18 +63,23 @@ Completed:
 Why:
 - Moves from “power-user tooling” to polished, durable product workflows.
 
-### 4) Phase 3.5 Copilot Tool Updates (Next)
-Status: In Progress
+### 4) Phase 3.5 Copilot Tool Updates
+Status: Completed
 
 Scope:
 1. Validate all planned tools are present and production-ready: `get_account_balances`, `compute_tax`, `add_timeline_event`, `compare_withdrawal_strategies`, `get_asset_allocation`, `set_contribution_rules`, `get_buildwealth_context`.
 2. Close any remaining tool contract gaps and system prompt routing coverage.
 3. Add regression tests for high-impact tool paths (especially timeline/contribution editing flows).
 
+Completed:
+- Added the missing first-class `add_timeline_event` Copilot tool (append semantics, validation, active-plan fallback, decision logging).
+- Updated Copilot prompt tool-selection guide to call `add_timeline_event` for quick life-event timeline updates.
+- Added regression coverage for 3.5 tool registration completeness and `add_timeline_event` behavior in `test_copilot_tool_updates.py`.
+
 Why:
 - BuildWealth’s differentiation depends on using portfolio + planning + research context in chat reliably.
 
-### 5) Phase 3.6 Documentation + Ops Cleanup
+### 5) Phase 3.6 Documentation + Ops Cleanup (Next)
 Status: Pending
 
 Scope:

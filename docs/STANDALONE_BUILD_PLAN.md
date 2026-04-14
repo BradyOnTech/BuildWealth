@@ -57,6 +57,14 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-14 (Completed - Phase 3.5 Copilot Tool Updates)
+- Added first-class Copilot tool `add_timeline_event` for appending a single validated timeline event without replacing the full timeline payload.
+- `add_timeline_event` reuses Plan Workspace timeline sanitization/decision logging and preserves existing retirement timeline assumptions when appending events.
+- Updated Copilot tool-selection guidance to route quick life-event timeline additions to `add_timeline_event`.
+- Added focused regression coverage in `test_copilot_tool_updates.py`:
+  - verifies all planned Phase 3.5 tools are registered (`get_account_balances`, `compute_tax`, `add_timeline_event`, `compare_withdrawal_strategies`, `get_asset_allocation`, `set_contribution_rules`, `get_buildwealth_context`)
+  - verifies timeline-event append behavior and active-plan fallback path
+
 ### 2026-04-14 (Completed - Phase 3.4 UI Updates)
 - Portfolio view now includes an account-scope selector for holdings/allocation analysis (`All Accounts` + per-account filter), with account-scoped allocation summaries.
 - Added chart-style allocation visuals (bar charts) for asset class, sector, and region so users can scan allocation concentration without reading tables only.

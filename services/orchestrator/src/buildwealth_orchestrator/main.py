@@ -351,6 +351,7 @@ copilot = FinancialCopilot(
         "- For plan contribution allocation rules and defaults → call set_contribution_rules "
         "(or get_plan_contribution_rules to inspect current rules).\n"
         "- For comparing retirement withdrawal strategies across outcomes → call compare_withdrawal_strategies.\n"
+        "- For adding a dated plan event (windfall, purchase, job change, retirement) → call add_timeline_event.\n"
         "- For 'what if I change my contributions?' → call run_plan_scenario_diff.\n"
         "- For life-event what-ifs (job loss, raise, new recurring costs) → call run_plan_scenario_branch.\n"
         "- For reusable life-event presets/templates → call get_plan_branch_templates or update_plan_branch_templates.\n"
@@ -4262,6 +4263,113 @@ async def tool_update_plan_timeline(arguments: dict[str, object]) -> dict[str, o
     }
 
 
+async def tool_add_timeline_event(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+
+    date_value = str(arguments.get("date") or "").strip()
+    if not date_value:
+        raise ValueError("date is required (YYYY-MM-DD).")
+    label = str(arguments.get("label") or "").strip()
+    if not label:
+        raise ValueError("label is required.")
+
+    event_type = str(arguments.get("event_type") or "milestone").strip().lower() or "milestone"
+    if event_type not in {"purchase", "windfall", "job_change", "retirement", "milestone"}:
+        raise ValueError("event_type must be one of: purchase, windfall, job_change, retirement, milestone")
+
+    impact_type_raw = str(arguments.get("impact_type") or "").strip().lower()
+    impact_type = impact_type_raw or {
+        "purchase": "expense",
+        "windfall": "income",
+        "job_change": "income",
+        "retirement": "contribution",
+        "milestone": "portfolio",
+    }.get(event_type, "portfolio")
+    if impact_type not in {"income", "expense", "portfolio", "contribution", "debt_payment"}:
+        raise ValueError("impact_type must be one of: income, expense, portfolio, contribution, debt_payment")
+
+    recurring_frequency = str(arguments.get("recurring_frequency") or "one_time").strip().lower() or "one_time"
+    if recurring_frequency not in {"one_time", "monthly", "yearly"}:
+        raise ValueError("recurring_frequency must be one of: one_time, monthly, yearly")
+
+    timeline_payload = plan_workspace.get_plan_timeline(plan_id)
+    existing_events_raw = timeline_payload.get("events")
+    existing_events = list(existing_events_raw) if isinstance(existing_events_raw, list) else []
+    existing_ids = {
+        str(item.get("id")).strip()
+        for item in existing_events
+        if isinstance(item, dict) and str(item.get("id") or "").strip()
+    }
+
+    added_event: dict[str, Any] = {
+        "date": date_value,
+        "label": label,
+        "event_type": event_type,
+        "impact_type": impact_type,
+        "amount_usd": _coerce_float(arguments.get("amount_usd"), 0.0),
+        "recurring_frequency": recurring_frequency,
+    }
+
+    event_id = str(arguments.get("event_id") or arguments.get("id") or "").strip()
+    if event_id:
+        added_event["id"] = event_id
+
+    end_date = str(arguments.get("end_date") or "").strip()
+    if end_date:
+        added_event["end_date"] = end_date
+    account_id = str(arguments.get("account_id") or "").strip()
+    if account_id:
+        added_event["account_id"] = account_id
+    notes = str(arguments.get("notes") or "").strip()
+    if notes:
+        added_event["notes"] = notes
+
+    existing_events.append(added_event)
+    existing_events.sort(key=lambda item: str(item.get("date") or ""))
+
+    timeline = plan_workspace.update_plan_timeline(
+        plan_id=plan_id,
+        timeline_payload={
+            "events": existing_events,
+            "retirement": (
+                timeline_payload.get("retirement")
+                if isinstance(timeline_payload.get("retirement"), dict)
+                else {}
+            ),
+        },
+        rationale=str(arguments.get("rationale") or "").strip() or "Added timeline event via copilot tool.",
+        status=str(arguments.get("status") or "accepted").strip().lower() or "accepted",
+        log_decision=_coerce_bool(arguments.get("log_decision"), True),
+    )
+
+    resolved_event: dict[str, Any] | None = None
+    updated_events = timeline.get("events")
+    if isinstance(updated_events, list):
+        if event_id:
+            for item in updated_events:
+                if isinstance(item, dict) and str(item.get("id") or "").strip() == event_id:
+                    resolved_event = item
+                    break
+        if resolved_event is None:
+            for item in reversed(updated_events):
+                if not isinstance(item, dict):
+                    continue
+                item_id = str(item.get("id") or "").strip()
+                if item_id and item_id not in existing_ids:
+                    resolved_event = item
+                    break
+        if resolved_event is None and updated_events:
+            last_item = updated_events[-1]
+            if isinstance(last_item, dict):
+                resolved_event = last_item
+
+    return {
+        "plan_id": plan_id,
+        "event": resolved_event or {},
+        "timeline": timeline,
+    }
+
+
 async def tool_get_plan_contribution_rules(arguments: dict[str, object]) -> dict[str, object]:
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
     contribution_rules = plan_workspace.get_plan_contribution_rules(plan_id)
@@ -5440,6 +5548,35 @@ def configure_copilot_tools() -> None:
             "additionalProperties": False,
         },
         handler=tool_update_plan_timeline,
+    )
+    copilot.register_tool(
+        name="add_timeline_event",
+        description=(
+            "Append a single dated timeline event to a plan using the existing timeline + retirement payload. "
+            "Useful for quick life-event modeling without rewriting the full timeline object."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                "date": {"type": "string"},
+                "label": {"type": "string"},
+                "event_type": {"type": "string"},
+                "impact_type": {"type": "string"},
+                "amount_usd": {"type": "number"},
+                "recurring_frequency": {"type": "string"},
+                "end_date": {"type": "string"},
+                "account_id": {"type": "string"},
+                "notes": {"type": "string"},
+                "event_id": {"type": "string"},
+                "rationale": {"type": "string"},
+                "status": {"type": "string"},
+                "log_decision": {"type": "boolean"},
+            },
+            "required": ["date", "label"],
+            "additionalProperties": False,
+        },
+        handler=tool_add_timeline_event,
     )
     copilot.register_tool(
         name="set_contribution_rules",
