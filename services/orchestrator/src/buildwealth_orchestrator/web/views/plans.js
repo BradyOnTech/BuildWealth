@@ -149,8 +149,10 @@ export function template() {
         <div class="inline-builder">
           <input type="text" id="research-bridge-symbols" placeholder="Optional symbols (e.g. NVDA,VTI)" disabled />
           <button class="ghost small" id="pin-watchlist-branch-template" type="button" disabled>Pin Watchlist Research</button>
+          <button class="ghost small" id="open-latest-research-bridge-artifact" type="button" disabled>Open Latest Bridge Artifact</button>
         </div>
         <p class="hint tight">Pins watchlist thesis, target-price, and tag context into the selected branch template (or a research bridge template).</p>
+        <p class="hint tight" id="research-bridge-summary">No watchlist research bridge activity recorded yet.</p>
         <label class="field"><span>Branch Templates JSON</span><textarea id="plan-branch-templates" rows="10" placeholder='{"default_template_id":"job_loss_6_months","templates":[...]}' disabled></textarea></label>
         <p class="hint tight" id="scenario-branch-summary">No scenario branch run yet.</p>
         <label class="field"><span>Scenario Branch Output</span><textarea id="scenario-branch-output" rows="8" readonly></textarea></label>

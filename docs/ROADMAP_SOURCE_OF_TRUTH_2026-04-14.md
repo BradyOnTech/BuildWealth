@@ -1,0 +1,247 @@
+# BuildWealth Product Roadmap (Source of Truth)
+
+## Date
+2026-04-14
+
+## Status
+Active canonical roadmap for post-Phase-3.7 execution.
+
+This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active planning sequence and supersedes roadmap sections in `docs/STANDALONE_BUILD_PLAN.md` that are now stale or already complete.
+
+## Product Purpose
+Build a production-grade all-in-one financial command center that unifies:
+1. Financial picture clarity (portfolio + cash/debt/goals/profile).
+2. Planning and projection depth (tax-aware scenarios, withdrawals, timeline modeling).
+3. Investment research depth.
+4. LLM workflows grounded in structured BuildWealth context and actionable decision loops.
+
+## Architecture Invariants (Do Not Break)
+1. Python orchestrator remains system of record and product entrypoint.
+2. Sidecars remain optional, contract-bound compute adapters (no full-app runtime dependency).
+3. Degraded mode remains explicit and safe when sidecars/providers are unavailable.
+4. Vertical slices ship with API + UI + tests together.
+
+## Upstream Review Summary (Completed 2026-04-14)
+
+### Ghostfolio repository areas reviewed
+- `apps/api/src/app/portfolio/{calculator,portfolio.service.ts,rules.service.ts}`
+- `apps/api/src/app/import/*`
+- `apps/api/src/app/{activities,account-balance,symbol,export}`
+- `apps/api/src/services/data-provider/*`
+- `apps/client/src/app/components/{portfolio-performance,benchmark-comparator,home-watchlist}`
+
+### Ignidash repository areas reviewed
+- `src/lib/calc/{simulation-engine,portfolio,account,taxes,returns,contribution-rules}`
+- `src/lib/calc/returns-providers/*`
+- `src/lib/calc/data-analyzers/*`
+- `src/lib/schemas/inputs/*`
+- `convex/{plans,timeline,tax_settings,templates,validators}`
+
+### Feature signals from upstream still relevant to BuildWealth
+1. Ghostfolio patterns to leverage further:
+- richer symbol search and metadata UX flow (`symbol` module patterns)
+- account-balance detail views and portfolio rules/tagging patterns
+- import/export and reconciliation ergonomics
+- benchmark/performance visualization polish patterns
+
+2. Ignidash patterns to leverage further:
+- simulation modes: fixed, stochastic, historical backtest, Monte Carlo variants
+- analyzer/reporting layer for multi-simulation comparison
+- more complete retirement/tax scenario controls (drawdown order, advanced decumulation)
+- stronger plan/template/schema lifecycle controls
+
+## Licensing and Compliance Gate (Mandatory)
+As of 2026-04-14, Ghostfolio and Ignidash GitHub default branches report AGPL-3.0 licenses.
+
+Actions required before further direct code adaptation from current upstream revisions:
+1. Run explicit legal review for AGPL compatibility with BuildWealth distribution model.
+2. Distinguish between:
+- algorithmic re-implementation inspired by public behavior/tests, and
+- direct derivative reuse from AGPL source.
+3. Track provenance by file and commit hash for all upstream-informed implementations.
+4. Keep `ATTRIBUTIONS.md` and file headers in sync with actual source/revision provenance.
+
+Until legal review is complete, prioritize:
+- contract-level interoperability,
+- behavioral parity tests,
+- clean-room Python implementations where needed.
+
+## Current Delivered Baseline (Shipped)
+1. Portfolio foundation: multi-account ledger, lot-aware holdings, configurable cost basis, total return decomposition, cash ledger, manual prices, custom assets, FX + FX history, historical backfill, watchlist, broker template import coverage, benchmark/attribution adapters.
+2. Planning foundation: tax engine baseline, contribution rules, income/expense/debt/physical-asset projections, timeline events, tax-aware scenario core, withdrawal strategies, Social Security, RMD, assumption sets, scenario branching, branch templates, projection visuals.
+3. BuildWealth differentiator foundation: unified context quality/coverage metadata, cache observability/reset controls, decision packets, recommendation closure metadata, research-to-planning bridge with persisted plan artifacts.
+4. UX and operations foundation: guided planners/editors, standalone-first operations docs, migration/compatibility docs, sidecar contract hardening.
+
+## Remaining Strategic Build (What Is Left)
+The highest-leverage missing work is no longer raw parity checkboxes. It is decision-grade integration quality across portfolio, planning, research, and Copilot loops.
+
+### A) Research Intelligence Depth
+1. Multi-symbol compare with normalized metrics, thesis context, and portfolio-fit framing.
+2. Fundamental + estimate + earnings + news/sentiment packaging into reusable research dossiers.
+3. Watchlist scoring/ranking with explicit reason codes and freshness metadata.
+4. Research provenance and evidence scoring in Copilot-visible context.
+
+### B) Decision Intelligence Operating Loop
+1. Recommendation prioritization by expected impact, confidence, reversibility, and time horizon.
+2. One-click "simulate before apply" for recommendation classes.
+3. Post-decision outcome tracking and calibration (did expected delta materialize?).
+4. Decision history analytics: what action classes actually improved outcomes.
+
+### C) Planning Realism Expansion
+1. State/local tax layer, IRMAA surcharge modeling, and tax-friction realism.
+2. Roth conversion planning and configurable drawdown ordering.
+3. Household/couple planning constraints and shared-goal modeling.
+4. Simulation mode expansion (historical/stochastic/Monte Carlo variants) with comparable output summaries.
+
+### D) Portfolio and Data Operations Hardening
+1. Import quality framework: deterministic parser confidence, reconciliation reports, and corrective UX.
+2. Corporate actions depth and lot-audit explainability.
+3. Expanded risk analytics (factor/sector/geography concentration trajectories and drift alerts).
+4. Export/reporting surfaces for advisor-style portfolio and plan snapshots.
+
+### E) Productization and Platform Reliability
+1. Persistence hardening beyond ad-hoc JSON stores for higher durability and concurrency safety.
+2. Backup/restore workflow and data integrity checks.
+3. Local security hardening for sensitive financial and conversation data.
+4. Performance budgets and observability SLOs (API latency, cache behavior, snapshot freshness).
+
+## Execution Plan (Phased)
+
+### Phase 4.0 - Truth Reset and Platform Baseline (1 week)
+Goal: remove doc drift and reduce architecture entropy before adding major surface area.
+
+Slices:
+1. Adopt this roadmap as canonical and convert older planning docs to historical pointers.
+2. Correct stale capability audit references and parity assumptions in legacy docs.
+3. Add license/compliance checklist to engineering workflow for upstream reuse.
+4. Start route/module decomposition plan for `main.py` and large UI view files.
+
+Definition of done:
+1. Every planning doc points to one canonical active roadmap.
+2. Stale or contradictory parity statements are marked historical.
+3. No new feature work starts without explicit source-provenance note.
+
+### Phase 4.1 - Research Intelligence Foundation (2 to 4 weeks)
+Goal: make research a first-class decision input, not a thin quote endpoint.
+
+Slices:
+1. Add `POST /api/research/compare` for multi-symbol analysis.
+2. Add research dossier artifacts (`research_dossier`) with thesis, metrics, risks, catalysts, and freshness.
+3. Add watchlist ranking endpoint and UI list sorted by score/priority.
+4. Add Copilot tools for compare + dossier retrieval and enforce evidence citations in recommendations.
+
+Upstream reuse targets:
+1. Ghostfolio symbol/data-provider patterns for normalized market metadata retrieval.
+2. Ignidash analyzer output structuring patterns for multi-scenario comparison style summaries.
+
+Definition of done:
+1. Research compare flows are accessible via API, UI, and Copilot.
+2. At least one recommendation class consumes dossier evidence directly.
+3. Research context quality is visible in unified context and recommendation payloads.
+
+### Phase 4.2 - Decision Intelligence Engine (2 to 3 weeks)
+Goal: move from "suggestion inbox" to ranked, outcome-aware action system.
+
+Slices:
+1. Add recommendation scoring service (`impact`, `confidence`, `urgency`, `reversibility`).
+2. Add one-click pre-apply simulation for each supported recommendation type.
+3. Persist expected vs realized outcome fields and expose closure analytics.
+4. Add "Top 3 Next Actions" card in dashboard and plans workspace.
+
+Upstream reuse targets:
+1. Ignidash simulation/compare patterns for expected delta calculation.
+2. Ghostfolio portfolio risk/presentation conventions for action explainability.
+
+Definition of done:
+1. Recommendation inbox defaults to ranked actions with transparent scores.
+2. Apply/reject flows include expected impact and post-closure realized impact where available.
+3. Copilot can answer "what should I do next" with ranked, evidence-backed actions.
+
+### Phase 5.0 - Planning Realism Expansion (3 to 5 weeks)
+Goal: upgrade retirement and tax realism from foundation to robust planning depth.
+
+Slices:
+1. Add state tax and IRMAA modeling surfaces in tax engine and scenario outputs.
+2. Add Roth conversion plan controls and scenario-aware conversion simulation.
+3. Add configurable drawdown ordering in withdrawal strategies.
+4. Add household/couple planning mode with shared goals and filing assumptions.
+5. Add simulation mode selector (fixed/stochastic/historical/Monte Carlo variants) and comparison outputs.
+
+Upstream reuse targets:
+1. Ignidash `returns-providers/*` and `simulation-engine.ts` patterns for simulation modes.
+2. Ignidash `taxes.ts` structures for extended tax-processing design.
+
+Definition of done:
+1. New tax and decumulation controls are editable in plan workspace and reflected in outputs.
+2. Scenario compare clearly reports impact deltas from each realism toggle.
+3. Tests cover mode selection, tax extensions, and conversion edge cases.
+
+### Phase 5.1 - Portfolio Industrialization (3 to 5 weeks)
+Goal: raise portfolio operations from feature-rich to audit-grade reliability.
+
+Slices:
+1. Add import reconciliation report (accepted/rejected/normalized rows and confidence flags).
+2. Expand corporate actions and lot-audit explainability artifacts.
+3. Add portfolio drift/risk alerts tied to allocation and concentration thresholds.
+4. Add export/report package endpoints for periodic review packets.
+
+Upstream reuse targets:
+1. Ghostfolio import/export and activities/account-balance module patterns.
+2. Ghostfolio calculator and rules patterns for risk and classification logic.
+
+Definition of done:
+1. Import UX produces deterministic reconciliation output for every run.
+2. Lot/position changes are explainable through persisted audit artifacts.
+3. Portfolio review packet can be generated end-to-end from local data.
+
+### Phase 6.0 - Productization and Trust Layer (2 to 4 weeks)
+Goal: make BuildWealth operationally durable as a real software product.
+
+Slices:
+1. Implement durable storage strategy upgrade path (with migration and rollback checks).
+2. Add backup/restore command + UI entrypoint.
+3. Add local data protection options for sensitive stores.
+4. Add runtime telemetry dashboards for API latency, context freshness, and cache quality.
+
+Definition of done:
+1. Recovery path is tested and documented.
+2. Operational failures are visible via built-in telemetry.
+3. Security and data-integrity controls are verified in tests and runbook.
+
+## Prioritization Logic
+Use this scoring when selecting the next slice:
+1. User decision quality impact (highest).
+2. Cross-domain leverage (portfolio + planning + research + Copilot together).
+3. Reuse ROI from upstream references.
+4. Operational risk reduction.
+5. Implementation complexity.
+
+## Immediate Next 3 Slices
+1. Research compare endpoint + UI + Copilot tool (Phase 4.1 Slice 1).
+2. Recommendation scoring engine with ranked inbox sorting (Phase 4.2 Slice 1).
+3. Import reconciliation report contract and persistence (Phase 5.1 Slice 1).
+
+## Guardrails
+1. Do not fork or embed full Ghostfolio/Ignidash apps into BuildWealth runtime path.
+2. Reuse upstream logic selectively where it improves correctness and speed.
+3. Keep BuildWealth UX/API contracts stable while internals evolve.
+4. Ship each slice with tests and operator-facing observability.
+5. Keep this document updated at slice completion time.
+
+## Success Metrics
+1. Decision utility:
+- at least 80% of recommendations include quantified expected impact and evidence links.
+- at least 60% of applied recommendations have closure outcome capture.
+
+2. Research utility:
+- multi-symbol compare used in at least 50% of research-driven recommendation flows.
+- watchlist ranking freshness under 24 hours for tracked symbols.
+
+3. Planning utility:
+- scenario engine supports multiple simulation modes with deterministic compare outputs.
+- tax/withdrawal realism settings materially alter scenario outputs with transparent deltas.
+
+4. Product reliability:
+- full test suite remains green on each slice.
+- no silent degraded sidecar failures.
+- backup/restore validation passes in CI or scripted local checks.

@@ -6,7 +6,7 @@ adapted from the following open source projects:
 ## Ghostfolio
 
 - Project: https://github.com/ghostfolio/ghostfolio
-- License: MIT
+- License: AGPL-3.0 (current upstream default branch as of 2026-04-14; verify by adapted revision)
 - Copyright: Ghostfolio contributors
 - Intended reuse in BuildWealth:
   portfolio activity models, import workflows, broker CSV handling patterns,
@@ -30,7 +30,7 @@ adapted from the following open source projects:
 ## Ignidash
 
 - Project: https://github.com/schelskedevco/ignidash
-- License: MIT
+- License: AGPL-3.0 (current upstream default branch as of 2026-04-14; verify by adapted revision)
 - Copyright: Ignidash contributors
 - Intended reuse in BuildWealth:
   planning schemas, tax engine structure, contribution rule logic,

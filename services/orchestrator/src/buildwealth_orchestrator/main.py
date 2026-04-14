@@ -1363,6 +1363,80 @@ def _is_research_bridge_event(raw_event: dict[str, Any]) -> bool:
     return RESEARCH_BRIDGE_NOTE_PREFIX in notes
 
 
+def _build_research_bridge_pin_markdown(
+    *,
+    plan_id: str,
+    template_id: str,
+    template_name: str,
+    branch_name: str,
+    assumption_set_id: str | None,
+    requested_symbols: list[str],
+    pinned_items: list[PlanResearchBridgePinnedItem],
+    retained_event_count: int,
+    generated_event_count: int,
+    pinned_at: str,
+) -> str:
+    pinned_symbols = [item.symbol for item in pinned_items]
+    payload = {
+        "plan_id": plan_id,
+        "template_id": template_id,
+        "template_name": template_name,
+        "branch_name": branch_name,
+        "assumption_set_id": assumption_set_id,
+        "requested_symbols": requested_symbols,
+        "pinned_symbols": pinned_symbols,
+        "retained_non_bridge_event_count": retained_event_count,
+        "generated_bridge_event_count": generated_event_count,
+        "pinned_at": pinned_at,
+    }
+    lines = [
+        f"# Research Bridge Pin: {template_name}",
+        "",
+        "## Summary",
+        "",
+        f"- Plan ID: `{plan_id}`",
+        f"- Template ID: `{template_id}`",
+        f"- Branch Name: `{branch_name}`",
+        f"- Assumption Set: `{assumption_set_id or 'none'}`",
+        f"- Requested Symbols: `{', '.join(requested_symbols) if requested_symbols else 'auto-select from watchlist'}`",
+        f"- Pinned Symbols: `{', '.join(pinned_symbols)}`",
+        f"- Pinned At: `{pinned_at}`",
+        "",
+        "## Pinned Watchlist Items",
+        "",
+    ]
+    for item in pinned_items:
+        details: list[str] = []
+        if item.target_price_usd is not None:
+            details.append(f"target {_format_currency_amount(item.target_price_usd)}")
+        if item.tags:
+            details.append(f"tags: {', '.join(item.tags)}")
+        detail_suffix = f" ({'; '.join(details)})" if details else ""
+        lines.append(f"- `{item.symbol}` [{item.data_source}]{detail_suffix}")
+        if item.thesis:
+            lines.append(f"  - thesis: {item.thesis}")
+        if item.note:
+            lines.append(f"  - note: {item.note}")
+
+    lines.extend(
+        [
+            "",
+            "## Branch Event Coverage",
+            "",
+            f"- Retained non-bridge event count: `{retained_event_count}`",
+            f"- Generated bridge event count: `{generated_event_count}`",
+            "",
+            "## Structured Payload",
+            "",
+            "```json",
+            json.dumps(payload, indent=2, default=str),
+            "```",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def resolve_plan_branch_templates(detail: dict[str, Any]) -> dict[str, Any]:
     files = detail.get("files", {})
     raw_payload = files.get("branch_templates_json") if isinstance(files, dict) else None
@@ -2670,6 +2744,141 @@ def _summarize_recommendation_scenario_diff_preview(
     }
 
 
+def _format_currency_amount(value: Any) -> str:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return "n/a"
+    return f"${parsed:,.2f}"
+
+
+def _scenario_diff_preview_summary_text(preview_payload: dict[str, Any] | None) -> str:
+    if not isinstance(preview_payload, dict):
+        return "Scenario preview unavailable."
+    status = str(preview_payload.get("status") or "unknown").strip().lower()
+    if status != "captured":
+        reason = str(preview_payload.get("reason") or "").strip()
+        if reason:
+            return f"Scenario preview {status}: {reason}"
+        return f"Scenario preview {status}."
+
+    deltas_raw = preview_payload.get("scenario_deltas")
+    deltas = [item for item in deltas_raw if isinstance(item, dict)] if isinstance(deltas_raw, list) else []
+    baseline = next((item for item in deltas if str(item.get("label")) == "baseline"), deltas[0] if deltas else None)
+    if not isinstance(baseline, dict):
+        return "Scenario preview captured."
+    return (
+        "Scenario preview captured: baseline "
+        f"future-value delta {_format_currency_amount(baseline.get('delta_future_value_usd'))}, "
+        f"real-value delta {_format_currency_amount(baseline.get('delta_real_value_usd'))}."
+    )
+
+
+def _build_recommendation_closure_markdown(
+    *,
+    recommendation: dict[str, Any],
+    decision_closure: dict[str, Any],
+) -> str:
+    preview_payload = (
+        decision_closure.get("scenario_diff_preview")
+        if isinstance(decision_closure.get("scenario_diff_preview"), dict)
+        else {}
+    )
+    title = str(recommendation.get("title") or "Recommendation").strip() or "Recommendation"
+    lines: list[str] = [
+        f"# Recommendation Decision Closure: {title}",
+        "",
+        "## Recommendation",
+        "",
+        f"- Recommendation ID: `{recommendation.get('id')}`",
+        f"- Type: `{recommendation.get('recommendation_type') or 'general'}`",
+        f"- Priority: `{recommendation.get('priority') or 'medium'}`",
+        f"- Source: `{recommendation.get('source') or 'manual'}`",
+        "",
+        "## Decision Closure",
+        "",
+        f"- Decision status: `{decision_closure.get('decision_status') or 'unknown'}`",
+    ]
+    if decision_closure.get("applied_at"):
+        lines.append(f"- Applied at: `{decision_closure.get('applied_at')}`")
+    if decision_closure.get("rejected_at"):
+        lines.append(f"- Rejected at: `{decision_closure.get('rejected_at')}`")
+    if decision_closure.get("rationale"):
+        lines.append(f"- Rationale: {decision_closure.get('rationale')}")
+    if decision_closure.get("reason"):
+        lines.append(f"- Reason: {decision_closure.get('reason')}")
+
+    lines.extend(
+        [
+            "",
+            "## Scenario Preview",
+            "",
+            f"- {_scenario_diff_preview_summary_text(preview_payload if isinstance(preview_payload, dict) else {})}",
+            "",
+            "```json",
+            json.dumps(
+                {
+                    "recommendation": {
+                        "id": recommendation.get("id"),
+                        "title": recommendation.get("title"),
+                    },
+                    "decision_closure": decision_closure,
+                },
+                indent=2,
+                default=str,
+            ),
+            "```",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def persist_recommendation_closure_to_plan(
+    *,
+    plan_id: str,
+    recommendation: dict[str, Any],
+    decision_closure: dict[str, Any],
+) -> PlanArtifactSummary | None:
+    if not plan_id:
+        return None
+
+    preview_payload = (
+        decision_closure.get("scenario_diff_preview")
+        if isinstance(decision_closure.get("scenario_diff_preview"), dict)
+        else None
+    )
+    if preview_payload is None:
+        return None
+
+    decision_status = str(decision_closure.get("decision_status") or "accepted").strip().lower() or "accepted"
+    title = str(recommendation.get("title") or "Recommendation").strip() or "Recommendation"
+    summary = f"Recommendation closure: {title} ({decision_status})"
+    rationale_parts: list[str] = []
+    if decision_closure.get("rationale"):
+        rationale_parts.append(str(decision_closure.get("rationale")))
+    if decision_closure.get("reason"):
+        rationale_parts.append(f"Reason: {decision_closure.get('reason')}")
+    rationale_parts.append(_scenario_diff_preview_summary_text(preview_payload))
+    plan_workspace.append_decision(
+        plan_id=plan_id,
+        summary=summary,
+        rationale=" ".join(part for part in rationale_parts if part).strip(),
+        status=decision_status,
+    )
+
+    artifact_payload = plan_workspace.write_artifact(
+        plan_id=plan_id,
+        title=f"Decision Closure - {title}",
+        markdown=_build_recommendation_closure_markdown(
+            recommendation=recommendation,
+            decision_closure=decision_closure,
+        ),
+        kind="recommendation_decision_closure",
+    )
+    return PlanArtifactSummary(**artifact_payload)
+
+
 async def build_recommendation_scenario_diff_preview(
     recommendation: dict[str, Any],
     *,
@@ -3036,6 +3245,20 @@ async def apply_recommendation_with_decision_packet(
         except Exception as exc:
             decision_packet_message_suffix = f" Decision packet could not be written: {exc}"
 
+    closure_artifact_summary: PlanArtifactSummary | None = None
+    closure_message_suffix = ""
+    if result.plan is not None and decision_closure_payload:
+        try:
+            closure_artifact_summary = persist_recommendation_closure_to_plan(
+                plan_id=plan_id,
+                recommendation=recommendation_payload,
+                decision_closure=decision_closure_payload,
+            )
+            if closure_artifact_summary is not None:
+                closure_message_suffix = " Decision closure snapshot saved to plan artifacts."
+        except Exception as exc:
+            closure_message_suffix = f" Decision closure snapshot could not be written: {exc}"
+
     action_payload_raw = recommendation_payload.get("action_payload")
     action_payload = dict(action_payload_raw) if isinstance(action_payload_raw, dict) else {}
     if suggested_symbols:
@@ -3044,6 +3267,13 @@ async def apply_recommendation_with_decision_packet(
         action_payload["research_bridge"] = research_bridge_payload
     if decision_closure_payload:
         action_payload["decision_closure"] = decision_closure_payload
+    if closure_artifact_summary is not None:
+        action_payload["decision_closure_artifact"] = {
+            "artifact_id": closure_artifact_summary.id,
+            "file_name": closure_artifact_summary.file_name,
+            "plan_id": plan_id,
+            "created_at": closure_artifact_summary.created_at.isoformat(),
+        }
     if artifact_summary is not None:
         decision_status = str(request.decision_status or "accepted").strip() or "accepted"
         action_payload["decision_packet"] = {
@@ -3073,10 +3303,14 @@ async def apply_recommendation_with_decision_packet(
         recommendation=RecommendationItem(**updated_recommendation_payload),
         plan=refreshed_plan,
         decision_packet_artifact=artifact_summary,
+        decision_closure_artifact=closure_artifact_summary,
         suggested_research_symbols=suggested_symbols,
         research_bridge=research_bridge_payload,
         decision_closure=decision_closure_payload,
-        message=f"{result.message}{decision_packet_message_suffix}{research_bridge_message_suffix}",
+        message=(
+            f"{result.message}{decision_packet_message_suffix}"
+            f"{research_bridge_message_suffix}{closure_message_suffix}"
+        ),
     )
 
 
@@ -3147,7 +3381,10 @@ async def reject_recommendation(
     recommendation_id: str,
     reason: str = "",
     *,
+    plan_id: str | None = None,
     capture_scenario_diff: bool = True,
+    create_decision_packet: bool = False,
+    decision_packet_research_symbols: list[str] | None = None,
 ) -> RecommendationActionResponse:
     recommendation = recommendation_inbox.get(recommendation_id)
     current_status = str(recommendation.get("status", "proposed")).strip().lower()
@@ -3156,7 +3393,10 @@ async def reject_recommendation(
 
     scenario_diff_preview: dict[str, Any] | None = None
     if capture_scenario_diff:
-        scenario_diff_preview = await build_recommendation_scenario_diff_preview(recommendation)
+        scenario_diff_preview = await build_recommendation_scenario_diff_preview(
+            recommendation,
+            requested_plan_id=plan_id,
+        )
 
     updated = recommendation_inbox.set_status(
         recommendation_id,
@@ -3165,24 +3405,132 @@ async def reject_recommendation(
     )
     action_payload_raw = updated.get("action_payload")
     action_payload = dict(action_payload_raw) if isinstance(action_payload_raw, dict) else {}
+    decision_closure_raw = action_payload.get("decision_closure")
+    decision_closure = (
+        dict(decision_closure_raw)
+        if isinstance(decision_closure_raw, dict)
+        else {}
+    )
+    decision_closure["rejected_at"] = context_utc_now_iso()
+    decision_closure["decision_status"] = "rejected"
+    decision_closure["reason"] = reason
     if scenario_diff_preview is not None:
-        decision_closure_raw = action_payload.get("decision_closure")
-        decision_closure = (
-            dict(decision_closure_raw)
-            if isinstance(decision_closure_raw, dict)
-            else {}
-        )
-        decision_closure["rejected_at"] = context_utc_now_iso()
-        decision_closure["decision_status"] = "rejected"
-        decision_closure["reason"] = reason
         decision_closure["scenario_diff_preview"] = scenario_diff_preview
-        action_payload["decision_closure"] = decision_closure
-        updated = recommendation_inbox.update(
-            recommendation_id,
-            updates={"action_payload": action_payload},
-        )
+    action_payload["decision_closure"] = decision_closure
 
-    suggested_symbols = _extract_decision_packet_symbols(updated)
+    resolved_plan_id: str | None = None
+    try:
+        resolved_plan_id = _resolve_recommendation_plan_id(updated, plan_id)
+    except ValueError:
+        resolved_plan_id = None
+
+    context_payload: dict[str, Any] | None = None
+    context_error: str | None = None
+    requested_symbols = normalize_research_symbols(decision_packet_research_symbols or [], max_symbols=12)
+    if create_decision_packet and resolved_plan_id:
+        try:
+            context_payload = await build_buildwealth_context_payload(
+                use_live_snapshot=False,
+                plan_id=resolved_plan_id,
+                include_research=True,
+                include_plan_projection=False,
+                force_refresh=False,
+                research_symbols=requested_symbols,
+                max_recommendations=10,
+                max_plan_decisions=8,
+                summary_max_chars=1800,
+                research_symbol_limit=max(DEFAULT_RESEARCH_SYMBOL_LIMIT, len(requested_symbols) or 0),
+                detail_level="light",
+            )
+        except Exception as exc:
+            context_error = str(exc)
+
+    suggested_symbols = _extract_decision_packet_symbols(
+        updated,
+        request_symbols=requested_symbols,
+        context_payload=context_payload,
+    )
+
+    decision_packet_artifact: PlanArtifactSummary | None = None
+    decision_packet_message_suffix = ""
+    if create_decision_packet and resolved_plan_id:
+        plan_detail_for_packet: PlanDetailResponse | None = None
+        try:
+            plan_detail_for_packet = PlanDetailResponse(**plan_workspace.get_plan(resolved_plan_id))
+        except Exception:
+            plan_detail_for_packet = None
+
+        assumptions_payload = _build_decision_packet_assumptions(resolved_plan_id, plan_detail_for_packet)
+        rationale = reason.strip() if reason.strip() else str(updated.get("detail") or "")
+        markdown = _build_decision_packet_markdown(
+            recommendation=updated,
+            plan_id=resolved_plan_id,
+            rationale=rationale,
+            decision_status="rejected",
+            cited_symbols=suggested_symbols,
+            assumptions_payload=assumptions_payload,
+            context_payload=context_payload,
+            context_error=context_error,
+        )
+        try:
+            artifact_payload = plan_workspace.write_artifact(
+                plan_id=resolved_plan_id,
+                title=f"Decision Packet - {updated.get('title') or recommendation_id} (Rejected)",
+                markdown=markdown,
+                kind="decision_packet",
+            )
+            decision_packet_artifact = PlanArtifactSummary(**artifact_payload)
+            action_payload["decision_packet"] = {
+                "artifact_id": decision_packet_artifact.id,
+                "file_name": decision_packet_artifact.file_name,
+                "plan_id": resolved_plan_id,
+                "created_at": decision_packet_artifact.created_at.isoformat(),
+                "decision_status": "rejected",
+                "cited_research_symbols": suggested_symbols,
+                "context_generated_at": context_payload.get("generated_at") if isinstance(context_payload, dict) else None,
+                "assumption_set_id": assumptions_payload.get("active_assumption_set_id"),
+            }
+            decision_packet_message_suffix = " Decision packet saved to plan artifacts."
+        except Exception as exc:
+            decision_packet_message_suffix = f" Decision packet could not be written: {exc}"
+    elif create_decision_packet and not resolved_plan_id:
+        decision_packet_message_suffix = " Decision packet skipped: no plan_id is available."
+
+    plan_detail: PlanDetailResponse | None = None
+    closure_artifact_summary: PlanArtifactSummary | None = None
+    closure_message_suffix = ""
+    if resolved_plan_id:
+        try:
+            closure_artifact_summary = persist_recommendation_closure_to_plan(
+                plan_id=resolved_plan_id,
+                recommendation=updated,
+                decision_closure=decision_closure,
+            )
+            if closure_artifact_summary is not None:
+                action_payload["decision_closure_artifact"] = {
+                    "artifact_id": closure_artifact_summary.id,
+                    "file_name": closure_artifact_summary.file_name,
+                    "plan_id": resolved_plan_id,
+                    "created_at": closure_artifact_summary.created_at.isoformat(),
+                }
+                plan_detail = PlanDetailResponse(**plan_workspace.get_plan(resolved_plan_id))
+                closure_message_suffix = " Decision closure snapshot saved to plan artifacts."
+        except (PlanNotFoundError, ValueError) as exc:
+            closure_message_suffix = f" Decision closure snapshot could not be written: {exc}"
+
+    if plan_detail is None and (decision_packet_artifact is not None) and resolved_plan_id:
+        try:
+            plan_detail = PlanDetailResponse(**plan_workspace.get_plan(resolved_plan_id))
+        except Exception:
+            plan_detail = None
+
+    if suggested_symbols:
+        action_payload["suggested_research_symbols"] = suggested_symbols
+    updated = recommendation_inbox.update(
+        recommendation_id,
+        updates={"action_payload": action_payload},
+    )
+
     decision_closure_payload = (
         action_payload.get("decision_closure")
         if isinstance(action_payload.get("decision_closure"), dict)
@@ -3190,10 +3538,12 @@ async def reject_recommendation(
     )
     return RecommendationActionResponse(
         recommendation=RecommendationItem(**updated),
-        plan=None,
+        plan=plan_detail,
+        decision_packet_artifact=decision_packet_artifact,
+        decision_closure_artifact=closure_artifact_summary,
         suggested_research_symbols=suggested_symbols,
         decision_closure=decision_closure_payload,
-        message="Recommendation rejected.",
+        message=f"Recommendation rejected.{decision_packet_message_suffix}{closure_message_suffix}",
     )
 
 
@@ -4478,8 +4828,15 @@ async def tool_reject_recommendation(arguments: dict[str, object]) -> dict[str, 
     reason = str(arguments.get("reason") or "").strip()
     result = await reject_recommendation(
         recommendation_id,
+        plan_id=(str(arguments.get("plan_id") or "").strip() or None),
         reason=reason,
         capture_scenario_diff=_coerce_bool(arguments.get("capture_scenario_diff"), True),
+        create_decision_packet=_coerce_bool(arguments.get("create_decision_packet"), False),
+        decision_packet_research_symbols=(
+            [str(item) for item in arguments.get("decision_packet_research_symbols")]
+            if isinstance(arguments.get("decision_packet_research_symbols"), list)
+            else []
+        ),
     )
     return result.model_dump(mode="json")
 
@@ -5995,14 +6352,18 @@ def configure_copilot_tools() -> None:
         name="reject_recommendation",
         description=(
             "Reject a recommendation inbox item with an optional reason. "
-            "By default captures a scenario-diff preview for plan-setting recommendations."
+            "By default captures a scenario-diff preview for plan-setting recommendations. "
+            "Optionally write a decision-packet-style rationale artifact."
         ),
         parameters={
             "type": "object",
             "properties": {
                 "recommendation_id": {"type": "string"},
+                "plan_id": {"type": "string"},
                 "reason": {"type": "string"},
                 "capture_scenario_diff": {"type": "boolean"},
+                "create_decision_packet": {"type": "boolean"},
+                "decision_packet_research_symbols": {"type": "array", "items": {"type": "string"}},
             },
             "required": ["recommendation_id"],
             "additionalProperties": False,
@@ -7258,8 +7619,11 @@ async def reject_recommendation_route(
     try:
         return await reject_recommendation(
             recommendation_id,
+            plan_id=request.plan_id,
             reason=request.reason,
             capture_scenario_diff=request.capture_scenario_diff,
+            create_decision_packet=request.create_decision_packet,
+            decision_packet_research_symbols=request.decision_packet_research_symbols,
         )
     except RecommendationNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -7545,9 +7909,8 @@ def pin_watchlist_research_bridge(
         str(existing_template.get("description") or "").strip()
         or "Watchlist research symbols and thesis notes pinned for scenario branch analysis."
     )
-    description = (
-        f"{description_prefix} Last pinned {len(generated_events)} symbol(s) on {context_utc_now_iso()}."
-    )
+    pinned_at = context_utc_now_iso()
+    description = f"{description_prefix} Last pinned {len(generated_events)} symbol(s) on {pinned_at}."
 
     compare_settings_raw = existing_template.get("compare_settings")
     compare_settings = compare_settings_raw if isinstance(compare_settings_raw, dict) else {}
@@ -7588,7 +7951,7 @@ def pin_watchlist_research_bridge(
             "(research-to-planning bridge)."
         ),
         status="accepted",
-        log_decision=True,
+        log_decision=False,
     )
 
     updated_templates = updated_templates_payload.get("templates")
@@ -7602,12 +7965,48 @@ def pin_watchlist_research_bridge(
                 break
 
     pinned_items = [PlanResearchBridgePinnedItem(**item) for item in selected_items]
+    pinned_symbols = [item.symbol for item in pinned_items]
+    symbol_preview = ", ".join(pinned_symbols[:5]) + ("..." if len(pinned_symbols) > 5 else "")
+    decision_summary = f"Pinned research bridge symbols: {symbol_preview} -> {resolved_template_id}"
+    decision_rationale = (
+        f"Pinned {len(pinned_symbols)} watchlist symbol(s) into branch template "
+        f"{resolved_template_id} ({template_name})"
+        f"{f' using assumption set {resolved_assumption_set_id}' if resolved_assumption_set_id else ''}."
+    )
+    plan_workspace.append_decision(
+        plan_id=plan_id,
+        summary=decision_summary,
+        rationale=decision_rationale,
+        status="accepted",
+    )
+    artifact_title = f"Research Bridge Pin - {template_name}"
+    artifact_payload = plan_workspace.write_artifact(
+        plan_id=plan_id,
+        title=artifact_title,
+        markdown=_build_research_bridge_pin_markdown(
+            plan_id=plan_id,
+            template_id=resolved_template_id,
+            template_name=template_name,
+            branch_name=branch_name,
+            assumption_set_id=resolved_assumption_set_id,
+            requested_symbols=requested_symbols,
+            pinned_items=pinned_items,
+            retained_event_count=len(retained_events),
+            generated_event_count=len(generated_events),
+            pinned_at=pinned_at,
+        ),
+        kind="research_bridge",
+    )
     return PlanResearchBridgeResponse(
         plan_id=plan_id,
         template_id=resolved_template_id,
         template_name=template_name,
-        pinned_symbols=[item.symbol for item in pinned_items],
+        pinned_symbols=pinned_symbols,
         pinned_items=pinned_items,
+        decision_summary=decision_summary,
+        artifact_id=str(artifact_payload.get("id") or "") or None,
+        artifact_title=str(artifact_payload.get("title") or artifact_title),
+        pinned_at=pinned_at,
         branch_templates=PlanScenarioBranchTemplatesResponse(**updated_templates_payload),
     )
 

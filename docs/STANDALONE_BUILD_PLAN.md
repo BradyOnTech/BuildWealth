@@ -2,20 +2,26 @@
 
 ## Date: 2026-04-10
 
+## Status (2026-04-14)
+Historical implementation plan and progress log.
+
+For active roadmap sequencing and current priorities, use:
+- [BuildWealth Product Roadmap (Source of Truth, 2026-04-14)](./ROADMAP_SOURCE_OF_TRUTH_2026-04-14.md)
+
+Notes:
+- The Progress Log below remains the canonical historical record of completed slices.
+- Capability audit tables in this document are no longer the active planning baseline.
+
 ## Strategic Direction
 
 **BuildWealth is becoming a standalone single-user financial command center with targeted engine reuse.** Python remains the control plane and system of record, while selected high-complexity calculations are delegated to local TypeScript sidecars adapted from Ghostfolio (portfolio analytics) and Ignidash (planning/tax simulation).
 
-Both Ghostfolio and Ignidash are MIT licensed, which permits us to:
-- Read and reference their source code on GitHub
-- Port algorithms to Python when needed
-- Reuse logic in sidecar services with adapter contracts
-- Borrow their data schemas and test cases
-- Use their broker CSV templates and asset class taxonomies
-
-We must:
-- Add an `ATTRIBUTIONS.md` to the repo acknowledging both projects and their copyright holders
-- Keep the MIT license attribution for any substantial code we adapt
+License note:
+- This historical plan was originally written under an MIT-license assumption for upstream reuse.
+- Upstream licenses should now be treated as version-specific and verified at implementation time.
+- See active guidance in:
+  - `docs/ROADMAP_SOURCE_OF_TRUTH_2026-04-14.md` (Licensing and Compliance Gate)
+  - `ATTRIBUTIONS.md`
 
 ## Why This Approach (vs. Full Rewrite)
 
@@ -56,6 +62,45 @@ These decisions refine the build plan based on the current repository and upstre
 ---
 
 ## Progress Log
+
+### 2026-04-14 (Completed - Post-3.7 Slice 9, One-Click Bridge Artifact Control)
+- Plan Workspace bridge summary now includes a one-click action (`Open Latest Bridge Artifact`) to open the latest persisted `research_bridge` artifact directly in the artifact content panel.
+- Bridge action enablement is now artifact-aware:
+  - disabled when no plan is selected
+  - disabled when no bridge artifact exists
+  - auto-updated after bridge pin operations and on plan detail refresh.
+- This closes the bridge-summary action loop so operators can move from summary to full bridge evidence without manual artifact table scanning.
+
+### 2026-04-14 (Completed - Post-3.7 Slice 8, Research Bridge Plan Workspace Summary Surface)
+- Research-to-planning bridge outcomes now persist with explicit Plan Workspace history artifacts:
+  - bridge pin operations append a detailed plan decision summary (`Pinned research bridge symbols ...`) instead of only generic branch-template update text.
+  - bridge pin operations now write a dedicated `research_bridge` artifact containing pinned symbols, thesis/target/tag context, template/assumption metadata, and structured payload.
+- Bridge response contract now includes plan-workspace summary metadata (`decision_summary`, `artifact_id`, `artifact_title`, `pinned_at`) so UI/log surfaces can show closure details immediately.
+- Plan Workspace UI now includes a first-class bridge summary hint under Branch Templates (`research-bridge-summary`) that surfaces latest bridge decision/artifact context.
+- Added/updated regression coverage in `test_plan_research_bridge.py` for detailed decision/artifact persistence and updated bridge logging behavior.
+- Verification: `pytest -q services/orchestrator/tests` passes (`368 passed`).
+
+### 2026-04-14 (Completed - Post-3.7 Slice 7, Rejection Decision Packet Rationale)
+- Rejection flows now support optional decision-packet-style artifact generation:
+  - `RecommendationRejectRequest` and Copilot `reject_recommendation` now accept `create_decision_packet` and `decision_packet_research_symbols` controls (plus optional `plan_id` override).
+  - reject action can build a unified-context decision packet (`decision_status=rejected`) and persist packet metadata into recommendation action payloads.
+- Rejection response payloads now return `decision_packet_artifact` when generated, and include cited research symbols for closure auditability.
+- Added focused regression coverage:
+  - reject decision-packet artifact generation and metadata persistence in `test_recommendation_actions.py`
+  - reject tool-schema contract coverage in `test_copilot_tool_updates.py`.
+- Verification: `pytest -q services/orchestrator/tests` passes (`368 passed`).
+
+### 2026-04-14 (Completed - Post-3.7 Slice 6, Plan Workspace Closure Surface)
+- Recommendation closure outcomes now persist directly into Plan Workspace history when closure previews are captured:
+  - apply/reject flows append a closure decision summary into `decisions.jsonl`
+  - apply/reject flows write a `recommendation_decision_closure` artifact with scenario preview deltas/reasoning payload.
+- Recommendation action responses now include `decision_closure_artifact` metadata (alongside `decision_packet_artifact`), and action payloads persist `decision_closure_artifact` references for auditability.
+- Reject flow now consistently writes closure status metadata (`rejected_at`, status, reason) even when scenario-diff capture is disabled; preview content remains optional.
+- Added/expanded regression coverage in `test_recommendation_actions.py` for:
+  - apply closure artifact persistence
+  - decision-packet opt-out while still persisting closure artifacts
+  - reject-path closure artifact persistence when plan linkage exists.
+- Verification: `pytest -q services/orchestrator/tests` passes (`367 passed`).
 
 ### 2026-04-14 (Completed - Post-3.7 Slice 5, Recommendation Closure UX Surface)
 - Recommendation Inbox UI now renders decision-closure details from recommendation action payloads:

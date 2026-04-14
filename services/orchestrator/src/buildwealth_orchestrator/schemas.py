@@ -863,14 +863,18 @@ class RecommendationApplyRequest(BaseModel):
 
 
 class RecommendationRejectRequest(BaseModel):
+    plan_id: str | None = None
     reason: str = ""
     capture_scenario_diff: bool = True
+    create_decision_packet: bool = False
+    decision_packet_research_symbols: list[str] = Field(default_factory=list)
 
 
 class RecommendationActionResponse(BaseModel):
     recommendation: RecommendationItem
     plan: PlanDetailResponse | None = None
     decision_packet_artifact: PlanArtifactSummary | None = None
+    decision_closure_artifact: PlanArtifactSummary | None = None
     suggested_research_symbols: list[str] = Field(default_factory=list)
     research_bridge: dict[str, Any] = Field(default_factory=dict)
     decision_closure: dict[str, Any] = Field(default_factory=dict)
@@ -1154,6 +1158,10 @@ class PlanResearchBridgeResponse(BaseModel):
     template_name: str
     pinned_symbols: list[str] = Field(default_factory=list)
     pinned_items: list[PlanResearchBridgePinnedItem] = Field(default_factory=list)
+    decision_summary: str = ""
+    artifact_id: str | None = None
+    artifact_title: str | None = None
+    pinned_at: datetime | None = None
     branch_templates: PlanScenarioBranchTemplatesResponse
 
 

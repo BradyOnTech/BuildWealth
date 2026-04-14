@@ -9,15 +9,16 @@ Build a production-grade all-in-one financial command center that combines:
 
 ## Planning Source of Truth
 Detailed implementation sequencing lives in:
-- [Standalone Build Plan](./STANDALONE_BUILD_PLAN.md)
-- [Next Execution Steps (2026-04-14)](./NEXT_EXECUTION_STEPS_2026-04-14.md)
+- [BuildWealth Product Roadmap (Source of Truth, 2026-04-14)](./ROADMAP_SOURCE_OF_TRUTH_2026-04-14.md)
+- [Standalone Build Plan (historical progress log)](./STANDALONE_BUILD_PLAN.md)
+- [Next Execution Steps (2026-04-14, historical)](./NEXT_EXECUTION_STEPS_2026-04-14.md)
 
 ## Active Product Workstreams
-1. Post-3.7 decision intelligence expansion (decision packets, action closure, traceability).
-2. Research-to-planning bridge (pin symbols/thesis into branch assumptions and scenario workflows).
-3. Portfolio/planning depth parity expansion where high leverage remains.
-4. Sidecar contract governance, compatibility, and observability.
-5. Data migration safety and operator runbook quality.
+1. Research intelligence depth (multi-symbol compare, dossiers, ranked watchlist context).
+2. Decision intelligence engine (ranked recommendations, pre-apply simulation, closure analytics).
+3. Planning realism expansion (advanced tax/withdrawal/simulation modes and household modeling).
+4. Portfolio industrialization (import reconciliation, lot/corporate-action audit depth, reporting).
+5. Productization and trust layer (durability, backup/restore, security and observability).
 
 ## Execution Principles
 1. Ship vertical slices with tests and UI/API integration, not isolated internals.

@@ -24,6 +24,8 @@ def test_pin_watchlist_research_to_plan_branch_template_replaces_previous_bridge
     class FakePlanWorkspace:
         def __init__(self) -> None:
             self.updated_payload = None
+            self.last_decision = None
+            self.last_artifact = None
 
         def get_plan_branch_templates(self, plan_id: str) -> dict[str, object]:
             assert plan_id == "plan-bridge"
@@ -89,12 +91,49 @@ def test_pin_watchlist_research_to_plan_branch_template_replaces_previous_bridge
             assert plan_id == "plan-bridge"
             assert "research-to-planning bridge" in str(rationale or "")
             assert status == "accepted"
-            assert log_decision is True
+            assert log_decision is False
             self.updated_payload = branch_templates_payload
             return {
                 "schema_version": 2,
                 "default_template_id": branch_templates_payload.get("default_template_id"),
                 "templates": branch_templates_payload.get("templates", []),
+            }
+
+        def append_decision(
+            self,
+            *,
+            plan_id: str,
+            summary: str,
+            rationale: str | None = None,
+            status: str = "accepted",
+        ) -> dict[str, object]:
+            assert plan_id == "plan-bridge"
+            assert summary.startswith("Pinned research bridge symbols:")
+            assert "stress_case" in summary
+            assert "Pinned 2 watchlist symbol(s)" in str(rationale or "")
+            assert status == "accepted"
+            self.last_decision = {"summary": summary, "rationale": rationale, "status": status}
+            return {"id": "decision-bridge", "summary": summary, "rationale": rationale, "status": status}
+
+        def write_artifact(
+            self,
+            *,
+            plan_id: str,
+            title: str,
+            markdown: str,
+            kind: str = "workflow",
+        ) -> dict[str, object]:
+            assert plan_id == "plan-bridge"
+            assert title.startswith("Research Bridge Pin - ")
+            assert "## Pinned Watchlist Items" in markdown
+            assert "`NVDA` [OPENBB]" in markdown
+            assert kind == "research_bridge"
+            self.last_artifact = {"title": title, "kind": kind, "markdown": markdown}
+            return {
+                "id": "artifact-bridge",
+                "file_name": "artifact-bridge.md",
+                "title": title,
+                "created_at": "2026-04-14T21:15:00+00:00",
             }
 
     class FakePortfolioStore:
@@ -134,8 +173,12 @@ def test_pin_watchlist_research_to_plan_branch_template_replaces_previous_bridge
     assert response.plan_id == "plan-bridge"
     assert response.template_id == "stress_case"
     assert response.pinned_symbols == ["NVDA", "VTI"]
+    assert response.artifact_id == "artifact-bridge"
+    assert response.decision_summary.startswith("Pinned research bridge symbols:")
 
     assert fake_workspace.updated_payload is not None
+    assert fake_workspace.last_decision is not None
+    assert fake_workspace.last_artifact is not None
     templates = fake_workspace.updated_payload.get("templates")
     assert isinstance(templates, list)
     template = next(item for item in templates if item.get("id") == "stress_case")

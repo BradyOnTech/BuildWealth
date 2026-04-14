@@ -46,10 +46,13 @@ def test_apply_recommendation_tool_supports_decision_packet_controls() -> None:
     assert "research_bridge_template_id" in properties
 
 
-def test_reject_recommendation_tool_supports_scenario_capture_control() -> None:
+def test_reject_recommendation_tool_supports_decision_packet_controls() -> None:
     tool = main.copilot.tools["reject_recommendation"]
     properties = tool.parameters.get("properties", {})
+    assert "plan_id" in properties
     assert "capture_scenario_diff" in properties
+    assert "create_decision_packet" in properties
+    assert "decision_packet_research_symbols" in properties
 
 
 def test_pin_watchlist_research_tool_contract() -> None:

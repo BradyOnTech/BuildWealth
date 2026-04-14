@@ -462,7 +462,7 @@ function setControlsEnabled(enabled) {
     'activate-plan', 'refresh-plan-context', 'save-plan', 'save-plan-timeline', 'save-plan-assumption-sets',
     'save-plan-contribution-rules', 'save-plan-branch-templates', 'save-plan-settings', 'run-scenario-diff',
     'run-withdrawal-strategy-compare', 'apply-scenario-overrides', 'load-branch-template', 'run-scenario-branch',
-    'pin-watchlist-branch-template',
+    'pin-watchlist-branch-template', 'open-latest-research-bridge-artifact',
     'refresh-projection-profile', 'projection-source', 'projection-scenario-label', 'projection-account-metric',
     'add-decision', 'plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets',
     'plan-contribution-rules', 'plan-branch-templates', 'diff-assumption-set-id',
@@ -1206,6 +1206,8 @@ export function clearDetail() {
   byId('scenario-diff-summary').textContent = 'No scenario diff run yet.';
   byId('withdrawal-strategy-compare-summary').textContent = 'No withdrawal strategy comparison run yet.';
   byId('scenario-branch-summary').textContent = 'No scenario branch run yet.';
+  byId('research-bridge-summary').textContent = 'No watchlist research bridge activity recorded yet.';
+  setResearchBridgeArtifactAction('', '');
   byId('projection-summary').textContent = 'Run a scenario diff or branch to populate projection visuals.';
   byId('plan-decisions-body').innerHTML = '<tr><td colspan="4">No decisions yet.</td></tr>';
   byId('plan-artifacts-body').innerHTML = '<tr><td colspan="4">No artifacts yet.</td></tr>';
@@ -1281,6 +1283,7 @@ export function renderDetail() {
   renderArtifacts(Array.isArray(d.artifacts) ? d.artifacts : []);
   byId('artifact-content').value = '';
   setControlsEnabled(true);
+  renderResearchBridgeSummary(d);
 }
 
 function renderDecisions(decisions) {
@@ -1292,6 +1295,36 @@ function renderDecisions(decisions) {
     tr.innerHTML = `<td>${fmtDate(d.created_at)}</td><td>${d.status || 'proposed'}</td><td>${d.summary || '-'}</td><td>${d.rationale || '-'}</td>`;
     tbody.appendChild(tr);
   }
+}
+
+function setResearchBridgeArtifactAction(artifactId, artifactTitle = '') {
+  const button = byId('open-latest-research-bridge-artifact');
+  if (!button) return;
+  const resolvedArtifactId = String(artifactId || '').trim();
+  button.dataset.artifactId = resolvedArtifactId;
+  button.disabled = !state.currentPlanId || !resolvedArtifactId;
+  if (artifactTitle) button.title = String(artifactTitle);
+  else button.removeAttribute('title');
+}
+
+function renderResearchBridgeSummary(detail) {
+  const summaryEl = byId('research-bridge-summary');
+  if (!summaryEl) return;
+  const decisions = Array.isArray(detail?.decisions) ? detail.decisions : [];
+  const artifacts = Array.isArray(detail?.artifacts) ? detail.artifacts : [];
+  const latestBridgeDecision = decisions.find((item) => String(item?.summary || '').toLowerCase().includes('research bridge'));
+  const latestBridgeArtifact = artifacts.find((item) => String(item?.title || '').toLowerCase().startsWith('research bridge pin'));
+  setResearchBridgeArtifactAction(latestBridgeArtifact?.id, latestBridgeArtifact?.title || '');
+  if (!latestBridgeDecision && !latestBridgeArtifact) {
+    summaryEl.textContent = 'No watchlist research bridge activity recorded yet.';
+    return;
+  }
+
+  const parts = [];
+  if (latestBridgeDecision?.summary) parts.push(String(latestBridgeDecision.summary));
+  if (latestBridgeDecision?.created_at) parts.push(`logged ${fmtDate(latestBridgeDecision.created_at)}`);
+  if (latestBridgeArtifact?.title) parts.push(`artifact: ${latestBridgeArtifact.title}`);
+  summaryEl.textContent = parts.join(' • ');
 }
 
 function renderArtifacts(artifacts) {
@@ -1788,12 +1821,45 @@ export function initEditor(refreshPlans) {
       state.currentPlanDetail = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}`);
       await refreshPlans();
       const pinnedSymbols = Array.isArray(result?.pinned_symbols) ? result.pinned_symbols : [];
+      const bridgeSummaryEl = byId('research-bridge-summary');
+      if (bridgeSummaryEl) {
+        const parts = [];
+        if (result?.decision_summary) parts.push(String(result.decision_summary));
+        if (result?.pinned_at) parts.push(`logged ${fmtDate(result.pinned_at)}`);
+        if (result?.artifact_title) parts.push(`artifact: ${result.artifact_title}`);
+        bridgeSummaryEl.textContent = parts.length
+          ? parts.join(' • ')
+          : 'No watchlist research bridge activity recorded yet.';
+      }
+      setResearchBridgeArtifactAction(result?.artifact_id || '', result?.artifact_title || '');
       writeLog(
         `Pinned ${pinnedSymbols.length} watchlist symbol(s) into template ${templateId || '(unknown)'}.`,
-        { pinned_symbols: pinnedSymbols },
+        {
+          pinned_symbols: pinnedSymbols,
+          decision_summary: result?.decision_summary || null,
+          artifact_id: result?.artifact_id || null,
+        },
       );
     } catch (e) {
       writeLog(`Research bridge pin failed: ${e.message}`, null, true);
+    }
+  });
+
+  byId('open-latest-research-bridge-artifact').addEventListener('click', async () => {
+    if (!state.currentPlanId) {
+      writeLog('Select a plan first.', null, true);
+      return;
+    }
+    const artifactId = String(byId('open-latest-research-bridge-artifact')?.dataset?.artifactId || '').trim();
+    if (!artifactId) {
+      writeLog('No research bridge artifact is available yet.', null, true);
+      return;
+    }
+    try {
+      await loadArtifact(artifactId);
+      writeLog('Opened latest research bridge artifact.', { artifact_id: artifactId });
+    } catch (e) {
+      writeLog(`Research bridge artifact load failed: ${e.message}`, null, true);
     }
   });
 

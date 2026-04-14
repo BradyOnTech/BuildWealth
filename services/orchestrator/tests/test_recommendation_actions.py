@@ -71,8 +71,10 @@ def test_apply_recommendation_writes_decision_packet_artifact(
 
     assert response.recommendation.status == "applied"
     assert response.decision_packet_artifact is not None
+    assert response.decision_closure_artifact is not None
     assert response.plan is not None
     assert response.decision_packet_artifact.id in {item.id for item in response.plan.artifacts}
+    assert response.decision_closure_artifact.id in {item.id for item in response.plan.artifacts}
 
     packet_artifact = workspace.read_artifact(plan["id"], response.decision_packet_artifact.id)
     assert "## Unified Context Snapshot" in packet_artifact["content"]
@@ -80,11 +82,16 @@ def test_apply_recommendation_writes_decision_packet_artifact(
     assert "AAPL" in packet_artifact["content"]
     assert "VTI" in packet_artifact["content"]
     assert "VXUS" in packet_artifact["content"]
+    closure_artifact = workspace.read_artifact(plan["id"], response.decision_closure_artifact.id)
+    assert "## Scenario Preview" in closure_artifact["content"]
+    assert "baseline" in closure_artifact["content"]
 
     updated_recommendation = inbox.get(recommendation["id"])
     packet_meta = updated_recommendation["action_payload"].get("decision_packet", {})
     assert packet_meta.get("artifact_id") == response.decision_packet_artifact.id
     assert "AAPL" in packet_meta.get("cited_research_symbols", [])
+    closure_artifact_meta = updated_recommendation["action_payload"].get("decision_closure_artifact", {})
+    assert closure_artifact_meta.get("artifact_id") == response.decision_closure_artifact.id
     closure = updated_recommendation["action_payload"].get("decision_closure", {})
     assert closure.get("scenario_diff_preview", {}).get("status") == "captured"
 
@@ -125,10 +132,12 @@ def test_apply_recommendation_can_skip_decision_packet(
 
     assert response.recommendation.status == "applied"
     assert response.decision_packet_artifact is None
+    assert response.decision_closure_artifact is not None
     assert response.decision_closure.get("scenario_diff_preview", {}).get("status") == "captured"
 
     artifacts = workspace.get_plan(plan["id"]).get("artifacts", [])
-    assert artifacts == []
+    assert len(artifacts) == 1
+    assert artifacts[0].get("id") == response.decision_closure_artifact.id
 
 
 def test_apply_recommendation_updates_research_bridge_metadata(
@@ -192,6 +201,7 @@ def test_apply_recommendation_updates_research_bridge_metadata(
 
     assert response.recommendation.status == "applied"
     assert response.decision_packet_artifact is None
+    assert response.decision_closure_artifact is not None
     assert response.research_bridge.get("status") == "pinned"
     assert response.suggested_research_symbols == ["VTI"]
     assert response.decision_closure.get("scenario_diff_preview", {}).get("status") == "captured"
@@ -201,6 +211,8 @@ def test_apply_recommendation_updates_research_bridge_metadata(
     assert bridge_meta.get("status") == "pinned"
     assert bridge_meta.get("template_id") == "research_watchlist_bridge"
     assert bridge_meta.get("pinned_symbols") == ["VTI"]
+    closure_artifact_meta = updated_recommendation["action_payload"].get("decision_closure_artifact", {})
+    assert closure_artifact_meta.get("artifact_id") == response.decision_closure_artifact.id
 
 
 def test_reject_recommendation_returns_suggested_research_symbols(
@@ -225,3 +237,132 @@ def test_reject_recommendation_returns_suggested_research_symbols(
     assert response.recommendation.status == "rejected"
     assert response.suggested_research_symbols == ["QQQ", "VTI"]
     assert response.decision_closure.get("scenario_diff_preview", {}).get("status") == "captured"
+
+
+def test_reject_recommendation_persists_closure_artifact_when_plan_available(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = PlanWorkspace(tmp_path / "plans")
+    plan = workspace.create_plan(title="Reject Closure Plan")
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    recommendation = inbox.create(
+        title="Delay contribution increase",
+        detail="Reject now and revisit in six months.",
+        recommendation_type="plan_settings_update",
+        plan_id=plan["id"],
+        action_payload={
+            "plan_settings_updates": {
+                "annual_contribution_usd": 25000.0,
+            }
+        },
+    )
+    monkeypatch.setattr(main, "plan_workspace", workspace)
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    async def fake_preview(*_: object, **__: object) -> dict[str, object]:
+        return {
+            "status": "captured",
+            "scenario_deltas": [
+                {
+                    "label": "baseline",
+                    "delta_future_value_usd": 1250.0,
+                    "delta_real_value_usd": 900.0,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(main, "build_recommendation_scenario_diff_preview", fake_preview)
+    response = asyncio.run(main.reject_recommendation(recommendation["id"], reason="Revisit after annual review."))
+
+    assert response.recommendation.status == "rejected"
+    assert response.plan is not None
+    assert response.decision_closure_artifact is not None
+    assert response.decision_closure.get("decision_status") == "rejected"
+
+    decision_summaries = [item.summary for item in response.plan.decisions]
+    assert any(summary.startswith("Recommendation closure:") for summary in decision_summaries)
+    assert response.decision_closure_artifact.id in {item.id for item in response.plan.artifacts}
+
+    updated_recommendation = inbox.get(recommendation["id"])
+    closure_artifact_meta = updated_recommendation["action_payload"].get("decision_closure_artifact", {})
+    assert closure_artifact_meta.get("artifact_id") == response.decision_closure_artifact.id
+
+
+def test_reject_recommendation_can_write_decision_packet_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = PlanWorkspace(tmp_path / "plans")
+    plan = workspace.create_plan(title="Reject Decision Packet Plan")
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    recommendation = inbox.create(
+        title="Skip aggressive contribution bump",
+        detail="Reject this recommendation for now.",
+        recommendation_type="plan_settings_update",
+        plan_id=plan["id"],
+        action_payload={
+            "plan_settings_updates": {
+                "annual_contribution_usd": 25000.0,
+            },
+            "research_symbols": ["VTI"],
+        },
+    )
+
+    async def fake_context_payload(**_: object) -> dict[str, object]:
+        return {
+            "generated_at": "2026-04-14T21:00:00+00:00",
+            "scope": {
+                "detail_level": "light",
+            },
+            "quality": {
+                "freshness": {
+                    "snapshot_stale": False,
+                    "snapshot_age_seconds": 900.0,
+                },
+                "coverage": {
+                    "score_pct": 95.0,
+                },
+            },
+            "warnings": [],
+            "summary": "Context summary for reject decision packet.",
+            "research": {
+                "symbols": ["VXUS"],
+            },
+        }
+
+    async def fake_preview(*_: object, **__: object) -> dict[str, object]:
+        return {"status": "captured", "scenario_deltas": [{"label": "baseline", "delta_future_value_usd": -800.0}]}
+
+    monkeypatch.setattr(main, "plan_workspace", workspace)
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    monkeypatch.setattr(main, "build_buildwealth_context_payload", fake_context_payload)
+    monkeypatch.setattr(main, "build_recommendation_scenario_diff_preview", fake_preview)
+
+    response = asyncio.run(
+        main.reject_recommendation(
+            recommendation["id"],
+            reason="Need to protect short-term liquidity.",
+            create_decision_packet=True,
+            decision_packet_research_symbols=["AAPL"],
+        )
+    )
+
+    assert response.recommendation.status == "rejected"
+    assert response.plan is not None
+    assert response.decision_packet_artifact is not None
+    assert response.decision_closure_artifact is not None
+    assert response.decision_packet_artifact.id in {item.id for item in response.plan.artifacts}
+
+    packet_artifact = workspace.read_artifact(plan["id"], response.decision_packet_artifact.id)
+    assert "## Unified Context Snapshot" in packet_artifact["content"]
+    assert "- Decision Status: `rejected`" in packet_artifact["content"]
+    assert "AAPL" in packet_artifact["content"]
+    assert "VTI" in packet_artifact["content"]
+    assert "VXUS" in packet_artifact["content"]
+
+    updated_recommendation = inbox.get(recommendation["id"])
+    packet_meta = updated_recommendation["action_payload"].get("decision_packet", {})
+    assert packet_meta.get("artifact_id") == response.decision_packet_artifact.id
+    assert packet_meta.get("decision_status") == "rejected"
+    assert "AAPL" in packet_meta.get("cited_research_symbols", [])
