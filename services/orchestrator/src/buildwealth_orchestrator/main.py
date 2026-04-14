@@ -156,7 +156,9 @@ from buildwealth_orchestrator.services.today_dashboard import build_today_dashbo
 from buildwealth_orchestrator.services.buildwealth_context import (
     DEFAULT_RESEARCH_SYMBOL_LIMIT,
     DEFAULT_CONTEXT_SUMMARY_MAX_CHARS,
-    build_context_summary,
+    build_context_quality,
+    build_context_summary_with_metadata,
+    normalize_context_warnings,
     derive_research_symbols,
     normalize_research_symbols,
     utc_now_iso as context_utc_now_iso,
@@ -2970,9 +2972,13 @@ async def build_buildwealth_context_payload(
 ) -> dict[str, Any]:
     warnings: list[str] = []
     resolved_snapshot: PortfolioSnapshot | None = None
-    cache_enabled = bool(settings.copilot_context_cache_enabled) and not force_refresh
+    cache_globally_enabled = bool(settings.copilot_context_cache_enabled)
+    cache_reads_enabled = cache_globally_enabled and not force_refresh
+    cache_writes_enabled = cache_globally_enabled
     research_cache_hit = False
+    research_cache_written = False
     projection_cache_hit = False
+    projection_cache_written = False
 
     snapshot_summary_payload: dict[str, Any]
     try:
@@ -3166,7 +3172,7 @@ async def build_buildwealth_context_payload(
 
         if include_plan_projection and resolved_snapshot is not None:
             projection_cache_key: str | None = None
-            if cache_enabled and resolved_plan_id and not use_live_snapshot:
+            if cache_reads_enabled and resolved_plan_id and not use_live_snapshot:
                 projection_cache_key = _build_context_cache_key(
                     "baseline_projection",
                     {
@@ -3182,6 +3188,17 @@ async def build_buildwealth_context_payload(
                 )
                 if projection_cache_hit and isinstance(cached_projection_payload, dict):
                     baseline_projection_payload = cached_projection_payload
+            elif cache_writes_enabled and resolved_plan_id and not use_live_snapshot:
+                projection_cache_key = _build_context_cache_key(
+                    "baseline_projection",
+                    {
+                        "plan_id": resolved_plan_id,
+                        "plan_updated_at": resolved_plan_detail.get("updated_at"),
+                        "snapshot_as_of": resolved_snapshot.as_of.isoformat(),
+                        "snapshot_total_value_usd": round(float(resolved_snapshot.total_value_usd), 2),
+                        "currency": settings.app_currency,
+                    },
+                )
 
             if baseline_projection_payload is None:
                 try:
@@ -3233,7 +3250,7 @@ async def build_buildwealth_context_payload(
                     )
                     baseline_projection_payload = baseline_projection.model_dump(mode="json")
                     if (
-                        cache_enabled
+                        cache_writes_enabled
                         and projection_cache_key
                         and isinstance(baseline_projection_payload, dict)
                     ):
@@ -3242,6 +3259,7 @@ async def build_buildwealth_context_payload(
                             baseline_projection_payload,
                             ttl_seconds=settings.copilot_context_projection_cache_ttl_seconds,
                         )
+                        projection_cache_written = True
                 except Exception as exc:
                     warnings.append(f"Baseline projection context unavailable: {exc}")
 
@@ -3276,7 +3294,7 @@ async def build_buildwealth_context_payload(
                 "symbols": research_symbols_for_context,
             },
         )
-        if cache_enabled:
+        if cache_reads_enabled:
             research_cache_hit, cached_research_payload = copilot_context_research_cache.lookup(
                 research_cache_key
             )
@@ -3342,7 +3360,7 @@ async def build_buildwealth_context_payload(
                 if not history_response.available:
                     research_warnings.append(f"{symbol}: history unavailable ({history_response.message})")
 
-            if cache_enabled and research_cache_key:
+            if cache_writes_enabled and research_cache_key:
                 copilot_context_research_cache.set(
                     research_cache_key,
                     {
@@ -3351,6 +3369,7 @@ async def build_buildwealth_context_payload(
                     },
                     ttl_seconds=settings.copilot_context_research_cache_ttl_seconds,
                 )
+                research_cache_written = True
 
     context_payload: dict[str, Any] = {
         "generated_at": context_utc_now_iso(),
@@ -3361,20 +3380,29 @@ async def build_buildwealth_context_payload(
             "include_plan_projection": bool(include_plan_projection),
         },
         "cache": {
-            "enabled": bool(settings.copilot_context_cache_enabled),
+            "enabled": bool(cache_globally_enabled),
+            "read_enabled": bool(cache_reads_enabled),
+            "write_enabled": bool(cache_writes_enabled),
             "force_refresh": bool(force_refresh),
+            "bypass_reason": (
+                "force_refresh"
+                if cache_globally_enabled and force_refresh
+                else ("disabled" if not cache_globally_enabled else None)
+            ),
             "research": {
                 "hit": bool(research_cache_hit),
+                "written": bool(research_cache_written),
                 "ttl_seconds": float(settings.copilot_context_research_cache_ttl_seconds),
             },
             "baseline_projection": {
                 "hit": bool(projection_cache_hit),
+                "written": bool(projection_cache_written),
                 "ttl_seconds": float(settings.copilot_context_projection_cache_ttl_seconds),
             },
         },
         "location_state": settings.app_state,
         "currency": settings.app_currency,
-        "warnings": [*warnings, *research_warnings],
+        "warnings": normalize_context_warnings([*warnings, *research_warnings]),
         "planning_defaults": {
             "years_to_retirement": settings.planner_years_to_retirement,
             "annual_contribution_usd": settings.planner_annual_contribution_usd,
@@ -3431,10 +3459,37 @@ async def build_buildwealth_context_payload(
             "plan_decisions_recent": plan_decisions_payload,
         },
     }
-    context_payload["summary"] = build_context_summary(
+    summary_text, summary_metadata = build_context_summary_with_metadata(
         context_payload=context_payload,
         max_chars=summary_max_chars,
     )
+    context_payload["summary"] = summary_text
+    context_payload["quality"] = build_context_quality(
+        context_payload=context_payload,
+        summary_metadata=summary_metadata,
+        snapshot_stale_after_seconds=settings.copilot_context_snapshot_stale_after_seconds,
+    )
+
+    freshness_payload = context_payload["quality"].get("freshness", {})
+    if (
+        isinstance(freshness_payload, dict)
+        and freshness_payload.get("snapshot_stale") is True
+    ):
+        stale_age_seconds = _coerce_float(freshness_payload.get("snapshot_age_seconds"), 0.0)
+        stale_hours = max(0.0, stale_age_seconds / 3600.0)
+        stale_warning = (
+            "Portfolio snapshot is stale "
+            f"({stale_hours:.1f}h old). Run sync or request live snapshot."
+        )
+        context_payload["warnings"] = normalize_context_warnings(
+            [*context_payload["warnings"], stale_warning]
+        )
+        context_payload["quality"] = build_context_quality(
+            context_payload=context_payload,
+            summary_metadata=summary_metadata,
+            snapshot_stale_after_seconds=settings.copilot_context_snapshot_stale_after_seconds,
+        )
+
     return context_payload
 
 

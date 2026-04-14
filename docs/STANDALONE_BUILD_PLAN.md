@@ -57,6 +57,22 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-14 (Completed - Phase 3.7 Unified Context Packaging, Slice 1)
+- Added first-class unified-context quality metadata (`quality`) with:
+  - snapshot freshness (`snapshot_as_of`, `snapshot_age_seconds`, `snapshot_stale`, stale threshold)
+  - coverage score/checks/missing sections for expected context domains
+  - summary budget metadata (`max_chars`, `full_chars`, `actual_chars`, `truncated`)
+  - warning count/status
+- Added consistent warning normalization (dedupe, trim, bounded count) for context payloads.
+- Hardened cache policy for context generation:
+  - `force_refresh=true` now bypasses cache reads but still writes refreshed sub-payloads back into cache
+  - cache payload now exposes read/write policy and per-subcache write metadata (`written`) for operator visibility
+- Added stale-snapshot warning emission in unified context when freshness threshold is exceeded.
+- Expanded regression coverage:
+  - `test_buildwealth_context.py` now covers warning normalization, quality metadata, and summary truncation metadata
+  - `test_copilot_context_payload.py` validates force-refresh cache bypass/write behavior and stale freshness paths
+- Updated Copilot unified-context UI status text to surface coverage %, snapshot freshness/stale state, summary truncation, and cache read/write behavior.
+
 ### 2026-04-14 (Completed - Phase 3.6 Documentation and Ops Cleanup)
 - Rewrote root README for standalone-first operation with explicit runtime modes (orchestrator-only default, optional sidecars, optional legacy-upstream profile).
 - Added dedicated operator runbook in `docs/OPERATIONS_STANDALONE.md` covering startup paths, sidecar enablement, contract compatibility checks, degraded-mode behavior, and triage commands.

@@ -93,13 +93,26 @@ Why:
 - Keeps execution aligned and prevents drift in future slices.
 
 ### 6) Phase 3.7 Unified Context Packaging (Next)
-Status: Pending
+Status: In progress
 
 Scope:
 1. Productionize context payload quality controls (freshness/evidence coverage, warning consistency, token-budget behavior).
 2. Harden API/tool contracts for context retrieval and force-refresh paths under higher-load chat workflows.
 3. Expand focused test coverage for context composition correctness across portfolio/planning/research permutations.
 4. Improve operator visibility into context cache behavior and stale-context decision paths.
+
+Completed in Slice 1:
+- Added `quality` metadata envelope (freshness, coverage, warning counts, summary budget/truncation).
+- Added warning normalization (dedupe + bounded output).
+- Hardened `force_refresh` cache behavior to bypass reads but still repopulate cache.
+- Added stale snapshot warning emission + UI metadata surfacing.
+- Added regression tests for quality metadata and cache policy behavior.
+
+Remaining:
+1. Add stronger API response contracts for `/api/copilot/context` shape validation.
+2. Expand context-composition tests across plan/no-plan and research include/exclude permutations.
+3. Add lightweight operator endpoint/metrics snapshot for context cache key counts and churn.
+4. Tighten Copilot prompt guidance to consume freshness/coverage metadata explicitly when caveating answers.
 
 Why:
 - This is the BuildWealth differentiator and the main remaining leverage point after parity foundations.

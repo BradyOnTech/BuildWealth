@@ -91,6 +91,11 @@ This profile is not required for standalone BuildWealth operation.
 - Upgrade sidecar to expected contract major, or
 - Intentionally pin orchestrator expected contract version to sidecar major only if contracts are verified compatible.
 
+4. Snapshot freshness warnings in unified context:
+- Unified context now marks snapshot freshness and stale status under `quality.freshness`.
+- Configure stale threshold with `COPILOT_CONTEXT_SNAPSHOT_STALE_AFTER_SECONDS` (default: `86400`).
+- If stale warnings appear frequently, schedule syncs or use `use_live_snapshot=true` for Copilot context requests.
+
 ## Useful Commands
 
 ```bash

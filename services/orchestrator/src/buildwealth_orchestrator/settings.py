@@ -118,6 +118,10 @@ class Settings(BaseSettings):
         default=120.0,
         alias="COPILOT_CONTEXT_PROJECTION_CACHE_TTL_SECONDS",
     )
+    copilot_context_snapshot_stale_after_seconds: float = Field(
+        default=86400.0,
+        alias="COPILOT_CONTEXT_SNAPSHOT_STALE_AFTER_SECONDS",
+    )
 
     openbb_provider: str = Field(default="yfinance", alias="OPENBB_PROVIDER")
 

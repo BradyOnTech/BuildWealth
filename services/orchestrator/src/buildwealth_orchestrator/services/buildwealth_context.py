@@ -8,6 +8,8 @@ from typing import Any
 
 DEFAULT_RESEARCH_SYMBOL_LIMIT = 5
 DEFAULT_CONTEXT_SUMMARY_MAX_CHARS = 2400
+DEFAULT_CONTEXT_WARNING_LIMIT = 50
+DEFAULT_CONTEXT_SNAPSHOT_STALE_AFTER_SECONDS = 86_400.0
 _SYMBOL_PATTERN = re.compile(r"[^A-Z0-9._-]+")
 
 
@@ -43,6 +45,47 @@ def _trim_text(value: Any, *, limit: int = 220) -> str:
     if len(text) <= limit:
         return text
     return f"{text[: max(0, limit - 3)].rstrip()}..."
+
+
+def _parse_iso_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def normalize_context_warnings(
+    raw_warnings: list[Any] | None,
+    *,
+    max_warnings: int = DEFAULT_CONTEXT_WARNING_LIMIT,
+) -> list[str]:
+    if not isinstance(raw_warnings, list):
+        return []
+
+    resolved_limit = max(0, min(int(max_warnings), 200))
+    if resolved_limit == 0:
+        return []
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for warning in raw_warnings:
+        text = _trim_text(warning, limit=220)
+        if not text:
+            continue
+        lowered = text.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        normalized.append(text)
+        if len(normalized) >= resolved_limit:
+            break
+    return normalized
 
 
 def normalize_research_symbols(raw_symbols: list[Any] | None, *, max_symbols: int = DEFAULT_RESEARCH_SYMBOL_LIMIT) -> list[str]:
@@ -121,11 +164,42 @@ def derive_research_symbols(
     return merged
 
 
-def build_context_summary(
+def _compute_snapshot_freshness(
+    *,
+    context_payload: dict[str, Any],
+    snapshot_stale_after_seconds: float = DEFAULT_CONTEXT_SNAPSHOT_STALE_AFTER_SECONDS,
+) -> dict[str, Any]:
+    financial_picture = context_payload.get("financial_picture")
+    if not isinstance(financial_picture, dict):
+        financial_picture = {}
+    snapshot_summary = financial_picture.get("snapshot_summary")
+    if not isinstance(snapshot_summary, dict):
+        snapshot_summary = {}
+
+    generated_dt = _parse_iso_datetime(context_payload.get("generated_at")) or datetime.now(timezone.utc)
+    snapshot_as_of = _parse_iso_datetime(snapshot_summary.get("as_of"))
+
+    stale_after = max(60.0, min(float(snapshot_stale_after_seconds), 2_592_000.0))
+    snapshot_age_seconds: float | None = None
+    snapshot_stale: bool | None = None
+    if snapshot_as_of is not None:
+        snapshot_age_seconds = max(0.0, (generated_dt - snapshot_as_of).total_seconds())
+        snapshot_stale = snapshot_age_seconds > stale_after
+
+    return {
+        "generated_at": generated_dt.isoformat(),
+        "snapshot_as_of": snapshot_as_of.isoformat() if snapshot_as_of else None,
+        "snapshot_age_seconds": round(snapshot_age_seconds, 3) if snapshot_age_seconds is not None else None,
+        "snapshot_stale": snapshot_stale,
+        "snapshot_stale_threshold_seconds": stale_after,
+    }
+
+
+def build_context_summary_with_metadata(
     *,
     context_payload: dict[str, Any],
     max_chars: int = DEFAULT_CONTEXT_SUMMARY_MAX_CHARS,
-) -> str:
+) -> tuple[str, dict[str, Any]]:
     summary_limit = max(300, min(int(max_chars), 12_000))
     financial_picture = context_payload.get("financial_picture")
     if not isinstance(financial_picture, dict):
@@ -181,6 +255,21 @@ def build_context_summary(
         warnings = []
 
     generated_at = str(context_payload.get("generated_at") or "").strip() or utc_now_iso()
+    freshness = _compute_snapshot_freshness(context_payload=context_payload)
+    snapshot_as_of_label = str(freshness.get("snapshot_as_of") or "n/a")
+    snapshot_age_seconds = _safe_float(freshness.get("snapshot_age_seconds"))
+    snapshot_age_label = (
+        f"{(snapshot_age_seconds / 3600.0):.1f}h old"
+        if snapshot_age_seconds is not None
+        else "age unavailable"
+    )
+    snapshot_stale = freshness.get("snapshot_stale")
+    if snapshot_stale is True:
+        snapshot_status_label = "stale"
+    elif snapshot_stale is False:
+        snapshot_status_label = "fresh"
+    else:
+        snapshot_status_label = "unknown"
     raw_watchlist_symbols_preview = watchlist.get("symbols_preview")
     watchlist_symbols_preview = (
         [str(item).strip().upper() for item in raw_watchlist_symbols_preview if str(item).strip()]
@@ -202,6 +291,10 @@ def build_context_summary(
             f"- Net worth {_format_currency(dashboard.get('net_worth_usd'))}, "
             f"monthly surplus {_format_currency(dashboard.get('monthly_surplus_usd'))}, "
             f"savings rate {_format_percent(dashboard.get('savings_rate_pct'), digits=1)}."
+        ),
+        (
+            f"- Snapshot as-of {snapshot_as_of_label} "
+            f"({snapshot_age_label}, status: {snapshot_status_label})."
         ),
         (
             f"- Watchlist: {int(_safe_float(watchlist.get('count')) or 0)} item(s)"
@@ -289,7 +382,125 @@ def build_context_summary(
             if warning_text:
                 lines.append(f"- {warning_text}")
 
-    summary = "\n".join(lines).strip()
-    if len(summary) <= summary_limit:
-        return summary
-    return f"{summary[: summary_limit - 3].rstrip()}..."
+    full_summary = "\n".join(lines).strip()
+    if len(full_summary) <= summary_limit:
+        return full_summary, {
+            "max_chars": summary_limit,
+            "full_chars": len(full_summary),
+            "actual_chars": len(full_summary),
+            "truncated": False,
+        }
+
+    trimmed = f"{full_summary[: summary_limit - 3].rstrip()}..."
+    return trimmed, {
+        "max_chars": summary_limit,
+        "full_chars": len(full_summary),
+        "actual_chars": len(trimmed),
+        "truncated": True,
+    }
+
+
+def build_context_quality(
+    *,
+    context_payload: dict[str, Any],
+    summary_metadata: dict[str, Any] | None = None,
+    snapshot_stale_after_seconds: float = DEFAULT_CONTEXT_SNAPSHOT_STALE_AFTER_SECONDS,
+) -> dict[str, Any]:
+    scope = context_payload.get("scope")
+    if not isinstance(scope, dict):
+        scope = {}
+    include_research = bool(scope.get("include_research"))
+    requested_plan_id = str(scope.get("plan_id") or "").strip()
+
+    financial_picture = context_payload.get("financial_picture")
+    if not isinstance(financial_picture, dict):
+        financial_picture = {}
+    planning = context_payload.get("planning")
+    if not isinstance(planning, dict):
+        planning = {}
+    decisions = context_payload.get("decisions")
+    if not isinstance(decisions, dict):
+        decisions = {}
+    recommendations = decisions.get("recommendations")
+    if not isinstance(recommendations, dict):
+        recommendations = {}
+    research = context_payload.get("research")
+    if not isinstance(research, dict):
+        research = {}
+
+    snapshot_summary = financial_picture.get("snapshot_summary")
+    if not isinstance(snapshot_summary, dict):
+        snapshot_summary = {}
+    today_dashboard = financial_picture.get("today_dashboard")
+    if not isinstance(today_dashboard, dict):
+        today_dashboard = {}
+    financial_profile = financial_picture.get("financial_profile")
+    if not isinstance(financial_profile, dict):
+        financial_profile = {}
+
+    active_plan = planning.get("active_plan")
+    has_planning_context = isinstance(active_plan, dict) and bool(active_plan.get("id"))
+
+    research_items = research.get("items")
+    has_research_context = isinstance(research_items, list)
+
+    checks: list[tuple[str, bool, bool]] = [
+        ("snapshot_summary", bool(snapshot_summary.get("as_of")), True),
+        ("today_dashboard", "note" not in today_dashboard, True),
+        ("financial_profile", "note" not in financial_profile, True),
+        ("recommendations", "note" not in recommendations, True),
+        ("planning_context", has_planning_context, bool(requested_plan_id)),
+        ("research_context", has_research_context, include_research),
+    ]
+
+    expected_checks = [item for item in checks if item[2]]
+    passed_checks = [item for item in expected_checks if item[1]]
+    missing_sections = [name for name, passed, expected in checks if expected and not passed]
+    score_pct = (
+        round((len(passed_checks) / len(expected_checks)) * 100.0, 1)
+        if expected_checks
+        else 100.0
+    )
+
+    warnings = normalize_context_warnings(context_payload.get("warnings"))
+    freshness = _compute_snapshot_freshness(
+        context_payload=context_payload,
+        snapshot_stale_after_seconds=snapshot_stale_after_seconds,
+    )
+
+    summary_meta = summary_metadata if isinstance(summary_metadata, dict) else {}
+    summary_max = int(summary_meta.get("max_chars") or 0)
+    summary_full = int(summary_meta.get("full_chars") or 0)
+    summary_actual = int(summary_meta.get("actual_chars") or 0)
+    summary_truncated = bool(summary_meta.get("truncated"))
+
+    return {
+        "freshness": freshness,
+        "coverage": {
+            "score_pct": score_pct,
+            "checks": {name: passed for name, passed, _ in checks},
+            "missing_sections": missing_sections,
+        },
+        "warnings": {
+            "count": len(warnings),
+            "has_warnings": bool(warnings),
+        },
+        "summary": {
+            "max_chars": summary_max,
+            "full_chars": summary_full,
+            "actual_chars": summary_actual,
+            "truncated": summary_truncated,
+        },
+    }
+
+
+def build_context_summary(
+    *,
+    context_payload: dict[str, Any],
+    max_chars: int = DEFAULT_CONTEXT_SUMMARY_MAX_CHARS,
+) -> str:
+    summary, _ = build_context_summary_with_metadata(
+        context_payload=context_payload,
+        max_chars=max_chars,
+    )
+    return summary

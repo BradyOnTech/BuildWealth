@@ -1,6 +1,9 @@
 from buildwealth_orchestrator.services.buildwealth_context import (
+    build_context_quality,
     build_context_summary,
+    build_context_summary_with_metadata,
     derive_research_symbols,
+    normalize_context_warnings,
     normalize_research_symbols,
 )
 
@@ -88,14 +91,14 @@ def test_build_context_summary_contains_core_sections_and_trims() -> None:
         "warnings": ["OpenBB quote endpoint unavailable for one symbol."],
     }
 
-    summary = build_context_summary(context_payload=payload, max_chars=700)
+    summary = build_context_summary(context_payload=payload, max_chars=1200)
 
     assert "BuildWealth Unified Context" in summary
     assert "Financial Picture" in summary
     assert "Planning" in summary
     assert "Decisions" in summary
     assert "Research" in summary
-    assert len(summary) <= 700
+    assert len(summary) <= 1200
 
 
 def test_build_context_summary_includes_planning_controls() -> None:
@@ -147,3 +150,102 @@ def test_build_context_summary_includes_planning_controls() -> None:
     assert "Contribution allocation preview:" in summary
     assert "Watchlist: 2 item(s) (NVDA, MSFT)." in summary
     assert "Withdrawal strategy: dynamic_guardrails" in summary
+
+
+def test_build_context_summary_with_metadata_reports_truncation() -> None:
+    payload = {
+        "generated_at": "2026-04-14T18:45:00+00:00",
+        "financial_picture": {
+            "snapshot_summary": {
+                "as_of": "2026-04-14T17:45:00+00:00",
+                "total_value_usd": 500000.0,
+                "net_performance_usd": 65000.0,
+                "net_performance_percent": 14.95,
+            },
+            "today_dashboard": {
+                "net_worth_usd": 620000.0,
+                "monthly_surplus_usd": 1500.0,
+                "savings_rate_pct": 22.0,
+            },
+            "watchlist": {
+                "count": 4,
+                "symbols_preview": ["NVDA", "MSFT", "AAPL", "GOOGL"],
+            },
+        },
+        "planning": {
+            "active_plan": {"id": "plan-1", "title": "Retirement 2055"},
+            "tracking": {
+                "status": "on_track",
+                "actual_annualized_return_pct": 7.2,
+                "expected_annualized_return_pct": 6.9,
+            },
+        },
+        "decisions": {"recommendations": {"open_count": 2, "high_priority_count": 1}},
+        "research": {"items": [{"symbol": "AAPL", "quote_price": 210.0, "period_label": "6mo", "period_change_pct": 8.1}]},
+        "warnings": [],
+    }
+
+    summary, metadata = build_context_summary_with_metadata(context_payload=payload, max_chars=420)
+
+    assert metadata["max_chars"] == 420
+    assert metadata["truncated"] is True
+    assert metadata["actual_chars"] <= 420
+    assert metadata["full_chars"] > metadata["actual_chars"]
+    assert len(summary) <= 420
+
+
+def test_build_context_quality_reports_freshness_and_coverage() -> None:
+    payload = {
+        "generated_at": "2026-04-14T12:00:00+00:00",
+        "scope": {
+            "plan_id": "plan-1",
+            "include_research": True,
+        },
+        "financial_picture": {
+            "snapshot_summary": {
+                "as_of": "2026-04-12T12:00:00+00:00",
+            },
+            "today_dashboard": {"note": "unavailable"},
+            "financial_profile": {"schema_version": 2},
+        },
+        "planning": {
+            "active_plan": {"id": "plan-1"},
+        },
+        "research": {"items": []},
+        "decisions": {"recommendations": {"open_count": 0, "high_priority_count": 0}},
+        "warnings": ["A warning", "A warning"],
+    }
+
+    quality = build_context_quality(
+        context_payload=payload,
+        summary_metadata={"max_chars": 800, "full_chars": 900, "actual_chars": 800, "truncated": True},
+        snapshot_stale_after_seconds=3600,
+    )
+
+    freshness = quality["freshness"]
+    assert freshness["snapshot_stale"] is True
+    assert freshness["snapshot_age_seconds"] == 172800.0
+    assert freshness["snapshot_stale_threshold_seconds"] == 3600.0
+
+    coverage = quality["coverage"]
+    assert coverage["checks"]["planning_context"] is True
+    assert coverage["checks"]["today_dashboard"] is False
+    assert "today_dashboard" in coverage["missing_sections"]
+    assert coverage["score_pct"] < 100
+
+    warnings = quality["warnings"]
+    assert warnings["count"] == 1
+    assert warnings["has_warnings"] is True
+
+    summary_meta = quality["summary"]
+    assert summary_meta["truncated"] is True
+    assert summary_meta["actual_chars"] == 800
+
+
+def test_normalize_context_warnings_dedupes_and_caps() -> None:
+    warnings = normalize_context_warnings(
+        [" one ", "One", "", None, "two", "three", "two", "four"],
+        max_warnings=3,
+    )
+
+    assert warnings == ["one", "two", "three"]

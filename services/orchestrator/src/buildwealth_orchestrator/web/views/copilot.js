@@ -125,17 +125,42 @@ function renderContextSummary() {
   const warnings = Array.isArray(payload.warnings) ? payload.warnings.length : 0;
   const updatedAt = state.copilotContextUpdatedAt ? fmtDate(state.copilotContextUpdatedAt) : 'unknown time';
   const cache = payload && typeof payload.cache === 'object' ? payload.cache : null;
+  const quality = payload && typeof payload.quality === 'object' ? payload.quality : null;
   const cacheDetails = [];
   if (cache?.enabled) {
     if (typeof cache?.research?.hit === 'boolean') {
-      cacheDetails.push(`research cache ${cache.research.hit ? 'hit' : 'miss'}`);
+      const writeLabel = typeof cache?.research?.written === 'boolean' ? `, write ${cache.research.written ? 'yes' : 'no'}` : '';
+      cacheDetails.push(`research cache ${cache.research.hit ? 'hit' : 'miss'}${writeLabel}`);
     }
     if (typeof cache?.baseline_projection?.hit === 'boolean') {
-      cacheDetails.push(`projection cache ${cache.baseline_projection.hit ? 'hit' : 'miss'}`);
+      const writeLabel = typeof cache?.baseline_projection?.written === 'boolean' ? `, write ${cache.baseline_projection.written ? 'yes' : 'no'}` : '';
+      cacheDetails.push(`projection cache ${cache.baseline_projection.hit ? 'hit' : 'miss'}${writeLabel}`);
+    }
+    if (cache?.read_enabled === false && cache?.bypass_reason) {
+      cacheDetails.push(`cache read bypassed (${cache.bypass_reason})`);
     }
   }
-  const cacheSummary = cacheDetails.length ? ` • ${cacheDetails.join(', ')}` : '';
-  metaEl.textContent = `Last refreshed ${updatedAt}${warnings ? ` • ${warnings} warning(s)` : ''}${cacheSummary}`;
+  const qualityDetails = [];
+  const coverageScore = Number(quality?.coverage?.score_pct);
+  if (Number.isFinite(coverageScore)) {
+    qualityDetails.push(`coverage ${coverageScore.toFixed(1)}%`);
+  }
+  const staleState = quality?.freshness?.snapshot_stale;
+  const snapshotAgeSeconds = Number(quality?.freshness?.snapshot_age_seconds);
+  if (staleState === true && Number.isFinite(snapshotAgeSeconds)) {
+    qualityDetails.push(`snapshot stale (${(snapshotAgeSeconds / 3600).toFixed(1)}h old)`);
+  } else if (staleState === false && Number.isFinite(snapshotAgeSeconds)) {
+    qualityDetails.push(`snapshot fresh (${(snapshotAgeSeconds / 3600).toFixed(1)}h old)`);
+  }
+  if (quality?.summary?.truncated === true) {
+    qualityDetails.push('summary truncated');
+  }
+
+  const metaBits = [`Last refreshed ${updatedAt}`];
+  if (warnings) metaBits.push(`${warnings} warning(s)`);
+  if (qualityDetails.length) metaBits.push(qualityDetails.join(', '));
+  if (cacheDetails.length) metaBits.push(cacheDetails.join(', '));
+  metaEl.textContent = metaBits.join(' • ');
 
   const summary = String(state.copilotContextSummary || '').trim();
   if (summary) {
