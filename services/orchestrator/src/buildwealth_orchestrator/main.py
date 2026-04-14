@@ -24,6 +24,7 @@ from buildwealth_orchestrator.schemas import (
     CopilotConversationSummary,
     CsvImportRequest,
     CsvImportResponse,
+    CsvTemplateOption,
     FinancialProfileRequest,
     FinancialProfileResponse,
     OnboardingStatusResponse,
@@ -102,6 +103,7 @@ from buildwealth_orchestrator.services.copilot_runtime import (
 )
 from buildwealth_orchestrator.services.csv_importer import (
     archive_import_file,
+    list_csv_templates,
     parse_transaction_csv,
 )
 from buildwealth_orchestrator.services.financial_profile import FinancialProfileStore
@@ -492,6 +494,7 @@ async def execute_csv_import(file_path: Path, request: CsvImportRequest) -> CsvI
         default_currency=request.default_currency or settings.app_currency,
         delimiter=request.delimiter,
         account_ids_by_name=portfolio_store.account_ids_by_name(),
+        broker_template=request.broker_template,
     )
 
     imported_activities = 0
@@ -532,6 +535,8 @@ async def execute_csv_import(file_path: Path, request: CsvImportRequest) -> CsvI
     return CsvImportResponse(
         file_path=str(file_path),
         dry_run=request.dry_run,
+        selected_template=parsed.selected_template,
+        detected_template=parsed.detected_template,
         parsed_rows=parsed.parsed_rows,
         valid_activities=len(parsed.activities),
         imported_activities=imported_activities,
@@ -6288,6 +6293,12 @@ def list_import_files() -> dict[str, list[str]]:
     return {"files": files}
 
 
+@app.get("/api/import/csv-templates")
+def list_import_csv_templates() -> dict[str, list[CsvTemplateOption]]:
+    templates = [CsvTemplateOption(**item) for item in list_csv_templates()]
+    return {"templates": templates}
+
+
 @app.get("/api/plans", response_model=list[PlanSummary])
 def list_plans(limit: int = 100) -> list[PlanSummary]:
     summaries = plan_workspace.list_plans(limit=max(1, min(limit, 500)))
@@ -6937,6 +6948,7 @@ async def import_uploaded_csv(
     file: UploadFile = File(...),
     dry_run: bool = Form(True),
     delimiter: str = Form(","),
+    broker_template: str = Form("auto"),
     default_data_source: str | None = Form(None),
     default_currency: str | None = Form(None),
     archive_after_success: bool = Form(False),
@@ -6957,6 +6969,7 @@ async def import_uploaded_csv(
         path=str(destination),
         dry_run=dry_run,
         delimiter=delimiter,
+        broker_template=broker_template,
         default_data_source=default_data_source,
         default_currency=default_currency,
         archive_after_success=archive_after_success,

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from buildwealth_orchestrator.services.csv_importer import parse_transaction_csv
+from buildwealth_orchestrator.services.csv_importer import list_csv_templates, parse_transaction_csv
 
 
 def test_parse_transaction_csv_with_aliases_and_account_mapping(tmp_path: Path) -> None:
@@ -18,6 +18,8 @@ def test_parse_transaction_csv_with_aliases_and_account_mapping(tmp_path: Path) 
         account_ids_by_name={"taxable brokerage": "acc-1"},
     )
 
+    assert result.selected_template == "generic"
+    assert result.detected_template == "generic"
     assert result.parsed_rows == 1
     assert len(result.errors) == 0
     assert len(result.activities) == 1
@@ -119,3 +121,155 @@ def test_parse_transaction_csv_extracts_asset_metadata_columns(tmp_path: Path) -
     assert activity["sector"] == "Technology"
     assert activity["region"] == "US"
     assert activity["lotMethod"] == "FIFO"
+
+
+def test_parse_transaction_csv_auto_detects_schwab(tmp_path: Path) -> None:
+    csv_file = tmp_path / "schwab.csv"
+    csv_file.write_text(
+        "Date,Action,Symbol,Quantity,Price,Fees & Comm,Amount,Account\n"
+        "2026-01-10,Buy,VTI,10,250.50,1.25,2506.25,Taxable Brokerage\n",
+        encoding="utf-8",
+    )
+
+    result = parse_transaction_csv(
+        file_path=csv_file,
+        default_data_source="YAHOO",
+        default_currency="USD",
+    )
+
+    assert not result.errors
+    assert result.selected_template == "schwab"
+    assert result.detected_template == "schwab"
+    assert len(result.activities) == 1
+    assert result.activities[0]["type"] == "BUY"
+
+
+def test_parse_transaction_csv_auto_detects_fidelity(tmp_path: Path) -> None:
+    csv_file = tmp_path / "fidelity.csv"
+    csv_file.write_text(
+        "Date,Account,Action,Symbol,Description,Type,Quantity,Price ($),Commission ($),Fees ($),Accrued Interest ($),Amount ($),Settlement Date\n"
+        "01/15/2026,Taxable Brokerage,You Bought,VTI,Vanguard Total Stock Market,Cash,3,290.00,0,0,0,870.00,01/20/2026\n",
+        encoding="utf-8",
+    )
+
+    result = parse_transaction_csv(
+        file_path=csv_file,
+        default_data_source="YAHOO",
+        default_currency="USD",
+    )
+
+    assert not result.errors
+    assert result.selected_template == "fidelity"
+    assert result.detected_template == "fidelity"
+    assert len(result.activities) == 1
+    assert result.activities[0]["type"] == "BUY"
+
+
+def test_parse_transaction_csv_auto_detects_vanguard(tmp_path: Path) -> None:
+    csv_file = tmp_path / "vanguard.csv"
+    csv_file.write_text(
+        "Trade Date,Settlement Date,Transaction Type,Symbol,Name,Shares,Share Price,Principal Amount,Commission Fees,Net Amount,Account Type\n"
+        "2026-02-01,2026-02-03,Dividend Received,SCHD,Schwab US Dividend Equity ETF,,,,0,45.25,Roth IRA\n",
+        encoding="utf-8",
+    )
+
+    result = parse_transaction_csv(
+        file_path=csv_file,
+        default_data_source="YAHOO",
+        default_currency="USD",
+    )
+
+    assert not result.errors
+    assert result.selected_template == "vanguard"
+    assert result.detected_template == "vanguard"
+    assert len(result.activities) == 1
+    assert result.activities[0]["type"] == "DIVIDEND"
+    assert result.activities[0]["unitPrice"] == 45.25
+    assert result.activities[0]["quantity"] == 1
+    assert result.activities[0]["accountName"] == "Roth IRA"
+
+
+def test_parse_transaction_csv_auto_detects_interactive_brokers(tmp_path: Path) -> None:
+    csv_file = tmp_path / "ibkr.csv"
+    csv_file.write_text(
+        "CurrencyPrimary,Symbol,TradeDate,Buy/Sell,Quantity,TradePrice,IBCommission,NetCash,ClientAccountID,Description,AssetClass,SubCategory\n"
+        "USD,VTI,20230403,BUY,17,204.3473,-1,-3474.9041,U1234567,VANGUARD TOTAL STOCK MKT ETF,STK,ETF\n",
+        encoding="utf-8",
+    )
+
+    result = parse_transaction_csv(
+        file_path=csv_file,
+        default_data_source="YAHOO",
+        default_currency="USD",
+    )
+
+    assert not result.errors
+    assert result.selected_template == "interactive_brokers"
+    assert result.detected_template == "interactive_brokers"
+    assert len(result.activities) == 1
+    activity = result.activities[0]
+    assert activity["type"] == "BUY"
+    assert activity["date"].startswith("2023-04-03T")
+    assert activity["fee"] == 1
+    assert activity["quantity"] == 17
+    assert activity["unitPrice"] == 204.3473
+    assert activity["accountName"] == "U1234567"
+    assert activity["assetClass"] == "STK"
+    assert activity["assetType"] == "ETF"
+
+
+def test_parse_transaction_csv_allows_template_override(tmp_path: Path) -> None:
+    csv_file = tmp_path / "override.csv"
+    csv_file.write_text(
+        "CurrencyPrimary,Symbol,TradeDate,Buy/Sell,Quantity,TradePrice,IBCommission,NetCash\n"
+        "USD,VTI,20230403,BUY,17,204.3473,-1,-3474.9041\n",
+        encoding="utf-8",
+    )
+
+    result = parse_transaction_csv(
+        file_path=csv_file,
+        default_data_source="YAHOO",
+        default_currency="USD",
+        broker_template="generic",
+    )
+
+    assert not result.errors
+    assert result.selected_template == "generic"
+    assert result.detected_template == "interactive_brokers"
+    assert any("auto-detect suggested" in warning for warning in result.warnings)
+
+
+def test_parse_transaction_csv_rejects_unknown_template(tmp_path: Path) -> None:
+    csv_file = tmp_path / "unknown.csv"
+    csv_file.write_text(
+        "date,action,symbol,quantity,unit_price\n"
+        "2026-01-01,buy,VTI,1,1\n",
+        encoding="utf-8",
+    )
+
+    result = parse_transaction_csv(
+        file_path=csv_file,
+        default_data_source="YAHOO",
+        default_currency="USD",
+        broker_template="unknown-template",
+    )
+
+    assert not result.activities
+    assert result.errors
+    assert "Unsupported broker_template" in result.errors[0]
+
+
+def test_list_csv_templates_includes_required_brokers() -> None:
+    template_ids = {item["id"] for item in list_csv_templates()}
+
+    assert "auto" in template_ids
+    assert "generic" in template_ids
+    assert "schwab" in template_ids
+    assert "fidelity" in template_ids
+    assert "vanguard" in template_ids
+    assert "robinhood" in template_ids
+    assert "etrade" in template_ids
+    assert "interactive_brokers" in template_ids
+    assert "ally" in template_ids
+    assert "m1" in template_ids
+    assert "wealthfront" in template_ids

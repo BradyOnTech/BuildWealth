@@ -609,10 +609,17 @@ class ResearchResponse(BaseModel):
     records: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class CsvTemplateOption(BaseModel):
+    id: str
+    name: str
+    description: str
+
+
 class CsvImportRequest(BaseModel):
     path: str
     dry_run: bool = True
     delimiter: str = ","
+    broker_template: str = "auto"
     default_data_source: str | None = None
     default_currency: str | None = None
     archive_after_success: bool = False
@@ -621,6 +628,8 @@ class CsvImportRequest(BaseModel):
 class CsvImportResponse(BaseModel):
     file_path: str
     dry_run: bool
+    selected_template: str = "generic"
+    detected_template: str = "generic"
     parsed_rows: int
     valid_activities: int
     imported_activities: int

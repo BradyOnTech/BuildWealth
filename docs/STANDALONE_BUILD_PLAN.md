@@ -57,6 +57,24 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-14 (Completed - Broker CSV Templates, Phase 1.18 Foundation)
+- Expanded import parser with broker-template support and auto-detection by header signatures:
+  - templates: `auto`, `generic`, `schwab`, `fidelity`, `vanguard`, `robinhood`, `etrade`, `interactive_brokers`, `ally`, `m1`, `wealthfront`
+  - detection + parser metadata now included in import responses (`selected_template`, `detected_template`)
+- Added template-aware mapping for Schwab/Fidelity/Vanguard plus Interactive Brokers (IBKR) activity-statement format:
+  - supports broker-specific header aliases for action/date/symbol/qty/price/fees/amount/account fields
+  - extended date/number parsing for real export patterns (`YYYYMMDD`, `YYYYMMDD;HHMMSS`, parenthesized/trailing-minus amounts)
+- Added template discovery API and UI controls:
+  - `GET /api/import/csv-templates`
+  - Sync view now exposes template selectors for inbox imports and upload imports
+  - both import paths (`/api/import/csv`, `/api/import/upload-csv`) now accept `broker_template`
+- Added focused coverage in `test_csv_importer.py`:
+  - auto-detection tests for Schwab, Fidelity, Vanguard, and IBKR-like CSV
+  - override-path and unsupported-template tests
+  - template catalog assertion coverage
+- Upstream reference usage:
+  - aligned field conventions with Ghostfolio import contracts (`apps/api/src/app/import/*`) and import fixtures (`test/import/ok/*.csv`, especially IBKR-style sample)
+
 ### 2026-04-14 (Completed - Watchlist Foundation, Ghostfolio-Inspired)
 - Added local watchlist persistence in portfolio storage (`watchlist.json`) with migration-safe payload handling and schema normalization:
   - symbol/data-source identity, note/thesis fields, target price, tags, timestamps

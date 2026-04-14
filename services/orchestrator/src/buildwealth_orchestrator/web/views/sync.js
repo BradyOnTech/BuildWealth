@@ -28,6 +28,7 @@ export function template() {
         <h3 class="section-title">Inbox Import</h3>
         <p class="hint">Import a CSV already in <code>data/imports/inbox</code>.</p>
         <label class="field"><span>CSV File</span><select id="inbox-file"></select></label>
+        <label class="field"><span>Template</span><select id="inbox-template"></select></label>
         <div class="inline-options">
           <label><input type="checkbox" id="inbox-dry-run" checked /> Dry run</label>
           <label><input type="checkbox" id="inbox-archive" /> Archive after success</label>
@@ -41,6 +42,7 @@ export function template() {
       <form id="upload-form">
         <div class="four-col compact">
           <label class="field file-field"><span>CSV</span><input type="file" id="upload-file" accept=".csv,text/csv" required /></label>
+          <label class="field"><span>Template</span><select id="upload-template"></select></label>
           <label class="field"><span>Delimiter</span><input type="text" id="upload-delimiter" value="," maxlength="1" /></label>
           <label class="field"><span>Data Source</span><input type="text" id="upload-source" value="YAHOO" /></label>
           <label class="field"><span>Currency</span><input type="text" id="upload-currency" value="USD" /></label>
@@ -70,9 +72,31 @@ function renderInboxFiles(files) {
   for (const f of files) { const o = document.createElement('option'); o.value = f; o.textContent = f; select.appendChild(o); }
 }
 
+function renderTemplateOptions(templates) {
+  const fallback = [{ id: 'auto', name: 'Auto Detect', description: 'Detect broker format from CSV headers.' }];
+  const options = Array.isArray(templates) && templates.length ? templates : fallback;
+  for (const selectId of ['inbox-template', 'upload-template']) {
+    const select = byId(selectId);
+    const previousValue = select.value || 'auto';
+    select.innerHTML = '';
+    for (const template of options) {
+      const opt = document.createElement('option');
+      opt.value = String(template.id || 'auto');
+      opt.textContent = String(template.name || template.id || 'Auto Detect');
+      if (template.description) {
+        opt.title = String(template.description);
+      }
+      select.appendChild(opt);
+    }
+    const hasPrevious = options.some((template) => String(template.id || 'auto') === previousValue);
+    select.value = hasPrevious ? previousValue : 'auto';
+  }
+}
+
 async function loadAll() {
   try { renderSyncStatus(await fetchJson('/api/sync/status')); } catch (e) { writeLog(e.message, null, true); }
   try { const p = await fetchJson('/api/import/files'); renderInboxFiles(p.files || []); } catch (e) { writeLog(e.message, null, true); }
+  try { const p = await fetchJson('/api/import/csv-templates'); renderTemplateOptions(p.templates || []); } catch (e) { writeLog(e.message, null, true); }
 }
 
 async function runSync() {
@@ -87,7 +111,12 @@ async function runSync() {
 async function importInboxFile() {
   const file = byId('inbox-file').value;
   if (!file) { writeLog('Select a CSV file from inbox first.', null, true); return; }
-  const body = { path: file, dry_run: byId('inbox-dry-run').checked, archive_after_success: byId('inbox-archive').checked };
+  const body = {
+    path: file,
+    dry_run: byId('inbox-dry-run').checked,
+    archive_after_success: byId('inbox-archive').checked,
+    broker_template: byId('inbox-template').value || 'auto',
+  };
   writeLog(`Importing ${file}...`, body);
   try {
     const result = await fetchJson('/api/import/csv', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -106,6 +135,7 @@ async function uploadAndImport(event) {
   fd.append('dry_run', String(byId('upload-dry-run').checked));
   fd.append('archive_after_success', String(byId('upload-archive').checked));
   fd.append('delimiter', byId('upload-delimiter').value || ',');
+  fd.append('broker_template', byId('upload-template').value || 'auto');
   fd.append('default_data_source', byId('upload-source').value || 'YAHOO');
   fd.append('default_currency', byId('upload-currency').value || 'USD');
   writeLog(`Uploading ${file.name}...`);
