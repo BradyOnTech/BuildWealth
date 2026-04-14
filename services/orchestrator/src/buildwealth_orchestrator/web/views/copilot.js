@@ -7,6 +7,7 @@ const DEFAULT_RESEARCH_PERIOD = '6mo';
 const DEFAULT_RESEARCH_INTERVAL = '1d';
 const DEFAULT_RESEARCH_SYMBOL_LIMIT = 5;
 const DEFAULT_SUMMARY_MAX_CHARS = 1800;
+const DEFAULT_CONTEXT_DETAIL_LEVEL = 'light';
 
 export const id = 'copilot';
 export const label = 'Copilot';
@@ -28,7 +29,10 @@ export function template() {
         <section class="copilot-context-card">
           <div class="copilot-context-header">
             <p class="sidebar-label">Unified Context</p>
-            <button class="ghost small" id="copilot-refresh-context" type="button">Refresh Context</button>
+            <div class="header-actions">
+              <button class="ghost small" id="copilot-reset-context-cache" type="button">Reset Cache</button>
+              <button class="ghost small" id="copilot-refresh-context" type="button">Refresh Context</button>
+            </div>
           </div>
           <div class="copilot-context-controls">
             <label class="inline-check"><input type="checkbox" id="copilot-use-unified-context" /> Use unified context in chat</label>
@@ -96,6 +100,7 @@ function buildContextOptionsFromState() {
     include_research: useUnifiedContext && !!state.copilotIncludeResearchContext,
     include_plan_projection: useUnifiedContext && !!state.copilotIncludeProjectionContext,
     force_refresh: false,
+    detail_level: DEFAULT_CONTEXT_DETAIL_LEVEL,
     research_symbols: symbols,
     research_period: DEFAULT_RESEARCH_PERIOD,
     research_interval: DEFAULT_RESEARCH_INTERVAL,
@@ -175,9 +180,30 @@ function renderContextSummary() {
 function setContextBusy(busy) {
   state.copilotContextLoading = busy;
   const button = byId('copilot-refresh-context');
+  const resetButton = byId('copilot-reset-context-cache');
   button.disabled = busy;
   button.textContent = busy ? 'Refreshing...' : 'Refresh Context';
+  if (resetButton) {
+    resetButton.disabled = busy;
+  }
   renderContextSummary();
+}
+
+async function resetContextCache() {
+  if (state.copilotContextLoading) return;
+  writeLog('Resetting unified context caches...');
+  try {
+    const status = await fetchJson('/api/copilot/context/cache/reset', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const stores = Array.isArray(status?.stores) ? status.stores : [];
+    writeLog('Unified context caches reset.', { stores });
+    await refreshContextPreview();
+  } catch (error) {
+    writeLog(`Context cache reset failed: ${error.message}`, null, true);
+  }
 }
 
 async function refreshContextPreview() {
@@ -198,6 +224,7 @@ async function refreshContextPreview() {
   params.set('research_interval', refreshContextOptions.research_interval);
   params.set('research_symbol_limit', String(refreshContextOptions.research_symbol_limit));
   params.set('summary_max_chars', String(refreshContextOptions.summary_max_chars));
+  params.set('detail_level', String(refreshContextOptions.detail_level || DEFAULT_CONTEXT_DETAIL_LEVEL));
   if (refreshContextOptions.research_symbols.length) {
     params.set('research_symbols', refreshContextOptions.research_symbols.join(','));
   }
@@ -362,6 +389,7 @@ export function init(params = {}) {
 
   byId('reload-conversations').addEventListener('click', () => loadConversations(false).catch(e => writeLog(e.message, null, true)));
   byId('new-conversation').addEventListener('click', startNew);
+  byId('copilot-reset-context-cache').addEventListener('click', () => resetContextCache().catch(e => writeLog(e.message, null, true)));
   byId('copilot-refresh-context').addEventListener('click', () => refreshContextPreview().catch(e => writeLog(e.message, null, true)));
   byId('copilot-form').addEventListener('submit', submit);
 

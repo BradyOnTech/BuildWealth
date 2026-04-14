@@ -86,6 +86,8 @@ docker compose -f infra/docker-compose.yml --profile legacy-upstream up -d
 - `GET /api/portfolio/attribution`
 - `POST /api/planning/scenarios`
 - `GET /api/copilot/context`
+- `GET /api/copilot/context/cache`
+- `POST /api/copilot/context/cache/reset`
 - `POST /api/copilot/chat`
 
 ## Local Testing

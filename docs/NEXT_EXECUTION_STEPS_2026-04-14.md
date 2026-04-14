@@ -11,7 +11,7 @@ Concrete follow-on work after Phase 1.18 completion, ordered by leverage and dep
 - Phase 3.4 UI updates are complete (portfolio account filter + allocation charts, guided plan timeline/contribution editors, profile physical assets).
 - Phase 3.5 Copilot tool updates are complete.
 - Phase 3.6 docs/ops cleanup is complete (standalone-first README/runbook, migration/compatibility docs, compose/make standalone defaults).
-- Primary remaining work is unified context productionization and quality hardening (Phase 3.7).
+- Phase 3.7 unified context productionization is complete.
 
 ## Priority Order
 
@@ -92,8 +92,8 @@ Scope:
 Why:
 - Keeps execution aligned and prevents drift in future slices.
 
-### 6) Phase 3.7 Unified Context Packaging (Next)
-Status: In progress
+### 6) Phase 3.7 Unified Context Packaging
+Status: Completed
 
 Scope:
 1. Productionize context payload quality controls (freshness/evidence coverage, warning consistency, token-budget behavior).
@@ -108,14 +108,51 @@ Completed in Slice 1:
 - Added stale snapshot warning emission + UI metadata surfacing.
 - Added regression tests for quality metadata and cache policy behavior.
 
+Completed in Slice 2:
+- Added explicit `/api/copilot/context` response contract (`CopilotContextResponse`) and runtime payload validation.
+- Added context payload permutation tests (plan/no-plan, research on/off) for contract stability.
+- Added lightweight cache observability endpoint `GET /api/copilot/context/cache`.
+- Added cache-store stats methods + tests (`entries`, `max_entries`, `expired_pruned`).
+
+Completed in Slice 3:
+- Updated Copilot prompt/tool guidance to explicitly use `quality` + `warnings` metadata when caveating context-driven answers.
+- Added prompt regression test coverage to prevent drift from quality-aware response behavior.
+
+Completed in Slice 4:
+- Added `detail_level` (`light`/`full`) to Copilot context options, API context endpoint, and `get_buildwealth_context` tool input contract.
+- Unified context payload generation now applies optional light-shaping for high-volume sections while preserving summary/quality metadata.
+- Copilot chat context now defaults to `light` detail for routine turns, reducing token load while keeping full detail available on demand.
+- Added regression coverage for detail-level normalization, payload shaping, tool schema, and context response permutations.
+
+Completed in Slice 5:
+- Expanded cache status observability with rolling counters (`lookup_count`, `hit_count`, `miss_count`, `write_count`, `eviction_count`, `expired_pruned`, `hit_rate_pct`) for research/projection context caches.
+- Updated `/api/copilot/context/cache` response contract and tests to assert trend metrics beyond point-in-time entry counts.
+- Hardened cache clear semantics to support deterministic metric reset behavior (`clear(reset_metrics=True)`).
+
+Completed in Slice 6:
+- Added cache reset controls:
+  - `POST /api/copilot/context/cache/reset` endpoint with target selection (`all`, `research`, `baseline_projection`) and optional metric reset.
+  - Copilot UI `Reset Cache` action in Unified Context panel for local troubleshooting loops.
+- Added regression coverage for reset behavior and invalid target handling.
+
 Remaining:
-1. Add stronger API response contracts for `/api/copilot/context` shape validation.
-2. Expand context-composition tests across plan/no-plan and research include/exclude permutations.
-3. Add lightweight operator endpoint/metrics snapshot for context cache key counts and churn.
-4. Tighten Copilot prompt guidance to consume freshness/coverage metadata explicitly when caveating answers.
+- None for Phase 3.7. Unified context productionization slices are complete.
 
 Why:
 - This is the BuildWealth differentiator and the main remaining leverage point after parity foundations.
+
+## Post-3.7 Recommended Next Workstream
+1. Decision intelligence loop:
+- Add a first-class “decision packet” artifact that combines unified context + selected plan assumptions + cited research symbols for each major recommendation.
+- Goal: make Copilot guidance auditable and directly actionable in plan workflows.
+
+2. Research-to-planning bridge:
+- Add UI/API flow to pin research symbols and thesis notes directly into plan branches/scenario assumptions.
+- Goal: reduce friction between market research and planning model inputs.
+
+3. Copilot action closure:
+- Expand recommendation application/rejection loops with explicit before/after scenario diffs and captured decision rationale.
+- Goal: tighten the feedback loop between conversation, simulation, and committed plan changes.
 
 ## Guardrails
 1. Keep using Ghostfolio and Ignidash upstream logic/code patterns when beneficial.

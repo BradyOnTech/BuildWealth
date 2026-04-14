@@ -57,6 +57,52 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-14 (Completed - Phase 3.7 Unified Context Packaging, Slice 6)
+- Added cache reset controls for deterministic local troubleshooting:
+  - endpoint: `POST /api/copilot/context/cache/reset`
+  - target selection: `all`, `research`, `baseline_projection`
+  - optional metric reset behavior alongside entry reset.
+- Added Copilot UI `Reset Cache` action in the Unified Context panel to trigger cache reset without leaving the app.
+- Added regression coverage for reset semantics and invalid-target validation in `test_copilot_context_payload.py`.
+- With this slice, planned Phase 3.7 unified-context productionization tasks are complete.
+
+### 2026-04-14 (Completed - Phase 3.7 Unified Context Packaging, Slice 5)
+- Expanded unified-context cache observability from point-in-time counts to rolling counters in `ExpiringCache`:
+  - `lookup_count`, `hit_count`, `miss_count`, `write_count`, `eviction_count`, `expired_pruned`, `hit_rate_pct`.
+- Updated `GET /api/copilot/context/cache` response schema to expose rolling cache trend metrics per store (`research`, `baseline_projection`).
+- Preserved deterministic cache reset behavior for tests/operators via `clear(reset_metrics=True)` semantics.
+- Added/updated coverage:
+  - rolling counter behavior in `test_context_cache.py`
+  - endpoint response assertions for new cache metrics in `test_copilot_context_payload.py`.
+
+### 2026-04-14 (Completed - Phase 3.7 Unified Context Packaging, Slice 4)
+- Added explicit light/full response-shaping controls for unified context payloads:
+  - `detail_level` added to `CopilotContextOptions`, context scope, API query params, and Copilot tool contract.
+  - `GET /api/copilot/context` and `get_buildwealth_context` now accept `detail_level` (`light` or `full`).
+- Wired light/full shaping through context generation and Copilot chat briefing:
+  - full payloads remain available for deep analysis workflows
+  - routine chat now defaults to `light` detail via `context_options.detail_level` to reduce token load.
+- Reused existing context shaping helper to trim high-volume blocks (history/profile/research/planning detail) while preserving summary + quality metadata.
+- Added focused regression coverage:
+  - detail-level normalization and payload shaping behavior in `test_buildwealth_context.py`
+  - context contract permutations with `detail_level` in `test_copilot_context_payload.py`
+  - tool schema coverage for `detail_level` in `test_copilot_tool_updates.py`.
+
+### 2026-04-14 (Completed - Phase 3.7 Unified Context Packaging, Slice 3)
+- Updated Copilot tool-selection and response guidance to explicitly consume unified-context quality metadata and warnings when caveating recommendations.
+- Added prompt guidance to require concrete mitigation steps when context quality is degraded (for example sync or live snapshot refresh).
+- Extended `get_buildwealth_context` tool description to document quality/freshness metadata availability.
+- Added prompt regression coverage in `test_copilot_tool_updates.py` for quality-aware guidance text.
+
+### 2026-04-14 (Completed - Phase 3.7 Unified Context Packaging, Slice 2)
+- Added explicit API response contract model `CopilotContextResponse` and applied it to `GET /api/copilot/context`.
+- Unified context payload generation now validates against `CopilotContextResponse` before returning, ensuring shape consistency for API + Copilot tool call paths.
+- Expanded regression coverage for context shape permutations (`with/without plan`, `with/without research`) in `test_copilot_context_payload.py`.
+- Added lightweight context cache observability endpoint:
+  - `GET /api/copilot/context/cache`
+  - returns store-level stats for research/projection caches (entry count, max entries, expired-prune count).
+- Added cache-store stats support in cache service and associated test coverage.
+
 ### 2026-04-14 (Completed - Phase 3.7 Unified Context Packaging, Slice 1)
 - Added first-class unified-context quality metadata (`quality`) with:
   - snapshot freshness (`snapshot_as_of`, `snapshot_age_seconds`, `snapshot_stale`, stale threshold)

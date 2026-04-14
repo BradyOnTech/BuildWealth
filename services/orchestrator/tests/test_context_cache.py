@@ -1,5 +1,7 @@
 import time
 
+import pytest
+
 from buildwealth_orchestrator.services.context_cache import ExpiringCache
 
 
@@ -15,6 +17,14 @@ def test_expiring_cache_lookup_hit_and_expire() -> None:
     hit_after, value_after = cache.lookup("k1")
     assert hit_after is False
     assert value_after is None
+
+    stats = cache.stats()
+    assert stats["lookup_count"] == 2
+    assert stats["hit_count"] == 1
+    assert stats["miss_count"] == 1
+    assert stats["write_count"] == 1
+    assert stats["expired_pruned"] == 1
+    assert stats["hit_rate_pct"] == 50.0
 
 
 def test_expiring_cache_evicts_oldest_entry() -> None:
@@ -32,3 +42,41 @@ def test_expiring_cache_evicts_oldest_entry() -> None:
     assert value_b == 2
     assert hit_c is True
     assert value_c == 3
+
+    stats = cache.stats()
+    assert stats["eviction_count"] == 1
+    assert stats["write_count"] == 3
+    assert stats["lookup_count"] == 3
+    assert stats["hit_count"] == 2
+    assert stats["miss_count"] == 1
+    assert stats["hit_rate_pct"] == pytest.approx(66.7, abs=0.1)
+
+
+def test_expiring_cache_stats_prunes_expired_entries() -> None:
+    cache = ExpiringCache(max_entries=3)
+    cache.set("fresh", {"v": 1}, ttl_seconds=30)
+    cache.set("expired", {"v": 2}, ttl_seconds=0.01)
+    time.sleep(0.02)
+
+    stats = cache.stats()
+    assert stats["max_entries"] == 3
+    assert stats["entries"] == 1
+    assert stats["expired_pruned"] == 1
+    assert stats["lookup_count"] == 0
+    assert stats["hit_count"] == 0
+    assert stats["miss_count"] == 0
+    assert stats["write_count"] == 2
+
+
+def test_expiring_cache_clear_preserves_metrics_when_requested() -> None:
+    cache = ExpiringCache(max_entries=2)
+    cache.set("a", 1, ttl_seconds=30)
+    cache.lookup("a")
+
+    cache.clear(reset_metrics=False)
+    stats = cache.stats()
+
+    assert stats["entries"] == 0
+    assert stats["write_count"] == 1
+    assert stats["lookup_count"] == 1
+    assert stats["hit_count"] == 1

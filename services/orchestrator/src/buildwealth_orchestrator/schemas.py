@@ -869,11 +869,104 @@ class CopilotContextOptions(BaseModel):
     include_research: bool = False
     include_plan_projection: bool = False
     force_refresh: bool = False
+    detail_level: Literal["light", "full"] = "light"
     research_symbols: list[str] = Field(default_factory=list)
     research_period: str = "6mo"
     research_interval: str = "1d"
     research_symbol_limit: int = Field(default=5, ge=0, le=20)
     summary_max_chars: int = Field(default=1800, ge=300, le=12000)
+
+
+class CopilotContextScope(BaseModel):
+    plan_id: str | None = None
+    use_live_snapshot: bool = False
+    include_research: bool = False
+    include_plan_projection: bool = False
+    detail_level: Literal["light", "full"] = "full"
+
+
+class CopilotContextCacheLayer(BaseModel):
+    hit: bool = False
+    written: bool = False
+    ttl_seconds: float | None = None
+
+
+class CopilotContextCacheMetadata(BaseModel):
+    enabled: bool = False
+    read_enabled: bool | None = None
+    write_enabled: bool | None = None
+    force_refresh: bool = False
+    bypass_reason: str | None = None
+    research: CopilotContextCacheLayer = Field(default_factory=CopilotContextCacheLayer)
+    baseline_projection: CopilotContextCacheLayer = Field(default_factory=CopilotContextCacheLayer)
+
+
+class CopilotContextFreshness(BaseModel):
+    generated_at: datetime | None = None
+    snapshot_as_of: datetime | None = None
+    snapshot_age_seconds: float | None = None
+    snapshot_stale: bool | None = None
+    snapshot_stale_threshold_seconds: float | None = None
+
+
+class CopilotContextCoverage(BaseModel):
+    score_pct: float = 0.0
+    checks: dict[str, bool] = Field(default_factory=dict)
+    missing_sections: list[str] = Field(default_factory=list)
+
+
+class CopilotContextWarningQuality(BaseModel):
+    count: int = 0
+    has_warnings: bool = False
+
+
+class CopilotContextSummaryQuality(BaseModel):
+    max_chars: int = 0
+    full_chars: int = 0
+    actual_chars: int = 0
+    truncated: bool = False
+
+
+class CopilotContextQuality(BaseModel):
+    freshness: CopilotContextFreshness = Field(default_factory=CopilotContextFreshness)
+    coverage: CopilotContextCoverage = Field(default_factory=CopilotContextCoverage)
+    warnings: CopilotContextWarningQuality = Field(default_factory=CopilotContextWarningQuality)
+    summary: CopilotContextSummaryQuality = Field(default_factory=CopilotContextSummaryQuality)
+
+
+class CopilotContextResponse(BaseModel):
+    generated_at: datetime
+    scope: CopilotContextScope = Field(default_factory=CopilotContextScope)
+    cache: CopilotContextCacheMetadata = Field(default_factory=CopilotContextCacheMetadata)
+    location_state: str = ""
+    currency: str = "USD"
+    warnings: list[str] = Field(default_factory=list)
+    quality: CopilotContextQuality = Field(default_factory=CopilotContextQuality)
+    planning_defaults: dict[str, Any] = Field(default_factory=dict)
+    financial_picture: dict[str, Any] = Field(default_factory=dict)
+    planning: dict[str, Any] = Field(default_factory=dict)
+    research: dict[str, Any] = Field(default_factory=dict)
+    decisions: dict[str, Any] = Field(default_factory=dict)
+    summary: str = ""
+
+
+class CopilotContextCacheStoreStats(BaseModel):
+    name: Literal["research", "baseline_projection"]
+    max_entries: int
+    entries: int
+    lookup_count: int = 0
+    hit_count: int = 0
+    miss_count: int = 0
+    write_count: int = 0
+    eviction_count: int = 0
+    expired_pruned: int
+    hit_rate_pct: float = 0.0
+
+
+class CopilotContextCacheStatusResponse(BaseModel):
+    as_of: datetime
+    enabled: bool
+    stores: list[CopilotContextCacheStoreStats] = Field(default_factory=list)
 
 
 class CopilotChatRequest(BaseModel):

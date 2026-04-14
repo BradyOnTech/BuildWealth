@@ -18,6 +18,8 @@ from buildwealth_orchestrator.schemas import (
     ChatResponse,
     CopilotChatRequest,
     CopilotChatResponse,
+    CopilotContextCacheStatusResponse,
+    CopilotContextResponse,
     CopilotConversationResponse,
     CopilotConversationSummary,
     CsvImportRequest,
@@ -154,13 +156,16 @@ from buildwealth_orchestrator.services.engine_status import EngineProbeConfig, E
 from buildwealth_orchestrator.services.tax_engine import estimate_federal_tax
 from buildwealth_orchestrator.services.today_dashboard import build_today_dashboard_payload
 from buildwealth_orchestrator.services.buildwealth_context import (
-    DEFAULT_RESEARCH_SYMBOL_LIMIT,
+    DEFAULT_CONTEXT_DETAIL_LEVEL,
     DEFAULT_CONTEXT_SUMMARY_MAX_CHARS,
+    DEFAULT_RESEARCH_SYMBOL_LIMIT,
     build_context_quality,
     build_context_summary_with_metadata,
+    normalize_context_detail_level,
     normalize_context_warnings,
     derive_research_symbols,
     normalize_research_symbols,
+    shape_context_payload,
     utc_now_iso as context_utc_now_iso,
 )
 from buildwealth_orchestrator.services.context_cache import ExpiringCache
@@ -342,6 +347,8 @@ copilot = FinancialCopilot(
         "- Do not provide legal or tax advice; provide analytical insights and scenarios.\n\n"
         "TOOL SELECTION GUIDE:\n"
         "- For a full cross-domain briefing (portfolio + plan + research + open decisions) → call get_buildwealth_context.\n"
+        "- After calling get_buildwealth_context, inspect `quality` and `warnings` fields before making recommendations. "
+        "If `quality.freshness.snapshot_stale=true` or coverage is missing sections, call that out clearly and suggest refresh actions.\n"
         "- For 'how am I doing?' or 'what is my financial situation?' → call get_financial_health first.\n"
         "- For account-level balances/cash breakdowns → call get_account_balances.\n"
         "- For allocation mix or rebalancing discussions → call get_asset_allocation.\n"
@@ -363,6 +370,8 @@ copilot = FinancialCopilot(
         "- For 'what if I buy/sell X?' → call simulate_trade to show allocation and concentration impact.\n"
         "- For daily reviews → call get_financial_health, get_plan_tracking, and get_today_dashboard.\n\n"
         "RESPONSE GUIDELINES:\n"
+        "- Explicitly caveat recommendations when context quality is degraded (stale snapshot, missing coverage sections, or warning-heavy payloads).\n"
+        "- If context quality is degraded, include the exact mitigation step (for example: run sync, use live snapshot, or refresh context).\n"
         "- When discussing portfolio holdings, reference specific symbols and allocation percentages.\n"
         "- When discussing cash flow, cite monthly income, expenses, and surplus figures.\n"
         "- When recommending actions, explain the quantitative impact (e.g., 'increasing contributions by "
@@ -2969,8 +2978,10 @@ async def build_buildwealth_context_payload(
     max_plan_decisions: int = 8,
     summary_max_chars: int = DEFAULT_CONTEXT_SUMMARY_MAX_CHARS,
     research_symbol_limit: int = DEFAULT_RESEARCH_SYMBOL_LIMIT,
+    detail_level: str = DEFAULT_CONTEXT_DETAIL_LEVEL,
 ) -> dict[str, Any]:
     warnings: list[str] = []
+    resolved_detail_level = normalize_context_detail_level(detail_level)
     resolved_snapshot: PortfolioSnapshot | None = None
     cache_globally_enabled = bool(settings.copilot_context_cache_enabled)
     cache_reads_enabled = cache_globally_enabled and not force_refresh
@@ -3378,6 +3389,7 @@ async def build_buildwealth_context_payload(
             "use_live_snapshot": bool(use_live_snapshot),
             "include_research": bool(include_research),
             "include_plan_projection": bool(include_plan_projection),
+            "detail_level": resolved_detail_level,
         },
         "cache": {
             "enabled": bool(cache_globally_enabled),
@@ -3490,7 +3502,11 @@ async def build_buildwealth_context_payload(
             snapshot_stale_after_seconds=settings.copilot_context_snapshot_stale_after_seconds,
         )
 
-    return context_payload
+    shaped_payload = shape_context_payload(
+        context_payload=context_payload,
+        detail_level=resolved_detail_level,
+    )
+    return CopilotContextResponse(**shaped_payload).model_dump(mode="json")
 
 
 async def build_contextual_brief(
@@ -3504,6 +3520,7 @@ async def build_contextual_brief(
     research_interval: str = "1d",
     research_symbol_limit: int = DEFAULT_RESEARCH_SYMBOL_LIMIT,
     summary_max_chars: int = 1800,
+    detail_level: str = "light",
 ) -> str:
     payload = await build_buildwealth_context_payload(
         use_live_snapshot=use_live_snapshot,
@@ -3517,6 +3534,7 @@ async def build_contextual_brief(
         research_symbol_limit=research_symbol_limit,
         max_recommendations=8,
         summary_max_chars=summary_max_chars,
+        detail_level=detail_level,
     )
     return json.dumps(payload, indent=2, default=str)
 
@@ -3574,6 +3592,7 @@ async def tool_get_buildwealth_context(arguments: dict[str, object]) -> dict[str
     include_research = _coerce_bool(arguments.get("include_research"), True)
     include_plan_projection = _coerce_bool(arguments.get("include_plan_projection"), True)
     force_refresh = _coerce_bool(arguments.get("force_refresh"), False)
+    detail_level = normalize_context_detail_level(arguments.get("detail_level"))
 
     symbol_limit = max(
         0,
@@ -3607,6 +3626,7 @@ async def tool_get_buildwealth_context(arguments: dict[str, object]) -> dict[str
         max_plan_decisions=max_plan_decisions,
         summary_max_chars=summary_max_chars,
         research_symbol_limit=symbol_limit,
+        detail_level=detail_level,
     )
     return payload
 
@@ -5048,7 +5068,8 @@ def configure_copilot_tools() -> None:
         name="get_buildwealth_context",
         description=(
             "Build a unified context package for LLM planning decisions across portfolio state, "
-            "plan tracking/projections, research highlights, and open recommendations."
+            "plan tracking/projections, research highlights, and open recommendations. "
+            "Includes cache metadata, warnings, and quality/freshness coverage fields for caveated decision support."
         ),
         parameters={
             "type": "object",
@@ -5057,6 +5078,10 @@ def configure_copilot_tools() -> None:
                 "use_live_snapshot": {"type": "boolean"},
                 "include_research": {"type": "boolean"},
                 "force_refresh": {"type": "boolean"},
+                "detail_level": {
+                    "type": "string",
+                    "enum": ["light", "full"],
+                },
                 "research_symbols": {"type": "array", "items": {"type": "string"}},
                 "research_period": {"type": "string"},
                 "research_interval": {"type": "string"},
@@ -6986,7 +7011,7 @@ async def run_workflow(request: WorkflowRunRequest) -> WorkflowRunResponse:
     return WorkflowRunResponse(**result)
 
 
-@app.get("/api/copilot/context")
+@app.get("/api/copilot/context", response_model=CopilotContextResponse)
 async def get_copilot_context(
     use_live_snapshot: bool = False,
     plan_id: str | None = None,
@@ -7000,6 +7025,7 @@ async def get_copilot_context(
     max_recommendations: int = 10,
     max_plan_decisions: int = 8,
     summary_max_chars: int = DEFAULT_CONTEXT_SUMMARY_MAX_CHARS,
+    detail_level: str = DEFAULT_CONTEXT_DETAIL_LEVEL,
 ) -> dict[str, Any]:
     symbols_input = [
         item.strip()
@@ -7019,7 +7045,49 @@ async def get_copilot_context(
         max_plan_decisions=max_plan_decisions,
         summary_max_chars=summary_max_chars,
         research_symbol_limit=research_symbol_limit,
+        detail_level=detail_level,
     )
+
+
+@app.get("/api/copilot/context/cache", response_model=CopilotContextCacheStatusResponse)
+def get_copilot_context_cache_status() -> CopilotContextCacheStatusResponse:
+    research_stats = copilot_context_research_cache.stats()
+    projection_stats = copilot_context_projection_cache.stats()
+    return CopilotContextCacheStatusResponse(
+        as_of=utc_now(),
+        enabled=bool(settings.copilot_context_cache_enabled),
+        stores=[
+            {
+                "name": "research",
+                **research_stats,
+            },
+            {
+                "name": "baseline_projection",
+                **projection_stats,
+            },
+        ],
+    )
+
+
+@app.post("/api/copilot/context/cache/reset", response_model=CopilotContextCacheStatusResponse)
+def reset_copilot_context_cache(
+    target: str = "all",
+    reset_metrics: bool = True,
+) -> CopilotContextCacheStatusResponse:
+    target_value = str(target or "all").strip().lower()
+    valid_targets = {"all", "research", "baseline_projection"}
+    if target_value not in valid_targets:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported cache target '{target}'. Expected one of: all, research, baseline_projection.",
+        )
+
+    if target_value in {"all", "research"}:
+        copilot_context_research_cache.clear(reset_metrics=reset_metrics)
+    if target_value in {"all", "baseline_projection"}:
+        copilot_context_projection_cache.clear(reset_metrics=reset_metrics)
+
+    return get_copilot_context_cache_status()
 
 
 @app.get("/api/copilot/conversations", response_model=list[CopilotConversationSummary])
@@ -7051,6 +7119,7 @@ async def copilot_chat(request: CopilotChatRequest) -> CopilotChatResponse:
         include_research=context_options.include_research,
         include_plan_projection=context_options.include_plan_projection,
         force_refresh=context_options.force_refresh,
+        detail_level=context_options.detail_level,
         research_symbols=context_symbols,
         research_period=context_options.research_period,
         research_interval=context_options.research_interval,

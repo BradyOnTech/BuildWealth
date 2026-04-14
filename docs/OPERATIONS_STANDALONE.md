@@ -96,6 +96,12 @@ This profile is not required for standalone BuildWealth operation.
 - Configure stale threshold with `COPILOT_CONTEXT_SNAPSHOT_STALE_AFTER_SECONDS` (default: `86400`).
 - If stale warnings appear frequently, schedule syncs or use `use_live_snapshot=true` for Copilot context requests.
 
+5. Context cache visibility:
+- Use `GET /api/copilot/context/cache` to inspect current research/projection cache entry counts and rolling hit/miss/write trend counters.
+- Use payload-level cache metadata from `GET /api/copilot/context` to confirm hit/miss and force-refresh bypass behavior per request.
+- Use `POST /api/copilot/context/cache/reset` to clear cache entries (and optionally metrics) during local troubleshooting.
+- For context payload size control, pass `detail_level=light` on `GET /api/copilot/context` (or `context_options.detail_level` in chat requests); use `full` only when deep payload detail is required.
+
 ## Useful Commands
 
 ```bash

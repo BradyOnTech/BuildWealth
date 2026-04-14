@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -10,6 +11,8 @@ DEFAULT_RESEARCH_SYMBOL_LIMIT = 5
 DEFAULT_CONTEXT_SUMMARY_MAX_CHARS = 2400
 DEFAULT_CONTEXT_WARNING_LIMIT = 50
 DEFAULT_CONTEXT_SNAPSHOT_STALE_AFTER_SECONDS = 86_400.0
+DEFAULT_CONTEXT_DETAIL_LEVEL = "full"
+VALID_CONTEXT_DETAIL_LEVELS = {"full", "light"}
 _SYMBOL_PATTERN = re.compile(r"[^A-Z0-9._-]+")
 
 
@@ -86,6 +89,20 @@ def normalize_context_warnings(
         if len(normalized) >= resolved_limit:
             break
     return normalized
+
+
+def normalize_context_detail_level(
+    raw_level: Any,
+    *,
+    default: str = DEFAULT_CONTEXT_DETAIL_LEVEL,
+) -> str:
+    fallback = str(default or DEFAULT_CONTEXT_DETAIL_LEVEL).strip().lower() or DEFAULT_CONTEXT_DETAIL_LEVEL
+    if fallback not in VALID_CONTEXT_DETAIL_LEVELS:
+        fallback = DEFAULT_CONTEXT_DETAIL_LEVEL
+    level = str(raw_level or "").strip().lower()
+    if level in VALID_CONTEXT_DETAIL_LEVELS:
+        return level
+    return fallback
 
 
 def normalize_research_symbols(raw_symbols: list[Any] | None, *, max_symbols: int = DEFAULT_RESEARCH_SYMBOL_LIMIT) -> list[str]:
@@ -492,6 +509,257 @@ def build_context_quality(
             "truncated": summary_truncated,
         },
     }
+
+
+def shape_context_payload(
+    *,
+    context_payload: dict[str, Any],
+    detail_level: str = DEFAULT_CONTEXT_DETAIL_LEVEL,
+) -> dict[str, Any]:
+    resolved_level = normalize_context_detail_level(detail_level)
+    if resolved_level == "full":
+        return context_payload
+
+    payload = deepcopy(context_payload)
+
+    scope = payload.get("scope")
+    if not isinstance(scope, dict):
+        scope = {}
+    scope["detail_level"] = resolved_level
+    payload["scope"] = scope
+
+    financial_picture = payload.get("financial_picture")
+    if isinstance(financial_picture, dict):
+        snapshot_history = financial_picture.get("snapshot_history")
+        if isinstance(snapshot_history, dict):
+            financial_picture["snapshot_history"] = {
+                "window_points": snapshot_history.get("window_points"),
+                "latest_as_of": snapshot_history.get("latest_as_of"),
+                "oldest_as_of": snapshot_history.get("oldest_as_of"),
+                "delta_total_value_usd": snapshot_history.get("delta_total_value_usd"),
+                "delta_total_value_percent": snapshot_history.get("delta_total_value_percent"),
+            }
+
+        financial_profile = financial_picture.get("financial_profile")
+        if isinstance(financial_profile, dict):
+            financial_picture["financial_profile"] = {
+                "schema_version": financial_profile.get("schema_version"),
+                "updated_at": financial_profile.get("updated_at"),
+                "income_items_count": len(financial_profile.get("income_items", []))
+                if isinstance(financial_profile.get("income_items"), list)
+                else 0,
+                "expense_items_count": len(financial_profile.get("expense_items", []))
+                if isinstance(financial_profile.get("expense_items"), list)
+                else 0,
+                "debt_items_count": len(financial_profile.get("debt_items", []))
+                if isinstance(financial_profile.get("debt_items"), list)
+                else 0,
+                "goal_items_count": len(financial_profile.get("goal_items", []))
+                if isinstance(financial_profile.get("goal_items"), list)
+                else 0,
+                "physical_assets_count": len(financial_profile.get("physical_assets", []))
+                if isinstance(financial_profile.get("physical_assets"), list)
+                else 0,
+                "tax_profile": (
+                    financial_profile.get("tax_profile")
+                    if isinstance(financial_profile.get("tax_profile"), dict)
+                    else {}
+                ),
+                "flags": (
+                    financial_profile.get("flags")
+                    if isinstance(financial_profile.get("flags"), dict)
+                    else {}
+                ),
+            }
+
+        onboarding_status = financial_picture.get("onboarding_status")
+        if isinstance(onboarding_status, dict):
+            financial_picture["onboarding_status"] = {
+                "completion_percent": onboarding_status.get("completion_percent"),
+                "ready_for_daily_review": onboarding_status.get("ready_for_daily_review"),
+            }
+
+        watchlist = financial_picture.get("watchlist")
+        if isinstance(watchlist, dict):
+            financial_picture["watchlist"] = {
+                "count": watchlist.get("count"),
+                "symbols_preview": (
+                    watchlist.get("symbols_preview")
+                    if isinstance(watchlist.get("symbols_preview"), list)
+                    else []
+                ),
+                "updated_at": watchlist.get("updated_at"),
+            }
+
+    planning = payload.get("planning")
+    if isinstance(planning, dict):
+        active_plan = planning.get("active_plan")
+        if isinstance(active_plan, dict):
+            planning["active_plan"] = {
+                "id": active_plan.get("id"),
+                "title": active_plan.get("title"),
+                "description": active_plan.get("description"),
+                "updated_at": active_plan.get("updated_at"),
+            }
+
+        tracking = planning.get("tracking")
+        if isinstance(tracking, dict):
+            warnings = tracking.get("warnings")
+            planning["tracking"] = {
+                "status": tracking.get("status"),
+                "actual_annualized_return_pct": tracking.get("actual_annualized_return_pct"),
+                "expected_annualized_return_pct": tracking.get("expected_annualized_return_pct"),
+                "actual_return_method": tracking.get("actual_return_method"),
+                "warnings": warnings[:3] if isinstance(warnings, list) else [],
+            }
+
+        assumption_sets = planning.get("assumption_sets")
+        if isinstance(assumption_sets, dict):
+            sets = assumption_sets.get("sets")
+            planning["assumption_sets"] = {
+                "schema_version": assumption_sets.get("schema_version"),
+                "active_assumption_set_id": assumption_sets.get("active_assumption_set_id"),
+                "sets_count": len(sets) if isinstance(sets, list) else 0,
+                "set_names": [
+                    str(item.get("name") or item.get("id") or "").strip()
+                    for item in (sets[:5] if isinstance(sets, list) else [])
+                    if isinstance(item, dict)
+                ],
+            }
+
+        timeline = planning.get("timeline")
+        if isinstance(timeline, dict):
+            events = timeline.get("events")
+            planning["timeline"] = {
+                "schema_version": timeline.get("schema_version"),
+                "events_count": len(events) if isinstance(events, list) else 0,
+                "retirement": (
+                    timeline.get("retirement")
+                    if isinstance(timeline.get("retirement"), dict)
+                    else {}
+                ),
+            }
+
+        contribution_rules = planning.get("contribution_rules")
+        if isinstance(contribution_rules, dict):
+            rules = contribution_rules.get("rules")
+            planning["contribution_rules"] = {
+                "schema_version": contribution_rules.get("schema_version"),
+                "base_rule": (
+                    contribution_rules.get("base_rule")
+                    if isinstance(contribution_rules.get("base_rule"), dict)
+                    else {}
+                ),
+                "profile_id": contribution_rules.get("profile_id"),
+                "rules": [item for item in (rules[:5] if isinstance(rules, list) else []) if isinstance(item, dict)],
+                "rules_count": len(rules) if isinstance(rules, list) else 0,
+                "employer_match_target_usd": contribution_rules.get("employer_match_target_usd"),
+                "age": contribution_rules.get("age"),
+            }
+
+        allocation_preview = planning.get("contribution_allocation_preview")
+        if isinstance(allocation_preview, dict):
+            rules = allocation_preview.get("applied_rules")
+            account_allocations = allocation_preview.get("account_allocations")
+            planning["contribution_allocation_preview"] = {
+                "total_contributions_usd": allocation_preview.get("total_contributions_usd"),
+                "employee_contributions_usd": allocation_preview.get("employee_contributions_usd"),
+                "employer_match_usd": allocation_preview.get("employer_match_usd"),
+                "applied_rules": [item for item in (rules[:5] if isinstance(rules, list) else []) if isinstance(item, dict)],
+                "account_allocations": [
+                    item for item in (account_allocations[:5] if isinstance(account_allocations, list) else [])
+                    if isinstance(item, dict)
+                ],
+            }
+
+        branch_templates = planning.get("branch_templates")
+        if isinstance(branch_templates, dict):
+            templates = branch_templates.get("templates")
+            planning["branch_templates"] = {
+                "schema_version": branch_templates.get("schema_version"),
+                "default_template_id": branch_templates.get("default_template_id"),
+                "templates_count": len(templates) if isinstance(templates, list) else 0,
+                "templates": [
+                    {
+                        "id": item.get("id"),
+                        "name": item.get("name"),
+                        "description": _trim_text(item.get("description"), limit=120),
+                    }
+                    for item in (templates[:5] if isinstance(templates, list) else [])
+                    if isinstance(item, dict)
+                ],
+            }
+
+        baseline_projection = planning.get("baseline_projection")
+        if isinstance(baseline_projection, dict):
+            scenarios = baseline_projection.get("scenarios")
+            planning["baseline_projection"] = {
+                "as_of": baseline_projection.get("as_of"),
+                "warnings": baseline_projection.get("warnings", []),
+                "scenarios": [
+                    {
+                        "label": item.get("label"),
+                        "future_value_usd": item.get("future_value_usd"),
+                        "real_value_usd": item.get("real_value_usd"),
+                        "annualized_return_pct": item.get("annualized_return_pct"),
+                    }
+                    for item in (scenarios[:3] if isinstance(scenarios, list) else [])
+                    if isinstance(item, dict)
+                ],
+            }
+
+    decisions = payload.get("decisions")
+    if isinstance(decisions, dict):
+        recommendations = decisions.get("recommendations")
+        if isinstance(recommendations, dict):
+            items = recommendations.get("items")
+            decisions["recommendations"] = {
+                "open_count": recommendations.get("open_count"),
+                "high_priority_count": recommendations.get("high_priority_count"),
+                "items": [
+                    {
+                        "id": item.get("id"),
+                        "title": item.get("title"),
+                        "priority": item.get("priority"),
+                        "status": item.get("status"),
+                        "plan_id": item.get("plan_id"),
+                    }
+                    for item in (items[:5] if isinstance(items, list) else [])
+                    if isinstance(item, dict)
+                ],
+            }
+
+        plan_decisions = decisions.get("plan_decisions_recent")
+        if isinstance(plan_decisions, list):
+            decisions["plan_decisions_recent"] = [
+                {
+                    "id": item.get("id"),
+                    "status": item.get("status"),
+                    "summary": _trim_text(item.get("summary"), limit=140),
+                    "created_at": item.get("created_at"),
+                }
+                for item in plan_decisions[:5]
+                if isinstance(item, dict)
+            ]
+
+    research = payload.get("research")
+    if isinstance(research, dict):
+        items = research.get("items")
+        research["items"] = [
+            {
+                "symbol": item.get("symbol"),
+                "quote_available": item.get("quote_available"),
+                "quote_price": item.get("quote_price"),
+                "quote_change_pct": item.get("quote_change_pct"),
+                "history_available": item.get("history_available"),
+                "period_label": item.get("period_label"),
+                "period_change_pct": item.get("period_change_pct"),
+            }
+            for item in (items[:5] if isinstance(items, list) else [])
+            if isinstance(item, dict)
+        ]
+
+    return payload
 
 
 def build_context_summary(

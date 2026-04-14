@@ -20,6 +20,20 @@ def test_copilot_registry_includes_phase_3_5_tools() -> None:
     assert required_tools <= set(main.copilot.tools.keys())
 
 
+def test_copilot_prompt_includes_context_quality_guidance() -> None:
+    prompt = str(main.copilot.system_prompt)
+    assert "quality.freshness.snapshot_stale" in prompt
+    assert "caveat recommendations when context quality is degraded" in prompt
+
+
+def test_get_buildwealth_context_tool_supports_detail_level_control() -> None:
+    tool = main.copilot.tools["get_buildwealth_context"]
+    properties = tool.parameters.get("properties", {})
+    detail_field = properties.get("detail_level")
+    assert isinstance(detail_field, dict)
+    assert detail_field.get("enum") == ["light", "full"]
+
+
 def test_tool_add_timeline_event_appends_event_and_preserves_retirement_payload(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

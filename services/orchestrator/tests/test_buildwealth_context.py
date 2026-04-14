@@ -3,8 +3,10 @@ from buildwealth_orchestrator.services.buildwealth_context import (
     build_context_summary,
     build_context_summary_with_metadata,
     derive_research_symbols,
+    normalize_context_detail_level,
     normalize_context_warnings,
     normalize_research_symbols,
+    shape_context_payload,
 )
 
 
@@ -249,3 +251,127 @@ def test_normalize_context_warnings_dedupes_and_caps() -> None:
     )
 
     assert warnings == ["one", "two", "three"]
+
+
+def test_normalize_context_detail_level_falls_back_to_default() -> None:
+    assert normalize_context_detail_level("light") == "light"
+    assert normalize_context_detail_level("FULL") == "full"
+    assert normalize_context_detail_level("invalid", default="light") == "light"
+
+
+def test_shape_context_payload_light_reduces_heavy_sections() -> None:
+    payload = {
+        "scope": {
+            "detail_level": "full",
+            "include_research": True,
+        },
+        "financial_picture": {
+            "snapshot_history": {
+                "window_points": 30,
+                "latest_as_of": "2026-04-14T00:00:00+00:00",
+                "oldest_as_of": "2026-03-15T00:00:00+00:00",
+                "delta_total_value_usd": 1234.56,
+                "delta_total_value_percent": 2.5,
+                "points": [{"as_of": "2026-04-14T00:00:00+00:00", "total_value_usd": 1000.0}],
+            },
+            "financial_profile": {
+                "schema_version": 2,
+                "updated_at": "2026-04-14T00:00:00+00:00",
+                "income_items": [{"label": "Salary"}],
+                "expense_items": [{"label": "Rent"}],
+                "debt_items": [],
+                "goal_items": [{"name": "Emergency"}],
+                "physical_assets": [{"name": "Home"}],
+                "tax_profile": {"filing_status": "single"},
+                "flags": {"ready": True},
+            },
+            "watchlist": {
+                "count": 8,
+                "symbols_preview": ["AAPL", "MSFT"],
+                "items": [{"symbol": "AAPL"}],
+                "updated_at": "2026-04-14T00:00:00+00:00",
+            },
+        },
+        "planning": {
+            "active_plan": {
+                "id": "plan-1",
+                "title": "Primary Plan",
+                "description": "Detailed plan payload",
+                "updated_at": "2026-04-14T00:00:00+00:00",
+                "settings": {"years": 30},
+            },
+            "tracking": {
+                "status": "on_track",
+                "actual_annualized_return_pct": 7.1,
+                "expected_annualized_return_pct": 6.8,
+                "actual_return_method": "dietz",
+                "warnings": ["one", "two", "three", "four"],
+            },
+            "assumption_sets": {
+                "schema_version": 2,
+                "active_assumption_set_id": "set-1",
+                "sets": [{"id": "set-1", "name": "Default"}],
+            },
+            "timeline": {
+                "schema_version": 2,
+                "events": [{"id": "event-1"}],
+                "retirement": {"target_retirement_age": 60},
+            },
+            "contribution_rules": {
+                "schema_version": 2,
+                "base_rule": {"type": "save"},
+                "profile_id": "default",
+                "rules": [{"priority": 1}],
+                "employer_match_target_usd": 1000,
+                "age": 40,
+            },
+            "contribution_allocation_preview": {
+                "total_contributions_usd": 10000,
+                "employee_contributions_usd": 8000,
+                "employer_match_usd": 2000,
+                "applied_rules": [{"priority": 1}],
+                "account_allocations": [{"account_id": "a1"}],
+            },
+            "branch_templates": {
+                "schema_version": 2,
+                "default_template_id": "t1",
+                "templates": [{"id": "t1", "name": "Base", "description": "A long description here"}],
+            },
+            "baseline_projection": {
+                "as_of": "2026-04-14T00:00:00+00:00",
+                "warnings": [],
+                "scenarios": [{"label": "baseline", "future_value_usd": 1.0}],
+            },
+        },
+        "decisions": {
+            "recommendations": {
+                "open_count": 1,
+                "high_priority_count": 1,
+                "items": [{"id": "r1", "title": "Do thing", "priority": "high", "status": "proposed"}],
+            },
+            "plan_decisions_recent": [
+                {"id": "d1", "status": "accepted", "summary": "Long summary text", "created_at": "2026-04-14T00:00:00+00:00"}
+            ],
+        },
+        "research": {
+            "items": [
+                {"symbol": "AAPL", "quote_available": True, "quote_price": 200.0, "history_available": True, "period_label": "6mo"},
+                {"symbol": "MSFT", "quote_available": True, "quote_price": 300.0, "history_available": True, "period_label": "6mo"},
+                {"symbol": "NVDA", "quote_available": True, "quote_price": 400.0, "history_available": True, "period_label": "6mo"},
+                {"symbol": "TSLA", "quote_available": True, "quote_price": 500.0, "history_available": True, "period_label": "6mo"},
+                {"symbol": "GOOGL", "quote_available": True, "quote_price": 600.0, "history_available": True, "period_label": "6mo"},
+                {"symbol": "META", "quote_available": True, "quote_price": 700.0, "history_available": True, "period_label": "6mo"},
+            ]
+        },
+    }
+
+    shaped = shape_context_payload(context_payload=payload, detail_level="light")
+
+    assert shaped["scope"]["detail_level"] == "light"
+    assert "points" not in shaped["financial_picture"]["snapshot_history"]
+    assert "income_items" not in shaped["financial_picture"]["financial_profile"]
+    assert shaped["financial_picture"]["financial_profile"]["income_items_count"] == 1
+    assert "settings" not in shaped["planning"]["active_plan"]
+    assert len(shaped["planning"]["tracking"]["warnings"]) == 3
+    assert shaped["planning"]["branch_templates"]["templates_count"] == 1
+    assert len(shaped["research"]["items"]) == 5
