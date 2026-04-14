@@ -11,10 +11,11 @@ import * as workflows from './views/workflows.js';
 import * as tracking from './views/tracking.js';
 import * as importStatement from './views/import-statement.js';
 import * as portfolio from './views/portfolio.js';
+import * as research from './views/research.js';
 import * as sync from './views/sync.js';
 import * as settings from './views/settings.js';
 
-const views = [dashboard, profile, copilot, plans, tracking, recommendations, workflows, importStatement, portfolio, sync, settings];
+const views = [dashboard, profile, copilot, research, plans, tracking, recommendations, workflows, importStatement, portfolio, sync, settings];
 let currentView = null;
 let pendingParams = null;
 

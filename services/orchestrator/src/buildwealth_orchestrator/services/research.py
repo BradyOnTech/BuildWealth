@@ -1,8 +1,20 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from math import sqrt
+import re
+from statistics import pstdev
 from typing import Any
 
-from buildwealth_orchestrator.schemas import ResearchResponse
+from buildwealth_orchestrator.schemas import (
+    ResearchCompareItem,
+    ResearchCompareResponse,
+    ResearchCompareSummary,
+    ResearchResponse,
+)
+
+
+_SYMBOL_PATTERN = re.compile(r"[^A-Z0-9._-]+")
 
 
 class OpenBBResearchService:
@@ -77,6 +89,140 @@ class OpenBBResearchService:
 
         joined = "; ".join(attempts) if attempts else "No endpoint call variants were attempted."
         raise RuntimeError(f"Unable to call OpenBB endpoint with tested kwargs. {joined}")
+
+    @staticmethod
+    def _parse_number(value: Any) -> float | None:
+        if isinstance(value, (int, float)):
+            numeric = float(value)
+            if numeric != numeric:
+                return None
+            return numeric
+
+        text = str(value or "").strip()
+        if not text:
+            return None
+
+        negative_parentheses = text.startswith("(") and text.endswith(")")
+        if negative_parentheses:
+            text = text[1:-1].strip()
+
+        text = text.replace(",", "").replace("$", "")
+        is_percent = text.endswith("%")
+        if is_percent:
+            text = text[:-1].strip()
+        if not text:
+            return None
+
+        try:
+            numeric = float(text)
+        except Exception:
+            return None
+
+        if negative_parentheses:
+            numeric *= -1
+        return numeric
+
+    @classmethod
+    def _extract_number(cls, row: dict[str, Any], keys: tuple[str, ...]) -> float | None:
+        for key in keys:
+            if key not in row:
+                continue
+            numeric = cls._parse_number(row.get(key))
+            if numeric is not None:
+                return numeric
+        return None
+
+    @classmethod
+    def _compute_history_volatility_pct(cls, records: list[dict[str, Any]], interval: str) -> float | None:
+        if not records:
+            return None
+
+        close_values: list[float] = []
+        for row in records:
+            if not isinstance(row, dict):
+                continue
+            close = cls._extract_number(row, ("close", "adj_close", "last", "price"))
+            if close is None:
+                continue
+            close_values.append(close)
+
+        if len(close_values) < 3:
+            return None
+
+        returns: list[float] = []
+        for previous, current in zip(close_values, close_values[1:]):
+            if previous == 0:
+                continue
+            returns.append((current - previous) / previous)
+
+        if len(returns) < 2:
+            return None
+
+        period_vol = pstdev(returns)
+        normalized_interval = str(interval or "").strip().lower()
+        if normalized_interval in {"1wk", "1w", "week", "weekly"}:
+            annualization_factor = sqrt(52)
+        elif normalized_interval in {"1mo", "1m", "month", "monthly"}:
+            annualization_factor = sqrt(12)
+        else:
+            annualization_factor = sqrt(252)
+
+        return period_vol * annualization_factor * 100.0
+
+    @classmethod
+    def _quote_metrics(cls, quote_row: dict[str, Any]) -> dict[str, float | None]:
+        last_price = cls._extract_number(
+            quote_row,
+            ("last", "price", "regularMarketPrice", "close", "adj_close"),
+        )
+        day_change_pct = cls._extract_number(
+            quote_row,
+            (
+                "change_percent",
+                "changePercent",
+                "percent_change",
+                "change_pct",
+                "regularMarketChangePercent",
+            ),
+        )
+        market_cap = cls._extract_number(
+            quote_row,
+            ("market_cap", "marketCap", "market_capitalization"),
+        )
+        pe_ratio = cls._extract_number(
+            quote_row,
+            ("pe_ratio", "peRatio", "trailingPE", "forwardPE"),
+        )
+        dividend_yield = cls._extract_number(
+            quote_row,
+            ("dividend_yield", "dividendYield", "trailingAnnualDividendYield"),
+        )
+        if dividend_yield is not None and 0 < dividend_yield <= 1:
+            dividend_yield *= 100
+
+        return {
+            "last_price": last_price,
+            "day_change_pct": day_change_pct,
+            "market_cap_usd": market_cap,
+            "pe_ratio": pe_ratio,
+            "dividend_yield_pct": dividend_yield,
+        }
+
+    @staticmethod
+    def _score_item(
+        *,
+        period_change_pct: float | None,
+        day_change_pct: float | None,
+        volatility_pct: float | None,
+    ) -> float | None:
+        metrics = [metric for metric in (period_change_pct, day_change_pct, volatility_pct) if metric is not None]
+        if not metrics:
+            return None
+
+        period_component = (period_change_pct or 0.0) * 0.7
+        day_component = (day_change_pct or 0.0) * 0.2
+        risk_component = (volatility_pct or 0.0) * -0.1
+        return round(period_component + day_component + risk_component, 4)
 
     def options_chain(self, symbol: str) -> ResearchResponse:
         try:
@@ -220,6 +366,151 @@ class OpenBBResearchService:
         return self._unavailable(
             symbol=symbol,
             detail=f"OpenBB quote request failed: {last_error or 'Unknown error'}",
+        )
+
+    def compare(
+        self,
+        *,
+        symbols: list[str],
+        period: str = "6mo",
+        interval: str = "1d",
+        baseline_symbol: str | None = None,
+    ) -> ResearchCompareResponse:
+        normalized_symbols: list[str] = []
+        seen: set[str] = set()
+        for raw_symbol in symbols:
+            symbol = _SYMBOL_PATTERN.sub("", str(raw_symbol or "").strip().upper())
+            if not symbol or symbol in seen:
+                continue
+            seen.add(symbol)
+            normalized_symbols.append(symbol)
+            if len(normalized_symbols) >= 20:
+                break
+
+        warnings: list[str] = []
+        items: list[ResearchCompareItem] = []
+        for symbol in normalized_symbols:
+            quote_response = self.quote(symbol)
+            history_response = self.price_history(symbol=symbol, period=period, interval=interval)
+
+            quote_row = (
+                quote_response.records[0]
+                if quote_response.available and quote_response.records and isinstance(quote_response.records[0], dict)
+                else {}
+            )
+            quote_metrics = self._quote_metrics(quote_row)
+
+            _, _, period_change_pct = self._compute_price_change(history_response.records)
+            volatility_pct = self._compute_history_volatility_pct(history_response.records, interval=interval)
+            score = self._score_item(
+                period_change_pct=period_change_pct,
+                day_change_pct=quote_metrics.get("day_change_pct"),
+                volatility_pct=volatility_pct,
+            )
+
+            available = bool(quote_response.available or history_response.available)
+            message_bits: list[str] = []
+            if quote_response.message:
+                message_bits.append(f"quote: {quote_response.message}")
+            if history_response.message:
+                message_bits.append(f"history: {history_response.message}")
+            if not quote_response.available:
+                warnings.append(f"{symbol}: quote unavailable ({quote_response.message})")
+            if not history_response.available:
+                warnings.append(f"{symbol}: history unavailable ({history_response.message})")
+
+            items.append(
+                ResearchCompareItem(
+                    symbol=symbol,
+                    available=available,
+                    message="; ".join(message_bits) if message_bits else "No research data available.",
+                    score=score,
+                    last_price=quote_metrics.get("last_price"),
+                    day_change_pct=quote_metrics.get("day_change_pct"),
+                    period_change_pct=period_change_pct,
+                    volatility_pct=volatility_pct,
+                    market_cap_usd=quote_metrics.get("market_cap_usd"),
+                    pe_ratio=quote_metrics.get("pe_ratio"),
+                    dividend_yield_pct=quote_metrics.get("dividend_yield_pct"),
+                    quote_records=len(quote_response.records),
+                    history_records=len(history_response.records),
+                )
+            )
+
+        ranked = sorted(
+            items,
+            key=lambda item: (item.score is None, -(item.score or -10_000), item.symbol),
+        )
+        for index, item in enumerate(ranked, start=1):
+            if item.score is not None:
+                item.rank = index
+
+        period_rows = [item for item in items if item.period_change_pct is not None]
+        volatility_rows = [item for item in items if item.volatility_pct is not None]
+
+        resolved_baseline = (
+            str(baseline_symbol or "").strip().upper()
+            if baseline_symbol
+            else None
+        )
+        if resolved_baseline and resolved_baseline not in normalized_symbols:
+            resolved_baseline = None
+        if resolved_baseline is None and normalized_symbols:
+            resolved_baseline = normalized_symbols[0]
+
+        baseline_relative_return_pct: dict[str, float] = {}
+        baseline_period_return: float | None = None
+        if resolved_baseline:
+            baseline_item = next((row for row in items if row.symbol == resolved_baseline), None)
+            baseline_period_return = baseline_item.period_change_pct if baseline_item else None
+        if baseline_period_return is not None:
+            for item in items:
+                if item.period_change_pct is None:
+                    continue
+                baseline_relative_return_pct[item.symbol] = round(
+                    item.period_change_pct - baseline_period_return,
+                    4,
+                )
+
+        summary = ResearchCompareSummary(
+            requested_symbols=len(normalized_symbols),
+            compared_symbols=len(items),
+            available_symbols=sum(1 for item in items if item.available),
+            baseline_symbol=resolved_baseline,
+            ranked_symbols=[item.symbol for item in ranked if item.rank is not None],
+            best_period_return_symbol=(
+                max(period_rows, key=lambda item: item.period_change_pct or -10_000).symbol if period_rows else None
+            ),
+            worst_period_return_symbol=(
+                min(period_rows, key=lambda item: item.period_change_pct or 10_000).symbol if period_rows else None
+            ),
+            highest_volatility_symbol=(
+                max(volatility_rows, key=lambda item: item.volatility_pct or -10_000).symbol if volatility_rows else None
+            ),
+            lowest_volatility_symbol=(
+                min(volatility_rows, key=lambda item: item.volatility_pct or 10_000).symbol if volatility_rows else None
+            ),
+            baseline_relative_return_pct=baseline_relative_return_pct,
+        )
+
+        deduped_warnings: list[str] = []
+        seen_warnings: set[str] = set()
+        for warning in warnings:
+            lowered = warning.lower()
+            if lowered in seen_warnings:
+                continue
+            seen_warnings.add(lowered)
+            deduped_warnings.append(warning)
+
+        return ResearchCompareResponse(
+            provider=self.provider,
+            period=str(period or "6mo").strip() or "6mo",
+            interval=str(interval or "1d").strip() or "1d",
+            generated_at=datetime.now(timezone.utc),
+            symbols=normalized_symbols,
+            summary=summary,
+            items=ranked,
+            warnings=deduped_warnings,
         )
 
     def get_quote(self, symbol: str) -> dict[str, Any]:

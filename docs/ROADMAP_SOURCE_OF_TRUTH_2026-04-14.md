@@ -8,6 +8,21 @@ Active canonical roadmap for post-Phase-3.7 execution.
 
 This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active planning sequence and supersedes roadmap sections in `docs/STANDALONE_BUILD_PLAN.md` that are now stale or already complete.
 
+## Progress Log
+
+### 2026-04-14 (Completed - Phase 4.1 Slice 1, Research Compare Vertical Slice)
+1. Added first-class research compare API surface:
+- `POST /api/research/compare` with symbol set, period/interval, baseline controls.
+- response includes ranked items, score, period return, volatility, and baseline-relative deltas.
+2. Added comparison computation logic in research service:
+- quote/history metric normalization
+- volatility estimation by interval
+- composite ranking score and summary winners.
+3. Added Copilot tool `research_compare` and system prompt guidance for multi-symbol candidate analysis.
+4. Added dedicated `Research` UI view with comparison form, ranked table, summary, and warning surfaces.
+5. Added regression coverage in `test_research_service.py` and `test_copilot_tool_updates.py`.
+6. Verification: `pytest -q services/orchestrator/tests` passes (`372 passed`).
+
 ## Product Purpose
 Build a production-grade all-in-one financial command center that unifies:
 1. Financial picture clarity (portfolio + cash/debt/goals/profile).
@@ -217,9 +232,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Research compare endpoint + UI + Copilot tool (Phase 4.1 Slice 1).
+1. Research dossier artifacts (`research_dossier`) with thesis/risks/catalysts and freshness metadata (Phase 4.1 Slice 2).
 2. Recommendation scoring engine with ranked inbox sorting (Phase 4.2 Slice 1).
-3. Import reconciliation report contract and persistence (Phase 5.1 Slice 1).
+3. Watchlist ranking endpoint + UI score surfacing (Phase 4.1 Slice 3).
 
 ## Guardrails
 1. Do not fork or embed full Ghostfolio/Ignidash apps into BuildWealth runtime path.

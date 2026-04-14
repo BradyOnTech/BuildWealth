@@ -613,6 +613,74 @@ class ResearchResponse(BaseModel):
     records: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class ResearchCompareRequest(BaseModel):
+    symbols: list[str] = Field(default_factory=list)
+    period: str = "6mo"
+    interval: str = "1d"
+    baseline_symbol: str | None = None
+
+    @model_validator(mode="after")
+    def _normalize_symbols(self) -> "ResearchCompareRequest":
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw in self.symbols:
+            symbol = str(raw or "").strip().upper()
+            if not symbol or symbol in seen:
+                continue
+            seen.add(symbol)
+            normalized.append(symbol)
+            if len(normalized) >= 20:
+                break
+        self.symbols = normalized
+        if self.baseline_symbol is not None:
+            resolved = str(self.baseline_symbol or "").strip().upper()
+            self.baseline_symbol = resolved or None
+        self.period = str(self.period or "6mo").strip() or "6mo"
+        self.interval = str(self.interval or "1d").strip() or "1d"
+        return self
+
+
+class ResearchCompareItem(BaseModel):
+    symbol: str
+    available: bool
+    message: str
+    rank: int | None = None
+    score: float | None = None
+    last_price: float | None = None
+    day_change_pct: float | None = None
+    period_change_pct: float | None = None
+    volatility_pct: float | None = None
+    market_cap_usd: float | None = None
+    pe_ratio: float | None = None
+    dividend_yield_pct: float | None = None
+    quote_records: int = 0
+    history_records: int = 0
+
+
+class ResearchCompareSummary(BaseModel):
+    requested_symbols: int
+    compared_symbols: int
+    available_symbols: int
+    baseline_symbol: str | None = None
+    ranked_symbols: list[str] = Field(default_factory=list)
+    best_period_return_symbol: str | None = None
+    worst_period_return_symbol: str | None = None
+    highest_volatility_symbol: str | None = None
+    lowest_volatility_symbol: str | None = None
+    baseline_relative_return_pct: dict[str, float] = Field(default_factory=dict)
+
+
+class ResearchCompareResponse(BaseModel):
+    provider: str
+    period: str
+    interval: str
+    generated_at: datetime
+    symbols: list[str] = Field(default_factory=list)
+    summary: ResearchCompareSummary
+    items: list[ResearchCompareItem] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class CsvTemplateOption(BaseModel):
     id: str
     name: str

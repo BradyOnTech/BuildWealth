@@ -17,6 +17,7 @@ def test_copilot_registry_includes_phase_3_5_tools() -> None:
         "set_contribution_rules",
         "get_buildwealth_context",
         "pin_watchlist_research_to_plan",
+        "research_compare",
     }
     assert required_tools <= set(main.copilot.tools.keys())
 
@@ -64,6 +65,15 @@ def test_pin_watchlist_research_tool_contract() -> None:
     assert "max_symbols" in properties
 
 
+def test_research_compare_tool_contract() -> None:
+    tool = main.copilot.tools["research_compare"]
+    properties = tool.parameters.get("properties", {})
+    assert "symbols" in properties
+    assert "period" in properties
+    assert "interval" in properties
+    assert "baseline_symbol" in properties
+
+
 def test_tool_pin_watchlist_research_to_plan_calls_bridge(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -101,6 +111,51 @@ def test_tool_pin_watchlist_research_to_plan_calls_bridge(
     assert payload["plan_id"] == "plan-abc"
     assert payload["template_id"] == "research_watchlist_bridge"
     assert payload["pinned_symbols"] == ["NVDA", "VTI"]
+
+
+def test_tool_research_compare_calls_research_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        def model_dump(self, mode: str = "json") -> dict[str, object]:
+            del mode
+            return {
+                "provider": "test",
+                "period": "6mo",
+                "interval": "1d",
+                "symbols": ["MSFT", "AAPL"],
+                "summary": {"best_period_return_symbol": "MSFT"},
+                "items": [
+                    {"symbol": "MSFT", "rank": 1},
+                    {"symbol": "AAPL", "rank": 2},
+                ],
+                "warnings": [],
+            }
+
+    class FakeResearchService:
+        def compare(self, *, symbols, period: str, interval: str, baseline_symbol: str | None):
+            assert symbols == ["MSFT", "AAPL"]
+            assert period == "6mo"
+            assert interval == "1d"
+            assert baseline_symbol == "MSFT"
+            return FakeResponse()
+
+    monkeypatch.setattr(main, "research_service", FakeResearchService())
+
+    payload = asyncio.run(
+        main.tool_research_compare(
+            {
+                "symbols": ["msft", "AAPL"],
+                "period": "6mo",
+                "interval": "1d",
+                "baseline_symbol": "MSFT",
+            }
+        )
+    )
+
+    assert payload["provider"] == "test"
+    assert payload["summary"]["best_period_return_symbol"] == "MSFT"
+    assert [item["symbol"] for item in payload["items"]] == ["MSFT", "AAPL"]
 
 
 def test_tool_add_timeline_event_appends_event_and_preserves_retirement_payload(

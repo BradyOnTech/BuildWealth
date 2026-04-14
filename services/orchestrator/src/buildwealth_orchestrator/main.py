@@ -30,6 +30,8 @@ from buildwealth_orchestrator.schemas import (
     OnboardingStatusResponse,
     OptionsChainRequest,
     PriceHistoryRequest,
+    ResearchCompareRequest,
+    ResearchCompareResponse,
     PlanArtifactSummary,
     PlanArtifactResponse,
     PlanCreateRequest,
@@ -370,8 +372,9 @@ copilot = FinancialCopilot(
         "- For reusable life-event presets/templates → call get_plan_branch_templates or update_plan_branch_templates.\n"
         "- To move research watchlist thesis into planning branches → call pin_watchlist_research_to_plan.\n"
         "- For 'what should I do?' → call get_today_dashboard and list_recommendations.\n"
-        "- For stock/investment research → call research_quote or research_price_history, "
-        "then call simulate_trade to show how buying it would affect portfolio allocation.\n"
+        "- For stock/investment research on one ticker → call research_quote or research_price_history.\n"
+        "- For comparing multiple investment candidates → call research_compare, "
+        "then call simulate_trade to show how a chosen trade would affect portfolio allocation.\n"
         "- For 'what if I buy/sell X?' → call simulate_trade to show allocation and concentration impact.\n"
         "- For daily reviews → call get_financial_health, get_plan_tracking, and get_today_dashboard.\n\n"
         "RESPONSE GUIDELINES:\n"
@@ -5170,6 +5173,35 @@ async def tool_research_price_history(arguments: dict[str, object]) -> dict[str,
     return result
 
 
+async def tool_research_compare(arguments: dict[str, object]) -> dict[str, object]:
+    symbols_raw = arguments.get("symbols")
+    symbols: list[str] = []
+    if isinstance(symbols_raw, list):
+        symbols = [str(item or "").strip().upper() for item in symbols_raw]
+    elif isinstance(symbols_raw, str):
+        symbols = [item.strip().upper() for item in symbols_raw.split(",")]
+
+    symbols = [symbol for symbol in symbols if symbol]
+    if len(symbols) < 2:
+        symbols = ["AAPL", "MSFT"]
+
+    period = str(arguments.get("period", "6mo")).strip() or "6mo"
+    interval = str(arguments.get("interval", "1d")).strip() or "1d"
+    baseline_symbol = str(arguments.get("baseline_symbol") or "").strip().upper() or None
+
+    result = research_service.compare(
+        symbols=symbols,
+        period=period,
+        interval=interval,
+        baseline_symbol=baseline_symbol,
+    ).model_dump(mode="json")
+    items = result.get("items", [])
+    if isinstance(items, list):
+        result["items"] = items[:20]
+        result["items_truncated"] = max(0, len(items) - 20)
+    return result
+
+
 def _normalize_account_total_rows(payload: Any) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]]
     if isinstance(payload, dict):
@@ -6568,6 +6600,25 @@ def configure_copilot_tools() -> None:
             "additionalProperties": False,
         },
         handler=tool_research_price_history,
+    )
+    copilot.register_tool(
+        name="research_compare",
+        description=(
+            "Compare multiple tickers using quote + historical-return context. "
+            "Returns ranked symbols with period return, volatility, and baseline-relative deltas."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbols": {"type": "array", "items": {"type": "string"}},
+                "period": {"type": "string"},
+                "interval": {"type": "string"},
+                "baseline_symbol": {"type": "string"},
+            },
+            "required": ["symbols"],
+            "additionalProperties": False,
+        },
+        handler=tool_research_compare,
     )
     copilot.register_tool(
         name="list_accounts",
@@ -8922,6 +8973,19 @@ def price_history(request: PriceHistoryRequest) -> ResearchResponse:
         symbol=request.symbol,
         period=request.period,
         interval=request.interval,
+    )
+
+
+@app.post("/api/research/compare", response_model=ResearchCompareResponse)
+def research_compare(request: ResearchCompareRequest) -> ResearchCompareResponse:
+    if len(request.symbols) < 2:
+        raise HTTPException(status_code=400, detail="Research compare requires at least 2 symbols.")
+
+    return research_service.compare(
+        symbols=request.symbols,
+        period=request.period,
+        interval=request.interval,
+        baseline_symbol=request.baseline_symbol,
     )
 
 
