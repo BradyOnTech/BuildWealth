@@ -853,6 +853,8 @@ class RecommendationApplyRequest(BaseModel):
     plan_settings_updates: dict[str, Any] = Field(default_factory=dict)
     rationale: str = ""
     decision_status: str = "accepted"
+    create_decision_packet: bool = True
+    decision_packet_research_symbols: list[str] = Field(default_factory=list)
 
 
 class RecommendationRejectRequest(BaseModel):
@@ -862,6 +864,7 @@ class RecommendationRejectRequest(BaseModel):
 class RecommendationActionResponse(BaseModel):
     recommendation: RecommendationItem
     plan: PlanDetailResponse | None = None
+    decision_packet_artifact: PlanArtifactSummary | None = None
     message: str
 
 

@@ -34,6 +34,13 @@ def test_get_buildwealth_context_tool_supports_detail_level_control() -> None:
     assert detail_field.get("enum") == ["light", "full"]
 
 
+def test_apply_recommendation_tool_supports_decision_packet_controls() -> None:
+    tool = main.copilot.tools["apply_recommendation"]
+    properties = tool.parameters.get("properties", {})
+    assert "create_decision_packet" in properties
+    assert "decision_packet_research_symbols" in properties
+
+
 def test_tool_add_timeline_event_appends_event_and_preserves_retirement_payload(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

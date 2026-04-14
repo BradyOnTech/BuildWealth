@@ -30,6 +30,7 @@ from buildwealth_orchestrator.schemas import (
     OnboardingStatusResponse,
     OptionsChainRequest,
     PriceHistoryRequest,
+    PlanArtifactSummary,
     PlanArtifactResponse,
     PlanCreateRequest,
     PlanDecisionCreateRequest,
@@ -2437,6 +2438,308 @@ def _resolve_recommendation_plan_id(
     raise ValueError("No plan_id is available for applying this recommendation.")
 
 
+def _extract_decision_packet_symbols(
+    recommendation: dict[str, Any],
+    request_symbols: list[str] | None = None,
+    context_payload: dict[str, Any] | None = None,
+) -> list[str]:
+    candidates: list[Any] = []
+    if isinstance(request_symbols, list):
+        candidates.extend(request_symbols)
+
+    action_payload = recommendation.get("action_payload")
+    if isinstance(action_payload, dict):
+        for key in ("research_symbols", "symbols"):
+            raw = action_payload.get(key)
+            if isinstance(raw, list):
+                candidates.extend(raw)
+        evidence = action_payload.get("evidence")
+        if isinstance(evidence, dict):
+            for key in ("research_symbols", "symbols"):
+                raw = evidence.get(key)
+                if isinstance(raw, list):
+                    candidates.extend(raw)
+
+    if isinstance(context_payload, dict):
+        research_payload = context_payload.get("research")
+        if isinstance(research_payload, dict):
+            for key in ("requested_symbols", "symbols"):
+                raw = research_payload.get(key)
+                if isinstance(raw, list):
+                    candidates.extend(raw)
+
+    return normalize_research_symbols(candidates, max_symbols=16)
+
+
+def _build_decision_packet_assumptions(
+    plan_id: str,
+    plan_detail: PlanDetailResponse | None,
+) -> dict[str, Any]:
+    plan_settings: dict[str, Any] = {}
+    if plan_detail is not None:
+        plan_settings = {
+            key: value
+            for key, value in plan_detail.settings.model_dump(mode="json").items()
+            if value is not None and key not in {"schema_version", "updated_at"}
+        }
+
+    active_assumption_set_id: str | None = None
+    active_assumption_set: dict[str, Any] = {}
+    assumption_set_count = 0
+    try:
+        payload = plan_workspace.get_plan_assumption_sets(plan_id)
+        sets = payload.get("sets")
+        assumption_sets = [item for item in sets if isinstance(item, dict)] if isinstance(sets, list) else []
+        assumption_set_count = len(assumption_sets)
+        active_assumption_set_id = str(payload.get("active_assumption_set_id") or "").strip() or None
+        if active_assumption_set_id:
+            for item in assumption_sets:
+                if str(item.get("id") or "").strip() != active_assumption_set_id:
+                    continue
+                active_assumption_set = {
+                    key: value
+                    for key, value in item.items()
+                    if value is not None
+                }
+                break
+    except Exception:
+        active_assumption_set = {}
+
+    return {
+        "plan_settings": plan_settings,
+        "active_assumption_set_id": active_assumption_set_id,
+        "active_assumption_set": active_assumption_set,
+        "assumption_sets_count": assumption_set_count,
+    }
+
+
+def _build_decision_packet_markdown(
+    *,
+    recommendation: dict[str, Any],
+    plan_id: str,
+    rationale: str,
+    decision_status: str,
+    cited_symbols: list[str],
+    assumptions_payload: dict[str, Any],
+    context_payload: dict[str, Any] | None = None,
+    context_error: str | None = None,
+) -> str:
+    context = context_payload if isinstance(context_payload, dict) else {}
+    context_scope = context.get("scope") if isinstance(context.get("scope"), dict) else {}
+    context_quality = context.get("quality") if isinstance(context.get("quality"), dict) else {}
+    context_freshness = (
+        context_quality.get("freshness")
+        if isinstance(context_quality.get("freshness"), dict)
+        else {}
+    )
+    context_coverage = (
+        context_quality.get("coverage")
+        if isinstance(context_quality.get("coverage"), dict)
+        else {}
+    )
+    context_warnings = context.get("warnings") if isinstance(context.get("warnings"), list) else []
+    context_summary = str(context.get("summary") or "").strip()
+
+    packet_payload = {
+        "recommendation": {
+            "id": recommendation.get("id"),
+            "title": recommendation.get("title"),
+            "priority": recommendation.get("priority"),
+            "source": recommendation.get("source"),
+            "recommendation_type": recommendation.get("recommendation_type"),
+            "created_at": recommendation.get("created_at"),
+            "resolved_at": recommendation.get("resolved_at"),
+        },
+        "decision": {
+            "plan_id": plan_id,
+            "decision_status": decision_status,
+            "rationale": rationale,
+            "cited_research_symbols": cited_symbols,
+        },
+        "assumptions": assumptions_payload,
+        "context": {
+            "generated_at": context.get("generated_at"),
+            "scope": context_scope,
+            "quality": {
+                "freshness": context_freshness,
+                "coverage": context_coverage,
+                "warning_count": len(context_warnings),
+            },
+            "error": context_error,
+        },
+    }
+
+    lines: list[str] = [
+        f"# Decision Packet: {recommendation.get('title') or 'Recommendation'}",
+        "",
+        "## Recommendation",
+        "",
+        f"- Recommendation ID: `{recommendation.get('id')}`",
+        f"- Plan ID: `{plan_id}`",
+        f"- Type: `{recommendation.get('recommendation_type') or 'general'}`",
+        f"- Priority: `{recommendation.get('priority') or 'medium'}`",
+        f"- Source: `{recommendation.get('source') or 'manual'}`",
+        f"- Decision Status: `{decision_status}`",
+        f"- Rationale: {rationale or 'n/a'}",
+        "",
+        "## Cited Research Symbols",
+        "",
+    ]
+    if cited_symbols:
+        lines.append(f"- {', '.join(cited_symbols)}")
+    else:
+        lines.append("- None captured for this decision.")
+
+    lines.extend(["", "## Unified Context Snapshot", ""])
+    if context_error:
+        lines.append(f"- Context generation warning: {context_error}")
+    if context:
+        lines.extend(
+            [
+                f"- Context generated at: `{context.get('generated_at')}`",
+                f"- Context detail level: `{context_scope.get('detail_level')}`",
+                f"- Coverage score: `{context_coverage.get('score_pct')}`",
+                f"- Snapshot stale: `{context_freshness.get('snapshot_stale')}`",
+                f"- Snapshot age seconds: `{context_freshness.get('snapshot_age_seconds')}`",
+                f"- Warning count: `{len(context_warnings)}`",
+            ]
+        )
+        if context_summary:
+            lines.extend(["", "### Context Summary", "", context_summary])
+        if context_warnings:
+            lines.extend(["", "### Context Warnings", ""])
+            lines.extend([f"- {str(item)}" for item in context_warnings[:8]])
+    else:
+        lines.append("- Unified context payload unavailable for this packet.")
+
+    plan_settings = assumptions_payload.get("plan_settings")
+    active_set = assumptions_payload.get("active_assumption_set")
+    lines.extend(["", "## Selected Plan Assumptions", ""])
+    if isinstance(plan_settings, dict) and plan_settings:
+        lines.append("- Plan settings overrides in effect:")
+        lines.extend([f"  - `{key}`: `{value}`" for key, value in sorted(plan_settings.items())])
+    else:
+        lines.append("- Plan settings overrides in effect: none")
+
+    if isinstance(active_set, dict) and active_set:
+        set_id = active_set.get("id")
+        set_name = active_set.get("name")
+        lines.append(f"- Active assumption set: `{set_name or set_id or 'unknown'}`")
+        for key, value in sorted(active_set.items()):
+            if key in {"id", "name"}:
+                continue
+            lines.append(f"  - `{key}`: `{value}`")
+    else:
+        active_set_id = assumptions_payload.get("active_assumption_set_id")
+        lines.append(f"- Active assumption set: `{active_set_id or 'none'}`")
+
+    lines.extend(
+        [
+            "",
+            "## Structured Packet",
+            "",
+            "```json",
+            json.dumps(packet_payload, indent=2, default=str),
+            "```",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+async def apply_recommendation_with_decision_packet(
+    recommendation_id: str,
+    request: RecommendationApplyRequest,
+) -> RecommendationActionResponse:
+    result = apply_recommendation(recommendation_id, request)
+    if not request.create_decision_packet or result.plan is None:
+        return result
+
+    recommendation_payload = result.recommendation.model_dump(mode="json")
+    plan_id = str(result.plan.id)
+
+    context_payload: dict[str, Any] | None = None
+    context_error: str | None = None
+    requested_symbols = normalize_research_symbols(request.decision_packet_research_symbols, max_symbols=12)
+    try:
+        context_payload = await build_buildwealth_context_payload(
+            use_live_snapshot=False,
+            plan_id=plan_id,
+            include_research=True,
+            include_plan_projection=False,
+            force_refresh=False,
+            research_symbols=requested_symbols,
+            max_recommendations=10,
+            max_plan_decisions=8,
+            summary_max_chars=1800,
+            research_symbol_limit=max(DEFAULT_RESEARCH_SYMBOL_LIMIT, len(requested_symbols) or 0),
+            detail_level="light",
+        )
+    except Exception as exc:
+        context_error = str(exc)
+
+    cited_symbols = _extract_decision_packet_symbols(
+        recommendation_payload,
+        request_symbols=requested_symbols,
+        context_payload=context_payload,
+    )
+    assumptions_payload = _build_decision_packet_assumptions(plan_id, result.plan)
+    decision_status = str(request.decision_status or "accepted").strip() or "accepted"
+    rationale = request.rationale.strip() if request.rationale else str(recommendation_payload.get("detail") or "")
+    markdown = _build_decision_packet_markdown(
+        recommendation=recommendation_payload,
+        plan_id=plan_id,
+        rationale=rationale,
+        decision_status=decision_status,
+        cited_symbols=cited_symbols,
+        assumptions_payload=assumptions_payload,
+        context_payload=context_payload,
+        context_error=context_error,
+    )
+
+    try:
+        artifact_payload = plan_workspace.write_artifact(
+            plan_id=plan_id,
+            title=f"Decision Packet - {recommendation_payload.get('title') or recommendation_id}",
+            markdown=markdown,
+            kind="decision_packet",
+        )
+        artifact_summary = PlanArtifactSummary(**artifact_payload)
+    except Exception as exc:
+        return RecommendationActionResponse(
+            recommendation=result.recommendation,
+            plan=result.plan,
+            decision_packet_artifact=None,
+            message=f"{result.message} Decision packet could not be written: {exc}",
+        )
+
+    action_payload_raw = recommendation_payload.get("action_payload")
+    action_payload = dict(action_payload_raw) if isinstance(action_payload_raw, dict) else {}
+    action_payload["decision_packet"] = {
+        "artifact_id": artifact_summary.id,
+        "file_name": artifact_summary.file_name,
+        "plan_id": plan_id,
+        "created_at": artifact_summary.created_at.isoformat(),
+        "decision_status": decision_status,
+        "cited_research_symbols": cited_symbols,
+        "context_generated_at": context_payload.get("generated_at") if isinstance(context_payload, dict) else None,
+        "assumption_set_id": assumptions_payload.get("active_assumption_set_id"),
+    }
+
+    updated_recommendation = recommendation_inbox.update(
+        recommendation_id,
+        updates={"action_payload": action_payload},
+    )
+    refreshed_plan = PlanDetailResponse(**plan_workspace.get_plan(plan_id))
+
+    return RecommendationActionResponse(
+        recommendation=RecommendationItem(**updated_recommendation),
+        plan=refreshed_plan,
+        decision_packet_artifact=artifact_summary,
+        message=f"{result.message} Decision packet saved to plan artifacts.",
+    )
+
+
 def apply_recommendation(
     recommendation_id: str,
     request: RecommendationApplyRequest,
@@ -3768,8 +4071,14 @@ async def tool_apply_recommendation(arguments: dict[str, object]) -> dict[str, o
         ),
         rationale=str(arguments.get("rationale") or ""),
         decision_status=str(arguments.get("decision_status") or "accepted"),
+        create_decision_packet=_coerce_bool(arguments.get("create_decision_packet"), True),
+        decision_packet_research_symbols=(
+            [str(item) for item in arguments.get("decision_packet_research_symbols")]
+            if isinstance(arguments.get("decision_packet_research_symbols"), list)
+            else []
+        ),
     )
-    result = apply_recommendation(recommendation_id, payload)
+    result = await apply_recommendation_with_decision_packet(recommendation_id, payload)
     return result.model_dump(mode="json")
 
 
@@ -5239,7 +5548,8 @@ def configure_copilot_tools() -> None:
     copilot.register_tool(
         name="apply_recommendation",
         description=(
-            "Apply a recommendation. For plan_settings_update recommendations, may include plan_settings_updates overrides."
+            "Apply a recommendation. For plan_settings_update recommendations, may include plan_settings_updates overrides. "
+            "By default this also writes a decision packet artifact with context, assumptions, and cited research symbols."
         ),
         parameters={
             "type": "object",
@@ -5249,6 +5559,8 @@ def configure_copilot_tools() -> None:
                 "plan_settings_updates": {"type": "object"},
                 "rationale": {"type": "string"},
                 "decision_status": {"type": "string"},
+                "create_decision_packet": {"type": "boolean"},
+                "decision_packet_research_symbols": {"type": "array", "items": {"type": "string"}},
             },
             "required": ["recommendation_id"],
             "additionalProperties": False,
@@ -6475,12 +6787,12 @@ def update_recommendation(
 
 
 @app.post("/api/recommendations/{recommendation_id}/apply", response_model=RecommendationActionResponse)
-def apply_recommendation_route(
+async def apply_recommendation_route(
     recommendation_id: str,
     request: RecommendationApplyRequest,
 ) -> RecommendationActionResponse:
     try:
-        return apply_recommendation(recommendation_id, request)
+        return await apply_recommendation_with_decision_packet(recommendation_id, request)
     except RecommendationNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PlanNotFoundError as exc:

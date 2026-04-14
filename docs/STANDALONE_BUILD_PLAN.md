@@ -57,6 +57,19 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-14 (Completed - Post-3.7 Slice 1, Decision Packet v1)
+- Added first-class decision packet generation on recommendation application:
+  - recommendation apply flows (API + Copilot tool) now generate a decision packet artifact by default.
+  - packet captures recommendation metadata, unified context snapshot summary/quality, selected plan assumptions, and cited research symbols.
+- Decision packet artifacts are written into the active plan artifact store using `decision_packet` artifact kind.
+- Recommendation action payloads now persist decision-packet metadata (`artifact_id`, `cited_research_symbols`, context/assumption references) for auditability.
+- Added apply controls:
+  - `create_decision_packet` (default `true`)
+  - `decision_packet_research_symbols` (optional symbol overrides/citations)
+- Added regression coverage:
+  - new `test_recommendation_actions.py` for packet creation and opt-out behavior
+  - tool schema coverage update in `test_copilot_tool_updates.py`.
+
 ### 2026-04-14 (Completed - Phase 3.7 Unified Context Packaging, Slice 6)
 - Added cache reset controls for deterministic local troubleshooting:
   - endpoint: `POST /api/copilot/context/cache/reset`

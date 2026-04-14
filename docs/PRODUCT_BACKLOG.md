@@ -13,9 +13,9 @@ Detailed implementation sequencing lives in:
 - [Next Execution Steps (2026-04-14)](./NEXT_EXECUTION_STEPS_2026-04-14.md)
 
 ## Active Product Workstreams
-1. Unified context productionization and quality hardening.
-2. Portfolio/planning depth parity expansion where high leverage remains.
-3. Copilot decision workflows and evidence/freshness UX hardening.
+1. Post-3.7 decision intelligence expansion (decision packets, action closure, traceability).
+2. Research-to-planning bridge (pin symbols/thesis into branch assumptions and scenario workflows).
+3. Portfolio/planning depth parity expansion where high leverage remains.
 4. Sidecar contract governance, compatibility, and observability.
 5. Data migration safety and operator runbook quality.
 

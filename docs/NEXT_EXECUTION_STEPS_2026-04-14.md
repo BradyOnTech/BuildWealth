@@ -143,8 +143,9 @@ Why:
 
 ## Post-3.7 Recommended Next Workstream
 1. Decision intelligence loop:
-- Add a first-class “decision packet” artifact that combines unified context + selected plan assumptions + cited research symbols for each major recommendation.
-- Goal: make Copilot guidance auditable and directly actionable in plan workflows.
+- Status: Completed (Decision Packet v1)
+- Recommendation application now writes a decision packet artifact by default, including unified context snapshot metadata, selected assumptions, and cited research symbols.
+- Apply flows now support `create_decision_packet` and `decision_packet_research_symbols` controls.
 
 2. Research-to-planning bridge:
 - Add UI/API flow to pin research symbols and thesis notes directly into plan branches/scenario assumptions.
