@@ -34,6 +34,9 @@ export function template() {
         <div class="view-header"><h3>Assumption Sets</h3><button class="primary small" id="save-plan-assumption-sets" disabled>Save Assumption Sets</button></div>
         <p class="hint tight">Edit named assumption sets JSON. Active set is applied by default when running scenarios.</p>
         <label class="field"><span>Assumption Sets JSON</span><textarea id="plan-assumption-sets" rows="10" placeholder='{"active_assumption_set_id":"default","sets":[...]}' disabled></textarea></label>
+        <div class="view-header"><h3>Contribution Rules</h3><button class="primary small" id="save-plan-contribution-rules" disabled>Save Contribution Rules</button></div>
+        <p class="hint tight">Edit contribution allocation rules JSON (base rule + ordered account rules) used by planning scenarios.</p>
+        <label class="field"><span>Contribution Rules JSON</span><textarea id="plan-contribution-rules" rows="10" placeholder='{"base_rule":{"type":"save"},"rules":[...]}' disabled></textarea></label>
         <label class="field"><span>Context Snapshot</span><textarea id="plan-context" rows="6" readonly></textarea></label>
         <div class="view-header"><h3>Plan Settings</h3><button class="primary small" id="save-plan-settings" disabled>Save Settings</button></div>
         <p class="hint tight" id="plan-settings-meta">Blank values use global defaults from planner configuration.</p>

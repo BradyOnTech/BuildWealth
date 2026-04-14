@@ -207,6 +207,9 @@ class PlanWorkspace:
             "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
             "base_rule": {"type": "save"},
             "rules": [],
+            "profile_id": None,
+            "employer_match_target_usd": 6000.0,
+            "age": 35,
         }
 
     @staticmethod
@@ -612,6 +615,58 @@ class PlanWorkspace:
                 "rmd_birth_year": resolved_rmd_birth_year,
                 "rmd_start_age": resolved_rmd_start_age,
             },
+        }
+
+    def _sanitize_contribution_rules_payload(self, raw_payload: dict[str, Any]) -> dict[str, Any]:
+        default_payload = self._default_contribution_rules()
+        input_payload = raw_payload if isinstance(raw_payload, dict) else {}
+
+        base_rule_raw = input_payload.get("base_rule")
+        if not isinstance(base_rule_raw, dict):
+            base_rule_raw = default_payload.get("base_rule", {"type": "save"})
+        base_rule_type = str(base_rule_raw.get("type") or "save").strip().lower()
+        if base_rule_type not in {"save", "spend"}:
+            raise ValueError("contribution_rules.base_rule.type must be one of: save, spend")
+        base_rule = {"type": base_rule_type}
+
+        rules_raw = input_payload.get("rules")
+        if rules_raw is None:
+            rules_raw = default_payload.get("rules", [])
+        if not isinstance(rules_raw, list):
+            raise ValueError("contribution_rules.rules must be a list")
+        rules: list[dict[str, Any]] = []
+        for index, item in enumerate(rules_raw, start=1):
+            if not isinstance(item, dict):
+                raise ValueError(f"contribution_rules.rules[{index}] must be an object")
+            rules.append(item)
+
+        profile_id = str(input_payload.get("profile_id") or "").strip() or None
+
+        try:
+            employer_match_target_usd = float(input_payload.get("employer_match_target_usd") or 6000.0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("contribution_rules.employer_match_target_usd must be numeric") from exc
+        if employer_match_target_usd < 0:
+            raise ValueError("contribution_rules.employer_match_target_usd must be >= 0")
+
+        age_raw = input_payload.get("age")
+        if age_raw is None:
+            age = 35
+        else:
+            try:
+                age = int(age_raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("contribution_rules.age must be an integer") from exc
+            if age < 0 or age > 120:
+                raise ValueError("contribution_rules.age must be between 0 and 120")
+
+        return {
+            "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
+            "base_rule": base_rule,
+            "rules": rules,
+            "profile_id": profile_id,
+            "employer_match_target_usd": employer_match_target_usd,
+            "age": age,
         }
 
     def _sanitize_assumption_sets_payload(self, raw_payload: dict[str, Any]) -> dict[str, Any]:
@@ -1365,6 +1420,53 @@ class PlanWorkspace:
                 plan_id=plan_id,
                 summary=f"Updated plan timeline: {event_count} event(s).",
                 rationale=(rationale or "Timeline events/retirement milestones were updated."),
+                status=status,
+            )
+        else:
+            self.refresh_context(plan_id)
+
+        return sanitized
+
+    def get_plan_contribution_rules(self, plan_id: str) -> dict[str, Any]:
+        plan_dir = self._plan_dir(plan_id)
+        if not plan_dir.exists():
+            raise PlanNotFoundError(f"Plan not found: {plan_id}")
+
+        payload = self._read_or_initialize_json(
+            self._contribution_rules_path(plan_id),
+            self._default_contribution_rules(),
+        )
+        sanitized = self._sanitize_contribution_rules_payload(payload)
+        self._contribution_rules_path(plan_id).write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
+        return sanitized
+
+    def update_plan_contribution_rules(
+        self,
+        plan_id: str,
+        contribution_rules_payload: dict[str, Any],
+        rationale: str | None = None,
+        status: str = "accepted",
+        log_decision: bool = True,
+    ) -> dict[str, Any]:
+        plan_dir = self._plan_dir(plan_id)
+        if not plan_dir.exists():
+            raise PlanNotFoundError(f"Plan not found: {plan_id}")
+
+        sanitized = self._sanitize_contribution_rules_payload(contribution_rules_payload)
+        self._contribution_rules_path(plan_id).write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
+
+        index_payload = self._load_index()
+        self._touch_plan(index_payload, plan_id)
+        self._save_index(index_payload)
+
+        if log_decision:
+            self.append_decision(
+                plan_id=plan_id,
+                summary=(
+                    "Updated contribution rules: "
+                    f"{len(sanitized.get('rules', []))} rule(s), base={sanitized.get('base_rule', {}).get('type')}"
+                ),
+                rationale=(rationale or "Contribution-allocation rules were updated."),
                 status=status,
             )
         else:

@@ -38,7 +38,7 @@ const projectionState = {
 };
 
 function setControlsEnabled(enabled) {
-  ['activate-plan', 'refresh-plan-context', 'save-plan', 'save-plan-timeline', 'save-plan-assumption-sets', 'save-plan-branch-templates', 'save-plan-settings', 'run-scenario-diff', 'apply-scenario-overrides', 'load-branch-template', 'run-scenario-branch', 'refresh-projection-profile', 'projection-source', 'projection-scenario-label', 'projection-account-metric', 'add-decision', 'plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-branch-templates', 'diff-assumption-set-id', 'diff-candidate-assumption-set-id', 'branch-template-id', 'scenario-branch-name', 'branch-assumption-set-id', 'scenario-branch-events', 'decision-summary', 'decision-rationale', 'decision-status'].forEach(id => { const el = byId(id); if (el) el.disabled = !enabled; });
+  ['activate-plan', 'refresh-plan-context', 'save-plan', 'save-plan-timeline', 'save-plan-assumption-sets', 'save-plan-contribution-rules', 'save-plan-branch-templates', 'save-plan-settings', 'run-scenario-diff', 'apply-scenario-overrides', 'load-branch-template', 'run-scenario-branch', 'refresh-projection-profile', 'projection-source', 'projection-scenario-label', 'projection-account-metric', 'add-decision', 'plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-contribution-rules', 'plan-branch-templates', 'diff-assumption-set-id', 'diff-candidate-assumption-set-id', 'branch-template-id', 'scenario-branch-name', 'branch-assumption-set-id', 'scenario-branch-events', 'decision-summary', 'decision-rationale', 'decision-status'].forEach(id => { const el = byId(id); if (el) el.disabled = !enabled; });
   for (const f of [...PLAN_SETTING_FIELDS, ...DIFF_SETTING_FIELDS]) { const el = byId(f.inputId); if (el) el.disabled = !enabled; }
 }
 
@@ -741,7 +741,7 @@ export function clearDetail() {
   state.currentPlanDetail = null;
   byId('plan-meta').textContent = 'Select a plan to view details.';
   byId('plan-settings-meta').textContent = 'Blank values use global defaults from planner configuration.';
-  ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-branch-templates', 'plan-context', 'scenario-diff-output', 'scenario-branch-name', 'scenario-branch-events', 'scenario-branch-output', 'artifact-content'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
+  ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-contribution-rules', 'plan-branch-templates', 'plan-context', 'scenario-diff-output', 'scenario-branch-name', 'scenario-branch-events', 'scenario-branch-output', 'artifact-content'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
   byId('scenario-diff-summary').textContent = 'No scenario diff run yet.';
   byId('scenario-branch-summary').textContent = 'No scenario branch run yet.';
   byId('projection-summary').textContent = 'Run a scenario diff or branch to populate projection visuals.';
@@ -772,6 +772,7 @@ export function renderDetail() {
   byId('plan-tasks').value = d.files?.tasks_markdown || '';
   byId('plan-timeline').value = d.files?.timeline_json || '';
   byId('plan-assumption-sets').value = d.files?.assumption_sets_json || '';
+  byId('plan-contribution-rules').value = d.files?.contribution_rules_json || '';
   byId('plan-branch-templates').value = d.files?.branch_templates_json || '';
   setAssumptionSetOptions(d.files?.assumption_sets_json || '');
   setBranchTemplateOptions(d.files?.branch_templates_json || '');
@@ -1132,6 +1133,32 @@ export function initEditor(refreshPlans) {
       writeLog('Assumption sets saved.');
     } catch (e) {
       writeLog(`Save assumption sets failed: ${e.message}`, null, true);
+    }
+  });
+
+  byId('save-plan-contribution-rules').addEventListener('click', async () => {
+    if (!state.currentPlanId) { writeLog('Select a plan first.', null, true); return; }
+    const raw = byId('plan-contribution-rules').value.trim();
+    let payload;
+    try {
+      payload = raw ? JSON.parse(raw) : {};
+    } catch (e) {
+      writeLog(`Contribution rules JSON is invalid: ${e.message}`, null, true);
+      return;
+    }
+    writeLog('Saving contribution rules...', payload);
+    try {
+      await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/contribution-rules`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      state.currentPlanDetail = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}`);
+      renderDetail();
+      await refreshPlans();
+      writeLog('Contribution rules saved.');
+    } catch (e) {
+      writeLog(`Save contribution rules failed: ${e.message}`, null, true);
     }
   });
 

@@ -953,6 +953,23 @@ class PlanTimelineUpdateRequest(BaseModel):
     retirement: PlanTimelineRetirement = Field(default_factory=PlanTimelineRetirement)
 
 
+class PlanContributionRulesResponse(BaseModel):
+    schema_version: int = 2
+    base_rule: dict[str, Any] = Field(default_factory=lambda: {"type": "save"})
+    rules: list[dict[str, Any]] = Field(default_factory=list)
+    profile_id: str | None = None
+    employer_match_target_usd: float = Field(default=6000.0, ge=0)
+    age: int = Field(default=35, ge=0, le=120)
+
+
+class PlanContributionRulesUpdateRequest(BaseModel):
+    base_rule: dict[str, Any] = Field(default_factory=lambda: {"type": "save"})
+    rules: list[dict[str, Any]] = Field(default_factory=list)
+    profile_id: str | None = None
+    employer_match_target_usd: float = Field(default=6000.0, ge=0)
+    age: int = Field(default=35, ge=0, le=120)
+
+
 class PlanAssumptionSet(BaseModel):
     id: str
     name: str

@@ -41,6 +41,8 @@ from buildwealth_orchestrator.schemas import (
     PlanSettingsUpdateRequest,
     PlanTimelineResponse,
     PlanTimelineUpdateRequest,
+    PlanContributionRulesResponse,
+    PlanContributionRulesUpdateRequest,
     PlanAssumptionSetsResponse,
     PlanAssumptionSetsUpdateRequest,
     PlanScenarioBranchTemplatesResponse,
@@ -105,7 +107,7 @@ from buildwealth_orchestrator.services.ignidash_exporter import (
     IgnidashExportStore,
 )
 from buildwealth_orchestrator.services.research import OpenBBResearchService
-from buildwealth_orchestrator.services.scenario_engine import ScenarioEngine
+from buildwealth_orchestrator.services.scenario_engine import STRATEGY_ALIASES, ScenarioEngine
 from buildwealth_orchestrator.services.snapshot_store import (
     SnapshotStore,
 )
@@ -334,6 +336,9 @@ copilot = FinancialCopilot(
         "- For 'am I on track?' → call get_plan_tracking for plan assumptions, or get_goal_progress for specific goals.\n"
         "- For 'when will I reach my goal?' or 'what do I need to save?' → call get_goal_progress.\n"
         "- For federal tax estimates (income, capital gains, withholding) → call compute_tax.\n"
+        "- For plan contribution allocation rules and defaults → call set_contribution_rules "
+        "(or get_plan_contribution_rules to inspect current rules).\n"
+        "- For comparing retirement withdrawal strategies across outcomes → call compare_withdrawal_strategies.\n"
         "- For 'what if I change my contributions?' → call run_plan_scenario_diff.\n"
         "- For life-event what-ifs (job loss, raise, new recurring costs) → call run_plan_scenario_branch.\n"
         "- For reusable life-event presets/templates → call get_plan_branch_templates or update_plan_branch_templates.\n"
@@ -809,6 +814,48 @@ def resolve_plan_contribution_rules(detail: dict[str, Any]) -> dict[str, Any]:
     files = detail.get("files", {})
     raw_payload = files.get("contribution_rules_json") if isinstance(files, dict) else None
     return parse_contribution_rules_payload(raw_payload)
+
+
+def normalize_withdrawal_strategies(
+    raw_values: Any,
+) -> tuple[list[str], list[str]]:
+    default_strategies = [
+        "cashflow_only",
+        "four_percent_rule",
+        "dynamic_guardrails",
+        "bond_tent",
+        "bucket_strategy",
+    ]
+    if raw_values is None:
+        return default_strategies, []
+
+    raw_items: list[str]
+    if isinstance(raw_values, str):
+        raw_items = [item.strip() for item in raw_values.split(",") if item.strip()]
+    elif isinstance(raw_values, list):
+        raw_items = [str(item).strip() for item in raw_values if str(item).strip()]
+    else:
+        raw_items = []
+
+    if not raw_items:
+        return default_strategies, []
+
+    resolved: list[str] = []
+    invalid: list[str] = []
+    seen: set[str] = set()
+    for item in raw_items:
+        normalized = STRATEGY_ALIASES.get(item.strip().lower())
+        if not normalized:
+            invalid.append(item)
+            continue
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        resolved.append(normalized)
+
+    if not resolved:
+        return default_strategies, invalid
+    return resolved, invalid
 
 
 def parse_assumption_sets_payload(raw_payload: Any) -> dict[str, Any]:
@@ -3952,6 +3999,258 @@ async def tool_update_plan_timeline(arguments: dict[str, object]) -> dict[str, o
     }
 
 
+async def tool_get_plan_contribution_rules(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+    contribution_rules = plan_workspace.get_plan_contribution_rules(plan_id)
+    return {
+        "plan_id": plan_id,
+        "contribution_rules": contribution_rules,
+    }
+
+
+async def tool_set_contribution_rules(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+
+    payload_raw = arguments.get("contribution_rules")
+    payload = dict(payload_raw) if isinstance(payload_raw, dict) else {}
+    shorthand_base_rule = arguments.get("base_rule")
+    if isinstance(shorthand_base_rule, dict):
+        payload["base_rule"] = shorthand_base_rule
+    shorthand_rules = arguments.get("rules")
+    if isinstance(shorthand_rules, list):
+        payload["rules"] = [item for item in shorthand_rules if isinstance(item, dict)]
+    if arguments.get("profile_id") is not None:
+        payload["profile_id"] = str(arguments.get("profile_id") or "").strip() or None
+
+    employer_match_target_usd = max(
+        0.0,
+        _coerce_float(
+            arguments.get("employer_match_target_usd", payload.get("employer_match_target_usd", 6000.0)),
+            6000.0,
+        ),
+    )
+    age = max(
+        0,
+        min(
+            _coerce_int(arguments.get("age", payload.get("age", 35)), 35),
+            120,
+        ),
+    )
+    payload["employer_match_target_usd"] = employer_match_target_usd
+    payload["age"] = age
+
+    has_explicit_payload = (
+        isinstance(payload_raw, dict)
+        or isinstance(shorthand_rules, list)
+        or isinstance(shorthand_base_rule, dict)
+    )
+    use_default_profile = _coerce_bool(arguments.get("use_default_profile"), False) or not has_explicit_payload
+    if use_default_profile:
+        generated = build_tax_optimized_high_earner_rules(
+            build_planning_accounts_from_portfolio(),
+            employer_match_target_usd=employer_match_target_usd,
+        )
+        if not isinstance(payload.get("base_rule"), dict):
+            payload["base_rule"] = generated.get("base_rule", {"type": "save"})
+        if not isinstance(payload.get("rules"), list) or not payload.get("rules"):
+            payload["rules"] = generated.get("rules", [])
+        if not payload.get("profile_id"):
+            payload["profile_id"] = generated.get("profile_id", "tax_optimized_high_earner")
+
+    contribution_rules = plan_workspace.update_plan_contribution_rules(
+        plan_id=plan_id,
+        contribution_rules_payload=payload,
+        rationale=str(arguments.get("rationale") or "").strip() or "Updated via copilot tool.",
+        status=str(arguments.get("status") or "accepted").strip().lower() or "accepted",
+        log_decision=True,
+    )
+
+    allocation_preview: dict[str, Any] | None = None
+    allocation_warning: str | None = None
+    try:
+        detail = plan_workspace.get_plan(plan_id)
+        plan_settings = detail.get("settings", {})
+        if not isinstance(plan_settings, dict):
+            plan_settings = {}
+        preview = build_contribution_allocation_for_plan_settings(
+            plan_settings=plan_settings,
+            contribution_rules_payload=contribution_rules,
+        )
+        allocation_preview = preview.model_dump(mode="json")
+    except Exception as exc:
+        allocation_warning = f"Contribution allocation preview unavailable: {exc}"
+
+    response: dict[str, Any] = {
+        "plan_id": plan_id,
+        "contribution_rules": contribution_rules,
+    }
+    if allocation_preview is not None:
+        response["allocation_preview"] = allocation_preview
+    if allocation_warning:
+        response["warnings"] = [allocation_warning]
+    return response
+
+
+async def tool_compare_withdrawal_strategies(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+    detail = plan_workspace.get_plan(plan_id)
+    if not isinstance(detail, dict):
+        raise ValueError(f"Plan not found: {plan_id}")
+
+    current_portfolio_value_raw = arguments.get("current_portfolio_value_usd")
+    current_portfolio_value = resolve_portfolio_value(
+        float(current_portfolio_value_raw) if current_portfolio_value_raw is not None else None
+    )
+
+    strategies, invalid_strategies = normalize_withdrawal_strategies(arguments.get("strategies"))
+    include_raw_results = _coerce_bool(arguments.get("include_raw_results"), False)
+    assumption_set_id = str(arguments.get("assumption_set_id") or "").strip() or None
+
+    base_settings_raw = detail.get("settings", {})
+    if not isinstance(base_settings_raw, dict):
+        base_settings_raw = {}
+
+    assumption_sets_payload = resolve_plan_assumption_sets(detail)
+    projection_settings, active_assumption_set = apply_assumption_set_to_settings(
+        plan_settings=base_settings_raw,
+        assumption_sets_payload=assumption_sets_payload,
+        assumption_set_id=assumption_set_id,
+    )
+    timeline_payload = resolve_plan_timeline_payload(detail)
+    timeline_retirement_age = resolve_timeline_retirement_age(timeline_payload)
+    timeline_withdrawal_strategy = resolve_timeline_withdrawal_strategy(timeline_payload)
+    contribution_rules_payload = resolve_plan_contribution_rules(detail)
+
+    income_projection = build_income_projection_for_plan_settings(projection_settings)
+    expense_projection = build_expense_projection_for_plan_settings(projection_settings)
+    debt_projection = build_debt_projection_for_plan_settings(projection_settings)
+    timeline_projection = build_timeline_projection_for_plan_settings(
+        plan_settings=projection_settings,
+        timeline_payload=timeline_payload,
+    )
+    contribution_allocation = build_contribution_allocation_for_plan_settings(
+        plan_settings=projection_settings,
+        contribution_rules_payload=contribution_rules_payload,
+    )
+    social_security_projection = build_social_security_projection_for_plan_settings(
+        plan_settings=projection_settings,
+        timeline_payload=timeline_payload,
+        income_projection=income_projection,
+        start_year=utc_now().year,
+    )
+    rmd_projection = build_rmd_projection_for_plan_settings(
+        plan_settings=projection_settings,
+        timeline_payload=timeline_payload,
+        start_year=utc_now().year,
+    )
+
+    comparisons: list[dict[str, Any]] = []
+    raw_results: dict[str, Any] = {}
+    warnings: list[str] = []
+    if invalid_strategies:
+        warnings.append(f"Ignored invalid strategies: {', '.join(invalid_strategies)}")
+
+    for strategy in strategies:
+        strategy_settings = {**projection_settings, "withdrawal_strategy": strategy}
+        result = await run_scenarios_for_plan_settings(
+            current_portfolio_value_usd=current_portfolio_value,
+            plan_settings=strategy_settings,
+            income_projection=income_projection,
+            expense_projection=expense_projection,
+            debt_projection=debt_projection,
+            timeline_projection=timeline_projection,
+            contribution_allocation=contribution_allocation,
+            social_security_projection=social_security_projection,
+            rmd_projection=rmd_projection,
+            assumption_set=active_assumption_set,
+            retirement_age=timeline_retirement_age,
+            timeline_withdrawal_strategy=timeline_withdrawal_strategy,
+        )
+
+        baseline_scenario = next((item for item in result.scenarios if item.label == "baseline"), None)
+        assumptions = baseline_scenario.assumptions if baseline_scenario else {}
+        if not isinstance(assumptions, dict):
+            assumptions = {}
+        timeline_points = baseline_scenario.timeline_points if baseline_scenario else []
+        total_withdrawals_usd = round(sum(float(point.withdrawals_usd) for point in timeline_points), 2)
+        total_taxes_usd = round(sum(float(point.taxes_usd) for point in timeline_points), 2)
+        total_rmds_usd = round(sum(float(point.rmds_usd) for point in timeline_points), 2)
+        terminal_age = timeline_points[-1].age if timeline_points else None
+        terminal_balance_usd = (
+            round(float(timeline_points[-1].ending_balance_usd), 2)
+            if timeline_points
+            else None
+        )
+
+        monte_carlo = result.monte_carlo if isinstance(result.monte_carlo, dict) else {}
+        comparisons.append(
+            {
+                "strategy": strategy,
+                "baseline_future_value_usd": (
+                    round(float(baseline_scenario.future_value_usd), 2) if baseline_scenario is not None else None
+                ),
+                "baseline_real_value_usd": (
+                    round(float(baseline_scenario.real_value_usd), 2) if baseline_scenario is not None else None
+                ),
+                "total_withdrawals_usd": total_withdrawals_usd,
+                "total_taxes_usd": total_taxes_usd,
+                "total_rmds_usd": total_rmds_usd,
+                "terminal_age": terminal_age,
+                "terminal_balance_usd": terminal_balance_usd,
+                "monte_carlo_p10_future_value_usd": _coerce_float(
+                    monte_carlo.get("p10_future_value_usd"),
+                    0.0,
+                ),
+                "monte_carlo_p50_future_value_usd": _coerce_float(
+                    monte_carlo.get("p50_future_value_usd"),
+                    0.0,
+                ),
+                "monte_carlo_p90_future_value_usd": _coerce_float(
+                    monte_carlo.get("p90_future_value_usd"),
+                    0.0,
+                ),
+                "average_effective_tax_rate": assumptions.get("average_effective_tax_rate"),
+                "engine": result.engine,
+                "engine_status": result.engine_status,
+                "fallback_method": result.fallback_method,
+                "warnings": list(result.warnings),
+            }
+        )
+        warnings.extend(result.warnings)
+        if include_raw_results:
+            raw_results[strategy] = result.model_dump(mode="json")
+
+    comparisons.sort(
+        key=lambda item: _coerce_float(item.get("baseline_future_value_usd"), 0.0),
+        reverse=True,
+    )
+
+    def _best_strategy(metric: str) -> str | None:
+        best: dict[str, Any] | None = None
+        for row in comparisons:
+            value = _coerce_float(row.get(metric), float("-inf"))
+            if best is None or value > _coerce_float(best.get(metric), float("-inf")):
+                best = row
+        return str(best.get("strategy")) if isinstance(best, dict) and best.get("strategy") else None
+
+    response: dict[str, Any] = {
+        "plan_id": plan_id,
+        "current_portfolio_value_usd": current_portfolio_value,
+        "assumption_set": active_assumption_set,
+        "strategies": strategies,
+        "comparisons": comparisons,
+        "best_strategy_by_metric": {
+            "future_value": _best_strategy("baseline_future_value_usd"),
+            "real_value": _best_strategy("baseline_real_value_usd"),
+            "monte_carlo_p50": _best_strategy("monte_carlo_p50_future_value_usd"),
+        },
+        "warnings": warnings,
+    }
+    if include_raw_results:
+        response["raw_results"] = raw_results
+    return response
+
+
 async def tool_get_plan_assumption_sets(arguments: dict[str, object]) -> dict[str, object]:
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
     assumption_sets = plan_workspace.get_plan_assumption_sets(plan_id)
@@ -4798,6 +5097,16 @@ def configure_copilot_tools() -> None:
         handler=tool_get_plan_timeline,
     )
     copilot.register_tool(
+        name="get_plan_contribution_rules",
+        description="Read contribution allocation rules for a plan or active plan by default.",
+        parameters={
+            "type": "object",
+            "properties": {"plan_id": {"type": "string"}},
+            "additionalProperties": False,
+        },
+        handler=tool_get_plan_contribution_rules,
+    )
+    copilot.register_tool(
         name="get_plan_assumption_sets",
         description="Read assumption sets for a plan (active set + named sets) or active plan by default.",
         parameters={
@@ -4870,6 +5179,31 @@ def configure_copilot_tools() -> None:
         handler=tool_update_plan_timeline,
     )
     copilot.register_tool(
+        name="set_contribution_rules",
+        description=(
+            "Set or replace plan contribution-allocation rules. "
+            "Supports explicit contribution_rules payload or auto-generating the default "
+            "tax-optimized profile from current accounts."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                "contribution_rules": {"type": "object"},
+                "base_rule": {"type": "object"},
+                "rules": {"type": "array", "items": {"type": "object"}},
+                "profile_id": {"type": "string"},
+                "employer_match_target_usd": {"type": "number"},
+                "age": {"type": "integer"},
+                "use_default_profile": {"type": "boolean"},
+                "rationale": {"type": "string"},
+                "status": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_set_contribution_rules,
+    )
+    copilot.register_tool(
         name="update_plan_assumption_sets",
         description=(
             "Update named assumption sets (active set id + set list) for a plan and record a decision trail."
@@ -4927,6 +5261,30 @@ def configure_copilot_tools() -> None:
             "additionalProperties": False,
         },
         handler=tool_run_plan_scenario_diff,
+    )
+    copilot.register_tool(
+        name="compare_withdrawal_strategies",
+        description=(
+            "Compare retirement withdrawal strategies (cashflow-only, 4% rule, dynamic guardrails, "
+            "bond tent, bucket) against the current plan assumptions and return ranked outcomes."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                "current_portfolio_value_usd": {"type": "number"},
+                "assumption_set_id": {"type": "string"},
+                "strategies": {
+                    "oneOf": [
+                        {"type": "array", "items": {"type": "string"}},
+                        {"type": "string"},
+                    ]
+                },
+                "include_raw_results": {"type": "boolean"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_compare_withdrawal_strategies,
     )
     copilot.register_tool(
         name="run_plan_scenario_branch",
@@ -5728,6 +6086,37 @@ def update_plan_timeline(plan_id: str, request: PlanTimelineUpdateRequest) -> Pl
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return PlanTimelineResponse(**timeline)
+
+
+@app.get("/api/plans/{plan_id}/contribution-rules", response_model=PlanContributionRulesResponse)
+def get_plan_contribution_rules(plan_id: str) -> PlanContributionRulesResponse:
+    try:
+        payload = plan_workspace.get_plan_contribution_rules(plan_id)
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PlanContributionRulesResponse(**payload)
+
+
+@app.put("/api/plans/{plan_id}/contribution-rules", response_model=PlanContributionRulesResponse)
+def update_plan_contribution_rules(
+    plan_id: str,
+    request: PlanContributionRulesUpdateRequest,
+) -> PlanContributionRulesResponse:
+    try:
+        payload = plan_workspace.update_plan_contribution_rules(
+            plan_id=plan_id,
+            contribution_rules_payload=request.model_dump(mode="json"),
+            rationale="Updated via Plan Workspace contribution rules editor.",
+            status="accepted",
+            log_decision=True,
+        )
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PlanContributionRulesResponse(**payload)
 
 
 @app.get("/api/plans/{plan_id}/assumption-sets", response_model=PlanAssumptionSetsResponse)

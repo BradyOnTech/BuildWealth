@@ -57,6 +57,19 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-14 (Completed - Planning Control Surface Expansion)
+- Added plan-level contribution-rules model management in Plan Workspace with validation + decision logging:
+  - `GET/PUT /api/plans/{plan_id}/contribution-rules`
+  - contribution rules now have first-class sanitization (`base_rule`, `rules`, `profile_id`, `employer_match_target_usd`, `age`)
+- Expanded Copilot planning tools with:
+  - `get_plan_contribution_rules`
+  - `set_contribution_rules` (supports explicit payloads or auto-generated tax-optimized defaults from current accounts)
+  - `compare_withdrawal_strategies` (cashflow-only, 4% rule, dynamic guardrails, bond tent, bucket strategy)
+- Withdrawal strategy comparison reuses BuildWealth’s Ignidash-adapted scenario engine strategy aliases/behaviors so tool results stay aligned with planning execution paths
+- Updated Copilot tool-selection guide to route contribution-rule and withdrawal-strategy questions to the new tools
+- Plan Workspace UI now includes a dedicated Contribution Rules JSON editor + save flow, so contribution-allocation modeling is editable in-app outside chat
+- Added focused coverage in `test_plan_workspace.py` for contribution-rules round-trip + validation
+
 ### 2026-04-12 (Completed - Copilot Tool Coverage Expansion)
 - Added new Copilot tools backed by existing BuildWealth engines/data:
   - `get_account_balances` (account-level value/cash/cost basis/performance with optional per-account top holdings)

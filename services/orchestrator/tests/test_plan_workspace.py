@@ -268,6 +268,82 @@ def test_timeline_schema_defaults_impact_type_by_event() -> None:
     assert parsed.events[0].impact_type == "contribution"
 
 
+def test_plan_workspace_contribution_rules_round_trip(tmp_path: Path) -> None:
+    workspace = PlanWorkspace(tmp_path)
+    detail = workspace.create_plan(title="Contribution Rules Plan")
+
+    defaults = workspace.get_plan_contribution_rules(detail["id"])
+    assert defaults["base_rule"]["type"] == "save"
+    assert defaults["rules"] == []
+    assert defaults["employer_match_target_usd"] == pytest.approx(6000.0)
+    assert defaults["age"] == 35
+
+    updated = workspace.update_plan_contribution_rules(
+        plan_id=detail["id"],
+        contribution_rules_payload={
+            "base_rule": {"type": "spend"},
+            "rules": [
+                {
+                    "id": "rule-1",
+                    "accountId": "acct-401k",
+                    "rank": 1,
+                    "amount": {"type": "dollarAmount", "dollarAmount": 10000},
+                    "employerMatch": 6000,
+                }
+            ],
+            "profile_id": "custom_profile",
+            "employer_match_target_usd": 6500.0,
+            "age": 40,
+        },
+        rationale="Tune contribution rules for matching-first strategy.",
+    )
+    assert updated["base_rule"]["type"] == "spend"
+    assert len(updated["rules"]) == 1
+    assert updated["profile_id"] == "custom_profile"
+    assert updated["employer_match_target_usd"] == pytest.approx(6500.0)
+    assert updated["age"] == 40
+
+    refreshed = workspace.get_plan(detail["id"])
+    assert refreshed["decisions"]
+    assert refreshed["decisions"][0]["summary"].startswith("Updated contribution rules:")
+    contribution_rules_json = json.loads(refreshed["files"]["contribution_rules_json"])
+    assert contribution_rules_json["base_rule"]["type"] == "spend"
+    assert contribution_rules_json["age"] == 40
+
+
+def test_plan_workspace_contribution_rules_validation(tmp_path: Path) -> None:
+    workspace = PlanWorkspace(tmp_path)
+    detail = workspace.create_plan(title="Contribution Rules Validation Plan")
+
+    with pytest.raises(ValueError, match="base_rule.type"):
+        workspace.update_plan_contribution_rules(
+            plan_id=detail["id"],
+            contribution_rules_payload={
+                "base_rule": {"type": "invalid"},
+                "rules": [],
+            },
+        )
+
+    with pytest.raises(ValueError, match="rules must be a list"):
+        workspace.update_plan_contribution_rules(
+            plan_id=detail["id"],
+            contribution_rules_payload={
+                "base_rule": {"type": "save"},
+                "rules": {},
+            },
+        )
+
+    with pytest.raises(ValueError, match="age must be between 0 and 120"):
+        workspace.update_plan_contribution_rules(
+            plan_id=detail["id"],
+            contribution_rules_payload={
+                "base_rule": {"type": "save"},
+                "rules": [],
+                "age": 150,
+            },
+        )
+
+
 def test_plan_workspace_assumption_sets_round_trip(tmp_path: Path) -> None:
     workspace = PlanWorkspace(tmp_path)
     detail = workspace.create_plan(title="Assumption Sets Plan")
