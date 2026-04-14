@@ -4,6 +4,7 @@ import pytest
 
 import buildwealth_orchestrator.main as main
 from buildwealth_orchestrator.services.recommendation_inbox import RecommendationInbox
+from buildwealth_orchestrator.services.plan_workspace import PlanWorkspace
 
 
 def test_recommendation_list_defaults_to_ranked_sort(
@@ -80,3 +81,67 @@ def test_create_recommendation_route_includes_score(
     assert item.score is not None
     assert item.score.total > 0
     assert item.score.impact > 0
+
+
+def test_build_top_next_actions_scopes_to_plan_and_global(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    target_plan = inbox.create(
+        title="Increase annual contributions",
+        detail="Raise annual contribution by $4,000.",
+        priority="high",
+        recommendation_type="plan_settings_update",
+        plan_id="plan-target",
+        source="workflow:weekly_review",
+    )
+    other_plan = inbox.create(
+        title="Different plan action",
+        detail="Belongs to another plan.",
+        priority="high",
+        recommendation_type="plan_settings_update",
+        plan_id="plan-other",
+        source="workflow:weekly_review",
+    )
+    global_action = inbox.create(
+        title="Global hygiene review",
+        detail="Review global assumptions.",
+        priority="low",
+        recommendation_type="general",
+        source="manual-ui",
+    )
+
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    actions = main._build_top_next_actions(plan_id="plan-target", limit=3)
+
+    ids = [item.recommendation_id for item in actions]
+    assert target_plan["id"] in ids
+    assert global_action["id"] in ids
+    assert other_plan["id"] not in ids
+    assert ids[0] == target_plan["id"]
+
+
+def test_get_plan_includes_top_next_actions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = PlanWorkspace(tmp_path / "plans")
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    plan = workspace.create_plan(title="Primary Plan")
+    recommendation = inbox.create(
+        title="Boost contribution rate",
+        detail="Increase annual contribution in plan settings.",
+        priority="high",
+        recommendation_type="plan_settings_update",
+        plan_id=plan["id"],
+        source="workflow:plan_review",
+    )
+
+    monkeypatch.setattr(main, "plan_workspace", workspace)
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    payload = main.get_plan(plan["id"])
+
+    assert payload.top_next_actions
+    assert payload.top_next_actions[0].recommendation_id == recommendation["id"]

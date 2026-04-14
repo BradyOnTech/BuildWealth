@@ -854,6 +854,20 @@ class TodayRecommendation(BaseModel):
     priority: Literal["high", "medium", "low"] = "medium"
 
 
+class TopNextAction(BaseModel):
+    recommendation_id: str | None = None
+    title: str
+    detail: str
+    priority: Literal["high", "medium", "low"] = "medium"
+    recommendation_type: Literal["plan_settings_update", "workflow_action", "general"] = "general"
+    source: str = "manual"
+    plan_id: str | None = None
+    score_total: float | None = None
+    score_rank: int | None = None
+    score_reasons: list[str] = Field(default_factory=list)
+    action_hint: str | None = None
+
+
 class TodayActivePlanSummary(BaseModel):
     id: str
     title: str
@@ -888,6 +902,7 @@ class TodayDashboardResponse(BaseModel):
     financial_health_status: Literal["healthy", "needs_attention", "critical", "insufficient_data"] | None = None
     context_state: Literal["ready", "warning", "critical"] = "warning"
     context_notes: list[str] = Field(default_factory=list)
+    top_next_actions: list[TopNextAction] = Field(default_factory=list)
     checklist: list[TodayChecklistItem] = Field(default_factory=list)
     recommendations: list[TodayRecommendation] = Field(default_factory=list)
     workflow_steps: list[str] = Field(default_factory=list)
@@ -1585,6 +1600,7 @@ class PlanDetailResponse(BaseModel):
     settings: PlanSettings
     decisions: list[PlanDecision] = Field(default_factory=list)
     artifacts: list[PlanArtifactSummary] = Field(default_factory=list)
+    top_next_actions: list[TopNextAction] = Field(default_factory=list)
 
 
 class PlanCreateRequest(BaseModel):

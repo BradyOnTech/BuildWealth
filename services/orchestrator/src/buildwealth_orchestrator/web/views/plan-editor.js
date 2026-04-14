@@ -459,7 +459,7 @@ function resetContributionRuleInputs() {
 
 function setControlsEnabled(enabled) {
   [
-    'activate-plan', 'refresh-plan-context', 'save-plan', 'save-plan-timeline', 'save-plan-assumption-sets',
+    'activate-plan', 'refresh-plan-context', 'open-plan-recommendations', 'save-plan', 'save-plan-timeline', 'save-plan-assumption-sets',
     'save-plan-contribution-rules', 'save-plan-branch-templates', 'save-plan-settings', 'run-scenario-diff',
     'run-withdrawal-strategy-compare', 'apply-scenario-overrides', 'load-branch-template', 'run-scenario-branch',
     'pin-watchlist-branch-template', 'open-latest-research-bridge-artifact',
@@ -1192,9 +1192,51 @@ function renderProjectionVisuals() {
   summary.textContent = `${sourceLabel} • ${String(scenario.label || scenarioLabel)} • ${firstYear || '-'} to ${lastYear || '-'} • Final net worth ${fmtCurrency(finalPoint.net_worth || 0)} • Account metric: ${metricLabel}`;
 }
 
+function renderPlanTopNextActions(actionsRaw) {
+  const summaryEl = byId('plan-next-actions-summary');
+  const listEl = byId('plan-next-actions');
+  if (!summaryEl || !listEl) return;
+
+  const actions = Array.isArray(actionsRaw) ? actionsRaw : [];
+  if (!actions.length) {
+    summaryEl.textContent = 'No ranked next actions yet for this plan. Use Recommendation Inbox to create or score recommendations.';
+    listEl.innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No next actions yet.</p><p class="list-item-meta">Open Recommendation Inbox and add at least one proposed recommendation.</p></article>';
+    return;
+  }
+
+  const highCount = actions.filter((item) => String(item.priority || 'medium').toLowerCase() === 'high').length;
+  summaryEl.textContent = `${actions.length} ranked action(s) loaded${highCount > 0 ? ` • ${highCount} high priority` : ''}.`;
+  listEl.innerHTML = '';
+  for (const action of actions) {
+    const priority = String(action.priority || 'medium').toLowerCase();
+    const scoreTotal = Number(action.score_total);
+    const scoreRank = Number(action.score_rank);
+    const scoreParts = [`Priority: ${priority.toUpperCase()}`];
+    if (Number.isFinite(scoreRank) && scoreRank > 0) scoreParts.push(`Rank: #${Math.trunc(scoreRank)}`);
+    if (Number.isFinite(scoreTotal)) scoreParts.push(`Score: ${scoreTotal.toFixed(1)}`);
+    if (action.recommendation_type) scoreParts.push(`Type: ${String(action.recommendation_type)}`);
+    if (action.source) scoreParts.push(`Source: ${String(action.source)}`);
+    const reasons = Array.isArray(action.score_reasons)
+      ? action.score_reasons.filter(Boolean).slice(0, 2).join(' ')
+      : '';
+
+    const card = document.createElement('article');
+    card.className = `list-item ${priority === 'high' ? 'attention' : priority === 'low' ? 'complete' : 'incomplete'}`;
+    card.innerHTML = `
+      <p class="list-item-title">${action.title || '-'}</p>
+      <p class="list-item-meta">${scoreParts.join(' • ')}</p>
+      <p class="list-item-meta">${action.detail || ''}</p>
+      ${reasons ? `<p class="list-item-meta">${reasons}</p>` : ''}
+      ${action.action_hint ? `<p class="list-item-meta">Action: ${action.action_hint}</p>` : ''}
+    `;
+    listEl.appendChild(card);
+  }
+}
+
 export function clearDetail() {
   state.currentPlanDetail = null;
   byId('plan-meta').textContent = 'Select a plan to view details.';
+  byId('plan-next-actions-summary').textContent = 'Select a plan to load ranked next actions.';
   byId('plan-settings-meta').textContent = 'Blank values use global defaults from planner configuration.';
   ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-contribution-rules', 'plan-branch-templates', 'plan-context', 'scenario-diff-output', 'withdrawal-current-portfolio-value', 'withdrawal-strategies', 'withdrawal-strategy-compare-output', 'scenario-branch-name', 'scenario-branch-events', 'scenario-branch-output', 'research-bridge-symbols', 'artifact-content'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
   writeTimelinePayloadToEditor({ events: [], retirement: {} }, { preferFormValues: false });
@@ -1209,6 +1251,7 @@ export function clearDetail() {
   byId('research-bridge-summary').textContent = 'No watchlist research bridge activity recorded yet.';
   setResearchBridgeArtifactAction('', '');
   byId('projection-summary').textContent = 'Run a scenario diff or branch to populate projection visuals.';
+  byId('plan-next-actions').innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No plan selected.</p></article>';
   byId('plan-decisions-body').innerHTML = '<tr><td colspan="4">No decisions yet.</td></tr>';
   byId('plan-artifacts-body').innerHTML = '<tr><td colspan="4">No artifacts yet.</td></tr>';
   byId('projection-account-body').innerHTML = '<tr><td colspan="6">No projection data yet.</td></tr>';
@@ -1279,6 +1322,7 @@ export function renderDetail() {
   setSettingsInputs(PLAN_SETTING_FIELDS, d.settings || {});
   const su = d.settings?.updated_at ? fmtDate(d.settings.updated_at) : null;
   byId('plan-settings-meta').textContent = su ? `Settings updated ${su}` : 'Blank values use global defaults from planner configuration.';
+  renderPlanTopNextActions(Array.isArray(d.top_next_actions) ? d.top_next_actions : []);
   renderDecisions(Array.isArray(d.decisions) ? d.decisions : []);
   renderArtifacts(Array.isArray(d.artifacts) ? d.artifacts : []);
   byId('artifact-content').value = '';
@@ -1633,6 +1677,9 @@ export function initEditor(refreshPlans) {
   byId('projection-source').addEventListener('change', () => renderProjectionVisuals());
   byId('projection-scenario-label').addEventListener('change', () => renderProjectionVisuals());
   byId('projection-account-metric').addEventListener('change', () => renderProjectionVisuals());
+  byId('open-plan-recommendations').addEventListener('click', () => {
+    location.hash = 'recommendations';
+  });
   byId('plan-timeline').addEventListener('change', () => {
     refreshTimelineBuilderFromEditor(false);
   });

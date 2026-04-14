@@ -36,8 +36,11 @@ export function template() {
         <div id="today-checklist" class="item-list"></div>
       </section>
       <section class="panel">
-        <h3 class="panel-title">Recommendations</h3>
-        <div id="today-recommendations" class="item-list"></div>
+        <div class="panel-head-inline">
+          <h3 class="panel-title">Top 3 Next Actions</h3>
+          <button class="ghost small" id="today-open-recommendations" type="button">Open Inbox</button>
+        </div>
+        <div id="today-top-next-actions" class="item-list"></div>
       </section>
       <section class="panel">
         <h3 class="panel-title">Workflow</h3>
@@ -87,11 +90,25 @@ function render(payload) {
     return el;
   });
 
-  renderItemList('today-recommendations', payload.recommendations, (item) => {
+  const topNextActions = Array.isArray(payload.top_next_actions) && payload.top_next_actions.length
+    ? payload.top_next_actions
+    : (Array.isArray(payload.recommendations) ? payload.recommendations : []);
+
+  renderItemList('today-top-next-actions', topNextActions, (item) => {
     const el = document.createElement('article');
     const p = String(item.priority || 'medium').toLowerCase();
+    const scoreTotal = Number(item.score_total);
+    const scoreRank = Number(item.score_rank);
+    const metaParts = [`Priority: ${String(item.priority || 'medium').toUpperCase()}`];
+    if (Number.isFinite(scoreRank) && scoreRank > 0) metaParts.push(`Rank: #${Math.trunc(scoreRank)}`);
+    if (Number.isFinite(scoreTotal)) metaParts.push(`Score: ${scoreTotal.toFixed(1)}`);
+    if (item.recommendation_type) metaParts.push(`Type: ${String(item.recommendation_type)}`);
+    if (item.source) metaParts.push(`Source: ${String(item.source)}`);
+    const scoreReasons = Array.isArray(item.score_reasons)
+      ? item.score_reasons.filter(Boolean).slice(0, 2).join(' ')
+      : '';
     el.className = `list-item ${p === 'high' ? 'attention' : p === 'low' ? 'complete' : 'incomplete'}`;
-    el.innerHTML = `<p class="list-item-title">${item.title || '-'}</p><p class="list-item-meta">Priority: ${String(item.priority || 'medium').toUpperCase()}</p><p class="list-item-meta">${item.detail || ''}</p>`;
+    el.innerHTML = `<p class="list-item-title">${item.title || '-'}</p><p class="list-item-meta">${metaParts.join(' • ')}</p><p class="list-item-meta">${item.detail || ''}</p>${scoreReasons ? `<p class="list-item-meta">${scoreReasons}</p>` : ''}${item.action_hint ? `<p class="list-item-meta">Action: ${item.action_hint}</p>` : ''}`;
     return el;
   });
 
@@ -223,6 +240,9 @@ export function init() {
   byId('reload-today').addEventListener('click', () => load().catch(e => writeLog(e.message, null, true)));
   byId('today-refresh-engines').addEventListener('click', () => load({ refreshEngines: true }).catch(e => writeLog(e.message, null, true)));
   byId('today-run-sync').addEventListener('click', runSync);
+  byId('today-open-recommendations').addEventListener('click', () => {
+    location.hash = 'recommendations';
+  });
   byId('today-ask-copilot').addEventListener('click', () => {
     location.hash = 'copilot?dailyReview=1';
   });

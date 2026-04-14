@@ -26,6 +26,9 @@ export function template() {
         <div class="plan-meta-row"><p id="plan-meta" class="hint">Select a plan to view details.</p>
           <div class="header-actions"><button class="ghost small" id="activate-plan" disabled>Set Active</button><button class="ghost small" id="refresh-plan-context" disabled>Refresh Context</button><button class="primary small" id="save-plan" disabled>Save Plan</button></div>
         </div>
+        <div class="view-header"><h3>Top 3 Next Actions</h3><button class="ghost small" id="open-plan-recommendations" disabled>Open Inbox</button></div>
+        <p class="hint tight" id="plan-next-actions-summary">Select a plan to load ranked next actions.</p>
+        <div id="plan-next-actions" class="item-list"></div>
         <label class="field"><span>Plan Markdown</span><textarea id="plan-markdown" rows="12" placeholder="Plan markdown will appear here." disabled></textarea></label>
         <label class="field"><span>Tasks Markdown</span><textarea id="plan-tasks" rows="6" placeholder="Task checklist markdown." disabled></textarea></label>
         <div class="view-header"><h3>Timeline Events</h3><button class="primary small" id="save-plan-timeline" disabled>Save Timeline</button></div>

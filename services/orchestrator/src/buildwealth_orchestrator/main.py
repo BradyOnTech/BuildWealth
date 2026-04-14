@@ -105,6 +105,7 @@ from buildwealth_orchestrator.schemas import (
     PlanTrackingResponse,
     EngineStatusResponse,
     TodayDashboardResponse,
+    TopNextAction,
     WorkflowRunRequest,
     WorkflowRunResponse,
     WorkflowTemplateResponse,
@@ -2590,6 +2591,99 @@ def _recommendation_item_from_row(row: dict[str, Any]) -> RecommendationItem:
     return RecommendationItem(**payload)
 
 
+def _normalized_recommendation_priority(value: Any) -> str:
+    priority = str(value or "medium").strip().lower()
+    if priority in {"high", "medium", "low"}:
+        return priority
+    return "medium"
+
+
+def _normalized_recommendation_type(value: Any) -> str:
+    recommendation_type = str(value or "general").strip().lower()
+    if recommendation_type in {"plan_settings_update", "workflow_action", "general"}:
+        return recommendation_type
+    return "general"
+
+
+def _as_top_next_action(row: dict[str, Any]) -> TopNextAction:
+    score = row.get("score")
+    score_payload = score if isinstance(score, dict) else {}
+    raw_reasons = score_payload.get("reasons")
+    score_reasons = [
+        str(reason).strip()
+        for reason in raw_reasons
+        if str(reason).strip()
+    ] if isinstance(raw_reasons, list) else []
+
+    score_rank = score_payload.get("rank")
+    normalized_rank = (
+        int(score_rank)
+        if isinstance(score_rank, int) and score_rank > 0
+        else None
+    )
+    score_total = None
+    if "total" in score_payload:
+        score_total = round(_coerce_float(score_payload.get("total"), 0.0), 2)
+
+    recommendation_id = str(row.get("id") or "").strip() or None
+    return TopNextAction(
+        recommendation_id=recommendation_id,
+        title=str(row.get("title") or recommendation_id or "Recommendation").strip() or "Recommendation",
+        detail=str(row.get("detail") or "").strip(),
+        priority=_normalized_recommendation_priority(row.get("priority")),
+        recommendation_type=_normalized_recommendation_type(row.get("recommendation_type")),
+        source=str(row.get("source") or "manual").strip() or "manual",
+        plan_id=(str(row.get("plan_id") or "").strip() or None),
+        score_total=score_total,
+        score_rank=normalized_rank,
+        score_reasons=score_reasons[:3],
+        action_hint="Open Recommendation Inbox to preview/apply.",
+    )
+
+
+def _build_top_next_actions(
+    *,
+    plan_id: str | None = None,
+    limit: int = 3,
+) -> list[TopNextAction]:
+    try:
+        bounded_limit = max(1, min(int(limit), 10))
+    except Exception:
+        bounded_limit = 3
+
+    resolved_plan_id = str(plan_id or "").strip() or None
+    try:
+        ranked_rows = _recommendation_list(
+            limit=500,
+            status="proposed",
+            sort="ranked",
+        )
+    except Exception:
+        return []
+
+    if not ranked_rows:
+        return []
+
+    scoped_rows: list[dict[str, Any]] = []
+    for row in ranked_rows:
+        if not resolved_plan_id:
+            scoped_rows.append(row)
+            continue
+        row_plan_id = str(row.get("plan_id") or "").strip() or None
+        if row_plan_id in {None, resolved_plan_id}:
+            scoped_rows.append(row)
+
+    selected_rows = scoped_rows if scoped_rows else ranked_rows
+    return [_as_top_next_action(row) for row in selected_rows[:bounded_limit]]
+
+
+def _build_plan_detail_response(detail: dict[str, Any]) -> PlanDetailResponse:
+    payload = dict(detail)
+    plan_id = str(payload.get("id") or "").strip() or None
+    payload["top_next_actions"] = _build_top_next_actions(plan_id=plan_id, limit=3)
+    return PlanDetailResponse(**payload)
+
+
 def _build_recommendation_open_counts() -> tuple[int, int]:
     rows = recommendation_inbox.list(limit=500, status="proposed")
     high = [
@@ -4729,6 +4823,26 @@ def build_today_dashboard_response() -> TodayDashboardResponse:
         dashboard.financial_health_status = health.status
     except Exception:
         pass
+
+    top_next_actions = _build_top_next_actions(
+        plan_id=(dashboard.active_plan.id if dashboard.active_plan is not None else None),
+        limit=3,
+    )
+    if top_next_actions:
+        dashboard.top_next_actions = top_next_actions
+    else:
+        dashboard.top_next_actions = [
+            TopNextAction(
+                recommendation_id=item.id,
+                title=item.title,
+                detail=item.detail,
+                priority=item.priority,
+                recommendation_type="general",
+                source="today-dashboard-heuristic",
+                action_hint="Use Today workflow or Recommendation Inbox.",
+            )
+            for item in dashboard.recommendations[:3]
+        ]
 
     return dashboard
 
@@ -9260,7 +9374,7 @@ def create_plan(request: PlanCreateRequest) -> PlanDetailResponse:
         detail = plan_workspace.create_plan(title=request.title, description=request.description)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return PlanDetailResponse(**detail)
+    return _build_plan_detail_response(detail)
 
 
 @app.get("/api/plans/{plan_id}", response_model=PlanDetailResponse)
@@ -9269,7 +9383,7 @@ def get_plan(plan_id: str) -> PlanDetailResponse:
         detail = plan_workspace.get_plan(plan_id)
     except PlanNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return PlanDetailResponse(**detail)
+    return _build_plan_detail_response(detail)
 
 
 @app.put("/api/plans/{plan_id}", response_model=PlanDetailResponse)
@@ -9284,7 +9398,7 @@ def update_plan(plan_id: str, request: PlanUpdateRequest) -> PlanDetailResponse:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return PlanDetailResponse(**detail)
+    return _build_plan_detail_response(detail)
 
 
 @app.patch("/api/plans/{plan_id}/settings", response_model=PlanDetailResponse)
@@ -9305,7 +9419,7 @@ def update_plan_settings(plan_id: str, request: PlanSettingsUpdateRequest) -> Pl
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return PlanDetailResponse(**detail)
+    return _build_plan_detail_response(detail)
 
 
 @app.get("/api/plans/{plan_id}/timeline", response_model=PlanTimelineResponse)
@@ -9840,7 +9954,7 @@ def append_plan_decision(plan_id: str, request: PlanDecisionCreateRequest) -> Pl
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return PlanDetailResponse(**detail)
+    return _build_plan_detail_response(detail)
 
 
 @app.post("/api/plans/{plan_id}/refresh-context", response_model=PlanDetailResponse)
@@ -9850,7 +9964,7 @@ def refresh_plan_context(plan_id: str) -> PlanDetailResponse:
         detail = plan_workspace.get_plan(plan_id)
     except PlanNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return PlanDetailResponse(**detail)
+    return _build_plan_detail_response(detail)
 
 
 @app.get("/api/plans/{plan_id}/artifacts/{artifact_id}", response_model=PlanArtifactResponse)

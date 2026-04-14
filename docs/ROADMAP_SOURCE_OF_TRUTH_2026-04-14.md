@@ -10,6 +10,29 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-14 (Completed - Phase 4.2 Slice 4, Top 3 Next Actions in Dashboard and Plan Workspace)
+1. Added shared Top Next Actions contract:
+- new `TopNextAction` schema for ranked action cards (priority, type, source, score/rank, score reasons, action hint)
+- added `top_next_actions` to both `TodayDashboardResponse` and `PlanDetailResponse`.
+2. Added recommendation-driven Top 3 selector in `main.py`:
+- uses ranked recommendation scoring output (existing `recommendation_scoring.py` pipeline)
+- scopes actions for Plan Workspace to `{plan_id, global}` recommendations
+- falls back to global ranked list if plan-scoped results are empty.
+3. Wired Top 3 actions into dashboard API payload:
+- `build_today_dashboard_response()` now injects ranked Top 3 actions
+- when no inbox recommendations are available, falls back to existing dashboard heuristics.
+4. Wired Top 3 actions into plan-detail API responses:
+- plan create/get/update/settings/decision/refresh responses now include `top_next_actions` via shared detail builder.
+5. Updated UI surfaces:
+- Today Dashboard now has a dedicated “Top 3 Next Actions” card with rank/score/type/source visibility and one-click inbox navigation
+- Plan Workspace now renders plan-scoped “Top 3 Next Actions” with one-click inbox navigation.
+6. Source-provenance note:
+- ranking and score-factor transparency continues to reuse Ignidash-style analyzer packaging patterns already in recommendation scoring
+- action prioritization display remains aligned with Ghostfolio-inspired “actionable risk/explainability” presentation conventions used elsewhere in dashboard surfaces.
+7. Added regression coverage:
+- plan-scoped next-action selection and plan-detail enrichment tests in `test_recommendation_ranking_integration.py`.
+8. Verification: `pytest -q tests/test_recommendation_ranking_integration.py tests/test_today_dashboard.py tests/test_recommendation_actions.py tests/test_copilot_tool_updates.py tests/test_buildwealth_context.py` passes (`49 passed`).
+
 ### 2026-04-14 (Completed - Phase 4.2 Slice 3, Expected-vs-Realized Outcomes and Closure Analytics)
 1. Added first-class expected-vs-realized outcome tracking on recommendation closure:
 - apply/reject flows now persist `expected_outcome` and `expected_vs_realized` metadata in `decision_closure`
@@ -373,9 +396,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Add "Top 3 Next Actions" surfaces in dashboard and plan workspace (Phase 4.2 Slice 4).
-2. Add recommendation calibration reporting (by recommendation class/source) to improve decision loop quality (Phase 4.2 follow-up).
-3. Extend closure analytics into plan workspace artifact summaries for longitudinal decision-review workflows.
+1. Add recommendation calibration reporting (by recommendation class/source) to improve decision loop quality (Phase 4.2 follow-up).
+2. Extend closure analytics into plan workspace artifact summaries for longitudinal decision-review workflows.
+3. Add recommendation quality trend views in dashboard/plan workspace (rolling 30/90-day directional match and coverage rates).
 
 ## Guardrails
 1. Do not fork or embed full Ghostfolio/Ignidash apps into BuildWealth runtime path.
