@@ -145,6 +145,41 @@ def test_ignidash_sidecar_service_falls_back_on_sidecar_error() -> None:
     assert any("sidecar unavailable" in warning.lower() for warning in result.warnings)
 
 
+def test_ignidash_sidecar_service_skips_sidecar_when_contract_guarded() -> None:
+    calls = {"count": 0}
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        calls["count"] += 1
+        return httpx.Response(status_code=200, json={})
+
+    adapter = SidecarAdapter(
+        base_url="http://localhost:8412",
+        max_retries=0,
+        transport=httpx.MockTransport(handler),
+    )
+
+    service = IgnidashScenarioService(
+        scenario_engine=_build_scenario_engine(),
+        sidecar_adapter=adapter,
+        sidecar_enabled=True,
+        sidecar_path="/v1/scenario/simulate",
+        currency="USD",
+    )
+
+    result = asyncio.run(
+        service.run(
+            current_portfolio_value_usd=100000,
+            sidecar_guard_reason="Sidecar contract version mismatch (expected v1, got v2)",
+        )
+    )
+
+    assert calls["count"] == 0
+    assert result.engine == "local"
+    assert result.engine_status == "degraded"
+    assert result.fallback_method == "contract_version_guard"
+    assert any("sidecar skipped" in warning.lower() for warning in result.warnings)
+
+
 def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content.decode("utf-8"))

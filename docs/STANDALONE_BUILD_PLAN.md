@@ -57,6 +57,25 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-14 (In Progress - Phase 3.3 Sidecar Boundary Hardening)
+- Added explicit expected contract-version tracking on engine probes (`expected_contract_version`, `contract_compatible`) so sidecar status now reports compatibility, not just reachability.
+- Added sidecar guard evaluation (`sidecar_guard_reason`) to block benchmark/attribution/planning sidecar calls when probe state detects contract mismatch.
+- Benchmark, attribution, and planning services now support contract-guarded local fallback with explicit `contract_version_guard` fallback metadata/warnings.
+- Engine adapter now only allows versioned contract paths (`/v{n}/...`) to prevent accidental fallback to legacy full-app endpoints.
+- Added focused regression coverage for contract mismatch and guarded sidecar skip paths in:
+  - `test_engine_status.py`
+  - `test_engine_adapter.py`
+  - `test_portfolio_benchmark.py`
+  - `test_portfolio_attribution.py`
+  - `test_planning_sidecar.py`
+
+### 2026-04-14 (Completed - Phase 3.1 Asset Metadata Database Expansion)
+- Added a seeded local asset metadata catalog (`asset_metadata_seed.json`) with 500+ symbols (S&P 500 equities plus curated ETF/asset-class mappings) to improve offline classification coverage.
+- Portfolio store now merges seeded metadata non-destructively into local `asset_metadata.json` (fills missing fields, preserves user/imported overrides).
+- Added deterministic fallback metadata inference for uncataloged symbols (cash, crypto pairs, FX, and generic equity fallback) so allocation and planning context do not degrade to `Unknown`.
+- Extended holding/snapshot metadata surface with optional `metadata_source` and `expense_ratio` fields for downstream UI/context use.
+- Added focused coverage in `test_portfolio_store.py` for seed size, seed-merge override safety, and fallback classification behavior.
+
 ### 2026-04-14 (Completed - Broker CSV Templates, Phase 1.18 Foundation)
 - Expanded import parser with broker-template support and auto-detection by header signatures:
   - templates: `auto`, `generic`, `schwab`, `fidelity`, `vanguard`, `robinhood`, `etrade`, `interactive_brokers`, `ally`, `m1`, `wealthfront`

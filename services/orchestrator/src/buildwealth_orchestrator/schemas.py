@@ -14,6 +14,8 @@ class Holding(BaseModel):
     asset_class: str | None = None
     sector: str | None = None
     region: str | None = None
+    metadata_source: str | None = None
+    expense_ratio: float | None = None
     allocation_percent: float = 0.0
     value_usd: float = 0.0
     quantity: float = 0.0
@@ -67,6 +69,8 @@ class EngineStatusItem(BaseModel):
     enabled: bool
     reachable: bool
     contract_version: int | None = None
+    expected_contract_version: int | None = None
+    contract_compatible: bool | None = None
     degraded_count: int = 0
     last_error: str | None = None
     last_checked_at: datetime | None = None

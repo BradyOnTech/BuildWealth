@@ -71,6 +71,14 @@ class Settings(BaseSettings):
         default="/health,/api/health",
         alias="IGNIDASH_SIDECAR_HEALTH_PATHS",
     )
+    ghostfolio_sidecar_contract_version: int = Field(
+        default=1,
+        alias="GHOSTFOLIO_SIDECAR_CONTRACT_VERSION",
+    )
+    ignidash_sidecar_contract_version: int = Field(
+        default=1,
+        alias="IGNIDASH_SIDECAR_CONTRACT_VERSION",
+    )
     portfolio_benchmark_default_symbols: str = Field(
         default="SPY",
         alias="PORTFOLIO_BENCHMARK_DEFAULT_SYMBOLS",

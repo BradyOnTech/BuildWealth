@@ -18,6 +18,7 @@ class EngineProbeConfig:
     enabled: bool
     health_paths: tuple[str, ...]
     version_paths: tuple[str, ...]
+    expected_contract_version: int | None = None
 
 
 class EngineStatusTracker:
@@ -43,6 +44,12 @@ class EngineStatusTracker:
                 "enabled": bool(config.enabled),
                 "reachable": False,
                 "contract_version": None,
+                "expected_contract_version": (
+                    int(config.expected_contract_version)
+                    if config.expected_contract_version is not None
+                    else None
+                ),
+                "contract_compatible": None,
                 "degraded_count": 0,
                 "last_error": None,
                 "last_checked_at": None,
@@ -68,6 +75,12 @@ class EngineStatusTracker:
                 "enabled": False,
                 "reachable": False,
                 "contract_version": None,
+                "expected_contract_version": (
+                    int(config.expected_contract_version)
+                    if config.expected_contract_version is not None
+                    else None
+                ),
+                "contract_compatible": None,
                 "last_error": None,
                 "last_checked_at": checked_at,
             }
@@ -85,6 +98,7 @@ class EngineStatusTracker:
                 last_error = f"{path}: {exc}"
 
         contract_version: int | None = None
+        contract_compatible: bool | None = None
         if reachable:
             for path in config.version_paths:
                 try:
@@ -95,13 +109,53 @@ class EngineStatusTracker:
                 except Exception:
                     continue
 
+            expected = config.expected_contract_version
+            if expected is not None:
+                expected = int(expected)
+                contract_compatible = contract_version == expected
+                if not contract_compatible:
+                    if contract_version is None:
+                        last_error = (
+                            f"Could not verify contract version (expected v{expected})"
+                        )
+                    else:
+                        last_error = (
+                            f"Contract version mismatch (expected v{expected}, got v{contract_version})"
+                        )
+                else:
+                    last_error = None
+
         return config.name, {
             "enabled": True,
             "reachable": reachable,
             "contract_version": contract_version,
+            "expected_contract_version": (
+                int(config.expected_contract_version)
+                if config.expected_contract_version is not None
+                else None
+            ),
+            "contract_compatible": contract_compatible,
             "last_error": last_error,
             "last_checked_at": checked_at,
         }
+
+    async def sidecar_guard_reason(self, engine_name: str) -> str | None:
+        async with self._lock:
+            entry = self._state.get(engine_name)
+            if entry is None:
+                return None
+            if not bool(entry.get("enabled")):
+                return None
+            contract_compatible = entry.get("contract_compatible")
+            if contract_compatible is not False:
+                return None
+            expected = entry.get("expected_contract_version")
+            actual = entry.get("contract_version")
+            if expected is None:
+                return "Sidecar contract compatibility check failed"
+            if actual is None:
+                return f"Sidecar contract version is unverified (expected v{expected})"
+            return f"Sidecar contract version mismatch (expected v{expected}, got v{actual})"
 
     async def _get_payload(self, base_url: str, path: str) -> dict[str, Any]:
         normalized_path = self._normalize_path(path)

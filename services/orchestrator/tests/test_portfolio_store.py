@@ -20,6 +20,55 @@ def store(tmp_path):
     return PortfolioStore(tmp_path / "portfolio")
 
 
+class TestAssetMetadataSeed:
+    def test_default_asset_metadata_payload_seeds_large_catalog(self):
+        payload = PortfolioStore._default_asset_metadata_payload()
+        symbols = payload.get("symbols", {})
+        assert isinstance(symbols, dict)
+        assert len(symbols) >= 500
+        assert "AAPL" in symbols
+        assert "SPY" in symbols
+
+    def test_seed_merge_preserves_existing_custom_metadata(self, store):
+        store.upsert_asset_metadata(
+            "AAPL",
+            {
+                "asset_class": "US Stocks",
+                "sector": "Custom Sector",
+                "metadata_source": "manual_override",
+            },
+        )
+        # Re-read through the migration/seed path.
+        metadata = store.get_asset_metadata_map()["AAPL"]
+        assert metadata["sector"] == "Custom Sector"
+        assert metadata["metadata_source"] == "manual_override"
+
+    def test_unknown_symbol_gets_deterministic_fallback_metadata(self, store):
+        store.add_transaction(
+            date="2026-01-01",
+            symbol="ZZZZ",
+            action="BUY",
+            quantity=1,
+            unit_price=100,
+        )
+        holding = _position(store.get_holdings(), "ZZZZ")
+        assert holding["asset_class"] == "US Stocks"
+        assert holding["region"] == "US"
+        assert holding["metadata_source"] == "fallback"
+
+    def test_crypto_pair_gets_fallback_crypto_classification(self, store):
+        store.add_transaction(
+            date="2026-01-01",
+            symbol="SOL-USD",
+            action="BUY",
+            quantity=1,
+            unit_price=120,
+        )
+        holding = _position(store.get_holdings(), "SOL-USD")
+        assert holding["asset_class"] == "Crypto"
+        assert holding["metadata_source"] == "fallback"
+
+
 class TestTransactions:
     def test_add_transaction(self, store):
         txn = store.add_transaction(

@@ -15,6 +15,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
+from buildwealth_orchestrator.services.asset_metadata_seed import (
+    infer_asset_metadata,
+    load_seed_asset_metadata,
+)
 from buildwealth_orchestrator.services.portfolio_performance import calculate_portfolio_performance
 
 PORTFOLIO_STORE_SCHEMA_VERSION = 6
@@ -192,9 +196,17 @@ class PortfolioStore:
 
     @staticmethod
     def _default_asset_metadata_payload() -> dict[str, Any]:
+        seed_map = load_seed_asset_metadata()
+        symbols: dict[str, dict[str, Any]] = {}
+        for symbol, record in seed_map.items():
+            symbol_normalized = PortfolioStore._normalize_symbol(symbol)
+            if not symbol_normalized or not isinstance(record, dict):
+                continue
+            symbols[symbol_normalized] = PortfolioStore._normalize_metadata_record(symbol_normalized, record)
+
         return {
             "schema_version": ASSET_METADATA_SCHEMA_VERSION,
-            "symbols": {},
+            "symbols": symbols,
             "updated_at": _utc_now(),
         }
 
@@ -453,6 +465,17 @@ class PortfolioStore:
             text = str(value).strip()
             return text if text else None
 
+        def _clean_float(value: Any) -> float | None:
+            if value is None:
+                return None
+            try:
+                parsed = float(value)
+            except (TypeError, ValueError):
+                return None
+            if parsed < 0:
+                return None
+            return round(parsed, 6)
+
         raw_custom = merged.get("is_custom_asset")
         if isinstance(raw_custom, bool):
             is_custom_asset = raw_custom
@@ -463,6 +486,12 @@ class PortfolioStore:
 
         data_source = _clean(merged.get("data_source") or merged.get("dataSource") or merged.get("source"))
         valuation_method = _clean(merged.get("valuation_method") or merged.get("valuationMethod"))
+        metadata_source = _clean(
+            merged.get("metadata_source")
+            or merged.get("classification_source")
+            or merged.get("metadataSource")
+        )
+        expense_ratio = _clean_float(merged.get("expense_ratio") or merged.get("expenseRatio"))
 
         return {
             "symbol": symbol_normalized,
@@ -474,8 +503,49 @@ class PortfolioStore:
             "data_source": data_source.upper() if data_source else None,
             "is_custom_asset": is_custom_asset,
             "valuation_method": valuation_method,
+            "metadata_source": metadata_source,
+            "expense_ratio": expense_ratio,
             "updated_at": _utc_now(),
         }
+
+    def _merge_seed_metadata_payload(self, payload: dict[str, Any]) -> tuple[dict[str, Any], int]:
+        symbols = payload.get("symbols", {})
+        if not isinstance(symbols, dict):
+            symbols = {}
+            payload["symbols"] = symbols
+
+        seed_map = load_seed_asset_metadata()
+        if not seed_map:
+            return payload, 0
+
+        changed = 0
+        for symbol, raw_record in seed_map.items():
+            symbol_normalized = self._normalize_symbol(symbol)
+            if not symbol_normalized or not isinstance(raw_record, dict):
+                continue
+
+            existing = symbols.get(symbol_normalized)
+            if isinstance(existing, dict):
+                patch: dict[str, Any] = {}
+                for field, value in raw_record.items():
+                    existing_value = existing.get(field)
+                    if existing_value is None:
+                        patch[field] = value
+                    elif isinstance(existing_value, str) and existing_value.strip() == "":
+                        patch[field] = value
+                if not patch:
+                    continue
+                updated = self._normalize_metadata_record(symbol_normalized, patch, existing=existing)
+                if updated != existing:
+                    symbols[symbol_normalized] = updated
+                    changed += 1
+            else:
+                symbols[symbol_normalized] = self._normalize_metadata_record(symbol_normalized, raw_record)
+                changed += 1
+
+        if changed:
+            payload["updated_at"] = _utc_now()
+        return payload, changed
 
     def _migrate_asset_metadata_payload(self, payload: Any) -> dict[str, Any]:
         default_payload = self._default_asset_metadata_payload()
@@ -507,6 +577,7 @@ class PortfolioStore:
     def _read_asset_metadata_payload(self) -> dict[str, Any]:
         original = self._read_json(self._asset_metadata_path)
         payload = self._migrate_asset_metadata_payload(original)
+        payload, _ = self._merge_seed_metadata_payload(payload)
         if payload != original:
             self._write_json(self._asset_metadata_path, payload)
         return payload
@@ -1027,6 +1098,8 @@ class PortfolioStore:
                 "data_source": raw_holding.get("data_source"),
                 "is_custom_asset": bool(raw_holding.get("is_custom_asset", False)),
                 "valuation_method": raw_holding.get("valuation_method"),
+                "metadata_source": raw_holding.get("metadata_source"),
+                "expense_ratio": raw_holding.get("expense_ratio"),
             }
 
             migrated_holdings[scoped_key] = holding_record
@@ -1263,6 +1336,8 @@ class PortfolioStore:
                     "data_source": holding.get("data_source"),
                     "is_custom_asset": bool(holding.get("is_custom_asset", False)),
                     "valuation_method": holding.get("valuation_method"),
+                    "metadata_source": holding.get("metadata_source"),
+                    "expense_ratio": holding.get("expense_ratio"),
                 },
             )
 
@@ -1287,7 +1362,17 @@ class PortfolioStore:
             if holding.get("price_source") == "MANUAL":
                 bucket["price_source"] = "MANUAL"
 
-            for field in ("name", "asset_type", "asset_class", "sector", "region", "data_source", "valuation_method"):
+            for field in (
+                "name",
+                "asset_type",
+                "asset_class",
+                "sector",
+                "region",
+                "data_source",
+                "valuation_method",
+                "metadata_source",
+                "expense_ratio",
+            ):
                 if not bucket.get(field) and holding.get(field):
                     bucket[field] = holding.get(field)
             bucket["is_custom_asset"] = bool(bucket.get("is_custom_asset")) or bool(holding.get("is_custom_asset"))
@@ -1441,6 +1526,8 @@ class PortfolioStore:
     def _apply_metadata(self, symbol: str, base: dict[str, Any], metadata_map: dict[str, dict[str, Any]]) -> None:
         metadata = metadata_map.get(symbol) if isinstance(metadata_map, dict) else None
         if not isinstance(metadata, dict):
+            metadata = infer_asset_metadata(symbol)
+        if not isinstance(metadata, dict):
             return
         for field in (
             "name",
@@ -1451,6 +1538,8 @@ class PortfolioStore:
             "data_source",
             "is_custom_asset",
             "valuation_method",
+            "metadata_source",
+            "expense_ratio",
         ):
             if metadata.get(field) is not None:
                 base[field] = metadata.get(field)
@@ -2130,6 +2219,8 @@ class PortfolioStore:
                 "data_source": None,
                 "is_custom_asset": False,
                 "valuation_method": None,
+                "metadata_source": None,
+                "expense_ratio": None,
             }
 
             self._apply_metadata(position["symbol"], holding, metadata_map)

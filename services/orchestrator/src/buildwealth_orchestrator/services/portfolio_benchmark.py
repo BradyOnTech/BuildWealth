@@ -19,6 +19,8 @@ from buildwealth_orchestrator.services.engine_adapter import (
 )
 from buildwealth_orchestrator.services.snapshot_store import SnapshotStore
 
+GHOSTFOLIO_BENCHMARK_CONTRACT_VERSION = 1
+
 
 class GhostfolioBenchmarkPortfolioPointV1(BaseModel):
     date: date
@@ -113,11 +115,20 @@ class GhostfolioBenchmarkService:
         *,
         benchmark_symbols: list[str],
         limit: int,
+        sidecar_guard_reason: str | None = None,
     ) -> PortfolioBenchmarkResponse:
         request_payload = self._build_request_payload(
             benchmark_symbols=benchmark_symbols,
             limit=limit,
         )
+
+        if sidecar_guard_reason:
+            fallback = self._compute_local_fallback(
+                request_payload,
+                fallback_method="contract_version_guard",
+                warning=f"Ghostfolio benchmark sidecar skipped: {sidecar_guard_reason}",
+            )
+            return self._to_api_response(request_payload, fallback)
 
         if self.sidecar_enabled and self.sidecar_adapter is not None:
             try:

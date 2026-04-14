@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, TypeVar
 
 import httpx
@@ -59,6 +60,10 @@ class SidecarAdapter:
         body = request_obj.model_dump(mode="json")
         attempts = self.max_retries + 1
         path_value = self._normalize_path(path)
+        if not self._is_versioned_contract_path(path_value):
+            raise SidecarTransportError(
+                "Sidecar path must use a versioned contract prefix (for example /v1/...)"
+            )
 
         for attempt in range(attempts):
             try:
@@ -102,6 +107,10 @@ class SidecarAdapter:
         if not cleaned:
             raise SidecarTransportError("Sidecar path must not be empty")
         return cleaned if cleaned.startswith("/") else f"/{cleaned}"
+
+    @staticmethod
+    def _is_versioned_contract_path(path: str) -> bool:
+        return bool(re.match(r"^/v\d+(?:/|$)", path))
 
     @staticmethod
     def _is_retryable_status(status_code: int) -> bool:

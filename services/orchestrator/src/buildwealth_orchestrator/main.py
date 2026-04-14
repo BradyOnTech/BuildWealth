@@ -140,9 +140,18 @@ from buildwealth_orchestrator.services.price_updater import (
     refresh_portfolio,
 )
 from buildwealth_orchestrator.services.engine_adapter import SidecarAdapter
-from buildwealth_orchestrator.services.portfolio_benchmark import GhostfolioBenchmarkService
-from buildwealth_orchestrator.services.portfolio_attribution import GhostfolioAttributionService
-from buildwealth_orchestrator.services.planning_sidecar import IgnidashScenarioService
+from buildwealth_orchestrator.services.portfolio_benchmark import (
+    GHOSTFOLIO_BENCHMARK_CONTRACT_VERSION,
+    GhostfolioBenchmarkService,
+)
+from buildwealth_orchestrator.services.portfolio_attribution import (
+    GHOSTFOLIO_ATTRIBUTION_CONTRACT_VERSION,
+    GhostfolioAttributionService,
+)
+from buildwealth_orchestrator.services.planning_sidecar import (
+    IGNIDASH_SCENARIO_CONTRACT_VERSION,
+    IgnidashScenarioService,
+)
 from buildwealth_orchestrator.services.engine_status import EngineProbeConfig, EngineStatusTracker
 from buildwealth_orchestrator.services.tax_engine import estimate_federal_tax
 from buildwealth_orchestrator.services.today_dashboard import build_today_dashboard_payload
@@ -273,6 +282,11 @@ engine_status_tracker = EngineStatusTracker(
                 settings.engine_sidecar_version_paths,
                 fallback=("/version",),
             ),
+            expected_contract_version=(
+                settings.ghostfolio_sidecar_contract_version
+                if settings.ghostfolio_sidecar_contract_version > 0
+                else GHOSTFOLIO_BENCHMARK_CONTRACT_VERSION
+            ),
         ),
         EngineProbeConfig(
             name="ghostfolio_attribution",
@@ -286,6 +300,11 @@ engine_status_tracker = EngineStatusTracker(
                 settings.engine_sidecar_version_paths,
                 fallback=("/version",),
             ),
+            expected_contract_version=(
+                settings.ghostfolio_sidecar_contract_version
+                if settings.ghostfolio_sidecar_contract_version > 0
+                else GHOSTFOLIO_ATTRIBUTION_CONTRACT_VERSION
+            ),
         ),
         EngineProbeConfig(
             name="ignidash_scenario",
@@ -298,6 +317,11 @@ engine_status_tracker = EngineStatusTracker(
             version_paths=parse_path_candidates(
                 settings.engine_sidecar_version_paths,
                 fallback=("/version",),
+            ),
+            expected_contract_version=(
+                settings.ignidash_sidecar_contract_version
+                if settings.ignidash_sidecar_contract_version > 0
+                else IGNIDASH_SCENARIO_CONTRACT_VERSION
             ),
         ),
     ],
@@ -380,6 +404,13 @@ sync_state: dict[str, object] = {
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+async def sidecar_contract_guard_reason(engine_name: str) -> str | None:
+    try:
+        return await engine_status_tracker.sidecar_guard_reason(engine_name)
+    except Exception:
+        return None
 
 
 async def build_live_snapshot() -> PortfolioSnapshot:
@@ -1870,6 +1901,7 @@ async def run_scenarios_for_plan_settings(
     if not withdrawal_strategy:
         withdrawal_strategy = str(timeline_withdrawal_strategy or "").strip() or None
     resolved_start_year = utc_now().year
+    scenario_guard_reason = await sidecar_contract_guard_reason("ignidash_scenario")
 
     result = await service.run(
         current_portfolio_value_usd=resolved_portfolio_value,
@@ -1888,6 +1920,7 @@ async def run_scenarios_for_plan_settings(
         start_year=resolved_start_year,
         withdrawal_strategy=withdrawal_strategy,
         retirement_age=retirement_age,
+        sidecar_guard_reason=scenario_guard_reason,
         assumption_set_id=(str(assumption_set.get("id")) if isinstance(assumption_set, dict) and assumption_set.get("id") else None),
         assumption_set_name=(str(assumption_set.get("name")) if isinstance(assumption_set, dict) and assumption_set.get("name") else None),
     )
@@ -5911,9 +5944,11 @@ async def get_portfolio_benchmark(symbols: str | None = None, limit: int = 180) 
 
     bounded_limit = max(2, min(int(limit), 3650))
     try:
+        guard_reason = await sidecar_contract_guard_reason("ghostfolio_benchmark")
         result = await benchmark_service.compare(
             benchmark_symbols=resolved_symbols,
             limit=bounded_limit,
+            sidecar_guard_reason=guard_reason,
         )
         if result.engine_status == "degraded":
             await engine_status_tracker.increment_degraded(
@@ -5929,7 +5964,11 @@ async def get_portfolio_benchmark(symbols: str | None = None, limit: int = 180) 
 async def get_portfolio_attribution(top_n: int = 5) -> PortfolioAttributionResponse:
     bounded_top_n = max(1, min(int(top_n), 50))
     try:
-        result = await attribution_service.analyze(top_n=bounded_top_n)
+        guard_reason = await sidecar_contract_guard_reason("ghostfolio_attribution")
+        result = await attribution_service.analyze(
+            top_n=bounded_top_n,
+            sidecar_guard_reason=guard_reason,
+        )
         if result.engine_status == "degraded":
             await engine_status_tracker.increment_degraded(
                 "ghostfolio_attribution",
@@ -7092,6 +7131,7 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
     if planning_settings_for_run.get("filing_status"):
         filing_status = str(planning_settings_for_run.get("filing_status") or "").strip() or filing_status
 
+    scenario_guard_reason = await sidecar_contract_guard_reason("ignidash_scenario")
     result = await service.run(
         current_portfolio_value_usd=resolved_current_value,
         annual_contribution_usd=resolved_annual_contribution,
@@ -7121,6 +7161,7 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         start_year=utc_now().year,
         withdrawal_strategy=active_withdrawal_strategy,
         retirement_age=active_retirement_age,
+        sidecar_guard_reason=scenario_guard_reason,
         assumption_set_id=(
             str(active_assumption_set.get("id"))
             if isinstance(active_assumption_set, dict) and active_assumption_set.get("id")

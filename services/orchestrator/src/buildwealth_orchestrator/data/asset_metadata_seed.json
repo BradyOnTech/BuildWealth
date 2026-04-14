@@ -1,0 +1,4412 @@
+{
+  "symbols": {
+    "A": {
+      "name": "Agilent Technologies",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AAPL": {
+      "name": "Apple Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ABBV": {
+      "name": "AbbVie",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ABNB": {
+      "name": "Airbnb",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ABT": {
+      "name": "Abbott Laboratories",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ACGL": {
+      "name": "Arch Capital Group",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ACN": {
+      "name": "Accenture",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ADBE": {
+      "name": "Adobe Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ADI": {
+      "name": "Analog Devices",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ADM": {
+      "name": "Archer Daniels Midland",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ADP": {
+      "name": "Automatic Data Processing",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ADSK": {
+      "name": "Autodesk",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AEE": {
+      "name": "Ameren",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AEP": {
+      "name": "American Electric Power",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AES": {
+      "name": "AES Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AFL": {
+      "name": "Aflac",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AGG": {
+      "name": "iShares Core U.S. Aggregate Bond ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Bonds",
+      "sector": "Broad Bond Market",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AIG": {
+      "name": "American International Group",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AIZ": {
+      "name": "Assurant",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AJG": {
+      "name": "Arthur J. Gallagher & Co.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AKAM": {
+      "name": "Akamai Technologies",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ALB": {
+      "name": "Albemarle Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ALGN": {
+      "name": "Align Technology",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ALL": {
+      "name": "Allstate",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ALLE": {
+      "name": "Allegion",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AMAT": {
+      "name": "Applied Materials",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AMCR": {
+      "name": "Amcor",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AMD": {
+      "name": "Advanced Micro Devices",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AME": {
+      "name": "Ametek",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AMGN": {
+      "name": "Amgen",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AMP": {
+      "name": "Ameriprise Financial",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AMT": {
+      "name": "American Tower",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AMZN": {
+      "name": "Amazon",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ANET": {
+      "name": "Arista Networks",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AON": {
+      "name": "Aon plc",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AOS": {
+      "name": "A. O. Smith",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "APA": {
+      "name": "APA Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "APD": {
+      "name": "Air Products",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "APH": {
+      "name": "Amphenol",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "APO": {
+      "name": "Apollo Global Management",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "APP": {
+      "name": "AppLovin",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "APTV": {
+      "name": "Aptiv",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ARE": {
+      "name": "Alexandria Real Estate Equities",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ARES": {
+      "name": "Ares Management",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ARKB": {
+      "name": "ARK 21Shares Bitcoin ETF",
+      "asset_type": "ETF",
+      "asset_class": "Crypto",
+      "sector": "Bitcoin",
+      "region": "Global",
+      "data_source": "YAHOO"
+    },
+    "ATO": {
+      "name": "Atmos Energy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AVB": {
+      "name": "AvalonBay Communities",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AVGO": {
+      "name": "Broadcom",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AVY": {
+      "name": "Avery Dennison",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AWK": {
+      "name": "American Water Works",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AXON": {
+      "name": "Axon Enterprise",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AXP": {
+      "name": "American Express",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "AZO": {
+      "name": "AutoZone",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BA": {
+      "name": "Boeing",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BAC": {
+      "name": "Bank of America",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BALL": {
+      "name": "Ball Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BAX": {
+      "name": "Baxter International",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BBY": {
+      "name": "Best Buy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BDX": {
+      "name": "Becton Dickinson",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BEN": {
+      "name": "Franklin Resources",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BF.B": {
+      "name": "Brown\u2013Forman",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BG": {
+      "name": "Bunge Global",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BIIB": {
+      "name": "Biogen",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BIL": {
+      "name": "SPDR Bloomberg 1-3 Month T-Bill ETF",
+      "asset_type": "ETF",
+      "asset_class": "Cash",
+      "sector": "Treasury Bills",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BK": {
+      "name": "BNY Mellon",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BKNG": {
+      "name": "Booking Holdings",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BKR": {
+      "name": "Baker Hughes",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BLDR": {
+      "name": "Builders FirstSource",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BLK": {
+      "name": "BlackRock",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BMY": {
+      "name": "Bristol Myers Squibb",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BND": {
+      "name": "Vanguard Total Bond Market ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Bonds",
+      "sector": "Broad Bond Market",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BNDX": {
+      "name": "Vanguard Total International Bond ETF",
+      "asset_type": "ETF",
+      "asset_class": "International Bonds",
+      "sector": "Broad Bond Market",
+      "region": "International",
+      "data_source": "YAHOO"
+    },
+    "BR": {
+      "name": "Broadridge Financial Solutions",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BRK.B": {
+      "name": "Berkshire Hathaway",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BRO": {
+      "name": "Brown & Brown",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BSX": {
+      "name": "Boston Scientific",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BTC-USD": {
+      "name": "Bitcoin USD",
+      "asset_type": "CRYPTO",
+      "asset_class": "Crypto",
+      "sector": "Bitcoin",
+      "region": "Global",
+      "data_source": "YAHOO"
+    },
+    "BX": {
+      "name": "Blackstone Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "BXP": {
+      "name": "BXP, Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "C": {
+      "name": "Citigroup",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CAG": {
+      "name": "Conagra Brands",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CAH": {
+      "name": "Cardinal Health",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CARR": {
+      "name": "Carrier Global",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CASY": {
+      "name": "Casey's",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CAT": {
+      "name": "Caterpillar Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CB": {
+      "name": "Chubb Limited",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CBOE": {
+      "name": "Cboe Global Markets",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CBRE": {
+      "name": "CBRE Group",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CCI": {
+      "name": "Crown Castle",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CCL": {
+      "name": "Carnival",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CDNS": {
+      "name": "Cadence Design Systems",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CDW": {
+      "name": "CDW Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CEG": {
+      "name": "Constellation Energy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CF": {
+      "name": "CF Industries",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CFG": {
+      "name": "Citizens Financial Group",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CHD": {
+      "name": "Church & Dwight",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CHRW": {
+      "name": "C.H. Robinson",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CHTR": {
+      "name": "Charter Communications",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CI": {
+      "name": "Cigna",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CIEN": {
+      "name": "Ciena",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CINF": {
+      "name": "Cincinnati Financial",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CL": {
+      "name": "Colgate-Palmolive",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CLX": {
+      "name": "Clorox",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CMCSA": {
+      "name": "Comcast",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CME": {
+      "name": "CME Group",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CMG": {
+      "name": "Chipotle Mexican Grill",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CMI": {
+      "name": "Cummins",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CMS": {
+      "name": "CMS Energy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CNC": {
+      "name": "Centene Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CNP": {
+      "name": "CenterPoint Energy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "COF": {
+      "name": "Capital One",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "COHR": {
+      "name": "Coherent Corp.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "COIN": {
+      "name": "Coinbase",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "COO": {
+      "name": "Cooper Companies (The)",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "COP": {
+      "name": "ConocoPhillips",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "COR": {
+      "name": "Cencora",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "COST": {
+      "name": "Costco",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CPAY": {
+      "name": "Corpay",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CPB": {
+      "name": "Campbell's Company (The)",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CPRT": {
+      "name": "Copart",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CPT": {
+      "name": "Camden Property Trust",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CRH": {
+      "name": "CRH plc",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CRL": {
+      "name": "Charles River Laboratories",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CRM": {
+      "name": "Salesforce",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CRWD": {
+      "name": "CrowdStrike",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CSCO": {
+      "name": "Cisco",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CSGP": {
+      "name": "CoStar Group",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CSX": {
+      "name": "CSX Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CTAS": {
+      "name": "Cintas",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CTRA": {
+      "name": "Coterra",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CTSH": {
+      "name": "Cognizant",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CTVA": {
+      "name": "Corteva",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CVNA": {
+      "name": "Carvana",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CVS": {
+      "name": "CVS Health",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "CVX": {
+      "name": "Chevron Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "D": {
+      "name": "Dominion Energy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DAL": {
+      "name": "Delta Air Lines",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DASH": {
+      "name": "DoorDash",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DBC": {
+      "name": "Invesco DB Commodity Index Tracking Fund",
+      "asset_type": "ETF",
+      "asset_class": "Commodities",
+      "sector": "Broad Commodities",
+      "region": "Global",
+      "data_source": "YAHOO"
+    },
+    "DD": {
+      "name": "DuPont",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DDOG": {
+      "name": "Datadog",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DE": {
+      "name": "Deere & Company",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DECK": {
+      "name": "Deckers Brands",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DELL": {
+      "name": "Dell Technologies",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DG": {
+      "name": "Dollar General",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DGRO": {
+      "name": "iShares Core Dividend Growth ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Stocks",
+      "sector": "Dividend",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DGX": {
+      "name": "Quest Diagnostics",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DHI": {
+      "name": "D. R. Horton",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DHR": {
+      "name": "Danaher Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DIS": {
+      "name": "Walt Disney Company (The)",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DLR": {
+      "name": "Digital Realty",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DLTR": {
+      "name": "Dollar Tree",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DOC": {
+      "name": "Healthpeak Properties",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DOV": {
+      "name": "Dover Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DOW": {
+      "name": "Dow Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DPZ": {
+      "name": "Domino's",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DRI": {
+      "name": "Darden Restaurants",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DTE": {
+      "name": "DTE Energy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DUK": {
+      "name": "Duke Energy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DVA": {
+      "name": "DaVita",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DVN": {
+      "name": "Devon Energy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "DXCM": {
+      "name": "Dexcom",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EA": {
+      "name": "Electronic Arts",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EBAY": {
+      "name": "eBay Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ECL": {
+      "name": "Ecolab",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ED": {
+      "name": "Consolidated Edison",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EEM": {
+      "name": "iShares MSCI Emerging Markets ETF",
+      "asset_type": "ETF",
+      "asset_class": "Emerging Markets",
+      "sector": "Emerging Markets",
+      "region": "Emerging Markets",
+      "data_source": "YAHOO"
+    },
+    "EFX": {
+      "name": "Equifax",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EG": {
+      "name": "Everest Group",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EIX": {
+      "name": "Edison International",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EL": {
+      "name": "Est\u00e9e Lauder Companies (The)",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ELV": {
+      "name": "Elevance Health",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EME": {
+      "name": "Emcor",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EMR": {
+      "name": "Emerson Electric",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EOG": {
+      "name": "EOG Resources",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EPAM": {
+      "name": "EPAM Systems",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EQIX": {
+      "name": "Equinix",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EQR": {
+      "name": "Equity Residential",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EQT": {
+      "name": "EQT Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ERIE": {
+      "name": "Erie Indemnity",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ES": {
+      "name": "Eversource Energy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ESS": {
+      "name": "Essex Property Trust",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ETH-USD": {
+      "name": "Ethereum USD",
+      "asset_type": "CRYPTO",
+      "asset_class": "Crypto",
+      "sector": "Ethereum",
+      "region": "Global",
+      "data_source": "YAHOO"
+    },
+    "ETHA": {
+      "name": "iShares Ethereum Trust ETF",
+      "asset_type": "ETF",
+      "asset_class": "Crypto",
+      "sector": "Ethereum",
+      "region": "Global",
+      "data_source": "YAHOO"
+    },
+    "ETN": {
+      "name": "Eaton Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ETR": {
+      "name": "Entergy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EVRG": {
+      "name": "Evergy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EW": {
+      "name": "Edwards Lifesciences",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EXC": {
+      "name": "Exelon",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EXE": {
+      "name": "Expand Energy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EXPD": {
+      "name": "Expeditors International",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EXPE": {
+      "name": "Expedia Group",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "EXR": {
+      "name": "Extra Space Storage",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "F": {
+      "name": "Ford Motor Company",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "FANG": {
+      "name": "Diamondback Energy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "FAST": {
+      "name": "Fastenal",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "FBTC": {
+      "name": "Fidelity Wise Origin Bitcoin Fund",
+      "asset_type": "ETF",
+      "asset_class": "Crypto",
+      "sector": "Bitcoin",
+      "region": "Global",
+      "data_source": "YAHOO"
+    },
+    "FCX": {
+      "name": "Freeport-McMoRan",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "FDS": {
+      "name": "FactSet",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "FDX": {
+      "name": "FedEx",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "FE": {
+      "name": "FirstEnergy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "FFIV": {
+      "name": "F5, Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "FICO": {
+      "name": "Fair Isaac",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "FIS": {
+      "name": "Fidelity National Information Services",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "FISV": {
+      "name": "Fiserv",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "FITB": {
+      "name": "Fifth Third Bancorp",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "FIX": {
+      "name": "Comfort Systems USA",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "FOX": {
+      "name": "Fox Corporation (Class B)",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "FOXA": {
+      "name": "Fox Corporation (Class A)",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "FRT": {
+      "name": "Federal Realty Investment Trust",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "FSLR": {
+      "name": "First Solar",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "FTNT": {
+      "name": "Fortinet",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "FTV": {
+      "name": "Fortive",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "GD": {
+      "name": "General Dynamics",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "GDDY": {
+      "name": "GoDaddy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "GE": {
+      "name": "GE Aerospace",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "GEHC": {
+      "name": "GE HealthCare",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "GEN": {
+      "name": "Gen Digital",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "GEV": {
+      "name": "GE Vernova",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "GILD": {
+      "name": "Gilead Sciences",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "GIS": {
+      "name": "General Mills",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "GL": {
+      "name": "Globe Life",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "GLD": {
+      "name": "SPDR Gold Shares",
+      "asset_type": "ETF",
+      "asset_class": "Commodities",
+      "sector": "Gold",
+      "region": "Global",
+      "data_source": "YAHOO"
+    },
+    "GLW": {
+      "name": "Corning Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "GM": {
+      "name": "General Motors",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "GNRC": {
+      "name": "Generac",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "GOOG": {
+      "name": "Alphabet Inc. (Class C)",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "GOOGL": {
+      "name": "Alphabet Inc. (Class A)",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "GPC": {
+      "name": "Genuine Parts Company",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "GPN": {
+      "name": "Global Payments",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "GRMN": {
+      "name": "Garmin",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "GS": {
+      "name": "Goldman Sachs",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "GWW": {
+      "name": "W. W. Grainger",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "HAL": {
+      "name": "Halliburton",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "HAS": {
+      "name": "Hasbro",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "HBAN": {
+      "name": "Huntington Bancshares",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "HCA": {
+      "name": "HCA Healthcare",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "HD": {
+      "name": "Home Depot (The)",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "HIG": {
+      "name": "Hartford (The)",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "HII": {
+      "name": "Huntington Ingalls Industries",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "HLT": {
+      "name": "Hilton Worldwide",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "HON": {
+      "name": "Honeywell",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "HOOD": {
+      "name": "Robinhood Markets",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "HPE": {
+      "name": "Hewlett Packard Enterprise",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "HPQ": {
+      "name": "HP Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "HRL": {
+      "name": "Hormel Foods",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "HSIC": {
+      "name": "Henry Schein",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "HST": {
+      "name": "Host Hotels & Resorts",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "HSY": {
+      "name": "Hershey Company (The)",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "HUBB": {
+      "name": "Hubbell Incorporated",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "HUM": {
+      "name": "Humana",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "HWM": {
+      "name": "Howmet Aerospace",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "IAU": {
+      "name": "iShares Gold Trust",
+      "asset_type": "ETF",
+      "asset_class": "Commodities",
+      "sector": "Gold",
+      "region": "Global",
+      "data_source": "YAHOO"
+    },
+    "IBIT": {
+      "name": "iShares Bitcoin Trust ETF",
+      "asset_type": "ETF",
+      "asset_class": "Crypto",
+      "sector": "Bitcoin",
+      "region": "Global",
+      "data_source": "YAHOO"
+    },
+    "IBKR": {
+      "name": "Interactive Brokers",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "IBM": {
+      "name": "IBM",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ICE": {
+      "name": "Intercontinental Exchange",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ICSH": {
+      "name": "iShares Ultra Short-Term Bond ETF",
+      "asset_type": "ETF",
+      "asset_class": "Cash",
+      "sector": "Ultra Short Bond",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "IDXX": {
+      "name": "Idexx Laboratories",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "IEF": {
+      "name": "iShares 7-10 Year Treasury Bond ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Bonds",
+      "sector": "Treasury",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "IEFA": {
+      "name": "iShares Core MSCI EAFE ETF",
+      "asset_type": "ETF",
+      "asset_class": "International Stocks",
+      "sector": "Developed Markets",
+      "region": "International",
+      "data_source": "YAHOO"
+    },
+    "IEMG": {
+      "name": "iShares Core MSCI Emerging Markets ETF",
+      "asset_type": "ETF",
+      "asset_class": "Emerging Markets",
+      "sector": "Emerging Markets",
+      "region": "Emerging Markets",
+      "data_source": "YAHOO"
+    },
+    "IEX": {
+      "name": "IDEX Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "IFF": {
+      "name": "International Flavors & Fragrances",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "INCY": {
+      "name": "Incyte",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "INTC": {
+      "name": "Intel",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "INTU": {
+      "name": "Intuit",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "INVH": {
+      "name": "Invitation Homes",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "IP": {
+      "name": "International Paper",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "IQV": {
+      "name": "IQVIA",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "IR": {
+      "name": "Ingersoll Rand",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "IRM": {
+      "name": "Iron Mountain",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ISRG": {
+      "name": "Intuitive Surgical",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "IT": {
+      "name": "Gartner",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ITOT": {
+      "name": "iShares Core S&P Total U.S. Stock Market ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Stocks",
+      "sector": "Broad Market",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ITW": {
+      "name": "Illinois Tool Works",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "IUSB": {
+      "name": "iShares Core Total USD Bond Market ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Bonds",
+      "sector": "Broad Bond Market",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "IVV": {
+      "name": "iShares Core S&P 500 ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Stocks",
+      "sector": "Broad Market",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "IVZ": {
+      "name": "Invesco",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "IWM": {
+      "name": "iShares Russell 2000 ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Stocks",
+      "sector": "Small Cap",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "IXUS": {
+      "name": "iShares Core MSCI Total International Stock ETF",
+      "asset_type": "ETF",
+      "asset_class": "International Stocks",
+      "sector": "Broad Market",
+      "region": "International",
+      "data_source": "YAHOO"
+    },
+    "IYR": {
+      "name": "iShares U.S. Real Estate ETF",
+      "asset_type": "ETF",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "J": {
+      "name": "Jacobs Solutions",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "JBHT": {
+      "name": "J.B. Hunt",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "JBL": {
+      "name": "Jabil",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "JCI": {
+      "name": "Johnson Controls",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "JKHY": {
+      "name": "Jack Henry & Associates",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "JNJ": {
+      "name": "Johnson & Johnson",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "JPM": {
+      "name": "JPMorgan Chase",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "KDP": {
+      "name": "Keurig Dr Pepper",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "KEY": {
+      "name": "KeyCorp",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "KEYS": {
+      "name": "Keysight Technologies",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "KHC": {
+      "name": "Kraft Heinz",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "KIM": {
+      "name": "Kimco Realty",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "KKR": {
+      "name": "KKR & Co.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "KLAC": {
+      "name": "KLA Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "KMB": {
+      "name": "Kimberly-Clark",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "KMI": {
+      "name": "Kinder Morgan",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "KO": {
+      "name": "Coca-Cola Company (The)",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "KR": {
+      "name": "Kroger",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "KVUE": {
+      "name": "Kenvue",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "L": {
+      "name": "Loews Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "LDOS": {
+      "name": "Leidos",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "LEN": {
+      "name": "Lennar",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "LH": {
+      "name": "Labcorp",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "LHX": {
+      "name": "L3Harris",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "LII": {
+      "name": "Lennox International",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "LIN": {
+      "name": "Linde plc",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "LITE": {
+      "name": "Lumentum",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "LLY": {
+      "name": "Lilly (Eli)",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "LMT": {
+      "name": "Lockheed Martin",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "LNT": {
+      "name": "Alliant Energy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "LOW": {
+      "name": "Lowe's",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "LRCX": {
+      "name": "Lam Research",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "LULU": {
+      "name": "Lululemon Athletica",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "LUV": {
+      "name": "Southwest Airlines",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "LVS": {
+      "name": "Las Vegas Sands",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "LYB": {
+      "name": "LyondellBasell",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "LYV": {
+      "name": "Live Nation Entertainment",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MA": {
+      "name": "Mastercard",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MAA": {
+      "name": "Mid-America Apartment Communities",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MAR": {
+      "name": "Marriott International",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MAS": {
+      "name": "Masco",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MCD": {
+      "name": "McDonald's",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MCHP": {
+      "name": "Microchip Technology",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MCK": {
+      "name": "McKesson Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MCO": {
+      "name": "Moody's Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MDLZ": {
+      "name": "Mondelez International",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MDT": {
+      "name": "Medtronic",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MET": {
+      "name": "MetLife",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "META": {
+      "name": "Meta Platforms",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MGM": {
+      "name": "MGM Resorts",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MKC": {
+      "name": "McCormick & Company",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MLM": {
+      "name": "Martin Marietta Materials",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MMM": {
+      "name": "3M",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MNST": {
+      "name": "Monster Beverage",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MO": {
+      "name": "Altria",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MOS": {
+      "name": "Mosaic Company (The)",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MPC": {
+      "name": "Marathon Petroleum",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MPWR": {
+      "name": "Monolithic Power Systems",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MRK": {
+      "name": "Merck & Co.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MRNA": {
+      "name": "Moderna",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MRSH": {
+      "name": "Marsh McLennan",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MS": {
+      "name": "Morgan Stanley",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MSCI": {
+      "name": "MSCI Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MSFT": {
+      "name": "Microsoft",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MSI": {
+      "name": "Motorola Solutions",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MTB": {
+      "name": "M&T Bank",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MTD": {
+      "name": "Mettler Toledo",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "MU": {
+      "name": "Micron Technology",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NCLH": {
+      "name": "Norwegian Cruise Line Holdings",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NDAQ": {
+      "name": "Nasdaq, Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NDSN": {
+      "name": "Nordson Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NEE": {
+      "name": "NextEra Energy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NEM": {
+      "name": "Newmont",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NFLX": {
+      "name": "Netflix",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NI": {
+      "name": "NiSource",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NKE": {
+      "name": "Nike, Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NOC": {
+      "name": "Northrop Grumman",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NOW": {
+      "name": "ServiceNow",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NRG": {
+      "name": "NRG Energy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NSC": {
+      "name": "Norfolk Southern",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NTAP": {
+      "name": "NetApp",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NTRS": {
+      "name": "Northern Trust",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NUE": {
+      "name": "Nucor",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NVDA": {
+      "name": "Nvidia",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NVR": {
+      "name": "NVR, Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NWS": {
+      "name": "News Corp (Class B)",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NWSA": {
+      "name": "News Corp (Class A)",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "NXPI": {
+      "name": "NXP Semiconductors",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "O": {
+      "name": "Realty Income",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ODFL": {
+      "name": "Old Dominion",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "OKE": {
+      "name": "Oneok",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "OMC": {
+      "name": "Omnicom Group",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ON": {
+      "name": "ON Semiconductor",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ORCL": {
+      "name": "Oracle Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ORLY": {
+      "name": "O\u2019Reilly Automotive",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "OTIS": {
+      "name": "Otis Worldwide",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "OXY": {
+      "name": "Occidental Petroleum",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PANW": {
+      "name": "Palo Alto Networks",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PAYX": {
+      "name": "Paychex",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PCAR": {
+      "name": "Paccar",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PCG": {
+      "name": "PG&E Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PEG": {
+      "name": "Public Service Enterprise Group",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PEP": {
+      "name": "PepsiCo",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PFE": {
+      "name": "Pfizer",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PFG": {
+      "name": "Principal Financial Group",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PG": {
+      "name": "Procter & Gamble",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PGR": {
+      "name": "Progressive Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PH": {
+      "name": "Parker Hannifin",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PHM": {
+      "name": "PulteGroup",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PKG": {
+      "name": "Packaging Corporation of America",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PLD": {
+      "name": "Prologis",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PLTR": {
+      "name": "Palantir Technologies",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PM": {
+      "name": "Philip Morris International",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PNC": {
+      "name": "PNC Financial Services",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PNR": {
+      "name": "Pentair",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PNW": {
+      "name": "Pinnacle West Capital",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PODD": {
+      "name": "Insulet Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "POOL": {
+      "name": "Pool Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PPG": {
+      "name": "PPG Industries",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PPL": {
+      "name": "PPL Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PRU": {
+      "name": "Prudential Financial",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PSA": {
+      "name": "Public Storage",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PSKY": {
+      "name": "Paramount Skydance Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PSX": {
+      "name": "Phillips 66",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PTC": {
+      "name": "PTC Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PWR": {
+      "name": "Quanta Services",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "PYPL": {
+      "name": "PayPal",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "Q": {
+      "name": "Qnity Electronics",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "QCOM": {
+      "name": "Qualcomm",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "QQQ": {
+      "name": "Invesco QQQ Trust",
+      "asset_type": "ETF",
+      "asset_class": "US Stocks",
+      "sector": "Growth",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "RCL": {
+      "name": "Royal Caribbean Group",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "REG": {
+      "name": "Regency Centers",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "REGN": {
+      "name": "Regeneron Pharmaceuticals",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "RF": {
+      "name": "Regions Financial Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "RJF": {
+      "name": "Raymond James Financial",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "RL": {
+      "name": "Ralph Lauren Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "RMD": {
+      "name": "ResMed",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ROK": {
+      "name": "Rockwell Automation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ROL": {
+      "name": "Rollins, Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ROP": {
+      "name": "Roper Technologies",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ROST": {
+      "name": "Ross Stores",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "RSG": {
+      "name": "Republic Services",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "RSP": {
+      "name": "Invesco S&P 500 Equal Weight ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Stocks",
+      "sector": "Broad Market",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "RTX": {
+      "name": "RTX Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "RVTY": {
+      "name": "Revvity",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SATS": {
+      "name": "EchoStar",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SBAC": {
+      "name": "SBA Communications",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SBUX": {
+      "name": "Starbucks",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SCHB": {
+      "name": "Schwab U.S. Broad Market ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Stocks",
+      "sector": "Broad Market",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SCHD": {
+      "name": "Schwab U.S. Dividend Equity ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Stocks",
+      "sector": "Dividend",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SCHH": {
+      "name": "Schwab U.S. REIT ETF",
+      "asset_type": "ETF",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SCHP": {
+      "name": "Schwab U.S. TIPS ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Bonds",
+      "sector": "Inflation-Protected",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SCHW": {
+      "name": "Charles Schwab Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SCHZ": {
+      "name": "Schwab U.S. Aggregate Bond ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Bonds",
+      "sector": "Broad Bond Market",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SGOV": {
+      "name": "iShares 0-3 Month Treasury Bond ETF",
+      "asset_type": "ETF",
+      "asset_class": "Cash",
+      "sector": "Treasury Bills",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SHV": {
+      "name": "iShares Short Treasury Bond ETF",
+      "asset_type": "ETF",
+      "asset_class": "Cash",
+      "sector": "Treasury Bills",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SHW": {
+      "name": "Sherwin-Williams",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SHY": {
+      "name": "iShares 1-3 Year Treasury Bond ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Bonds",
+      "sector": "Treasury",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SJM": {
+      "name": "J.M. Smucker Company (The)",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SLB": {
+      "name": "Schlumberger",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SLV": {
+      "name": "iShares Silver Trust",
+      "asset_type": "ETF",
+      "asset_class": "Commodities",
+      "sector": "Silver",
+      "region": "Global",
+      "data_source": "YAHOO"
+    },
+    "SMCI": {
+      "name": "Supermicro",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SNA": {
+      "name": "Snap-on",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SNDK": {
+      "name": "Sandisk",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SNPS": {
+      "name": "Synopsys",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SO": {
+      "name": "Southern Company",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SOLV": {
+      "name": "Solventum",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SPG": {
+      "name": "Simon Property Group",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SPGI": {
+      "name": "S&P Global",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SPY": {
+      "name": "SPDR S&P 500 ETF Trust",
+      "asset_type": "ETF",
+      "asset_class": "US Stocks",
+      "sector": "Broad Market",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SRE": {
+      "name": "Sempra",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "STE": {
+      "name": "Steris",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "STLD": {
+      "name": "Steel Dynamics",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "STT": {
+      "name": "State Street Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "STX": {
+      "name": "Seagate Technology",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "STZ": {
+      "name": "Constellation Brands",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SW": {
+      "name": "Smurfit Westrock",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SWK": {
+      "name": "Stanley Black & Decker",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SWKS": {
+      "name": "Skyworks Solutions",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SYF": {
+      "name": "Synchrony Financial",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SYK": {
+      "name": "Stryker Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "SYY": {
+      "name": "Sysco",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "T": {
+      "name": "AT&T",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TAP": {
+      "name": "Molson Coors Beverage Company",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TDG": {
+      "name": "TransDigm Group",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TDY": {
+      "name": "Teledyne Technologies",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TECH": {
+      "name": "Bio-Techne",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TEL": {
+      "name": "TE Connectivity",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TER": {
+      "name": "Teradyne",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TFC": {
+      "name": "Truist Financial",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TGT": {
+      "name": "Target Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TIP": {
+      "name": "iShares TIPS Bond ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Bonds",
+      "sector": "Inflation-Protected",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TJX": {
+      "name": "TJX Companies",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TKO": {
+      "name": "TKO Group Holdings",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TLT": {
+      "name": "iShares 20+ Year Treasury Bond ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Bonds",
+      "sector": "Treasury",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TMO": {
+      "name": "Thermo Fisher Scientific",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TMUS": {
+      "name": "T-Mobile US",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TPL": {
+      "name": "Texas Pacific Land Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TPR": {
+      "name": "Tapestry, Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TRGP": {
+      "name": "Targa Resources",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TRMB": {
+      "name": "Trimble Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TROW": {
+      "name": "T. Rowe Price",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TRV": {
+      "name": "Travelers Companies (The)",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TSCO": {
+      "name": "Tractor Supply",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TSLA": {
+      "name": "Tesla, Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TSN": {
+      "name": "Tyson Foods",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TT": {
+      "name": "Trane Technologies",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TTD": {
+      "name": "Trade Desk (The)",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TTWO": {
+      "name": "Take-Two Interactive",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TXN": {
+      "name": "Texas Instruments",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TXT": {
+      "name": "Textron",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "TYL": {
+      "name": "Tyler Technologies",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "UAL": {
+      "name": "United Airlines Holdings",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "UBER": {
+      "name": "Uber",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "UDR": {
+      "name": "UDR, Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "UHS": {
+      "name": "Universal Health Services",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ULTA": {
+      "name": "Ulta Beauty",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "UNH": {
+      "name": "UnitedHealth Group",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "UNP": {
+      "name": "Union Pacific Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "UPS": {
+      "name": "United Parcel Service",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "URI": {
+      "name": "United Rentals",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "USB": {
+      "name": "U.S. Bancorp",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "V": {
+      "name": "Visa Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "VEA": {
+      "name": "Vanguard FTSE Developed Markets ETF",
+      "asset_type": "ETF",
+      "asset_class": "International Stocks",
+      "sector": "Developed Markets",
+      "region": "International",
+      "data_source": "YAHOO"
+    },
+    "VICI": {
+      "name": "Vici Properties",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "VLO": {
+      "name": "Valero Energy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "VLTO": {
+      "name": "Veralto",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "VMC": {
+      "name": "Vulcan Materials Company",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Materials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "VNQ": {
+      "name": "Vanguard Real Estate ETF",
+      "asset_type": "ETF",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "VOO": {
+      "name": "Vanguard S&P 500 ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Stocks",
+      "sector": "Broad Market",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "VRSK": {
+      "name": "Verisk Analytics",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "VRSN": {
+      "name": "Verisign",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "VRT": {
+      "name": "Vertiv",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "VRTX": {
+      "name": "Vertex Pharmaceuticals",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "VST": {
+      "name": "Vistra Corp.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "VTI": {
+      "name": "Vanguard Total Stock Market ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Stocks",
+      "sector": "Broad Market",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "VTR": {
+      "name": "Ventas",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "VTRS": {
+      "name": "Viatris",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "VTV": {
+      "name": "Vanguard Value ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Stocks",
+      "sector": "Value",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "VUG": {
+      "name": "Vanguard Growth ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Stocks",
+      "sector": "Growth",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "VWO": {
+      "name": "Vanguard FTSE Emerging Markets ETF",
+      "asset_type": "ETF",
+      "asset_class": "Emerging Markets",
+      "sector": "Emerging Markets",
+      "region": "Emerging Markets",
+      "data_source": "YAHOO"
+    },
+    "VXUS": {
+      "name": "Vanguard Total International Stock ETF",
+      "asset_type": "ETF",
+      "asset_class": "International Stocks",
+      "sector": "Broad Market",
+      "region": "International",
+      "data_source": "YAHOO"
+    },
+    "VYM": {
+      "name": "Vanguard High Dividend Yield ETF",
+      "asset_type": "ETF",
+      "asset_class": "US Stocks",
+      "sector": "Dividend",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "VZ": {
+      "name": "Verizon",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "WAB": {
+      "name": "Wabtec",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "WAT": {
+      "name": "Waters Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "WBD": {
+      "name": "Warner Bros. Discovery",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Communication Services",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "WDAY": {
+      "name": "Workday, Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "WDC": {
+      "name": "Western Digital",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "WEC": {
+      "name": "WEC Energy Group",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "WELL": {
+      "name": "Welltower",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "WFC": {
+      "name": "Wells Fargo",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "WM": {
+      "name": "Waste Management",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "WMB": {
+      "name": "Williams Companies",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "WMT": {
+      "name": "Walmart",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Staples",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "WRB": {
+      "name": "W. R. Berkley Corporation",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "WSM": {
+      "name": "Williams-Sonoma, Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "WST": {
+      "name": "West Pharmaceutical Services",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "WTW": {
+      "name": "Willis Towers Watson",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "WY": {
+      "name": "Weyerhaeuser",
+      "asset_type": "EQUITY",
+      "asset_class": "REITs",
+      "sector": "Real Estate",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "WYNN": {
+      "name": "Wynn Resorts",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "XEL": {
+      "name": "Xcel Energy",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Utilities",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "XOM": {
+      "name": "ExxonMobil",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Energy",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "XYL": {
+      "name": "Xylem Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Industrials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "XYZ": {
+      "name": "Block, Inc.",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Financials",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "YUM": {
+      "name": "Yum! Brands",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Consumer Discretionary",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ZBH": {
+      "name": "Zimmer Biomet",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ZBRA": {
+      "name": "Zebra Technologies",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Information Technology",
+      "region": "US",
+      "data_source": "YAHOO"
+    },
+    "ZTS": {
+      "name": "Zoetis",
+      "asset_type": "EQUITY",
+      "asset_class": "US Stocks",
+      "sector": "Health Care",
+      "region": "US",
+      "data_source": "YAHOO"
+    }
+  }
+}

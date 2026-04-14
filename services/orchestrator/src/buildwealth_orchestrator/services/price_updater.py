@@ -342,6 +342,8 @@ def build_snapshot_from_holdings(holdings_data: dict[str, Any]) -> PortfolioSnap
                     "asset_class": holding.get("asset_class"),
                     "sector": holding.get("sector"),
                     "region": holding.get("region"),
+                    "metadata_source": holding.get("metadata_source"),
+                    "expense_ratio": holding.get("expense_ratio"),
                     "quantity": 0.0,
                     "cost_basis": 0.0,
                     "current_value": 0.0,
@@ -354,7 +356,7 @@ def build_snapshot_from_holdings(holdings_data: dict[str, Any]) -> PortfolioSnap
             bucket["current_value"] += float(holding.get("current_value") or 0.0)
             if bucket.get("current_price") is None and holding.get("current_price") is not None:
                 bucket["current_price"] = holding.get("current_price")
-            for field in ("name", "asset_type", "asset_class", "sector", "region"):
+            for field in ("name", "asset_type", "asset_class", "sector", "region", "metadata_source", "expense_ratio"):
                 if not bucket.get(field) and holding.get(field):
                     bucket[field] = holding.get(field)
             if not bucket.get("data_source"):
@@ -377,6 +379,8 @@ def build_snapshot_from_holdings(holdings_data: dict[str, Any]) -> PortfolioSnap
                 asset_class=holding.get("asset_class"),
                 sector=holding.get("sector"),
                 region=holding.get("region"),
+                metadata_source=holding.get("metadata_source"),
+                expense_ratio=holding.get("expense_ratio"),
                 value_usd=value,
                 allocation_percent=round(alloc, 2),
                 quantity=float(holding.get("quantity") or 0.0),

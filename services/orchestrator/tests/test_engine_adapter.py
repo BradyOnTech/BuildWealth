@@ -10,6 +10,7 @@ from buildwealth_orchestrator.services.engine_adapter import (
     SidecarAdapter,
     SidecarRequestValidationError,
     SidecarResponseValidationError,
+    SidecarTransportError,
 )
 
 
@@ -91,6 +92,24 @@ def test_sidecar_adapter_rejects_invalid_inbound_payload() -> None:
             adapter.post_json(
                 path="/v1/example",
                 request_payload={"contract_version": 1, "request_id": "req-2"},
+                request_model=_RequestContract,
+                response_model=_ResponseContract,
+            )
+        )
+
+
+def test_sidecar_adapter_rejects_non_contract_path() -> None:
+    adapter = SidecarAdapter(
+        base_url="http://localhost:8411",
+        max_retries=0,
+        transport=httpx.MockTransport(lambda _: httpx.Response(status_code=200, json={})),
+    )
+
+    with pytest.raises(SidecarTransportError):
+        asyncio.run(
+            adapter.post_json(
+                path="/api/portfolio/benchmark",
+                request_payload={"contract_version": 1, "request_id": "req-3"},
                 request_model=_RequestContract,
                 response_model=_ResponseContract,
             )

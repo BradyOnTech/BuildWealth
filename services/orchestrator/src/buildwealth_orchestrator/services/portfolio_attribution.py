@@ -23,6 +23,7 @@ from buildwealth_orchestrator.services.portfolio_store import PortfolioStore
 
 
 EPSILON = 1e-9
+GHOSTFOLIO_ATTRIBUTION_CONTRACT_VERSION = 1
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -146,8 +147,21 @@ class GhostfolioAttributionService:
         self.sidecar_path = sidecar_path
         self.base_currency = str(base_currency or "USD").upper()
 
-    async def analyze(self, *, top_n: int) -> PortfolioAttributionResponse:
+    async def analyze(
+        self,
+        *,
+        top_n: int,
+        sidecar_guard_reason: str | None = None,
+    ) -> PortfolioAttributionResponse:
         request_payload = self._build_request_payload(top_n=top_n)
+
+        if sidecar_guard_reason:
+            fallback = self._compute_local_fallback(
+                request_payload,
+                fallback_method="contract_version_guard",
+                warning=f"Ghostfolio attribution sidecar skipped: {sidecar_guard_reason}",
+            )
+            return self._to_api_response(request_payload, fallback)
 
         if self.sidecar_enabled and self.sidecar_adapter is not None:
             try:

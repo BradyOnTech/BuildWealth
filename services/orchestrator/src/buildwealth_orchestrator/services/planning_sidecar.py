@@ -18,6 +18,8 @@ from buildwealth_orchestrator.services.contribution_rules import (
 from buildwealth_orchestrator.services.engine_adapter import SidecarAdapter, SidecarAdapterError
 from buildwealth_orchestrator.services.scenario_engine import ScenarioEngine
 
+IGNIDASH_SCENARIO_CONTRACT_VERSION = 1
+
 
 class IgnidashScenarioAccountV1(BaseModel):
     account_id: str
@@ -133,6 +135,7 @@ class IgnidashScenarioService:
         start_age: int = 35,
         withdrawal_strategy: str | None = None,
         retirement_age: int | None = None,
+        sidecar_guard_reason: str | None = None,
     ) -> PlanningResponse:
         local_result = self.scenario_engine.run(
             current_portfolio_value_usd=current_portfolio_value_usd,
@@ -155,6 +158,23 @@ class IgnidashScenarioService:
             withdrawal_strategy=withdrawal_strategy,
             retirement_age=retirement_age,
         )
+
+        if sidecar_guard_reason:
+            return local_result.model_copy(
+                update={
+                    "engine": "local",
+                    "engine_status": "degraded",
+                    "fallback_method": "contract_version_guard",
+                    "warnings": [f"Ignidash scenario sidecar skipped: {sidecar_guard_reason}"],
+                    "income_projection": income_projection,
+                    "expense_projection": expense_projection,
+                    "debt_projection": debt_projection,
+                    "timeline_projection": timeline_projection,
+                    "contribution_allocation": contribution_allocation,
+                    "social_security_projection": social_security_projection,
+                    "rmd_projection": rmd_projection,
+                }
+            )
 
         if not self.sidecar_enabled or self.sidecar_adapter is None:
             return local_result.model_copy(
