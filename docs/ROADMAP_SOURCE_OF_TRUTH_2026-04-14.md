@@ -10,6 +10,28 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-14 (Completed - Phase 4.1 Slice 2, Research Dossier Artifacts)
+1. Added first-class research dossier contract and orchestration path:
+- `POST /api/research/dossier` with thesis/risks/catalysts, baseline controls, and optional plan artifact persistence.
+- `research_dossier` Copilot tool with matching parameters and system-prompt guidance.
+2. Added dossier generation service flow in `research.py`:
+- compare-driven scorecard embedding
+- key-takeaway synthesis and freshness metadata (`fresh` / `partial` / `degraded`)
+- portfolio-fit framing using current symbol weights.
+3. Added plan artifact integration for dossiers:
+- optional `save_to_plan` support with `research_dossier` artifact kind.
+- graceful warning path when no active/valid plan is available.
+4. Expanded `Research` UI with dossier controls and outputs:
+- thesis/risks/catalysts inputs
+- dossier generation action
+- rendered takeaways, freshness status, markdown payload, and artifact status.
+5. Added regression coverage for service and Copilot tool contracts:
+- dossier shape/freshness/portfolio-fit tests in `test_research_service.py`
+- tool contract and invocation tests in `test_copilot_tool_updates.py`.
+6. Source-provenance note:
+- output packaging follows Ignidash-style analyzer summary structure (`src/lib/calc/data-analyzers/*`) and uses Ghostfolio-aligned symbol normalization conventions already in active BuildWealth research flows.
+7. Verification: `pytest -q services/orchestrator/tests` passes (`376 passed`).
+
 ### 2026-04-14 (Completed - Phase 4.1 Slice 1, Research Compare Vertical Slice)
 1. Added first-class research compare API surface:
 - `POST /api/research/compare` with symbol set, period/interval, baseline controls.
@@ -232,9 +254,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Research dossier artifacts (`research_dossier`) with thesis/risks/catalysts and freshness metadata (Phase 4.1 Slice 2).
-2. Recommendation scoring engine with ranked inbox sorting (Phase 4.2 Slice 1).
-3. Watchlist ranking endpoint + UI score surfacing (Phase 4.1 Slice 3).
+1. Recommendation scoring engine with ranked inbox sorting (Phase 4.2 Slice 1).
+2. Watchlist ranking endpoint + UI score surfacing (Phase 4.1 Slice 3).
+3. Copilot recommendation evidence-citation enforcement using dossier context (Phase 4.1 Slice 4).
 
 ## Guardrails
 1. Do not fork or embed full Ghostfolio/Ignidash apps into BuildWealth runtime path.

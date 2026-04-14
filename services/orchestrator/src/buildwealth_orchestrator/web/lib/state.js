@@ -23,6 +23,8 @@ export const state = {
   recommendationFilterStatus: 'proposed',
   recommendationFilterPlanId: '',
   recommendationEditingId: null,
+  researchCompare: null,
+  researchDossier: null,
 };
 
 export const PLAN_SETTING_FIELDS = [

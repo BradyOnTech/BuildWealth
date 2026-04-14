@@ -10,6 +10,7 @@ from buildwealth_orchestrator.schemas import (
     ResearchCompareItem,
     ResearchCompareResponse,
     ResearchCompareSummary,
+    ResearchDossierResponse,
     ResearchResponse,
 )
 
@@ -224,6 +225,215 @@ class OpenBBResearchService:
         risk_component = (volatility_pct or 0.0) * -0.1
         return round(period_component + day_component + risk_component, 4)
 
+    @staticmethod
+    def _normalize_symbol_list(symbols: list[str], *, max_symbols: int = 20) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw_symbol in symbols:
+            symbol = _SYMBOL_PATTERN.sub("", str(raw_symbol or "").strip().upper())
+            if not symbol or symbol in seen:
+                continue
+            seen.add(symbol)
+            normalized.append(symbol)
+            if len(normalized) >= max_symbols:
+                break
+        return normalized
+
+    @staticmethod
+    def _normalize_text_list(items: list[str] | None, *, max_items: int = 12) -> list[str]:
+        if not isinstance(items, list):
+            return []
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw_item in items:
+            item = str(raw_item or "").strip()
+            if not item:
+                continue
+            lowered = item.lower()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            normalized.append(item)
+            if len(normalized) >= max_items:
+                break
+        return normalized
+
+    @staticmethod
+    def _freshness_status(*, available_symbols: int, compared_symbols: int, warning_count: int) -> str:
+        if compared_symbols <= 0 or available_symbols <= 0:
+            return "degraded"
+        if available_symbols == compared_symbols and warning_count == 0:
+            return "fresh"
+        return "partial"
+
+    @classmethod
+    def _build_portfolio_fit(
+        cls,
+        *,
+        symbols: list[str],
+        include_portfolio_fit: bool,
+        portfolio_weights_pct: dict[str, float] | None,
+    ) -> dict[str, Any]:
+        if not include_portfolio_fit:
+            return {}
+
+        normalized_weights: dict[str, float] = {}
+        if isinstance(portfolio_weights_pct, dict):
+            for raw_symbol, raw_weight in portfolio_weights_pct.items():
+                symbol = _SYMBOL_PATTERN.sub("", str(raw_symbol or "").strip().upper())
+                if not symbol:
+                    continue
+                numeric_weight = cls._parse_number(raw_weight)
+                if numeric_weight is None:
+                    continue
+                normalized_weights[symbol] = max(0.0, numeric_weight)
+
+        portfolio_symbols = sorted(normalized_weights.keys())
+        overlap = [symbol for symbol in symbols if symbol in normalized_weights]
+        new_candidates = [symbol for symbol in symbols if symbol not in normalized_weights]
+        overlap_weight_pct = round(sum(normalized_weights.get(symbol, 0.0) for symbol in overlap), 2)
+        overlap_ratio = round((len(overlap) / len(symbols) * 100.0), 2) if symbols else 0.0
+
+        fit_label = "none"
+        if overlap_ratio >= 60:
+            fit_label = "high_overlap"
+        elif overlap_ratio >= 25:
+            fit_label = "mixed"
+        elif symbols:
+            fit_label = "mostly_new"
+
+        overlap_ranked = sorted(overlap, key=lambda symbol: normalized_weights.get(symbol, 0.0), reverse=True)
+
+        return {
+            "portfolio_symbols_considered": portfolio_symbols,
+            "existing_symbols": overlap,
+            "new_symbols": new_candidates,
+            "overlap_ratio_pct": overlap_ratio,
+            "overlap_weight_pct": overlap_weight_pct,
+            "highest_weight_overlap_symbols": overlap_ranked[:5],
+            "fit_label": fit_label,
+        }
+
+    @staticmethod
+    def _build_dossier_markdown(
+        *,
+        headline: str,
+        compare: ResearchCompareResponse,
+        thesis: str,
+        risks: list[str],
+        catalysts: list[str],
+        key_takeaways: list[str],
+        freshness: dict[str, Any],
+        portfolio_fit: dict[str, Any],
+    ) -> str:
+        lines: list[str] = [
+            f"# Research Dossier: {', '.join(compare.symbols)}",
+            "",
+            f"- Generated: {compare.generated_at.isoformat()}",
+            f"- Provider: {compare.provider}",
+            f"- Period/Interval: {compare.period} / {compare.interval}",
+            f"- Baseline: {compare.summary.baseline_symbol or 'n/a'}",
+            "",
+            "## Headline",
+            "",
+            headline,
+            "",
+            "## Thesis",
+            "",
+            thesis or "- Thesis not provided.",
+            "",
+            "## Scorecard",
+            "",
+            "| Rank | Symbol | Period Return | Volatility | Score | Availability |",
+            "| --- | --- | ---: | ---: | ---: | --- |",
+        ]
+
+        for item in compare.items:
+            period = f"{item.period_change_pct:.2f}%" if item.period_change_pct is not None else "-"
+            volatility = f"{item.volatility_pct:.2f}%" if item.volatility_pct is not None else "-"
+            score = f"{item.score:.3f}" if item.score is not None else "-"
+            availability = "available" if item.available else "partial"
+            rank = str(item.rank) if item.rank is not None else "-"
+            lines.append(f"| {rank} | {item.symbol} | {period} | {volatility} | {score} | {availability} |")
+
+        lines.extend(
+            [
+                "",
+                "## Key Takeaways",
+                "",
+            ]
+        )
+        if key_takeaways:
+            lines.extend([f"- {item}" for item in key_takeaways])
+        else:
+            lines.append("- No takeaways available from current inputs.")
+
+        lines.extend(
+            [
+                "",
+                "## Risks",
+                "",
+            ]
+        )
+        if risks:
+            lines.extend([f"- {item}" for item in risks])
+        else:
+            lines.append("- No explicit risks provided.")
+
+        lines.extend(
+            [
+                "",
+                "## Catalysts",
+                "",
+            ]
+        )
+        if catalysts:
+            lines.extend([f"- {item}" for item in catalysts])
+        else:
+            lines.append("- No explicit catalysts provided.")
+
+        lines.extend(
+            [
+                "",
+                "## Freshness",
+                "",
+                f"- Status: {freshness.get('status', 'unknown')}",
+                f"- Available symbols: {freshness.get('available_symbols', 0)} / {freshness.get('compared_symbols', 0)}",
+                f"- Warning count: {freshness.get('warning_count', 0)}",
+            ]
+        )
+
+        if portfolio_fit:
+            existing_symbols = portfolio_fit.get("existing_symbols", [])
+            if not isinstance(existing_symbols, list):
+                existing_symbols = []
+            new_symbols = portfolio_fit.get("new_symbols", [])
+            if not isinstance(new_symbols, list):
+                new_symbols = []
+            lines.extend(
+                [
+                    "",
+                    "## Portfolio Fit",
+                    "",
+                    f"- Fit label: {portfolio_fit.get('fit_label', 'unknown')}",
+                    f"- Existing overlap symbols: {', '.join(existing_symbols) if existing_symbols else 'none'}",
+                    f"- New candidate symbols: {', '.join(new_symbols) if new_symbols else 'none'}",
+                    f"- Existing overlap weight: {portfolio_fit.get('overlap_weight_pct', 0.0)}%",
+                ]
+            )
+
+        if compare.warnings:
+            lines.extend(
+                [
+                    "",
+                    "## Data Warnings",
+                    "",
+                ]
+            )
+            lines.extend([f"- {warning}" for warning in compare.warnings[:20]])
+
+        return "\n".join(lines).strip() + "\n"
+
     def options_chain(self, symbol: str) -> ResearchResponse:
         try:
             from openbb import obb  # type: ignore
@@ -376,16 +586,7 @@ class OpenBBResearchService:
         interval: str = "1d",
         baseline_symbol: str | None = None,
     ) -> ResearchCompareResponse:
-        normalized_symbols: list[str] = []
-        seen: set[str] = set()
-        for raw_symbol in symbols:
-            symbol = _SYMBOL_PATTERN.sub("", str(raw_symbol or "").strip().upper())
-            if not symbol or symbol in seen:
-                continue
-            seen.add(symbol)
-            normalized_symbols.append(symbol)
-            if len(normalized_symbols) >= 20:
-                break
+        normalized_symbols = self._normalize_symbol_list(symbols, max_symbols=20)
 
         warnings: list[str] = []
         items: list[ResearchCompareItem] = []
@@ -511,6 +712,143 @@ class OpenBBResearchService:
             summary=summary,
             items=ranked,
             warnings=deduped_warnings,
+        )
+
+    def dossier(
+        self,
+        *,
+        symbols: list[str],
+        period: str = "6mo",
+        interval: str = "1d",
+        baseline_symbol: str | None = None,
+        thesis: str = "",
+        risks: list[str] | None = None,
+        catalysts: list[str] | None = None,
+        include_portfolio_fit: bool = True,
+        portfolio_weights_pct: dict[str, float] | None = None,
+    ) -> ResearchDossierResponse:
+        normalized_symbols = self._normalize_symbol_list(symbols, max_symbols=20)
+        compare = self.compare(
+            symbols=normalized_symbols,
+            period=period,
+            interval=interval,
+            baseline_symbol=baseline_symbol,
+        )
+
+        normalized_risks = self._normalize_text_list(risks, max_items=12)
+        normalized_catalysts = self._normalize_text_list(catalysts, max_items=12)
+        normalized_thesis = str(thesis or "").strip()
+
+        warnings = list(compare.warnings)
+        if not compare.items:
+            warnings.append("No symbols were available to build a dossier.")
+
+        freshness = {
+            "generated_at": compare.generated_at.isoformat(),
+            "status": self._freshness_status(
+                available_symbols=compare.summary.available_symbols,
+                compared_symbols=compare.summary.compared_symbols,
+                warning_count=len(warnings),
+            ),
+            "available_symbols": compare.summary.available_symbols,
+            "compared_symbols": compare.summary.compared_symbols,
+            "warning_count": len(warnings),
+            "quote_records_total": sum(item.quote_records for item in compare.items),
+            "history_records_total": sum(item.history_records for item in compare.items),
+        }
+
+        portfolio_fit = self._build_portfolio_fit(
+            symbols=compare.symbols,
+            include_portfolio_fit=include_portfolio_fit,
+            portfolio_weights_pct=portfolio_weights_pct,
+        )
+
+        best_symbol = compare.summary.best_period_return_symbol
+        worst_symbol = compare.summary.worst_period_return_symbol
+        highest_vol_symbol = compare.summary.highest_volatility_symbol
+
+        headline = f"Research dossier for {', '.join(compare.symbols)}."
+        if best_symbol and worst_symbol and best_symbol != worst_symbol:
+            headline = f"{best_symbol} leads {compare.period} performance while {worst_symbol} trails."
+        elif best_symbol:
+            headline = f"{best_symbol} is the leading performer in this comparison window."
+
+        key_takeaways: list[str] = []
+        if best_symbol:
+            best_item = next((item for item in compare.items if item.symbol == best_symbol), None)
+            if best_item and best_item.period_change_pct is not None:
+                key_takeaways.append(
+                    f"{best_symbol} delivered the strongest period return at {best_item.period_change_pct:.2f}%."
+                )
+        if worst_symbol and worst_symbol != best_symbol:
+            worst_item = next((item for item in compare.items if item.symbol == worst_symbol), None)
+            if worst_item and worst_item.period_change_pct is not None:
+                key_takeaways.append(
+                    f"{worst_symbol} had the weakest period return at {worst_item.period_change_pct:.2f}%."
+                )
+        if highest_vol_symbol:
+            highest_vol_item = next((item for item in compare.items if item.symbol == highest_vol_symbol), None)
+            if highest_vol_item and highest_vol_item.volatility_pct is not None:
+                key_takeaways.append(
+                    f"{highest_vol_symbol} shows the highest estimated volatility at {highest_vol_item.volatility_pct:.2f}%."
+                )
+
+        baseline_deltas = compare.summary.baseline_relative_return_pct
+        if baseline_deltas and compare.summary.baseline_symbol:
+            outperformers = [
+                symbol
+                for symbol, delta in sorted(baseline_deltas.items(), key=lambda item: item[1], reverse=True)
+                if symbol != compare.summary.baseline_symbol and delta > 0
+            ]
+            if outperformers:
+                key_takeaways.append(
+                    f"{', '.join(outperformers[:3])} outperformed baseline {compare.summary.baseline_symbol} over this period."
+                )
+
+        if portfolio_fit:
+            overlap_symbols = portfolio_fit.get("existing_symbols", [])
+            new_symbols = portfolio_fit.get("new_symbols", [])
+            if isinstance(overlap_symbols, list):
+                if overlap_symbols:
+                    key_takeaways.append(
+                        f"Portfolio overlap includes {', '.join(overlap_symbols[:4])}; overlap weight is {portfolio_fit.get('overlap_weight_pct', 0.0)}%."
+                    )
+                elif isinstance(new_symbols, list) and new_symbols:
+                    key_takeaways.append(
+                        f"All compared symbols are currently new to the portfolio: {', '.join(new_symbols[:4])}."
+                    )
+
+        if not key_takeaways:
+            key_takeaways.append("Data was limited; collect additional research before decisioning.")
+
+        dossier_markdown = self._build_dossier_markdown(
+            headline=headline,
+            compare=compare,
+            thesis=normalized_thesis,
+            risks=normalized_risks,
+            catalysts=normalized_catalysts,
+            key_takeaways=key_takeaways,
+            freshness=freshness,
+            portfolio_fit=portfolio_fit,
+        )
+
+        return ResearchDossierResponse(
+            provider=self.provider,
+            period=compare.period,
+            interval=compare.interval,
+            generated_at=compare.generated_at,
+            symbols=compare.symbols,
+            baseline_symbol=compare.summary.baseline_symbol,
+            headline=headline,
+            thesis=normalized_thesis,
+            risks=normalized_risks,
+            catalysts=normalized_catalysts,
+            key_takeaways=key_takeaways,
+            freshness=freshness,
+            compare=compare,
+            portfolio_fit=portfolio_fit,
+            dossier_markdown=dossier_markdown,
+            warnings=warnings,
         )
 
     def get_quote(self, symbol: str) -> dict[str, Any]:

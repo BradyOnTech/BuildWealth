@@ -9,6 +9,7 @@ export const icon = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" 
 const DEFAULT_SYMBOLS = 'AAPL, MSFT, VTI';
 const DEFAULT_PERIOD = '6mo';
 const DEFAULT_INTERVAL = '1d';
+const DEFAULT_THESIS = '';
 
 function parseSymbols(raw) {
   const seen = new Set();
@@ -21,6 +22,22 @@ function parseSymbols(raw) {
     if (symbols.length >= 20) break;
   }
   return symbols;
+}
+
+function parseTextList(raw) {
+  const seen = new Set();
+  const values = [];
+  const normalized = String(raw || '').replace(/\n/g, ',');
+  for (const chunk of normalized.split(',')) {
+    const value = chunk.trim();
+    if (!value) continue;
+    const lowered = value.toLowerCase();
+    if (seen.has(lowered)) continue;
+    seen.add(lowered);
+    values.push(value);
+    if (values.length >= 12) break;
+  }
+  return values;
 }
 
 function fmtMaybeCurrency(value) {
@@ -38,13 +55,14 @@ function fmtMaybeNumber(value, digits = 2) {
 export function template() {
   return `
     <div class="view-header">
-      <h2>Research Compare</h2>
+      <h2>Research Intelligence</h2>
       <div class="header-actions">
         <button class="ghost small" id="research-reset">Reset</button>
+        <button class="ghost small" id="research-run-dossier">Generate Dossier</button>
         <button class="primary small" id="research-run-compare">Run Compare</button>
       </div>
     </div>
-    <p class="hint">Compare multiple symbols with normalized return/volatility context before simulating portfolio impact.</p>
+    <p class="hint">Compare symbols, then package thesis evidence into a reusable research dossier artifact.</p>
 
     <form id="research-compare-form" class="txn-form">
       <label class="field"><span>Symbols</span><input id="research-symbols" type="text" value="${DEFAULT_SYMBOLS}" placeholder="AAPL, MSFT, VTI" required /></label>
@@ -90,11 +108,29 @@ export function template() {
 
     <p class="hint" id="research-compare-meta"></p>
     <div id="research-compare-warnings" class="item-list"></div>
+
+    <hr />
+
+    <form id="research-dossier-form" class="txn-form">
+      <label class="field"><span>Thesis</span><textarea id="research-dossier-thesis" rows="3" placeholder="Core investment thesis.">${DEFAULT_THESIS}</textarea></label>
+      <label class="field"><span>Risks (comma-separated)</span><input id="research-dossier-risks" type="text" placeholder="valuation, regulation, demand slowdown" /></label>
+      <label class="field"><span>Catalysts (comma-separated)</span><input id="research-dossier-catalysts" type="text" placeholder="earnings beat, margin expansion" /></label>
+      <label class="field"><span>Plan ID (optional)</span><input id="research-dossier-plan-id" type="text" placeholder="plan-..." /></label>
+      <label class="inline-check"><input type="checkbox" id="research-dossier-save" checked /> Save dossier to plan artifacts</label>
+      <label class="inline-check"><input type="checkbox" id="research-dossier-fit" checked /> Include portfolio-fit analysis</label>
+      <button class="primary" type="submit">Generate Dossier</button>
+    </form>
+
+    <p class="hint" id="research-dossier-summary">Generate a dossier after setting thesis and risk assumptions.</p>
+    <div id="research-dossier-takeaways" class="item-list"></div>
+    <p class="hint" id="research-dossier-artifact"></p>
+    <pre id="research-dossier-markdown"></pre>
+    <div id="research-dossier-warnings" class="item-list"></div>
   `;
 }
 
-function renderWarnings(warnings) {
-  const list = byId('research-compare-warnings');
+function renderWarnings(warnings, targetId = 'research-compare-warnings') {
+  const list = byId(targetId);
   const rows = Array.isArray(warnings) ? warnings : [];
   if (!rows.length) {
     list.innerHTML = '';
@@ -150,6 +186,37 @@ function renderResult(payload) {
   renderWarnings(payload?.warnings || []);
 }
 
+function renderDossier(payload) {
+  state.researchDossier = payload;
+  const freshness = payload && typeof payload.freshness === 'object' ? payload.freshness : {};
+  const status = freshness.status || 'unknown';
+  const available = Number(freshness.available_symbols || 0);
+  const compared = Number(freshness.compared_symbols || 0);
+
+  byId('research-dossier-summary').textContent =
+    `${payload?.headline || 'Research dossier generated.'} Freshness: ${status} (${available}/${compared} symbols).`;
+
+  const takeaways = Array.isArray(payload?.key_takeaways) ? payload.key_takeaways : [];
+  const takeawaysList = byId('research-dossier-takeaways');
+  if (!takeaways.length) {
+    takeawaysList.innerHTML = '<article class="list-item"><p class="list-item-title">No key takeaways.</p></article>';
+  } else {
+    takeawaysList.innerHTML = takeaways.map((item) => (
+      `<article class="list-item"><p class="list-item-title">Takeaway</p><p class="list-item-meta">${item}</p></article>`
+    )).join('');
+  }
+
+  const artifact = payload?.artifact && typeof payload.artifact === 'object' ? payload.artifact : null;
+  if (artifact?.id) {
+    byId('research-dossier-artifact').textContent = `Saved as plan artifact: ${artifact.title || artifact.id} (${artifact.file_name || 'markdown'}).`;
+  } else {
+    byId('research-dossier-artifact').textContent = 'No plan artifact saved for this dossier run.';
+  }
+
+  byId('research-dossier-markdown').textContent = String(payload?.dossier_markdown || '').trim();
+  renderWarnings(payload?.warnings || [], 'research-dossier-warnings');
+}
+
 async function runCompare() {
   const symbols = parseSymbols(byId('research-symbols').value);
   const period = String(byId('research-period').value || DEFAULT_PERIOD);
@@ -195,15 +262,87 @@ async function runCompare() {
   }
 }
 
+async function runDossier() {
+  const symbols = parseSymbols(byId('research-symbols').value);
+  const period = String(byId('research-period').value || DEFAULT_PERIOD);
+  const interval = String(byId('research-interval').value || DEFAULT_INTERVAL);
+  const baselineSymbol = String(byId('research-baseline-symbol').value || '').trim().toUpperCase();
+  const thesis = String(byId('research-dossier-thesis').value || '').trim();
+  const risks = parseTextList(byId('research-dossier-risks').value);
+  const catalysts = parseTextList(byId('research-dossier-catalysts').value);
+  const planId = String(byId('research-dossier-plan-id').value || '').trim();
+  const saveToPlan = Boolean(byId('research-dossier-save').checked);
+  const includePortfolioFit = Boolean(byId('research-dossier-fit').checked);
+
+  if (symbols.length < 2) {
+    writeLog('Research dossier needs at least two symbols.', { symbols }, true);
+    byId('research-dossier-summary').textContent = 'Please enter at least two symbols before generating a dossier.';
+    return;
+  }
+
+  const payload = {
+    symbols,
+    period,
+    interval,
+    thesis,
+    risks,
+    catalysts,
+    save_to_plan: saveToPlan,
+    include_portfolio_fit: includePortfolioFit,
+  };
+  if (baselineSymbol) payload.baseline_symbol = baselineSymbol;
+  if (planId) payload.plan_id = planId;
+
+  const button = byId('research-run-dossier');
+  button.disabled = true;
+  button.textContent = 'Generating...';
+  byId('research-dossier-summary').textContent = 'Generating dossier...';
+  writeLog('Running research dossier generation...', payload);
+
+  try {
+    const result = await fetchJson('/api/research/dossier', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    renderDossier(result);
+    writeLog('Research dossier completed.', {
+      symbols: result.symbols,
+      freshness_status: result?.freshness?.status,
+      saved: Boolean(result?.artifact?.id),
+      warnings: Array.isArray(result.warnings) ? result.warnings.length : 0,
+    });
+  } catch (error) {
+    writeLog(`Research dossier failed: ${error.message}`, null, true);
+    byId('research-dossier-summary').textContent = `Dossier failed: ${error.message}`;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Generate Dossier';
+  }
+}
+
 function resetForm() {
   byId('research-symbols').value = DEFAULT_SYMBOLS;
   byId('research-baseline-symbol').value = '';
   byId('research-period').value = DEFAULT_PERIOD;
   byId('research-interval').value = DEFAULT_INTERVAL;
+
   byId('research-compare-summary').textContent = 'Run a comparison to view ranked symbols.';
   byId('research-compare-meta').textContent = '';
   byId('research-compare-body').innerHTML = '<tr><td colspan="10">No comparison run yet.</td></tr>';
   byId('research-compare-warnings').innerHTML = '';
+
+  byId('research-dossier-thesis').value = DEFAULT_THESIS;
+  byId('research-dossier-risks').value = '';
+  byId('research-dossier-catalysts').value = '';
+  byId('research-dossier-plan-id').value = '';
+  byId('research-dossier-save').checked = true;
+  byId('research-dossier-fit').checked = true;
+  byId('research-dossier-summary').textContent = 'Generate a dossier after setting thesis and risk assumptions.';
+  byId('research-dossier-takeaways').innerHTML = '';
+  byId('research-dossier-artifact').textContent = '';
+  byId('research-dossier-markdown').textContent = '';
+  byId('research-dossier-warnings').innerHTML = '';
 }
 
 export function init() {
@@ -214,13 +353,22 @@ export function init() {
   byId('research-run-compare').addEventListener('click', () => {
     runCompare();
   });
+  byId('research-dossier-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    runDossier();
+  });
+  byId('research-run-dossier').addEventListener('click', () => {
+    runDossier();
+  });
   byId('research-reset').addEventListener('click', () => {
     resetForm();
   });
 
+  resetForm();
   if (state.researchCompare) {
     renderResult(state.researchCompare);
-  } else {
-    resetForm();
+  }
+  if (state.researchDossier) {
+    renderDossier(state.researchDossier);
   }
 }

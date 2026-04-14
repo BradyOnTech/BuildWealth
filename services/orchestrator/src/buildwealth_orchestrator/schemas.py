@@ -681,6 +681,63 @@ class ResearchCompareResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ResearchDossierRequest(BaseModel):
+    symbols: list[str] = Field(default_factory=list)
+    period: str = "6mo"
+    interval: str = "1d"
+    baseline_symbol: str | None = None
+    thesis: str = ""
+    risks: list[str] = Field(default_factory=list)
+    catalysts: list[str] = Field(default_factory=list)
+    plan_id: str | None = None
+    save_to_plan: bool = True
+    include_portfolio_fit: bool = True
+
+    @model_validator(mode="after")
+    def _normalize_fields(self) -> "ResearchDossierRequest":
+        normalized_symbols: list[str] = []
+        seen: set[str] = set()
+        for raw in self.symbols:
+            symbol = str(raw or "").strip().upper()
+            if not symbol or symbol in seen:
+                continue
+            seen.add(symbol)
+            normalized_symbols.append(symbol)
+            if len(normalized_symbols) >= 20:
+                break
+        self.symbols = normalized_symbols
+        self.period = str(self.period or "6mo").strip() or "6mo"
+        self.interval = str(self.interval or "1d").strip() or "1d"
+        baseline = str(self.baseline_symbol or "").strip().upper()
+        self.baseline_symbol = baseline or None
+        self.thesis = str(self.thesis or "").strip()
+        self.risks = [str(item or "").strip() for item in self.risks if str(item or "").strip()][:12]
+        self.catalysts = [str(item or "").strip() for item in self.catalysts if str(item or "").strip()][:12]
+        plan_id = str(self.plan_id or "").strip()
+        self.plan_id = plan_id or None
+        return self
+
+
+class ResearchDossierResponse(BaseModel):
+    provider: str
+    period: str
+    interval: str
+    generated_at: datetime
+    symbols: list[str] = Field(default_factory=list)
+    baseline_symbol: str | None = None
+    headline: str
+    thesis: str = ""
+    risks: list[str] = Field(default_factory=list)
+    catalysts: list[str] = Field(default_factory=list)
+    key_takeaways: list[str] = Field(default_factory=list)
+    freshness: dict[str, Any] = Field(default_factory=dict)
+    compare: ResearchCompareResponse
+    portfolio_fit: dict[str, Any] = Field(default_factory=dict)
+    dossier_markdown: str
+    artifact: dict[str, Any] | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
 class CsvTemplateOption(BaseModel):
     id: str
     name: str

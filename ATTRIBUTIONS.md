@@ -95,7 +95,10 @@ adapted from the following open source projects:
   `services/orchestrator/src/buildwealth_orchestrator/services/scenario_engine.py`
   (tax-aware year-by-year scenario projection, account withdrawal ordering, and
   phase-aware simulation structure adapted from `src/lib/calc/simulation-engine.ts`,
-  `src/lib/calc/portfolio.ts`, `src/lib/calc/account.ts`, and `src/lib/calc/phase.ts`)
+  `src/lib/calc/portfolio.ts`, `src/lib/calc/account.ts`, and `src/lib/calc/phase.ts`);
+  `services/orchestrator/src/buildwealth_orchestrator/services/research.py`
+  (research dossier packaging and comparison-summary framing aligned to
+  `src/lib/calc/data-analyzers/*` output conventions)
 
 ## OpenBB Platform
 

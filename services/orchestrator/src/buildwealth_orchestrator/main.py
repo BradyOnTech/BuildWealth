@@ -32,6 +32,8 @@ from buildwealth_orchestrator.schemas import (
     PriceHistoryRequest,
     ResearchCompareRequest,
     ResearchCompareResponse,
+    ResearchDossierRequest,
+    ResearchDossierResponse,
     PlanArtifactSummary,
     PlanArtifactResponse,
     PlanCreateRequest,
@@ -375,6 +377,7 @@ copilot = FinancialCopilot(
         "- For stock/investment research on one ticker → call research_quote or research_price_history.\n"
         "- For comparing multiple investment candidates → call research_compare, "
         "then call simulate_trade to show how a chosen trade would affect portfolio allocation.\n"
+        "- For structured multi-symbol research memos with thesis/risks/catalysts and plan artifacts → call research_dossier.\n"
         "- For 'what if I buy/sell X?' → call simulate_trade to show allocation and concentration impact.\n"
         "- For daily reviews → call get_financial_health, get_plan_tracking, and get_today_dashboard.\n\n"
         "RESPONSE GUIDELINES:\n"
@@ -5202,6 +5205,154 @@ async def tool_research_compare(arguments: dict[str, object]) -> dict[str, objec
     return result
 
 
+def _portfolio_symbol_weights_pct() -> dict[str, float]:
+    holdings_payload = portfolio_store.get_holdings()
+    by_symbol_raw = holdings_payload.get("holdings_by_symbol")
+    by_symbol = by_symbol_raw if isinstance(by_symbol_raw, dict) else {}
+
+    total_value = _coerce_float(holdings_payload.get("total_portfolio_value"), 0.0)
+    if total_value <= 0:
+        total_value = sum(
+            _coerce_float(item.get("current_value"), 0.0)
+            for item in by_symbol.values()
+            if isinstance(item, dict)
+        )
+    if total_value <= 0:
+        return {}
+
+    weights: dict[str, float] = {}
+    for raw_symbol, raw_row in by_symbol.items():
+        row = raw_row if isinstance(raw_row, dict) else {}
+        symbol = str(raw_symbol or row.get("symbol") or "").strip().upper()
+        if not symbol:
+            continue
+        value = _coerce_float(row.get("current_value"), 0.0)
+        if value <= 0:
+            continue
+        weights[symbol] = round((value / total_value) * 100.0, 4)
+    return weights
+
+
+def build_research_dossier_payload(
+    *,
+    symbols: list[str],
+    period: str,
+    interval: str,
+    baseline_symbol: str | None,
+    thesis: str,
+    risks: list[str],
+    catalysts: list[str],
+    plan_id: str | None,
+    save_to_plan: bool,
+    include_portfolio_fit: bool,
+) -> ResearchDossierResponse:
+    portfolio_weights_pct = _portfolio_symbol_weights_pct() if include_portfolio_fit else {}
+
+    response = research_service.dossier(
+        symbols=symbols,
+        period=period,
+        interval=interval,
+        baseline_symbol=baseline_symbol,
+        thesis=thesis,
+        risks=risks,
+        catalysts=catalysts,
+        include_portfolio_fit=include_portfolio_fit,
+        portfolio_weights_pct=portfolio_weights_pct,
+    )
+
+    if not save_to_plan:
+        return response
+
+    artifact_warnings = list(response.warnings)
+    resolved_plan_id: str | None = None
+    if plan_id:
+        resolved_plan_id = plan_id
+    else:
+        try:
+            resolved_plan_id = resolve_plan_id_or_active(None)
+        except ValueError as exc:
+            artifact_warnings.append(f"Dossier not saved to plan: {exc}")
+
+    if resolved_plan_id:
+        try:
+            artifact_payload = plan_workspace.write_artifact(
+                plan_id=resolved_plan_id,
+                title=f"Research Dossier - {' vs '.join(response.symbols[:3])}",
+                markdown=response.dossier_markdown,
+                kind="research_dossier",
+            )
+            artifact_payload["plan_id"] = resolved_plan_id
+            response.artifact = artifact_payload
+        except PlanNotFoundError as exc:
+            artifact_warnings.append(f"Dossier not saved to plan: {exc}")
+
+    response.warnings = normalize_context_warnings(artifact_warnings, max_warnings=80)
+    return response
+
+
+def _normalize_text_list_argument(raw_value: object, *, limit: int = 12) -> list[str]:
+    values: list[str] = []
+    if isinstance(raw_value, list):
+        values = [str(item or "").strip() for item in raw_value]
+    elif isinstance(raw_value, str):
+        values = [item.strip() for item in raw_value.split(",")]
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if not value:
+            continue
+        lowered = value.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        normalized.append(value)
+        if len(normalized) >= max(1, min(int(limit), 30)):
+            break
+    return normalized
+
+
+async def tool_research_dossier(arguments: dict[str, object]) -> dict[str, object]:
+    symbols_raw = arguments.get("symbols")
+    symbols: list[str] = []
+    if isinstance(symbols_raw, list):
+        symbols = [str(item or "").strip() for item in symbols_raw]
+    elif isinstance(symbols_raw, str):
+        symbols = [item.strip() for item in symbols_raw.split(",")]
+    symbols = normalize_research_symbols(symbols, max_symbols=20)
+    if len(symbols) < 2:
+        symbols = ["AAPL", "MSFT"]
+
+    period = str(arguments.get("period", "6mo")).strip() or "6mo"
+    interval = str(arguments.get("interval", "1d")).strip() or "1d"
+    baseline_symbol = str(arguments.get("baseline_symbol") or "").strip().upper() or None
+    thesis = str(arguments.get("thesis") or "").strip()
+    risks = _normalize_text_list_argument(arguments.get("risks"), limit=12)
+    catalysts = _normalize_text_list_argument(arguments.get("catalysts"), limit=12)
+    plan_id = str(arguments.get("plan_id") or "").strip() or None
+    save_to_plan = _coerce_bool(arguments.get("save_to_plan"), True)
+    include_portfolio_fit = _coerce_bool(arguments.get("include_portfolio_fit"), True)
+
+    result = build_research_dossier_payload(
+        symbols=symbols,
+        period=period,
+        interval=interval,
+        baseline_symbol=baseline_symbol,
+        thesis=thesis,
+        risks=risks,
+        catalysts=catalysts,
+        plan_id=plan_id,
+        save_to_plan=save_to_plan,
+        include_portfolio_fit=include_portfolio_fit,
+    ).model_dump(mode="json")
+    compare_payload = result.get("compare")
+    if isinstance(compare_payload, dict):
+        items = compare_payload.get("items")
+        if isinstance(items, list):
+            compare_payload["items"] = items[:20]
+            compare_payload["items_truncated"] = max(0, len(items) - 20)
+    return result
+
+
 def _normalize_account_total_rows(payload: Any) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]]
     if isinstance(payload, dict):
@@ -6619,6 +6770,31 @@ def configure_copilot_tools() -> None:
             "additionalProperties": False,
         },
         handler=tool_research_compare,
+    )
+    copilot.register_tool(
+        name="research_dossier",
+        description=(
+            "Build a research dossier for multiple symbols with thesis, risks, catalysts, "
+            "freshness metadata, and optional plan artifact persistence."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbols": {"type": "array", "items": {"type": "string"}},
+                "period": {"type": "string"},
+                "interval": {"type": "string"},
+                "baseline_symbol": {"type": "string"},
+                "thesis": {"type": "string"},
+                "risks": {"type": "array", "items": {"type": "string"}},
+                "catalysts": {"type": "array", "items": {"type": "string"}},
+                "plan_id": {"type": "string"},
+                "save_to_plan": {"type": "boolean"},
+                "include_portfolio_fit": {"type": "boolean"},
+            },
+            "required": ["symbols"],
+            "additionalProperties": False,
+        },
+        handler=tool_research_dossier,
     )
     copilot.register_tool(
         name="list_accounts",
@@ -8987,6 +9163,28 @@ def research_compare(request: ResearchCompareRequest) -> ResearchCompareResponse
         interval=request.interval,
         baseline_symbol=request.baseline_symbol,
     )
+
+
+@app.post("/api/research/dossier", response_model=ResearchDossierResponse)
+def research_dossier(request: ResearchDossierRequest) -> ResearchDossierResponse:
+    if len(request.symbols) < 2:
+        raise HTTPException(status_code=400, detail="Research dossier requires at least 2 symbols.")
+
+    try:
+        return build_research_dossier_payload(
+            symbols=request.symbols,
+            period=request.period,
+            interval=request.interval,
+            baseline_symbol=request.baseline_symbol,
+            thesis=request.thesis,
+            risks=request.risks,
+            catalysts=request.catalysts,
+            plan_id=request.plan_id,
+            save_to_plan=request.save_to_plan,
+            include_portfolio_fit=request.include_portfolio_fit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/chat", response_model=ChatResponse)
