@@ -98,7 +98,10 @@ adapted from the following open source projects:
   `src/lib/calc/portfolio.ts`, `src/lib/calc/account.ts`, and `src/lib/calc/phase.ts`);
   `services/orchestrator/src/buildwealth_orchestrator/services/research.py`
   (research dossier packaging and comparison-summary framing aligned to
-  `src/lib/calc/data-analyzers/*` output conventions)
+  `src/lib/calc/data-analyzers/*` output conventions);
+  `services/orchestrator/src/buildwealth_orchestrator/services/recommendation_scoring.py`
+  (weighted analyzer-style output packaging aligned to
+  `src/lib/calc/data-analyzers/*` summary-shaping conventions)
 
 ## OpenBB Platform
 

@@ -10,6 +10,34 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-14 (Completed - Phase 4.2 Slice 1, Recommendation Scoring Engine)
+1. Added a dedicated recommendation scoring service (`recommendation_scoring.py`) with transparent factor outputs:
+- impact
+- confidence
+- urgency
+- reversibility
+- weighted total and rank metadata (`model_version: v1`).
+2. Switched recommendation list flow to ranked ordering by default:
+- open/proposed recommendations are ranked by score
+- non-open recommendations are ordered by recency.
+3. Extended recommendation contracts to expose score transparency:
+- `RecommendationItem` now carries a structured `score` object with factor breakdown and score drivers.
+4. Added API/tool sorting controls:
+- `/api/recommendations` now accepts `sort` (`ranked` default, `created_at` fallback).
+- Copilot `list_recommendations` tool now accepts `sort`.
+5. Updated Inbox UI to surface ranking:
+- new sort selector (Ranked/Newest)
+- score column with rank
+- score breakdown and driver hints in recommendation detail rows.
+6. Added regression coverage:
+- scoring engine behavior (`test_recommendation_scoring.py`)
+- inbox list sort controls (`test_recommendation_inbox.py`)
+- main integration for ranked/default sorting and score-bearing route output (`test_recommendation_ranking_integration.py`)
+- Copilot tool contract update (`test_copilot_tool_updates.py`).
+7. Source-provenance note:
+- analyzer-style weighted summary packaging aligns with Ignidash `src/lib/calc/data-analyzers/*` output conventions.
+8. Verification: `pytest -q services/orchestrator/tests` passes.
+
 ### 2026-04-14 (Completed - Phase 4.1 Slice 2, Research Dossier Artifacts)
 1. Added first-class research dossier contract and orchestration path:
 - `POST /api/research/dossier` with thesis/risks/catalysts, baseline controls, and optional plan artifact persistence.
@@ -254,9 +282,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Recommendation scoring engine with ranked inbox sorting (Phase 4.2 Slice 1).
-2. Watchlist ranking endpoint + UI score surfacing (Phase 4.1 Slice 3).
-3. Copilot recommendation evidence-citation enforcement using dossier context (Phase 4.1 Slice 4).
+1. Watchlist ranking endpoint + UI score surfacing (Phase 4.1 Slice 3).
+2. Copilot recommendation evidence-citation enforcement using dossier context (Phase 4.1 Slice 4).
+3. One-click pre-apply simulation previews for recommendation types in Inbox UI/API flows (Phase 4.2 Slice 2).
 
 ## Guardrails
 1. Do not fork or embed full Ghostfolio/Ignidash apps into BuildWealth runtime path.

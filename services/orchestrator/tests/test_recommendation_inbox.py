@@ -77,3 +77,24 @@ def test_recommendation_inbox_update_and_status_flow(tmp_path: Path) -> None:
 
     with pytest.raises(RecommendationNotFoundError):
         store.get("missing-recommendation")
+
+
+def test_recommendation_inbox_list_sort_controls(tmp_path: Path) -> None:
+    store = RecommendationInbox(tmp_path / "recommendations.json")
+    first = store.create(
+        title="First recommendation",
+        detail="Created first.",
+    )
+    second = store.create(
+        title="Second recommendation",
+        detail="Created second.",
+    )
+
+    newest_first = store.list(include_archived=True, sort="created_at_desc")
+    assert newest_first[0]["id"] == second["id"]
+
+    oldest_first = store.list(include_archived=True, sort="created_at_asc")
+    assert oldest_first[0]["id"] == first["id"]
+
+    unsorted = store.list(limit=None, include_archived=True, sort="none")
+    assert [row["id"] for row in unsorted] == [first["id"], second["id"]]

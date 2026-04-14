@@ -59,10 +59,11 @@ class RecommendationInbox:
 
     def list(
         self,
-        limit: int = 100,
+        limit: int | None = 100,
         status: RecommendationStatus | None = None,
         plan_id: str | None = None,
         include_archived: bool = False,
+        sort: str = "created_at_desc",
     ) -> list[dict[str, Any]]:
         payload = self._load()
         rows = list(payload.get("recommendations", []))
@@ -76,8 +77,19 @@ class RecommendationInbox:
             cleaned_plan_id = plan_id.strip()
             rows = [row for row in rows if str(row.get("plan_id") or "").strip() == cleaned_plan_id]
 
-        rows.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
-        return rows[: max(1, limit)]
+        normalized_sort = str(sort or "created_at_desc").strip().lower()
+        if normalized_sort == "created_at_asc":
+            rows.sort(key=lambda item: str(item.get("created_at", "")))
+        elif normalized_sort == "none":
+            pass
+        else:
+            rows.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
+
+        if limit is None:
+            return rows
+
+        bounded_limit = max(1, min(int(limit), 5000))
+        return rows[:bounded_limit]
 
     def get(self, recommendation_id: str) -> dict[str, Any]:
         payload = self._load()

@@ -22,6 +22,7 @@ export const state = {
   recommendations: [],
   recommendationFilterStatus: 'proposed',
   recommendationFilterPlanId: '',
+  recommendationSort: 'ranked',
   recommendationEditingId: null,
   researchCompare: null,
   researchDossier: null,

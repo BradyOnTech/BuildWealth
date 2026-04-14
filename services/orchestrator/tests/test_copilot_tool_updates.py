@@ -57,6 +57,16 @@ def test_reject_recommendation_tool_supports_decision_packet_controls() -> None:
     assert "decision_packet_research_symbols" in properties
 
 
+def test_list_recommendations_tool_contract_includes_sort() -> None:
+    tool = main.copilot.tools["list_recommendations"]
+    properties = tool.parameters.get("properties", {})
+    assert "status" in properties
+    assert "plan_id" in properties
+    assert "limit" in properties
+    assert "include_archived" in properties
+    assert "sort" in properties
+
+
 def test_pin_watchlist_research_tool_contract() -> None:
     tool = main.copilot.tools["pin_watchlist_research_to_plan"]
     properties = tool.parameters.get("properties", {})

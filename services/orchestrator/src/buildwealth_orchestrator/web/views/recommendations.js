@@ -10,14 +10,18 @@ export const icon = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" 
 export function template() {
   return `
     <div class="view-header"><h2>Recommendation Inbox</h2><button class="ghost small" id="reload-recommendations">Reload</button></div>
-    <p class="hint">Review, edit, apply, reject, or archive recommendations. Applied recommendations write to your plan history.</p>
+    <p class="hint">Review, edit, apply, reject, or archive recommendations. Ranked mode prioritizes highest-impact next actions first.</p>
     <div class="filter-bar">
       <label class="field compact-field"><span>Status</span><select id="recommendation-status-filter">
         <option value="proposed" selected>Proposed</option><option value="applied">Applied</option><option value="rejected">Rejected</option><option value="archived">Archived</option><option value="all">All</option>
       </select></label>
       <label class="field compact-field"><span>Plan</span><select id="recommendation-plan-filter"></select></label>
+      <label class="field compact-field"><span>Sort</span><select id="recommendation-sort-filter">
+        <option value="ranked" selected>Ranked</option>
+        <option value="created_at">Newest</option>
+      </select></label>
     </div>
-    <div class="table-wrap"><table><thead><tr><th>When</th><th>Status</th><th>Priority</th><th>Type</th><th>Recommendation</th><th>Plan</th><th>Source</th><th>Actions</th></tr></thead><tbody id="recommendation-body"></tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>When</th><th>Status</th><th>Score</th><th>Priority</th><th>Type</th><th>Recommendation</th><th>Plan</th><th>Source</th><th>Actions</th></tr></thead><tbody id="recommendation-body"></tbody></table></div>
     <div class="form-section">
       <div class="view-header"><h3 id="recommendation-form-title">Create Recommendation</h3>
         <div class="header-actions"><button class="ghost small" id="recommendation-cancel-edit" hidden>Cancel</button><button class="primary small" id="recommendation-save">Save</button></div>
@@ -61,11 +65,23 @@ function formPayload() {
 function renderTable() {
   const tbody = byId('recommendation-body');
   tbody.innerHTML = '';
-  if (!state.recommendations.length) { tbody.innerHTML = '<tr><td colspan="8">No recommendations for this filter.</td></tr>'; return; }
+  if (!state.recommendations.length) { tbody.innerHTML = '<tr><td colspan="9">No recommendations for this filter.</td></tr>'; return; }
   for (const r of state.recommendations) {
     const tr = document.createElement('tr');
     const statusBadge = `<span class="status-badge ${recommendationStatusClass(r.status)}">${String(r.status || 'proposed').toUpperCase()}</span>`;
+    const score = r.score && typeof r.score === 'object' ? r.score : null;
+    const scoreTotal = Number(score?.total);
+    const scoreRank = Number(score?.rank);
+    const scoreCell = Number.isFinite(scoreTotal)
+      ? `${scoreTotal.toFixed(1)}${Number.isFinite(scoreRank) && scoreRank > 0 ? ` (#${Math.trunc(scoreRank)})` : ''}`
+      : '-';
     let recHtml = `<p class="rec-title">${r.title || '-'}</p><p class="rec-detail">${r.detail || ''}</p>`;
+    if (score && Number.isFinite(Number(score.impact)) && Number.isFinite(Number(score.confidence)) && Number.isFinite(Number(score.urgency)) && Number.isFinite(Number(score.reversibility))) {
+      recHtml += `<p class="rec-detail">Score breakdown: impact ${Number(score.impact).toFixed(1)} • confidence ${Number(score.confidence).toFixed(1)} • urgency ${Number(score.urgency).toFixed(1)} • reversibility ${Number(score.reversibility).toFixed(1)}</p>`;
+      if (Array.isArray(score.reasons) && score.reasons.length) {
+        recHtml += `<p class="rec-detail">Drivers: ${score.reasons.slice(0, 3).join(' • ')}</p>`;
+      }
+    }
     if (r.resolution_note) recHtml += `<p class="rec-detail">Resolution: ${r.resolution_note}</p>`;
     const evidence = r.action_payload?.evidence;
     if (evidence) {
@@ -137,7 +153,7 @@ function renderTable() {
       archBtn.addEventListener('click', () => archiveItem(r)); wrap.appendChild(archBtn);
     }
     actionsCell.appendChild(wrap);
-    tr.innerHTML = `<td>${fmtDate(r.created_at)}</td><td>${statusBadge}</td><td>${String(r.priority || 'medium').toUpperCase()}</td><td>${r.recommendation_type || 'general'}</td><td>${recHtml}</td><td>${r.plan_id || 'active'}</td><td>${r.source || '-'}</td>`;
+    tr.innerHTML = `<td>${fmtDate(r.created_at)}</td><td>${statusBadge}</td><td>${scoreCell}</td><td>${String(r.priority || 'medium').toUpperCase()}</td><td>${r.recommendation_type || 'general'}</td><td>${recHtml}</td><td>${r.plan_id || 'active'}</td><td>${r.source || '-'}</td>`;
     tr.appendChild(actionsCell);
     tbody.appendChild(tr);
   }
@@ -146,10 +162,13 @@ function renderTable() {
 async function load() {
   const status = byId('recommendation-status-filter').value || 'proposed';
   const plan = byId('recommendation-plan-filter').value || '';
+  const sort = byId('recommendation-sort-filter').value || 'ranked';
   state.recommendationFilterStatus = status;
   state.recommendationFilterPlanId = plan;
+  state.recommendationSort = sort;
   const params = new URLSearchParams();
   params.set('limit', '200');
+  params.set('sort', sort);
   if (status === 'all') params.set('include_archived', 'true');
   else params.set('status', status);
   if (plan) params.set('plan_id', plan);
@@ -223,9 +242,16 @@ function populatePlanFilters() {
 export function init() {
   populatePlanFilters();
   resetForm();
+  if ([...byId('recommendation-status-filter').options].some((option) => option.value === state.recommendationFilterStatus)) {
+    byId('recommendation-status-filter').value = state.recommendationFilterStatus;
+  }
+  if ([...byId('recommendation-sort-filter').options].some((option) => option.value === state.recommendationSort)) {
+    byId('recommendation-sort-filter').value = state.recommendationSort;
+  }
   byId('reload-recommendations').addEventListener('click', () => load().catch(e => writeLog(e.message, null, true)));
   byId('recommendation-status-filter').addEventListener('change', () => load().catch(e => writeLog(e.message, null, true)));
   byId('recommendation-plan-filter').addEventListener('change', () => load().catch(e => writeLog(e.message, null, true)));
+  byId('recommendation-sort-filter').addEventListener('change', () => load().catch(e => writeLog(e.message, null, true)));
   byId('recommendation-save').addEventListener('click', save);
   byId('recommendation-cancel-edit').addEventListener('click', resetForm);
   load();

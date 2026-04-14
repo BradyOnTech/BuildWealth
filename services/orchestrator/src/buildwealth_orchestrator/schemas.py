@@ -937,6 +937,17 @@ RecommendationPriority = Literal["high", "medium", "low"]
 RecommendationType = Literal["plan_settings_update", "workflow_action", "general"]
 
 
+class RecommendationScore(BaseModel):
+    impact: float = 0.0
+    confidence: float = 0.0
+    urgency: float = 0.0
+    reversibility: float = 0.0
+    total: float = 0.0
+    rank: int | None = None
+    model_version: str = "v1"
+    reasons: list[str] = Field(default_factory=list)
+
+
 class RecommendationItem(BaseModel):
     id: str
     created_at: datetime
@@ -949,6 +960,7 @@ class RecommendationItem(BaseModel):
     source: str = "manual"
     plan_id: str | None = None
     action_payload: dict[str, Any] = Field(default_factory=dict)
+    score: RecommendationScore | None = None
     resolution_note: str = ""
     resolved_at: datetime | None = None
 

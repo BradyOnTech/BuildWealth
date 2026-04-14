@@ -186,6 +186,10 @@ from buildwealth_orchestrator.services.recommendation_inbox import (
     RecommendationInbox,
     RecommendationNotFoundError,
 )
+from buildwealth_orchestrator.services.recommendation_scoring import (
+    normalize_recommendation_sort,
+    score_and_sort_recommendations,
+)
 from buildwealth_orchestrator.services.user_settings import UserSettingsStore
 from buildwealth_orchestrator.settings import get_settings
 
@@ -2546,18 +2550,31 @@ def _recommendation_list(
     status: str | None = None,
     plan_id: str | None = None,
     include_archived: bool = False,
+    sort: str | None = None,
 ) -> list[dict[str, Any]]:
     cleaned_status = str(status or "").strip().lower() or None
     status_filter = None
     if cleaned_status in {"proposed", "applied", "rejected", "archived"}:
         status_filter = cleaned_status
 
-    return recommendation_inbox.list(
-        limit=max(1, min(int(limit), 500)),
+    raw_rows = recommendation_inbox.list(
+        limit=None,
         status=status_filter,  # type: ignore[arg-type]
         plan_id=(plan_id.strip() if isinstance(plan_id, str) and plan_id.strip() else None),
         include_archived=include_archived,
+        sort="none",
     )
+    return score_and_sort_recommendations(
+        raw_rows,
+        sort=normalize_recommendation_sort(sort),
+        limit=max(1, min(int(limit), 500)),
+    )
+
+
+def _recommendation_item_from_row(row: dict[str, Any]) -> RecommendationItem:
+    scored_rows = score_and_sort_recommendations([row], sort="created_at", limit=1)
+    payload = scored_rows[0] if scored_rows else row
+    return RecommendationItem(**payload)
 
 
 def _build_recommendation_open_counts() -> tuple[int, int]:
@@ -3306,7 +3323,7 @@ async def apply_recommendation_with_decision_packet(
     )
 
     return RecommendationActionResponse(
-        recommendation=RecommendationItem(**updated_recommendation_payload),
+        recommendation=_recommendation_item_from_row(updated_recommendation_payload),
         plan=refreshed_plan,
         decision_packet_artifact=artifact_summary,
         decision_closure_artifact=closure_artifact_summary,
@@ -3376,7 +3393,7 @@ def apply_recommendation(
     )
     suggested_symbols = _extract_decision_packet_symbols(recommendation, request_symbols=request.decision_packet_research_symbols)
     return RecommendationActionResponse(
-        recommendation=RecommendationItem(**recommendation),
+        recommendation=_recommendation_item_from_row(recommendation),
         plan=plan_detail,
         suggested_research_symbols=suggested_symbols,
         message=message,
@@ -3543,7 +3560,7 @@ async def reject_recommendation(
         else {}
     )
     return RecommendationActionResponse(
-        recommendation=RecommendationItem(**updated),
+        recommendation=_recommendation_item_from_row(updated),
         plan=plan_detail,
         decision_packet_artifact=decision_packet_artifact,
         decision_closure_artifact=closure_artifact_summary,
@@ -3560,7 +3577,7 @@ def archive_recommendation(recommendation_id: str, note: str = "") -> Recommenda
         resolution_note=note,
     )
     return RecommendationActionResponse(
-        recommendation=RecommendationItem(**recommendation),
+        recommendation=_recommendation_item_from_row(recommendation),
         plan=None,
         message="Recommendation archived.",
     )
@@ -4758,11 +4775,13 @@ async def tool_list_recommendations(arguments: dict[str, object]) -> dict[str, o
     status = str(arguments.get("status") or "").strip().lower() or None
     plan_id = str(arguments.get("plan_id") or "").strip() or None
     include_archived = bool(arguments.get("include_archived", False))
+    sort = str(arguments.get("sort") or "").strip().lower() or None
     rows = _recommendation_list(
         limit=limit,
         status=status,
         plan_id=plan_id,
         include_archived=include_archived,
+        sort=sort,
     )
     return {
         "count": len(rows),
@@ -4788,7 +4807,7 @@ async def tool_create_recommendation(arguments: dict[str, object]) -> dict[str, 
         plan_id=(str(arguments.get("plan_id") or "").strip() or None),
         action_payload=payload,
     )
-    return {"recommendation": recommendation}
+    return {"recommendation": _recommendation_item_from_row(recommendation).model_dump(mode="json")}
 
 
 async def tool_apply_recommendation(arguments: dict[str, object]) -> dict[str, object]:
@@ -6467,7 +6486,8 @@ def configure_copilot_tools() -> None:
     copilot.register_tool(
         name="list_recommendations",
         description=(
-            "List recommendation inbox items. Optional fields: status, plan_id, limit, include_archived."
+            "List recommendation inbox items. Optional fields: status, plan_id, limit, "
+            "include_archived, sort (ranked or created_at)."
         ),
         parameters={
             "type": "object",
@@ -6476,6 +6496,7 @@ def configure_copilot_tools() -> None:
                 "plan_id": {"type": "string"},
                 "limit": {"type": "integer"},
                 "include_archived": {"type": "boolean"},
+                "sort": {"type": "string"},
             },
             "additionalProperties": False,
         },
@@ -7771,12 +7792,14 @@ def list_recommendations(
     status: str | None = None,
     plan_id: str | None = None,
     include_archived: bool = False,
+    sort: str = "ranked",
 ) -> list[RecommendationItem]:
     rows = _recommendation_list(
         limit=limit,
         status=status,
         plan_id=plan_id,
         include_archived=include_archived,
+        sort=sort,
     )
     return [RecommendationItem(**row) for row in rows]
 
@@ -7792,7 +7815,7 @@ def create_recommendation(request: RecommendationCreateRequest) -> Recommendatio
         plan_id=request.plan_id,
         action_payload=request.action_payload,
     )
-    return RecommendationItem(**recommendation)
+    return _recommendation_item_from_row(recommendation)
 
 
 @app.get("/api/recommendations/{recommendation_id}", response_model=RecommendationItem)
@@ -7801,7 +7824,7 @@ def get_recommendation(recommendation_id: str) -> RecommendationItem:
         recommendation = recommendation_inbox.get(recommendation_id)
     except RecommendationNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return RecommendationItem(**recommendation)
+    return _recommendation_item_from_row(recommendation)
 
 
 @app.put("/api/recommendations/{recommendation_id}", response_model=RecommendationItem)
@@ -7820,7 +7843,7 @@ def update_recommendation(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return RecommendationItem(**recommendation)
+    return _recommendation_item_from_row(recommendation)
 
 
 @app.post("/api/recommendations/{recommendation_id}/apply", response_model=RecommendationActionResponse)
