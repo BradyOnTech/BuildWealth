@@ -13,7 +13,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547563+00:00"
+      "updated_at": "2026-04-14T17:04:04.391970+00:00"
     },
     "AAPL": {
       "symbol": "AAPL",
@@ -27,7 +27,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547566+00:00"
+      "updated_at": "2026-04-14T17:04:04.391973+00:00"
     },
     "ABBV": {
       "symbol": "ABBV",
@@ -41,7 +41,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547569+00:00"
+      "updated_at": "2026-04-14T17:04:04.391976+00:00"
     },
     "ABNB": {
       "symbol": "ABNB",
@@ -55,7 +55,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547571+00:00"
+      "updated_at": "2026-04-14T17:04:04.391979+00:00"
     },
     "ABT": {
       "symbol": "ABT",
@@ -69,7 +69,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547573+00:00"
+      "updated_at": "2026-04-14T17:04:04.391981+00:00"
     },
     "ACGL": {
       "symbol": "ACGL",
@@ -83,7 +83,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547576+00:00"
+      "updated_at": "2026-04-14T17:04:04.391984+00:00"
     },
     "ACN": {
       "symbol": "ACN",
@@ -97,7 +97,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547578+00:00"
+      "updated_at": "2026-04-14T17:04:04.391986+00:00"
     },
     "ADBE": {
       "symbol": "ADBE",
@@ -111,7 +111,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547582+00:00"
+      "updated_at": "2026-04-14T17:04:04.391990+00:00"
     },
     "ADI": {
       "symbol": "ADI",
@@ -125,7 +125,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547584+00:00"
+      "updated_at": "2026-04-14T17:04:04.391994+00:00"
     },
     "ADM": {
       "symbol": "ADM",
@@ -139,7 +139,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547586+00:00"
+      "updated_at": "2026-04-14T17:04:04.391997+00:00"
     },
     "ADP": {
       "symbol": "ADP",
@@ -153,7 +153,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547589+00:00"
+      "updated_at": "2026-04-14T17:04:04.391999+00:00"
     },
     "ADSK": {
       "symbol": "ADSK",
@@ -167,7 +167,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547591+00:00"
+      "updated_at": "2026-04-14T17:04:04.392002+00:00"
     },
     "AEE": {
       "symbol": "AEE",
@@ -181,7 +181,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547594+00:00"
+      "updated_at": "2026-04-14T17:04:04.392004+00:00"
     },
     "AEP": {
       "symbol": "AEP",
@@ -195,7 +195,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547597+00:00"
+      "updated_at": "2026-04-14T17:04:04.392007+00:00"
     },
     "AES": {
       "symbol": "AES",
@@ -209,7 +209,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547599+00:00"
+      "updated_at": "2026-04-14T17:04:04.392009+00:00"
     },
     "AFL": {
       "symbol": "AFL",
@@ -223,7 +223,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547602+00:00"
+      "updated_at": "2026-04-14T17:04:04.392012+00:00"
     },
     "AGG": {
       "symbol": "AGG",
@@ -237,7 +237,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547604+00:00"
+      "updated_at": "2026-04-14T17:04:04.392014+00:00"
     },
     "AIG": {
       "symbol": "AIG",
@@ -251,7 +251,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547606+00:00"
+      "updated_at": "2026-04-14T17:04:04.392018+00:00"
     },
     "AIZ": {
       "symbol": "AIZ",
@@ -265,7 +265,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547609+00:00"
+      "updated_at": "2026-04-14T17:04:04.392021+00:00"
     },
     "AJG": {
       "symbol": "AJG",
@@ -279,7 +279,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547611+00:00"
+      "updated_at": "2026-04-14T17:04:04.392023+00:00"
     },
     "AKAM": {
       "symbol": "AKAM",
@@ -293,7 +293,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547613+00:00"
+      "updated_at": "2026-04-14T17:04:04.392026+00:00"
     },
     "ALB": {
       "symbol": "ALB",
@@ -307,7 +307,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547616+00:00"
+      "updated_at": "2026-04-14T17:04:04.392028+00:00"
     },
     "ALGN": {
       "symbol": "ALGN",
@@ -321,7 +321,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547618+00:00"
+      "updated_at": "2026-04-14T17:04:04.392032+00:00"
     },
     "ALL": {
       "symbol": "ALL",
@@ -335,7 +335,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547620+00:00"
+      "updated_at": "2026-04-14T17:04:04.392034+00:00"
     },
     "ALLE": {
       "symbol": "ALLE",
@@ -349,7 +349,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547623+00:00"
+      "updated_at": "2026-04-14T17:04:04.392037+00:00"
     },
     "AMAT": {
       "symbol": "AMAT",
@@ -363,7 +363,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547625+00:00"
+      "updated_at": "2026-04-14T17:04:04.392039+00:00"
     },
     "AMCR": {
       "symbol": "AMCR",
@@ -377,7 +377,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547627+00:00"
+      "updated_at": "2026-04-14T17:04:04.392042+00:00"
     },
     "AMD": {
       "symbol": "AMD",
@@ -391,7 +391,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547630+00:00"
+      "updated_at": "2026-04-14T17:04:04.392044+00:00"
     },
     "AME": {
       "symbol": "AME",
@@ -405,7 +405,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547632+00:00"
+      "updated_at": "2026-04-14T17:04:04.392046+00:00"
     },
     "AMGN": {
       "symbol": "AMGN",
@@ -419,7 +419,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547634+00:00"
+      "updated_at": "2026-04-14T17:04:04.392049+00:00"
     },
     "AMP": {
       "symbol": "AMP",
@@ -433,7 +433,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547637+00:00"
+      "updated_at": "2026-04-14T17:04:04.392051+00:00"
     },
     "AMT": {
       "symbol": "AMT",
@@ -447,7 +447,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547639+00:00"
+      "updated_at": "2026-04-14T17:04:04.392054+00:00"
     },
     "AMZN": {
       "symbol": "AMZN",
@@ -461,7 +461,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547641+00:00"
+      "updated_at": "2026-04-14T17:04:04.392056+00:00"
     },
     "ANET": {
       "symbol": "ANET",
@@ -475,7 +475,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547644+00:00"
+      "updated_at": "2026-04-14T17:04:04.392059+00:00"
     },
     "AON": {
       "symbol": "AON",
@@ -489,7 +489,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547646+00:00"
+      "updated_at": "2026-04-14T17:04:04.392061+00:00"
     },
     "AOS": {
       "symbol": "AOS",
@@ -503,7 +503,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547648+00:00"
+      "updated_at": "2026-04-14T17:04:04.392064+00:00"
     },
     "APA": {
       "symbol": "APA",
@@ -517,7 +517,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547651+00:00"
+      "updated_at": "2026-04-14T17:04:04.392066+00:00"
     },
     "APD": {
       "symbol": "APD",
@@ -531,7 +531,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547654+00:00"
+      "updated_at": "2026-04-14T17:04:04.392069+00:00"
     },
     "APH": {
       "symbol": "APH",
@@ -545,7 +545,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547656+00:00"
+      "updated_at": "2026-04-14T17:04:04.392071+00:00"
     },
     "APO": {
       "symbol": "APO",
@@ -559,7 +559,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547658+00:00"
+      "updated_at": "2026-04-14T17:04:04.392074+00:00"
     },
     "APP": {
       "symbol": "APP",
@@ -573,7 +573,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547661+00:00"
+      "updated_at": "2026-04-14T17:04:04.392077+00:00"
     },
     "APTV": {
       "symbol": "APTV",
@@ -587,7 +587,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547663+00:00"
+      "updated_at": "2026-04-14T17:04:04.392079+00:00"
     },
     "ARE": {
       "symbol": "ARE",
@@ -601,7 +601,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547665+00:00"
+      "updated_at": "2026-04-14T17:04:04.392081+00:00"
     },
     "ARES": {
       "symbol": "ARES",
@@ -615,7 +615,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547668+00:00"
+      "updated_at": "2026-04-14T17:04:04.392085+00:00"
     },
     "ARKB": {
       "symbol": "ARKB",
@@ -629,7 +629,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547670+00:00"
+      "updated_at": "2026-04-14T17:04:04.392087+00:00"
     },
     "ATO": {
       "symbol": "ATO",
@@ -643,7 +643,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547674+00:00"
+      "updated_at": "2026-04-14T17:04:04.392089+00:00"
     },
     "AVB": {
       "symbol": "AVB",
@@ -657,7 +657,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547676+00:00"
+      "updated_at": "2026-04-14T17:04:04.392092+00:00"
     },
     "AVGO": {
       "symbol": "AVGO",
@@ -671,7 +671,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547679+00:00"
+      "updated_at": "2026-04-14T17:04:04.392094+00:00"
     },
     "AVY": {
       "symbol": "AVY",
@@ -685,7 +685,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547681+00:00"
+      "updated_at": "2026-04-14T17:04:04.392096+00:00"
     },
     "AWK": {
       "symbol": "AWK",
@@ -699,7 +699,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547683+00:00"
+      "updated_at": "2026-04-14T17:04:04.392099+00:00"
     },
     "AXON": {
       "symbol": "AXON",
@@ -713,7 +713,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547685+00:00"
+      "updated_at": "2026-04-14T17:04:04.392101+00:00"
     },
     "AXP": {
       "symbol": "AXP",
@@ -727,7 +727,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547688+00:00"
+      "updated_at": "2026-04-14T17:04:04.392104+00:00"
     },
     "AZO": {
       "symbol": "AZO",
@@ -741,7 +741,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547690+00:00"
+      "updated_at": "2026-04-14T17:04:04.392106+00:00"
     },
     "BA": {
       "symbol": "BA",
@@ -755,7 +755,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547693+00:00"
+      "updated_at": "2026-04-14T17:04:04.392109+00:00"
     },
     "BAC": {
       "symbol": "BAC",
@@ -769,7 +769,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547696+00:00"
+      "updated_at": "2026-04-14T17:04:04.392111+00:00"
     },
     "BALL": {
       "symbol": "BALL",
@@ -783,7 +783,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547698+00:00"
+      "updated_at": "2026-04-14T17:04:04.392113+00:00"
     },
     "BAX": {
       "symbol": "BAX",
@@ -797,7 +797,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547700+00:00"
+      "updated_at": "2026-04-14T17:04:04.392116+00:00"
     },
     "BBY": {
       "symbol": "BBY",
@@ -811,7 +811,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547703+00:00"
+      "updated_at": "2026-04-14T17:04:04.392118+00:00"
     },
     "BDX": {
       "symbol": "BDX",
@@ -825,7 +825,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547705+00:00"
+      "updated_at": "2026-04-14T17:04:04.392124+00:00"
     },
     "BEN": {
       "symbol": "BEN",
@@ -839,7 +839,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547707+00:00"
+      "updated_at": "2026-04-14T17:04:04.392127+00:00"
     },
     "BF.B": {
       "symbol": "BF.B",
@@ -853,7 +853,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547710+00:00"
+      "updated_at": "2026-04-14T17:04:04.392129+00:00"
     },
     "BG": {
       "symbol": "BG",
@@ -867,7 +867,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547712+00:00"
+      "updated_at": "2026-04-14T17:04:04.392132+00:00"
     },
     "BIIB": {
       "symbol": "BIIB",
@@ -881,7 +881,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547715+00:00"
+      "updated_at": "2026-04-14T17:04:04.392134+00:00"
     },
     "BIL": {
       "symbol": "BIL",
@@ -895,7 +895,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547717+00:00"
+      "updated_at": "2026-04-14T17:04:04.392136+00:00"
     },
     "BK": {
       "symbol": "BK",
@@ -909,7 +909,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547720+00:00"
+      "updated_at": "2026-04-14T17:04:04.392139+00:00"
     },
     "BKNG": {
       "symbol": "BKNG",
@@ -923,7 +923,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547722+00:00"
+      "updated_at": "2026-04-14T17:04:04.392141+00:00"
     },
     "BKR": {
       "symbol": "BKR",
@@ -937,7 +937,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547724+00:00"
+      "updated_at": "2026-04-14T17:04:04.392144+00:00"
     },
     "BLDR": {
       "symbol": "BLDR",
@@ -951,7 +951,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547726+00:00"
+      "updated_at": "2026-04-14T17:04:04.392146+00:00"
     },
     "BLK": {
       "symbol": "BLK",
@@ -965,7 +965,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547729+00:00"
+      "updated_at": "2026-04-14T17:04:04.392148+00:00"
     },
     "BMY": {
       "symbol": "BMY",
@@ -979,7 +979,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547731+00:00"
+      "updated_at": "2026-04-14T17:04:04.392151+00:00"
     },
     "BND": {
       "symbol": "BND",
@@ -993,7 +993,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547733+00:00"
+      "updated_at": "2026-04-14T17:04:04.392153+00:00"
     },
     "BNDX": {
       "symbol": "BNDX",
@@ -1007,7 +1007,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547736+00:00"
+      "updated_at": "2026-04-14T17:04:04.392156+00:00"
     },
     "BR": {
       "symbol": "BR",
@@ -1021,7 +1021,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547738+00:00"
+      "updated_at": "2026-04-14T17:04:04.392159+00:00"
     },
     "BRK.B": {
       "symbol": "BRK.B",
@@ -1035,7 +1035,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547740+00:00"
+      "updated_at": "2026-04-14T17:04:04.392162+00:00"
     },
     "BRO": {
       "symbol": "BRO",
@@ -1049,7 +1049,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547743+00:00"
+      "updated_at": "2026-04-14T17:04:04.392164+00:00"
     },
     "BSX": {
       "symbol": "BSX",
@@ -1063,7 +1063,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547745+00:00"
+      "updated_at": "2026-04-14T17:04:04.392167+00:00"
     },
     "BTC-USD": {
       "symbol": "BTC-USD",
@@ -1077,7 +1077,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547747+00:00"
+      "updated_at": "2026-04-14T17:04:04.392169+00:00"
     },
     "BX": {
       "symbol": "BX",
@@ -1091,7 +1091,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547750+00:00"
+      "updated_at": "2026-04-14T17:04:04.392171+00:00"
     },
     "BXP": {
       "symbol": "BXP",
@@ -1105,7 +1105,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547752+00:00"
+      "updated_at": "2026-04-14T17:04:04.392174+00:00"
     },
     "C": {
       "symbol": "C",
@@ -1119,7 +1119,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547754+00:00"
+      "updated_at": "2026-04-14T17:04:04.392176+00:00"
     },
     "CAG": {
       "symbol": "CAG",
@@ -1133,7 +1133,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547757+00:00"
+      "updated_at": "2026-04-14T17:04:04.392179+00:00"
     },
     "CAH": {
       "symbol": "CAH",
@@ -1147,7 +1147,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547759+00:00"
+      "updated_at": "2026-04-14T17:04:04.392181+00:00"
     },
     "CARR": {
       "symbol": "CARR",
@@ -1161,7 +1161,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547761+00:00"
+      "updated_at": "2026-04-14T17:04:04.392183+00:00"
     },
     "CASY": {
       "symbol": "CASY",
@@ -1175,7 +1175,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547764+00:00"
+      "updated_at": "2026-04-14T17:04:04.392186+00:00"
     },
     "CAT": {
       "symbol": "CAT",
@@ -1189,7 +1189,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547766+00:00"
+      "updated_at": "2026-04-14T17:04:04.392188+00:00"
     },
     "CB": {
       "symbol": "CB",
@@ -1203,7 +1203,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547768+00:00"
+      "updated_at": "2026-04-14T17:04:04.392191+00:00"
     },
     "CBOE": {
       "symbol": "CBOE",
@@ -1217,7 +1217,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547771+00:00"
+      "updated_at": "2026-04-14T17:04:04.392194+00:00"
     },
     "CBRE": {
       "symbol": "CBRE",
@@ -1231,7 +1231,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547773+00:00"
+      "updated_at": "2026-04-14T17:04:04.392197+00:00"
     },
     "CCI": {
       "symbol": "CCI",
@@ -1245,7 +1245,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547776+00:00"
+      "updated_at": "2026-04-14T17:04:04.392199+00:00"
     },
     "CCL": {
       "symbol": "CCL",
@@ -1259,7 +1259,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547778+00:00"
+      "updated_at": "2026-04-14T17:04:04.392203+00:00"
     },
     "CDNS": {
       "symbol": "CDNS",
@@ -1273,7 +1273,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547780+00:00"
+      "updated_at": "2026-04-14T17:04:04.392205+00:00"
     },
     "CDW": {
       "symbol": "CDW",
@@ -1287,7 +1287,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547783+00:00"
+      "updated_at": "2026-04-14T17:04:04.392208+00:00"
     },
     "CEG": {
       "symbol": "CEG",
@@ -1301,7 +1301,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547785+00:00"
+      "updated_at": "2026-04-14T17:04:04.392210+00:00"
     },
     "CF": {
       "symbol": "CF",
@@ -1315,7 +1315,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547787+00:00"
+      "updated_at": "2026-04-14T17:04:04.392212+00:00"
     },
     "CFG": {
       "symbol": "CFG",
@@ -1329,7 +1329,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547791+00:00"
+      "updated_at": "2026-04-14T17:04:04.392215+00:00"
     },
     "CHD": {
       "symbol": "CHD",
@@ -1343,7 +1343,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547793+00:00"
+      "updated_at": "2026-04-14T17:04:04.392217+00:00"
     },
     "CHRW": {
       "symbol": "CHRW",
@@ -1357,7 +1357,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547795+00:00"
+      "updated_at": "2026-04-14T17:04:04.392220+00:00"
     },
     "CHTR": {
       "symbol": "CHTR",
@@ -1371,7 +1371,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547798+00:00"
+      "updated_at": "2026-04-14T17:04:04.392223+00:00"
     },
     "CI": {
       "symbol": "CI",
@@ -1385,7 +1385,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547800+00:00"
+      "updated_at": "2026-04-14T17:04:04.392226+00:00"
     },
     "CIEN": {
       "symbol": "CIEN",
@@ -1399,7 +1399,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547802+00:00"
+      "updated_at": "2026-04-14T17:04:04.392229+00:00"
     },
     "CINF": {
       "symbol": "CINF",
@@ -1413,7 +1413,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547805+00:00"
+      "updated_at": "2026-04-14T17:04:04.392232+00:00"
     },
     "CL": {
       "symbol": "CL",
@@ -1427,7 +1427,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547807+00:00"
+      "updated_at": "2026-04-14T17:04:04.392234+00:00"
     },
     "CLX": {
       "symbol": "CLX",
@@ -1441,7 +1441,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547809+00:00"
+      "updated_at": "2026-04-14T17:04:04.392237+00:00"
     },
     "CMCSA": {
       "symbol": "CMCSA",
@@ -1455,7 +1455,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547812+00:00"
+      "updated_at": "2026-04-14T17:04:04.392240+00:00"
     },
     "CME": {
       "symbol": "CME",
@@ -1469,7 +1469,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547814+00:00"
+      "updated_at": "2026-04-14T17:04:04.392243+00:00"
     },
     "CMG": {
       "symbol": "CMG",
@@ -1483,7 +1483,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547816+00:00"
+      "updated_at": "2026-04-14T17:04:04.392246+00:00"
     },
     "CMI": {
       "symbol": "CMI",
@@ -1497,7 +1497,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547819+00:00"
+      "updated_at": "2026-04-14T17:04:04.392248+00:00"
     },
     "CMS": {
       "symbol": "CMS",
@@ -1511,7 +1511,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547821+00:00"
+      "updated_at": "2026-04-14T17:04:04.392251+00:00"
     },
     "CNC": {
       "symbol": "CNC",
@@ -1525,7 +1525,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547823+00:00"
+      "updated_at": "2026-04-14T17:04:04.392254+00:00"
     },
     "CNP": {
       "symbol": "CNP",
@@ -1539,7 +1539,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547827+00:00"
+      "updated_at": "2026-04-14T17:04:04.392257+00:00"
     },
     "COF": {
       "symbol": "COF",
@@ -1553,7 +1553,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547829+00:00"
+      "updated_at": "2026-04-14T17:04:04.392259+00:00"
     },
     "COHR": {
       "symbol": "COHR",
@@ -1567,7 +1567,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547831+00:00"
+      "updated_at": "2026-04-14T17:04:04.392262+00:00"
     },
     "COIN": {
       "symbol": "COIN",
@@ -1581,7 +1581,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547834+00:00"
+      "updated_at": "2026-04-14T17:04:04.392265+00:00"
     },
     "COO": {
       "symbol": "COO",
@@ -1595,7 +1595,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547836+00:00"
+      "updated_at": "2026-04-14T17:04:04.392267+00:00"
     },
     "COP": {
       "symbol": "COP",
@@ -1609,7 +1609,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547839+00:00"
+      "updated_at": "2026-04-14T17:04:04.392270+00:00"
     },
     "COR": {
       "symbol": "COR",
@@ -1623,7 +1623,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547841+00:00"
+      "updated_at": "2026-04-14T17:04:04.392272+00:00"
     },
     "COST": {
       "symbol": "COST",
@@ -1637,7 +1637,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547862+00:00"
+      "updated_at": "2026-04-14T17:04:04.392274+00:00"
     },
     "CPAY": {
       "symbol": "CPAY",
@@ -1651,7 +1651,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547872+00:00"
+      "updated_at": "2026-04-14T17:04:04.392277+00:00"
     },
     "CPB": {
       "symbol": "CPB",
@@ -1665,7 +1665,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547876+00:00"
+      "updated_at": "2026-04-14T17:04:04.392279+00:00"
     },
     "CPRT": {
       "symbol": "CPRT",
@@ -1679,7 +1679,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547879+00:00"
+      "updated_at": "2026-04-14T17:04:04.392282+00:00"
     },
     "CPT": {
       "symbol": "CPT",
@@ -1693,7 +1693,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547881+00:00"
+      "updated_at": "2026-04-14T17:04:04.392284+00:00"
     },
     "CRH": {
       "symbol": "CRH",
@@ -1707,7 +1707,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547884+00:00"
+      "updated_at": "2026-04-14T17:04:04.392286+00:00"
     },
     "CRL": {
       "symbol": "CRL",
@@ -1721,7 +1721,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547887+00:00"
+      "updated_at": "2026-04-14T17:04:04.392289+00:00"
     },
     "CRM": {
       "symbol": "CRM",
@@ -1735,7 +1735,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547889+00:00"
+      "updated_at": "2026-04-14T17:04:04.392291+00:00"
     },
     "CRWD": {
       "symbol": "CRWD",
@@ -1749,7 +1749,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547892+00:00"
+      "updated_at": "2026-04-14T17:04:04.392294+00:00"
     },
     "CSCO": {
       "symbol": "CSCO",
@@ -1763,7 +1763,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547894+00:00"
+      "updated_at": "2026-04-14T17:04:04.392296+00:00"
     },
     "CSGP": {
       "symbol": "CSGP",
@@ -1777,7 +1777,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547897+00:00"
+      "updated_at": "2026-04-14T17:04:04.392299+00:00"
     },
     "CSX": {
       "symbol": "CSX",
@@ -1791,7 +1791,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547900+00:00"
+      "updated_at": "2026-04-14T17:04:04.392301+00:00"
     },
     "CTAS": {
       "symbol": "CTAS",
@@ -1805,7 +1805,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547902+00:00"
+      "updated_at": "2026-04-14T17:04:04.392304+00:00"
     },
     "CTRA": {
       "symbol": "CTRA",
@@ -1819,7 +1819,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547905+00:00"
+      "updated_at": "2026-04-14T17:04:04.392306+00:00"
     },
     "CTSH": {
       "symbol": "CTSH",
@@ -1833,7 +1833,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547907+00:00"
+      "updated_at": "2026-04-14T17:04:04.392308+00:00"
     },
     "CTVA": {
       "symbol": "CTVA",
@@ -1847,7 +1847,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547910+00:00"
+      "updated_at": "2026-04-14T17:04:04.392311+00:00"
     },
     "CVNA": {
       "symbol": "CVNA",
@@ -1861,7 +1861,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547912+00:00"
+      "updated_at": "2026-04-14T17:04:04.392313+00:00"
     },
     "CVS": {
       "symbol": "CVS",
@@ -1875,7 +1875,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547915+00:00"
+      "updated_at": "2026-04-14T17:04:04.392316+00:00"
     },
     "CVX": {
       "symbol": "CVX",
@@ -1889,7 +1889,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547920+00:00"
+      "updated_at": "2026-04-14T17:04:04.392318+00:00"
     },
     "D": {
       "symbol": "D",
@@ -1903,7 +1903,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547922+00:00"
+      "updated_at": "2026-04-14T17:04:04.392325+00:00"
     },
     "DAL": {
       "symbol": "DAL",
@@ -1917,7 +1917,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547925+00:00"
+      "updated_at": "2026-04-14T17:04:04.392328+00:00"
     },
     "DASH": {
       "symbol": "DASH",
@@ -1931,7 +1931,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547928+00:00"
+      "updated_at": "2026-04-14T17:04:04.392330+00:00"
     },
     "DBC": {
       "symbol": "DBC",
@@ -1945,7 +1945,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547930+00:00"
+      "updated_at": "2026-04-14T17:04:04.392334+00:00"
     },
     "DD": {
       "symbol": "DD",
@@ -1959,7 +1959,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547933+00:00"
+      "updated_at": "2026-04-14T17:04:04.392337+00:00"
     },
     "DDOG": {
       "symbol": "DDOG",
@@ -1973,7 +1973,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547935+00:00"
+      "updated_at": "2026-04-14T17:04:04.392339+00:00"
     },
     "DE": {
       "symbol": "DE",
@@ -1987,7 +1987,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547938+00:00"
+      "updated_at": "2026-04-14T17:04:04.392342+00:00"
     },
     "DECK": {
       "symbol": "DECK",
@@ -2001,7 +2001,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547940+00:00"
+      "updated_at": "2026-04-14T17:04:04.392344+00:00"
     },
     "DELL": {
       "symbol": "DELL",
@@ -2015,7 +2015,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547943+00:00"
+      "updated_at": "2026-04-14T17:04:04.392347+00:00"
     },
     "DG": {
       "symbol": "DG",
@@ -2029,7 +2029,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547945+00:00"
+      "updated_at": "2026-04-14T17:04:04.392349+00:00"
     },
     "DGRO": {
       "symbol": "DGRO",
@@ -2043,7 +2043,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547948+00:00"
+      "updated_at": "2026-04-14T17:04:04.392352+00:00"
     },
     "DGX": {
       "symbol": "DGX",
@@ -2057,7 +2057,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547950+00:00"
+      "updated_at": "2026-04-14T17:04:04.392354+00:00"
     },
     "DHI": {
       "symbol": "DHI",
@@ -2071,7 +2071,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547953+00:00"
+      "updated_at": "2026-04-14T17:04:04.392357+00:00"
     },
     "DHR": {
       "symbol": "DHR",
@@ -2085,7 +2085,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547955+00:00"
+      "updated_at": "2026-04-14T17:04:04.392359+00:00"
     },
     "DIS": {
       "symbol": "DIS",
@@ -2099,7 +2099,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547958+00:00"
+      "updated_at": "2026-04-14T17:04:04.392361+00:00"
     },
     "DLR": {
       "symbol": "DLR",
@@ -2113,7 +2113,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547960+00:00"
+      "updated_at": "2026-04-14T17:04:04.392364+00:00"
     },
     "DLTR": {
       "symbol": "DLTR",
@@ -2127,7 +2127,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547963+00:00"
+      "updated_at": "2026-04-14T17:04:04.392366+00:00"
     },
     "DOC": {
       "symbol": "DOC",
@@ -2141,7 +2141,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547965+00:00"
+      "updated_at": "2026-04-14T17:04:04.392369+00:00"
     },
     "DOV": {
       "symbol": "DOV",
@@ -2155,7 +2155,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547968+00:00"
+      "updated_at": "2026-04-14T17:04:04.392371+00:00"
     },
     "DOW": {
       "symbol": "DOW",
@@ -2169,7 +2169,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547970+00:00"
+      "updated_at": "2026-04-14T17:04:04.392374+00:00"
     },
     "DPZ": {
       "symbol": "DPZ",
@@ -2183,7 +2183,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547972+00:00"
+      "updated_at": "2026-04-14T17:04:04.392376+00:00"
     },
     "DRI": {
       "symbol": "DRI",
@@ -2197,7 +2197,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547975+00:00"
+      "updated_at": "2026-04-14T17:04:04.392378+00:00"
     },
     "DTE": {
       "symbol": "DTE",
@@ -2211,7 +2211,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547978+00:00"
+      "updated_at": "2026-04-14T17:04:04.392381+00:00"
     },
     "DUK": {
       "symbol": "DUK",
@@ -2225,7 +2225,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547980+00:00"
+      "updated_at": "2026-04-14T17:04:04.392383+00:00"
     },
     "DVA": {
       "symbol": "DVA",
@@ -2239,7 +2239,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547983+00:00"
+      "updated_at": "2026-04-14T17:04:04.392386+00:00"
     },
     "DVN": {
       "symbol": "DVN",
@@ -2253,7 +2253,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547985+00:00"
+      "updated_at": "2026-04-14T17:04:04.392389+00:00"
     },
     "DXCM": {
       "symbol": "DXCM",
@@ -2267,7 +2267,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547988+00:00"
+      "updated_at": "2026-04-14T17:04:04.392391+00:00"
     },
     "EA": {
       "symbol": "EA",
@@ -2281,7 +2281,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547990+00:00"
+      "updated_at": "2026-04-14T17:04:04.392394+00:00"
     },
     "EBAY": {
       "symbol": "EBAY",
@@ -2295,7 +2295,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547993+00:00"
+      "updated_at": "2026-04-14T17:04:04.392396+00:00"
     },
     "ECL": {
       "symbol": "ECL",
@@ -2309,7 +2309,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547995+00:00"
+      "updated_at": "2026-04-14T17:04:04.392399+00:00"
     },
     "ED": {
       "symbol": "ED",
@@ -2323,7 +2323,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.547998+00:00"
+      "updated_at": "2026-04-14T17:04:04.392401+00:00"
     },
     "EEM": {
       "symbol": "EEM",
@@ -2337,7 +2337,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548000+00:00"
+      "updated_at": "2026-04-14T17:04:04.392404+00:00"
     },
     "EFX": {
       "symbol": "EFX",
@@ -2351,7 +2351,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548003+00:00"
+      "updated_at": "2026-04-14T17:04:04.392406+00:00"
     },
     "EG": {
       "symbol": "EG",
@@ -2365,7 +2365,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548005+00:00"
+      "updated_at": "2026-04-14T17:04:04.392409+00:00"
     },
     "EIX": {
       "symbol": "EIX",
@@ -2379,7 +2379,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548008+00:00"
+      "updated_at": "2026-04-14T17:04:04.392411+00:00"
     },
     "EL": {
       "symbol": "EL",
@@ -2393,7 +2393,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548010+00:00"
+      "updated_at": "2026-04-14T17:04:04.392413+00:00"
     },
     "ELV": {
       "symbol": "ELV",
@@ -2407,7 +2407,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548015+00:00"
+      "updated_at": "2026-04-14T17:04:04.392417+00:00"
     },
     "EME": {
       "symbol": "EME",
@@ -2421,7 +2421,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548017+00:00"
+      "updated_at": "2026-04-14T17:04:04.392420+00:00"
     },
     "EMR": {
       "symbol": "EMR",
@@ -2435,7 +2435,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548021+00:00"
+      "updated_at": "2026-04-14T17:04:04.392422+00:00"
     },
     "EOG": {
       "symbol": "EOG",
@@ -2449,7 +2449,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548024+00:00"
+      "updated_at": "2026-04-14T17:04:04.392425+00:00"
     },
     "EPAM": {
       "symbol": "EPAM",
@@ -2463,7 +2463,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548027+00:00"
+      "updated_at": "2026-04-14T17:04:04.392427+00:00"
     },
     "EQIX": {
       "symbol": "EQIX",
@@ -2477,7 +2477,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548029+00:00"
+      "updated_at": "2026-04-14T17:04:04.392430+00:00"
     },
     "EQR": {
       "symbol": "EQR",
@@ -2491,7 +2491,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548032+00:00"
+      "updated_at": "2026-04-14T17:04:04.392432+00:00"
     },
     "EQT": {
       "symbol": "EQT",
@@ -2505,7 +2505,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548034+00:00"
+      "updated_at": "2026-04-14T17:04:04.392436+00:00"
     },
     "ERIE": {
       "symbol": "ERIE",
@@ -2519,7 +2519,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548037+00:00"
+      "updated_at": "2026-04-14T17:04:04.392438+00:00"
     },
     "ES": {
       "symbol": "ES",
@@ -2533,7 +2533,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548039+00:00"
+      "updated_at": "2026-04-14T17:04:04.392441+00:00"
     },
     "ESS": {
       "symbol": "ESS",
@@ -2547,7 +2547,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548042+00:00"
+      "updated_at": "2026-04-14T17:04:04.392443+00:00"
     },
     "ETH-USD": {
       "symbol": "ETH-USD",
@@ -2561,7 +2561,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548045+00:00"
+      "updated_at": "2026-04-14T17:04:04.392446+00:00"
     },
     "ETHA": {
       "symbol": "ETHA",
@@ -2575,7 +2575,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548047+00:00"
+      "updated_at": "2026-04-14T17:04:04.392448+00:00"
     },
     "ETN": {
       "symbol": "ETN",
@@ -2589,7 +2589,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548050+00:00"
+      "updated_at": "2026-04-14T17:04:04.392451+00:00"
     },
     "ETR": {
       "symbol": "ETR",
@@ -2603,7 +2603,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548052+00:00"
+      "updated_at": "2026-04-14T17:04:04.392453+00:00"
     },
     "EVRG": {
       "symbol": "EVRG",
@@ -2617,7 +2617,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548055+00:00"
+      "updated_at": "2026-04-14T17:04:04.392456+00:00"
     },
     "EW": {
       "symbol": "EW",
@@ -2631,7 +2631,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548057+00:00"
+      "updated_at": "2026-04-14T17:04:04.392458+00:00"
     },
     "EXC": {
       "symbol": "EXC",
@@ -2645,7 +2645,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548060+00:00"
+      "updated_at": "2026-04-14T17:04:04.392461+00:00"
     },
     "EXE": {
       "symbol": "EXE",
@@ -2659,7 +2659,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548062+00:00"
+      "updated_at": "2026-04-14T17:04:04.392463+00:00"
     },
     "EXPD": {
       "symbol": "EXPD",
@@ -2673,7 +2673,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548065+00:00"
+      "updated_at": "2026-04-14T17:04:04.392466+00:00"
     },
     "EXPE": {
       "symbol": "EXPE",
@@ -2687,7 +2687,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548068+00:00"
+      "updated_at": "2026-04-14T17:04:04.392468+00:00"
     },
     "EXR": {
       "symbol": "EXR",
@@ -2701,7 +2701,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548070+00:00"
+      "updated_at": "2026-04-14T17:04:04.392471+00:00"
     },
     "F": {
       "symbol": "F",
@@ -2715,7 +2715,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548073+00:00"
+      "updated_at": "2026-04-14T17:04:04.392473+00:00"
     },
     "FANG": {
       "symbol": "FANG",
@@ -2729,7 +2729,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548075+00:00"
+      "updated_at": "2026-04-14T17:04:04.392475+00:00"
     },
     "FAST": {
       "symbol": "FAST",
@@ -2743,7 +2743,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548078+00:00"
+      "updated_at": "2026-04-14T17:04:04.392478+00:00"
     },
     "FBTC": {
       "symbol": "FBTC",
@@ -2757,7 +2757,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548080+00:00"
+      "updated_at": "2026-04-14T17:04:04.392480+00:00"
     },
     "FCX": {
       "symbol": "FCX",
@@ -2771,7 +2771,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548083+00:00"
+      "updated_at": "2026-04-14T17:04:04.392483+00:00"
     },
     "FDS": {
       "symbol": "FDS",
@@ -2785,7 +2785,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548085+00:00"
+      "updated_at": "2026-04-14T17:04:04.392485+00:00"
     },
     "FDX": {
       "symbol": "FDX",
@@ -2799,7 +2799,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548088+00:00"
+      "updated_at": "2026-04-14T17:04:04.392489+00:00"
     },
     "FE": {
       "symbol": "FE",
@@ -2813,7 +2813,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548090+00:00"
+      "updated_at": "2026-04-14T17:04:04.392491+00:00"
     },
     "FFIV": {
       "symbol": "FFIV",
@@ -2827,7 +2827,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548093+00:00"
+      "updated_at": "2026-04-14T17:04:04.392494+00:00"
     },
     "FICO": {
       "symbol": "FICO",
@@ -2841,7 +2841,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548095+00:00"
+      "updated_at": "2026-04-14T17:04:04.392496+00:00"
     },
     "FIS": {
       "symbol": "FIS",
@@ -2855,7 +2855,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548098+00:00"
+      "updated_at": "2026-04-14T17:04:04.392505+00:00"
     },
     "FISV": {
       "symbol": "FISV",
@@ -2869,7 +2869,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548100+00:00"
+      "updated_at": "2026-04-14T17:04:04.392508+00:00"
     },
     "FITB": {
       "symbol": "FITB",
@@ -2883,7 +2883,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548103+00:00"
+      "updated_at": "2026-04-14T17:04:04.392511+00:00"
     },
     "FIX": {
       "symbol": "FIX",
@@ -2897,7 +2897,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548105+00:00"
+      "updated_at": "2026-04-14T17:04:04.392513+00:00"
     },
     "FOX": {
       "symbol": "FOX",
@@ -2911,7 +2911,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548107+00:00"
+      "updated_at": "2026-04-14T17:04:04.392515+00:00"
     },
     "FOXA": {
       "symbol": "FOXA",
@@ -2925,7 +2925,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548110+00:00"
+      "updated_at": "2026-04-14T17:04:04.392518+00:00"
     },
     "FRT": {
       "symbol": "FRT",
@@ -2939,7 +2939,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548112+00:00"
+      "updated_at": "2026-04-14T17:04:04.392521+00:00"
     },
     "FSLR": {
       "symbol": "FSLR",
@@ -2953,7 +2953,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548115+00:00"
+      "updated_at": "2026-04-14T17:04:04.392523+00:00"
     },
     "FTNT": {
       "symbol": "FTNT",
@@ -2967,7 +2967,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548117+00:00"
+      "updated_at": "2026-04-14T17:04:04.392526+00:00"
     },
     "FTV": {
       "symbol": "FTV",
@@ -2981,7 +2981,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548120+00:00"
+      "updated_at": "2026-04-14T17:04:04.392528+00:00"
     },
     "GD": {
       "symbol": "GD",
@@ -2995,7 +2995,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548122+00:00"
+      "updated_at": "2026-04-14T17:04:04.392530+00:00"
     },
     "GDDY": {
       "symbol": "GDDY",
@@ -3009,7 +3009,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548126+00:00"
+      "updated_at": "2026-04-14T17:04:04.392533+00:00"
     },
     "GE": {
       "symbol": "GE",
@@ -3023,7 +3023,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548130+00:00"
+      "updated_at": "2026-04-14T17:04:04.392535+00:00"
     },
     "GEHC": {
       "symbol": "GEHC",
@@ -3037,7 +3037,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548132+00:00"
+      "updated_at": "2026-04-14T17:04:04.392538+00:00"
     },
     "GEN": {
       "symbol": "GEN",
@@ -3051,7 +3051,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548135+00:00"
+      "updated_at": "2026-04-14T17:04:04.392540+00:00"
     },
     "GEV": {
       "symbol": "GEV",
@@ -3065,7 +3065,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548137+00:00"
+      "updated_at": "2026-04-14T17:04:04.392544+00:00"
     },
     "GILD": {
       "symbol": "GILD",
@@ -3079,7 +3079,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548140+00:00"
+      "updated_at": "2026-04-14T17:04:04.392546+00:00"
     },
     "GIS": {
       "symbol": "GIS",
@@ -3093,7 +3093,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548142+00:00"
+      "updated_at": "2026-04-14T17:04:04.392549+00:00"
     },
     "GL": {
       "symbol": "GL",
@@ -3107,7 +3107,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548150+00:00"
+      "updated_at": "2026-04-14T17:04:04.392551+00:00"
     },
     "GLD": {
       "symbol": "GLD",
@@ -3121,7 +3121,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548152+00:00"
+      "updated_at": "2026-04-14T17:04:04.392554+00:00"
     },
     "GLW": {
       "symbol": "GLW",
@@ -3135,7 +3135,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548155+00:00"
+      "updated_at": "2026-04-14T17:04:04.392557+00:00"
     },
     "GM": {
       "symbol": "GM",
@@ -3149,7 +3149,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548157+00:00"
+      "updated_at": "2026-04-14T17:04:04.392559+00:00"
     },
     "GNRC": {
       "symbol": "GNRC",
@@ -3163,7 +3163,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548160+00:00"
+      "updated_at": "2026-04-14T17:04:04.392562+00:00"
     },
     "GOOG": {
       "symbol": "GOOG",
@@ -3177,7 +3177,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548162+00:00"
+      "updated_at": "2026-04-14T17:04:04.392564+00:00"
     },
     "GOOGL": {
       "symbol": "GOOGL",
@@ -3191,7 +3191,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548165+00:00"
+      "updated_at": "2026-04-14T17:04:04.392567+00:00"
     },
     "GPC": {
       "symbol": "GPC",
@@ -3205,7 +3205,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548167+00:00"
+      "updated_at": "2026-04-14T17:04:04.392569+00:00"
     },
     "GPN": {
       "symbol": "GPN",
@@ -3219,7 +3219,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548169+00:00"
+      "updated_at": "2026-04-14T17:04:04.392572+00:00"
     },
     "GRMN": {
       "symbol": "GRMN",
@@ -3233,7 +3233,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548172+00:00"
+      "updated_at": "2026-04-14T17:04:04.392574+00:00"
     },
     "GS": {
       "symbol": "GS",
@@ -3247,7 +3247,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548174+00:00"
+      "updated_at": "2026-04-14T17:04:04.392577+00:00"
     },
     "GWW": {
       "symbol": "GWW",
@@ -3261,7 +3261,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548177+00:00"
+      "updated_at": "2026-04-14T17:04:04.392579+00:00"
     },
     "HAL": {
       "symbol": "HAL",
@@ -3275,7 +3275,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548179+00:00"
+      "updated_at": "2026-04-14T17:04:04.392581+00:00"
     },
     "HAS": {
       "symbol": "HAS",
@@ -3289,7 +3289,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548182+00:00"
+      "updated_at": "2026-04-14T17:04:04.392584+00:00"
     },
     "HBAN": {
       "symbol": "HBAN",
@@ -3303,7 +3303,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548184+00:00"
+      "updated_at": "2026-04-14T17:04:04.392586+00:00"
     },
     "HCA": {
       "symbol": "HCA",
@@ -3317,7 +3317,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548187+00:00"
+      "updated_at": "2026-04-14T17:04:04.392589+00:00"
     },
     "HD": {
       "symbol": "HD",
@@ -3331,7 +3331,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548191+00:00"
+      "updated_at": "2026-04-14T17:04:04.392591+00:00"
     },
     "HIG": {
       "symbol": "HIG",
@@ -3345,7 +3345,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548193+00:00"
+      "updated_at": "2026-04-14T17:04:04.392594+00:00"
     },
     "HII": {
       "symbol": "HII",
@@ -3359,7 +3359,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548196+00:00"
+      "updated_at": "2026-04-14T17:04:04.392596+00:00"
     },
     "HLT": {
       "symbol": "HLT",
@@ -3373,7 +3373,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548198+00:00"
+      "updated_at": "2026-04-14T17:04:04.392599+00:00"
     },
     "HON": {
       "symbol": "HON",
@@ -3387,7 +3387,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548201+00:00"
+      "updated_at": "2026-04-14T17:04:04.392601+00:00"
     },
     "HOOD": {
       "symbol": "HOOD",
@@ -3401,7 +3401,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548203+00:00"
+      "updated_at": "2026-04-14T17:04:04.392604+00:00"
     },
     "HPE": {
       "symbol": "HPE",
@@ -3415,7 +3415,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548206+00:00"
+      "updated_at": "2026-04-14T17:04:04.392606+00:00"
     },
     "HPQ": {
       "symbol": "HPQ",
@@ -3429,7 +3429,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548208+00:00"
+      "updated_at": "2026-04-14T17:04:04.392609+00:00"
     },
     "HRL": {
       "symbol": "HRL",
@@ -3443,7 +3443,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548211+00:00"
+      "updated_at": "2026-04-14T17:04:04.392611+00:00"
     },
     "HSIC": {
       "symbol": "HSIC",
@@ -3457,7 +3457,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548213+00:00"
+      "updated_at": "2026-04-14T17:04:04.392614+00:00"
     },
     "HST": {
       "symbol": "HST",
@@ -3471,7 +3471,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548216+00:00"
+      "updated_at": "2026-04-14T17:04:04.392616+00:00"
     },
     "HSY": {
       "symbol": "HSY",
@@ -3485,7 +3485,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548218+00:00"
+      "updated_at": "2026-04-14T17:04:04.392619+00:00"
     },
     "HUBB": {
       "symbol": "HUBB",
@@ -3499,7 +3499,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548221+00:00"
+      "updated_at": "2026-04-14T17:04:04.392621+00:00"
     },
     "HUM": {
       "symbol": "HUM",
@@ -3513,7 +3513,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548223+00:00"
+      "updated_at": "2026-04-14T17:04:04.392624+00:00"
     },
     "HWM": {
       "symbol": "HWM",
@@ -3527,7 +3527,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548226+00:00"
+      "updated_at": "2026-04-14T17:04:04.392626+00:00"
     },
     "IAU": {
       "symbol": "IAU",
@@ -3541,7 +3541,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548228+00:00"
+      "updated_at": "2026-04-14T17:04:04.392628+00:00"
     },
     "IBIT": {
       "symbol": "IBIT",
@@ -3555,7 +3555,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548231+00:00"
+      "updated_at": "2026-04-14T17:04:04.392631+00:00"
     },
     "IBKR": {
       "symbol": "IBKR",
@@ -3569,7 +3569,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548234+00:00"
+      "updated_at": "2026-04-14T17:04:04.392633+00:00"
     },
     "IBM": {
       "symbol": "IBM",
@@ -3583,7 +3583,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548237+00:00"
+      "updated_at": "2026-04-14T17:04:04.392636+00:00"
     },
     "ICE": {
       "symbol": "ICE",
@@ -3597,7 +3597,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548239+00:00"
+      "updated_at": "2026-04-14T17:04:04.392638+00:00"
     },
     "ICSH": {
       "symbol": "ICSH",
@@ -3611,7 +3611,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548242+00:00"
+      "updated_at": "2026-04-14T17:04:04.392641+00:00"
     },
     "IDXX": {
       "symbol": "IDXX",
@@ -3625,7 +3625,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548244+00:00"
+      "updated_at": "2026-04-14T17:04:04.392645+00:00"
     },
     "IEF": {
       "symbol": "IEF",
@@ -3639,7 +3639,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548247+00:00"
+      "updated_at": "2026-04-14T17:04:04.392648+00:00"
     },
     "IEFA": {
       "symbol": "IEFA",
@@ -3653,7 +3653,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548249+00:00"
+      "updated_at": "2026-04-14T17:04:04.392651+00:00"
     },
     "IEMG": {
       "symbol": "IEMG",
@@ -3667,7 +3667,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548252+00:00"
+      "updated_at": "2026-04-14T17:04:04.392654+00:00"
     },
     "IEX": {
       "symbol": "IEX",
@@ -3681,7 +3681,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548254+00:00"
+      "updated_at": "2026-04-14T17:04:04.392656+00:00"
     },
     "IFF": {
       "symbol": "IFF",
@@ -3695,7 +3695,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548257+00:00"
+      "updated_at": "2026-04-14T17:04:04.392660+00:00"
     },
     "INCY": {
       "symbol": "INCY",
@@ -3709,7 +3709,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548259+00:00"
+      "updated_at": "2026-04-14T17:04:04.392663+00:00"
     },
     "INTC": {
       "symbol": "INTC",
@@ -3723,7 +3723,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548261+00:00"
+      "updated_at": "2026-04-14T17:04:04.392665+00:00"
     },
     "INTU": {
       "symbol": "INTU",
@@ -3737,7 +3737,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548264+00:00"
+      "updated_at": "2026-04-14T17:04:04.392668+00:00"
     },
     "INVH": {
       "symbol": "INVH",
@@ -3751,7 +3751,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548266+00:00"
+      "updated_at": "2026-04-14T17:04:04.392670+00:00"
     },
     "IP": {
       "symbol": "IP",
@@ -3765,7 +3765,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548269+00:00"
+      "updated_at": "2026-04-14T17:04:04.392673+00:00"
     },
     "IQV": {
       "symbol": "IQV",
@@ -3779,7 +3779,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548271+00:00"
+      "updated_at": "2026-04-14T17:04:04.392675+00:00"
     },
     "IR": {
       "symbol": "IR",
@@ -3793,7 +3793,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548274+00:00"
+      "updated_at": "2026-04-14T17:04:04.392678+00:00"
     },
     "IRM": {
       "symbol": "IRM",
@@ -3807,7 +3807,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548276+00:00"
+      "updated_at": "2026-04-14T17:04:04.392680+00:00"
     },
     "ISRG": {
       "symbol": "ISRG",
@@ -3821,7 +3821,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548279+00:00"
+      "updated_at": "2026-04-14T17:04:04.392682+00:00"
     },
     "IT": {
       "symbol": "IT",
@@ -3835,7 +3835,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548281+00:00"
+      "updated_at": "2026-04-14T17:04:04.392685+00:00"
     },
     "ITOT": {
       "symbol": "ITOT",
@@ -3849,7 +3849,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548284+00:00"
+      "updated_at": "2026-04-14T17:04:04.392687+00:00"
     },
     "ITW": {
       "symbol": "ITW",
@@ -3863,7 +3863,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548286+00:00"
+      "updated_at": "2026-04-14T17:04:04.392690+00:00"
     },
     "IUSB": {
       "symbol": "IUSB",
@@ -3877,7 +3877,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548289+00:00"
+      "updated_at": "2026-04-14T17:04:04.392692+00:00"
     },
     "IVV": {
       "symbol": "IVV",
@@ -3891,7 +3891,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548292+00:00"
+      "updated_at": "2026-04-14T17:04:04.392695+00:00"
     },
     "IVZ": {
       "symbol": "IVZ",
@@ -3905,7 +3905,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548294+00:00"
+      "updated_at": "2026-04-14T17:04:04.392697+00:00"
     },
     "IWM": {
       "symbol": "IWM",
@@ -3919,7 +3919,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548297+00:00"
+      "updated_at": "2026-04-14T17:04:04.392700+00:00"
     },
     "IXUS": {
       "symbol": "IXUS",
@@ -3933,7 +3933,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548299+00:00"
+      "updated_at": "2026-04-14T17:04:04.392702+00:00"
     },
     "IYR": {
       "symbol": "IYR",
@@ -3947,7 +3947,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548302+00:00"
+      "updated_at": "2026-04-14T17:04:04.392705+00:00"
     },
     "J": {
       "symbol": "J",
@@ -3961,7 +3961,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548304+00:00"
+      "updated_at": "2026-04-14T17:04:04.392707+00:00"
     },
     "JBHT": {
       "symbol": "JBHT",
@@ -3975,7 +3975,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548307+00:00"
+      "updated_at": "2026-04-14T17:04:04.392710+00:00"
     },
     "JBL": {
       "symbol": "JBL",
@@ -3989,7 +3989,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548309+00:00"
+      "updated_at": "2026-04-14T17:04:04.392712+00:00"
     },
     "JCI": {
       "symbol": "JCI",
@@ -4003,7 +4003,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548312+00:00"
+      "updated_at": "2026-04-14T17:04:04.392715+00:00"
     },
     "JKHY": {
       "symbol": "JKHY",
@@ -4017,7 +4017,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548314+00:00"
+      "updated_at": "2026-04-14T17:04:04.392717+00:00"
     },
     "JNJ": {
       "symbol": "JNJ",
@@ -4031,7 +4031,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548316+00:00"
+      "updated_at": "2026-04-14T17:04:04.392720+00:00"
     },
     "JPM": {
       "symbol": "JPM",
@@ -4045,7 +4045,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548319+00:00"
+      "updated_at": "2026-04-14T17:04:04.392723+00:00"
     },
     "KDP": {
       "symbol": "KDP",
@@ -4059,7 +4059,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548321+00:00"
+      "updated_at": "2026-04-14T17:04:04.392725+00:00"
     },
     "KEY": {
       "symbol": "KEY",
@@ -4073,7 +4073,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548324+00:00"
+      "updated_at": "2026-04-14T17:04:04.392727+00:00"
     },
     "KEYS": {
       "symbol": "KEYS",
@@ -4087,7 +4087,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548326+00:00"
+      "updated_at": "2026-04-14T17:04:04.392730+00:00"
     },
     "KHC": {
       "symbol": "KHC",
@@ -4101,7 +4101,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548329+00:00"
+      "updated_at": "2026-04-14T17:04:04.392732+00:00"
     },
     "KIM": {
       "symbol": "KIM",
@@ -4115,7 +4115,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548331+00:00"
+      "updated_at": "2026-04-14T17:04:04.392734+00:00"
     },
     "KKR": {
       "symbol": "KKR",
@@ -4129,7 +4129,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548335+00:00"
+      "updated_at": "2026-04-14T17:04:04.392737+00:00"
     },
     "KLAC": {
       "symbol": "KLAC",
@@ -4143,7 +4143,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548337+00:00"
+      "updated_at": "2026-04-14T17:04:04.392739+00:00"
     },
     "KMB": {
       "symbol": "KMB",
@@ -4157,7 +4157,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548340+00:00"
+      "updated_at": "2026-04-14T17:04:04.392742+00:00"
     },
     "KMI": {
       "symbol": "KMI",
@@ -4171,7 +4171,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548342+00:00"
+      "updated_at": "2026-04-14T17:04:04.392744+00:00"
     },
     "KO": {
       "symbol": "KO",
@@ -4185,7 +4185,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548345+00:00"
+      "updated_at": "2026-04-14T17:04:04.392750+00:00"
     },
     "KR": {
       "symbol": "KR",
@@ -4199,7 +4199,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548347+00:00"
+      "updated_at": "2026-04-14T17:04:04.392753+00:00"
     },
     "KVUE": {
       "symbol": "KVUE",
@@ -4213,7 +4213,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548351+00:00"
+      "updated_at": "2026-04-14T17:04:04.392755+00:00"
     },
     "L": {
       "symbol": "L",
@@ -4227,7 +4227,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548353+00:00"
+      "updated_at": "2026-04-14T17:04:04.392768+00:00"
     },
     "LDOS": {
       "symbol": "LDOS",
@@ -4241,7 +4241,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548356+00:00"
+      "updated_at": "2026-04-14T17:04:04.392771+00:00"
     },
     "LEN": {
       "symbol": "LEN",
@@ -4255,7 +4255,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548358+00:00"
+      "updated_at": "2026-04-14T17:04:04.392773+00:00"
     },
     "LH": {
       "symbol": "LH",
@@ -4269,7 +4269,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548361+00:00"
+      "updated_at": "2026-04-14T17:04:04.392775+00:00"
     },
     "LHX": {
       "symbol": "LHX",
@@ -4283,7 +4283,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548363+00:00"
+      "updated_at": "2026-04-14T17:04:04.392778+00:00"
     },
     "LII": {
       "symbol": "LII",
@@ -4297,7 +4297,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548366+00:00"
+      "updated_at": "2026-04-14T17:04:04.392780+00:00"
     },
     "LIN": {
       "symbol": "LIN",
@@ -4311,7 +4311,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548368+00:00"
+      "updated_at": "2026-04-14T17:04:04.392783+00:00"
     },
     "LITE": {
       "symbol": "LITE",
@@ -4325,7 +4325,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548371+00:00"
+      "updated_at": "2026-04-14T17:04:04.392785+00:00"
     },
     "LLY": {
       "symbol": "LLY",
@@ -4339,7 +4339,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548373+00:00"
+      "updated_at": "2026-04-14T17:04:04.392788+00:00"
     },
     "LMT": {
       "symbol": "LMT",
@@ -4353,7 +4353,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548376+00:00"
+      "updated_at": "2026-04-14T17:04:04.392790+00:00"
     },
     "LNT": {
       "symbol": "LNT",
@@ -4367,7 +4367,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548378+00:00"
+      "updated_at": "2026-04-14T17:04:04.392793+00:00"
     },
     "LOW": {
       "symbol": "LOW",
@@ -4381,7 +4381,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548381+00:00"
+      "updated_at": "2026-04-14T17:04:04.392795+00:00"
     },
     "LRCX": {
       "symbol": "LRCX",
@@ -4395,7 +4395,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548383+00:00"
+      "updated_at": "2026-04-14T17:04:04.392797+00:00"
     },
     "LULU": {
       "symbol": "LULU",
@@ -4409,7 +4409,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548386+00:00"
+      "updated_at": "2026-04-14T17:04:04.392800+00:00"
     },
     "LUV": {
       "symbol": "LUV",
@@ -4423,7 +4423,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548388+00:00"
+      "updated_at": "2026-04-14T17:04:04.392802+00:00"
     },
     "LVS": {
       "symbol": "LVS",
@@ -4437,7 +4437,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548391+00:00"
+      "updated_at": "2026-04-14T17:04:04.392805+00:00"
     },
     "LYB": {
       "symbol": "LYB",
@@ -4451,7 +4451,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548393+00:00"
+      "updated_at": "2026-04-14T17:04:04.392807+00:00"
     },
     "LYV": {
       "symbol": "LYV",
@@ -4465,7 +4465,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548396+00:00"
+      "updated_at": "2026-04-14T17:04:04.392809+00:00"
     },
     "MA": {
       "symbol": "MA",
@@ -4479,7 +4479,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548398+00:00"
+      "updated_at": "2026-04-14T17:04:04.392812+00:00"
     },
     "MAA": {
       "symbol": "MAA",
@@ -4493,7 +4493,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548401+00:00"
+      "updated_at": "2026-04-14T17:04:04.392814+00:00"
     },
     "MAR": {
       "symbol": "MAR",
@@ -4507,7 +4507,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548403+00:00"
+      "updated_at": "2026-04-14T17:04:04.392817+00:00"
     },
     "MAS": {
       "symbol": "MAS",
@@ -4521,7 +4521,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548406+00:00"
+      "updated_at": "2026-04-14T17:04:04.392820+00:00"
     },
     "MCD": {
       "symbol": "MCD",
@@ -4535,7 +4535,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548408+00:00"
+      "updated_at": "2026-04-14T17:04:04.392822+00:00"
     },
     "MCHP": {
       "symbol": "MCHP",
@@ -4549,7 +4549,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548410+00:00"
+      "updated_at": "2026-04-14T17:04:04.392825+00:00"
     },
     "MCK": {
       "symbol": "MCK",
@@ -4563,7 +4563,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548413+00:00"
+      "updated_at": "2026-04-14T17:04:04.392828+00:00"
     },
     "MCO": {
       "symbol": "MCO",
@@ -4577,7 +4577,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548415+00:00"
+      "updated_at": "2026-04-14T17:04:04.392830+00:00"
     },
     "MDLZ": {
       "symbol": "MDLZ",
@@ -4591,7 +4591,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548418+00:00"
+      "updated_at": "2026-04-14T17:04:04.392834+00:00"
     },
     "MDT": {
       "symbol": "MDT",
@@ -4605,7 +4605,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548420+00:00"
+      "updated_at": "2026-04-14T17:04:04.392837+00:00"
     },
     "MET": {
       "symbol": "MET",
@@ -4619,7 +4619,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548423+00:00"
+      "updated_at": "2026-04-14T17:04:04.392839+00:00"
     },
     "META": {
       "symbol": "META",
@@ -4633,7 +4633,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548425+00:00"
+      "updated_at": "2026-04-14T17:04:04.392842+00:00"
     },
     "MGM": {
       "symbol": "MGM",
@@ -4647,7 +4647,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548428+00:00"
+      "updated_at": "2026-04-14T17:04:04.392844+00:00"
     },
     "MKC": {
       "symbol": "MKC",
@@ -4661,7 +4661,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548430+00:00"
+      "updated_at": "2026-04-14T17:04:04.392847+00:00"
     },
     "MLM": {
       "symbol": "MLM",
@@ -4675,7 +4675,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548433+00:00"
+      "updated_at": "2026-04-14T17:04:04.392849+00:00"
     },
     "MMM": {
       "symbol": "MMM",
@@ -4689,7 +4689,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548436+00:00"
+      "updated_at": "2026-04-14T17:04:04.392851+00:00"
     },
     "MNST": {
       "symbol": "MNST",
@@ -4703,7 +4703,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548439+00:00"
+      "updated_at": "2026-04-14T17:04:04.392854+00:00"
     },
     "MO": {
       "symbol": "MO",
@@ -4717,7 +4717,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548441+00:00"
+      "updated_at": "2026-04-14T17:04:04.392857+00:00"
     },
     "MOS": {
       "symbol": "MOS",
@@ -4731,7 +4731,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548444+00:00"
+      "updated_at": "2026-04-14T17:04:04.392859+00:00"
     },
     "MPC": {
       "symbol": "MPC",
@@ -4745,7 +4745,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548447+00:00"
+      "updated_at": "2026-04-14T17:04:04.392862+00:00"
     },
     "MPWR": {
       "symbol": "MPWR",
@@ -4759,7 +4759,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548449+00:00"
+      "updated_at": "2026-04-14T17:04:04.392865+00:00"
     },
     "MRK": {
       "symbol": "MRK",
@@ -4773,7 +4773,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548452+00:00"
+      "updated_at": "2026-04-14T17:04:04.392868+00:00"
     },
     "MRNA": {
       "symbol": "MRNA",
@@ -4787,7 +4787,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548454+00:00"
+      "updated_at": "2026-04-14T17:04:04.392870+00:00"
     },
     "MRSH": {
       "symbol": "MRSH",
@@ -4801,7 +4801,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548459+00:00"
+      "updated_at": "2026-04-14T17:04:04.392875+00:00"
     },
     "MS": {
       "symbol": "MS",
@@ -4815,7 +4815,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548461+00:00"
+      "updated_at": "2026-04-14T17:04:04.392877+00:00"
     },
     "MSCI": {
       "symbol": "MSCI",
@@ -4829,7 +4829,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548464+00:00"
+      "updated_at": "2026-04-14T17:04:04.392880+00:00"
     },
     "MSFT": {
       "symbol": "MSFT",
@@ -4843,7 +4843,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548466+00:00"
+      "updated_at": "2026-04-14T17:04:04.392882+00:00"
     },
     "MSI": {
       "symbol": "MSI",
@@ -4857,7 +4857,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548469+00:00"
+      "updated_at": "2026-04-14T17:04:04.392885+00:00"
     },
     "MTB": {
       "symbol": "MTB",
@@ -4871,7 +4871,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548471+00:00"
+      "updated_at": "2026-04-14T17:04:04.392887+00:00"
     },
     "MTD": {
       "symbol": "MTD",
@@ -4885,7 +4885,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548474+00:00"
+      "updated_at": "2026-04-14T17:04:04.392890+00:00"
     },
     "MU": {
       "symbol": "MU",
@@ -4899,7 +4899,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548476+00:00"
+      "updated_at": "2026-04-14T17:04:04.392892+00:00"
     },
     "NCLH": {
       "symbol": "NCLH",
@@ -4913,7 +4913,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548478+00:00"
+      "updated_at": "2026-04-14T17:04:04.392895+00:00"
     },
     "NDAQ": {
       "symbol": "NDAQ",
@@ -4927,7 +4927,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548481+00:00"
+      "updated_at": "2026-04-14T17:04:04.392897+00:00"
     },
     "NDSN": {
       "symbol": "NDSN",
@@ -4941,7 +4941,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548483+00:00"
+      "updated_at": "2026-04-14T17:04:04.392900+00:00"
     },
     "NEE": {
       "symbol": "NEE",
@@ -4955,7 +4955,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548486+00:00"
+      "updated_at": "2026-04-14T17:04:04.392902+00:00"
     },
     "NEM": {
       "symbol": "NEM",
@@ -4969,7 +4969,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548488+00:00"
+      "updated_at": "2026-04-14T17:04:04.392905+00:00"
     },
     "NFLX": {
       "symbol": "NFLX",
@@ -4983,7 +4983,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548491+00:00"
+      "updated_at": "2026-04-14T17:04:04.392907+00:00"
     },
     "NI": {
       "symbol": "NI",
@@ -4997,7 +4997,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548493+00:00"
+      "updated_at": "2026-04-14T17:04:04.392910+00:00"
     },
     "NKE": {
       "symbol": "NKE",
@@ -5011,7 +5011,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548496+00:00"
+      "updated_at": "2026-04-14T17:04:04.392912+00:00"
     },
     "NOC": {
       "symbol": "NOC",
@@ -5025,7 +5025,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548498+00:00"
+      "updated_at": "2026-04-14T17:04:04.392915+00:00"
     },
     "NOW": {
       "symbol": "NOW",
@@ -5039,7 +5039,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548501+00:00"
+      "updated_at": "2026-04-14T17:04:04.392917+00:00"
     },
     "NRG": {
       "symbol": "NRG",
@@ -5053,7 +5053,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548503+00:00"
+      "updated_at": "2026-04-14T17:04:04.392920+00:00"
     },
     "NSC": {
       "symbol": "NSC",
@@ -5067,7 +5067,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548506+00:00"
+      "updated_at": "2026-04-14T17:04:04.392922+00:00"
     },
     "NTAP": {
       "symbol": "NTAP",
@@ -5081,7 +5081,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548508+00:00"
+      "updated_at": "2026-04-14T17:04:04.392925+00:00"
     },
     "NTRS": {
       "symbol": "NTRS",
@@ -5095,7 +5095,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548511+00:00"
+      "updated_at": "2026-04-14T17:04:04.392927+00:00"
     },
     "NUE": {
       "symbol": "NUE",
@@ -5109,7 +5109,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548514+00:00"
+      "updated_at": "2026-04-14T17:04:04.392930+00:00"
     },
     "NVDA": {
       "symbol": "NVDA",
@@ -5123,7 +5123,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548517+00:00"
+      "updated_at": "2026-04-14T17:04:04.392932+00:00"
     },
     "NVR": {
       "symbol": "NVR",
@@ -5137,7 +5137,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548519+00:00"
+      "updated_at": "2026-04-14T17:04:04.392935+00:00"
     },
     "NWS": {
       "symbol": "NWS",
@@ -5151,7 +5151,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548522+00:00"
+      "updated_at": "2026-04-14T17:04:04.392937+00:00"
     },
     "NWSA": {
       "symbol": "NWSA",
@@ -5165,7 +5165,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548524+00:00"
+      "updated_at": "2026-04-14T17:04:04.392940+00:00"
     },
     "NXPI": {
       "symbol": "NXPI",
@@ -5179,7 +5179,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548527+00:00"
+      "updated_at": "2026-04-14T17:04:04.392942+00:00"
     },
     "O": {
       "symbol": "O",
@@ -5193,7 +5193,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548529+00:00"
+      "updated_at": "2026-04-14T17:04:04.392945+00:00"
     },
     "ODFL": {
       "symbol": "ODFL",
@@ -5207,7 +5207,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548531+00:00"
+      "updated_at": "2026-04-14T17:04:04.392947+00:00"
     },
     "OKE": {
       "symbol": "OKE",
@@ -5221,7 +5221,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548534+00:00"
+      "updated_at": "2026-04-14T17:04:04.392949+00:00"
     },
     "OMC": {
       "symbol": "OMC",
@@ -5235,7 +5235,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548536+00:00"
+      "updated_at": "2026-04-14T17:04:04.392952+00:00"
     },
     "ON": {
       "symbol": "ON",
@@ -5249,7 +5249,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548540+00:00"
+      "updated_at": "2026-04-14T17:04:04.392954+00:00"
     },
     "ORCL": {
       "symbol": "ORCL",
@@ -5263,7 +5263,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548542+00:00"
+      "updated_at": "2026-04-14T17:04:04.392957+00:00"
     },
     "ORLY": {
       "symbol": "ORLY",
@@ -5277,7 +5277,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548545+00:00"
+      "updated_at": "2026-04-14T17:04:04.392959+00:00"
     },
     "OTIS": {
       "symbol": "OTIS",
@@ -5291,7 +5291,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548547+00:00"
+      "updated_at": "2026-04-14T17:04:04.392962+00:00"
     },
     "OXY": {
       "symbol": "OXY",
@@ -5305,7 +5305,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548550+00:00"
+      "updated_at": "2026-04-14T17:04:04.392968+00:00"
     },
     "PANW": {
       "symbol": "PANW",
@@ -5319,7 +5319,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548552+00:00"
+      "updated_at": "2026-04-14T17:04:04.392971+00:00"
     },
     "PAYX": {
       "symbol": "PAYX",
@@ -5333,7 +5333,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548555+00:00"
+      "updated_at": "2026-04-14T17:04:04.392973+00:00"
     },
     "PCAR": {
       "symbol": "PCAR",
@@ -5347,7 +5347,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548557+00:00"
+      "updated_at": "2026-04-14T17:04:04.392976+00:00"
     },
     "PCG": {
       "symbol": "PCG",
@@ -5361,7 +5361,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548559+00:00"
+      "updated_at": "2026-04-14T17:04:04.392978+00:00"
     },
     "PEG": {
       "symbol": "PEG",
@@ -5375,7 +5375,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548562+00:00"
+      "updated_at": "2026-04-14T17:04:04.392981+00:00"
     },
     "PEP": {
       "symbol": "PEP",
@@ -5389,7 +5389,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548564+00:00"
+      "updated_at": "2026-04-14T17:04:04.392983+00:00"
     },
     "PFE": {
       "symbol": "PFE",
@@ -5403,7 +5403,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548568+00:00"
+      "updated_at": "2026-04-14T17:04:04.392985+00:00"
     },
     "PFG": {
       "symbol": "PFG",
@@ -5417,7 +5417,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548570+00:00"
+      "updated_at": "2026-04-14T17:04:04.392988+00:00"
     },
     "PG": {
       "symbol": "PG",
@@ -5431,7 +5431,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548573+00:00"
+      "updated_at": "2026-04-14T17:04:04.392990+00:00"
     },
     "PGR": {
       "symbol": "PGR",
@@ -5445,7 +5445,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548575+00:00"
+      "updated_at": "2026-04-14T17:04:04.392993+00:00"
     },
     "PH": {
       "symbol": "PH",
@@ -5459,7 +5459,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548577+00:00"
+      "updated_at": "2026-04-14T17:04:04.392995+00:00"
     },
     "PHM": {
       "symbol": "PHM",
@@ -5473,7 +5473,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548580+00:00"
+      "updated_at": "2026-04-14T17:04:04.393002+00:00"
     },
     "PKG": {
       "symbol": "PKG",
@@ -5487,7 +5487,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548582+00:00"
+      "updated_at": "2026-04-14T17:04:04.393004+00:00"
     },
     "PLD": {
       "symbol": "PLD",
@@ -5501,7 +5501,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548585+00:00"
+      "updated_at": "2026-04-14T17:04:04.393007+00:00"
     },
     "PLTR": {
       "symbol": "PLTR",
@@ -5515,7 +5515,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548587+00:00"
+      "updated_at": "2026-04-14T17:04:04.393009+00:00"
     },
     "PM": {
       "symbol": "PM",
@@ -5529,7 +5529,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548590+00:00"
+      "updated_at": "2026-04-14T17:04:04.393012+00:00"
     },
     "PNC": {
       "symbol": "PNC",
@@ -5543,7 +5543,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548592+00:00"
+      "updated_at": "2026-04-14T17:04:04.393014+00:00"
     },
     "PNR": {
       "symbol": "PNR",
@@ -5557,7 +5557,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548595+00:00"
+      "updated_at": "2026-04-14T17:04:04.393016+00:00"
     },
     "PNW": {
       "symbol": "PNW",
@@ -5571,7 +5571,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548597+00:00"
+      "updated_at": "2026-04-14T17:04:04.393019+00:00"
     },
     "PODD": {
       "symbol": "PODD",
@@ -5585,7 +5585,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548600+00:00"
+      "updated_at": "2026-04-14T17:04:04.393021+00:00"
     },
     "POOL": {
       "symbol": "POOL",
@@ -5599,7 +5599,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548602+00:00"
+      "updated_at": "2026-04-14T17:04:04.393024+00:00"
     },
     "PPG": {
       "symbol": "PPG",
@@ -5613,7 +5613,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548605+00:00"
+      "updated_at": "2026-04-14T17:04:04.393026+00:00"
     },
     "PPL": {
       "symbol": "PPL",
@@ -5627,7 +5627,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548607+00:00"
+      "updated_at": "2026-04-14T17:04:04.393029+00:00"
     },
     "PRU": {
       "symbol": "PRU",
@@ -5641,7 +5641,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548609+00:00"
+      "updated_at": "2026-04-14T17:04:04.393031+00:00"
     },
     "PSA": {
       "symbol": "PSA",
@@ -5655,7 +5655,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548612+00:00"
+      "updated_at": "2026-04-14T17:04:04.393034+00:00"
     },
     "PSKY": {
       "symbol": "PSKY",
@@ -5669,7 +5669,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548614+00:00"
+      "updated_at": "2026-04-14T17:04:04.393036+00:00"
     },
     "PSX": {
       "symbol": "PSX",
@@ -5683,7 +5683,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548617+00:00"
+      "updated_at": "2026-04-14T17:04:04.393039+00:00"
     },
     "PTC": {
       "symbol": "PTC",
@@ -5697,7 +5697,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548619+00:00"
+      "updated_at": "2026-04-14T17:04:04.393041+00:00"
     },
     "PWR": {
       "symbol": "PWR",
@@ -5711,7 +5711,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548622+00:00"
+      "updated_at": "2026-04-14T17:04:04.393044+00:00"
     },
     "PYPL": {
       "symbol": "PYPL",
@@ -5725,7 +5725,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548624+00:00"
+      "updated_at": "2026-04-14T17:04:04.393046+00:00"
     },
     "Q": {
       "symbol": "Q",
@@ -5739,7 +5739,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548626+00:00"
+      "updated_at": "2026-04-14T17:04:04.393049+00:00"
     },
     "QCOM": {
       "symbol": "QCOM",
@@ -5753,7 +5753,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548629+00:00"
+      "updated_at": "2026-04-14T17:04:04.393051+00:00"
     },
     "QQQ": {
       "symbol": "QQQ",
@@ -5767,7 +5767,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548631+00:00"
+      "updated_at": "2026-04-14T17:04:04.393054+00:00"
     },
     "RCL": {
       "symbol": "RCL",
@@ -5781,7 +5781,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548634+00:00"
+      "updated_at": "2026-04-14T17:04:04.393056+00:00"
     },
     "REG": {
       "symbol": "REG",
@@ -5795,7 +5795,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548636+00:00"
+      "updated_at": "2026-04-14T17:04:04.393059+00:00"
     },
     "REGN": {
       "symbol": "REGN",
@@ -5809,7 +5809,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548640+00:00"
+      "updated_at": "2026-04-14T17:04:04.393061+00:00"
     },
     "RF": {
       "symbol": "RF",
@@ -5823,7 +5823,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548642+00:00"
+      "updated_at": "2026-04-14T17:04:04.393064+00:00"
     },
     "RJF": {
       "symbol": "RJF",
@@ -5837,7 +5837,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548645+00:00"
+      "updated_at": "2026-04-14T17:04:04.393066+00:00"
     },
     "RL": {
       "symbol": "RL",
@@ -5851,7 +5851,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548647+00:00"
+      "updated_at": "2026-04-14T17:04:04.393069+00:00"
     },
     "RMD": {
       "symbol": "RMD",
@@ -5865,7 +5865,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548649+00:00"
+      "updated_at": "2026-04-14T17:04:04.393073+00:00"
     },
     "ROK": {
       "symbol": "ROK",
@@ -5879,7 +5879,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548652+00:00"
+      "updated_at": "2026-04-14T17:04:04.393075+00:00"
     },
     "ROL": {
       "symbol": "ROL",
@@ -5893,7 +5893,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548654+00:00"
+      "updated_at": "2026-04-14T17:04:04.393078+00:00"
     },
     "ROP": {
       "symbol": "ROP",
@@ -5907,7 +5907,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548657+00:00"
+      "updated_at": "2026-04-14T17:04:04.393080+00:00"
     },
     "ROST": {
       "symbol": "ROST",
@@ -5921,7 +5921,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548659+00:00"
+      "updated_at": "2026-04-14T17:04:04.393083+00:00"
     },
     "RSG": {
       "symbol": "RSG",
@@ -5935,7 +5935,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548662+00:00"
+      "updated_at": "2026-04-14T17:04:04.393085+00:00"
     },
     "RSP": {
       "symbol": "RSP",
@@ -5949,7 +5949,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548664+00:00"
+      "updated_at": "2026-04-14T17:04:04.393088+00:00"
     },
     "RTX": {
       "symbol": "RTX",
@@ -5963,7 +5963,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548666+00:00"
+      "updated_at": "2026-04-14T17:04:04.393090+00:00"
     },
     "RVTY": {
       "symbol": "RVTY",
@@ -5977,7 +5977,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548669+00:00"
+      "updated_at": "2026-04-14T17:04:04.393092+00:00"
     },
     "SATS": {
       "symbol": "SATS",
@@ -5991,7 +5991,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548671+00:00"
+      "updated_at": "2026-04-14T17:04:04.393095+00:00"
     },
     "SBAC": {
       "symbol": "SBAC",
@@ -6005,7 +6005,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548675+00:00"
+      "updated_at": "2026-04-14T17:04:04.393098+00:00"
     },
     "SBUX": {
       "symbol": "SBUX",
@@ -6019,7 +6019,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548677+00:00"
+      "updated_at": "2026-04-14T17:04:04.393102+00:00"
     },
     "SCHB": {
       "symbol": "SCHB",
@@ -6033,7 +6033,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548680+00:00"
+      "updated_at": "2026-04-14T17:04:04.393104+00:00"
     },
     "SCHD": {
       "symbol": "SCHD",
@@ -6047,7 +6047,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548682+00:00"
+      "updated_at": "2026-04-14T17:04:04.393107+00:00"
     },
     "SCHH": {
       "symbol": "SCHH",
@@ -6061,7 +6061,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548684+00:00"
+      "updated_at": "2026-04-14T17:04:04.393109+00:00"
     },
     "SCHP": {
       "symbol": "SCHP",
@@ -6075,7 +6075,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548686+00:00"
+      "updated_at": "2026-04-14T17:04:04.393112+00:00"
     },
     "SCHW": {
       "symbol": "SCHW",
@@ -6089,7 +6089,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548689+00:00"
+      "updated_at": "2026-04-14T17:04:04.393114+00:00"
     },
     "SCHZ": {
       "symbol": "SCHZ",
@@ -6103,7 +6103,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548691+00:00"
+      "updated_at": "2026-04-14T17:04:04.393116+00:00"
     },
     "SGOV": {
       "symbol": "SGOV",
@@ -6117,7 +6117,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548694+00:00"
+      "updated_at": "2026-04-14T17:04:04.393119+00:00"
     },
     "SHV": {
       "symbol": "SHV",
@@ -6131,7 +6131,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548696+00:00"
+      "updated_at": "2026-04-14T17:04:04.393121+00:00"
     },
     "SHW": {
       "symbol": "SHW",
@@ -6145,7 +6145,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548698+00:00"
+      "updated_at": "2026-04-14T17:04:04.393124+00:00"
     },
     "SHY": {
       "symbol": "SHY",
@@ -6159,7 +6159,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548701+00:00"
+      "updated_at": "2026-04-14T17:04:04.393126+00:00"
     },
     "SJM": {
       "symbol": "SJM",
@@ -6173,7 +6173,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548703+00:00"
+      "updated_at": "2026-04-14T17:04:04.393129+00:00"
     },
     "SLB": {
       "symbol": "SLB",
@@ -6187,7 +6187,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548705+00:00"
+      "updated_at": "2026-04-14T17:04:04.393131+00:00"
     },
     "SLV": {
       "symbol": "SLV",
@@ -6201,7 +6201,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548708+00:00"
+      "updated_at": "2026-04-14T17:04:04.393134+00:00"
     },
     "SMCI": {
       "symbol": "SMCI",
@@ -6215,7 +6215,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548710+00:00"
+      "updated_at": "2026-04-14T17:04:04.393136+00:00"
     },
     "SNA": {
       "symbol": "SNA",
@@ -6229,7 +6229,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548712+00:00"
+      "updated_at": "2026-04-14T17:04:04.393139+00:00"
     },
     "SNDK": {
       "symbol": "SNDK",
@@ -6243,7 +6243,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548715+00:00"
+      "updated_at": "2026-04-14T17:04:04.393141+00:00"
     },
     "SNPS": {
       "symbol": "SNPS",
@@ -6257,7 +6257,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548717+00:00"
+      "updated_at": "2026-04-14T17:04:04.393144+00:00"
     },
     "SO": {
       "symbol": "SO",
@@ -6271,7 +6271,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548720+00:00"
+      "updated_at": "2026-04-14T17:04:04.393146+00:00"
     },
     "SOLV": {
       "symbol": "SOLV",
@@ -6285,7 +6285,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548722+00:00"
+      "updated_at": "2026-04-14T17:04:04.393149+00:00"
     },
     "SPG": {
       "symbol": "SPG",
@@ -6299,7 +6299,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548725+00:00"
+      "updated_at": "2026-04-14T17:04:04.393151+00:00"
     },
     "SPGI": {
       "symbol": "SPGI",
@@ -6313,7 +6313,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548727+00:00"
+      "updated_at": "2026-04-14T17:04:04.393154+00:00"
     },
     "SPY": {
       "symbol": "SPY",
@@ -6327,7 +6327,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548729+00:00"
+      "updated_at": "2026-04-14T17:04:04.393156+00:00"
     },
     "SRE": {
       "symbol": "SRE",
@@ -6341,7 +6341,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548732+00:00"
+      "updated_at": "2026-04-14T17:04:04.393159+00:00"
     },
     "STE": {
       "symbol": "STE",
@@ -6355,7 +6355,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548734+00:00"
+      "updated_at": "2026-04-14T17:04:04.393161+00:00"
     },
     "STLD": {
       "symbol": "STLD",
@@ -6369,7 +6369,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548737+00:00"
+      "updated_at": "2026-04-14T17:04:04.393165+00:00"
     },
     "STT": {
       "symbol": "STT",
@@ -6383,7 +6383,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548740+00:00"
+      "updated_at": "2026-04-14T17:04:04.393167+00:00"
     },
     "STX": {
       "symbol": "STX",
@@ -6397,7 +6397,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548742+00:00"
+      "updated_at": "2026-04-14T17:04:04.393170+00:00"
     },
     "STZ": {
       "symbol": "STZ",
@@ -6411,7 +6411,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548744+00:00"
+      "updated_at": "2026-04-14T17:04:04.393172+00:00"
     },
     "SW": {
       "symbol": "SW",
@@ -6425,7 +6425,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548747+00:00"
+      "updated_at": "2026-04-14T17:04:04.393175+00:00"
     },
     "SWK": {
       "symbol": "SWK",
@@ -6439,7 +6439,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548749+00:00"
+      "updated_at": "2026-04-14T17:04:04.393178+00:00"
     },
     "SWKS": {
       "symbol": "SWKS",
@@ -6453,7 +6453,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548751+00:00"
+      "updated_at": "2026-04-14T17:04:04.393180+00:00"
     },
     "SYF": {
       "symbol": "SYF",
@@ -6467,7 +6467,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548754+00:00"
+      "updated_at": "2026-04-14T17:04:04.393183+00:00"
     },
     "SYK": {
       "symbol": "SYK",
@@ -6481,7 +6481,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548756+00:00"
+      "updated_at": "2026-04-14T17:04:04.393185+00:00"
     },
     "SYY": {
       "symbol": "SYY",
@@ -6495,7 +6495,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548758+00:00"
+      "updated_at": "2026-04-14T17:04:04.393187+00:00"
     },
     "T": {
       "symbol": "T",
@@ -6509,7 +6509,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548761+00:00"
+      "updated_at": "2026-04-14T17:04:04.393190+00:00"
     },
     "TAP": {
       "symbol": "TAP",
@@ -6523,7 +6523,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548763+00:00"
+      "updated_at": "2026-04-14T17:04:04.393192+00:00"
     },
     "TDG": {
       "symbol": "TDG",
@@ -6537,7 +6537,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548766+00:00"
+      "updated_at": "2026-04-14T17:04:04.393195+00:00"
     },
     "TDY": {
       "symbol": "TDY",
@@ -6551,7 +6551,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548768+00:00"
+      "updated_at": "2026-04-14T17:04:04.393197+00:00"
     },
     "TECH": {
       "symbol": "TECH",
@@ -6565,7 +6565,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548770+00:00"
+      "updated_at": "2026-04-14T17:04:04.393200+00:00"
     },
     "TEL": {
       "symbol": "TEL",
@@ -6579,7 +6579,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548773+00:00"
+      "updated_at": "2026-04-14T17:04:04.393202+00:00"
     },
     "TER": {
       "symbol": "TER",
@@ -6593,7 +6593,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548775+00:00"
+      "updated_at": "2026-04-14T17:04:04.393204+00:00"
     },
     "TFC": {
       "symbol": "TFC",
@@ -6607,7 +6607,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548777+00:00"
+      "updated_at": "2026-04-14T17:04:04.393207+00:00"
     },
     "TGT": {
       "symbol": "TGT",
@@ -6621,7 +6621,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548780+00:00"
+      "updated_at": "2026-04-14T17:04:04.393209+00:00"
     },
     "TIP": {
       "symbol": "TIP",
@@ -6635,7 +6635,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548782+00:00"
+      "updated_at": "2026-04-14T17:04:04.393212+00:00"
     },
     "TJX": {
       "symbol": "TJX",
@@ -6649,7 +6649,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548784+00:00"
+      "updated_at": "2026-04-14T17:04:04.393214+00:00"
     },
     "TKO": {
       "symbol": "TKO",
@@ -6663,7 +6663,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548787+00:00"
+      "updated_at": "2026-04-14T17:04:04.393217+00:00"
     },
     "TLT": {
       "symbol": "TLT",
@@ -6677,7 +6677,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548789+00:00"
+      "updated_at": "2026-04-14T17:04:04.393219+00:00"
     },
     "TMO": {
       "symbol": "TMO",
@@ -6691,7 +6691,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548792+00:00"
+      "updated_at": "2026-04-14T17:04:04.393222+00:00"
     },
     "TMUS": {
       "symbol": "TMUS",
@@ -6705,7 +6705,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548794+00:00"
+      "updated_at": "2026-04-14T17:04:04.393224+00:00"
     },
     "TPL": {
       "symbol": "TPL",
@@ -6719,7 +6719,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548797+00:00"
+      "updated_at": "2026-04-14T17:04:04.393227+00:00"
     },
     "TPR": {
       "symbol": "TPR",
@@ -6733,7 +6733,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548799+00:00"
+      "updated_at": "2026-04-14T17:04:04.393229+00:00"
     },
     "TRGP": {
       "symbol": "TRGP",
@@ -6747,7 +6747,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548801+00:00"
+      "updated_at": "2026-04-14T17:04:04.393232+00:00"
     },
     "TRMB": {
       "symbol": "TRMB",
@@ -6761,7 +6761,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548804+00:00"
+      "updated_at": "2026-04-14T17:04:04.393234+00:00"
     },
     "TROW": {
       "symbol": "TROW",
@@ -6775,7 +6775,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548806+00:00"
+      "updated_at": "2026-04-14T17:04:04.393237+00:00"
     },
     "TRV": {
       "symbol": "TRV",
@@ -6789,7 +6789,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548808+00:00"
+      "updated_at": "2026-04-14T17:04:04.393239+00:00"
     },
     "TSCO": {
       "symbol": "TSCO",
@@ -6803,7 +6803,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548811+00:00"
+      "updated_at": "2026-04-14T17:04:04.393241+00:00"
     },
     "TSLA": {
       "symbol": "TSLA",
@@ -6817,7 +6817,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548813+00:00"
+      "updated_at": "2026-04-14T17:04:04.393244+00:00"
     },
     "TSN": {
       "symbol": "TSN",
@@ -6831,7 +6831,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548816+00:00"
+      "updated_at": "2026-04-14T17:04:04.393246+00:00"
     },
     "TT": {
       "symbol": "TT",
@@ -6845,7 +6845,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548818+00:00"
+      "updated_at": "2026-04-14T17:04:04.393249+00:00"
     },
     "TTD": {
       "symbol": "TTD",
@@ -6859,7 +6859,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548821+00:00"
+      "updated_at": "2026-04-14T17:04:04.393251+00:00"
     },
     "TTWO": {
       "symbol": "TTWO",
@@ -6873,7 +6873,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548823+00:00"
+      "updated_at": "2026-04-14T17:04:04.393254+00:00"
     },
     "TXN": {
       "symbol": "TXN",
@@ -6887,7 +6887,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548825+00:00"
+      "updated_at": "2026-04-14T17:04:04.393256+00:00"
     },
     "TXT": {
       "symbol": "TXT",
@@ -6901,7 +6901,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548829+00:00"
+      "updated_at": "2026-04-14T17:04:04.393258+00:00"
     },
     "TYL": {
       "symbol": "TYL",
@@ -6915,7 +6915,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548831+00:00"
+      "updated_at": "2026-04-14T17:04:04.393261+00:00"
     },
     "UAL": {
       "symbol": "UAL",
@@ -6929,7 +6929,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548835+00:00"
+      "updated_at": "2026-04-14T17:04:04.393263+00:00"
     },
     "UBER": {
       "symbol": "UBER",
@@ -6943,7 +6943,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548837+00:00"
+      "updated_at": "2026-04-14T17:04:04.393266+00:00"
     },
     "UDR": {
       "symbol": "UDR",
@@ -6957,7 +6957,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548839+00:00"
+      "updated_at": "2026-04-14T17:04:04.393268+00:00"
     },
     "UHS": {
       "symbol": "UHS",
@@ -6971,7 +6971,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548842+00:00"
+      "updated_at": "2026-04-14T17:04:04.393271+00:00"
     },
     "ULTA": {
       "symbol": "ULTA",
@@ -6985,7 +6985,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548844+00:00"
+      "updated_at": "2026-04-14T17:04:04.393274+00:00"
     },
     "UNH": {
       "symbol": "UNH",
@@ -6999,7 +6999,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548846+00:00"
+      "updated_at": "2026-04-14T17:04:04.393276+00:00"
     },
     "UNP": {
       "symbol": "UNP",
@@ -7013,7 +7013,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548849+00:00"
+      "updated_at": "2026-04-14T17:04:04.393279+00:00"
     },
     "UPS": {
       "symbol": "UPS",
@@ -7027,7 +7027,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548851+00:00"
+      "updated_at": "2026-04-14T17:04:04.393281+00:00"
     },
     "URI": {
       "symbol": "URI",
@@ -7041,7 +7041,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548854+00:00"
+      "updated_at": "2026-04-14T17:04:04.393284+00:00"
     },
     "USB": {
       "symbol": "USB",
@@ -7055,7 +7055,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548856+00:00"
+      "updated_at": "2026-04-14T17:04:04.393286+00:00"
     },
     "V": {
       "symbol": "V",
@@ -7069,7 +7069,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548858+00:00"
+      "updated_at": "2026-04-14T17:04:04.393289+00:00"
     },
     "VEA": {
       "symbol": "VEA",
@@ -7083,7 +7083,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548861+00:00"
+      "updated_at": "2026-04-14T17:04:04.393291+00:00"
     },
     "VICI": {
       "symbol": "VICI",
@@ -7097,7 +7097,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548863+00:00"
+      "updated_at": "2026-04-14T17:04:04.393294+00:00"
     },
     "VLO": {
       "symbol": "VLO",
@@ -7111,7 +7111,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548865+00:00"
+      "updated_at": "2026-04-14T17:04:04.393296+00:00"
     },
     "VLTO": {
       "symbol": "VLTO",
@@ -7125,7 +7125,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548868+00:00"
+      "updated_at": "2026-04-14T17:04:04.393299+00:00"
     },
     "VMC": {
       "symbol": "VMC",
@@ -7139,7 +7139,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548870+00:00"
+      "updated_at": "2026-04-14T17:04:04.393301+00:00"
     },
     "VNQ": {
       "symbol": "VNQ",
@@ -7153,7 +7153,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548872+00:00"
+      "updated_at": "2026-04-14T17:04:04.393304+00:00"
     },
     "VOO": {
       "symbol": "VOO",
@@ -7167,7 +7167,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548875+00:00"
+      "updated_at": "2026-04-14T17:04:04.393306+00:00"
     },
     "VRSK": {
       "symbol": "VRSK",
@@ -7181,7 +7181,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548877+00:00"
+      "updated_at": "2026-04-14T17:04:04.393308+00:00"
     },
     "VRSN": {
       "symbol": "VRSN",
@@ -7195,7 +7195,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548879+00:00"
+      "updated_at": "2026-04-14T17:04:04.393311+00:00"
     },
     "VRT": {
       "symbol": "VRT",
@@ -7209,7 +7209,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548882+00:00"
+      "updated_at": "2026-04-14T17:04:04.393313+00:00"
     },
     "VRTX": {
       "symbol": "VRTX",
@@ -7223,7 +7223,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548884+00:00"
+      "updated_at": "2026-04-14T17:04:04.393316+00:00"
     },
     "VST": {
       "symbol": "VST",
@@ -7237,7 +7237,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548887+00:00"
+      "updated_at": "2026-04-14T17:04:04.393318+00:00"
     },
     "VTI": {
       "symbol": "VTI",
@@ -7251,7 +7251,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548889+00:00"
+      "updated_at": "2026-04-14T17:04:04.393320+00:00"
     },
     "VTR": {
       "symbol": "VTR",
@@ -7265,7 +7265,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548892+00:00"
+      "updated_at": "2026-04-14T17:04:04.393324+00:00"
     },
     "VTRS": {
       "symbol": "VTRS",
@@ -7279,7 +7279,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548894+00:00"
+      "updated_at": "2026-04-14T17:04:04.393326+00:00"
     },
     "VTV": {
       "symbol": "VTV",
@@ -7293,7 +7293,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548896+00:00"
+      "updated_at": "2026-04-14T17:04:04.393329+00:00"
     },
     "VUG": {
       "symbol": "VUG",
@@ -7307,7 +7307,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548899+00:00"
+      "updated_at": "2026-04-14T17:04:04.393331+00:00"
     },
     "VWO": {
       "symbol": "VWO",
@@ -7321,7 +7321,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548901+00:00"
+      "updated_at": "2026-04-14T17:04:04.393333+00:00"
     },
     "VXUS": {
       "symbol": "VXUS",
@@ -7335,7 +7335,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548903+00:00"
+      "updated_at": "2026-04-14T17:04:04.393336+00:00"
     },
     "VYM": {
       "symbol": "VYM",
@@ -7349,7 +7349,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548906+00:00"
+      "updated_at": "2026-04-14T17:04:04.393338+00:00"
     },
     "VZ": {
       "symbol": "VZ",
@@ -7363,7 +7363,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548908+00:00"
+      "updated_at": "2026-04-14T17:04:04.393341+00:00"
     },
     "WAB": {
       "symbol": "WAB",
@@ -7377,7 +7377,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548910+00:00"
+      "updated_at": "2026-04-14T17:04:04.393343+00:00"
     },
     "WAT": {
       "symbol": "WAT",
@@ -7391,7 +7391,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548913+00:00"
+      "updated_at": "2026-04-14T17:04:04.393345+00:00"
     },
     "WBD": {
       "symbol": "WBD",
@@ -7405,7 +7405,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548915+00:00"
+      "updated_at": "2026-04-14T17:04:04.393348+00:00"
     },
     "WDAY": {
       "symbol": "WDAY",
@@ -7419,7 +7419,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548917+00:00"
+      "updated_at": "2026-04-14T17:04:04.393350+00:00"
     },
     "WDC": {
       "symbol": "WDC",
@@ -7433,7 +7433,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548920+00:00"
+      "updated_at": "2026-04-14T17:04:04.393353+00:00"
     },
     "WEC": {
       "symbol": "WEC",
@@ -7447,7 +7447,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548922+00:00"
+      "updated_at": "2026-04-14T17:04:04.393355+00:00"
     },
     "WELL": {
       "symbol": "WELL",
@@ -7461,7 +7461,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548925+00:00"
+      "updated_at": "2026-04-14T17:04:04.393357+00:00"
     },
     "WFC": {
       "symbol": "WFC",
@@ -7475,7 +7475,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548927+00:00"
+      "updated_at": "2026-04-14T17:04:04.393360+00:00"
     },
     "WM": {
       "symbol": "WM",
@@ -7489,7 +7489,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548930+00:00"
+      "updated_at": "2026-04-14T17:04:04.393362+00:00"
     },
     "WMB": {
       "symbol": "WMB",
@@ -7503,7 +7503,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548933+00:00"
+      "updated_at": "2026-04-14T17:04:04.393364+00:00"
     },
     "WMT": {
       "symbol": "WMT",
@@ -7517,7 +7517,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548935+00:00"
+      "updated_at": "2026-04-14T17:04:04.393367+00:00"
     },
     "WRB": {
       "symbol": "WRB",
@@ -7531,7 +7531,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548938+00:00"
+      "updated_at": "2026-04-14T17:04:04.393369+00:00"
     },
     "WSM": {
       "symbol": "WSM",
@@ -7545,7 +7545,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548940+00:00"
+      "updated_at": "2026-04-14T17:04:04.393372+00:00"
     },
     "WST": {
       "symbol": "WST",
@@ -7559,7 +7559,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548942+00:00"
+      "updated_at": "2026-04-14T17:04:04.393375+00:00"
     },
     "WTW": {
       "symbol": "WTW",
@@ -7573,7 +7573,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548945+00:00"
+      "updated_at": "2026-04-14T17:04:04.393377+00:00"
     },
     "WY": {
       "symbol": "WY",
@@ -7587,7 +7587,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548947+00:00"
+      "updated_at": "2026-04-14T17:04:04.393379+00:00"
     },
     "WYNN": {
       "symbol": "WYNN",
@@ -7601,7 +7601,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548949+00:00"
+      "updated_at": "2026-04-14T17:04:04.393382+00:00"
     },
     "XEL": {
       "symbol": "XEL",
@@ -7615,7 +7615,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548952+00:00"
+      "updated_at": "2026-04-14T17:04:04.393384+00:00"
     },
     "XOM": {
       "symbol": "XOM",
@@ -7629,7 +7629,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548954+00:00"
+      "updated_at": "2026-04-14T17:04:04.393386+00:00"
     },
     "XYL": {
       "symbol": "XYL",
@@ -7643,7 +7643,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548957+00:00"
+      "updated_at": "2026-04-14T17:04:04.393389+00:00"
     },
     "XYZ": {
       "symbol": "XYZ",
@@ -7657,7 +7657,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548959+00:00"
+      "updated_at": "2026-04-14T17:04:04.393391+00:00"
     },
     "YUM": {
       "symbol": "YUM",
@@ -7671,7 +7671,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548961+00:00"
+      "updated_at": "2026-04-14T17:04:04.393393+00:00"
     },
     "ZBH": {
       "symbol": "ZBH",
@@ -7685,7 +7685,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548964+00:00"
+      "updated_at": "2026-04-14T17:04:04.393396+00:00"
     },
     "ZBRA": {
       "symbol": "ZBRA",
@@ -7699,7 +7699,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548966+00:00"
+      "updated_at": "2026-04-14T17:04:04.393398+00:00"
     },
     "ZTS": {
       "symbol": "ZTS",
@@ -7713,7 +7713,7 @@
       "valuation_method": null,
       "metadata_source": null,
       "expense_ratio": null,
-      "updated_at": "2026-04-14T16:44:31.548969+00:00"
+      "updated_at": "2026-04-14T17:04:04.393400+00:00"
     }
   },
   "updated_at": "2026-04-14T16:20:33.547662+00:00"

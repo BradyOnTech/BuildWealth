@@ -57,6 +57,18 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-14 (Completed - Phase 3.4 UI Updates)
+- Portfolio view now includes an account-scope selector for holdings/allocation analysis (`All Accounts` + per-account filter), with account-scoped allocation summaries.
+- Added chart-style allocation visuals (bar charts) for asset class, sector, and region so users can scan allocation concentration without reading tables only.
+- Plans view now includes guided editors for:
+  - timeline events (add/remove rows, event type/impact/frequency/date controls)
+  - retirement timeline assumptions (retirement age, withdrawal strategy, Social Security inputs, RMD inputs)
+  - contribution rules (Ignidash-style ranked rule editor: base rule, profile/age/match controls, amount type/value, optional limits)
+- Timeline and contribution-rule builders are synchronized with the existing JSON textareas (advanced mode preserved).
+- Profile view now includes a first-class `Physical Assets` section (add/remove rows with value/type/growth/purchase date), wired into `financial_profile.physical_assets`.
+- Updated frontend defaults so empty profiles always initialize `physical_assets` to prevent partial legacy payload shape issues.
+- Verification: `pytest -q services/orchestrator/tests` passed (`330 passed, 4 warnings`).
+
 ### 2026-04-14 (Completed - Phase 3.3 Sidecar Boundary Hardening)
 - Added explicit expected contract-version tracking on engine probes (`expected_contract_version`, `contract_compatible`) so sidecar status now reports compatibility, not just reachability.
 - Added sidecar guard evaluation (`sidecar_guard_reason`) to block benchmark/attribution/planning sidecar calls when probe state detects contract mismatch.

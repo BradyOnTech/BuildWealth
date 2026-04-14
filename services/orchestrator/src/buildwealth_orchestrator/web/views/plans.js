@@ -29,14 +29,88 @@ export function template() {
         <label class="field"><span>Plan Markdown</span><textarea id="plan-markdown" rows="12" placeholder="Plan markdown will appear here." disabled></textarea></label>
         <label class="field"><span>Tasks Markdown</span><textarea id="plan-tasks" rows="6" placeholder="Task checklist markdown." disabled></textarea></label>
         <div class="view-header"><h3>Timeline Events</h3><button class="primary small" id="save-plan-timeline" disabled>Save Timeline</button></div>
-        <p class="hint tight">Edit timeline JSON to model dated events (purchase, windfall, job change, retirement, milestone).</p>
-        <label class="field"><span>Timeline JSON</span><textarea id="plan-timeline" rows="10" placeholder='{"events":[...],"retirement":{...}}' disabled></textarea></label>
+        <p class="hint tight">Use the event editor for common timeline modeling, or edit JSON directly for advanced payloads.</p>
+        <div class="inline-builder">
+          <input type="date" id="timeline-event-date" disabled />
+          <input type="text" id="timeline-event-label" placeholder="Event label" disabled />
+          <select id="timeline-event-type" disabled>
+            <option value="milestone">Milestone</option>
+            <option value="purchase">Purchase</option>
+            <option value="windfall">Windfall</option>
+            <option value="job_change">Job Change</option>
+            <option value="retirement">Retirement</option>
+          </select>
+          <select id="timeline-event-impact-type" disabled>
+            <option value="">Impact (Auto)</option>
+            <option value="income">Income</option>
+            <option value="expense">Expense</option>
+            <option value="portfolio">Portfolio</option>
+            <option value="contribution">Contribution</option>
+            <option value="debt_payment">Debt Payment</option>
+          </select>
+          <input type="number" id="timeline-event-amount" step="0.01" placeholder="Amount USD" disabled />
+          <select id="timeline-event-frequency" disabled>
+            <option value="one_time">One Time</option>
+            <option value="monthly">Monthly</option>
+            <option value="yearly">Yearly</option>
+          </select>
+          <input type="date" id="timeline-event-end-date" disabled />
+          <input type="text" id="timeline-event-account-id" placeholder="Account ID (optional)" disabled />
+          <input type="text" id="timeline-event-notes" placeholder="Notes (optional)" disabled />
+          <button class="ghost small" id="add-timeline-event" type="button" disabled>Add Event</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Label</th><th>Type</th><th>Impact</th><th>Amount</th><th>Frequency</th><th>End</th><th>Account</th><th>Notes</th><th></th></tr></thead>
+            <tbody id="plan-timeline-events-body"><tr><td colspan="10">No timeline events yet.</td></tr></tbody>
+          </table>
+        </div>
+        <h4 class="section-title">Retirement Timeline Inputs</h4>
+        <div class="settings-grid">
+          <label class="field"><span>Target Retirement Age</span><input type="number" id="timeline-retirement-age" min="18" max="100" step="1" placeholder="Optional" disabled /></label>
+          <label class="field"><span>Withdrawal Strategy</span><input type="text" id="timeline-withdrawal-strategy" placeholder="e.g. four_percent_rule" disabled /></label>
+          <label class="field"><span>SS Birth Year</span><input type="number" id="timeline-ss-birth-year" min="1900" max="2500" step="1" placeholder="Optional" disabled /></label>
+          <label class="field"><span>SS Claiming Age</span><input type="number" id="timeline-ss-claiming-age" min="62" max="70" step="1" placeholder="Optional" disabled /></label>
+          <label class="field"><span>SS Life Expectancy Age</span><input type="number" id="timeline-ss-life-expectancy-age" min="67" max="120" step="1" placeholder="Optional" disabled /></label>
+          <label class="field"><span>SS FRA Monthly Benefit</span><input type="number" id="timeline-ss-fra-benefit" min="0" step="0.01" placeholder="Optional" disabled /></label>
+          <label class="field"><span>SS Estimated Annual Earnings</span><input type="number" id="timeline-ss-annual-earnings" min="0" step="0.01" placeholder="Optional" disabled /></label>
+          <label class="field"><span>RMD Birth Year</span><input type="number" id="timeline-rmd-birth-year" min="1900" max="2500" step="1" placeholder="Optional" disabled /></label>
+          <label class="field"><span>RMD Start Age</span><input type="number" id="timeline-rmd-start-age" min="72" max="120" step="1" placeholder="Optional" disabled /></label>
+        </div>
+        <label class="field"><span>Timeline JSON (Advanced)</span><textarea id="plan-timeline" rows="10" placeholder='{"events":[...],"retirement":{...}}' disabled></textarea></label>
         <div class="view-header"><h3>Assumption Sets</h3><button class="primary small" id="save-plan-assumption-sets" disabled>Save Assumption Sets</button></div>
         <p class="hint tight">Edit named assumption sets JSON. Active set is applied by default when running scenarios.</p>
         <label class="field"><span>Assumption Sets JSON</span><textarea id="plan-assumption-sets" rows="10" placeholder='{"active_assumption_set_id":"default","sets":[...]}' disabled></textarea></label>
         <div class="view-header"><h3>Contribution Rules</h3><button class="primary small" id="save-plan-contribution-rules" disabled>Save Contribution Rules</button></div>
-        <p class="hint tight">Edit contribution allocation rules JSON (base rule + ordered account rules) used by planning scenarios.</p>
-        <label class="field"><span>Contribution Rules JSON</span><textarea id="plan-contribution-rules" rows="10" placeholder='{"base_rule":{"type":"save"},"rules":[...]}' disabled></textarea></label>
+        <p class="hint tight">Ignidash-style ranked allocation rules. Use the editor for common cases, or JSON for advanced payloads.</p>
+        <div class="settings-grid">
+          <label class="field"><span>Base Rule</span><select id="contribution-base-rule" disabled><option value="save">Save</option><option value="spend">Spend</option></select></label>
+          <label class="field"><span>Profile ID</span><input type="text" id="contribution-profile-id" placeholder="Optional profile override" disabled /></label>
+          <label class="field"><span>Employer Match Target (USD)</span><input type="number" id="contribution-employer-match-target" min="0" step="0.01" placeholder="6000" disabled /></label>
+          <label class="field"><span>Age</span><input type="number" id="contribution-age" min="0" max="120" step="1" placeholder="35" disabled /></label>
+        </div>
+        <div class="inline-builder">
+          <input type="text" id="contribution-rule-account-id" placeholder="Account ID" disabled />
+          <input type="number" id="contribution-rule-rank" min="1" step="1" placeholder="Rank" disabled />
+          <select id="contribution-rule-amount-type" disabled>
+            <option value="unlimited">Unlimited</option>
+            <option value="dollarAmount">Dollar Amount</option>
+            <option value="percentRemaining">Percent Remaining</option>
+          </select>
+          <input type="number" id="contribution-rule-amount-value" min="0" step="0.01" placeholder="Amount / %" disabled />
+          <input type="number" id="contribution-rule-employer-match" min="0" step="0.01" placeholder="Employer Match (optional)" disabled />
+          <input type="number" id="contribution-rule-max-balance" min="0" step="0.01" placeholder="Max Balance (optional)" disabled />
+          <label class="inline-check"><input type="checkbox" id="contribution-rule-mega-backdoor" disabled /> Mega Backdoor</label>
+          <label class="inline-check"><input type="checkbox" id="contribution-rule-disabled" disabled /> Disabled</label>
+          <button class="ghost small" id="add-contribution-rule" type="button" disabled>Add Rule</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Rank</th><th>Account</th><th>Type</th><th>Value</th><th>Employer Match</th><th>Max Balance</th><th>Mega</th><th>Disabled</th><th></th></tr></thead>
+            <tbody id="plan-contribution-rules-body"><tr><td colspan="9">No contribution rules yet.</td></tr></tbody>
+          </table>
+        </div>
+        <label class="field"><span>Contribution Rules JSON (Advanced)</span><textarea id="plan-contribution-rules" rows="10" placeholder='{"base_rule":{"type":"save"},"rules":[...]}' disabled></textarea></label>
         <label class="field"><span>Context Snapshot</span><textarea id="plan-context" rows="6" readonly></textarea></label>
         <div class="view-header"><h3>Plan Settings</h3><button class="primary small" id="save-plan-settings" disabled>Save Settings</button></div>
         <p class="hint tight" id="plan-settings-meta">Blank values use global defaults from planner configuration.</p>

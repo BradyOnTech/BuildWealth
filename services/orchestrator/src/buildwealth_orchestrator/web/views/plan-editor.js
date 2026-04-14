@@ -38,8 +38,450 @@ const projectionState = {
   profileLoading: false,
 };
 
+const TIMELINE_EVENT_TYPES = new Set(['purchase', 'windfall', 'job_change', 'retirement', 'milestone']);
+const TIMELINE_IMPACT_TYPES = new Set(['income', 'expense', 'portfolio', 'contribution', 'debt_payment']);
+const TIMELINE_FREQUENCIES = new Set(['one_time', 'monthly', 'yearly']);
+const TIMELINE_DEFAULT_IMPACT_BY_EVENT = {
+  purchase: 'expense',
+  windfall: 'income',
+  job_change: 'income',
+  retirement: 'contribution',
+  milestone: 'portfolio',
+};
+const CONTRIBUTION_AMOUNT_TYPES = new Set(['dollarAmount', 'percentRemaining', 'unlimited']);
+
+function makeEditorId(prefix) {
+  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function coerceOptionalNumber(rawValue) {
+  if (rawValue === null || rawValue === undefined) return null;
+  const text = String(rawValue).trim();
+  if (!text) return null;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+}
+
+function coerceOptionalInteger(rawValue) {
+  const value = coerceOptionalNumber(rawValue);
+  if (value === null) return null;
+  return Math.trunc(value);
+}
+
+function dateInputValue(rawValue) {
+  const text = String(rawValue || '').trim();
+  return text ? text.slice(0, 10) : '';
+}
+
+function parseObjectJsonFromEditor(elementId, label) {
+  const raw = String(byId(elementId)?.value || '').trim();
+  if (!raw) return {};
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`${label} JSON is invalid: ${error.message}`);
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error(`${label} JSON must be an object.`);
+  }
+  return payload;
+}
+
+function normalizeTimelineEvent(rawEvent, index) {
+  const event = rawEvent && typeof rawEvent === 'object' ? { ...rawEvent } : {};
+  const eventTypeRaw = String(event.event_type || 'milestone').trim().toLowerCase();
+  const eventType = TIMELINE_EVENT_TYPES.has(eventTypeRaw) ? eventTypeRaw : 'milestone';
+  const impactTypeRaw = String(event.impact_type || '').trim().toLowerCase();
+  const impactType = TIMELINE_IMPACT_TYPES.has(impactTypeRaw)
+    ? impactTypeRaw
+    : (TIMELINE_DEFAULT_IMPACT_BY_EVENT[eventType] || 'portfolio');
+  const recurringFrequencyRaw = String(event.recurring_frequency || 'one_time').trim().toLowerCase();
+  const recurringFrequency = TIMELINE_FREQUENCIES.has(recurringFrequencyRaw) ? recurringFrequencyRaw : 'one_time';
+  const amountUsd = coerceOptionalNumber(event.amount_usd);
+
+  return {
+    id: String(event.id || '').trim() || `event-${index + 1}`,
+    date: dateInputValue(event.date),
+    label: String(event.label || '').trim(),
+    event_type: eventType,
+    impact_type: impactType,
+    amount_usd: amountUsd === null ? 0 : amountUsd,
+    recurring_frequency: recurringFrequency,
+    end_date: dateInputValue(event.end_date) || null,
+    account_id: String(event.account_id || '').trim() || null,
+    notes: String(event.notes || '').trim(),
+  };
+}
+
+function normalizeTimelinePayload(rawPayload) {
+  const payload = rawPayload && typeof rawPayload === 'object' && !Array.isArray(rawPayload)
+    ? { ...rawPayload }
+    : {};
+  const eventsRaw = Array.isArray(payload.events) ? payload.events : [];
+  const retirementRaw = payload.retirement && typeof payload.retirement === 'object' && !Array.isArray(payload.retirement)
+    ? payload.retirement
+    : {};
+  payload.events = eventsRaw.map((event, index) => normalizeTimelineEvent(event, index));
+  payload.retirement = { ...retirementRaw };
+  return payload;
+}
+
+function readTimelinePayloadFromEditor({ strict = false } = {}) {
+  const raw = String(byId('plan-timeline')?.value || '').trim();
+  if (!raw) return normalizeTimelinePayload({ events: [], retirement: {} });
+  try {
+    return normalizeTimelinePayload(JSON.parse(raw));
+  } catch (error) {
+    if (strict) throw new Error(`Timeline JSON is invalid: ${error.message}`);
+    return normalizeTimelinePayload({ events: [], retirement: {} });
+  }
+}
+
+function setTimelineRetirementInputs(retirementRaw) {
+  const retirement = retirementRaw && typeof retirementRaw === 'object' ? retirementRaw : {};
+  const setValue = (id, value) => {
+    const input = byId(id);
+    if (!input) return;
+    input.value = value === null || value === undefined ? '' : String(value);
+  };
+
+  setValue('timeline-retirement-age', coerceOptionalInteger(retirement.target_retirement_age));
+  setValue('timeline-withdrawal-strategy', String(retirement.withdrawal_strategy || '').trim());
+  setValue('timeline-ss-birth-year', coerceOptionalInteger(retirement.social_security_birth_year));
+  setValue('timeline-ss-claiming-age', coerceOptionalInteger(retirement.social_security_claiming_age));
+  setValue('timeline-ss-life-expectancy-age', coerceOptionalInteger(retirement.social_security_life_expectancy_age));
+  setValue('timeline-ss-fra-benefit', coerceOptionalNumber(retirement.social_security_fra_monthly_benefit_usd));
+  setValue('timeline-ss-annual-earnings', coerceOptionalNumber(retirement.social_security_estimated_annual_earnings_usd));
+  setValue('timeline-rmd-birth-year', coerceOptionalInteger(retirement.rmd_birth_year));
+  setValue('timeline-rmd-start-age', coerceOptionalInteger(retirement.rmd_start_age));
+}
+
+function collectTimelineRetirementInputs() {
+  return {
+    target_retirement_age: coerceOptionalInteger(byId('timeline-retirement-age')?.value),
+    withdrawal_strategy: String(byId('timeline-withdrawal-strategy')?.value || '').trim() || null,
+    social_security_birth_year: coerceOptionalInteger(byId('timeline-ss-birth-year')?.value),
+    social_security_claiming_age: coerceOptionalInteger(byId('timeline-ss-claiming-age')?.value),
+    social_security_life_expectancy_age: coerceOptionalInteger(byId('timeline-ss-life-expectancy-age')?.value),
+    social_security_fra_monthly_benefit_usd: coerceOptionalNumber(byId('timeline-ss-fra-benefit')?.value),
+    social_security_estimated_annual_earnings_usd: coerceOptionalNumber(byId('timeline-ss-annual-earnings')?.value),
+    rmd_birth_year: coerceOptionalInteger(byId('timeline-rmd-birth-year')?.value),
+    rmd_start_age: coerceOptionalInteger(byId('timeline-rmd-start-age')?.value),
+  };
+}
+
+function renderTimelineEventsTable(payload) {
+  const tbody = byId('plan-timeline-events-body');
+  if (!tbody) return;
+  const events = Array.isArray(payload?.events) ? payload.events : [];
+  if (!events.length) {
+    tbody.innerHTML = '<tr><td colspan="10">No timeline events yet.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = '';
+  for (const event of events) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${dateInputValue(event.date) || '-'}</td>
+      <td>${event.label || '-'}</td>
+      <td>${event.event_type || '-'}</td>
+      <td>${event.impact_type || '-'}</td>
+      <td>${fmtCurrency(Number(event.amount_usd || 0))}</td>
+      <td>${event.recurring_frequency || 'one_time'}</td>
+      <td>${dateInputValue(event.end_date) || '-'}</td>
+      <td><code>${event.account_id || '-'}</code></td>
+      <td>${event.notes || '-'}</td>
+      <td></td>`;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'ghost small';
+    button.textContent = 'Remove';
+    button.addEventListener('click', () => {
+      const current = readTimelinePayloadFromEditor();
+      current.events = (current.events || []).filter(item => String(item.id || '') !== String(event.id || ''));
+      writeTimelinePayloadToEditor(current);
+    });
+    tr.lastElementChild.appendChild(button);
+    tbody.appendChild(tr);
+  }
+}
+
+function writeTimelinePayloadToEditor(rawPayload, { preferFormValues = true } = {}) {
+  const payload = normalizeTimelinePayload(rawPayload);
+  payload.retirement = preferFormValues ? collectTimelineRetirementInputs() : (payload.retirement || {});
+  byId('plan-timeline').value = JSON.stringify(payload, null, 2);
+  setTimelineRetirementInputs(payload.retirement);
+  renderTimelineEventsTable(payload);
+}
+
+function refreshTimelineBuilderFromEditor(silent = true) {
+  try {
+    const payload = readTimelinePayloadFromEditor({ strict: true });
+    setTimelineRetirementInputs(payload.retirement);
+    renderTimelineEventsTable(payload);
+    return true;
+  } catch (error) {
+    if (!silent) writeLog(error.message, null, true);
+    return false;
+  }
+}
+
+function normalizeContributionRule(rawRule, index) {
+  const rule = rawRule && typeof rawRule === 'object' ? { ...rawRule } : {};
+  const amountRaw = rule.amount && typeof rule.amount === 'object' ? rule.amount : {};
+  const amountTypeRaw = String(
+    amountRaw.type || rule.amount_type || rule.contribution_type || 'unlimited',
+  ).trim();
+  const amountType = CONTRIBUTION_AMOUNT_TYPES.has(amountTypeRaw) ? amountTypeRaw : 'unlimited';
+  const rank = coerceOptionalInteger(rule.rank);
+  const amount = { type: amountType };
+  if (amountType === 'dollarAmount') {
+    amount.dollarAmount = Math.max(
+      0,
+      Number(coerceOptionalNumber(
+        amountRaw.dollarAmount ?? rule.dollarAmount ?? rule.dollar_amount_usd,
+      ) ?? 0),
+    );
+  } else if (amountType === 'percentRemaining') {
+    amount.percentRemaining = Math.max(
+      0,
+      Math.min(
+        100,
+        Number(coerceOptionalNumber(
+          amountRaw.percentRemaining ?? rule.percentRemaining ?? rule.percent_remaining,
+        ) ?? 0),
+      ),
+    );
+  }
+
+  const normalized = {
+    id: String(rule.id || rule.rule_id || '').trim() || `rule-${index + 1}`,
+    accountId: String(rule.accountId || rule.account_id || '').trim(),
+    rank: rank === null ? (index + 1) : Math.max(1, rank),
+    amount,
+  };
+
+  const employerMatch = coerceOptionalNumber(rule.employerMatch ?? rule.employer_match_usd);
+  const maxBalance = coerceOptionalNumber(rule.maxBalance ?? rule.max_balance_usd);
+  if (employerMatch !== null) normalized.employerMatch = Math.max(0, employerMatch);
+  if (maxBalance !== null) normalized.maxBalance = Math.max(0, maxBalance);
+  if (rule.enableMegaBackdoorRoth || rule.enable_mega_backdoor_roth) normalized.enableMegaBackdoorRoth = true;
+  if (rule.disabled) normalized.disabled = true;
+  return normalized;
+}
+
+function normalizeContributionRulesPayload(rawPayload) {
+  const payload = rawPayload && typeof rawPayload === 'object' && !Array.isArray(rawPayload)
+    ? { ...rawPayload }
+    : {};
+  const baseTypeRaw = String(payload.base_rule?.type || 'save').trim().toLowerCase();
+  payload.base_rule = { type: baseTypeRaw === 'spend' ? 'spend' : 'save' };
+  payload.rules = (Array.isArray(payload.rules) ? payload.rules : []).map((rule, index) => normalizeContributionRule(rule, index));
+  payload.profile_id = String(payload.profile_id || '').trim() || null;
+  const employerMatchTarget = coerceOptionalNumber(payload.employer_match_target_usd);
+  payload.employer_match_target_usd = employerMatchTarget === null ? 6000 : Math.max(0, employerMatchTarget);
+  const age = coerceOptionalInteger(payload.age);
+  payload.age = age === null ? 35 : Math.max(0, Math.min(120, age));
+  payload.rules.sort((left, right) => left.rank - right.rank);
+  return payload;
+}
+
+function readContributionRulesPayloadFromEditor({ strict = false } = {}) {
+  const raw = String(byId('plan-contribution-rules')?.value || '').trim();
+  if (!raw) return normalizeContributionRulesPayload({});
+  try {
+    return normalizeContributionRulesPayload(JSON.parse(raw));
+  } catch (error) {
+    if (strict) throw new Error(`Contribution rules JSON is invalid: ${error.message}`);
+    return normalizeContributionRulesPayload({});
+  }
+}
+
+function setContributionRuleMetaInputs(payloadRaw) {
+  const payload = payloadRaw && typeof payloadRaw === 'object' ? payloadRaw : {};
+  const baseRuleSelect = byId('contribution-base-rule');
+  if (baseRuleSelect) baseRuleSelect.value = payload.base_rule?.type === 'spend' ? 'spend' : 'save';
+  const profileInput = byId('contribution-profile-id');
+  if (profileInput) profileInput.value = String(payload.profile_id || '').trim();
+  const employerInput = byId('contribution-employer-match-target');
+  if (employerInput) employerInput.value = coerceOptionalNumber(payload.employer_match_target_usd) === null ? '' : String(payload.employer_match_target_usd);
+  const ageInput = byId('contribution-age');
+  if (ageInput) ageInput.value = coerceOptionalInteger(payload.age) === null ? '' : String(Math.trunc(payload.age));
+}
+
+function collectContributionRuleMetaInputs() {
+  return {
+    base_rule: {
+      type: String(byId('contribution-base-rule')?.value || 'save').trim().toLowerCase() === 'spend'
+        ? 'spend'
+        : 'save',
+    },
+    profile_id: String(byId('contribution-profile-id')?.value || '').trim() || null,
+    employer_match_target_usd: coerceOptionalNumber(byId('contribution-employer-match-target')?.value),
+    age: coerceOptionalInteger(byId('contribution-age')?.value),
+  };
+}
+
+function formatContributionRuleAmount(rule) {
+  const amount = rule?.amount && typeof rule.amount === 'object' ? rule.amount : {};
+  const amountType = String(amount.type || 'unlimited');
+  if (amountType === 'dollarAmount') return fmtCurrency(Number(amount.dollarAmount || 0));
+  if (amountType === 'percentRemaining') return `${Number(amount.percentRemaining || 0).toFixed(2)}%`;
+  return 'Unlimited';
+}
+
+function renderContributionRulesTable(payload) {
+  const tbody = byId('plan-contribution-rules-body');
+  if (!tbody) return;
+  const rules = Array.isArray(payload?.rules) ? payload.rules : [];
+  if (!rules.length) {
+    tbody.innerHTML = '<tr><td colspan="9">No contribution rules yet.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = '';
+  for (const rule of rules) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${Math.max(1, Math.trunc(Number(rule.rank || 1)))}</td>
+      <td><code>${rule.accountId || '-'}</code></td>
+      <td>${rule.amount?.type || 'unlimited'}</td>
+      <td>${formatContributionRuleAmount(rule)}</td>
+      <td>${rule.employerMatch !== undefined ? fmtCurrency(Number(rule.employerMatch || 0)) : '-'}</td>
+      <td>${rule.maxBalance !== undefined ? fmtCurrency(Number(rule.maxBalance || 0)) : '-'}</td>
+      <td>${rule.enableMegaBackdoorRoth ? 'Yes' : 'No'}</td>
+      <td>${rule.disabled ? 'Yes' : 'No'}</td>
+      <td></td>`;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'ghost small';
+    button.textContent = 'Remove';
+    button.addEventListener('click', () => {
+      const current = readContributionRulesPayloadFromEditor();
+      current.rules = (current.rules || []).filter(item => String(item.id || '') !== String(rule.id || ''));
+      writeContributionRulesPayloadToEditor(current);
+    });
+    tr.lastElementChild.appendChild(button);
+    tbody.appendChild(tr);
+  }
+}
+
+function writeContributionRulesPayloadToEditor(rawPayload, { preferFormValues = true } = {}) {
+  const payload = normalizeContributionRulesPayload(rawPayload);
+  const meta = preferFormValues ? collectContributionRuleMetaInputs() : {
+    base_rule: payload.base_rule,
+    profile_id: payload.profile_id,
+    employer_match_target_usd: payload.employer_match_target_usd,
+    age: payload.age,
+  };
+  payload.base_rule = meta.base_rule;
+  payload.profile_id = meta.profile_id;
+  payload.employer_match_target_usd = meta.employer_match_target_usd === null ? 6000 : Math.max(0, meta.employer_match_target_usd);
+  payload.age = meta.age === null ? 35 : Math.max(0, Math.min(120, meta.age));
+  payload.rules.sort((left, right) => left.rank - right.rank);
+  byId('plan-contribution-rules').value = JSON.stringify(payload, null, 2);
+  setContributionRuleMetaInputs(payload);
+  renderContributionRulesTable(payload);
+}
+
+function refreshContributionBuilderFromEditor(silent = true) {
+  try {
+    const payload = readContributionRulesPayloadFromEditor({ strict: true });
+    setContributionRuleMetaInputs(payload);
+    renderContributionRulesTable(payload);
+    return true;
+  } catch (error) {
+    if (!silent) writeLog(error.message, null, true);
+    return false;
+  }
+}
+
+function resetTimelineEventInputs() {
+  const defaults = [
+    ['timeline-event-date', ''],
+    ['timeline-event-label', ''],
+    ['timeline-event-type', 'milestone'],
+    ['timeline-event-impact-type', ''],
+    ['timeline-event-amount', ''],
+    ['timeline-event-frequency', 'one_time'],
+    ['timeline-event-end-date', ''],
+    ['timeline-event-account-id', ''],
+    ['timeline-event-notes', ''],
+  ];
+  for (const [id, value] of defaults) {
+    const input = byId(id);
+    if (!input) continue;
+    input.value = value;
+  }
+}
+
+function updateContributionRuleAmountField() {
+  const amountType = String(byId('contribution-rule-amount-type')?.value || 'unlimited');
+  const amountInput = byId('contribution-rule-amount-value');
+  if (!amountInput) return;
+  if (amountType === 'dollarAmount') {
+    amountInput.placeholder = 'Dollar Amount';
+    amountInput.disabled = false;
+    return;
+  }
+  if (amountType === 'percentRemaining') {
+    amountInput.placeholder = 'Percent Remaining';
+    amountInput.disabled = false;
+    return;
+  }
+  amountInput.placeholder = 'Not required';
+  amountInput.value = '';
+  amountInput.disabled = true;
+}
+
+function resetContributionRuleInputs() {
+  const defaults = [
+    ['contribution-rule-account-id', ''],
+    ['contribution-rule-rank', ''],
+    ['contribution-rule-amount-type', 'unlimited'],
+    ['contribution-rule-amount-value', ''],
+    ['contribution-rule-employer-match', ''],
+    ['contribution-rule-max-balance', ''],
+  ];
+  for (const [id, value] of defaults) {
+    const input = byId(id);
+    if (!input) continue;
+    input.value = value;
+  }
+  const megaCheckbox = byId('contribution-rule-mega-backdoor');
+  if (megaCheckbox) megaCheckbox.checked = false;
+  const disabledCheckbox = byId('contribution-rule-disabled');
+  if (disabledCheckbox) disabledCheckbox.checked = false;
+  updateContributionRuleAmountField();
+}
+
 function setControlsEnabled(enabled) {
-  ['activate-plan', 'refresh-plan-context', 'save-plan', 'save-plan-timeline', 'save-plan-assumption-sets', 'save-plan-contribution-rules', 'save-plan-branch-templates', 'save-plan-settings', 'run-scenario-diff', 'run-withdrawal-strategy-compare', 'apply-scenario-overrides', 'load-branch-template', 'run-scenario-branch', 'refresh-projection-profile', 'projection-source', 'projection-scenario-label', 'projection-account-metric', 'add-decision', 'plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-contribution-rules', 'plan-branch-templates', 'diff-assumption-set-id', 'diff-candidate-assumption-set-id', 'withdrawal-assumption-set-id', 'withdrawal-current-portfolio-value', 'withdrawal-strategies', 'withdrawal-include-raw-results', 'branch-template-id', 'scenario-branch-name', 'branch-assumption-set-id', 'scenario-branch-events', 'decision-summary', 'decision-rationale', 'decision-status'].forEach(id => { const el = byId(id); if (el) el.disabled = !enabled; });
+  [
+    'activate-plan', 'refresh-plan-context', 'save-plan', 'save-plan-timeline', 'save-plan-assumption-sets',
+    'save-plan-contribution-rules', 'save-plan-branch-templates', 'save-plan-settings', 'run-scenario-diff',
+    'run-withdrawal-strategy-compare', 'apply-scenario-overrides', 'load-branch-template', 'run-scenario-branch',
+    'refresh-projection-profile', 'projection-source', 'projection-scenario-label', 'projection-account-metric',
+    'add-decision', 'plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets',
+    'plan-contribution-rules', 'plan-branch-templates', 'diff-assumption-set-id',
+    'diff-candidate-assumption-set-id', 'withdrawal-assumption-set-id', 'withdrawal-current-portfolio-value',
+    'withdrawal-strategies', 'withdrawal-include-raw-results', 'branch-template-id', 'scenario-branch-name',
+    'branch-assumption-set-id', 'scenario-branch-events', 'decision-summary', 'decision-rationale',
+    'decision-status', 'timeline-event-date', 'timeline-event-label', 'timeline-event-type',
+    'timeline-event-impact-type', 'timeline-event-amount', 'timeline-event-frequency', 'timeline-event-end-date',
+    'timeline-event-account-id', 'timeline-event-notes', 'add-timeline-event', 'timeline-retirement-age',
+    'timeline-withdrawal-strategy', 'timeline-ss-birth-year', 'timeline-ss-claiming-age',
+    'timeline-ss-life-expectancy-age', 'timeline-ss-fra-benefit', 'timeline-ss-annual-earnings',
+    'timeline-rmd-birth-year', 'timeline-rmd-start-age', 'contribution-base-rule', 'contribution-profile-id',
+    'contribution-employer-match-target', 'contribution-age', 'contribution-rule-account-id',
+    'contribution-rule-rank', 'contribution-rule-amount-type', 'contribution-rule-amount-value',
+    'contribution-rule-employer-match', 'contribution-rule-max-balance', 'contribution-rule-mega-backdoor',
+    'contribution-rule-disabled', 'add-contribution-rule',
+  ].forEach((id) => {
+    const el = byId(id);
+    if (el) el.disabled = !enabled;
+  });
   for (const f of [...PLAN_SETTING_FIELDS, ...DIFF_SETTING_FIELDS]) { const el = byId(f.inputId); if (el) el.disabled = !enabled; }
 }
 
@@ -753,6 +1195,10 @@ export function clearDetail() {
   byId('plan-meta').textContent = 'Select a plan to view details.';
   byId('plan-settings-meta').textContent = 'Blank values use global defaults from planner configuration.';
   ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-contribution-rules', 'plan-branch-templates', 'plan-context', 'scenario-diff-output', 'withdrawal-current-portfolio-value', 'withdrawal-strategies', 'withdrawal-strategy-compare-output', 'scenario-branch-name', 'scenario-branch-events', 'scenario-branch-output', 'artifact-content'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
+  writeTimelinePayloadToEditor({ events: [], retirement: {} }, { preferFormValues: false });
+  resetTimelineEventInputs();
+  writeContributionRulesPayloadToEditor({}, { preferFormValues: false });
+  resetContributionRuleInputs();
   const includeRawCheckbox = byId('withdrawal-include-raw-results');
   if (includeRawCheckbox) includeRawCheckbox.checked = false;
   byId('scenario-diff-summary').textContent = 'No scenario diff run yet.';
@@ -784,10 +1230,23 @@ export function renderDetail() {
   byId('plan-meta').textContent = `${d.title || 'Untitled'} \u2022 ${d.is_active ? 'Active Plan' : 'Inactive'} \u2022 Updated ${fmtDate(d.updated_at)}`;
   byId('plan-markdown').value = d.files?.plan_markdown || '';
   byId('plan-tasks').value = d.files?.tasks_markdown || '';
-  byId('plan-timeline').value = d.files?.timeline_json || '';
   byId('plan-assumption-sets').value = d.files?.assumption_sets_json || '';
-  byId('plan-contribution-rules').value = d.files?.contribution_rules_json || '';
   byId('plan-branch-templates').value = d.files?.branch_templates_json || '';
+  try {
+    writeTimelinePayloadToEditor(d.files?.timeline_json ? JSON.parse(d.files.timeline_json) : {}, { preferFormValues: false });
+  } catch {
+    writeTimelinePayloadToEditor({ events: [], retirement: {} }, { preferFormValues: false });
+  }
+  resetTimelineEventInputs();
+  try {
+    writeContributionRulesPayloadToEditor(
+      d.files?.contribution_rules_json ? JSON.parse(d.files.contribution_rules_json) : {},
+      { preferFormValues: false },
+    );
+  } catch {
+    writeContributionRulesPayloadToEditor({}, { preferFormValues: false });
+  }
+  resetContributionRuleInputs();
   setAssumptionSetOptions(d.files?.assumption_sets_json || '');
   setBranchTemplateOptions(d.files?.branch_templates_json || '');
   byId('plan-context').value = d.files?.context_markdown || '';
@@ -1123,6 +1582,143 @@ export function initEditor(refreshPlans) {
   byId('projection-source').addEventListener('change', () => renderProjectionVisuals());
   byId('projection-scenario-label').addEventListener('change', () => renderProjectionVisuals());
   byId('projection-account-metric').addEventListener('change', () => renderProjectionVisuals());
+  byId('plan-timeline').addEventListener('change', () => {
+    refreshTimelineBuilderFromEditor(false);
+  });
+  byId('plan-contribution-rules').addEventListener('change', () => {
+    refreshContributionBuilderFromEditor(false);
+  });
+  byId('timeline-event-type').addEventListener('change', () => {
+    const eventType = String(byId('timeline-event-type')?.value || 'milestone').trim().toLowerCase();
+    const impactSelect = byId('timeline-event-impact-type');
+    if (impactSelect && !impactSelect.value) {
+      impactSelect.value = TIMELINE_DEFAULT_IMPACT_BY_EVENT[eventType] || 'portfolio';
+    }
+  });
+  byId('add-timeline-event').addEventListener('click', () => {
+    const date = dateInputValue(byId('timeline-event-date')?.value);
+    const label = String(byId('timeline-event-label')?.value || '').trim();
+    const eventTypeRaw = String(byId('timeline-event-type')?.value || 'milestone').trim().toLowerCase();
+    const eventType = TIMELINE_EVENT_TYPES.has(eventTypeRaw) ? eventTypeRaw : 'milestone';
+    const impactTypeRaw = String(byId('timeline-event-impact-type')?.value || '').trim().toLowerCase();
+    const impactType = TIMELINE_IMPACT_TYPES.has(impactTypeRaw)
+      ? impactTypeRaw
+      : (TIMELINE_DEFAULT_IMPACT_BY_EVENT[eventType] || 'portfolio');
+    const amountUsd = coerceOptionalNumber(byId('timeline-event-amount')?.value);
+    const recurringRaw = String(byId('timeline-event-frequency')?.value || 'one_time').trim().toLowerCase();
+    const recurringFrequency = TIMELINE_FREQUENCIES.has(recurringRaw) ? recurringRaw : 'one_time';
+    const endDate = dateInputValue(byId('timeline-event-end-date')?.value);
+    const accountId = String(byId('timeline-event-account-id')?.value || '').trim() || null;
+    const notes = String(byId('timeline-event-notes')?.value || '').trim();
+
+    if (!date) {
+      writeLog('Timeline event date is required.', null, true);
+      return;
+    }
+    if (!label) {
+      writeLog('Timeline event label is required.', null, true);
+      return;
+    }
+    if (amountUsd === null) {
+      writeLog('Timeline event amount must be numeric.', null, true);
+      return;
+    }
+    if (endDate && endDate < date) {
+      writeLog('Timeline event end date must be on or after event date.', null, true);
+      return;
+    }
+
+    const payload = readTimelinePayloadFromEditor();
+    payload.events = Array.isArray(payload.events) ? payload.events : [];
+    payload.events.push({
+      id: makeEditorId('event'),
+      date,
+      label,
+      event_type: eventType,
+      impact_type: impactType,
+      amount_usd: amountUsd,
+      recurring_frequency: recurringFrequency,
+      end_date: endDate || null,
+      account_id: accountId,
+      notes,
+    });
+    payload.events.sort((left, right) => String(left.date || '').localeCompare(String(right.date || '')));
+    writeTimelinePayloadToEditor(payload);
+    resetTimelineEventInputs();
+  });
+  [
+    'timeline-retirement-age', 'timeline-withdrawal-strategy', 'timeline-ss-birth-year', 'timeline-ss-claiming-age',
+    'timeline-ss-life-expectancy-age', 'timeline-ss-fra-benefit', 'timeline-ss-annual-earnings',
+    'timeline-rmd-birth-year', 'timeline-rmd-start-age',
+  ].forEach((id) => {
+    const input = byId(id);
+    if (!input) return;
+    input.addEventListener('change', () => {
+      const payload = readTimelinePayloadFromEditor();
+      payload.retirement = collectTimelineRetirementInputs();
+      writeTimelinePayloadToEditor(payload);
+    });
+  });
+  byId('contribution-rule-amount-type').addEventListener('change', () => {
+    updateContributionRuleAmountField();
+  });
+  byId('add-contribution-rule').addEventListener('click', () => {
+    const accountId = String(byId('contribution-rule-account-id')?.value || '').trim();
+    if (!accountId) {
+      writeLog('Contribution rule account ID is required.', null, true);
+      return;
+    }
+
+    const payload = readContributionRulesPayloadFromEditor();
+    const rankInput = coerceOptionalInteger(byId('contribution-rule-rank')?.value);
+    const nextRank = rankInput === null
+      ? ((payload.rules || []).reduce((maxRank, item) => Math.max(maxRank, Number(item.rank || 0)), 0) + 1)
+      : Math.max(1, rankInput);
+    const amountTypeRaw = String(byId('contribution-rule-amount-type')?.value || 'unlimited').trim();
+    const amountType = CONTRIBUTION_AMOUNT_TYPES.has(amountTypeRaw) ? amountTypeRaw : 'unlimited';
+    const amountValue = coerceOptionalNumber(byId('contribution-rule-amount-value')?.value);
+    const employerMatch = coerceOptionalNumber(byId('contribution-rule-employer-match')?.value);
+    const maxBalance = coerceOptionalNumber(byId('contribution-rule-max-balance')?.value);
+
+    if (amountType !== 'unlimited' && amountValue === null) {
+      writeLog('Contribution amount value is required for the selected amount type.', null, true);
+      return;
+    }
+    if (amountType === 'percentRemaining' && (Number(amountValue) < 0 || Number(amountValue) > 100)) {
+      writeLog('Percent Remaining must be between 0 and 100.', null, true);
+      return;
+    }
+
+    const amount = { type: amountType };
+    if (amountType === 'dollarAmount') amount.dollarAmount = Math.max(0, Number(amountValue || 0));
+    if (amountType === 'percentRemaining') amount.percentRemaining = Math.max(0, Math.min(100, Number(amountValue || 0)));
+
+    const rule = {
+      id: makeEditorId('rule'),
+      accountId,
+      rank: nextRank,
+      amount,
+    };
+    if (employerMatch !== null) rule.employerMatch = Math.max(0, employerMatch);
+    if (maxBalance !== null) rule.maxBalance = Math.max(0, maxBalance);
+    if (byId('contribution-rule-mega-backdoor')?.checked) rule.enableMegaBackdoorRoth = true;
+    if (byId('contribution-rule-disabled')?.checked) rule.disabled = true;
+
+    payload.rules = Array.isArray(payload.rules) ? payload.rules : [];
+    payload.rules.push(rule);
+    writeContributionRulesPayloadToEditor(payload);
+    resetContributionRuleInputs();
+  });
+  ['contribution-base-rule', 'contribution-profile-id', 'contribution-employer-match-target', 'contribution-age'].forEach((id) => {
+    const input = byId(id);
+    if (!input) return;
+    input.addEventListener('change', () => {
+      const payload = readContributionRulesPayloadFromEditor();
+      writeContributionRulesPayloadToEditor(payload);
+    });
+  });
+  resetTimelineEventInputs();
+  resetContributionRuleInputs();
   byId('refresh-projection-profile').addEventListener('click', () => {
     maybeLoadProjectionProfile(true);
     renderProjectionVisuals();
@@ -1180,14 +1776,15 @@ export function initEditor(refreshPlans) {
 
   byId('save-plan-timeline').addEventListener('click', async () => {
     if (!state.currentPlanId) { writeLog('Select a plan first.', null, true); return; }
-    const raw = byId('plan-timeline').value.trim();
     let payload;
     try {
-      payload = raw ? JSON.parse(raw) : { events: [], retirement: {} };
+      payload = normalizeTimelinePayload(parseObjectJsonFromEditor('plan-timeline', 'Timeline'));
+      payload.retirement = collectTimelineRetirementInputs();
     } catch (e) {
-      writeLog(`Timeline JSON is invalid: ${e.message}`, null, true);
+      writeLog(e.message, null, true);
       return;
     }
+    writeTimelinePayloadToEditor(payload);
     writeLog('Saving timeline...', payload);
     try {
       await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/timeline`, {
@@ -1232,14 +1829,19 @@ export function initEditor(refreshPlans) {
 
   byId('save-plan-contribution-rules').addEventListener('click', async () => {
     if (!state.currentPlanId) { writeLog('Select a plan first.', null, true); return; }
-    const raw = byId('plan-contribution-rules').value.trim();
     let payload;
     try {
-      payload = raw ? JSON.parse(raw) : {};
+      payload = normalizeContributionRulesPayload(parseObjectJsonFromEditor('plan-contribution-rules', 'Contribution rules'));
+      const meta = collectContributionRuleMetaInputs();
+      payload.base_rule = meta.base_rule;
+      payload.profile_id = meta.profile_id;
+      payload.employer_match_target_usd = meta.employer_match_target_usd === null ? 6000 : Math.max(0, meta.employer_match_target_usd);
+      payload.age = meta.age === null ? 35 : Math.max(0, Math.min(120, meta.age));
     } catch (e) {
-      writeLog(`Contribution rules JSON is invalid: ${e.message}`, null, true);
+      writeLog(e.message, null, true);
       return;
     }
+    writeContributionRulesPayloadToEditor(payload);
     writeLog('Saving contribution rules...', payload);
     try {
       await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/contribution-rules`, {

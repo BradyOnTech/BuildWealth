@@ -28,7 +28,8 @@ export function template() {
     ${section('Income', 'income', ['Label|text|income-label|Source label', 'Monthly USD|number|income-amount|0', 'Type|select|income-source-type|salary:Salary,bonus:Bonus,business:Business,rental:Rental,other:Other', 'Pre-tax|checkbox|income-pre-tax|', 'Growth %/Yr|number|income-growth-rate|Optional', 'Start Date|date|income-start-date|', 'End Date|date|income-end-date|'], ['Label', 'Monthly', 'Type', 'Pre-Tax', 'Growth', 'Start', 'End'])}
     ${section('Expenses', 'expense', ['Label|text|expense-label|Expense label', 'Monthly USD|number|expense-amount|0', 'Category|text|expense-category|Category', 'Fixed|checkbox|expense-fixed|checked', 'Inflation %/Yr|number|expense-inflation-rate|Optional', 'Start Date|date|expense-start-date|', 'End Date|date|expense-end-date|'], ['Label', 'Monthly', 'Category', 'Fixed', 'Inflation', 'Start', 'End'])}
     ${section('Debt', 'debt', ['Label|text|debt-label|Debt label', 'Balance USD|number|debt-balance|0', 'Rate %|number|debt-rate|0', 'Min Payment|number|debt-min-payment|0', 'Strategy|select|debt-strategy|minimum:Minimum,snowball:Snowball,avalanche:Avalanche,custom:Custom', 'Custom Payment|number|debt-custom-payment|Optional'], ['Label', 'Balance', 'Rate', 'Min Payment', 'Strategy', 'Custom'])}
-    ${section('Goals', 'goal', ['Label|text|goal-label|Goal label', 'Target USD|number|goal-amount|0', 'Target Date|date|goal-date|', 'Priority|select|goal-priority|high:High,medium:Medium,low:Low'], ['Label', 'Target', 'Target Date', 'Priority'])}`;
+    ${section('Goals', 'goal', ['Label|text|goal-label|Goal label', 'Target USD|number|goal-amount|0', 'Target Date|date|goal-date|', 'Priority|select|goal-priority|high:High,medium:Medium,low:Low'], ['Label', 'Target', 'Target Date', 'Priority'])}
+    ${section('Physical Assets', 'physical-asset', ['Label|text|physical-asset-label|Asset label', 'Current Value USD|number|physical-asset-value|0', 'Type|select|physical-asset-type|real_estate:Real Estate,vehicle:Vehicle,jewelry:Jewelry,equipment:Equipment,collectible:Collectible,other:Other', 'Growth %/Yr|number|physical-asset-growth-rate|Optional', 'Purchase Date|date|physical-asset-purchase-date|'], ['Label', 'Current Value', 'Type', 'Growth', 'Purchase Date'])}`;
 }
 
 function section(title, key, fields, headers) {
@@ -51,7 +52,16 @@ function section(title, key, fields, headers) {
   return `<h3 class="section-title">${title}</h3><div class="inline-builder">${inputs}<button class="ghost small" id="add-${key}" type="button">Add</button></div><div class="table-wrap"><table><thead><tr>${ths}</tr></thead><tbody id="profile-${key}-body"></tbody></table></div>`;
 }
 
-function ensure() { if (!state.financialProfile || typeof state.financialProfile !== 'object') state.financialProfile = emptyFinancialProfile(); }
+function ensure() {
+  if (!state.financialProfile || typeof state.financialProfile !== 'object') {
+    state.financialProfile = emptyFinancialProfile();
+    return;
+  }
+  const profile = state.financialProfile;
+  for (const key of ['income_items', 'expense_items', 'debt_items', 'goal_items', 'physical_assets']) {
+    if (!Array.isArray(profile[key])) profile[key] = [];
+  }
+}
 
 function fmtPercentOrDefault(value, defaultLabel = 'Default') {
   if (typeof value !== 'number' || Number.isNaN(value)) return defaultLabel;
@@ -113,6 +123,19 @@ function renderTables() {
     7,
   );
   tableRows('profile-goal-body', p.goal_items, i => [i.label, fmtCurrency(i.target_amount_usd), i.target_date ? fmtDate(i.target_date) : '-', i.priority], 'goal_items', 5);
+  tableRows(
+    'profile-physical-asset-body',
+    p.physical_assets,
+    i => [
+      i.label,
+      fmtCurrency(i.current_value_usd),
+      i.asset_type || 'other',
+      fmtPercentOrDefault(i.annual_growth_rate),
+      fmtDateOnly(i.purchase_date),
+    ],
+    'physical_assets',
+    6,
+  );
 }
 
 function tableRows(tbodyId, items, cellsFn, stateKey, columnCount = 5) {
@@ -302,6 +325,47 @@ export function init() {
     const raw = byId('goal-date').value; const date = raw ? new Date(`${raw}T00:00:00.000Z`).toISOString() : null;
     const item = { id: uid('goal'), label, target_amount_usd: amt, target_date: date, priority: byId('goal-priority').value || 'medium', notes: '' };
     byId('goal-label').value = ''; byId('goal-amount').value = ''; byId('goal-date').value = ''; byId('goal-priority').value = 'medium'; return item;
+  }));
+  byId('add-physical-asset').addEventListener('click', () => addItem('physical_assets', () => {
+    const label = byId('physical-asset-label').value.trim();
+    if (!label) { writeLog('Physical asset label required.', null, true); return null; }
+
+    let value; let growthRate;
+    try {
+      value = parseOptionalNumber(byId('physical-asset-value').value, 'Current value');
+      growthRate = parseOptionalNumber(byId('physical-asset-growth-rate').value, 'Growth rate');
+    } catch (e) {
+      writeLog(e.message, null, true);
+      return null;
+    }
+    if (value === null || value < 0) { writeLog('Current value must be >= 0.', null, true); return null; }
+    if (growthRate !== null && (growthRate < -100 || growthRate > 100)) {
+      writeLog('Growth rate must be between -100 and 100.', null, true);
+      return null;
+    }
+
+    const purchaseRaw = byId('physical-asset-purchase-date').value.trim();
+    const purchaseDate = purchaseRaw ? new Date(`${purchaseRaw}T00:00:00.000Z`) : null;
+    if (purchaseDate && Number.isNaN(purchaseDate.getTime())) {
+      writeLog('Physical asset purchase date must be a valid date.', null, true);
+      return null;
+    }
+
+    const item = {
+      id: uid('asset'),
+      label,
+      current_value_usd: value,
+      asset_type: byId('physical-asset-type').value || 'other',
+      annual_growth_rate: growthRate === null ? null : growthRate / 100,
+      purchase_date: purchaseDate ? purchaseDate.toISOString() : null,
+    };
+
+    byId('physical-asset-label').value = '';
+    byId('physical-asset-value').value = '';
+    byId('physical-asset-type').value = 'real_estate';
+    byId('physical-asset-growth-rate').value = '';
+    byId('physical-asset-purchase-date').value = '';
+    return item;
   }));
   load();
 }

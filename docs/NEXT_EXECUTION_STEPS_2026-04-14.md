@@ -7,7 +7,9 @@ Concrete follow-on work after Phase 1.18 completion, ordered by leverage and dep
 - Core Phase 1 + Phase 2 foundations are implemented and passing tests.
 - Phase 1.18 broker CSV templates are implemented with template selection, auto-detection, and broker-specific parsing coverage.
 - Phase 3.1 asset metadata database expansion is complete (seeded catalog + deterministic fallback + schema/UI plumbing + tests).
-- Primary remaining work is Phase 3 sidecar hardening, UX consolidation, and documentation/ops cleanup.
+- Phase 3.3 sidecar boundary hardening is complete.
+- Phase 3.4 UI updates are complete (portfolio account filter + allocation charts, guided plan timeline/contribution editors, profile physical assets).
+- Primary remaining work is Copilot tool completion, docs/ops cleanup, and unified context productionization.
 
 ## Priority Order
 
@@ -43,18 +45,36 @@ Completed:
 Why next:
 - Stabilizes the targeted-adapter architecture before further feature depth.
 
-### 3) Phase 3.4 UX Consolidation / Product UX Pass (Next)
-Status: In Progress
+### 3) Phase 3.4 UX Consolidation / Product UX Pass
+Status: Completed
 
 Scope:
 1. Replace JSON-heavy planner controls with guided forms where possible.
 2. Improve dashboard/portfolio/plans flow cohesion and action loops.
 3. Surface evidence/freshness/assumption context consistently in high-impact views.
 
+Completed:
+- Portfolio account selector/filter wired to holdings + allocation scope.
+- Portfolio allocation chart visualizations added for asset class/sector/region.
+- Plans guided editors added for timeline events, retirement assumptions, and contribution rules (while preserving advanced JSON mode).
+- Profile `physical_assets` section added and wired end-to-end.
+- Full orchestrator tests remain green after UI/code-path changes.
+
 Why:
 - Moves from “power-user tooling” to polished, durable product workflows.
 
-### 4) Phase 3.6 Documentation + Ops Cleanup
+### 4) Phase 3.5 Copilot Tool Updates (Next)
+Status: In Progress
+
+Scope:
+1. Validate all planned tools are present and production-ready: `get_account_balances`, `compute_tax`, `add_timeline_event`, `compare_withdrawal_strategies`, `get_asset_allocation`, `set_contribution_rules`, `get_buildwealth_context`.
+2. Close any remaining tool contract gaps and system prompt routing coverage.
+3. Add regression tests for high-impact tool paths (especially timeline/contribution editing flows).
+
+Why:
+- BuildWealth’s differentiation depends on using portfolio + planning + research context in chat reliably.
+
+### 5) Phase 3.6 Documentation + Ops Cleanup
 Status: Pending
 
 Scope:
@@ -73,5 +93,6 @@ Why:
 ## Definition of Done for This Workstream
 1. 3.1 merged with tests and visible metadata-quality improvements.
 2. 3.3 merged with fallback/contract regression coverage.
-3. Docs reflect shipped reality and current priorities.
-4. Full orchestrator test suite remains green.
+3. 3.4 merged with guided UX + account/allocation visualization updates.
+4. Docs reflect shipped reality and current priorities.
+5. Full orchestrator test suite remains green.

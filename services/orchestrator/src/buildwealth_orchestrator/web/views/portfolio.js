@@ -7,6 +7,8 @@ export const icon = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" 
 
 let accountNameById = new Map();
 let benchmarkSymbolsFilter = 'SPY';
+let activeAccountFilter = '';
+let latestHoldingsPayload = null;
 
 const ACCOUNT_TYPE_OPTIONS = [
   'taxable',
@@ -146,10 +148,23 @@ export function template() {
     </form>
 
     <h3 class="section-title">Holdings</h3>
+    <div class="filter-bar">
+      <label class="field compact-field"><span>Account</span><select id="port-account-filter"><option value="">All Accounts</option></select></label>
+      <p class="hint tight" id="port-allocation-summary">Viewing all accounts.</p>
+    </div>
     <div class="table-wrap"><table>
       <thead><tr><th>Symbol</th><th>Account</th><th>CCY</th><th>Asset Class</th><th>Method</th><th>Qty</th><th>Avg Cost</th><th>Price</th><th>Value</th><th>Gain/Loss</th><th>Return</th><th>Alloc</th></tr></thead>
       <tbody id="port-holdings-body"><tr><td colspan="12">Loading...</td></tr></tbody>
     </table></div>
+    <div class="history-chart-card">
+      <p class="hint tight">Allocation charts by asset class, sector, and region for the selected account scope.</p>
+      <h4 class="section-title">Asset Class</h4>
+      <div id="port-allocation-chart-asset-class" class="allocation-bar-list"></div>
+      <h4 class="section-title">Sector</h4>
+      <div id="port-allocation-chart-sector" class="allocation-bar-list"></div>
+      <h4 class="section-title">Region</h4>
+      <div id="port-allocation-chart-region" class="allocation-bar-list"></div>
+    </div>
     <div class="table-wrap">
       <table>
         <thead><tr><th colspan="3">Asset Class Breakdown</th></tr><tr><th>Category</th><th>Value</th><th>Alloc</th></tr></thead>
@@ -311,18 +326,111 @@ function renderAccounts(accountRows, accountTotals = {}) {
   if (customAccountSelect) {
     customAccountSelect.innerHTML = accountSelect.innerHTML;
   }
+
+  const accountFilterSelect = byId('port-account-filter');
+  if (accountFilterSelect) {
+    const previous = String(activeAccountFilter || '').trim();
+    accountFilterSelect.innerHTML = '<option value="">All Accounts</option>';
+    for (const account of accounts) {
+      const option = document.createElement('option');
+      option.value = account.id;
+      option.textContent = `${account.name || account.id} (${account.type || 'taxable'})`;
+      accountFilterSelect.appendChild(option);
+    }
+    const validValues = new Set(accounts.map((account) => account.id));
+    activeAccountFilter = validValues.has(previous) ? previous : '';
+    accountFilterSelect.value = activeAccountFilter;
+  }
+}
+
+function filteredHoldingEntries(data) {
+  const holdings = data?.holdings || {};
+  const entries = Object.values(holdings);
+  if (!activeAccountFilter) return entries;
+  return entries.filter((holding) => String(holding?.account || '').trim() === activeAccountFilter);
+}
+
+function breakdownRowsFromEntries(entries, keyField) {
+  const totals = new Map();
+  let totalValue = 0;
+  for (const entry of entries) {
+    const key = String(entry?.[keyField] || 'Unknown').trim() || 'Unknown';
+    const value = Number(entry?.current_value || 0);
+    if (!Number.isFinite(value) || value <= 0) continue;
+    totalValue += value;
+    totals.set(key, Number(totals.get(key) || 0) + value);
+  }
+
+  const rows = [...totals.entries()]
+    .map(([key, value]) => ({
+      key,
+      value,
+      allocation_pct: totalValue > 0 ? (value / totalValue) * 100 : 0,
+    }))
+    .sort((left, right) => right.value - left.value);
+  return rows;
+}
+
+function resolveBreakdownRows(data, entries) {
+  if (!activeAccountFilter) {
+    const breakdowns = data?.allocation_breakdowns || {};
+    return {
+      asset_class: Array.isArray(breakdowns.asset_class) ? breakdowns.asset_class : [],
+      sector: Array.isArray(breakdowns.sector) ? breakdowns.sector : [],
+      region: Array.isArray(breakdowns.region) ? breakdowns.region : [],
+    };
+  }
+  return {
+    asset_class: breakdownRowsFromEntries(entries, 'asset_class'),
+    sector: breakdownRowsFromEntries(entries, 'sector'),
+    region: breakdownRowsFromEntries(entries, 'region'),
+  };
+}
+
+function renderAllocationBars(rows, containerId) {
+  const container = byId(containerId);
+  if (!container) return;
+  const entries = Array.isArray(rows) ? rows : [];
+  if (!entries.length) {
+    container.innerHTML = '<p class="hint tight">No allocation data.</p>';
+    return;
+  }
+
+  const maxAllocation = Math.max(...entries.map((row) => Number(row?.allocation_pct || 0)), 0);
+  container.innerHTML = '';
+  for (const row of entries.slice(0, 8)) {
+    const allocation = Number(row?.allocation_pct || 0);
+    const width = maxAllocation > 0 ? (allocation / maxAllocation) * 100 : 0;
+    const line = document.createElement('div');
+    line.className = 'allocation-bar-row';
+    line.innerHTML = `
+      <span class="allocation-bar-label">${row.key || '-'}</span>
+      <span class="allocation-bar-track"><span class="allocation-bar-fill" style="width:${Math.max(0, Math.min(100, width)).toFixed(2)}%"></span></span>
+      <span class="allocation-bar-metric">${fmtPct(allocation)}</span>`;
+    container.appendChild(line);
+  }
+}
+
+function updateAllocationSummary(filteredEntries) {
+  const summary = byId('port-allocation-summary');
+  if (!summary) return;
+  const totalValue = filteredEntries.reduce((sum, entry) => sum + Number(entry?.current_value || 0), 0);
+  const accountLabelText = activeAccountFilter ? accountLabel(activeAccountFilter) : 'All Accounts';
+  summary.textContent = `${accountLabelText} | Holdings ${filteredEntries.length} | Value ${fmtCurrency(totalValue)}`;
 }
 
 function renderHoldings(data) {
   const tbody = byId('port-holdings-body');
-  const holdings = data.holdings || {};
   const manualPrices = data.manual_prices || {};
   const baseCurrency = String(data.base_currency || 'USD').toUpperCase();
-  const total = data.total_value || 0;
-  const entries = Object.values(holdings).sort((a, b) => (b.current_value || 0) - (a.current_value || 0));
+  const entries = filteredHoldingEntries(data).sort((a, b) => (b.current_value || 0) - (a.current_value || 0));
+  const total = entries.reduce((sum, item) => sum + Number(item.current_value || 0), 0);
+  updateAllocationSummary(entries);
 
   if (!entries.length) {
-    tbody.innerHTML = '<tr><td colspan="12">No holdings. Add transactions to build your portfolio.</td></tr>';
+    tbody.innerHTML = activeAccountFilter
+      ? '<tr><td colspan="12">No holdings for this account filter.</td></tr>'
+      : '<tr><td colspan="12">No holdings. Add transactions to build your portfolio.</td></tr>';
     return;
   }
 
@@ -455,20 +563,26 @@ function renderBreakdownTable(rows, tbodyId) {
 }
 
 function renderBreakdowns(data) {
-  const breakdowns = data.allocation_breakdowns || {};
+  const entries = filteredHoldingEntries(data);
+  const breakdowns = resolveBreakdownRows(data, entries);
   renderBreakdownTable(breakdowns.asset_class, 'port-breakdown-asset-class');
   renderBreakdownTable(breakdowns.sector, 'port-breakdown-sector');
   renderBreakdownTable(breakdowns.region, 'port-breakdown-region');
+  renderAllocationBars(breakdowns.asset_class, 'port-allocation-chart-asset-class');
+  renderAllocationBars(breakdowns.sector, 'port-allocation-chart-sector');
+  renderAllocationBars(breakdowns.region, 'port-allocation-chart-region');
 }
 
 function renderCustomAssets(data) {
   const tbody = byId('port-custom-assets-body');
-  const rows = Object.values(data.holdings_by_symbol || {})
+  const rows = filteredHoldingEntries(data)
     .filter((row) => row?.is_custom_asset || String(row?.data_source || '').toUpperCase() === 'MANUAL')
     .sort((a, b) => (b.current_value || 0) - (a.current_value || 0));
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="6">No custom assets yet.</td></tr>';
+    tbody.innerHTML = activeAccountFilter
+      ? '<tr><td colspan="6">No custom assets for this account filter.</td></tr>'
+      : '<tr><td colspan="6">No custom assets yet.</td></tr>';
     return;
   }
 
@@ -761,6 +875,7 @@ async function loadAll() {
     if (accountResult.status !== 'fulfilled') throw accountResult.reason;
 
     const holdings = holdingsResult.value;
+    latestHoldingsPayload = holdings;
     const txns = txnsResult.value;
     const accountRows = accountResult.value;
     renderAccounts(accountRows || holdings.accounts || [], holdings.account_totals || {});
@@ -1066,6 +1181,14 @@ function applyBenchmarkSymbols() {
   loadAll();
 }
 
+function applyAccountFilter() {
+  activeAccountFilter = String(byId('port-account-filter')?.value || '').trim();
+  if (!latestHoldingsPayload) return;
+  renderHoldings(latestHoldingsPayload);
+  renderBreakdowns(latestHoldingsPayload);
+  renderCustomAssets(latestHoldingsPayload);
+}
+
 async function deleteTxn(id) {
   try {
     await fetchJson(`/api/portfolio/transactions/${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -1081,6 +1204,7 @@ export function init() {
   byId('txn-action').addEventListener('change', syncTxnFieldRequirements);
   byId('port-reload').addEventListener('click', loadAll);
   byId('port-benchmark-apply').addEventListener('click', applyBenchmarkSymbols);
+  byId('port-account-filter').addEventListener('change', applyAccountFilter);
   byId('port-backfill-history-btn').addEventListener('click', backfillHistoryFromHeader);
   byId('port-refresh-prices').addEventListener('click', refreshPrices);
   byId('port-txn-form').addEventListener('submit', addTxn);

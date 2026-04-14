@@ -3,7 +3,7 @@ import { byId, parseOptionalNumericField, formatNumericInput } from './utils.js'
 
 export function emptyFinancialProfile() {
   return {
-    income_items: [], expense_items: [], debt_items: [], goal_items: [],
+    income_items: [], expense_items: [], debt_items: [], goal_items: [], physical_assets: [],
     tax_profile: { filing_status: '', marginal_tax_rate: null, effective_tax_rate: null, state: '' },
     flags: { no_debt: false, no_goals: false },
     notes: '', updated_at: null,
