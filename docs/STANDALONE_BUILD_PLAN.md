@@ -75,6 +75,16 @@ These decisions refine the build plan based on the current repository and upstre
 - Upstream reference usage:
   - aligned field conventions with Ghostfolio import contracts (`apps/api/src/app/import/*`) and import fixtures (`test/import/ok/*.csv`, especially IBKR-style sample)
 
+### 2026-04-14 (Completed - Broker CSV Templates, Phase 1.18 Coverage Expansion)
+- Extended template-aware field/action mappings for the remaining Phase 1.18 broker list:
+  - Robinhood
+  - E*TRADE
+  - Ally
+  - M1
+  - Wealthfront
+- Expanded action normalization for broker-specific transaction codes (e.g., `BTO`, `STC`, ACAT/journal transfer aliases, wire/ACH cash movements) to reduce manual CSV cleanup.
+- Added per-template parser tests validating auto-detection and mapped activity output across all listed brokers in `test_csv_importer.py`.
+
 ### 2026-04-14 (Completed - Watchlist Foundation, Ghostfolio-Inspired)
 - Added local watchlist persistence in portfolio storage (`watchlist.json`) with migration-safe payload handling and schema normalization:
   - symbol/data-source identity, note/thesis fields, target price, tags, timestamps

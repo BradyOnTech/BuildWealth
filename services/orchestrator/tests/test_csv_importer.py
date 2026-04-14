@@ -259,6 +259,119 @@ def test_parse_transaction_csv_rejects_unknown_template(tmp_path: Path) -> None:
     assert "Unsupported broker_template" in result.errors[0]
 
 
+def test_parse_transaction_csv_auto_detects_robinhood(tmp_path: Path) -> None:
+    csv_file = tmp_path / "robinhood.csv"
+    csv_file.write_text(
+        "Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount,Account\n"
+        "2026-03-01,2026-03-01,2026-03-03,AAPL,Apple Inc,BTO,2,180,360,RH Taxable\n",
+        encoding="utf-8",
+    )
+
+    result = parse_transaction_csv(
+        file_path=csv_file,
+        default_data_source="YAHOO",
+        default_currency="USD",
+    )
+
+    assert not result.errors
+    assert result.selected_template == "robinhood"
+    assert result.detected_template == "robinhood"
+    assert len(result.activities) == 1
+    assert result.activities[0]["type"] == "BUY"
+    assert result.activities[0]["symbol"] == "AAPL"
+
+
+def test_parse_transaction_csv_auto_detects_etrade(tmp_path: Path) -> None:
+    csv_file = tmp_path / "etrade.csv"
+    csv_file.write_text(
+        "Transaction Date,Transaction Type,Symbol,Description,Quantity,Price,Commission,Net Amount,Account\n"
+        "2026-03-02,Sold,VTI,Vanguard Total Stock Market,1,300,0,300,Etrade Brokerage\n",
+        encoding="utf-8",
+    )
+
+    result = parse_transaction_csv(
+        file_path=csv_file,
+        default_data_source="YAHOO",
+        default_currency="USD",
+    )
+
+    assert not result.errors
+    assert result.selected_template == "etrade"
+    assert result.detected_template == "etrade"
+    assert len(result.activities) == 1
+    assert result.activities[0]["type"] == "SELL"
+    assert result.activities[0]["accountName"] == "Etrade Brokerage"
+
+
+def test_parse_transaction_csv_auto_detects_ally(tmp_path: Path) -> None:
+    csv_file = tmp_path / "ally.csv"
+    csv_file.write_text(
+        "Trade Date,Activity Type,Symbol,Description,Quantity,Price,Amount,Account\n"
+        "2026-03-03,Dividend,SCHD,Schwab US Dividend Equity ETF,,,25.10,Ally IRA\n",
+        encoding="utf-8",
+    )
+
+    result = parse_transaction_csv(
+        file_path=csv_file,
+        default_data_source="YAHOO",
+        default_currency="USD",
+    )
+
+    assert not result.errors
+    assert result.selected_template == "ally"
+    assert result.detected_template == "ally"
+    assert len(result.activities) == 1
+    assert result.activities[0]["type"] == "DIVIDEND"
+    assert result.activities[0]["unitPrice"] == 25.1
+    assert result.activities[0]["quantity"] == 1
+
+
+def test_parse_transaction_csv_auto_detects_m1(tmp_path: Path) -> None:
+    csv_file = tmp_path / "m1.csv"
+    csv_file.write_text(
+        "Date,Activity,Symbol,Description,Shares,Price,Amount,Account\n"
+        "2026-03-04,BUY,QQQ,Invesco QQQ,0.5,430,215,M1 Invest\n",
+        encoding="utf-8",
+    )
+
+    result = parse_transaction_csv(
+        file_path=csv_file,
+        default_data_source="YAHOO",
+        default_currency="USD",
+    )
+
+    assert not result.errors
+    assert result.selected_template == "m1"
+    assert result.detected_template == "m1"
+    assert len(result.activities) == 1
+    assert result.activities[0]["type"] == "BUY"
+    assert result.activities[0]["quantity"] == 0.5
+    assert result.activities[0]["unitPrice"] == 430
+
+
+def test_parse_transaction_csv_auto_detects_wealthfront(tmp_path: Path) -> None:
+    csv_file = tmp_path / "wealthfront.csv"
+    csv_file.write_text(
+        "Date,Account,Type,Symbol,Description,Shares,Price,Amount,Fee\n"
+        "2026-03-05,Wealthfront Taxable,Fee,CASH,Advisory Fee,,,3.25,3.25\n",
+        encoding="utf-8",
+    )
+
+    result = parse_transaction_csv(
+        file_path=csv_file,
+        default_data_source="YAHOO",
+        default_currency="USD",
+    )
+
+    assert not result.errors
+    assert result.selected_template == "wealthfront"
+    assert result.detected_template == "wealthfront"
+    assert len(result.activities) == 1
+    assert result.activities[0]["type"] == "FEE"
+    assert result.activities[0]["symbol"] == "CASH"
+    assert result.activities[0]["unitPrice"] == 3.25
+
+
 def test_list_csv_templates_includes_required_brokers() -> None:
     template_ids = {item["id"] for item in list_csv_templates()}
 
