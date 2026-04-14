@@ -4,7 +4,7 @@ import asyncio
 import json
 import re
 from contextlib import suppress
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +60,8 @@ from buildwealth_orchestrator.schemas import (
     PlanResearchBridgeRequest,
     PlanResearchBridgeResponse,
     PlanResearchBridgePinnedItem,
+    PlanRecommendationClosureSummaryRequest,
+    PlanRecommendationClosureSummaryResponse,
     ScenarioComparisonRow,
     PlanSummary,
     PlanUpdateRequest,
@@ -388,6 +390,8 @@ copilot = FinancialCopilot(
         "- Before applying a high-impact recommendation → call preview_recommendation to inspect scenario and action effects.\n"
         "- After recommendations are applied/rejected, record realized outcomes → call update_recommendation_outcome.\n"
         "- For recommendation calibration and closure tracking quality → call get_recommendation_closure_analytics.\n"
+        "- To persist plan-scoped closure calibration reviews as artifacts/decision-log entries → "
+        "call create_plan_recommendation_closure_summary.\n"
         "- For stock/investment research on one ticker → call research_quote or research_price_history.\n"
         "- For comparing multiple investment candidates → call research_compare, "
         "then call simulate_trade to show how a chosen trade would affect portfolio allocation.\n"
@@ -4316,6 +4320,154 @@ def _normalize_recommendation_closure_statuses(raw_statuses: list[str] | str | N
     return normalized or ["applied", "rejected"]
 
 
+RECOMMENDATION_CALIBRATION_MODEL_VERSION = "calibration_v1"
+
+
+def _parse_utc_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    text = str(value or "").strip()
+    if not text:
+        return None
+    normalized = text.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _calibration_bias_from_gap(mean_gap: float | None) -> str:
+    if mean_gap is None:
+        return "unknown"
+    if mean_gap > 25.0:
+        return "underestimated"
+    if mean_gap < -25.0:
+        return "overestimated"
+    return "neutral"
+
+
+def _build_calibration_row(*, key: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    count = len(rows)
+    with_expected_count = 0
+    with_realized_count = 0
+    measured_count = 0
+    pending_realized_count = 0
+    direction_match_count = 0
+    expected_future_total = 0.0
+    realized_future_total = 0.0
+    future_gap_total = 0.0
+    future_abs_error_total = 0.0
+
+    for row in rows:
+        tracking_status = str(row.get("tracking_status") or "").strip().lower()
+        if tracking_status == "pending_realized":
+            pending_realized_count += 1
+
+        expected_future = _coerce_optional_float(row.get("expected_delta_future_value_usd"))
+        expected_real = _coerce_optional_float(row.get("expected_delta_real_value_usd"))
+        realized_future = _coerce_optional_float(row.get("realized_delta_future_value_usd"))
+        realized_real = _coerce_optional_float(row.get("realized_delta_real_value_usd"))
+        has_expected = expected_future is not None or expected_real is not None
+        has_realized = realized_future is not None or realized_real is not None
+        if has_expected:
+            with_expected_count += 1
+        if has_realized:
+            with_realized_count += 1
+
+        if expected_future is not None:
+            expected_future_total += expected_future
+        if realized_future is not None:
+            realized_future_total += realized_future
+
+        future_gap = _coerce_optional_float(row.get("future_value_gap_usd"))
+        if future_gap is None:
+            continue
+
+        measured_count += 1
+        future_gap_total += future_gap
+        future_abs_error_total += abs(future_gap)
+
+        future_direction_match = row.get("future_value_direction_match")
+        if not isinstance(future_direction_match, bool):
+            if expected_future is not None and realized_future is not None:
+                future_direction_match = _same_direction(expected_future, realized_future)
+            else:
+                future_direction_match = None
+        if bool(future_direction_match):
+            direction_match_count += 1
+
+    realized_coverage_pct = round((with_realized_count / count) * 100.0, 2) if count else 0.0
+    mean_gap = round((future_gap_total / measured_count), 2) if measured_count else None
+    mean_abs_error = round((future_abs_error_total / measured_count), 2) if measured_count else None
+    direction_match_rate = round((direction_match_count / measured_count) * 100.0, 2) if measured_count else None
+
+    return {
+        "key": key,
+        "count": count,
+        "with_expected_count": with_expected_count,
+        "with_realized_count": with_realized_count,
+        "measured_count": measured_count,
+        "pending_realized_count": pending_realized_count,
+        "realized_coverage_pct": realized_coverage_pct,
+        "future_value_direction_match_rate_pct": direction_match_rate,
+        "mean_future_value_gap_usd": mean_gap,
+        "mean_future_value_abs_error_usd": mean_abs_error,
+        "future_value_bias": _calibration_bias_from_gap(mean_gap),
+        "expected_future_value_total_usd": round(expected_future_total, 2),
+        "realized_future_value_total_usd": round(realized_future_total, 2),
+        "future_value_gap_total_usd": round(future_gap_total, 2),
+        "future_value_abs_error_total_usd": round(future_abs_error_total, 2),
+    }
+
+
+def _build_segmented_calibration_rows(
+    *,
+    rows: list[dict[str, Any]],
+    key_field: str,
+) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        key = str(row.get(key_field) or "unknown").strip().lower() or "unknown"
+        grouped.setdefault(key, []).append(row)
+
+    summary_rows = [
+        _build_calibration_row(key=key, rows=group_rows)
+        for key, group_rows in grouped.items()
+    ]
+    summary_rows.sort(key=lambda item: (-int(item.get("count") or 0), str(item.get("key") or "")))
+    return summary_rows
+
+
+def _build_calibration_windows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    now = utc_now()
+    windows: list[tuple[str, int | None]] = [
+        ("30d", 30),
+        ("90d", 90),
+        ("all", None),
+    ]
+    payload: list[dict[str, Any]] = []
+    for window_label, days in windows:
+        if days is None:
+            window_rows = list(rows)
+        else:
+            cutoff = now - timedelta(days=days)
+            window_rows = []
+            for row in rows:
+                resolved_at = _parse_utc_datetime(row.get("resolved_at") or row.get("updated_at"))
+                if resolved_at is not None and resolved_at >= cutoff:
+                    window_rows.append(row)
+        summary = _build_calibration_row(key=window_label, rows=window_rows)
+        summary["window"] = window_label
+        summary["window_days"] = days
+        payload.append(summary)
+    return payload
+
+
 def update_recommendation_outcome(
     recommendation_id: str,
     request: RecommendationOutcomeUpdateRequest,
@@ -4426,8 +4578,10 @@ def build_recommendation_closure_analytics_payload(
     limit: int = 200,
     statuses: list[str] | str | None = None,
     include_pending_realized: bool = True,
+    plan_id: str | None = None,
 ) -> dict[str, Any]:
     status_filters = _normalize_recommendation_closure_statuses(statuses)
+    resolved_plan_id = str(plan_id or "").strip() or None
     rows = recommendation_inbox.list(
         limit=None,
         status=None,
@@ -4439,6 +4593,12 @@ def build_recommendation_closure_analytics_payload(
         for row in rows
         if str(row.get("status") or "").strip().lower() in set(status_filters)
     ]
+    if resolved_plan_id is not None:
+        closed_rows = [
+            row
+            for row in closed_rows
+            if str(row.get("plan_id") or "").strip() == resolved_plan_id
+        ]
     closed_rows.sort(
         key=lambda row: (
             str(row.get("resolved_at") or row.get("updated_at") or ""),
@@ -4541,6 +4701,16 @@ def build_recommendation_closure_analytics_payload(
     coverage_pct = round((with_realized_count / count) * 100.0, 2) if count else 0.0
     direction_match_rate_pct = round((direction_match_count / measured_count) * 100.0, 2) if measured_count else None
     mean_abs_error = round((future_abs_error_total / measured_count), 2) if measured_count else None
+    calibration_summary = _build_calibration_row(key="all", rows=selected_rows)
+    calibration_by_type = _build_segmented_calibration_rows(
+        rows=selected_rows,
+        key_field="recommendation_type",
+    )
+    calibration_by_source = _build_segmented_calibration_rows(
+        rows=selected_rows,
+        key_field="source",
+    )
+    calibration_windows = _build_calibration_windows(selected_rows)
 
     def _counter_to_rows(counter: dict[str, int]) -> list[dict[str, Any]]:
         return [
@@ -4551,8 +4721,14 @@ def build_recommendation_closure_analytics_payload(
     return {
         "generated_at": context_utc_now_iso(),
         "count": count,
+        "plan_id": resolved_plan_id,
         "statuses": status_filters,
         "include_pending_realized": include_pending_realized,
+        "calibration_model_version": RECOMMENDATION_CALIBRATION_MODEL_VERSION,
+        "calibration_summary": calibration_summary,
+        "calibration_by_type": calibration_by_type,
+        "calibration_by_source": calibration_by_source,
+        "calibration_windows": calibration_windows,
         "summary": {
             "closed_count": count,
             "with_expected_count": with_expected_count,
@@ -4572,6 +4748,190 @@ def build_recommendation_closure_analytics_payload(
         "by_source": _counter_to_rows(source_counts),
         "items": selected_rows,
     }
+
+
+def _format_percent(value: Any) -> str:
+    parsed = _coerce_optional_float(value)
+    if parsed is None:
+        return "n/a"
+    return f"{parsed:.2f}%"
+
+
+def _build_plan_recommendation_closure_markdown(
+    *,
+    plan_detail: dict[str, Any],
+    analytics_payload: dict[str, Any],
+) -> str:
+    plan_id = str(plan_detail.get("id") or "").strip()
+    plan_title = str(plan_detail.get("title") or "Untitled Plan").strip() or "Untitled Plan"
+    summary = analytics_payload.get("summary") if isinstance(analytics_payload.get("summary"), dict) else {}
+    calibration_summary = (
+        analytics_payload.get("calibration_summary")
+        if isinstance(analytics_payload.get("calibration_summary"), dict)
+        else {}
+    )
+    calibration_by_type = (
+        analytics_payload.get("calibration_by_type")
+        if isinstance(analytics_payload.get("calibration_by_type"), list)
+        else []
+    )
+    calibration_by_source = (
+        analytics_payload.get("calibration_by_source")
+        if isinstance(analytics_payload.get("calibration_by_source"), list)
+        else []
+    )
+    calibration_windows = (
+        analytics_payload.get("calibration_windows")
+        if isinstance(analytics_payload.get("calibration_windows"), list)
+        else []
+    )
+    items = analytics_payload.get("items") if isinstance(analytics_payload.get("items"), list) else []
+    measured_items = [
+        item
+        for item in items
+        if isinstance(item, dict) and _coerce_optional_float(item.get("future_value_gap_usd")) is not None
+    ]
+    measured_items.sort(
+        key=lambda item: abs(_coerce_optional_float(item.get("future_value_gap_usd")) or 0.0),
+        reverse=True,
+    )
+
+    lines = [
+        f"# Recommendation Closure Analytics - {plan_title}",
+        "",
+        f"- Plan ID: `{plan_id}`",
+        f"- Generated At: `{analytics_payload.get('generated_at')}`",
+        f"- Statuses: `{', '.join(analytics_payload.get('statuses') or []) or 'n/a'}`",
+        f"- Closed Count: `{summary.get('closed_count', 0)}`",
+        f"- Measured Count: `{summary.get('measured_count', 0)}`",
+        f"- Realized Coverage: `{_format_percent(summary.get('realized_coverage_pct'))}`",
+        f"- Direction Match Rate: `{_format_percent(summary.get('future_value_direction_match_rate_pct'))}`",
+        f"- Mean Absolute Error (Future Value): `{_format_currency_amount(summary.get('mean_future_value_abs_error_usd'))}`",
+        f"- Calibration Bias: `{calibration_summary.get('future_value_bias') or 'unknown'}`",
+        "",
+        "## Calibration by Type",
+        "",
+        "| Type | Count | Measured | Pending | Match Rate | Mean Abs Error |",
+        "| --- | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    if calibration_by_type:
+        for row in calibration_by_type[:8]:
+            if not isinstance(row, dict):
+                continue
+            lines.append(
+                f"| `{row.get('key')}` | {int(row.get('count') or 0)} | {int(row.get('measured_count') or 0)} | "
+                f"{int(row.get('pending_realized_count') or 0)} | {_format_percent(row.get('future_value_direction_match_rate_pct'))} | "
+                f"{_format_currency_amount(row.get('mean_future_value_abs_error_usd'))} |"
+            )
+    else:
+        lines.append("| `n/a` | 0 | 0 | 0 | n/a | n/a |")
+
+    lines.extend(
+        [
+            "",
+            "## Calibration by Source",
+            "",
+            "| Source | Count | Measured | Pending | Match Rate | Mean Abs Error |",
+            "| --- | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    if calibration_by_source:
+        for row in calibration_by_source[:8]:
+            if not isinstance(row, dict):
+                continue
+            lines.append(
+                f"| `{row.get('key')}` | {int(row.get('count') or 0)} | {int(row.get('measured_count') or 0)} | "
+                f"{int(row.get('pending_realized_count') or 0)} | {_format_percent(row.get('future_value_direction_match_rate_pct'))} | "
+                f"{_format_currency_amount(row.get('mean_future_value_abs_error_usd'))} |"
+            )
+    else:
+        lines.append("| `n/a` | 0 | 0 | 0 | n/a | n/a |")
+
+    lines.extend(
+        [
+            "",
+            "## Calibration Windows",
+            "",
+            "| Window | Count | Measured | Match Rate | Mean Abs Error |",
+            "| --- | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    if calibration_windows:
+        for row in calibration_windows[:6]:
+            if not isinstance(row, dict):
+                continue
+            lines.append(
+                f"| `{row.get('window') or row.get('key')}` | {int(row.get('count') or 0)} | "
+                f"{int(row.get('measured_count') or 0)} | {_format_percent(row.get('future_value_direction_match_rate_pct'))} | "
+                f"{_format_currency_amount(row.get('mean_future_value_abs_error_usd'))} |"
+            )
+    else:
+        lines.append("| `n/a` | 0 | 0 | n/a | n/a |")
+
+    lines.extend(["", "## Largest Measured Future-Value Gaps", ""])
+    if measured_items:
+        for item in measured_items[:10]:
+            lines.append(
+                f"- `{item.get('id')}` {item.get('title')}: "
+                f"gap {_format_currency_amount(item.get('future_value_gap_usd'))}, "
+                f"expected {_format_currency_amount(item.get('expected_delta_future_value_usd'))}, "
+                f"realized {_format_currency_amount(item.get('realized_delta_future_value_usd'))}, "
+                f"type `{item.get('recommendation_type')}`, source `{item.get('source')}`."
+            )
+    else:
+        lines.append("- No measured future-value gaps yet.")
+
+    return "\n".join(lines)
+
+
+def create_plan_recommendation_closure_summary(
+    *,
+    plan_id: str,
+    request: PlanRecommendationClosureSummaryRequest,
+) -> PlanRecommendationClosureSummaryResponse:
+    plan_detail = plan_workspace.get_plan(plan_id)
+    analytics_payload = build_recommendation_closure_analytics_payload(
+        limit=request.limit,
+        statuses=request.statuses,
+        include_pending_realized=request.include_pending_realized,
+        plan_id=plan_id,
+    )
+    analytics = RecommendationClosureAnalyticsResponse(**analytics_payload)
+
+    decision_summary = (
+        "Generated recommendation closure analytics summary "
+        f"({analytics.summary.get('closed_count', 0)} closed, {analytics.summary.get('measured_count', 0)} measured)."
+    )
+
+    artifact_summary: PlanArtifactSummary | None = None
+    if request.write_artifact:
+        markdown = _build_plan_recommendation_closure_markdown(
+            plan_detail=plan_detail,
+            analytics_payload=analytics_payload,
+        )
+        artifact_payload = plan_workspace.write_artifact(
+            plan_id=plan_id,
+            title=f"Recommendation Closure Analytics ({utc_now().date().isoformat()})",
+            markdown=markdown,
+            kind="recommendation_closure_analytics",
+        )
+        artifact_summary = PlanArtifactSummary(**artifact_payload)
+        plan_workspace.append_decision(
+            plan_id=plan_id,
+            summary=decision_summary,
+            rationale=(
+                "Captured closure calibration metrics by type/source and trend windows "
+                "for longitudinal decision-review workflows."
+            ),
+            status="accepted",
+        )
+
+    return PlanRecommendationClosureSummaryResponse(
+        plan_id=plan_id,
+        analytics=analytics,
+        artifact=artifact_summary,
+        decision_summary=decision_summary,
+    )
 
 
 def archive_recommendation(recommendation_id: str, note: str = "") -> RecommendationActionResponse:
@@ -6116,11 +6476,42 @@ async def tool_get_recommendation_closure_analytics(arguments: dict[str, object]
     else:
         statuses = None
     include_pending_realized = _coerce_bool(arguments.get("include_pending_realized"), True)
+    kwargs: dict[str, Any] = {
+        "limit": limit,
+        "statuses": statuses,
+        "include_pending_realized": include_pending_realized,
+    }
+    plan_id = str(arguments.get("plan_id") or "").strip()
+    if plan_id:
+        kwargs["plan_id"] = plan_id
     return build_recommendation_closure_analytics_payload(
+        **kwargs,
+    )
+
+
+async def tool_create_plan_recommendation_closure_summary(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+    limit = max(1, min(_coerce_int(arguments.get("limit"), 200), 1000))
+    raw_statuses = arguments.get("statuses")
+    statuses: list[str] = []
+    if isinstance(raw_statuses, list):
+        statuses = [str(item or "") for item in raw_statuses]
+    elif isinstance(raw_statuses, str):
+        statuses = [item.strip() for item in raw_statuses.split(",") if item.strip()]
+    if not statuses:
+        statuses = ["applied", "rejected"]
+
+    request = PlanRecommendationClosureSummaryRequest(
         limit=limit,
         statuses=statuses,
-        include_pending_realized=include_pending_realized,
+        include_pending_realized=_coerce_bool(arguments.get("include_pending_realized"), True),
+        write_artifact=_coerce_bool(arguments.get("write_artifact"), True),
     )
+    response = create_plan_recommendation_closure_summary(
+        plan_id=plan_id,
+        request=request,
+    )
+    return response.model_dump(mode="json")
 
 
 async def tool_pin_watchlist_research_to_plan(arguments: dict[str, object]) -> dict[str, object]:
@@ -7908,12 +8299,32 @@ def configure_copilot_tools() -> None:
             "type": "object",
             "properties": {
                 "limit": {"type": "integer"},
+                "plan_id": {"type": "string"},
                 "statuses": {"type": "array", "items": {"type": "string"}},
                 "include_pending_realized": {"type": "boolean"},
             },
             "additionalProperties": False,
         },
         handler=tool_get_recommendation_closure_analytics,
+    )
+    copilot.register_tool(
+        name="create_plan_recommendation_closure_summary",
+        description=(
+            "Generate a plan-scoped recommendation closure calibration summary and optionally "
+            "persist it as a plan artifact for longitudinal decision-review workflows."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                "limit": {"type": "integer"},
+                "statuses": {"type": "array", "items": {"type": "string"}},
+                "include_pending_realized": {"type": "boolean"},
+                "write_artifact": {"type": "boolean"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_create_plan_recommendation_closure_summary,
     )
     copilot.register_tool(
         name="run_sync",
@@ -9210,11 +9621,13 @@ def get_recommendation_closure_analytics(
     limit: int = 200,
     statuses: str = "applied,rejected",
     include_pending_realized: bool = True,
+    plan_id: str | None = None,
 ) -> RecommendationClosureAnalyticsResponse:
     payload = build_recommendation_closure_analytics_payload(
         limit=limit,
         statuses=statuses,
         include_pending_realized=include_pending_realized,
+        plan_id=plan_id,
     )
     return RecommendationClosureAnalyticsResponse(**payload)
 
@@ -9938,6 +10351,25 @@ def activate_plan(plan_id: str) -> PlanSummary:
     except PlanNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return PlanSummary(**summary)
+
+
+@app.post(
+    "/api/plans/{plan_id}/recommendation-closure-summary",
+    response_model=PlanRecommendationClosureSummaryResponse,
+)
+def create_plan_recommendation_closure_summary_route(
+    plan_id: str,
+    request: PlanRecommendationClosureSummaryRequest,
+) -> PlanRecommendationClosureSummaryResponse:
+    try:
+        return create_plan_recommendation_closure_summary(
+            plan_id=plan_id,
+            request=request,
+        )
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/plans/{plan_id}/decisions", response_model=PlanDetailResponse)

@@ -77,6 +77,7 @@ function resetClosureAnalytics() {
 function renderClosureAnalytics(payload) {
   state.recommendationClosureAnalytics = payload && typeof payload === 'object' ? payload : null;
   const summary = payload && typeof payload.summary === 'object' ? payload.summary : {};
+  const calibrationSummary = payload && typeof payload.calibration_summary === 'object' ? payload.calibration_summary : {};
   const count = Number(payload?.count || 0);
   const measured = Number(summary?.measured_count || 0);
   const coverage = Number(summary?.realized_coverage_pct || 0);
@@ -90,7 +91,19 @@ function renderClosureAnalytics(payload) {
   ];
   if (Number.isFinite(directionRate)) summaryParts.push(`Direction match: ${directionRate.toFixed(1)}%`);
   if (Number.isFinite(meanAbsError)) summaryParts.push(`Mean abs error: ${fmtCurrency(meanAbsError)}`);
+  if (calibrationSummary?.future_value_bias) {
+    summaryParts.push(`Bias: ${String(calibrationSummary.future_value_bias).replace('_', ' ')}`);
+  }
   byId('recommendation-analytics-summary').textContent = summaryParts.join(' • ');
+
+  const fmtPct = (value) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? `${num.toFixed(1)}%` : 'n/a';
+  };
+  const fmtMoney = (value) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? fmtCurrency(num) : 'n/a';
+  };
 
   const cards = [];
   const byStatus = Array.isArray(payload?.by_status) ? payload.by_status : [];
@@ -104,6 +117,18 @@ function renderClosureAnalytics(payload) {
   const bySource = Array.isArray(payload?.by_source) ? payload.by_source : [];
   if (bySource.length) {
     cards.push(`<article class="list-item"><p class="list-item-title">By Source</p><p class="list-item-meta">${bySource.slice(0, 4).map((row) => `${row.key}: ${row.count}`).join(' • ')}</p></article>`);
+  }
+  const calibrationByType = Array.isArray(payload?.calibration_by_type) ? payload.calibration_by_type : [];
+  if (calibrationByType.length) {
+    cards.push(`<article class="list-item"><p class="list-item-title">Calibration by Type</p><p class="list-item-meta">${calibrationByType.slice(0, 3).map((row) => `${row.key}: measured ${row.measured_count}/${row.count}, match ${fmtPct(row.future_value_direction_match_rate_pct)}, MAE ${fmtMoney(row.mean_future_value_abs_error_usd)}`).join(' • ')}</p></article>`);
+  }
+  const calibrationBySource = Array.isArray(payload?.calibration_by_source) ? payload.calibration_by_source : [];
+  if (calibrationBySource.length) {
+    cards.push(`<article class="list-item"><p class="list-item-title">Calibration by Source</p><p class="list-item-meta">${calibrationBySource.slice(0, 3).map((row) => `${row.key}: measured ${row.measured_count}/${row.count}, match ${fmtPct(row.future_value_direction_match_rate_pct)}, MAE ${fmtMoney(row.mean_future_value_abs_error_usd)}`).join(' • ')}</p></article>`);
+  }
+  const calibrationWindows = Array.isArray(payload?.calibration_windows) ? payload.calibration_windows : [];
+  if (calibrationWindows.length) {
+    cards.push(`<article class="list-item"><p class="list-item-title">Calibration Trend Windows</p><p class="list-item-meta">${calibrationWindows.slice(0, 3).map((row) => `${row.window || row.key}: measured ${row.measured_count}/${row.count}, match ${fmtPct(row.future_value_direction_match_rate_pct)}, MAE ${fmtMoney(row.mean_future_value_abs_error_usd)}`).join(' • ')}</p></article>`);
   }
 
   byId('recommendation-analytics-details').innerHTML = cards.length
@@ -322,7 +347,13 @@ function renderTable() {
 }
 
 async function loadClosureAnalytics() {
-  const payload = await fetchJson('/api/recommendations/closure-analytics?limit=200&statuses=applied,rejected&include_pending_realized=true');
+  const plan = byId('recommendation-plan-filter').value || '';
+  const params = new URLSearchParams();
+  params.set('limit', '200');
+  params.set('statuses', 'applied,rejected');
+  params.set('include_pending_realized', 'true');
+  if (plan) params.set('plan_id', plan);
+  const payload = await fetchJson(`/api/recommendations/closure-analytics?${params.toString()}`);
   renderClosureAnalytics(payload && typeof payload === 'object' ? payload : {});
 }
 
@@ -339,9 +370,14 @@ async function load() {
   if (status === 'all') params.set('include_archived', 'true');
   else params.set('status', status);
   if (plan) params.set('plan_id', plan);
+  const analyticsParams = new URLSearchParams();
+  analyticsParams.set('limit', '200');
+  analyticsParams.set('statuses', 'applied,rejected');
+  analyticsParams.set('include_pending_realized', 'true');
+  if (plan) analyticsParams.set('plan_id', plan);
   const [recommendationsPayload, analyticsPayload] = await Promise.all([
     fetchJson(`/api/recommendations?${params}`),
-    fetchJson('/api/recommendations/closure-analytics?limit=200&statuses=applied,rejected&include_pending_realized=true'),
+    fetchJson(`/api/recommendations/closure-analytics?${analyticsParams.toString()}`),
   ]);
   state.recommendations = Array.isArray(recommendationsPayload) ? recommendationsPayload : [];
   renderClosureAnalytics(analyticsPayload && typeof analyticsPayload === 'object' ? analyticsPayload : {});

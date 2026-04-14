@@ -1120,9 +1120,15 @@ class RecommendationPreviewResponse(BaseModel):
 class RecommendationClosureAnalyticsResponse(BaseModel):
     generated_at: datetime
     count: int = 0
+    plan_id: str | None = None
     statuses: list[str] = Field(default_factory=list)
     include_pending_realized: bool = True
     summary: dict[str, Any] = Field(default_factory=dict)
+    calibration_model_version: str = "calibration_v1"
+    calibration_summary: dict[str, Any] = Field(default_factory=dict)
+    calibration_by_type: list[dict[str, Any]] = Field(default_factory=list)
+    calibration_by_source: list[dict[str, Any]] = Field(default_factory=list)
+    calibration_windows: list[dict[str, Any]] = Field(default_factory=list)
     by_status: list[dict[str, Any]] = Field(default_factory=list)
     by_type: list[dict[str, Any]] = Field(default_factory=list)
     by_source: list[dict[str, Any]] = Field(default_factory=list)
@@ -1586,6 +1592,20 @@ class PlanArtifactResponse(BaseModel):
     title: str
     created_at: datetime
     content: str
+
+
+class PlanRecommendationClosureSummaryRequest(BaseModel):
+    limit: int = Field(default=200, ge=1, le=1000)
+    statuses: list[str] = Field(default_factory=lambda: ["applied", "rejected"])
+    include_pending_realized: bool = True
+    write_artifact: bool = True
+
+
+class PlanRecommendationClosureSummaryResponse(BaseModel):
+    plan_id: str
+    analytics: RecommendationClosureAnalyticsResponse
+    artifact: PlanArtifactSummary | None = None
+    decision_summary: str = ""
 
 
 class PlanDetailResponse(BaseModel):

@@ -154,6 +154,28 @@ def test_build_recommendation_closure_analytics_payload_summarizes_outcomes(
     assert summary["pending_realized_count"] == 1
     assert summary["future_value_gap_total_usd"] == 250.0
     assert summary["future_value_direction_match_rate_pct"] == 50.0
+    assert payload["calibration_model_version"] == "calibration_v1"
+
+    calibration_summary = payload["calibration_summary"]
+    assert calibration_summary["count"] == 3
+    assert calibration_summary["measured_count"] == 2
+    assert calibration_summary["future_value_direction_match_rate_pct"] == 50.0
+    assert calibration_summary["mean_future_value_abs_error_usd"] == 325.0
+    assert calibration_summary["future_value_bias"] == "underestimated"
+
+    by_type = {row["key"]: row for row in payload["calibration_by_type"]}
+    assert by_type["plan_settings_update"]["future_value_direction_match_rate_pct"] == 100.0
+    assert by_type["workflow_action"]["future_value_direction_match_rate_pct"] == 0.0
+    assert by_type["general"]["pending_realized_count"] == 1
+    assert by_type["general"]["measured_count"] == 0
+
+    by_source = {row["key"]: row for row in payload["calibration_by_source"]}
+    assert by_source["copilot"]["measured_count"] == 2
+    assert by_source["workflow:daily_review"]["pending_realized_count"] == 1
+
+    windows = {row["window"]: row for row in payload["calibration_windows"]}
+    assert windows["all"]["count"] == 3
+    assert windows["all"]["measured_count"] == 2
 
     measured_only = main.build_recommendation_closure_analytics_payload(
         limit=200,
@@ -161,3 +183,109 @@ def test_build_recommendation_closure_analytics_payload_summarizes_outcomes(
         include_pending_realized=False,
     )
     assert measured_only["count"] == 2
+
+
+def test_build_recommendation_closure_analytics_payload_filters_by_plan_id(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    inbox.create(
+        title="Plan A Action",
+        detail="Measured in plan A.",
+        recommendation_type="plan_settings_update",
+        source="copilot",
+        plan_id="plan-a",
+        status="applied",
+        action_payload={
+            "decision_closure": {
+                "expected_outcome": {"expected_delta_future_value_usd": 1000.0},
+                "realized_outcome": {"realized_delta_future_value_usd": 900.0},
+                "expected_vs_realized": {"status": "measured", "future_value_gap_usd": -100.0},
+            }
+        },
+    )
+    inbox.create(
+        title="Plan B Action",
+        detail="Measured in plan B.",
+        recommendation_type="general",
+        source="manual-ui",
+        plan_id="plan-b",
+        status="rejected",
+        action_payload={
+            "decision_closure": {
+                "expected_outcome": {"expected_delta_future_value_usd": -300.0},
+                "realized_outcome": {"realized_delta_future_value_usd": -250.0},
+                "expected_vs_realized": {"status": "measured", "future_value_gap_usd": 50.0},
+            }
+        },
+    )
+
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    payload = main.build_recommendation_closure_analytics_payload(
+        limit=200,
+        statuses=["applied", "rejected"],
+        include_pending_realized=True,
+        plan_id="plan-a",
+    )
+
+    assert payload["plan_id"] == "plan-a"
+    assert payload["count"] == 1
+    assert payload["items"][0]["title"] == "Plan A Action"
+
+
+def test_create_plan_recommendation_closure_summary_writes_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = PlanWorkspace(tmp_path / "plans")
+    plan = workspace.create_plan(title="Closure Summary Plan")
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    inbox.create(
+        title="Measured Applied",
+        detail="Measured recommendation for plan closure summary.",
+        recommendation_type="plan_settings_update",
+        source="copilot",
+        plan_id=plan["id"],
+        status="applied",
+        action_payload={
+            "decision_closure": {
+                "expected_outcome": {"expected_delta_future_value_usd": 1200.0},
+                "realized_outcome": {"realized_delta_future_value_usd": 900.0},
+                "expected_vs_realized": {
+                    "status": "measured",
+                    "future_value_gap_usd": -300.0,
+                    "future_value_direction_match": True,
+                },
+            }
+        },
+    )
+
+    monkeypatch.setattr(main, "plan_workspace", workspace)
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    response = main.create_plan_recommendation_closure_summary(
+        plan_id=plan["id"],
+        request=main.PlanRecommendationClosureSummaryRequest(
+            limit=200,
+            statuses=["applied", "rejected"],
+            include_pending_realized=True,
+            write_artifact=True,
+        ),
+    )
+
+    assert response.plan_id == plan["id"]
+    assert response.analytics.plan_id == plan["id"]
+    assert response.analytics.count == 1
+    assert response.artifact is not None
+    assert response.decision_summary.startswith("Generated recommendation closure analytics summary")
+
+    artifact = workspace.read_artifact(plan["id"], response.artifact.id)
+    assert "Recommendation Closure Analytics" in artifact["title"]
+    assert "Calibration by Type" in artifact["content"]
+
+    refreshed_plan = workspace.get_plan(plan["id"])
+    assert any(
+        str(decision.get("summary") or "").startswith("Generated recommendation closure analytics summary")
+        for decision in refreshed_plan.get("decisions", [])
+    )

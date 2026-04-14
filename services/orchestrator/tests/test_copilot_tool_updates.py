@@ -23,6 +23,7 @@ def test_copilot_registry_includes_phase_3_5_tools() -> None:
         "research_watchlist_rank",
         "update_recommendation_outcome",
         "get_recommendation_closure_analytics",
+        "create_plan_recommendation_closure_summary",
         "preview_recommendation",
     }
     assert required_tools <= set(main.copilot.tools.keys())
@@ -79,8 +80,19 @@ def test_get_recommendation_closure_analytics_tool_contract() -> None:
     tool = main.copilot.tools["get_recommendation_closure_analytics"]
     properties = tool.parameters.get("properties", {})
     assert "limit" in properties
+    assert "plan_id" in properties
     assert "statuses" in properties
     assert "include_pending_realized" in properties
+
+
+def test_create_plan_recommendation_closure_summary_tool_contract() -> None:
+    tool = main.copilot.tools["create_plan_recommendation_closure_summary"]
+    properties = tool.parameters.get("properties", {})
+    assert "plan_id" in properties
+    assert "limit" in properties
+    assert "statuses" in properties
+    assert "include_pending_realized" in properties
+    assert "write_artifact" in properties
 
 
 def test_preview_recommendation_tool_contract() -> None:
@@ -559,6 +571,95 @@ def test_tool_get_recommendation_closure_analytics_calls_payload_builder(
 
     assert payload["count"] == 2
     assert payload["summary"]["measured_count"] == 1
+
+
+def test_tool_get_recommendation_closure_analytics_passes_plan_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_build(
+        *,
+        limit: int,
+        statuses,
+        include_pending_realized: bool,
+        plan_id: str | None = None,
+    ) -> dict[str, object]:
+        assert limit == 50
+        assert statuses == ["applied", "rejected"]
+        assert include_pending_realized is True
+        assert plan_id == "plan-123"
+        return {
+            "generated_at": "2026-04-14T00:00:00+00:00",
+            "count": 1,
+            "plan_id": "plan-123",
+            "statuses": ["applied", "rejected"],
+            "include_pending_realized": True,
+            "summary": {"measured_count": 1},
+            "by_status": [{"key": "applied", "count": 1}],
+            "by_type": [{"key": "plan_settings_update", "count": 1}],
+            "by_source": [{"key": "copilot", "count": 1}],
+            "items": [],
+        }
+
+    monkeypatch.setattr(main, "build_recommendation_closure_analytics_payload", fake_build)
+    payload = asyncio.run(
+        main.tool_get_recommendation_closure_analytics(
+            {
+                "limit": 50,
+                "plan_id": "plan-123",
+                "statuses": ["applied", "rejected"],
+                "include_pending_realized": True,
+            }
+        )
+    )
+
+    assert payload["count"] == 1
+    assert payload["plan_id"] == "plan-123"
+
+
+def test_tool_create_plan_recommendation_closure_summary_calls_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_create(
+        *,
+        plan_id: str,
+        request: main.PlanRecommendationClosureSummaryRequest,
+    ) -> main.PlanRecommendationClosureSummaryResponse:
+        assert plan_id == "plan-xyz"
+        assert request.limit == 120
+        assert request.statuses == ["applied", "rejected"]
+        assert request.include_pending_realized is False
+        assert request.write_artifact is False
+        return main.PlanRecommendationClosureSummaryResponse(
+            plan_id=plan_id,
+            analytics=main.RecommendationClosureAnalyticsResponse(
+                generated_at="2026-04-14T00:00:00+00:00",
+                count=2,
+                plan_id=plan_id,
+                statuses=["applied", "rejected"],
+                include_pending_realized=False,
+                summary={"measured_count": 1},
+            ),
+            artifact=None,
+            decision_summary="Generated recommendation closure analytics summary (2 closed, 1 measured).",
+        )
+
+    monkeypatch.setattr(main, "resolve_plan_id_or_active", lambda value: "plan-xyz")
+    monkeypatch.setattr(main, "create_plan_recommendation_closure_summary", fake_create)
+
+    payload = asyncio.run(
+        main.tool_create_plan_recommendation_closure_summary(
+            {
+                "plan_id": "plan-xyz",
+                "limit": 120,
+                "statuses": ["applied", "rejected"],
+                "include_pending_realized": False,
+                "write_artifact": False,
+            }
+        )
+    )
+
+    assert payload["plan_id"] == "plan-xyz"
+    assert payload["analytics"]["count"] == 2
 
 
 def test_tool_add_timeline_event_appends_event_and_preserves_retirement_payload(

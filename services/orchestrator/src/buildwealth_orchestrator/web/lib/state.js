@@ -26,6 +26,7 @@ export const state = {
   recommendationEditingId: null,
   recommendationPreview: null,
   recommendationClosureAnalytics: null,
+  planClosureSummary: null,
   researchCompare: null,
   researchDossier: null,
 };

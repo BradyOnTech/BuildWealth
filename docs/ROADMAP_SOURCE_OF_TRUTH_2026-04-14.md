@@ -10,6 +10,46 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-14 (Completed - Phase 4.2 Follow-up, Plan Workspace Closure-Analytics Artifacts)
+1. Added plan-scoped closure analytics summaries for longitudinal review workflows:
+- closure analytics now supports `plan_id` scoping in both API and Copilot tool surfaces.
+2. Added one-click plan summary artifact generation:
+- new endpoint `POST /api/plans/{plan_id}/recommendation-closure-summary`
+- generates plan-scoped calibration summary payload and optionally persists markdown artifact (`recommendation_closure_analytics`)
+- writes a plan decision-log entry documenting the review event.
+3. Added Copilot execution surface:
+- new tool `create_plan_recommendation_closure_summary` to create plan-scoped closure calibration artifacts directly from chat.
+4. Expanded Plan Workspace UI:
+- added “Closure Calibration Summary” panel in plan editor
+- added one-click “Generate Artifact” control that writes artifact + decision log and renders calibration stats inline.
+5. Source-provenance note:
+- summary/calibration packaging follows Ignidash-style analyzer segment reporting
+- artifact and audit trail behavior remains aligned with Ghostfolio-style explainability and review traceability conventions.
+6. Added regression coverage:
+- plan-scoped filtering and summary artifact generation tests in `test_recommendation_closure_analytics.py`
+- Copilot contract/invocation coverage for new plan-closure-summary tool in `test_copilot_tool_updates.py`.
+7. Verification: `pytest -q services/orchestrator/tests` passes (`413 passed`).
+
+### 2026-04-14 (Completed - Phase 4.2 Follow-up, Recommendation Calibration Reporting by Type/Source)
+1. Expanded closure analytics payload into a first-class calibration report:
+- added `calibration_model_version` (`calibration_v1`)
+- added `calibration_summary` with measured coverage, directional-match quality, error metrics, and bias classification
+- added `calibration_by_type` and `calibration_by_source` with per-segment measured count, match rate, MAE, and aggregate gap/error totals.
+2. Added rolling calibration window summaries:
+- `calibration_windows` now returns `30d`, `90d`, and `all` slices for quick trend monitoring and later dashboard/workspace visualizations.
+3. Preserved backward compatibility:
+- existing `summary`, `by_status`, `by_type`, `by_source`, and `items` fields remain intact
+- closure analytics route and Copilot tool contract are unchanged (`get_recommendation_closure_analytics`), with richer response content.
+4. Updated Inbox UI analytics panel:
+- now surfaces calibration-by-type and calibration-by-source quality stats
+- adds calibration window trend card and calibration bias in the analytics summary line.
+5. Source-provenance note:
+- calibration packaging follows Ignidash-style analyzer segment/quality reporting patterns
+- actionable explainability remains aligned with Ghostfolio-style transparent metric surfaces.
+6. Added regression coverage:
+- extended `test_recommendation_closure_analytics.py` assertions for calibration summary, segmented calibration rows, and calibration windows.
+7. Verification: `pytest -q services/orchestrator/tests` passes (`408 passed`).
+
 ### 2026-04-14 (Completed - Phase 4.2 Slice 4, Top 3 Next Actions in Dashboard and Plan Workspace)
 1. Added shared Top Next Actions contract:
 - new `TopNextAction` schema for ranked action cards (priority, type, source, score/rank, score reasons, action hint)
@@ -396,9 +436,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Add recommendation calibration reporting (by recommendation class/source) to improve decision loop quality (Phase 4.2 follow-up).
-2. Extend closure analytics into plan workspace artifact summaries for longitudinal decision-review workflows.
-3. Add recommendation quality trend views in dashboard/plan workspace (rolling 30/90-day directional match and coverage rates).
+1. Add recommendation quality trend views in dashboard/plan workspace (rolling 30/90-day directional match and coverage rates).
+2. Start Phase 5.0 Slice 1: add state tax and IRMAA modeling surfaces in tax engine and scenario outputs.
+3. Start Phase 5.0 Slice 2: add Roth conversion plan controls and scenario-aware conversion simulation.
 
 ## Guardrails
 1. Do not fork or embed full Ghostfolio/Ignidash apps into BuildWealth runtime path.

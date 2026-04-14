@@ -459,7 +459,7 @@ function resetContributionRuleInputs() {
 
 function setControlsEnabled(enabled) {
   [
-    'activate-plan', 'refresh-plan-context', 'open-plan-recommendations', 'save-plan', 'save-plan-timeline', 'save-plan-assumption-sets',
+    'activate-plan', 'refresh-plan-context', 'open-plan-recommendations', 'generate-plan-closure-summary', 'save-plan', 'save-plan-timeline', 'save-plan-assumption-sets',
     'save-plan-contribution-rules', 'save-plan-branch-templates', 'save-plan-settings', 'run-scenario-diff',
     'run-withdrawal-strategy-compare', 'apply-scenario-overrides', 'load-branch-template', 'run-scenario-branch',
     'pin-watchlist-branch-template', 'open-latest-research-bridge-artifact',
@@ -1233,10 +1233,68 @@ function renderPlanTopNextActions(actionsRaw) {
   }
 }
 
+function renderPlanClosureSummary(result) {
+  const summaryEl = byId('plan-closure-summary-status');
+  const detailsEl = byId('plan-closure-summary-details');
+  if (!summaryEl || !detailsEl) return;
+
+  if (!result || typeof result !== 'object' || !result.analytics || typeof result.analytics !== 'object') {
+    summaryEl.textContent = 'Generate recommendation closure analytics to capture calibration history for this plan.';
+    detailsEl.innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No closure summary generated yet.</p><p class="list-item-meta">Use Generate Artifact to write a calibration artifact and log this review decision.</p></article>';
+    return;
+  }
+
+  const analytics = result.analytics;
+  const summary = analytics.summary && typeof analytics.summary === 'object' ? analytics.summary : {};
+  const calibrationSummary = analytics.calibration_summary && typeof analytics.calibration_summary === 'object'
+    ? analytics.calibration_summary
+    : {};
+  const count = Number(analytics.count || 0);
+  const measured = Number(summary.measured_count || 0);
+  const coverage = Number(summary.realized_coverage_pct || 0);
+  const directionRate = Number(calibrationSummary.future_value_direction_match_rate_pct);
+  const meanAbsError = Number(calibrationSummary.mean_future_value_abs_error_usd);
+  const summaryParts = [`Closed ${count}`, `Measured ${measured}`];
+  if (Number.isFinite(coverage)) summaryParts.push(`Coverage ${coverage.toFixed(1)}%`);
+  if (Number.isFinite(directionRate)) summaryParts.push(`Match ${directionRate.toFixed(1)}%`);
+  if (Number.isFinite(meanAbsError)) summaryParts.push(`MAE ${fmtCurrency(meanAbsError)}`);
+  if (calibrationSummary.future_value_bias) summaryParts.push(`Bias ${String(calibrationSummary.future_value_bias).replace('_', ' ')}`);
+  if (result.artifact?.id) summaryParts.push(`Artifact ${result.artifact.id}`);
+  summaryEl.textContent = summaryParts.join(' • ');
+
+  const fmtPct = (value) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? `${num.toFixed(1)}%` : 'n/a';
+  };
+  const fmtMoney = (value) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? fmtCurrency(num) : 'n/a';
+  };
+
+  const cards = [];
+  const byType = Array.isArray(analytics.calibration_by_type) ? analytics.calibration_by_type : [];
+  if (byType.length) {
+    cards.push(`<article class="list-item"><p class="list-item-title">Calibration by Type</p><p class="list-item-meta">${byType.slice(0, 3).map((row) => `${row.key}: measured ${row.measured_count}/${row.count}, match ${fmtPct(row.future_value_direction_match_rate_pct)}, MAE ${fmtMoney(row.mean_future_value_abs_error_usd)}`).join(' • ')}</p></article>`);
+  }
+  const bySource = Array.isArray(analytics.calibration_by_source) ? analytics.calibration_by_source : [];
+  if (bySource.length) {
+    cards.push(`<article class="list-item"><p class="list-item-title">Calibration by Source</p><p class="list-item-meta">${bySource.slice(0, 3).map((row) => `${row.key}: measured ${row.measured_count}/${row.count}, match ${fmtPct(row.future_value_direction_match_rate_pct)}, MAE ${fmtMoney(row.mean_future_value_abs_error_usd)}`).join(' • ')}</p></article>`);
+  }
+  const windows = Array.isArray(analytics.calibration_windows) ? analytics.calibration_windows : [];
+  if (windows.length) {
+    cards.push(`<article class="list-item"><p class="list-item-title">Calibration Windows</p><p class="list-item-meta">${windows.slice(0, 3).map((row) => `${row.window || row.key}: measured ${row.measured_count}/${row.count}, match ${fmtPct(row.future_value_direction_match_rate_pct)}, MAE ${fmtMoney(row.mean_future_value_abs_error_usd)}`).join(' • ')}</p></article>`);
+  }
+  detailsEl.innerHTML = cards.length
+    ? cards.join('')
+    : '<article class="list-item"><p class="list-item-title">No calibration rows available yet.</p></article>';
+}
+
 export function clearDetail() {
   state.currentPlanDetail = null;
+  state.planClosureSummary = null;
   byId('plan-meta').textContent = 'Select a plan to view details.';
   byId('plan-next-actions-summary').textContent = 'Select a plan to load ranked next actions.';
+  byId('plan-closure-summary-status').textContent = 'Select a plan to generate recommendation closure analytics.';
   byId('plan-settings-meta').textContent = 'Blank values use global defaults from planner configuration.';
   ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-contribution-rules', 'plan-branch-templates', 'plan-context', 'scenario-diff-output', 'withdrawal-current-portfolio-value', 'withdrawal-strategies', 'withdrawal-strategy-compare-output', 'scenario-branch-name', 'scenario-branch-events', 'scenario-branch-output', 'research-bridge-symbols', 'artifact-content'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
   writeTimelinePayloadToEditor({ events: [], retirement: {} }, { preferFormValues: false });
@@ -1252,6 +1310,7 @@ export function clearDetail() {
   setResearchBridgeArtifactAction('', '');
   byId('projection-summary').textContent = 'Run a scenario diff or branch to populate projection visuals.';
   byId('plan-next-actions').innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No plan selected.</p></article>';
+  byId('plan-closure-summary-details').innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No closure summary generated yet.</p></article>';
   byId('plan-decisions-body').innerHTML = '<tr><td colspan="4">No decisions yet.</td></tr>';
   byId('plan-artifacts-body').innerHTML = '<tr><td colspan="4">No artifacts yet.</td></tr>';
   byId('projection-account-body').innerHTML = '<tr><td colspan="6">No projection data yet.</td></tr>';
@@ -1323,6 +1382,11 @@ export function renderDetail() {
   const su = d.settings?.updated_at ? fmtDate(d.settings.updated_at) : null;
   byId('plan-settings-meta').textContent = su ? `Settings updated ${su}` : 'Blank values use global defaults from planner configuration.';
   renderPlanTopNextActions(Array.isArray(d.top_next_actions) ? d.top_next_actions : []);
+  if (state.planClosureSummary && state.planClosureSummary.plan_id === d.id) {
+    renderPlanClosureSummary(state.planClosureSummary);
+  } else {
+    renderPlanClosureSummary(null);
+  }
   renderDecisions(Array.isArray(d.decisions) ? d.decisions : []);
   renderArtifacts(Array.isArray(d.artifacts) ? d.artifacts : []);
   byId('artifact-content').value = '';
@@ -1679,6 +1743,41 @@ export function initEditor(refreshPlans) {
   byId('projection-account-metric').addEventListener('change', () => renderProjectionVisuals());
   byId('open-plan-recommendations').addEventListener('click', () => {
     location.hash = 'recommendations';
+  });
+  byId('generate-plan-closure-summary').addEventListener('click', async () => {
+    if (!state.currentPlanId) { writeLog('Select a plan first.', null, true); return; }
+    writeLog('Generating plan closure analytics artifact...');
+    try {
+      const result = await fetchJson(
+        `/api/plans/${encodeURIComponent(state.currentPlanId)}/recommendation-closure-summary`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            limit: 200,
+            statuses: ['applied', 'rejected'],
+            include_pending_realized: true,
+            write_artifact: true,
+          }),
+        },
+      );
+      state.planClosureSummary = result && typeof result === 'object' ? result : null;
+      await refreshPlans();
+      if (state.planClosureSummary && state.planClosureSummary.plan_id === state.currentPlanId) {
+        renderPlanClosureSummary(state.planClosureSummary);
+      }
+      writeLog(
+        'Plan closure analytics artifact generated.',
+        {
+          plan_id: state.currentPlanId,
+          artifact_id: result?.artifact?.id || null,
+          closed_count: result?.analytics?.count || 0,
+          measured_count: result?.analytics?.summary?.measured_count || 0,
+        },
+      );
+    } catch (e) {
+      writeLog(`Generate closure summary failed: ${e.message}`, null, true);
+    }
   });
   byId('plan-timeline').addEventListener('change', () => {
     refreshTimelineBuilderFromEditor(false);
