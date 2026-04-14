@@ -150,18 +150,27 @@ function renderEngineStatus(payload, errorMessage = null) {
   listEl.innerHTML = '';
   for (const engine of engines) {
     const row = document.createElement('article');
+    const contractMismatch = engine.enabled && engine.reachable && engine.contract_compatible === false;
     const statusLabel = !engine.enabled
       ? 'DISABLED'
-      : engine.reachable
+      : contractMismatch
+        ? 'CONTRACT MISMATCH'
+        : engine.reachable
         ? 'HEALTHY'
         : 'UNREACHABLE';
     const statusClass = !engine.enabled
       ? 'attention'
+      : contractMismatch
+        ? 'incomplete'
       : engine.reachable
         ? 'complete'
         : 'incomplete';
     const engineName = String(engine.name || 'engine').replace(/_/g, ' ');
-    const versionText = engine.contract_version != null ? `v${engine.contract_version}` : 'n/a';
+    const expectedVersionText = engine.expected_contract_version != null
+      ? `v${engine.expected_contract_version}`
+      : 'n/a';
+    const actualVersionText = engine.contract_version != null ? `v${engine.contract_version}` : 'n/a';
+    const versionText = `actual ${actualVersionText} / expected ${expectedVersionText}`;
     const checkedText = engine.last_checked_at ? fmtDate(engine.last_checked_at) : 'never';
     row.className = `list-item ${statusClass}`;
     row.innerHTML = `

@@ -13,8 +13,6 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 import httpx
 
-from buildwealth_orchestrator.clients.ghostfolio import GhostfolioClient
-from buildwealth_orchestrator.clients.ignidash import IgnidashClient
 from buildwealth_orchestrator.schemas import (
     ChatRequest,
     ChatResponse,
@@ -194,10 +192,6 @@ if _user_cfg.get("openai_model"):
     settings.openai_model = _user_cfg["openai_model"]
 if _user_cfg.get("openai_base_url"):
     settings.openai_base_url = _user_cfg["openai_base_url"]
-if _user_cfg.get("ghostfolio_api_base"):
-    settings.ghostfolio_api_base = _user_cfg["ghostfolio_api_base"]
-if _user_cfg.get("ghostfolio_security_token"):
-    settings.ghostfolio_security_token = _user_cfg["ghostfolio_security_token"]
 
 
 def parse_path_candidates(raw_value: str, fallback: tuple[str, ...]) -> tuple[str, ...]:
@@ -209,16 +203,6 @@ def parse_path_candidates(raw_value: str, fallback: tuple[str, ...]) -> tuple[st
     return values or fallback
 
 
-ghostfolio_client = GhostfolioClient(
-    api_base=settings.ghostfolio_api_base,
-    security_token=settings.ghostfolio_security_token,
-    timeout_seconds=settings.ghostfolio_timeout_seconds,
-)
-ignidash_client = IgnidashClient(
-    convex_actions_url=settings.ignidash_convex_url,
-    convex_api_secret=settings.ignidash_convex_api_secret,
-    timeout_seconds=settings.ghostfolio_timeout_seconds,
-)
 snapshot_store = SnapshotStore(settings.snapshot_dir)
 portfolio_store = PortfolioStore(settings.snapshot_dir.parent / "portfolio")
 ignidash_export_store = IgnidashExportStore(settings.ignidash_export_dir)
@@ -5663,7 +5647,7 @@ def get_user_settings() -> dict[str, Any]:
 
 @app.put("/api/settings")
 def update_user_settings(request: dict[str, Any]) -> dict[str, Any]:
-    global ghostfolio_client, openai_tool_client
+    global openai_tool_client
 
     saved = user_settings_store.save(request)
 
@@ -5675,13 +5659,6 @@ def update_user_settings(request: dict[str, Any]) -> dict[str, Any]:
             base_url=saved.get("openai_base_url") or settings.openai_base_url,
         )
         copilot.llm_client = openai_tool_client
-
-    if saved.get("ghostfolio_security_token") or saved.get("ghostfolio_api_base"):
-        ghostfolio_client = GhostfolioClient(
-            api_base=saved.get("ghostfolio_api_base") or settings.ghostfolio_api_base,
-            security_token=saved.get("ghostfolio_security_token") or settings.ghostfolio_security_token,
-            timeout_seconds=settings.ghostfolio_timeout_seconds,
-        )
 
     return user_settings_store.load_masked()
 

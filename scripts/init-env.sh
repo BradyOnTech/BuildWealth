@@ -53,11 +53,9 @@ replace_token "$ENV_DIR/ignidash.env" "__IGNI_CONVEX_ADMIN_KEY__" "$IGNI_ADMIN_K
 replace_token "$ENV_DIR/ignidash.env" "__IGNI_BETTER_AUTH_SECRET__" "$IGNI_AUTH_SECRET"
 replace_token "$ENV_DIR/ignidash.env" "__IGNI_CONVEX_API_SECRET__" "$IGNI_API_SECRET"
 
-replace_token "$ENV_DIR/orchestrator.env" "__IGNI_CONVEX_API_SECRET__" "$IGNI_API_SECRET"
-
 echo ""
 echo "Environment files are ready."
 echo "Next:"
-echo "  1) Open $ENV_DIR/orchestrator.env and set GHOSTFOLIO_SECURITY_TOKEN"
-echo "  2) (Optional) adjust planning assumptions"
+echo "  1) Open $ENV_DIR/orchestrator.env and confirm sidecar base URLs/paths"
+echo "  2) (Optional) adjust planning assumptions and OpenAI settings"
 echo "  3) Run: docker compose -f infra/docker-compose.yml up -d"

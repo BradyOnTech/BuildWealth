@@ -24,8 +24,8 @@ Scope:
 Why now:
 - Improves allocation quality, planning assumptions, and Copilot context in one slice.
 
-### 2) Phase 3.3 Sidecar Boundary Hardening (Active)
-Status: In Progress
+### 2) Phase 3.3 Sidecar Boundary Hardening
+Status: Completed
 
 Scope:
 1. Audit sidecar adapters/routes for strict contract-version checks.
@@ -33,15 +33,18 @@ Scope:
 3. Add regression tests for sidecar failure modes and fallback telemetry.
 4. Remove/document any remaining legacy full-app bridge assumptions.
 
-Progress:
-- Implemented: contract-version compatibility tracking in engine status, route-level sidecar guards, guarded local fallback metadata, and contract-guard regression tests.
-- Remaining: finish bridge-assumption cleanup docs and complete UX/ops follow-through in 3.4/3.6.
+Completed:
+- Contract-version compatibility tracking in engine status.
+- Route-level sidecar guards + guarded local fallback metadata for benchmark/attribution/planning.
+- Versioned contract-path enforcement in adapter calls.
+- Legacy full-app bridge assumptions removed from active runtime/UI settings paths.
+- Regression coverage for contract mismatch, guarded fallback paths, and settings filtering.
 
 Why next:
 - Stabilizes the targeted-adapter architecture before further feature depth.
 
-### 3) Phase 3.4 UX Consolidation / Product UX Pass
-Status: Pending
+### 3) Phase 3.4 UX Consolidation / Product UX Pass (Next)
+Status: In Progress
 
 Scope:
 1. Replace JSON-heavy planner controls with guided forms where possible.

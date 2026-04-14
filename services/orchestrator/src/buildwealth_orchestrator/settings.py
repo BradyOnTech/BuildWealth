@@ -28,11 +28,6 @@ class Settings(BaseSettings):
         alias="RECOMMENDATIONS_PATH",
     )
 
-    ghostfolio_api_base: str = Field(default="http://ghostfolio:3333/api", alias="GHOSTFOLIO_API_BASE")
-    ghostfolio_security_token: str = Field(default="", alias="GHOSTFOLIO_SECURITY_TOKEN")
-    ghostfolio_timeout_seconds: float = Field(default=20.0, alias="GHOSTFOLIO_TIMEOUT_SECONDS")
-    ghostfolio_default_data_source: str = Field(default="YAHOO", alias="GHOSTFOLIO_DEFAULT_DATA_SOURCE")
-    ghostfolio_default_currency: str = Field(default="USD", alias="GHOSTFOLIO_DEFAULT_CURRENCY")
     ghostfolio_sidecar_base_url: str = Field(
         default="http://localhost:8411",
         alias="GHOSTFOLIO_SIDECAR_BASE_URL",
@@ -84,11 +79,6 @@ class Settings(BaseSettings):
         alias="PORTFOLIO_BENCHMARK_DEFAULT_SYMBOLS",
     )
 
-    ignidash_app_base_url: str = Field(default="http://ignidash:3000", alias="IGNIDASH_APP_BASE_URL")
-    ignidash_convex_url: str = Field(default="http://ignidash-convex-backend:3211", alias="IGNIDASH_CONVEX_URL")
-    ignidash_convex_api_secret: str = Field(default="", alias="IGNIDASH_CONVEX_API_SECRET")
-    ignidash_default_user_id: str = Field(default="buildwealth-local-user", alias="IGNIDASH_DEFAULT_USER_ID")
-    ignidash_default_user_name: str = Field(default="BuildWealth", alias="IGNIDASH_DEFAULT_USER_NAME")
     ignidash_sidecar_base_url: str = Field(
         default="http://localhost:8412",
         alias="IGNIDASH_SIDECAR_BASE_URL",

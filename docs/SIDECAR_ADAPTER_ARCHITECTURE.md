@@ -31,6 +31,7 @@ A stateless compute service/process that:
 3. No hidden coupling: sidecars must not read BuildWealth local files directly.
 4. Deterministic compute: same request payload yields same response payload.
 5. Safe degradation: if sidecar fails, Python returns explicit degraded result and can fall back to local logic where available.
+6. No full-app bridge dependencies: orchestrator runtime does not depend on direct Ghostfolio app APIs or Ignidash Convex actions.
 
 ## System Boundaries
 
@@ -57,6 +58,7 @@ A stateless compute service/process that:
 2. Sidecars run on localhost ports or as subprocesses.
 3. Adapters call sidecars over local HTTP JSON.
 4. Sidecar health is checked on startup and before calls.
+5. Only versioned contract paths are allowed (`/v{n}/...`), and incompatible contract versions are guarded before invocation.
 
 Suggested local defaults:
 - Ghostfolio engine sidecar: `localhost:8411`

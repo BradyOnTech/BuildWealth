@@ -7,10 +7,8 @@ export const icon = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" 
 
 const FIELDS = [
   { key: 'openai_api_key', label: 'OpenAI API Key', type: 'password', placeholder: 'sk-...', hint: 'Required for Copilot AI conversations.' },
-  { key: 'openai_model', label: 'OpenAI Model', type: 'text', placeholder: 'gpt-4o', hint: 'Model used for Copilot responses.' },
+  { key: 'openai_model', label: 'OpenAI Model', type: 'text', placeholder: 'gpt-5-mini', hint: 'Model used for Copilot responses.' },
   { key: 'openai_base_url', label: 'OpenAI Base URL', type: 'text', placeholder: 'https://api.openai.com/v1', hint: 'Custom endpoint for OpenAI-compatible APIs.' },
-  { key: 'ghostfolio_api_base', label: 'Ghostfolio API Base', type: 'text', placeholder: 'http://localhost:3333/api', hint: 'Ghostfolio instance URL for portfolio sync.' },
-  { key: 'ghostfolio_security_token', label: 'Ghostfolio Security Token', type: 'password', placeholder: 'Token from Ghostfolio settings', hint: 'Authentication token for Ghostfolio API.' },
 ];
 
 export function template() {
@@ -23,13 +21,12 @@ export function template() {
 
   return `
     <div class="view-header"><h2>Settings</h2><button class="primary small" id="save-settings">Save Settings</button></div>
-    <p class="hint">Configure API keys and service connections. Keys are stored locally on your machine and masked in the UI.</p>
+    <p class="hint">Configure local Copilot settings. Values are stored locally on your machine and masked in the UI.</p>
     <div class="settings-form">
       <h3 class="section-title">AI Copilot</h3>
       <div class="settings-grid">${FIELDS.filter(f => f.key.startsWith('openai')).map(fieldHtml).join('')}</div>
-      <h3 class="section-title">Ghostfolio Connection</h3>
-      <div class="settings-grid">${FIELDS.filter(f => f.key.startsWith('ghostfolio')).map(fieldHtml).join('')}</div>
     </div>
+    <p class="hint">Engine sidecar endpoints and health probes are configured via environment variables (`infra/env/orchestrator.env`).</p>
     <p class="hint" id="settings-status"></p>`;
 }
 

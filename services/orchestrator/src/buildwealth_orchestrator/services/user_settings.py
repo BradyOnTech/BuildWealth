@@ -34,15 +34,15 @@ class UserSettingsStore:
     API responses mask sensitive values.
     """
 
-    SENSITIVE_KEYS = {"openai_api_key", "ghostfolio_security_token"}
+    SENSITIVE_KEYS = {"openai_api_key"}
 
     DEFAULTS: dict[str, Any] = {
         "openai_api_key": "",
-        "openai_model": "gpt-4o",
+        "openai_model": "gpt-5-mini",
         "openai_base_url": "https://api.openai.com/v1",
-        "ghostfolio_api_base": "http://localhost:3333/api",
-        "ghostfolio_security_token": "",
     }
+
+    ALLOWED_KEYS = frozenset((*DEFAULTS.keys(), "updated_at"))
 
     def __init__(self, settings_path: Path):
         self.settings_path = settings_path
@@ -53,13 +53,24 @@ class UserSettingsStore:
     def _write(self, data: dict[str, Any]) -> None:
         self.settings_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
+    @classmethod
+    def _sanitize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        sanitized = {
+            key: value
+            for key, value in data.items()
+            if key in cls.ALLOWED_KEYS
+        }
+        for key, value in cls.DEFAULTS.items():
+            sanitized.setdefault(key, value)
+        return sanitized
+
     def load_raw(self) -> dict[str, Any]:
         """Load settings with real values (for internal use by services)."""
         try:
             data = json.loads(self.settings_path.read_text(encoding="utf-8"))
         except (FileNotFoundError, json.JSONDecodeError):
             data = {}
-        merged = {**self.DEFAULTS, **data}
+        merged = self._sanitize({**self.DEFAULTS, **data})
         return merged
 
     def load_masked(self) -> dict[str, Any]:
@@ -81,6 +92,8 @@ class UserSettingsStore:
         for key, value in updates.items():
             if key == "updated_at":
                 continue
+            if key not in self.DEFAULTS:
+                continue
             if key in self.SENSITIVE_KEYS and _is_masked(value):
                 # User didn't change this field — keep the existing value
                 continue
@@ -88,5 +101,6 @@ class UserSettingsStore:
                 current[key] = value
 
         current["updated_at"] = datetime.now(timezone.utc).isoformat()
+        current = self._sanitize(current)
         self._write(current)
         return current

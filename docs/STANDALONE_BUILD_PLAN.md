@@ -57,17 +57,20 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
-### 2026-04-14 (In Progress - Phase 3.3 Sidecar Boundary Hardening)
+### 2026-04-14 (Completed - Phase 3.3 Sidecar Boundary Hardening)
 - Added explicit expected contract-version tracking on engine probes (`expected_contract_version`, `contract_compatible`) so sidecar status now reports compatibility, not just reachability.
 - Added sidecar guard evaluation (`sidecar_guard_reason`) to block benchmark/attribution/planning sidecar calls when probe state detects contract mismatch.
 - Benchmark, attribution, and planning services now support contract-guarded local fallback with explicit `contract_version_guard` fallback metadata/warnings.
 - Engine adapter now only allows versioned contract paths (`/v{n}/...`) to prevent accidental fallback to legacy full-app endpoints.
+- Removed remaining legacy full-app bridge assumptions from orchestrator runtime/UI settings (direct Ghostfolio API + Ignidash Convex settings are no longer part of active runtime configuration paths).
+- Dashboard engine telemetry now surfaces contract mismatch state with actual-vs-expected version visibility per engine.
 - Added focused regression coverage for contract mismatch and guarded sidecar skip paths in:
   - `test_engine_status.py`
   - `test_engine_adapter.py`
   - `test_portfolio_benchmark.py`
   - `test_portfolio_attribution.py`
   - `test_planning_sidecar.py`
+  - `test_user_settings.py`
 
 ### 2026-04-14 (Completed - Phase 3.1 Asset Metadata Database Expansion)
 - Added a seeded local asset metadata catalog (`asset_metadata_seed.json`) with 500+ symbols (S&P 500 equities plus curated ETF/asset-class mappings) to improve offline classification coverage.
