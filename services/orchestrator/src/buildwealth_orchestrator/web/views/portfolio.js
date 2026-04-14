@@ -200,8 +200,8 @@ export function template() {
     <h3 class="section-title">Watchlist</h3>
     <p class="hint" id="port-watchlist-summary">No watchlist items yet.</p>
     <div class="table-wrap"><table>
-      <thead><tr><th>Symbol</th><th>Last</th><th>Day</th><th>Window</th><th>Trend 50d</th><th>Trend 200d</th><th>Condition</th><th>Target</th><th>Tags</th><th>Note</th><th></th></tr></thead>
-      <tbody id="port-watchlist-body"><tr><td colspan="11">No watchlist items yet.</td></tr></tbody>
+      <thead><tr><th>Symbol</th><th>Rank</th><th>Score</th><th>Last</th><th>Day</th><th>Window</th><th>Trend 50d</th><th>Trend 200d</th><th>Condition</th><th>Target</th><th>Tags</th><th>Note</th><th></th></tr></thead>
+      <tbody id="port-watchlist-body"><tr><td colspan="13">No watchlist items yet.</td></tr></tbody>
     </table></div>
     <form id="port-watchlist-form" class="txn-form">
       <label class="field"><span>Symbol</span><input type="text" id="watchlist-symbol" placeholder="NVDA" required /></label>
@@ -606,25 +606,42 @@ function renderWatchlist(payload) {
   const rows = Array.isArray(payload?.items) ? payload.items : [];
   const warnings = Array.isArray(payload?.warnings) ? payload.warnings : [];
   const periodLabel = String(payload?.period || '').trim();
+  const scoreModel = String(payload?.score_model || '').trim();
+  const sortedBy = String(payload?.sorted_by || '').trim();
   const warningLabel = warnings.length ? ` | Warnings: ${warnings.length}` : '';
 
   if (!rows.length) {
     summary.textContent = warnings.length ? `No watchlist items yet.${warningLabel}` : 'No watchlist items yet.';
-    tbody.innerHTML = '<tr><td colspan="11">No watchlist items yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13">No watchlist items yet.</td></tr>';
     return;
   }
 
-  summary.textContent = `Items: ${rows.length}${periodLabel ? ` | Window: ${periodLabel}` : ''}${warningLabel}`;
+  const topSymbol = rows[0]?.symbol || null;
+  const rankingLabel = sortedBy ? ` | Sorted: ${sortedBy}` : '';
+  const modelLabel = scoreModel ? ` | Model: ${scoreModel}` : '';
+  const topLabel = topSymbol ? ` | Top: ${topSymbol}` : '';
+  summary.textContent = `Items: ${rows.length}${periodLabel ? ` | Window: ${periodLabel}` : ''}${rankingLabel}${modelLabel}${topLabel}${warningLabel}`;
   tbody.innerHTML = '';
   for (const row of rows) {
     const quotePrice = Number(row.quote_price);
     const quoteChange = Number(row.quote_change_pct);
     const periodChange = Number(row.period_change_pct);
+    const rank = Number(row.watchlist_rank);
+    const scoreTotal = Number(row.watchlist_score_total);
+    const score = row.watchlist_score && typeof row.watchlist_score === 'object' ? row.watchlist_score : {};
+    const reasons = Array.isArray(row.watchlist_score_reasons) ? row.watchlist_score_reasons : [];
     const quoteClass = Number.isFinite(quoteChange) ? (quoteChange >= 0 ? 'drift-pos' : 'drift-neg') : '';
     const periodClass = Number.isFinite(periodChange) ? (periodChange >= 0 ? 'drift-pos' : 'drift-neg') : '';
+    const scoreClass = Number.isFinite(scoreTotal) ? (scoreTotal >= 65 ? 'drift-pos' : scoreTotal < 45 ? 'drift-neg' : '') : '';
+    const noteText = row.note || '-';
+    const driverText = reasons.length ? ` Drivers: ${reasons.slice(0, 3).join(', ')}.` : '';
+    const upside = Number(score?.upside_to_target_pct);
+    const upsideText = Number.isFinite(upside) ? ` Upside-to-target: ${upside >= 0 ? '+' : ''}${fmtPct(upside)}.` : '';
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><strong>${row.symbol || '-'}</strong></td>
+      <td>${Number.isFinite(rank) && rank > 0 ? `#${Math.trunc(rank)}` : '-'}</td>
+      <td class="${scoreClass}">${Number.isFinite(scoreTotal) ? scoreTotal.toFixed(1) : '-'}</td>
       <td>${Number.isFinite(quotePrice) ? fmtCurrency(quotePrice) : '-'}</td>
       <td class="${quoteClass}">${Number.isFinite(quoteChange) ? `${quoteChange >= 0 ? '+' : ''}${fmtPct(quoteChange)}` : '-'}</td>
       <td class="${periodClass}">${Number.isFinite(periodChange) ? `${periodChange >= 0 ? '+' : ''}${fmtPct(periodChange)}` : '-'}</td>
@@ -633,7 +650,7 @@ function renderWatchlist(payload) {
       <td>${row.market_condition || 'UNKNOWN'}</td>
       <td>${Number.isFinite(Number(row.target_price_usd)) ? fmtCurrency(Number(row.target_price_usd)) : '-'}</td>
       <td>${Array.isArray(row.tags) && row.tags.length ? row.tags.join(', ') : '-'}</td>
-      <td>${row.note || '-'}</td>
+      <td>${noteText}${driverText}${upsideText}</td>
       <td></td>`;
     const removeBtn = document.createElement('button');
     removeBtn.className = 'ghost small';
@@ -867,7 +884,7 @@ async function loadAll() {
       fetchJson('/api/snapshot/history?limit=120'),
       fetchJson(`/api/portfolio/benchmark?limit=120${benchmarkQuery}`),
       fetchJson('/api/portfolio/attribution?top_n=6'),
-      fetchJson('/api/portfolio/watchlist?period=2y&interval=1d'),
+      fetchJson('/api/research/watchlist-rank?period=2y&interval=1d&limit=200'),
     ]);
 
     if (holdingsResult.status !== 'fulfilled') throw holdingsResult.reason;

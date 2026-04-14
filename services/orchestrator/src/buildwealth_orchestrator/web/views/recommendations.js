@@ -148,6 +148,17 @@ function renderTable() {
       if (evidence.snapshot_as_of) parts.push(`Snapshot ${fmtDate(evidence.snapshot_as_of)}`);
       if (Array.isArray(evidence.data_keys) && evidence.data_keys.length) parts.push(`Data: ${evidence.data_keys.slice(0, 4).join(', ')}`);
       if (parts.length) recHtml += `<p class="rec-detail">Evidence: ${parts.join(' \u2022 ')}</p>`;
+      const citation = evidence.citation_quality && typeof evidence.citation_quality === 'object' ? evidence.citation_quality : null;
+      if (citation) {
+        const status = String(citation.status || 'unknown');
+        const cited = Array.isArray(citation.cited_symbols) ? citation.cited_symbols : [];
+        const missing = Array.isArray(citation.missing_dossier_symbols) ? citation.missing_dossier_symbols : [];
+        const citationParts = [`Citation ${status}`];
+        if (cited.length) citationParts.push(`cited ${cited.join(', ')}`);
+        if (missing.length) citationParts.push(`missing dossier ${missing.join(', ')}`);
+        if (citation.required) citationParts.push('required');
+        recHtml += `<p class="rec-detail">${citationParts.join(' \u2022 ')}</p>`;
+      }
     }
     const suggestedSymbols = Array.isArray(r.action_payload?.suggested_research_symbols)
       ? r.action_payload.suggested_research_symbols

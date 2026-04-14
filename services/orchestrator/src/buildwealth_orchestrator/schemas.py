@@ -738,6 +738,66 @@ class ResearchDossierResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ResearchDossierLookupItem(BaseModel):
+    artifact_id: str
+    file_name: str
+    title: str
+    created_at: datetime | None = None
+    plan_id: str
+    symbols: list[str] = Field(default_factory=list)
+    content_preview: str = ""
+
+
+class ResearchDossierLookupResponse(BaseModel):
+    plan_id: str | None = None
+    count: int = 0
+    items: list[ResearchDossierLookupItem] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    updated_at: datetime
+
+
+class WatchlistRankItem(BaseModel):
+    symbol: str
+    data_source: str = "OPENBB"
+    note: str = ""
+    thesis: str = ""
+    target_price_usd: float | None = None
+    tags: list[str] = Field(default_factory=list)
+    created_at: str | None = None
+    updated_at: str | None = None
+    quote_available: bool = False
+    quote_message: str = ""
+    quote_price: float | None = None
+    quote_change_pct: float | None = None
+    history_available: bool = False
+    history_message: str = ""
+    period_label: str = "2y"
+    period_first_close: float | None = None
+    period_last_close: float | None = None
+    period_change_pct: float | None = None
+    all_time_high: float | None = None
+    performance_from_high_pct: float | None = None
+    market_condition: str = "UNKNOWN"
+    trend50d: str = "UNKNOWN"
+    trend200d: str = "UNKNOWN"
+    history_records: int = 0
+    watchlist_rank: int | None = None
+    watchlist_score_total: float | None = None
+    watchlist_score: dict[str, Any] = Field(default_factory=dict)
+    watchlist_score_reasons: list[str] = Field(default_factory=list)
+
+
+class WatchlistRankResponse(BaseModel):
+    period: str = "2y"
+    interval: str = "1d"
+    count: int = 0
+    score_model: str = "watchlist_v1"
+    sorted_by: str = "ranked"
+    items: list[WatchlistRankItem] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    updated_at: datetime
+
+
 class CsvTemplateOption(BaseModel):
     id: str
     name: str

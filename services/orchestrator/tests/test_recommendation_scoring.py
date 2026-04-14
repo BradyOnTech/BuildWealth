@@ -120,3 +120,57 @@ def test_ranked_sort_places_non_proposed_after_open_actions() -> None:
     assert [row["id"] for row in ranked] == ["rec-proposed", "rec-applied"]
     assert ranked[0]["score"]["rank"] == 1
     assert ranked[1]["score"]["rank"] is None
+
+
+def test_scoring_penalizes_missing_required_dossier_citations() -> None:
+    rows = [
+        {
+            "id": "rec-cited",
+            "created_at": "2026-04-14T10:00:00+00:00",
+            "updated_at": "2026-04-14T10:00:00+00:00",
+            "title": "Cited recommendation",
+            "detail": "Has complete dossier citations.",
+            "priority": "medium",
+            "status": "proposed",
+            "recommendation_type": "general",
+            "source": "copilot",
+            "action_payload": {
+                "evidence": {
+                    "citation_quality": {
+                        "required": True,
+                        "status": "satisfied",
+                        "required_symbols": ["NVDA"],
+                        "cited_symbols": ["NVDA"],
+                        "missing_dossier_symbols": [],
+                    }
+                }
+            },
+        },
+        {
+            "id": "rec-missing",
+            "created_at": "2026-04-14T10:00:00+00:00",
+            "updated_at": "2026-04-14T10:00:00+00:00",
+            "title": "Missing citations",
+            "detail": "No dossier citation coverage.",
+            "priority": "medium",
+            "status": "proposed",
+            "recommendation_type": "general",
+            "source": "copilot",
+            "action_payload": {
+                "evidence": {
+                    "citation_quality": {
+                        "required": True,
+                        "status": "missing",
+                        "required_symbols": ["NVDA"],
+                        "cited_symbols": [],
+                        "missing_dossier_symbols": ["NVDA"],
+                    }
+                }
+            },
+        },
+    ]
+
+    ranked = score_and_sort_recommendations(rows, sort="ranked")
+    by_id = {row["id"]: row for row in ranked}
+    assert by_id["rec-cited"]["score"]["confidence"] > by_id["rec-missing"]["score"]["confidence"]
+    assert by_id["rec-cited"]["score"]["total"] > by_id["rec-missing"]["score"]["total"]

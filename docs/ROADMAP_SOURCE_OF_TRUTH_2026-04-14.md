@@ -10,6 +10,53 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-14 (Completed - Phase 4.1 Slice 4, Copilot Recommendation Evidence-Citation Enforcement)
+1. Added research dossier retrieval surfaces for recommendation evidence workflows:
+- `GET /api/research/dossiers` (plan-scoped dossier artifact lookup)
+- Copilot tool `research_dossier_lookup` for artifact-aware evidence retrieval in recommendation loops.
+2. Added recommendation evidence-citation quality model (`citation_v1`) in creation flow:
+- recommendation action payloads now normalize `evidence.citations`
+- recommendation evidence now includes `citation_quality` (`required`, `status`, required/cited/missing symbols, missing dossier symbols).
+3. Enforced dossier-backed citations for Copilot research-backed recommendations:
+- when source is Copilot and research symbols are present, dossier-backed citations are required
+- system auto-cites from latest plan dossier artifacts when available
+- requests fail with explicit guidance when dossier citation coverage is still missing.
+4. Updated workflow recommendation packaging to use the same citation-normalization pipeline for consistency.
+5. Updated recommendation scoring and UI to surface citation quality:
+- confidence scoring now rewards satisfied dossier citation coverage and penalizes missing required coverage
+- Inbox recommendation detail now displays citation status with cited/missing symbols.
+6. Source-provenance note:
+- analyzer-style evidence quality packaging remains aligned with Ignidash scoring/reporting patterns
+- artifact-centric research traceability stays consistent with Ghostfolio-style structured data provenance expectations.
+7. Added regression coverage:
+- dossier lookup and citation-enforcement tests in `test_recommendation_evidence_citations.py`
+- Copilot tool contract/invocation coverage in `test_copilot_tool_updates.py`
+- citation quality scoring behavior in `test_recommendation_scoring.py`.
+8. Verification: `pytest -q services/orchestrator/tests` passes (`400 passed`).
+
+### 2026-04-14 (Completed - Phase 4.1 Slice 3, Watchlist Ranking Endpoint and UI Score Surfacing)
+1. Expanded watchlist API contract into a first-class ranking response shape:
+- added `WatchlistRankItem` / `WatchlistRankResponse` schemas
+- watchlist rows now include composite score factors, ranked position, reason codes, and history-record count.
+2. Added watchlist scoring/ranking orchestration in `main.py`:
+- score model `watchlist_v1` combines momentum, trend, target-gap, data quality, and risk-balance factors
+- supports `sort` controls (`ranked`, `symbol`, `updated_at`) and `limit` controls for large lists
+- warnings are normalized and deduplicated for cleaner operator output.
+3. Added first-class ranking endpoint and Copilot retrieval tool:
+- `GET /api/research/watchlist-rank`
+- Copilot tool `research_watchlist_rank` with period/interval/limit controls.
+4. Updated Portfolio UI watchlist surface:
+- watchlist table now shows rank and score
+- summary line surfaces ranking model and top symbol
+- note column includes score-driver hints and upside-to-target context.
+5. Added regression coverage:
+- ranking/sort behavior tests in `test_portfolio_watchlist.py`
+- tool registry/contract/invocation coverage in `test_copilot_tool_updates.py`.
+6. Source-provenance note:
+- score packaging and factor transparency mirrors Ignidash analyzer-style output conventions
+- watchlist signal framing remains aligned with Ghostfolio watchlist/market-condition presentation patterns.
+7. Verification: `pytest -q services/orchestrator/tests` passes (`393 passed`).
+
 ### 2026-04-14 (Completed - Phase 4.2 Slice 2, Pre-Apply Recommendation Preview)
 1. Added first-class pre-apply recommendation preview contract:
 - `POST /api/recommendations/{recommendation_id}/preview`
@@ -299,9 +346,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Watchlist ranking endpoint + UI score surfacing (Phase 4.1 Slice 3).
-2. Copilot recommendation evidence-citation enforcement using dossier context (Phase 4.1 Slice 4).
-3. Persist expected-vs-realized recommendation outcomes and closure analytics surfaces (Phase 4.2 Slice 3).
+1. Persist expected-vs-realized recommendation outcomes and closure analytics surfaces (Phase 4.2 Slice 3).
+2. Add "Top 3 Next Actions" surfaces in dashboard and plan workspace (Phase 4.2 Slice 4).
+3. Add recommendation calibration reporting (by recommendation class/source) to improve decision loop quality (Phase 4.2 follow-up).
 
 ## Guardrails
 1. Do not fork or embed full Ghostfolio/Ignidash apps into BuildWealth runtime path.

@@ -188,6 +188,27 @@ def score_recommendation_row(
         if evidence.get("snapshot_as_of"):
             confidence += 4.0
 
+        citation_quality = evidence.get("citation_quality")
+        if isinstance(citation_quality, dict):
+            citation_status = str(citation_quality.get("status") or "").strip().lower()
+            citation_required = bool(citation_quality.get("required"))
+            if citation_status == "satisfied":
+                confidence += 10.0
+                _append_reason(reasons, "Research symbols are dossier-cited with artifact references.")
+            elif citation_status == "partial":
+                confidence += 2.0
+                _append_reason(reasons, "Research evidence citations are only partially complete.")
+                if citation_required:
+                    confidence -= 8.0
+                    _append_reason(reasons, "Copilot recommendation is missing dossier coverage for some symbols.")
+            elif citation_status == "missing":
+                if citation_required:
+                    confidence -= 18.0
+                    _append_reason(reasons, "Copilot recommendation is missing required dossier evidence citations.")
+                else:
+                    confidence -= 4.0
+                    _append_reason(reasons, "Recommendation has research symbols but no dossier citations.")
+
     decision_packet = action_payload.get("decision_packet")
     if isinstance(decision_packet, dict):
         confidence += 8.0

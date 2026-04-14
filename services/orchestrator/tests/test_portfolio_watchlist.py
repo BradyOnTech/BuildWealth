@@ -54,9 +54,15 @@ def test_build_portfolio_watchlist_payload_computes_market_metrics(monkeypatch) 
     assert payload["count"] == 1
     assert payload["period"] == "2y"
     assert payload["interval"] == "1d"
+    assert payload["score_model"] == "watchlist_v1"
+    assert payload["sorted_by"] == "ranked"
     assert payload["warnings"] == []
     row = payload["items"][0]
     assert row["symbol"] == "NVDA"
+    assert row["watchlist_rank"] == 1
+    assert isinstance(row["watchlist_score_total"], float)
+    assert isinstance(row["watchlist_score"], dict)
+    assert row["watchlist_score"]["model_version"] == "watchlist_v1"
     assert row["quote_price"] == 80.0
     assert row["quote_change_pct"] == -1.8
     assert row["trend50d"] == "UP"
@@ -76,3 +82,88 @@ def test_build_portfolio_watchlist_payload_handles_empty_watchlist(monkeypatch) 
 
     assert payload["count"] == 0
     assert payload["items"] == []
+
+
+def test_build_portfolio_watchlist_payload_ranks_items(monkeypatch) -> None:
+    class FakePortfolioStore:
+        def list_watchlist(self) -> list[dict[str, object]]:
+            return [
+                {
+                    "symbol": "AAA",
+                    "data_source": "OPENBB",
+                    "target_price_usd": 100.0,
+                    "tags": ["growth"],
+                },
+                {
+                    "symbol": "BBB",
+                    "data_source": "OPENBB",
+                    "target_price_usd": 102.0,
+                    "tags": ["value"],
+                },
+            ]
+
+    class FakeResearchService:
+        def quote(self, symbol: str):
+            if symbol == "AAA":
+                return _FakeResearchResponse([{"last": 80.0, "change_percent": 2.5}], available=True)
+            return _FakeResearchResponse([{"last": 100.0, "change_percent": -1.2}], available=True)
+
+        def price_history(self, symbol: str, period: str, interval: str):
+            assert period == "2y"
+            assert interval == "1d"
+            start = date(2026, 12, 31)
+            if symbol == "AAA":
+                base = 70.0
+                step = 0.03
+            else:
+                base = 130.0
+                step = -0.01
+            records = []
+            for idx in range(500):
+                records.append(
+                    {
+                        "date": (start - timedelta(days=idx)).isoformat(),
+                        "close": base + (idx * step),
+                    }
+                )
+            return _FakeResearchResponse(records, available=True)
+
+    monkeypatch.setattr(main, "portfolio_store", FakePortfolioStore())
+    monkeypatch.setattr(main, "research_service", FakeResearchService())
+
+    payload = main.build_portfolio_watchlist_payload(period="2y", interval="1d", sort="ranked")
+
+    assert payload["count"] == 2
+    assert payload["sorted_by"] == "ranked"
+    assert payload["items"][0]["symbol"] == "AAA"
+    assert payload["items"][0]["watchlist_rank"] == 1
+    assert payload["items"][1]["symbol"] == "BBB"
+    assert payload["items"][1]["watchlist_rank"] == 2
+    assert payload["items"][0]["watchlist_score_total"] > payload["items"][1]["watchlist_score_total"]
+
+
+def test_build_portfolio_watchlist_payload_symbol_sort(monkeypatch) -> None:
+    class FakePortfolioStore:
+        def list_watchlist(self) -> list[dict[str, object]]:
+            return [
+                {"symbol": "ZZZ", "data_source": "OPENBB"},
+                {"symbol": "AAA", "data_source": "OPENBB"},
+            ]
+
+    class FakeResearchService:
+        def quote(self, symbol: str):
+            return _FakeResearchResponse([{"last": 100.0, "change_percent": 0.0}], available=True)
+
+        def price_history(self, symbol: str, period: str, interval: str):
+            assert period == "2y"
+            assert interval == "1d"
+            records = [{"date": "2026-12-31", "close": 100.0}, {"date": "2026-12-30", "close": 100.0}]
+            return _FakeResearchResponse(records, available=True)
+
+    monkeypatch.setattr(main, "portfolio_store", FakePortfolioStore())
+    monkeypatch.setattr(main, "research_service", FakeResearchService())
+
+    payload = main.build_portfolio_watchlist_payload(sort="symbol")
+    assert payload["sorted_by"] == "symbol"
+    assert [row["symbol"] for row in payload["items"]] == ["AAA", "ZZZ"]
+    assert payload["items"][0]["watchlist_rank"] is None

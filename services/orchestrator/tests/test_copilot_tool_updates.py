@@ -19,6 +19,8 @@ def test_copilot_registry_includes_phase_3_5_tools() -> None:
         "pin_watchlist_research_to_plan",
         "research_compare",
         "research_dossier",
+        "research_dossier_lookup",
+        "research_watchlist_rank",
         "preview_recommendation",
     }
     assert required_tools <= set(main.copilot.tools.keys())
@@ -109,6 +111,22 @@ def test_research_dossier_tool_contract() -> None:
     assert "plan_id" in properties
     assert "save_to_plan" in properties
     assert "include_portfolio_fit" in properties
+
+
+def test_research_dossier_lookup_tool_contract() -> None:
+    tool = main.copilot.tools["research_dossier_lookup"]
+    properties = tool.parameters.get("properties", {})
+    assert "plan_id" in properties
+    assert "limit" in properties
+    assert "include_content" in properties
+
+
+def test_research_watchlist_rank_tool_contract() -> None:
+    tool = main.copilot.tools["research_watchlist_rank"]
+    properties = tool.parameters.get("properties", {})
+    assert "period" in properties
+    assert "interval" in properties
+    assert "limit" in properties
 
 
 def test_tool_pin_watchlist_research_to_plan_calls_bridge(
@@ -285,6 +303,93 @@ def test_tool_research_dossier_calls_research_service(
     assert payload["headline"] == "MSFT leads."
     assert payload["freshness"]["status"] == "fresh"
     assert [item["symbol"] for item in payload["compare"]["items"]] == ["MSFT", "AAPL"]
+
+
+def test_tool_research_dossier_lookup_calls_payload_builder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_build(
+        *,
+        plan_id: str | None,
+        limit: int,
+        include_content: bool,
+    ) -> dict[str, object]:
+        assert plan_id == "plan-abc"
+        assert limit == 4
+        assert include_content is True
+        return {
+            "plan_id": plan_id,
+            "count": 1,
+            "items": [
+                {
+                    "artifact_id": "artifact-1",
+                    "file_name": "artifact-1.md",
+                    "title": "Research Dossier: MSFT, AAPL",
+                    "created_at": "2026-04-14T00:00:00+00:00",
+                    "plan_id": plan_id,
+                    "symbols": ["MSFT", "AAPL"],
+                    "content_preview": "# Research Dossier: MSFT, AAPL",
+                }
+            ],
+            "warnings": [],
+            "updated_at": "2026-04-14T00:00:00+00:00",
+        }
+
+    monkeypatch.setattr(main, "build_research_dossier_lookup_payload", fake_build)
+    payload = asyncio.run(
+        main.tool_research_dossier_lookup(
+            {
+                "plan_id": "plan-abc",
+                "limit": 4,
+                "include_content": True,
+            }
+        )
+    )
+
+    assert payload["count"] == 1
+    assert payload["items"][0]["artifact_id"] == "artifact-1"
+    assert payload["items"][0]["symbols"] == ["MSFT", "AAPL"]
+
+
+def test_tool_research_watchlist_rank_calls_payload_builder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_build(
+        *,
+        period: str,
+        interval: str,
+        sort: str,
+        limit: int,
+    ) -> dict[str, object]:
+        assert period == "6mo"
+        assert interval == "1d"
+        assert sort == "ranked"
+        assert limit == 75
+        return {
+            "period": period,
+            "interval": interval,
+            "count": 1,
+            "score_model": "watchlist_v1",
+            "sorted_by": sort,
+            "items": [{"symbol": "NVDA", "watchlist_rank": 1, "watchlist_score_total": 78.2}],
+            "warnings": [],
+            "updated_at": "2026-04-14T00:00:00+00:00",
+        }
+
+    monkeypatch.setattr(main, "build_portfolio_watchlist_payload", fake_build)
+    payload = asyncio.run(
+        main.tool_research_watchlist_rank(
+            {
+                "period": "6mo",
+                "interval": "1d",
+                "limit": 75,
+            }
+        )
+    )
+
+    assert payload["sorted_by"] == "ranked"
+    assert payload["score_model"] == "watchlist_v1"
+    assert payload["items"][0]["symbol"] == "NVDA"
 
 
 def test_tool_preview_recommendation_calls_preview_service(

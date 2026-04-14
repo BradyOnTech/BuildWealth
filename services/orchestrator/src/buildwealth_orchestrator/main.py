@@ -34,6 +34,8 @@ from buildwealth_orchestrator.schemas import (
     ResearchCompareResponse,
     ResearchDossierRequest,
     ResearchDossierResponse,
+    ResearchDossierLookupResponse,
+    WatchlistRankResponse,
     PlanArtifactSummary,
     PlanArtifactResponse,
     PlanCreateRequest,
@@ -385,6 +387,8 @@ copilot = FinancialCopilot(
         "- For comparing multiple investment candidates → call research_compare, "
         "then call simulate_trade to show how a chosen trade would affect portfolio allocation.\n"
         "- For structured multi-symbol research memos with thesis/risks/catalysts and plan artifacts → call research_dossier.\n"
+        "- To reuse saved dossier evidence and artifact references for recommendation rationale → call research_dossier_lookup.\n"
+        "- For ranking watchlist candidates by momentum/trend/target/data quality → call research_watchlist_rank.\n"
         "- For 'what if I buy/sell X?' → call simulate_trade to show allocation and concentration impact.\n"
         "- For daily reviews → call get_financial_health, get_plan_tracking, and get_today_dashboard.\n\n"
         "RESPONSE GUIDELINES:\n"
@@ -394,6 +398,8 @@ copilot = FinancialCopilot(
         "- When discussing cash flow, cite monthly income, expenses, and surplus figures.\n"
         "- When recommending actions, explain the quantitative impact (e.g., 'increasing contributions by "
         "$200/month would add ~$X to your projected retirement value').\n"
+        "- For research-backed recommendations, include dossier artifact citations in recommendation evidence "
+        "(symbols + artifact references).\n"
         "- Proactively flag risks you discover (high concentration, low emergency fund, negative cash flow)."
     ),
 )
@@ -2590,6 +2596,274 @@ def _build_recommendation_open_counts() -> tuple[int, int]:
     return len(rows), len(high)
 
 
+RECOMMENDATION_CITATION_MODEL_VERSION = "citation_v1"
+
+
+def _recommendation_source_requires_dossier_citations(source: str) -> bool:
+    normalized = str(source or "").strip().lower()
+    return normalized.startswith("copilot")
+
+
+def _coerce_symbol_list_from_raw(raw_value: Any) -> list[str]:
+    if isinstance(raw_value, list):
+        return [str(item or "").strip() for item in raw_value]
+    if isinstance(raw_value, str):
+        return [item.strip() for item in raw_value.split(",")]
+    return []
+
+
+def _extract_symbols_from_research_dossier_title(title: Any) -> list[str]:
+    text = str(title or "").strip()
+    lowered = text.lower()
+    if lowered.startswith("research dossier:"):
+        symbol_segment = text.split(":", 1)[1]
+    elif lowered.startswith("research dossier -"):
+        symbol_segment = text.split("-", 1)[1]
+    else:
+        return []
+    normalized_segment = (
+        symbol_segment.replace(" vs ", ",")
+        .replace(" VS ", ",")
+        .replace(" Vs ", ",")
+        .replace("|", ",")
+        .replace("/", ",")
+    )
+    return normalize_research_symbols(
+        [item.strip() for item in normalized_segment.split(",") if item.strip()],
+        max_symbols=20,
+    )
+
+
+def _list_research_dossier_artifacts(
+    *,
+    plan_id: str,
+    limit: int = 5,
+    include_content: bool = False,
+) -> list[dict[str, Any]]:
+    plan_detail = plan_workspace.get_plan(plan_id)
+    artifacts_raw = plan_detail.get("artifacts")
+    artifacts = artifacts_raw if isinstance(artifacts_raw, list) else []
+    rows: list[dict[str, Any]] = []
+    max_rows = max(1, min(int(limit), 25))
+
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            continue
+        artifact_id = str(artifact.get("id") or "").strip()
+        if not artifact_id:
+            continue
+        file_name = str(artifact.get("file_name") or "").strip()
+        title = str(artifact.get("title") or "").strip()
+        title_lower = title.lower()
+        if "-research-dossier-" not in file_name and not title_lower.startswith("research dossier"):
+            continue
+        row: dict[str, Any] = {
+            "artifact_id": artifact_id,
+            "file_name": file_name or f"{artifact_id}.md",
+            "title": title or artifact_id,
+            "created_at": artifact.get("created_at"),
+            "plan_id": plan_id,
+            "symbols": _extract_symbols_from_research_dossier_title(title),
+            "content_preview": "",
+        }
+        if include_content:
+            with suppress(Exception):
+                artifact_payload = plan_workspace.read_artifact(plan_id=plan_id, artifact_id=artifact_id)
+                content = str(artifact_payload.get("content") or "")
+                row["content_preview"] = content[:1600]
+                if not row["symbols"]:
+                    row["symbols"] = _extract_symbols_from_research_dossier_title(
+                        artifact_payload.get("title")
+                    )
+        rows.append(row)
+        if len(rows) >= max_rows:
+            break
+    return rows
+
+
+def build_research_dossier_lookup_payload(
+    *,
+    plan_id: str | None = None,
+    limit: int = 5,
+    include_content: bool = False,
+) -> dict[str, Any]:
+    requested_plan_id = str(plan_id or "").strip() or None
+    resolved_plan_id = requested_plan_id or plan_workspace.get_active_plan_id()
+    warnings: list[str] = []
+    if not resolved_plan_id:
+        warnings.append("No plan_id provided and no active plan is set.")
+        return {
+            "plan_id": None,
+            "count": 0,
+            "items": [],
+            "warnings": warnings,
+            "updated_at": context_utc_now_iso(),
+        }
+
+    items: list[dict[str, Any]]
+    try:
+        items = _list_research_dossier_artifacts(
+            plan_id=resolved_plan_id,
+            limit=limit,
+            include_content=include_content,
+        )
+    except PlanNotFoundError as exc:
+        warnings.append(str(exc))
+        items = []
+
+    return {
+        "plan_id": resolved_plan_id,
+        "count": len(items),
+        "items": items,
+        "warnings": normalize_context_warnings(warnings, max_warnings=20),
+        "updated_at": context_utc_now_iso(),
+    }
+
+
+def _normalize_recommendation_evidence_citations(raw_citations: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw_citations, list):
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for raw in raw_citations:
+        if not isinstance(raw, dict):
+            continue
+        symbol = str(raw.get("symbol") or "").strip().upper()
+        if not symbol:
+            continue
+        source = str(raw.get("source") or "manual").strip().lower() or "manual"
+        artifact_id = str(raw.get("artifact_id") or "").strip()
+        artifact_title = str(raw.get("artifact_title") or "").strip()
+        note = str(raw.get("note") or "").strip()
+        key = (symbol, source, artifact_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(
+            {
+                "symbol": symbol,
+                "source": source,
+                "artifact_id": artifact_id or None,
+                "artifact_title": artifact_title or None,
+                "note": note,
+            }
+        )
+        if len(normalized) >= 24:
+            break
+    return normalized
+
+
+def _prepare_recommendation_action_payload(
+    *,
+    source: str,
+    action_payload: dict[str, Any] | None,
+    plan_id: str | None,
+) -> dict[str, Any]:
+    payload = dict(action_payload) if isinstance(action_payload, dict) else {}
+    evidence_raw = payload.get("evidence")
+    evidence = dict(evidence_raw) if isinstance(evidence_raw, dict) else {}
+    payload["evidence"] = evidence
+
+    symbol_candidates: list[str] = []
+    for key in ("research_symbols", "symbols"):
+        symbol_candidates.extend(_coerce_symbol_list_from_raw(payload.get(key)))
+        symbol_candidates.extend(_coerce_symbol_list_from_raw(evidence.get(key)))
+    required_symbols = normalize_research_symbols(symbol_candidates, max_symbols=12)
+
+    if required_symbols:
+        payload["research_symbols"] = required_symbols
+        evidence["research_symbols"] = required_symbols
+
+    citations = _normalize_recommendation_evidence_citations(evidence.get("citations"))
+    citation_symbols = normalize_research_symbols(
+        [str(item.get("symbol") or "").strip() for item in citations],
+        max_symbols=12,
+    )
+    citation_symbols_set = set(citation_symbols)
+
+    unresolved_symbols = [symbol for symbol in required_symbols if symbol not in citation_symbols_set]
+    resolved_plan_id = str(plan_id or "").strip() or plan_workspace.get_active_plan_id()
+    if unresolved_symbols and resolved_plan_id:
+        lookup = build_research_dossier_lookup_payload(plan_id=resolved_plan_id, limit=3, include_content=False)
+        lookup_items = lookup.get("items") if isinstance(lookup, dict) else []
+        dossier_items = lookup_items if isinstance(lookup_items, list) else []
+        for symbol in unresolved_symbols:
+            matched: dict[str, Any] | None = None
+            for item in dossier_items:
+                if not isinstance(item, dict):
+                    continue
+                dossier_symbols = item.get("symbols")
+                symbols = normalize_research_symbols(dossier_symbols, max_symbols=12) if isinstance(
+                    dossier_symbols,
+                    list,
+                ) else []
+                if symbols and symbol not in symbols:
+                    continue
+                matched = item
+                break
+            if matched is None:
+                continue
+            citations.append(
+                {
+                    "symbol": symbol,
+                    "source": "research_dossier",
+                    "artifact_id": str(matched.get("artifact_id") or "") or None,
+                    "artifact_title": str(matched.get("title") or "") or None,
+                    "note": "Auto-cited from latest plan research dossier.",
+                }
+            )
+
+    citations = _normalize_recommendation_evidence_citations(citations)
+    cited_symbols = normalize_research_symbols(
+        [str(item.get("symbol") or "").strip() for item in citations],
+        max_symbols=12,
+    )
+    cited_symbol_set = set(cited_symbols)
+    missing_symbols = [symbol for symbol in required_symbols if symbol not in cited_symbol_set]
+    dossier_cited_symbols = normalize_research_symbols(
+        [
+            str(item.get("symbol") or "").strip()
+            for item in citations
+            if str(item.get("artifact_id") or "").strip()
+            or str(item.get("source") or "").strip().lower() == "research_dossier"
+        ],
+        max_symbols=12,
+    )
+    dossier_symbol_set = set(dossier_cited_symbols)
+    missing_dossier_symbols = [symbol for symbol in required_symbols if symbol not in dossier_symbol_set]
+
+    citation_status = "not_required"
+    if required_symbols:
+        if not citations:
+            citation_status = "missing"
+        elif missing_dossier_symbols:
+            citation_status = "partial"
+        else:
+            citation_status = "satisfied"
+
+    citation_required = _recommendation_source_requires_dossier_citations(source) and bool(required_symbols)
+    evidence["citations"] = citations
+    evidence["citation_quality"] = {
+        "model_version": RECOMMENDATION_CITATION_MODEL_VERSION,
+        "required": citation_required,
+        "status": citation_status,
+        "required_symbols": required_symbols,
+        "cited_symbols": cited_symbols,
+        "missing_symbols": missing_symbols,
+        "missing_dossier_symbols": missing_dossier_symbols,
+        "updated_at": context_utc_now_iso(),
+    }
+    if citation_required and citation_status != "satisfied":
+        missing_label = ", ".join(missing_dossier_symbols or missing_symbols or required_symbols)
+        raise ValueError(
+            "Copilot research-backed recommendations require dossier-backed evidence citations "
+            f"for symbols: {missing_label}. Run research_dossier with save_to_plan=true (or pass "
+            "action_payload.evidence.citations with artifact_id references) and retry."
+        )
+    return payload
+
+
 def _workflow_recommendation_payload(
     workflow_id: str,
     recommendation_text: str,
@@ -2611,6 +2885,16 @@ def _workflow_recommendation_payload(
         "snapshot_as_of": snapshot_as_of,
         "data_keys": sorted(list(data_payload.keys()))[:16],
     }
+    action_payload = _prepare_recommendation_action_payload(
+        source=f"workflow:{workflow_id}",
+        action_payload={
+            "workflow_id": workflow_id,
+            "suggested_action": text,
+            "evidence": evidence,
+        },
+        plan_id=plan_id,
+    )
+
     return recommendation_inbox.create(
         title=f"{workflow_id.replace('_', ' ').title()} Recommendation",
         detail=text,
@@ -2618,11 +2902,7 @@ def _workflow_recommendation_payload(
         recommendation_type="workflow_action",
         source=f"workflow:{workflow_id}",
         plan_id=plan_id,
-        action_payload={
-            "workflow_id": workflow_id,
-            "suggested_action": text,
-            "evidence": evidence,
-        },
+        action_payload=action_payload,
     )
 
 
@@ -4049,13 +4329,134 @@ def _market_condition_from_all_time_high(performance_percent: float | None) -> s
     return "NEUTRAL_MARKET"
 
 
+WATCHLIST_SCORE_MODEL_VERSION = "watchlist_v1"
+
+
+def _normalize_watchlist_sort(raw_sort: str | None) -> str:
+    normalized = str(raw_sort or "").strip().lower()
+    if normalized in {"ranked", "symbol", "updated_at"}:
+        return normalized
+    return "ranked"
+
+
+def _score_from_percent(
+    value: float | None,
+    *,
+    floor: float,
+    ceil: float,
+    default_score: float = 50.0,
+) -> float:
+    if value is None:
+        return float(default_score)
+    if ceil <= floor:
+        return float(default_score)
+    clipped = max(floor, min(ceil, float(value)))
+    return ((clipped - floor) / (ceil - floor)) * 100.0
+
+
+def _trend_signal_score(signal: str) -> float:
+    normalized = str(signal or "").strip().upper()
+    if normalized == "UP":
+        return 100.0
+    if normalized == "DOWN":
+        return 20.0
+    if normalized == "NEUTRAL":
+        return 55.0
+    return 40.0
+
+
+def _build_watchlist_rank_score(
+    *,
+    quote_available: bool,
+    history_available: bool,
+    quote_price: float | None,
+    quote_change_pct: float | None,
+    period_change_pct: float | None,
+    trend_50d: str,
+    trend_200d: str,
+    target_price_usd: float | None,
+    performance_from_high_pct: float | None,
+    history_records: int,
+) -> dict[str, Any]:
+    reasons: list[str] = []
+
+    period_score = _score_from_percent(period_change_pct, floor=-30.0, ceil=30.0, default_score=50.0)
+    day_score = _score_from_percent(quote_change_pct, floor=-8.0, ceil=8.0, default_score=50.0)
+    momentum_score = (period_score * 0.75) + (day_score * 0.25)
+
+    trend_50d_score = _trend_signal_score(trend_50d)
+    trend_200d_score = _trend_signal_score(trend_200d)
+    trend_score = (trend_50d_score * 0.4) + (trend_200d_score * 0.6)
+    if trend_50d == "UP" and trend_200d == "UP":
+        reasons.append("trend_up_50d_200d")
+    elif trend_50d == "DOWN" and trend_200d == "DOWN":
+        reasons.append("trend_down_50d_200d")
+
+    upside_to_target_pct: float | None = None
+    target_score = 50.0
+    if target_price_usd is not None and quote_price is not None and quote_price > 0:
+        upside_to_target_pct = ((target_price_usd - quote_price) / quote_price) * 100.0
+        target_score = _score_from_percent(upside_to_target_pct, floor=-20.0, ceil=30.0, default_score=50.0)
+        if upside_to_target_pct >= 15.0:
+            reasons.append("target_upside_high")
+        elif upside_to_target_pct <= -10.0:
+            reasons.append("price_above_target")
+    elif target_price_usd is not None:
+        reasons.append("target_present_price_missing")
+    else:
+        reasons.append("target_missing")
+
+    data_quality_score = 15.0
+    if quote_available and history_available:
+        data_quality_score = 100.0
+    elif quote_available or history_available:
+        data_quality_score = 65.0
+    if history_records < 60:
+        data_quality_score = max(20.0, data_quality_score - 20.0)
+        reasons.append("history_shallow")
+    if not quote_available:
+        reasons.append("quote_unavailable")
+    if not history_available:
+        reasons.append("history_unavailable")
+
+    risk_score = _score_from_percent(performance_from_high_pct, floor=-50.0, ceil=10.0, default_score=55.0)
+    if performance_from_high_pct is not None and performance_from_high_pct <= -20.0:
+        reasons.append("drawdown_deep")
+    elif performance_from_high_pct is not None and performance_from_high_pct >= -5.0:
+        reasons.append("near_high")
+
+    total = (
+        (momentum_score * 0.30)
+        + (trend_score * 0.20)
+        + (target_score * 0.20)
+        + (data_quality_score * 0.20)
+        + (risk_score * 0.10)
+    )
+
+    return {
+        "model_version": WATCHLIST_SCORE_MODEL_VERSION,
+        "total": round(max(0.0, min(100.0, total)), 2),
+        "momentum": round(max(0.0, min(100.0, momentum_score)), 2),
+        "trend": round(max(0.0, min(100.0, trend_score)), 2),
+        "target_gap": round(max(0.0, min(100.0, target_score)), 2),
+        "data_quality": round(max(0.0, min(100.0, data_quality_score)), 2),
+        "risk_balance": round(max(0.0, min(100.0, risk_score)), 2),
+        "upside_to_target_pct": round(upside_to_target_pct, 2) if upside_to_target_pct is not None else None,
+        "reasons": reasons[:8],
+    }
+
+
 def build_portfolio_watchlist_payload(
     *,
     period: str = "2y",
     interval: str = "1d",
+    sort: str = "ranked",
+    limit: int = 200,
 ) -> dict[str, Any]:
     period_value = str(period or "2y").strip() or "2y"
     interval_value = str(interval or "1d").strip() or "1d"
+    sort_value = _normalize_watchlist_sort(sort)
+    limit_value = max(1, min(int(limit), 500))
     items_payload = portfolio_store.list_watchlist()
     rows: list[dict[str, Any]] = []
     warnings: list[str] = []
@@ -4112,13 +4513,34 @@ def build_portfolio_watchlist_payload(
         if not history_response.available:
             warnings.append(f"{symbol}: history unavailable ({history_response.message})")
 
+        target_price = _extract_numeric_field(
+            item,
+            (
+                "target_price_usd",
+                "target_price",
+                "target",
+            ),
+        )
+        score_payload = _build_watchlist_rank_score(
+            quote_available=quote_response.available,
+            history_available=history_response.available,
+            quote_price=quote_price,
+            quote_change_pct=quote_change_pct,
+            period_change_pct=period_change_pct,
+            trend_50d=trend_50d,
+            trend_200d=trend_200d,
+            target_price_usd=target_price,
+            performance_from_high_pct=performance_from_high_pct,
+            history_records=len(history_records),
+        )
+
         rows.append(
             {
                 "symbol": symbol,
                 "data_source": str(item.get("data_source") or "OPENBB").strip().upper() or "OPENBB",
                 "note": str(item.get("note") or ""),
                 "thesis": str(item.get("thesis") or ""),
-                "target_price_usd": item.get("target_price_usd"),
+                "target_price_usd": target_price,
                 "tags": item.get("tags") if isinstance(item.get("tags"), list) else [],
                 "created_at": item.get("created_at"),
                 "updated_at": item.get("updated_at"),
@@ -4137,16 +4559,38 @@ def build_portfolio_watchlist_payload(
                 "market_condition": _market_condition_from_all_time_high(performance_from_high_pct),
                 "trend50d": trend_50d,
                 "trend200d": trend_200d,
+                "history_records": len(history_records),
+                "watchlist_rank": None,
+                "watchlist_score_total": score_payload.get("total"),
+                "watchlist_score": score_payload,
+                "watchlist_score_reasons": score_payload.get("reasons"),
             }
         )
 
-    rows.sort(key=lambda item: str(item.get("symbol") or ""))
+    if sort_value == "symbol":
+        rows.sort(key=lambda item: str(item.get("symbol") or ""))
+    elif sort_value == "updated_at":
+        rows.sort(key=lambda item: str(item.get("updated_at") or item.get("created_at") or ""), reverse=True)
+    else:
+        rows.sort(
+            key=lambda item: (
+                -float(item.get("watchlist_score_total") or 0.0),
+                str(item.get("symbol") or ""),
+            )
+        )
+        for index, row in enumerate(rows, start=1):
+            row["watchlist_rank"] = index
+
+    deduped_warnings = normalize_context_warnings(warnings, max_warnings=80)
+    rows = rows[:limit_value]
     return {
         "period": period_value,
         "interval": interval_value,
+        "score_model": WATCHLIST_SCORE_MODEL_VERSION,
+        "sorted_by": sort_value,
         "count": len(rows),
         "items": rows,
-        "warnings": warnings,
+        "warnings": deduped_warnings,
         "updated_at": context_utc_now_iso(),
     }
 
@@ -4944,16 +5388,22 @@ async def tool_create_recommendation(arguments: dict[str, object]) -> dict[str, 
     if not title or not detail:
         raise ValueError("title and detail are required")
 
+    source = str(arguments.get("source") or "copilot").strip().lower() or "copilot"
+    plan_id = str(arguments.get("plan_id") or "").strip() or None
     action_payload = arguments.get("action_payload")
-    payload = action_payload if isinstance(action_payload, dict) else {}
+    payload = _prepare_recommendation_action_payload(
+        source=source,
+        action_payload=(action_payload if isinstance(action_payload, dict) else {}),
+        plan_id=plan_id,
+    )
 
     recommendation = recommendation_inbox.create(
         title=title,
         detail=detail,
         priority=str(arguments.get("priority") or "medium").strip().lower() or "medium",
         recommendation_type=str(arguments.get("recommendation_type") or "general").strip().lower() or "general",
-        source=str(arguments.get("source") or "copilot").strip().lower() or "copilot",
-        plan_id=(str(arguments.get("plan_id") or "").strip() or None),
+        source=source,
+        plan_id=plan_id,
         action_payload=payload,
     )
     return {"recommendation": _recommendation_item_from_row(recommendation).model_dump(mode="json")}
@@ -5538,6 +5988,30 @@ async def tool_research_dossier(arguments: dict[str, object]) -> dict[str, objec
             compare_payload["items"] = items[:20]
             compare_payload["items_truncated"] = max(0, len(items) - 20)
     return result
+
+
+async def tool_research_dossier_lookup(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = str(arguments.get("plan_id") or "").strip() or None
+    limit = max(1, min(_coerce_int(arguments.get("limit"), 5), 25))
+    include_content = _coerce_bool(arguments.get("include_content"), False)
+    return build_research_dossier_lookup_payload(
+        plan_id=plan_id,
+        limit=limit,
+        include_content=include_content,
+    )
+
+
+async def tool_research_watchlist_rank(arguments: dict[str, object]) -> dict[str, object]:
+    period = str(arguments.get("period", "2y")).strip() or "2y"
+    interval = str(arguments.get("interval", "1d")).strip() or "1d"
+    limit = max(1, min(_coerce_int(arguments.get("limit"), 100), 500))
+    payload = build_portfolio_watchlist_payload(
+        period=period,
+        interval=interval,
+        sort="ranked",
+        limit=limit,
+    )
+    return payload
 
 
 def _normalize_account_total_rows(payload: Any) -> list[dict[str, Any]]:
@@ -6674,7 +7148,9 @@ def configure_copilot_tools() -> None:
         name="create_recommendation",
         description=(
             "Create a recommendation inbox item. "
-            "Required: title, detail. Optional: priority, recommendation_type, source, plan_id, action_payload."
+            "Required: title, detail. Optional: priority, recommendation_type, source, plan_id, action_payload. "
+            "For copilot research-backed recommendations, action_payload should include "
+            "research symbols and evidence citations tied to research dossier artifacts."
         ),
         parameters={
             "type": "object",
@@ -7004,6 +7480,40 @@ def configure_copilot_tools() -> None:
             "additionalProperties": False,
         },
         handler=tool_research_dossier,
+    )
+    copilot.register_tool(
+        name="research_dossier_lookup",
+        description=(
+            "List saved research dossier artifacts for a plan so recommendations can cite evidence "
+            "with artifact references."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                "limit": {"type": "integer"},
+                "include_content": {"type": "boolean"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_research_dossier_lookup,
+    )
+    copilot.register_tool(
+        name="research_watchlist_rank",
+        description=(
+            "Rank watchlist symbols by a composite score (momentum, trend, target gap, data quality, risk balance). "
+            "Returns ranked watchlist rows and score breakdown."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "period": {"type": "string"},
+                "interval": {"type": "string"},
+                "limit": {"type": "integer"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_research_watchlist_rank,
     )
     copilot.register_tool(
         name="list_accounts",
@@ -7748,9 +8258,35 @@ def add_portfolio_account(request: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-@app.get("/api/portfolio/watchlist")
-def get_portfolio_watchlist(period: str = "2y", interval: str = "1d") -> dict[str, Any]:
-    return build_portfolio_watchlist_payload(period=period, interval=interval)
+@app.get("/api/portfolio/watchlist", response_model=WatchlistRankResponse)
+def get_portfolio_watchlist(
+    period: str = "2y",
+    interval: str = "1d",
+    sort: str = "ranked",
+    limit: int = 200,
+) -> WatchlistRankResponse:
+    payload = build_portfolio_watchlist_payload(
+        period=period,
+        interval=interval,
+        sort=sort,
+        limit=limit,
+    )
+    return WatchlistRankResponse(**payload)
+
+
+@app.get("/api/research/watchlist-rank", response_model=WatchlistRankResponse)
+def get_research_watchlist_rank(
+    period: str = "2y",
+    interval: str = "1d",
+    limit: int = 200,
+) -> WatchlistRankResponse:
+    payload = build_portfolio_watchlist_payload(
+        period=period,
+        interval=interval,
+        sort="ranked",
+        limit=limit,
+    )
+    return WatchlistRankResponse(**payload)
 
 
 @app.post("/api/portfolio/watchlist")
@@ -7994,15 +8530,23 @@ def list_recommendations(
 
 @app.post("/api/recommendations", response_model=RecommendationItem)
 def create_recommendation(request: RecommendationCreateRequest) -> RecommendationItem:
-    recommendation = recommendation_inbox.create(
-        title=request.title,
-        detail=request.detail,
-        priority=request.priority,
-        recommendation_type=request.recommendation_type,
-        source=request.source,
-        plan_id=request.plan_id,
-        action_payload=request.action_payload,
-    )
+    try:
+        prepared_payload = _prepare_recommendation_action_payload(
+            source=request.source,
+            action_payload=request.action_payload,
+            plan_id=request.plan_id,
+        )
+        recommendation = recommendation_inbox.create(
+            title=request.title,
+            detail=request.detail,
+            priority=request.priority,
+            recommendation_type=request.recommendation_type,
+            source=request.source,
+            plan_id=request.plan_id,
+            action_payload=prepared_payload,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _recommendation_item_from_row(recommendation)
 
 
@@ -9409,6 +9953,20 @@ def research_dossier(request: ResearchDossierRequest) -> ResearchDossierResponse
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/research/dossiers", response_model=ResearchDossierLookupResponse)
+def research_dossier_lookup(
+    plan_id: str | None = None,
+    limit: int = 5,
+    include_content: bool = False,
+) -> ResearchDossierLookupResponse:
+    payload = build_research_dossier_lookup_payload(
+        plan_id=plan_id,
+        limit=limit,
+        include_content=include_content,
+    )
+    return ResearchDossierLookupResponse(**payload)
 
 
 @app.post("/api/chat", response_model=ChatResponse)
