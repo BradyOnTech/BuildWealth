@@ -102,6 +102,27 @@ This profile is not required for standalone BuildWealth operation.
 - Use `POST /api/copilot/context/cache/reset` to clear cache entries (and optionally metrics) during local troubleshooting.
 - For context payload size control, pass `detail_level=light` on `GET /api/copilot/context` (or `context_options.detail_level` in chat requests); use `full` only when deep payload detail is required.
 
+## Durable Storage Upgrade Path (Phase 6.0 Slice 1)
+
+Status:
+```bash
+curl -s http://localhost:8090/api/storage/durable/status | jq
+```
+
+Run migration + rollback simulation checks:
+```bash
+curl -s -X POST http://localhost:8090/api/storage/durable/migrate \
+  -H 'Content-Type: application/json' \
+  -d '{"run_rollback_check": true}' | jq
+```
+
+Rollback latest migration backup:
+```bash
+curl -s -X POST http://localhost:8090/api/storage/durable/rollback \
+  -H 'Content-Type: application/json' \
+  -d '{}' | jq
+```
+
 ## Useful Commands
 
 ```bash

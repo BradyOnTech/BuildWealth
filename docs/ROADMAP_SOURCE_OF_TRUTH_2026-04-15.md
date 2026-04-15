@@ -10,6 +10,27 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 6.0 Slice 1, Durable Storage Upgrade Path)
+1. Added first-class durable storage migration service (`durable_storage.py`) to stage file-backed stores into a SQLite snapshot with verification:
+- migrates portfolio, snapshots, conversations, plans, profile, and recommendation stores from `data/` into `buildwealth_durable.db`.
+- verifies migrated checksum parity between source documents and SQLite rows before activation.
+2. Added rollback-path safety checks:
+- migration run now writes timestamped backup + report artifacts under `DURABLE_STORAGE_DIR/migrations/...`.
+- rollback simulation checks run during migration (default enabled) to validate restorable backups.
+- rollback endpoint can restore latest migration backup and restore/remove the durable database based on pre-migration state.
+3. Added API and configuration surfaces:
+- new endpoints:
+  - `GET /api/storage/durable/status`
+  - `POST /api/storage/durable/migrate`
+  - `POST /api/storage/durable/rollback`
+- new setting/env: `DURABLE_STORAGE_DIR` (default `data/storage`).
+4. Documentation updates:
+- updated standalone operations and migration compatibility runbooks with durable migration/rollback workflow.
+- normalized roadmap filename/date references to `docs/ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md`.
+5. Verification:
+- targeted: `pytest -q tests/test_durable_storage.py` (`2 passed`).
+- full: `pytest -q` (`455 passed`).
+
 ### 2026-04-15 (Completed - Phase 5.1 Slice 4, Portfolio Review Packet Export Endpoints)
 1. Added first-class periodic review packet export endpoints:
 - `POST /api/portfolio/review-packets` to generate a packet from local portfolio/planning/recommendation data.
@@ -642,9 +663,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Start Phase 6.0 Slice 1: implement durable storage strategy upgrade path with migration and rollback checks.
-2. Start Phase 6.0 Slice 2: add backup/restore command and UI entrypoint.
-3. Start Phase 6.0 Slice 3: add local data protection options for sensitive stores.
+1. Start Phase 6.0 Slice 2: add backup/restore command and UI entrypoint.
+2. Start Phase 6.0 Slice 3: add local data protection options for sensitive stores.
+3. Start Phase 6.0 Slice 4: add runtime telemetry dashboards for API latency, context freshness, and cache quality.
 
 ## Cross-Cutting Engineering Follow-Up
 1. Post-refactor helper indirection and intentional sidecar complexity are documented in [`docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`](./CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md).

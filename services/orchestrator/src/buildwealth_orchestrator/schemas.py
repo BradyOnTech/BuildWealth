@@ -1999,3 +1999,53 @@ class PlanTrackingResponse(BaseModel):
 
     market_growth_usd: float
     snapshot_count: int
+
+
+class DurableStorageStatusResponse(BaseModel):
+    strategy: str
+    data_root: str
+    storage_dir: str
+    database_path: str
+    database_exists: bool
+    document_count: int
+    latest_migration_id: str | None = None
+    latest_migration_at: datetime | None = None
+    latest_source_checksum: str | None = None
+    latest_database_checksum: str | None = None
+    latest_rollback_check_passed: bool | None = None
+
+
+class DurableStorageMigrationRequest(BaseModel):
+    run_rollback_check: bool = True
+
+
+class DurableStorageMigrationResponse(BaseModel):
+    migration_id: str
+    strategy: str
+    created_at: datetime
+    data_root: str
+    storage_dir: str
+    database_path: str
+    backup_dir: str
+    previous_database_backup_path: str | None = None
+    documents_migrated: int
+    total_bytes: int
+    source_checksum: str
+    database_checksum: str
+    rollback_check_performed: bool
+    rollback_check_passed: bool
+    report_path: str
+
+
+class DurableStorageRollbackRequest(BaseModel):
+    migration_id: str | None = None
+
+
+class DurableStorageRollbackResponse(BaseModel):
+    migration_id: str
+    restored_at: datetime
+    backup_dir: str
+    files_restored: int
+    bytes_restored: int
+    database_restored: bool
+    database_removed: bool

@@ -107,6 +107,11 @@ from buildwealth_orchestrator.schemas import (
     GoalProgressResponse,
     PlanTrackingResponse,
     EngineStatusResponse,
+    DurableStorageStatusResponse,
+    DurableStorageMigrationRequest,
+    DurableStorageMigrationResponse,
+    DurableStorageRollbackRequest,
+    DurableStorageRollbackResponse,
     TodayDashboardResponse,
     TopNextAction,
     PortfolioReviewPacketListResponse,
@@ -187,6 +192,11 @@ from buildwealth_orchestrator.services.planning_sidecar import (
     IgnidashScenarioService,
 )
 from buildwealth_orchestrator.services.engine_status import EngineProbeConfig, EngineStatusTracker
+from buildwealth_orchestrator.services.durable_storage import (
+    DurableStorageMigrationError,
+    DurableStorageMigrationNotFoundError,
+    DurableStorageMigrationService,
+)
 from buildwealth_orchestrator.services.tax_engine import estimate_federal_tax
 from buildwealth_orchestrator.services.today_dashboard import build_today_dashboard_payload
 from buildwealth_orchestrator.services.buildwealth_context import (
@@ -261,6 +271,7 @@ def parse_path_candidates(raw_value: str, fallback: tuple[str, ...]) -> tuple[st
 
 snapshot_store = SnapshotStore(settings.snapshot_dir)
 portfolio_store = PortfolioStore(settings.snapshot_dir.parent / "portfolio")
+durable_storage_service = DurableStorageMigrationService.from_settings(settings)
 ignidash_export_store = IgnidashExportStore(settings.ignidash_export_dir)
 portfolio_review_packet_store = PortfolioReviewPacketStore(settings.portfolio_review_packet_dir)
 scenario_engine = ScenarioEngine(
@@ -10096,6 +10107,35 @@ def configure_copilot_tools() -> None:
 configure_copilot_tools()
 
 
+@app.get("/api/storage/durable/status", response_model=DurableStorageStatusResponse)
+def get_durable_storage_status() -> DurableStorageStatusResponse:
+    return DurableStorageStatusResponse.model_validate(durable_storage_service.get_status())
+
+
+@app.post("/api/storage/durable/migrate", response_model=DurableStorageMigrationResponse)
+def migrate_durable_storage(
+    request: DurableStorageMigrationRequest,
+) -> DurableStorageMigrationResponse:
+    try:
+        report = durable_storage_service.run_upgrade(run_rollback_check=request.run_rollback_check)
+    except DurableStorageMigrationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return DurableStorageMigrationResponse.model_validate(report)
+
+
+@app.post("/api/storage/durable/rollback", response_model=DurableStorageRollbackResponse)
+def rollback_durable_storage(
+    request: DurableStorageRollbackRequest,
+) -> DurableStorageRollbackResponse:
+    try:
+        report = durable_storage_service.rollback_latest_migration(migration_id=request.migration_id)
+    except DurableStorageMigrationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except DurableStorageMigrationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return DurableStorageRollbackResponse.model_validate(report)
+
+
 @app.get("/api/settings")
 def get_user_settings() -> dict[str, Any]:
     return user_settings_store.load_masked()
@@ -10122,6 +10162,7 @@ def update_user_settings(request: dict[str, Any]) -> dict[str, Any]:
 async def on_startup() -> None:
     settings.import_inbox_dir.mkdir(parents=True, exist_ok=True)
     settings.import_archive_dir.mkdir(parents=True, exist_ok=True)
+    settings.durable_storage_dir.mkdir(parents=True, exist_ok=True)
     settings.conversation_dir.mkdir(parents=True, exist_ok=True)
     settings.plans_dir.mkdir(parents=True, exist_ok=True)
     settings.financial_profile_path.parent.mkdir(parents=True, exist_ok=True)

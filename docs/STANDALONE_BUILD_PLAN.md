@@ -63,6 +63,21 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 6.0 Slice 1, Durable Storage Upgrade Path)
+- Added durable storage migration service (`durable_storage.py`) that stages file-backed stores into a checksum-verified SQLite snapshot (`buildwealth_durable.db`).
+- Added rollback-path safety checks:
+  - timestamped migration backup/report artifacts under `DURABLE_STORAGE_DIR/migrations/...`
+  - rollback simulation checks during migration (default enabled)
+  - rollback endpoint support to restore latest migration backup and pre-migration database state.
+- Added new API endpoints:
+  - `GET /api/storage/durable/status`
+  - `POST /api/storage/durable/migrate`
+  - `POST /api/storage/durable/rollback`
+- Added new settings surface:
+  - `DURABLE_STORAGE_DIR` (default `data/storage`).
+- Added regression coverage in `test_durable_storage.py` for migration verification and rollback restore behavior.
+- Verification: `pytest -q` in `services/orchestrator` passes (`455 passed`).
+
 ### 2026-04-15 (Completed - Phase 5.1 Slice 4, Portfolio Review Packet Export Endpoints)
 - Added periodic portfolio review packet API surface:
   - `POST /api/portfolio/review-packets`

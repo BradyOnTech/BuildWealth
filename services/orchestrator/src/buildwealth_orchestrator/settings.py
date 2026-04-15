@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     app_state: str = Field(default="MN", alias="APP_STATE")
 
     snapshot_dir: Path = Field(default=Path("data/snapshots"), alias="SNAPSHOT_DIR")
+    durable_storage_dir: Path = Field(default=Path("data/storage"), alias="DURABLE_STORAGE_DIR")
     ignidash_export_dir: Path = Field(default=Path("data/ignidash"), alias="IGNIDASH_EXPORT_DIR")
     portfolio_review_packet_dir: Path = Field(
         default=Path("data/reports/portfolio_review_packets"),

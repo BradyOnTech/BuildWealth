@@ -3,10 +3,10 @@
 ## Scope
 BuildWealth uses file-backed local stores with schema-versioned payloads. Migrations are handled inside orchestrator services during read/write flows.
 
-## Current Schema and Contract Versions (2026-04-14)
+## Current Schema and Contract Versions (2026-04-15)
 
 ### Data Stores
-- Portfolio holdings payload: `schema_version = 6`
+- Portfolio holdings payload: `schema_version = 8`
 - Accounts payload: `schema_version = 2`
 - Asset metadata payload: `schema_version = 1`
 - Cost basis methods payload: `schema_version = 1`
@@ -14,6 +14,9 @@ BuildWealth uses file-backed local stores with schema-versioned payloads. Migrat
 - FX rates payload: `schema_version = 1`
 - FX history payload: `schema_version = 1`
 - Watchlist payload: `schema_version = 1`
+- Risk policy payload: `schema_version = 1`
+- Lot audit payload: `schema_version = 1`
+- Corporate actions payload: `schema_version = 1`
 - Financial profile payload: `schema_version = 2`
 - Plan workspace payloads (index/settings/timeline/contribution rules/assumption sets/branch templates): `schema_version = 2`
 
@@ -57,6 +60,18 @@ Engine probes and adapter guards enforce runtime contract compatibility:
 - On mismatch/unverified version, orchestrator avoids unsafe sidecar calls and degrades safely.
 - This contract compatibility applies only to the versioned sidecar runtime; reference-only upstream app containers are not part of the BuildWealth runtime path.
 
+### 5) Durable Storage Upgrade Path (Phase 6.0 Slice 1)
+BuildWealth now includes a migration service to stage file-backed stores into a SQLite durable snapshot:
+- `GET /api/storage/durable/status`
+- `POST /api/storage/durable/migrate` (default includes rollback simulation checks)
+- `POST /api/storage/durable/rollback`
+
+Migration behavior:
+- source files remain the active runtime store during this slice.
+- upgrade creates a timestamped migration report and backup snapshot under `DURABLE_STORAGE_DIR/migrations/...`.
+- the SQLite snapshot is checksum-verified against source files before activation.
+- rollback restores source files from migration backup and restores/removes the durable database based on pre-migration state.
+
 ## Compatibility Window Policy
 
 1. Forward upgrades
@@ -75,5 +90,7 @@ Engine probes and adapter guards enforce runtime contract compatibility:
 Before upgrading BuildWealth:
 1. Back up `data/` (especially `data/portfolio`, `data/plans`, `data/profile`).
 2. Upgrade and start orchestrator.
-3. Trigger a read path (for example `/api/snapshot/latest`, `/api/financial-profile`, plan APIs) so migrations run.
-4. Validate engine compatibility via `/api/engines/status` when sidecars are enabled.
+3. Optionally stage a durable snapshot with rollback checks:
+   - `POST /api/storage/durable/migrate` (default `run_rollback_check=true`)
+4. Trigger a read path (for example `/api/snapshot/latest`, `/api/financial-profile`, plan APIs) so schema migrations run.
+5. Validate engine compatibility via `/api/engines/status` when sidecars are enabled.

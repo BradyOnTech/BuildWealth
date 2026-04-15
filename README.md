@@ -80,6 +80,9 @@ docker compose -f infra/docker-compose.yml --profile legacy-upstream up -d
 
 - `GET /health`
 - `GET /api/engines/status`
+- `GET /api/storage/durable/status`
+- `POST /api/storage/durable/migrate`
+- `POST /api/storage/durable/rollback`
 - `POST /api/snapshot/sync`
 - `GET /api/snapshot/latest`
 - `GET /api/portfolio/benchmark`
