@@ -1808,6 +1808,44 @@ class WorkflowRunResponse(BaseModel):
     recommendations: list[RecommendationItem] = Field(default_factory=list)
 
 
+class PortfolioReviewPacketRequest(BaseModel):
+    period_days: int = Field(default=90, ge=7, le=3650)
+    plan_id: str | None = None
+    title: str | None = None
+    include_snapshot_history_limit: int = Field(default=365, ge=1, le=3650)
+    include_transactions_limit: int = Field(default=1000, ge=1, le=10000)
+    include_recommendations_limit: int = Field(default=1000, ge=1, le=10000)
+    include_archived_recommendations: bool = False
+    save_to_plan_artifacts: bool = True
+
+
+class PortfolioReviewPacketSummary(BaseModel):
+    packet_id: str
+    title: str
+    generated_at: datetime
+    period_start: date
+    period_end: date
+    holdings_as_of: datetime | None = None
+    total_portfolio_value_usd: float = 0.0
+    risk_status: Literal["ok", "warning", "critical"] = "ok"
+    risk_breach_count: int = 0
+    risk_watch_count: int = 0
+    recommendations_open: int = 0
+    recommendations_total: int = 0
+    storage: dict[str, str] = Field(default_factory=dict)
+
+
+class PortfolioReviewPacketResponse(BaseModel):
+    summary: PortfolioReviewPacketSummary
+    packet: dict[str, Any] = Field(default_factory=dict)
+    markdown: str = ""
+    plan_artifact: PlanArtifactSummary | None = None
+
+
+class PortfolioReviewPacketListResponse(BaseModel):
+    items: list[PortfolioReviewPacketSummary] = Field(default_factory=list)
+
+
 class SimulateTradeRequest(BaseModel):
     symbol: str
     action: Literal["buy", "sell"]

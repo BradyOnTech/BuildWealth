@@ -10,6 +10,25 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 5.1 Slice 4, Portfolio Review Packet Export Endpoints)
+1. Added first-class periodic review packet export endpoints:
+- `POST /api/portfolio/review-packets` to generate a packet from local portfolio/planning/recommendation data.
+- `GET /api/portfolio/review-packets` to list generated packet exports.
+- `GET /api/portfolio/review-packets/{packet_id}` to read a specific packet payload + markdown report.
+2. Added deterministic review packet service/store:
+- new `portfolio_review_packets.py` builds structured packet payloads and markdown reports with period windows, holdings/performance/risk summaries, transaction/audit trends, snapshot deltas, watchlist state, and recommendation status rollups.
+- new file-backed store persists JSON/Markdown packet pairs and provides list/read APIs.
+3. Added optional plan-artifact bridge:
+- review packet generation can optionally persist markdown into Plan Workspace artifacts (`kind=portfolio_review_packet`) when `plan_id` is provided.
+4. Added contract and settings surfaces:
+- new schemas for request/list/detail responses (`PortfolioReviewPacket*`).
+- new settings path `PORTFOLIO_REVIEW_PACKET_DIR` (default `data/reports/portfolio_review_packets`).
+5. Source-provenance note:
+- packet packaging structure follows Ghostfolio export/activity/account-balance service patterns (`apps/api/src/app/export/export.service.ts`, `apps/api/src/app/activities/activities.service.ts`, `apps/api/src/app/account-balance/account-balance.service.ts`) while preserving BuildWealth standalone contracts.
+6. Verification:
+- targeted: `pytest -q tests/test_portfolio_review_packets.py` (`3 passed`).
+- full: `pytest -q` (`444 passed`).
+
 ### 2026-04-15 (Completed - Phase 5.1 Slice 3, Portfolio Drift/Risk Alerts)
 1. Added a dedicated portfolio risk-alert sidecar service (`portfolio_risk_alerts.py`) with Ghostfolio-style threshold semantics:
 - concentration thresholds (`single_holding`, `top3`, `HHI`, `effective_positions`)
@@ -623,9 +642,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Start Phase 5.1 Slice 4: add export/report package endpoints for periodic review packets.
-2. Start Phase 6.0 Slice 1: implement durable storage strategy upgrade path with migration and rollback checks.
-3. Start Phase 6.0 Slice 2: add backup/restore command and UI entrypoint.
+1. Start Phase 6.0 Slice 1: implement durable storage strategy upgrade path with migration and rollback checks.
+2. Start Phase 6.0 Slice 2: add backup/restore command and UI entrypoint.
+3. Start Phase 6.0 Slice 3: add local data protection options for sensitive stores.
 
 ## Guardrails
 1. Do not fork or embed full Ghostfolio/Ignidash apps into BuildWealth runtime path.

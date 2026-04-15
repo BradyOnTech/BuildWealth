@@ -109,6 +109,9 @@ from buildwealth_orchestrator.schemas import (
     EngineStatusResponse,
     TodayDashboardResponse,
     TopNextAction,
+    PortfolioReviewPacketListResponse,
+    PortfolioReviewPacketRequest,
+    PortfolioReviewPacketResponse,
     WorkflowRunRequest,
     WorkflowRunResponse,
     WorkflowTemplateResponse,
@@ -149,6 +152,11 @@ from buildwealth_orchestrator.services.goal_tracker import compute_goal_progress
 from buildwealth_orchestrator.services.financial_health import compute_financial_health
 from buildwealth_orchestrator.services.plan_tracker import compute_plan_tracking
 from buildwealth_orchestrator.services.portfolio_store import PortfolioStore
+from buildwealth_orchestrator.services.portfolio_review_packets import (
+    PortfolioReviewPacketStore,
+    build_portfolio_review_packet,
+    build_portfolio_review_packet_markdown,
+)
 from buildwealth_orchestrator.services.contribution_rules import (
     allocate_contributions,
     build_tax_optimized_high_earner_rules,
@@ -243,6 +251,7 @@ def parse_path_candidates(raw_value: str, fallback: tuple[str, ...]) -> tuple[st
 snapshot_store = SnapshotStore(settings.snapshot_dir)
 portfolio_store = PortfolioStore(settings.snapshot_dir.parent / "portfolio")
 ignidash_export_store = IgnidashExportStore(settings.ignidash_export_dir)
+portfolio_review_packet_store = PortfolioReviewPacketStore(settings.portfolio_review_packet_dir)
 scenario_engine = ScenarioEngine(
     years_to_retirement=settings.planner_years_to_retirement,
     annual_contribution_usd=settings.planner_annual_contribution_usd,
@@ -10508,6 +10517,106 @@ def set_portfolio_risk_policy(request: dict[str, Any]) -> dict[str, Any]:
     if not updates:
         raise HTTPException(status_code=400, detail="At least one risk threshold field is required.")
     return portfolio_store.set_risk_policy_thresholds(updates=updates)
+
+
+@app.post("/api/portfolio/review-packets", response_model=PortfolioReviewPacketResponse)
+def create_portfolio_review_packet(request: PortfolioReviewPacketRequest) -> PortfolioReviewPacketResponse:
+    plan_detail: dict[str, Any] | None = None
+    if request.plan_id:
+        try:
+            plan_detail = plan_workspace.get_plan(request.plan_id)
+        except PlanNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    holdings_payload = portfolio_store.get_holdings()
+    transactions = portfolio_store.list_transactions(limit=request.include_transactions_limit)
+    snapshots = snapshot_store.recent(limit=request.include_snapshot_history_limit)
+    watchlist_items = portfolio_store.list_watchlist()
+    recommendations = recommendation_inbox.list(
+        limit=request.include_recommendations_limit,
+        plan_id=request.plan_id,
+        include_archived=request.include_archived_recommendations,
+        sort="created_at_desc",
+    )
+    generated_at = context_utc_now_iso()
+
+    packet = build_portfolio_review_packet(
+        generated_at=generated_at,
+        period_days=request.period_days,
+        holdings_payload=holdings_payload,
+        transactions=transactions,
+        snapshots=snapshots,
+        watchlist_items=watchlist_items,
+        recommendations=recommendations,
+        plan_detail=plan_detail,
+    )
+
+    default_title = f"Portfolio Review Packet ({packet.get('meta', {}).get('period_end') or generated_at[:10]})"
+    resolved_title = str(request.title or "").strip() or default_title
+    packet_meta = packet.get("meta") if isinstance(packet.get("meta"), dict) else {}
+    packet_meta["title"] = resolved_title
+    packet["meta"] = packet_meta
+    packet_summary = packet.get("summary") if isinstance(packet.get("summary"), dict) else {}
+    packet_summary["title"] = resolved_title
+    packet["summary"] = packet_summary
+
+    markdown = build_portfolio_review_packet_markdown(title=resolved_title, packet=packet)
+    summary_payload = portfolio_review_packet_store.write(
+        packet_payload=packet,
+        markdown=markdown,
+        title=resolved_title,
+    )
+
+    plan_artifact: PlanArtifactSummary | None = None
+    if request.plan_id and request.save_to_plan_artifacts:
+        try:
+            artifact_payload = plan_workspace.write_artifact(
+                plan_id=request.plan_id,
+                title=resolved_title,
+                markdown=markdown,
+                kind="portfolio_review_packet",
+            )
+            plan_artifact = PlanArtifactSummary(**artifact_payload)
+        except PlanNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        stored = portfolio_review_packet_store.read(str(summary_payload.get("packet_id") or ""))
+    except FileNotFoundError:
+        stored = {
+            "summary": summary_payload,
+            "packet": packet,
+            "markdown": markdown,
+        }
+
+    return PortfolioReviewPacketResponse(
+        summary=stored["summary"],
+        packet=stored["packet"],
+        markdown=stored["markdown"],
+        plan_artifact=plan_artifact,
+    )
+
+
+@app.get("/api/portfolio/review-packets", response_model=PortfolioReviewPacketListResponse)
+def list_portfolio_review_packets(limit: int = 20) -> PortfolioReviewPacketListResponse:
+    items = portfolio_review_packet_store.list(limit=max(1, min(int(limit), 200)))
+    return PortfolioReviewPacketListResponse(items=items)
+
+
+@app.get("/api/portfolio/review-packets/{packet_id}", response_model=PortfolioReviewPacketResponse)
+def get_portfolio_review_packet(packet_id: str) -> PortfolioReviewPacketResponse:
+    try:
+        payload = portfolio_review_packet_store.read(packet_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return PortfolioReviewPacketResponse(
+        summary=payload["summary"],
+        packet=payload["packet"],
+        markdown=payload["markdown"],
+    )
 
 
 @app.get("/api/portfolio/cost-basis-methods")

@@ -15,6 +15,10 @@ class Settings(BaseSettings):
 
     snapshot_dir: Path = Field(default=Path("data/snapshots"), alias="SNAPSHOT_DIR")
     ignidash_export_dir: Path = Field(default=Path("data/ignidash"), alias="IGNIDASH_EXPORT_DIR")
+    portfolio_review_packet_dir: Path = Field(
+        default=Path("data/reports/portfolio_review_packets"),
+        alias="PORTFOLIO_REVIEW_PACKET_DIR",
+    )
     import_inbox_dir: Path = Field(default=Path("data/imports/inbox"), alias="IMPORT_INBOX_DIR")
     import_archive_dir: Path = Field(default=Path("data/imports/archive"), alias="IMPORT_ARCHIVE_DIR")
     conversation_dir: Path = Field(default=Path("data/conversations"), alias="CONVERSATION_DIR")

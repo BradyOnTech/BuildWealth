@@ -63,6 +63,21 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 5.1 Slice 4, Portfolio Review Packet Export Endpoints)
+- Added periodic portfolio review packet API surface:
+  - `POST /api/portfolio/review-packets`
+  - `GET /api/portfolio/review-packets`
+  - `GET /api/portfolio/review-packets/{packet_id}`
+- Added a new review packet service/store (`portfolio_review_packets.py`) to:
+  - build deterministic JSON + markdown packet payloads from local holdings, risk alerts, transactions, lot/corporate audit streams, snapshot history, watchlist state, recommendations, and optional plan context.
+  - persist packet files to local export storage and support list/read retrieval semantics.
+- Added optional plan-artifact persistence on packet generation (`kind=portfolio_review_packet`) so periodic exports can be attached to plan history.
+- Added typed packet request/response contracts in schemas and new setting `PORTFOLIO_REVIEW_PACKET_DIR` (default `data/reports/portfolio_review_packets`).
+- Source-provenance note:
+  - package composition follows Ghostfolio export/activity/account-balance patterns (`apps/api/src/app/export/export.service.ts`, `apps/api/src/app/activities/activities.service.ts`, `apps/api/src/app/account-balance/account-balance.service.ts`) with BuildWealth-first contracts.
+- Added regression coverage in `test_portfolio_review_packets.py` for packet construction, store persistence/list/read behavior, and route-level artifact wiring.
+- Verification: `pytest -q` in `services/orchestrator` passes (`444 passed`).
+
 ### 2026-04-15 (Completed - Phase 5.1 Slice 3, Portfolio Drift/Risk Alerts)
 - Added a new portfolio risk-alert sidecar (`portfolio_risk_alerts.py`) that computes concentration/allocation alerts from local holdings with threshold-driven `breach`/`watch` states, severity, drift, and action guidance.
 - Added persistent threshold policy storage via `risk_policy.json`:
