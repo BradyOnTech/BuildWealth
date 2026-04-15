@@ -2049,3 +2049,48 @@ class DurableStorageRollbackResponse(BaseModel):
     bytes_restored: int
     database_restored: bool
     database_removed: bool
+
+
+class BackupSummary(BaseModel):
+    backup_id: str
+    archive_path: str
+    size_bytes: int
+    created_at: datetime
+
+
+class BackupListResponse(BaseModel):
+    strategy: str
+    data_root: str
+    backup_dir: str
+    backups: list[BackupSummary] = Field(default_factory=list)
+
+
+class BackupCreateRequest(BaseModel):
+    reason: str | None = None
+
+
+class BackupCreateResponse(BaseModel):
+    backup_id: str
+    strategy: str
+    archive_path: str
+    created_at: datetime
+    files_backed_up: int
+    total_bytes: int
+    archive_size_bytes: int
+    aggregate_checksum: str
+    reason: str | None = None
+
+
+class BackupRestoreRequest(BaseModel):
+    backup_id: str
+    create_pre_restore_backup: bool = True
+
+
+class BackupRestoreResponse(BaseModel):
+    backup_id: str
+    strategy: str
+    restored_at: datetime
+    archive_path: str
+    files_restored: int
+    bytes_restored: int
+    pre_restore_backup_id: str | None = None

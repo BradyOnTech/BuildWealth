@@ -63,6 +63,22 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 6.0 Slice 2, Backup/Restore Command + UI Entrypoint)
+- Added a new backup/restore service (`backup_restore.py`) with archive-manifest integrity checks and restore-time validation.
+- Added backup API endpoints:
+  - `GET /api/storage/backups`
+  - `POST /api/storage/backups`
+  - `POST /api/storage/backups/restore`
+- Added backup command entrypoints in `Makefile`:
+  - `make backup`
+  - `make backup-list`
+  - `make backup-restore BACKUP_ID=...`
+- Added a Settings UI backup section for list/refresh/create/restore operations with restore confirmation and pre-restore safety backup toggle.
+- Added new env/settings surface:
+  - `BACKUP_ARCHIVE_DIR` (default `data/backups`).
+- Added regression coverage in `test_backup_restore.py`.
+- Verification: `pytest -q` in `services/orchestrator` passes (`455 passed`).
+
 ### 2026-04-15 (Completed - Phase 6.0 Slice 1, Durable Storage Upgrade Path)
 - Added durable storage migration service (`durable_storage.py`) that stages file-backed stores into a checksum-verified SQLite snapshot (`buildwealth_durable.db`).
 - Added rollback-path safety checks:

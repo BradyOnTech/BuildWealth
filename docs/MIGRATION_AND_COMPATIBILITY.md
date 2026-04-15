@@ -72,6 +72,18 @@ Migration behavior:
 - the SQLite snapshot is checksum-verified against source files before activation.
 - rollback restores source files from migration backup and restores/removes the durable database based on pre-migration state.
 
+### 6) Backup and Restore Path (Phase 6.0 Slice 2)
+BuildWealth now includes archive-based backup/restore operations:
+- `GET /api/storage/backups`
+- `POST /api/storage/backups`
+- `POST /api/storage/backups/restore`
+
+Behavior:
+- backups are written under `BACKUP_ARCHIVE_DIR` (default `data/backups`) as timestamped tar archives.
+- each archive includes `manifest.json` with per-file checksums and an aggregate checksum.
+- restore validates manifest checksums before replacing active data.
+- restore can create a pre-restore safety backup (`create_pre_restore_backup=true` by default).
+
 ## Compatibility Window Policy
 
 1. Forward upgrades

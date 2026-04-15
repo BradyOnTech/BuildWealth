@@ -112,6 +112,11 @@ from buildwealth_orchestrator.schemas import (
     DurableStorageMigrationResponse,
     DurableStorageRollbackRequest,
     DurableStorageRollbackResponse,
+    BackupListResponse,
+    BackupCreateRequest,
+    BackupCreateResponse,
+    BackupRestoreRequest,
+    BackupRestoreResponse,
     TodayDashboardResponse,
     TopNextAction,
     PortfolioReviewPacketListResponse,
@@ -197,6 +202,11 @@ from buildwealth_orchestrator.services.durable_storage import (
     DurableStorageMigrationNotFoundError,
     DurableStorageMigrationService,
 )
+from buildwealth_orchestrator.services.backup_restore import (
+    BackupNotFoundError,
+    BackupRestoreError,
+    BackupRestoreService,
+)
 from buildwealth_orchestrator.services.tax_engine import estimate_federal_tax
 from buildwealth_orchestrator.services.today_dashboard import build_today_dashboard_payload
 from buildwealth_orchestrator.services.buildwealth_context import (
@@ -272,6 +282,7 @@ def parse_path_candidates(raw_value: str, fallback: tuple[str, ...]) -> tuple[st
 snapshot_store = SnapshotStore(settings.snapshot_dir)
 portfolio_store = PortfolioStore(settings.snapshot_dir.parent / "portfolio")
 durable_storage_service = DurableStorageMigrationService.from_settings(settings)
+backup_restore_service = BackupRestoreService.from_settings(settings)
 ignidash_export_store = IgnidashExportStore(settings.ignidash_export_dir)
 portfolio_review_packet_store = PortfolioReviewPacketStore(settings.portfolio_review_packet_dir)
 scenario_engine = ScenarioEngine(
@@ -10136,6 +10147,34 @@ def rollback_durable_storage(
     return DurableStorageRollbackResponse.model_validate(report)
 
 
+@app.get("/api/storage/backups", response_model=BackupListResponse)
+def list_backups() -> BackupListResponse:
+    return BackupListResponse.model_validate(backup_restore_service.list_backups())
+
+
+@app.post("/api/storage/backups", response_model=BackupCreateResponse)
+def create_backup(request: BackupCreateRequest) -> BackupCreateResponse:
+    try:
+        report = backup_restore_service.create_backup(reason=request.reason)
+    except BackupRestoreError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return BackupCreateResponse.model_validate(report)
+
+
+@app.post("/api/storage/backups/restore", response_model=BackupRestoreResponse)
+def restore_backup(request: BackupRestoreRequest) -> BackupRestoreResponse:
+    try:
+        report = backup_restore_service.restore_backup(
+            backup_id=request.backup_id,
+            create_pre_restore_backup=request.create_pre_restore_backup,
+        )
+    except BackupNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BackupRestoreError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return BackupRestoreResponse.model_validate(report)
+
+
 @app.get("/api/settings")
 def get_user_settings() -> dict[str, Any]:
     return user_settings_store.load_masked()
@@ -10163,6 +10202,7 @@ async def on_startup() -> None:
     settings.import_inbox_dir.mkdir(parents=True, exist_ok=True)
     settings.import_archive_dir.mkdir(parents=True, exist_ok=True)
     settings.durable_storage_dir.mkdir(parents=True, exist_ok=True)
+    settings.backup_archive_dir.mkdir(parents=True, exist_ok=True)
     settings.conversation_dir.mkdir(parents=True, exist_ok=True)
     settings.plans_dir.mkdir(parents=True, exist_ok=True)
     settings.financial_profile_path.parent.mkdir(parents=True, exist_ok=True)

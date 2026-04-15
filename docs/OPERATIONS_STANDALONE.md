@@ -123,6 +123,27 @@ curl -s -X POST http://localhost:8090/api/storage/durable/rollback \
   -d '{}' | jq
 ```
 
+## Backup and Restore (Phase 6.0 Slice 2)
+
+List backup archives:
+```bash
+curl -s http://localhost:8090/api/storage/backups | jq
+```
+
+Create a backup archive:
+```bash
+curl -s -X POST http://localhost:8090/api/storage/backups \
+  -H 'Content-Type: application/json' \
+  -d '{"reason":"manual_ops_backup"}' | jq
+```
+
+Restore a backup archive:
+```bash
+curl -s -X POST http://localhost:8090/api/storage/backups/restore \
+  -H 'Content-Type: application/json' \
+  -d '{"backup_id":"<backup-id>","create_pre_restore_backup":true}' | jq
+```
+
 ## Useful Commands
 
 ```bash
@@ -131,5 +152,8 @@ make up-legacy
 make ps
 make logs
 make sync
+make backup
+make backup-list
+make backup-restore BACKUP_ID=...
 make down
 ```
