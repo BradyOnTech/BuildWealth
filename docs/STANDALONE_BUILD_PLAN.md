@@ -2,7 +2,7 @@
 
 ## Date: 2026-04-10
 
-## Status (2026-04-14)
+## Status (2026-04-15)
 Historical implementation plan and progress log.
 
 For active roadmap sequencing and current priorities, use:
@@ -62,6 +62,19 @@ These decisions refine the build plan based on the current repository and upstre
 ---
 
 ## Progress Log
+
+### 2026-04-15 (Completed - Cross-Cutting Follow-up, Engine Policy/Envelope Unification + Sidecar Matrix Tests)
+- Added shared engine policy/envelope helper module (`engine_policy.py`) to centralize sidecar call disposition and degraded-response metadata assembly.
+- Unified sidecar eligibility/fallback handling in:
+  - `portfolio_benchmark.py`
+  - `portfolio_attribution.py`
+  - `planning_sidecar.py`
+- Added sidecar execution matrix coverage:
+  - new `test_engine_policy.py`
+  - adapter-missing path tests for benchmark/attribution/planning sidecar services.
+- Verification:
+  - targeted: `pytest -q tests/test_engine_policy.py tests/test_portfolio_benchmark.py tests/test_portfolio_attribution.py tests/test_planning_sidecar.py` (`22 passed`)
+  - full: `pytest -q` in `services/orchestrator` passes (`473 passed`).
 
 ### 2026-04-15 (Completed - Phase 6.0 Slice 4, Runtime Telemetry Dashboards)
 - Added runtime telemetry service (`runtime_telemetry.py`) to aggregate:

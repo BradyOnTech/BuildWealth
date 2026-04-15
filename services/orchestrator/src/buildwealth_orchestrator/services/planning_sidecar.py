@@ -16,6 +16,12 @@ from buildwealth_orchestrator.services.contribution_rules import (
     tax_treatment_for_account_type,
 )
 from buildwealth_orchestrator.services.engine_adapter import SidecarAdapter, SidecarAdapterError
+from buildwealth_orchestrator.services.engine_policy import (
+    ENGINE_STATUS_DEGRADED,
+    degraded_response_update,
+    resolve_engine_call_disposition,
+    sidecar_unavailable_warning,
+)
 from buildwealth_orchestrator.services.scenario_engine import ScenarioEngine
 
 IGNIDASH_SCENARIO_CONTRACT_VERSION = 1
@@ -199,17 +205,28 @@ class IgnidashScenarioService:
             "rmd_projection": rmd_projection,
         }
 
-        if sidecar_guard_reason:
-            return local_result.model_copy(
-                update={
-                    "engine_status": "degraded",
-                    "fallback_method": "contract_version_guard",
-                    "warnings": [f"Ignidash scenario sidecar skipped: {sidecar_guard_reason}"],
-                    **local_projection_updates,
-                }
-            )
+        disposition = resolve_engine_call_disposition(
+            engine_label="Ignidash scenario",
+            sidecar_enabled=self.sidecar_enabled,
+            sidecar_adapter=self.sidecar_adapter,
+            sidecar_guard_reason=sidecar_guard_reason,
+            disabled_behavior="local_ok",
+            adapter_missing_behavior="local_ok",
+        )
+        if not disposition.use_sidecar:
+            if disposition.engine_status == ENGINE_STATUS_DEGRADED:
+                return local_result.model_copy(
+                    update={
+                        **degraded_response_update(
+                            fallback_method=disposition.fallback_method,
+                            warning=disposition.warning,
+                        ),
+                        **local_projection_updates,
+                    }
+                )
+            return local_result.model_copy(update=local_projection_updates)
 
-        if not self.sidecar_enabled or self.sidecar_adapter is None:
+        if self.sidecar_adapter is None:
             return local_result.model_copy(update=local_projection_updates)
 
         request_payload = self._build_request_payload(
@@ -284,17 +301,15 @@ class IgnidashScenarioService:
         except SidecarAdapterError as exc:
             return local_result.model_copy(
                 update={
-                    "engine": "local",
-                    "engine_status": "degraded",
-                    "fallback_method": "local_scenario_engine_fallback",
-                    "warnings": [f"Ignidash scenario sidecar unavailable: {exc}"],
-                    "income_projection": income_projection,
-                    "expense_projection": expense_projection,
-                    "debt_projection": debt_projection,
-                    "timeline_projection": timeline_projection,
-                    "contribution_allocation": contribution_allocation,
-                    "social_security_projection": social_security_projection,
-                    "rmd_projection": rmd_projection,
+                    **degraded_response_update(
+                        engine="local",
+                        fallback_method="local_scenario_engine_fallback",
+                        warning=sidecar_unavailable_warning(
+                            engine_label="Ignidash scenario",
+                            error=exc,
+                        ),
+                    ),
+                    **local_projection_updates,
                 }
             )
 

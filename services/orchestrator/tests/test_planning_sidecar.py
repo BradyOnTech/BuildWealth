@@ -41,6 +41,24 @@ def test_ignidash_sidecar_service_returns_local_when_disabled() -> None:
     assert result.warnings == []
 
 
+def test_ignidash_sidecar_service_returns_local_when_adapter_missing() -> None:
+    service = IgnidashScenarioService(
+        scenario_engine=_build_scenario_engine(),
+        sidecar_adapter=None,
+        sidecar_enabled=True,
+        sidecar_path="/v1/scenario/simulate",
+        currency="USD",
+    )
+
+    result = asyncio.run(service.run(current_portfolio_value_usd=100000))
+
+    assert len(result.scenarios) == 4
+    assert result.engine == "local"
+    assert result.engine_status == "ok"
+    assert result.fallback_method is None
+    assert result.warnings == []
+
+
 def test_ignidash_sidecar_service_merges_sidecar_response() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content.decode("utf-8"))

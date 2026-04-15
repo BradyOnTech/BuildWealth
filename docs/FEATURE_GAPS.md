@@ -7,7 +7,7 @@ Archived snapshot from early pre-standalone planning. Many items below have sinc
 For current execution priority and status, use:
 - [ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md](./ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md)
 - [STANDALONE_BUILD_PLAN.md](./STANDALONE_BUILD_PLAN.md)
-- [NEXT_EXECUTION_STEPS_2026-04-14.md](./NEXT_EXECUTION_STEPS_2026-04-14.md)
+- [CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md](./CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md)
 
 ## Context
 

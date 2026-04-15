@@ -67,6 +67,25 @@ def test_attribution_service_uses_local_fallback_when_sidecar_disabled(tmp_path:
     assert result.detractors[0].symbol == "MSFT"
 
 
+def test_attribution_service_uses_degraded_fallback_when_adapter_missing(tmp_path: Path) -> None:
+    store = PortfolioStore(tmp_path / "portfolio")
+    _seed_store(store)
+
+    service = GhostfolioAttributionService(
+        portfolio_store=store,
+        sidecar_adapter=None,
+        sidecar_enabled=True,
+        sidecar_path="/v1/attribution/compute",
+        base_currency="USD",
+    )
+
+    result = asyncio.run(service.analyze(top_n=2))
+
+    assert result.engine_status == "degraded"
+    assert result.fallback_method == "sidecar_disabled"
+    assert any("adapter unavailable" in warning.lower() for warning in result.warnings)
+
+
 def test_attribution_service_uses_sidecar_response_when_enabled(tmp_path: Path) -> None:
     store = PortfolioStore(tmp_path / "portfolio")
     _seed_store(store)

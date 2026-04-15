@@ -10,6 +10,23 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Cross-Cutting Follow-up, Engine Policy/Envelope Unification + Sidecar Matrix Tests)
+1. Added shared sidecar policy and degraded-envelope helper module (`engine_policy.py`) to centralize:
+- sidecar call disposition decisions (guarded/disabled/adapter-missing/use-sidecar).
+- canonical engine status/fallback constants and warning normalization behavior.
+2. Unified benchmark/attribution/planning sidecar services on shared policy:
+- `portfolio_benchmark.py`, `portfolio_attribution.py`, and `planning_sidecar.py` now resolve sidecar eligibility through one policy entrypoint.
+- degraded response updates and sidecar-unavailable warning formatting are now shared helpers instead of ad hoc per-service logic.
+3. Expanded sidecar execution-state matrix coverage:
+- added `test_engine_policy.py` for direct policy/envelope behavior.
+- added adapter-missing path coverage in:
+  - `test_portfolio_benchmark.py`
+  - `test_portfolio_attribution.py`
+  - `test_planning_sidecar.py`
+4. Verification:
+- targeted: `pytest -q tests/test_engine_policy.py tests/test_portfolio_benchmark.py tests/test_portfolio_attribution.py tests/test_planning_sidecar.py` (`22 passed`).
+- full: `pytest -q` (`473 passed`).
+
 ### 2026-04-15 (Completed - Phase 6.0 Slice 4, Runtime Telemetry Dashboards)
 1. Added runtime telemetry service and request-latency instrumentation:
 - new `runtime_telemetry.py` tracker records API latency distributions (`avg/p50/p95/p99/max`), server-error rates, and per-route rollups.
@@ -724,9 +741,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Start cross-cutting follow-up: engine policy/envelope unification + sidecar matrix tests.
-2. Add backup/restore and protection-policy smoke validation into scripted reliability checks.
-3. Start Codebase Quality Follow-Up Slice A: split `service_utils.py` into cohesive coercion/projection helper modules.
+1. Add backup/restore and protection-policy smoke validation into scripted reliability checks.
+2. Start Codebase Quality Follow-Up Slice A: split `service_utils.py` into cohesive coercion/projection helper modules.
+3. Start Codebase Quality Follow-Up Slice B: isolate frontend plan-setting field schema from runtime state module.
 
 ## Cross-Cutting Engineering Follow-Up
 1. Post-refactor helper indirection and intentional sidecar complexity are documented in [`docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`](./CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md).

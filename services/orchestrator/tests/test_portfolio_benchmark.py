@@ -78,6 +78,35 @@ def test_benchmark_service_uses_local_fallback_when_sidecar_disabled(tmp_path: P
     assert len(result.series) == 3
 
 
+def test_benchmark_service_uses_degraded_fallback_when_adapter_missing(tmp_path: Path) -> None:
+    snapshot_store = SnapshotStore(tmp_path / "snapshots")
+    _write_snapshots(snapshot_store)
+    research = _FakeResearch(
+        {
+            "SPY": [
+                {"date": "2026-04-08", "close": 400},
+                {"date": "2026-04-09", "close": 420},
+                {"date": "2026-04-10", "close": 440},
+            ]
+        }
+    )
+
+    service = GhostfolioBenchmarkService(
+        snapshot_store=snapshot_store,
+        research_service=research,
+        sidecar_adapter=None,
+        sidecar_enabled=True,
+        sidecar_path="/v1/benchmark/compare",
+        base_currency="USD",
+    )
+
+    result = asyncio.run(service.compare(benchmark_symbols=["SPY"], limit=30))
+
+    assert result.engine_status == "degraded"
+    assert result.fallback_method == "sidecar_disabled"
+    assert any("adapter unavailable" in warning.lower() for warning in result.warnings)
+
+
 def test_benchmark_service_uses_sidecar_response_when_enabled(tmp_path: Path) -> None:
     snapshot_store = SnapshotStore(tmp_path / "snapshots")
     _write_snapshots(snapshot_store)

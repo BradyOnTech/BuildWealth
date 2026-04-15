@@ -17,6 +17,11 @@ from buildwealth_orchestrator.services.engine_adapter import (
     SidecarAdapter,
     SidecarAdapterError,
 )
+from buildwealth_orchestrator.services.engine_policy import (
+    FALLBACK_METHOD_SIDECAR_DISABLED,
+    resolve_engine_call_disposition,
+    sidecar_unavailable_warning,
+)
 from buildwealth_orchestrator.services.snapshot_store import SnapshotStore
 
 GHOSTFOLIO_BENCHMARK_CONTRACT_VERSION = 1
@@ -122,15 +127,23 @@ class GhostfolioBenchmarkService:
             limit=limit,
         )
 
-        if sidecar_guard_reason:
+        disposition = resolve_engine_call_disposition(
+            engine_label="Ghostfolio benchmark",
+            sidecar_enabled=self.sidecar_enabled,
+            sidecar_adapter=self.sidecar_adapter,
+            sidecar_guard_reason=sidecar_guard_reason,
+            disabled_behavior="degraded_fallback",
+        )
+
+        if not disposition.use_sidecar:
             fallback = self._compute_local_fallback(
                 request_payload,
-                fallback_method="contract_version_guard",
-                warning=f"Ghostfolio benchmark sidecar skipped: {sidecar_guard_reason}",
+                fallback_method=disposition.fallback_method or FALLBACK_METHOD_SIDECAR_DISABLED,
+                warning=disposition.warning or "Ghostfolio benchmark sidecar disabled; using local fallback",
             )
             return self._to_api_response(request_payload, fallback)
 
-        if self.sidecar_enabled and self.sidecar_adapter is not None:
+        if self.sidecar_adapter is not None:
             try:
                 contract_response = await self.sidecar_adapter.post_json(
                     path=self.sidecar_path,
@@ -143,14 +156,17 @@ class GhostfolioBenchmarkService:
                 fallback = self._compute_local_fallback(
                     request_payload,
                     fallback_method="local_benchmark_fallback",
-                    warning=f"Ghostfolio benchmark sidecar unavailable: {exc}",
+                    warning=sidecar_unavailable_warning(
+                        engine_label="Ghostfolio benchmark",
+                        error=exc,
+                    ),
                 )
                 return self._to_api_response(request_payload, fallback)
 
         fallback = self._compute_local_fallback(
             request_payload,
-            fallback_method="sidecar_disabled",
-            warning="Ghostfolio benchmark sidecar disabled; using local fallback",
+            fallback_method=FALLBACK_METHOD_SIDECAR_DISABLED,
+            warning="Ghostfolio benchmark sidecar adapter unavailable; using local fallback",
         )
         return self._to_api_response(request_payload, fallback)
 
