@@ -152,6 +152,22 @@ export function template() {
       <label class="field compact-field"><span>Account</span><select id="port-account-filter"><option value="">All Accounts</option></select></label>
       <p class="hint tight" id="port-allocation-summary">Viewing all accounts.</p>
     </div>
+    <p class="hint" id="port-risk-summary">Risk alerts not loaded yet.</p>
+    <form id="port-risk-policy-form" class="txn-form">
+      <label class="field"><span>Max Single Holding %</span><input type="number" id="risk-single-max" step="0.1" min="0" max="100" /></label>
+      <label class="field"><span>Max Top 3 %</span><input type="number" id="risk-top3-max" step="0.1" min="0" max="100" /></label>
+      <label class="field"><span>Max Account %</span><input type="number" id="risk-account-max" step="0.1" min="0" max="100" /></label>
+      <label class="field"><span>Max Asset Class %</span><input type="number" id="risk-asset-class-max" step="0.1" min="0" max="100" /></label>
+      <label class="field"><span>Max Sector %</span><input type="number" id="risk-sector-max" step="0.1" min="0" max="100" /></label>
+      <label class="field"><span>Max Region %</span><input type="number" id="risk-region-max" step="0.1" min="0" max="100" /></label>
+      <label class="field"><span>Max HHI</span><input type="number" id="risk-hhi-max" step="0.001" min="0.01" max="1" /></label>
+      <label class="field"><span>Min Effective Positions</span><input type="number" id="risk-effective-min" step="0.1" min="1" max="100" /></label>
+      <button class="ghost" type="submit">Save Risk Thresholds</button>
+    </form>
+    <div class="table-wrap"><table>
+      <thead><tr><th>State</th><th>Category</th><th>Alert</th><th>Observed</th><th>Threshold</th><th>Drift</th><th>Context</th><th>Recommendation</th></tr></thead>
+      <tbody id="port-risk-alerts-body"><tr><td colspan="8">Loading risk alerts...</td></tr></tbody>
+    </table></div>
     <div class="table-wrap"><table>
       <thead><tr><th>Symbol</th><th>Account</th><th>CCY</th><th>Asset Class</th><th>Method</th><th>Qty</th><th>Avg Cost</th><th>Price</th><th>Value</th><th>Gain/Loss</th><th>Return</th><th>Alloc</th></tr></thead>
       <tbody id="port-holdings-body"><tr><td colspan="12">Loading...</td></tr></tbody>
@@ -431,6 +447,92 @@ function updateAllocationSummary(filteredEntries) {
   const totalValue = filteredEntries.reduce((sum, entry) => sum + Number(entry?.current_value || 0), 0);
   const accountLabelText = activeAccountFilter ? accountLabel(activeAccountFilter) : 'All Accounts';
   summary.textContent = `${accountLabelText} | Holdings ${filteredEntries.length} | Value ${fmtCurrency(totalValue)}`;
+}
+
+function riskBadgeClass(alert) {
+  const state = String(alert?.state || '').toLowerCase();
+  const severity = String(alert?.severity || '').toLowerCase();
+  if (state === 'breach' && severity === 'high') return 'incomplete';
+  if (state === 'breach') return 'attention';
+  return 'complete';
+}
+
+function formatRiskMetricValue(alert, rawValue) {
+  const unit = String(alert?.unit || '').toLowerCase();
+  const value = Number(rawValue);
+  if (!Number.isFinite(value)) return '-';
+  if (unit === 'pct') return fmtPct(value);
+  if (unit === 'ratio') return value.toFixed(3);
+  if (unit === 'count') return value.toFixed(2);
+  return String(value);
+}
+
+function contextText(context) {
+  if (!context || typeof context !== 'object') return '-';
+  const bits = [];
+  if (context.symbol) bits.push(String(context.symbol));
+  if (Array.isArray(context.symbols) && context.symbols.length) bits.push(context.symbols.join(', '));
+  if (context.account_id) bits.push(`Account: ${context.account_id}`);
+  if (context.asset_class) bits.push(`Class: ${context.asset_class}`);
+  if (context.sector) bits.push(`Sector: ${context.sector}`);
+  if (context.region) bits.push(`Region: ${context.region}`);
+  return bits.length ? bits.join(' | ') : '-';
+}
+
+function renderRiskAlerts(data) {
+  const summary = byId('port-risk-summary');
+  const tbody = byId('port-risk-alerts-body');
+  const policy = data?.risk_policy || {};
+  const thresholds = policy?.thresholds || {};
+  const risk = data?.risk_alerts || {};
+  const alerts = Array.isArray(risk.alerts) ? risk.alerts : [];
+  const breaches = Number(risk.breach_count || 0);
+  const watches = Number(risk.watch_count || 0);
+  const status = String(risk.status || 'ok').toLowerCase();
+  const topSymbol = risk?.metrics?.top_holding_symbol || '-';
+  const topHolding = Number(risk?.metrics?.top_holding_pct);
+  const topHoldingText = Number.isFinite(topHolding) ? fmtPct(topHolding) : '-';
+
+  summary.textContent = `Status: ${status.toUpperCase()} | Breaches: ${breaches} | Watches: ${watches} | Top Holding: ${topSymbol} ${topHoldingText}`;
+  summary.className = status === 'critical' ? 'context-banner critical' : status === 'warning' ? 'context-banner warning' : 'hint';
+
+  const setInput = (id, value, digits = 2) => {
+    const input = byId(id);
+    if (!input) return;
+    const number = Number(value);
+    input.value = Number.isFinite(number) ? number.toFixed(digits) : '';
+  };
+  setInput('risk-single-max', thresholds.single_holding_max_pct, 1);
+  setInput('risk-top3-max', thresholds.top3_holdings_max_pct, 1);
+  setInput('risk-account-max', thresholds.account_max_pct, 1);
+  setInput('risk-asset-class-max', thresholds.asset_class_max_pct, 1);
+  setInput('risk-sector-max', thresholds.sector_max_pct, 1);
+  setInput('risk-region-max', thresholds.region_max_pct, 1);
+  setInput('risk-hhi-max', thresholds.hhi_max, 3);
+  setInput('risk-effective-min', thresholds.effective_positions_min, 1);
+
+  if (!alerts.length) {
+    tbody.innerHTML = '<tr><td colspan="8">No active risk alerts. Thresholds are currently within tolerance.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = '';
+  for (const alert of alerts) {
+    const tr = document.createElement('tr');
+    const state = String(alert?.state || '').toUpperCase();
+    const severity = String(alert?.severity || '').toUpperCase();
+    const driftClass = state === 'BREACH' ? 'drift-neg' : state === 'WATCH' ? 'drift-pos' : '';
+    tr.innerHTML = `
+      <td><span class="status-badge ${riskBadgeClass(alert)}">${state} ${severity}</span></td>
+      <td>${alert?.category || '-'}</td>
+      <td>${alert?.label || '-'}</td>
+      <td>${formatRiskMetricValue(alert, alert?.observed)}</td>
+      <td>${formatRiskMetricValue(alert, alert?.threshold)}</td>
+      <td class="${driftClass}">${formatRiskMetricValue(alert, alert?.drift_from_threshold)}</td>
+      <td>${contextText(alert?.context)}</td>
+      <td>${alert?.recommendation || '-'}</td>`;
+    tbody.appendChild(tr);
+  }
 }
 
 function renderHoldings(data) {
@@ -1028,6 +1130,7 @@ async function loadAll() {
     }
     renderAttribution(attributionResult.status === 'fulfilled' ? attributionResult.value : null);
     renderFxRates(holdings);
+    renderRiskAlerts(holdings);
     renderHoldings(holdings);
     renderBreakdowns(holdings);
     renderCustomAssets(holdings);
@@ -1216,6 +1319,38 @@ async function setCostBasisMethod({ account, symbol, method }) {
   }
 }
 
+async function setRiskPolicy(event) {
+  event.preventDefault();
+  const fields = [
+    ['single_holding_max_pct', 'risk-single-max'],
+    ['top3_holdings_max_pct', 'risk-top3-max'],
+    ['account_max_pct', 'risk-account-max'],
+    ['asset_class_max_pct', 'risk-asset-class-max'],
+    ['sector_max_pct', 'risk-sector-max'],
+    ['region_max_pct', 'risk-region-max'],
+    ['hhi_max', 'risk-hhi-max'],
+    ['effective_positions_min', 'risk-effective-min'],
+  ];
+  const payload = {};
+  for (const [key, fieldId] of fields) {
+    const value = parseFloat(byId(fieldId)?.value || '');
+    if (Number.isFinite(value)) payload[key] = value;
+  }
+  if (!Object.keys(payload).length) return;
+
+  try {
+    await fetchJson('/api/portfolio/risk-policy', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    writeLog('Portfolio risk thresholds updated.');
+    await loadAll();
+  } catch (e) {
+    writeLog(`Update risk thresholds failed: ${e.message}`, null, true);
+  }
+}
+
 async function setManualPrice({ symbol, price }) {
   try {
     await fetchJson('/api/portfolio/manual-prices', {
@@ -1353,6 +1488,7 @@ export function init() {
   byId('port-backfill-form').addEventListener('submit', backfillHistory);
   byId('port-account-form').addEventListener('submit', addAccount);
   byId('port-fx-form').addEventListener('submit', setFxRate);
+  byId('port-risk-policy-form').addEventListener('submit', setRiskPolicy);
   byId('port-custom-asset-form').addEventListener('submit', addCustomAsset);
   byId('port-watchlist-form').addEventListener('submit', addWatchlistItem);
   syncTxnFieldRequirements();

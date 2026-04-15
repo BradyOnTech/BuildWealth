@@ -10,6 +10,27 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 5.1 Slice 3, Portfolio Drift/Risk Alerts)
+1. Added a dedicated portfolio risk-alert sidecar service (`portfolio_risk_alerts.py`) with Ghostfolio-style threshold semantics:
+- concentration thresholds (`single_holding`, `top3`, `HHI`, `effective_positions`)
+- allocation/cluster thresholds (`account`, `asset_class`, `sector`, `region`)
+- deterministic alert states (`breach`/`watch`), severity, drift-from-threshold, and remediation guidance.
+2. Added persistent risk-threshold policy storage and migration:
+- new local `risk_policy.json` payload with normalized bounds and schema versioning.
+- added `PortfolioStore` methods to read/update thresholds and trigger deterministic holdings rebuild.
+3. Extended portfolio holdings contract:
+- bumped holdings schema version to `8`.
+- holdings payload now includes first-class `risk_policy` and computed `risk_alerts` blocks.
+- fixed allocation-risk normalization to use invested-holdings weights (avoids denominator distortion when cash balances are negative).
+4. Added API + UI surfaces:
+- new endpoints: `GET /api/portfolio/risk-policy`, `PUT /api/portfolio/risk-policy`.
+- Portfolio view now includes threshold controls and a risk-alert table with severity/state badges and drift visibility.
+5. Source-provenance note:
+- threshold-band and cluster-risk patterns adapted from Ghostfolio rule modules (`account-cluster-risk/current-investment.ts`, `asset-class-cluster-risk/equity.ts`, `regional-market-cluster-risk/north-america.ts`) while preserving BuildWealth standalone contracts.
+6. Verification:
+- targeted: `pytest -q tests/test_portfolio_risk_alerts.py tests/test_portfolio_store.py` (`58 passed`).
+- full: `pytest -q` (`441 passed`).
+
 ### 2026-04-15 (Completed - Phase 5.1 Slice 2, Corporate Actions + Lot Audit Explainability)
 1. Expanded local portfolio holdings contract with persisted audit payloads:
 - added first-class `lot_audit` and `corporate_actions` payload blocks to holdings responses.
@@ -602,9 +623,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Start Phase 5.1 Slice 3: add portfolio drift/risk alerts tied to allocation and concentration thresholds.
-2. Start Phase 5.1 Slice 4: add export/report package endpoints for periodic review packets.
-3. Start Phase 6.0 Slice 1: implement durable storage strategy upgrade path with migration and rollback checks.
+1. Start Phase 5.1 Slice 4: add export/report package endpoints for periodic review packets.
+2. Start Phase 6.0 Slice 1: implement durable storage strategy upgrade path with migration and rollback checks.
+3. Start Phase 6.0 Slice 2: add backup/restore command and UI entrypoint.
 
 ## Guardrails
 1. Do not fork or embed full Ghostfolio/Ignidash apps into BuildWealth runtime path.

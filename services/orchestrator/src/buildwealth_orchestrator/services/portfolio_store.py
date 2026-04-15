@@ -20,8 +20,13 @@ from buildwealth_orchestrator.services.asset_metadata_seed import (
     load_seed_asset_metadata,
 )
 from buildwealth_orchestrator.services.portfolio_performance import calculate_portfolio_performance
+from buildwealth_orchestrator.services.portfolio_risk_alerts import (
+    DEFAULT_RISK_THRESHOLDS,
+    calculate_portfolio_risk_alerts,
+    normalize_risk_thresholds,
+)
 
-PORTFOLIO_STORE_SCHEMA_VERSION = 7
+PORTFOLIO_STORE_SCHEMA_VERSION = 8
 ACCOUNTS_SCHEMA_VERSION = 2
 ASSET_METADATA_SCHEMA_VERSION = 1
 COST_BASIS_METHODS_SCHEMA_VERSION = 1
@@ -31,6 +36,7 @@ FX_RATES_HISTORY_SCHEMA_VERSION = 1
 WATCHLIST_SCHEMA_VERSION = 1
 LOT_AUDIT_SCHEMA_VERSION = 1
 CORPORATE_ACTIONS_SCHEMA_VERSION = 1
+RISK_POLICY_SCHEMA_VERSION = 1
 LOT_AUDIT_MAX_EVENTS = 1500
 CORPORATE_ACTION_MAX_EVENTS = 600
 DEFAULT_ACCOUNT_ID = "default"
@@ -51,6 +57,7 @@ SUPPORTED_TRANSACTION_ACTIONS = {
     "MERGER",
 }
 SYMBOL_OPTIONAL_ACTIONS = {"TRANSFER_IN", "TRANSFER_OUT", "CASH_DEPOSIT", "CASH_WITHDRAW"}
+RISK_POLICY_THRESHOLD_KEYS = set(DEFAULT_RISK_THRESHOLDS.keys())
 
 
 def _utc_now() -> str:
@@ -127,6 +134,7 @@ class PortfolioStore:
         self._fx_rates_path = portfolio_dir / "fx_rates.json"
         self._fx_rates_history_path = portfolio_dir / "fx_rates_history.json"
         self._watchlist_path = portfolio_dir / "watchlist.json"
+        self._risk_policy_path = portfolio_dir / "risk_policy.json"
         self._initialize()
 
     @staticmethod
@@ -190,6 +198,24 @@ class PortfolioStore:
                 "max_events": CORPORATE_ACTION_MAX_EVENTS,
                 "summary_by_symbol": {},
                 "generated_at": None,
+            },
+            "risk_policy": {
+                "schema_version": RISK_POLICY_SCHEMA_VERSION,
+                "thresholds": normalize_risk_thresholds(DEFAULT_RISK_THRESHOLDS),
+                "updated_at": None,
+            },
+            "risk_alerts": {
+                "schema_version": 1,
+                "generated_at": None,
+                "status": "ok",
+                "breach_count": 0,
+                "watch_count": 0,
+                "high_count": 0,
+                "medium_count": 0,
+                "low_count": 0,
+                "thresholds": normalize_risk_thresholds(DEFAULT_RISK_THRESHOLDS),
+                "metrics": {},
+                "alerts": [],
             },
             "total_cash": 0.0,
             "total_portfolio_value": 0.0,
@@ -276,6 +302,14 @@ class PortfolioStore:
             "updated_at": _utc_now(),
         }
 
+    @staticmethod
+    def _default_risk_policy_payload() -> dict[str, Any]:
+        return {
+            "schema_version": RISK_POLICY_SCHEMA_VERSION,
+            "thresholds": normalize_risk_thresholds(DEFAULT_RISK_THRESHOLDS),
+            "updated_at": _utc_now(),
+        }
+
     def _initialize(self) -> None:
         if not self._accounts_path.exists():
             self._write_json(self._accounts_path, self._default_accounts_payload())
@@ -315,6 +349,11 @@ class PortfolioStore:
             self._write_json(self._watchlist_path, self._default_watchlist_payload())
         else:
             self._read_watchlist_payload()
+
+        if not self._risk_policy_path.exists():
+            self._write_json(self._risk_policy_path, self._default_risk_policy_payload())
+        else:
+            self._read_risk_policy_payload()
 
         if not self._holdings_path.exists():
             self._write_json(self._holdings_path, self._default_holdings_payload())
@@ -868,6 +907,27 @@ class PortfolioStore:
             self._write_json(self._watchlist_path, payload)
         return payload
 
+    def _migrate_risk_policy_payload(self, payload: Any) -> dict[str, Any]:
+        default_payload = self._default_risk_policy_payload()
+        if not isinstance(payload, dict):
+            return default_payload
+
+        thresholds_raw = payload.get("thresholds") if isinstance(payload.get("thresholds"), dict) else payload
+        thresholds = normalize_risk_thresholds(thresholds_raw)
+
+        return {
+            "schema_version": RISK_POLICY_SCHEMA_VERSION,
+            "thresholds": thresholds,
+            "updated_at": str(payload.get("updated_at") or _utc_now()),
+        }
+
+    def _read_risk_policy_payload(self) -> dict[str, Any]:
+        original = self._read_json(self._risk_policy_path)
+        payload = self._migrate_risk_policy_payload(original)
+        if payload != original:
+            self._write_json(self._risk_policy_path, payload)
+        return payload
+
     def get_asset_metadata_map(self) -> dict[str, dict[str, Any]]:
         payload = self._read_asset_metadata_payload()
         symbols = payload.get("symbols", {})
@@ -1142,6 +1202,20 @@ class PortfolioStore:
         account_cash = self._normalize_account_cash_payload(payload.get("account_cash"))
         total_cash = round(sum(account_cash.values()), 2)
         total_portfolio_value = round(total_market_value + total_cash, 2)
+        account_totals = self._summarize_account_totals(migrated_holdings, account_cash=account_cash)
+        allocation_breakdowns = self._summarize_allocation_breakdowns(
+            migrated_holdings,
+            total_market_value=total_market_value,
+            total_cash=total_cash,
+        )
+        risk_policy = self._read_risk_policy_payload()
+        risk_alerts = calculate_portfolio_risk_alerts(
+            holdings=migrated_holdings,
+            account_totals=account_totals,
+            allocation_breakdowns=allocation_breakdowns,
+            thresholds=risk_policy.get("thresholds"),
+            generated_at=str(payload.get("updated_at") or _utc_now()),
+        )
 
         migrated = {
             **default_payload,
@@ -1150,12 +1224,8 @@ class PortfolioStore:
             "holdings": migrated_holdings,
             "holdings_by_symbol": self._summarize_holdings_by_symbol(migrated_holdings),
             "account_cash": account_cash,
-            "account_totals": self._summarize_account_totals(migrated_holdings, account_cash=account_cash),
-            "allocation_breakdowns": self._summarize_allocation_breakdowns(
-                migrated_holdings,
-                total_market_value=total_market_value,
-                total_cash=total_cash,
-            ),
+            "account_totals": account_totals,
+            "allocation_breakdowns": allocation_breakdowns,
             "cost_basis_methods": self._read_cost_basis_methods_payload(),
             "manual_prices": manual_prices,
             "base_currency": base_currency,
@@ -1163,6 +1233,8 @@ class PortfolioStore:
             "performance": performance,
             "lot_audit": self._normalize_lot_audit_payload(payload.get("lot_audit")),
             "corporate_actions": self._normalize_corporate_actions_payload(payload.get("corporate_actions")),
+            "risk_policy": risk_policy,
+            "risk_alerts": self._normalize_risk_alerts_payload(payload.get("risk_alerts"), fallback=risk_alerts),
             "total_value": round(total_market_value, 2),
             "total_cost_basis": round(total_cost, 2),
             "total_cash": total_cash,
@@ -1429,6 +1501,38 @@ class PortfolioStore:
             "summary_by_symbol": summary_by_symbol,
             "generated_at": str(payload.get("generated_at") or "") or None,
         }
+
+    def _normalize_risk_alerts_payload(self, payload: Any, *, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
+        default_payload = fallback or {
+            "schema_version": 1,
+            "generated_at": None,
+            "status": "ok",
+            "breach_count": 0,
+            "watch_count": 0,
+            "high_count": 0,
+            "medium_count": 0,
+            "low_count": 0,
+            "thresholds": normalize_risk_thresholds(DEFAULT_RISK_THRESHOLDS),
+            "metrics": {},
+            "alerts": [],
+        }
+        if not isinstance(payload, dict):
+            return default_payload
+
+        normalized = {
+            "schema_version": int(_safe_float(payload.get("schema_version"), default_payload.get("schema_version", 1))),
+            "generated_at": str(payload.get("generated_at") or default_payload.get("generated_at") or _utc_now()),
+            "status": str(payload.get("status") or default_payload.get("status") or "ok").strip().lower() or "ok",
+            "breach_count": max(0, int(_safe_float(payload.get("breach_count"), default_payload.get("breach_count", 0)))),
+            "watch_count": max(0, int(_safe_float(payload.get("watch_count"), default_payload.get("watch_count", 0)))),
+            "high_count": max(0, int(_safe_float(payload.get("high_count"), default_payload.get("high_count", 0)))),
+            "medium_count": max(0, int(_safe_float(payload.get("medium_count"), default_payload.get("medium_count", 0)))),
+            "low_count": max(0, int(_safe_float(payload.get("low_count"), default_payload.get("low_count", 0)))),
+            "thresholds": normalize_risk_thresholds(payload.get("thresholds")),
+            "metrics": payload.get("metrics") if isinstance(payload.get("metrics"), dict) else dict(default_payload.get("metrics", {})),
+            "alerts": [dict(item) for item in payload.get("alerts", []) if isinstance(item, dict)],
+        }
+        return normalized
 
     def _summarize_holdings_by_symbol(self, holdings: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
         summary: dict[str, dict[str, Any]] = {}
@@ -1814,15 +1918,25 @@ class PortfolioStore:
             )
 
         payload = self._default_holdings_payload()
-        payload["holdings"] = holdings
-        payload["holdings_by_symbol"] = self._summarize_holdings_by_symbol(holdings)
-        payload["account_cash"] = normalized_account_cash
-        payload["account_totals"] = self._summarize_account_totals(holdings, account_cash=normalized_account_cash)
-        payload["allocation_breakdowns"] = self._summarize_allocation_breakdowns(
+        risk_policy = self._read_risk_policy_payload()
+        account_totals = self._summarize_account_totals(holdings, account_cash=normalized_account_cash)
+        allocation_breakdowns = self._summarize_allocation_breakdowns(
             holdings,
             total_market_value=total_market_value,
             total_cash=total_cash,
         )
+        risk_alerts = calculate_portfolio_risk_alerts(
+            holdings=holdings,
+            account_totals=account_totals,
+            allocation_breakdowns=allocation_breakdowns,
+            thresholds=risk_policy.get("thresholds"),
+            generated_at=prices_updated_at or _utc_now(),
+        )
+        payload["holdings"] = holdings
+        payload["holdings_by_symbol"] = self._summarize_holdings_by_symbol(holdings)
+        payload["account_cash"] = normalized_account_cash
+        payload["account_totals"] = account_totals
+        payload["allocation_breakdowns"] = allocation_breakdowns
         payload["manual_prices"] = manual_prices
         payload["base_currency"] = base_currency
         payload["fx_rates"] = fx_rates
@@ -1842,6 +1956,8 @@ class PortfolioStore:
         )
         payload["lot_audit"] = self._normalize_lot_audit_payload(lot_audit)
         payload["corporate_actions"] = self._normalize_corporate_actions_payload(corporate_actions)
+        payload["risk_policy"] = risk_policy
+        payload["risk_alerts"] = self._normalize_risk_alerts_payload(risk_alerts, fallback=risk_alerts)
         payload["prices_updated_at"] = prices_updated_at
         payload["asset_metadata_updated_at"] = self._read_asset_metadata_payload().get("updated_at")
         payload["cost_basis_methods"] = self._read_cost_basis_methods_payload()
@@ -1984,11 +2100,21 @@ class PortfolioStore:
     def get_holdings(self) -> dict[str, Any]:
         payload = self._read_holdings_payload()
         base_currency, fx_rates = self._fx_rates_data()
+        risk_policy = self._read_risk_policy_payload()
+        risk_alerts = calculate_portfolio_risk_alerts(
+            holdings=payload.get("holdings", {}),
+            account_totals=payload.get("account_totals"),
+            allocation_breakdowns=payload.get("allocation_breakdowns"),
+            thresholds=risk_policy.get("thresholds"),
+            generated_at=str(payload.get("updated_at") or _utc_now()),
+        )
         payload["accounts"] = self.get_accounts()
         payload["cost_basis_methods"] = self.get_cost_basis_methods()
         payload["manual_prices"] = self._manual_prices_by_symbol()
         payload["base_currency"] = base_currency
         payload["fx_rates"] = fx_rates
+        payload["risk_policy"] = risk_policy
+        payload["risk_alerts"] = self._normalize_risk_alerts_payload(risk_alerts, fallback=risk_alerts)
         return payload
 
     @staticmethod
@@ -2868,6 +2994,32 @@ class PortfolioStore:
         payload["updated_at"] = _utc_now()
         self._write_json(self._watchlist_path, payload)
         return True
+
+    # ---- Portfolio risk policy ----
+
+    def get_risk_policy(self) -> dict[str, Any]:
+        return self._read_risk_policy_payload()
+
+    def set_risk_policy_thresholds(self, updates: dict[str, Any] | None = None, **kwargs: Any) -> dict[str, Any]:
+        payload = self._read_risk_policy_payload()
+        thresholds = payload.get("thresholds") if isinstance(payload.get("thresholds"), dict) else {}
+        merged: dict[str, Any] = {**thresholds}
+
+        if isinstance(updates, dict):
+            for key, value in updates.items():
+                if key in RISK_POLICY_THRESHOLD_KEYS and value is not None:
+                    merged[key] = value
+
+        for key, value in kwargs.items():
+            if key in RISK_POLICY_THRESHOLD_KEYS and value is not None:
+                merged[key] = value
+
+        payload["schema_version"] = RISK_POLICY_SCHEMA_VERSION
+        payload["thresholds"] = normalize_risk_thresholds(merged)
+        payload["updated_at"] = _utc_now()
+        self._write_json(self._risk_policy_path, payload)
+        self._rebuild_holdings()
+        return payload
 
     # ---- Cost basis methods ----
 

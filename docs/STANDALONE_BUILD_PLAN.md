@@ -63,6 +63,24 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 5.1 Slice 3, Portfolio Drift/Risk Alerts)
+- Added a new portfolio risk-alert sidecar (`portfolio_risk_alerts.py`) that computes concentration/allocation alerts from local holdings with threshold-driven `breach`/`watch` states, severity, drift, and action guidance.
+- Added persistent threshold policy storage via `risk_policy.json`:
+  - new normalized threshold contract (`single_holding`, `top3`, `account`, `asset_class`, `sector`, `region`, `hhi`, `effective_positions`)
+  - `PortfolioStore` read/update methods with deterministic rebuild integration.
+- Extended holdings contract and migration path:
+  - bumped holdings schema version to `8`
+  - added `risk_policy` and `risk_alerts` payload blocks to holdings responses.
+- Added API and UI surfaces:
+  - `GET/PUT /api/portfolio/risk-policy`
+  - Portfolio page controls for threshold editing and risk-alert table rendering.
+- Source-provenance note:
+  - threshold and cluster-risk guardrails follow Ghostfolio x-ray rule patterns (`account-cluster-risk/current-investment.ts`, `asset-class-cluster-risk/equity.ts`, `regional-market-cluster-risk/north-america.ts`) while keeping BuildWealth contract-first and standalone.
+- Added regression coverage:
+  - new `test_portfolio_risk_alerts.py`
+  - expanded `test_portfolio_store.py` risk-policy/risk-alert integration tests.
+- Verification: `pytest -q` in `services/orchestrator` passes (`441 passed`).
+
 ### 2026-04-15 (Completed - Phase 5.1 Slice 2, Corporate Actions + Lot Audit Explainability)
 - Expanded local holdings contract with persisted explainability payloads:
   - added `lot_audit` event stream and `corporate_actions` event stream to `holdings.json` payloads.

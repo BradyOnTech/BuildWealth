@@ -561,6 +561,40 @@ class TestWatchlist:
         assert rows[1]["tags"] == ["quality", "megacap"]
 
 
+class TestRiskPolicy:
+    def test_default_risk_policy_present_in_holdings_payload(self, store):
+        store.add_transaction(date="2026-01-01", symbol="AAPL", action="BUY", quantity=10, unit_price=100)
+        holdings = store.update_prices({"AAPL": 100})
+        assert holdings["risk_policy"]["schema_version"] == 1
+        assert "single_holding_max_pct" in holdings["risk_policy"]["thresholds"]
+        assert holdings["risk_alerts"]["schema_version"] == 1
+        assert isinstance(holdings["risk_alerts"]["alerts"], list)
+
+    def test_set_risk_policy_thresholds_persists_and_rebuilds_alerts(self, store):
+        store.add_transaction(date="2026-01-01", symbol="AAPL", action="BUY", quantity=10, unit_price=100)
+        store.add_transaction(date="2026-01-02", symbol="MSFT", action="BUY", quantity=10, unit_price=100)
+        baseline = store.update_prices({"AAPL": 100, "MSFT": 100})
+
+        assert baseline["risk_alerts"]["breach_count"] >= 1
+
+        updated = store.set_risk_policy_thresholds(
+            {
+                "single_holding_max_pct": 60,
+                "top3_holdings_max_pct": 100,
+                "asset_class_max_pct": 100,
+                "sector_max_pct": 100,
+                "region_max_pct": 100,
+                "hhi_max": 1,
+                "effective_positions_min": 1,
+            }
+        )
+        assert updated["thresholds"]["single_holding_max_pct"] == pytest.approx(60.0, abs=0.01)
+
+        holdings = store.get_holdings()
+        assert holdings["risk_policy"]["thresholds"]["single_holding_max_pct"] == pytest.approx(60.0, abs=0.01)
+        assert holdings["risk_alerts"]["breach_count"] == 0
+
+
 class TestCostBasisMethods:
     def test_lifo_method_changes_realized_gain(self, store):
         store.set_cost_basis_method(method="LIFO", account="default", symbol="AAPL")
@@ -689,7 +723,7 @@ class TestPersistence:
 
         store = PortfolioStore(dir_)
         holdings = store.get_holdings()
-        assert holdings["schema_version"] == 7
+        assert holdings["schema_version"] == 8
         assert holdings["performance"]["as_of"] == "2026-01-31T00:00:00+00:00"
         assert holdings["holdings"][_position_key("AAPL")]["realized_gains"] == 0.0
         assert holdings["lot_audit"]["events"] == []

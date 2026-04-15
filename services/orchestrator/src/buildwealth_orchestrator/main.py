@@ -10480,6 +10480,36 @@ def delete_portfolio_watchlist_item(symbol: str, data_source: str | None = None)
     }
 
 
+@app.get("/api/portfolio/risk-policy")
+def get_portfolio_risk_policy() -> dict[str, Any]:
+    return portfolio_store.get_risk_policy()
+
+
+@app.put("/api/portfolio/risk-policy")
+def set_portfolio_risk_policy(request: dict[str, Any]) -> dict[str, Any]:
+    allowed_fields = {
+        "single_holding_max_pct",
+        "top3_holdings_max_pct",
+        "account_max_pct",
+        "asset_class_max_pct",
+        "sector_max_pct",
+        "region_max_pct",
+        "hhi_max",
+        "effective_positions_min",
+    }
+    updates: dict[str, float] = {}
+    for key in allowed_fields:
+        if key not in request:
+            continue
+        try:
+            updates[key] = float(request.get(key))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=f"{key} must be a number") from exc
+    if not updates:
+        raise HTTPException(status_code=400, detail="At least one risk threshold field is required.")
+    return portfolio_store.set_risk_policy_thresholds(updates=updates)
+
+
 @app.get("/api/portfolio/cost-basis-methods")
 def get_portfolio_cost_basis_methods() -> dict[str, Any]:
     return portfolio_store.get_cost_basis_methods()
