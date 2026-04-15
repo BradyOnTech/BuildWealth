@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Literal
 
-from buildwealth_orchestrator.services.service_utils import safe_float, safe_int
+from buildwealth_orchestrator.services.value_coercion import safe_float, safe_int
 
 PayoffStrategy = Literal["minimum", "snowball", "avalanche", "custom"]
 

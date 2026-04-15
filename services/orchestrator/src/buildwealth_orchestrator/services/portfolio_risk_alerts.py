@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from buildwealth_orchestrator.services.service_utils import safe_float, utc_now_iso
+from buildwealth_orchestrator.services.value_coercion import safe_float, utc_now_iso
 
 RISK_ALERTS_SCHEMA_VERSION = 1
 

@@ -63,6 +63,18 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Cross-Cutting Follow-up, Slice A Shared Helper Cohesion)
+- Split mixed service helpers into focused modules:
+  - added `services/value_coercion.py` for shared coercion/parsing/time helpers.
+  - added `services/recurring_projection.py` for recurring schedule projection helpers.
+  - removed `services/service_utils.py` to eliminate mixed helper ownership.
+- Updated service import call sites to explicit helper modules:
+  - coercion/parsing call sites now import from `value_coercion.py`.
+  - recurring schedule call sites now import from `recurring_projection.py`.
+- Verification:
+  - targeted: `pytest -q tests/test_buildwealth_context.py tests/test_income_projection.py tests/test_expense_projection.py tests/test_debt_projection.py tests/test_rmd_projection.py tests/test_tax_engine.py tests/test_scenario_engine.py tests/test_portfolio_review_packets.py tests/test_portfolio_risk_alerts.py tests/test_plan_scenario_branching.py` (`63 passed`)
+  - full: `pytest -q` in `services/orchestrator` passes (`474 passed`).
+
 ### 2026-04-15 (Completed - Cross-Cutting Follow-up, Backup/Restore + Protection-Policy Scripted Reliability Smoke Validation)
 - Added scripted storage reliability smoke runner:
   - new script: `scripts/reliability-smoke-storage.sh`

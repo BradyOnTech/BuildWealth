@@ -10,6 +10,27 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Cross-Cutting Follow-up, Slice A Shared Helper Cohesion)
+1. Split mixed helper responsibilities into focused modules:
+- added `services/value_coercion.py` for shared coercion/parsing/time helpers.
+- added `services/recurring_projection.py` for recurring schedule projection logic.
+- removed `services/service_utils.py` to eliminate mixed coercion/projection ownership in one module.
+2. Updated service imports to explicit helper ownership:
+- coercion/parsing imports now point to `value_coercion.py` in:
+  - `buildwealth_context.py`
+  - `debt_projection.py`
+  - `portfolio_review_packets.py`
+  - `portfolio_risk_alerts.py`
+  - `rmd_projection.py`
+  - `scenario_engine.py`
+  - `tax_engine.py`
+- recurring projection imports now point to `recurring_projection.py` in:
+  - `income_projection.py`
+  - `expense_projection.py`
+3. Verification:
+- targeted: `pytest -q tests/test_buildwealth_context.py tests/test_income_projection.py tests/test_expense_projection.py tests/test_debt_projection.py tests/test_rmd_projection.py tests/test_tax_engine.py tests/test_scenario_engine.py tests/test_portfolio_review_packets.py tests/test_portfolio_risk_alerts.py tests/test_plan_scenario_branching.py` (`63 passed`).
+- full: `pytest -q` (`474 passed`).
+
 ### 2026-04-15 (Completed - Cross-Cutting Follow-up, Backup/Restore + Protection-Policy Scripted Reliability Smoke Validation)
 1. Added scripted storage reliability smoke runner:
 - new script: `scripts/reliability-smoke-storage.sh`
@@ -756,9 +777,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Start Codebase Quality Follow-Up Slice A: split `service_utils.py` into cohesive coercion/projection helper modules.
-2. Start Codebase Quality Follow-Up Slice B: isolate frontend plan-setting field schema from runtime state module.
-3. Start Codebase Quality Follow-Up Slice C: engine policy/envelope unification follow-through in any remaining sidecar paths.
+1. Start Codebase Quality Follow-Up Slice B: isolate frontend plan-setting field schema from runtime state module.
+2. Start Codebase Quality Follow-Up Slice D: decompose planning sidecar responsibilities into smaller internal helpers.
+3. Migrate FastAPI startup/shutdown hooks to lifespan handlers to clear deprecation warnings and preserve forward compatibility.
 
 ## Cross-Cutting Engineering Follow-Up
 1. Post-refactor helper indirection and intentional sidecar complexity are documented in [`docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`](./CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md).

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from buildwealth_orchestrator.schemas import PortfolioSnapshot
-from buildwealth_orchestrator.services.service_utils import (
+from buildwealth_orchestrator.services.value_coercion import (
     parse_optional_date,
     parse_optional_datetime,
     safe_float,

@@ -23,11 +23,22 @@ The tradeoff is that some shared helpers now sit one layer farther away from the
 - degraded responses
 - operator-facing engine health
 
+## Execution Status (2026-04-15)
+- Completed: Slice A (Shared Helper Cohesion)
+- Completed: Slice C (Engine Policy and Envelope Unification)
+- Completed: Slice E (Sidecar Matrix Test Hardening)
+- Pending: Slice B (Frontend Field Schema Isolation)
+- Pending: Slice D (Planning Sidecar Decomposition)
+
 ## Areas With New Indirection
 
 ### 1. Service Helper Consolidation
+Status:
+- Completed (2026-04-15, Slice A)
+
 Files:
-- `services/orchestrator/src/buildwealth_orchestrator/services/service_utils.py`
+- `services/orchestrator/src/buildwealth_orchestrator/services/value_coercion.py`
+- `services/orchestrator/src/buildwealth_orchestrator/services/recurring_projection.py`
 - `services/orchestrator/src/buildwealth_orchestrator/services/buildwealth_context.py`
 - `services/orchestrator/src/buildwealth_orchestrator/services/income_projection.py`
 - `services/orchestrator/src/buildwealth_orchestrator/services/expense_projection.py`
@@ -39,26 +50,23 @@ Files:
 - `services/orchestrator/src/buildwealth_orchestrator/services/tax_engine.py`
 
 What happened:
-- shared coercion helpers, text trimming, datetime parsing, and recurring projection logic were extracted into `service_utils.py`
+- shared coercion/parsing/time helpers moved into `value_coercion.py`
+- shared recurring schedule projection logic moved into `recurring_projection.py`
+- mixed helper ownership in `service_utils.py` was removed
 
 Why this is better:
 - lower duplication
 - fewer subtly different helper implementations
 - easier to test once and reuse everywhere
+- helper ownership is explicit for coercion/parsing vs projection concerns
 
 Why this is more indirect:
-- `service_utils.py` now mixes two different concerns:
-  - generic coercion and parsing
-  - recurring schedule projection
-- feature files now depend on a general-purpose helper module instead of keeping small local helpers inline
+- feature files still import shared helpers rather than keeping small local utilities inline
 
-How to fix it:
-1. Split `service_utils.py` into two focused modules:
-   - `services/value_coercion.py`
-   - `services/recurring_projection.py`
-2. Keep names explicit and domain-neutral.
-3. Add a short module docstring in both files describing which services should import them.
-4. Keep only truly shared logic there. If a helper is only used by one service again later, move it back.
+Guardrails after split:
+1. Keep names explicit and domain-neutral.
+2. Keep only truly shared logic in these modules.
+3. If a helper is only used by one service later, move it back to that service.
 
 ### 2. Neutral Extraction From Feature Modules
 Files:
@@ -243,9 +251,9 @@ Fix:
 
 ## Recommended Execution Order
 
-### Slice A: Shared Helper Cohesion
+### Slice A: Shared Helper Cohesion (Completed 2026-04-15)
 Goal:
-- split `service_utils.py` into cohesive modules and keep helper ownership obvious
+- split shared helper responsibilities into cohesive modules and keep helper ownership obvious
 
 Definition of done:
 - no mixed coercion/projection helper module remains
@@ -259,7 +267,7 @@ Definition of done:
 - runtime state and UI field schema are separated
 - plan settings render/parse from one dedicated metadata module
 
-### Slice C: Engine Policy and Envelope Unification
+### Slice C: Engine Policy and Envelope Unification (Completed 2026-04-15)
 Goal:
 - isolate intentional sidecar complexity behind smaller internal abstractions
 
@@ -275,7 +283,7 @@ Definition of done:
 - request build, local execution, fallback, and merge paths are separate functions
 - behavior and API contracts stay unchanged
 
-### Slice E: Sidecar Matrix Test Hardening
+### Slice E: Sidecar Matrix Test Hardening (Completed 2026-04-15)
 Goal:
 - make intentional complexity safer to maintain
 

@@ -30,7 +30,7 @@ from buildwealth_orchestrator.services.contribution_rules import (
     normalize_account_type,
     tax_treatment_for_account_type,
 )
-from buildwealth_orchestrator.services.service_utils import (
+from buildwealth_orchestrator.services.value_coercion import (
     clamp as _clamp,
     parse_optional_date as _parse_optional_date,
     safe_float as _safe_float,

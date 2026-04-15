@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Any
 
 from buildwealth_orchestrator.services.contribution_rules import normalize_account_type
-from buildwealth_orchestrator.services.service_utils import safe_float, safe_int
+from buildwealth_orchestrator.services.value_coercion import safe_float, safe_int
 
 
 UNIFORM_LIFETIME_FACTORS: dict[int, float] = {

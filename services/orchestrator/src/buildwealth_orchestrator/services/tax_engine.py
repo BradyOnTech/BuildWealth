@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from buildwealth_orchestrator.services.service_utils import safe_float
+from buildwealth_orchestrator.services.value_coercion import safe_float
 
 
 FilingStatus = Literal[

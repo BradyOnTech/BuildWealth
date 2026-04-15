@@ -8,7 +8,7 @@ import re
 from datetime import datetime, timezone
 from typing import TypedDict
 
-from buildwealth_orchestrator.services.service_utils import (
+from buildwealth_orchestrator.services.value_coercion import (
     parse_optional_datetime as _parse_iso_datetime,
     safe_float_or_none as _safe_float,
     trim_text as _trim_text,

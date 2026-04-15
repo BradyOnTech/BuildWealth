@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from buildwealth_orchestrator.services.service_utils import (
+from buildwealth_orchestrator.services.recurring_projection import (
     RecurringProjectionConfig,
     project_recurring_schedule,
 )
