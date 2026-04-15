@@ -10,5 +10,5 @@ Use these as the source of truth instead:
 - [Migration and Compatibility](./MIGRATION_AND_COMPATIBILITY.md)
 - [Standalone Operations](./OPERATIONS_STANDALONE.md)
 
-## Current Direction
-BuildWealth now runs as a standalone orchestrator-first application with optional contract-bound sidecars for targeted Ghostfolio/Ignidash compute reuse.
+## Archived Direction
+This file reflects the pre-standalone pivot and is retained for historical reference.

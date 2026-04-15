@@ -71,6 +71,24 @@ def test_workflow_runner_risk_concentration_output() -> None:
     assert "top_holding_percent" in result["data"]
 
 
+def test_workflow_runner_templates_are_structured() -> None:
+    runner = WorkflowRunner(
+        scenario_engine=_engine(),
+        default_annual_contribution_usd=18000,
+        default_years=25,
+        default_hsa_delta=1000,
+    )
+
+    templates = runner.templates()
+
+    assert [template["id"] for template in templates] == [
+        "risk_concentration_review",
+        "contribution_optimization",
+        "weekly_change_summary",
+    ]
+    assert templates[1]["default_params"]["increment_options_usd"] == [0, 1000, 3000, 5000]
+
+
 def test_workflow_runner_contribution_optimization_output() -> None:
     runner = WorkflowRunner(
         scenario_engine=_engine(),

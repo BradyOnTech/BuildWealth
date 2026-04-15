@@ -16,57 +16,15 @@ from pathlib import Path
 from typing import Any
 
 from buildwealth_orchestrator.schemas import PortfolioSnapshot
+from buildwealth_orchestrator.services.service_utils import (
+    parse_optional_date,
+    parse_optional_datetime,
+    safe_float,
+    safe_int,
+    utc_now_iso,
+)
 
 PORTFOLIO_REVIEW_PACKET_SCHEMA_VERSION = 1
-
-
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _safe_float(value: Any, fallback: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return fallback
-
-
-def _safe_int(value: Any, fallback: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return fallback
-
-
-def _to_date(value: Any) -> date | None:
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    text = str(value or "").strip()
-    if not text:
-        return None
-    candidate = text[:10]
-    try:
-        return datetime.fromisoformat(candidate).date()
-    except ValueError:
-        return None
-
-
-def _to_datetime(value: Any) -> datetime | None:
-    if isinstance(value, datetime):
-        return value
-    text = str(value or "").strip()
-    if not text:
-        return None
-    try:
-        normalized = text.replace("Z", "+00:00")
-        parsed = datetime.fromisoformat(normalized)
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
-    except ValueError:
-        return None
 
 
 def _status_counts(rows: list[dict[str, Any]], *, key: str) -> dict[str, int]:
@@ -87,7 +45,7 @@ def _summarize_transactions(
     for row in transactions:
         if not isinstance(row, dict):
             continue
-        txn_date = _to_date(row.get("date"))
+        txn_date = parse_optional_date(row.get("date"))
         if txn_date is None:
             continue
         if period_start <= txn_date <= period_end:
@@ -97,9 +55,9 @@ def _summarize_transactions(
     net_cash_flow = 0.0
     for row in in_period:
         action = str(row.get("action") or "").strip().upper()
-        quantity = _safe_float(row.get("quantity"), 0.0)
-        unit_price = _safe_float(row.get("unit_price"), 0.0)
-        fee = _safe_float(row.get("fee"), 0.0)
+        quantity = safe_float(row.get("quantity"), 0.0)
+        unit_price = safe_float(row.get("unit_price"), 0.0)
+        fee = safe_float(row.get("fee"), 0.0)
         gross = abs(quantity) * abs(unit_price)
         amount = gross + abs(fee)
         if action in {"BUY", "FEE", "CASH_WITHDRAW", "TRANSFER_OUT"}:
@@ -134,7 +92,7 @@ def _summarize_audit_events(
     corporate_events = [event for event in corporate_events_raw if isinstance(event, dict)]
 
     def within(event: dict[str, Any]) -> bool:
-        dt = _to_date(event.get("transaction_date"))
+        dt = parse_optional_date(event.get("transaction_date"))
         return dt is not None and period_start <= dt <= period_end
 
     lot_in_period = [event for event in lot_events if within(event)]
@@ -169,8 +127,8 @@ def _summarize_snapshots(
         }
 
     ordered = sorted(window, key=lambda item: item.as_of)
-    start_value = _safe_float(ordered[0].total_value_usd, 0.0)
-    end_value = _safe_float(ordered[-1].total_value_usd, 0.0)
+    start_value = safe_float(ordered[0].total_value_usd, 0.0)
+    end_value = safe_float(ordered[-1].total_value_usd, 0.0)
     delta = end_value - start_value
     delta_pct = (delta / start_value * 100) if start_value > 0 else None
     return {
@@ -194,13 +152,13 @@ def build_portfolio_review_packet(
     recommendations: list[dict[str, Any]],
     plan_detail: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    resolved_generated_at = _to_datetime(generated_at) or datetime.now(timezone.utc)
+    resolved_generated_at = parse_optional_datetime(generated_at) or datetime.now(timezone.utc)
     period_end = resolved_generated_at.date()
     period_start = period_end - timedelta(days=max(1, int(period_days)) - 1)
 
     holdings = holdings_payload.get("holdings") if isinstance(holdings_payload.get("holdings"), dict) else {}
     holdings_rows = [row for row in holdings.values() if isinstance(row, dict)]
-    holdings_rows.sort(key=lambda row: _safe_float(row.get("current_value"), 0.0), reverse=True)
+    holdings_rows.sort(key=lambda row: safe_float(row.get("current_value"), 0.0), reverse=True)
 
     performance = holdings_payload.get("performance") if isinstance(holdings_payload.get("performance"), dict) else {}
     risk = holdings_payload.get("risk_alerts") if isinstance(holdings_payload.get("risk_alerts"), dict) else {}
@@ -227,9 +185,9 @@ def build_portfolio_review_packet(
     )
 
     top_positions = []
-    total_value = _safe_float(holdings_payload.get("total_value"), 0.0)
+    total_value = safe_float(holdings_payload.get("total_value"), 0.0)
     for row in holdings_rows[:10]:
-        value = _safe_float(row.get("current_value"), 0.0)
+        value = safe_float(row.get("current_value"), 0.0)
         allocation = (value / total_value * 100) if total_value > 0 else 0.0
         top_positions.append(
             {
@@ -270,15 +228,15 @@ def build_portfolio_review_packet(
         },
         "summary": {
             "holdings_as_of": str(holdings_payload.get("prices_updated_at") or holdings_payload.get("updated_at") or ""),
-            "total_portfolio_value_usd": round(_safe_float(holdings_payload.get("total_portfolio_value"), 0.0), 2),
-            "total_invested_value_usd": round(_safe_float(holdings_payload.get("total_value"), 0.0), 2),
-            "total_cash_usd": round(_safe_float(holdings_payload.get("total_cash"), 0.0), 2),
+            "total_portfolio_value_usd": round(safe_float(holdings_payload.get("total_portfolio_value"), 0.0), 2),
+            "total_invested_value_usd": round(safe_float(holdings_payload.get("total_value"), 0.0), 2),
+            "total_cash_usd": round(safe_float(holdings_payload.get("total_cash"), 0.0), 2),
             "holdings_count": len(holdings_rows),
             "accounts_count": len(holdings_payload.get("account_totals") or {}),
             "watchlist_count": len([item for item in watchlist_items if isinstance(item, dict)]),
             "risk_status": str(risk.get("status") or "ok"),
-            "risk_breach_count": _safe_int(risk.get("breach_count"), 0),
-            "risk_watch_count": _safe_int(risk.get("watch_count"), 0),
+            "risk_breach_count": safe_int(risk.get("breach_count"), 0),
+            "risk_watch_count": safe_int(risk.get("watch_count"), 0),
             "recommendations_open": open_recommendations,
             "recommendations_total": len(recommendations),
             "performance": {
@@ -353,26 +311,26 @@ def build_portfolio_review_packet_markdown(
         "",
         "## Portfolio Summary",
         "",
-        f"- Total portfolio value: ${_safe_float(summary.get('total_portfolio_value_usd'), 0.0):,.2f}",
-        f"- Invested value: ${_safe_float(summary.get('total_invested_value_usd'), 0.0):,.2f}",
-        f"- Cash: ${_safe_float(summary.get('total_cash_usd'), 0.0):,.2f}",
-        f"- Holdings count: {_safe_int(summary.get('holdings_count'), 0)}",
-        f"- Accounts count: {_safe_int(summary.get('accounts_count'), 0)}",
+        f"- Total portfolio value: ${safe_float(summary.get('total_portfolio_value_usd'), 0.0):,.2f}",
+        f"- Invested value: ${safe_float(summary.get('total_invested_value_usd'), 0.0):,.2f}",
+        f"- Cash: ${safe_float(summary.get('total_cash_usd'), 0.0):,.2f}",
+        f"- Holdings count: {safe_int(summary.get('holdings_count'), 0)}",
+        f"- Accounts count: {safe_int(summary.get('accounts_count'), 0)}",
         f"- Holdings as of: {summary.get('holdings_as_of') or 'n/a'}",
         "",
         "## Performance",
         "",
         f"- TWR: {performance.get('twr_return_pct') if performance.get('twr_return_pct') is not None else 'n/a'}%",
         f"- XIRR (annualized): {performance.get('xirr_annualized_return_pct') if performance.get('xirr_annualized_return_pct') is not None else 'n/a'}%",
-        f"- Total return: ${_safe_float(performance.get('total_return_usd'), 0.0):,.2f} ({performance.get('total_return_pct') if performance.get('total_return_pct') is not None else 'n/a'}%)",
-        f"- Realized gains: ${_safe_float(performance.get('realized_gains_usd'), 0.0):,.2f}",
-        f"- Unrealized gains: ${_safe_float(performance.get('unrealized_gains_usd'), 0.0):,.2f}",
+        f"- Total return: ${safe_float(performance.get('total_return_usd'), 0.0):,.2f} ({performance.get('total_return_pct') if performance.get('total_return_pct') is not None else 'n/a'}%)",
+        f"- Realized gains: ${safe_float(performance.get('realized_gains_usd'), 0.0):,.2f}",
+        f"- Unrealized gains: ${safe_float(performance.get('unrealized_gains_usd'), 0.0):,.2f}",
         "",
         "## Risk",
         "",
         f"- Status: {str(summary.get('risk_status') or 'ok').upper()}",
-        f"- Breaches: {_safe_int(summary.get('risk_breach_count'), 0)}",
-        f"- Watches: {_safe_int(summary.get('risk_watch_count'), 0)}",
+        f"- Breaches: {safe_int(summary.get('risk_breach_count'), 0)}",
+        f"- Watches: {safe_int(summary.get('risk_watch_count'), 0)}",
     ]
 
     if alerts:
@@ -392,12 +350,12 @@ def build_portfolio_review_packet_markdown(
             "",
             "## Activity (Period)",
             "",
-            f"- Transactions: {_safe_int(transactions.get('period_transactions_count'), 0)}",
-            f"- Net cash-flow estimate: ${_safe_float(transactions.get('period_net_cash_flow_estimate_usd'), 0.0):,.2f}",
+            f"- Transactions: {safe_int(transactions.get('period_transactions_count'), 0)}",
+            f"- Net cash-flow estimate: ${safe_float(transactions.get('period_net_cash_flow_estimate_usd'), 0.0):,.2f}",
             "",
             "## Snapshot Trend (Period)",
             "",
-            f"- Snapshot points: {_safe_int(snapshots.get('period_snapshots_count'), 0)}",
+            f"- Snapshot points: {safe_int(snapshots.get('period_snapshots_count'), 0)}",
             f"- Start value: {snapshots.get('period_start_value_usd')}",
             f"- End value: {snapshots.get('period_end_value_usd')}",
             f"- Delta: {snapshots.get('period_delta_value_usd')} ({snapshots.get('period_delta_value_pct')}%)",
@@ -412,7 +370,7 @@ def build_portfolio_review_packet_markdown(
             if not isinstance(row, dict):
                 continue
             lines.append(
-                f"- {row.get('symbol')}: ${_safe_float(row.get('value_usd'), 0.0):,.2f} "
+                f"- {row.get('symbol')}: ${safe_float(row.get('value_usd'), 0.0):,.2f} "
                 f"({row.get('allocation_pct')}%)"
             )
     else:
@@ -424,13 +382,13 @@ def build_portfolio_review_packet_markdown(
             "",
             "## Recommendations",
             "",
-            f"- Open: {_safe_int(summary.get('recommendations_open'), 0)}",
-            f"- Total in packet scope: {_safe_int(summary.get('recommendations_total'), 0)}",
+            f"- Open: {safe_int(summary.get('recommendations_open'), 0)}",
+            f"- Total in packet scope: {safe_int(summary.get('recommendations_total'), 0)}",
             f"- Status counts: {json.dumps(status_counts, sort_keys=True)}",
             "",
             "## Watchlist",
             "",
-            f"- Items: {_safe_int(summary.get('watchlist_count'), 0)}",
+            f"- Items: {safe_int(summary.get('watchlist_count'), 0)}",
         ]
     )
 
@@ -442,9 +400,9 @@ def build_portfolio_review_packet_markdown(
                 "",
                 f"- Plan: {plan.get('title') or plan.get('plan_id')}",
                 f"- Updated at: {plan.get('updated_at') or 'n/a'}",
-                f"- Decisions: {_safe_int(plan.get('decisions_count'), 0)}",
-                f"- Artifacts: {_safe_int(plan.get('artifacts_count'), 0)}",
-                f"- Top next actions: {_safe_int(plan.get('top_next_actions_count'), 0)}",
+                f"- Decisions: {safe_int(plan.get('decisions_count'), 0)}",
+                f"- Artifacts: {safe_int(plan.get('artifacts_count'), 0)}",
+                f"- Top next actions: {safe_int(plan.get('top_next_actions_count'), 0)}",
             ]
         )
 
@@ -480,12 +438,12 @@ class PortfolioReviewPacketStore:
             "period_start": str(meta.get("period_start") or date.today().isoformat()),
             "period_end": str(meta.get("period_end") or date.today().isoformat()),
             "holdings_as_of": str(summary.get("holdings_as_of") or "") or None,
-            "total_portfolio_value_usd": round(_safe_float(summary.get("total_portfolio_value_usd"), 0.0), 2),
+            "total_portfolio_value_usd": round(safe_float(summary.get("total_portfolio_value_usd"), 0.0), 2),
             "risk_status": str(summary.get("risk_status") or "ok"),
-            "risk_breach_count": _safe_int(summary.get("risk_breach_count"), 0),
-            "risk_watch_count": _safe_int(summary.get("risk_watch_count"), 0),
-            "recommendations_open": _safe_int(summary.get("recommendations_open"), 0),
-            "recommendations_total": _safe_int(summary.get("recommendations_total"), 0),
+            "risk_breach_count": safe_int(summary.get("risk_breach_count"), 0),
+            "risk_watch_count": safe_int(summary.get("risk_watch_count"), 0),
+            "recommendations_open": safe_int(summary.get("recommendations_open"), 0),
+            "recommendations_total": safe_int(summary.get("recommendations_total"), 0),
             "storage": {
                 "json_file": json_file_name,
                 "markdown_file": markdown_file_name,

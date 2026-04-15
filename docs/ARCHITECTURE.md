@@ -1,6 +1,6 @@
 # Architecture
 
-## Current Direction (2026-04-14)
+## Overview
 BuildWealth runs as a standalone local application with Python as the control plane and data owner.
 Selected high-complexity calculations are delegated to optional, contract-bound sidecars adapted from Ghostfolio and Ignidash.
 
@@ -47,7 +47,7 @@ Selected high-complexity calculations are delegated to optional, contract-bound 
 ## Local Operations Modes
 1. **Default:** orchestrator-only standalone mode.
 2. **Optional:** orchestrator + sidecar engines.
-3. **Optional legacy profile:** full Ghostfolio/Ignidash app containers for reference workflows.
+3. **Optional reference profile:** full Ghostfolio/Ignidash app containers for parity checks and reference workflows only, not the runtime path.
 
 See:
 - [`docs/OPERATIONS_STANDALONE.md`](./OPERATIONS_STANDALONE.md)

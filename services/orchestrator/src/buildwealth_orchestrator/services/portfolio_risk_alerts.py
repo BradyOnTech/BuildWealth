@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any, Literal
+
+from buildwealth_orchestrator.services.service_utils import safe_float, utc_now_iso
 
 RISK_ALERTS_SCHEMA_VERSION = 1
 
@@ -43,19 +44,8 @@ _THRESHOLD_BOUNDS: dict[str, tuple[float, float]] = {
 }
 
 
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _safe_float(value: Any, fallback: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return fallback
-
-
 def _normalize_threshold_value(key: str, value: Any, fallback: float) -> float:
-    raw = _safe_float(value, fallback)
+    raw = safe_float(value, fallback)
     minimum, maximum = _THRESHOLD_BOUNDS[key]
     bounded = max(minimum, min(maximum, raw))
     precision = 3 if key == "hhi_max" else 2
@@ -196,7 +186,7 @@ def _largest_bucket(rows: Any) -> tuple[str | None, float | None]:
     if not isinstance(top, dict):
         return None, None
     label = str(top.get("key") or "").strip() or None
-    pct = _safe_float(top.get("allocation_pct"), None)
+    pct = safe_float(top.get("allocation_pct"), None)
     if pct is None:
         return label, None
     return label, round(pct, 2)
@@ -211,7 +201,7 @@ def _largest_dimension_from_holdings(
     totals: dict[str, float] = {}
     total_value = 0.0
     for row in holding_rows:
-        value = _safe_float(row.get("current_value"), 0.0)
+        value = safe_float(row.get("current_value"), 0.0)
         if value <= 0:
             continue
         key = str(row.get(field) or "").strip() or fallback_label
@@ -246,10 +236,10 @@ def calculate_portfolio_risk_alerts(
         [
             {
                 "symbol": str(row.get("symbol") or "").strip().upper() or "UNKNOWN",
-                "value": round(_safe_float(row.get("current_value"), 0.0), 2),
+                "value": round(safe_float(row.get("current_value"), 0.0), 2),
             }
             for row in holding_rows
-            if _safe_float(row.get("current_value"), 0.0) > 0
+            if safe_float(row.get("current_value"), 0.0) > 0
         ],
         key=lambda item: item["value"],
         reverse=True,
@@ -282,7 +272,7 @@ def calculate_portfolio_risk_alerts(
         for account_id, values in account_totals.items():
             if not isinstance(values, dict):
                 continue
-            total_value = _safe_float(values.get("total_value"), 0.0)
+            total_value = safe_float(values.get("total_value"), 0.0)
             if total_value <= 0:
                 continue
             account_rows.append((str(account_id), total_value))
@@ -438,7 +428,7 @@ def calculate_portfolio_risk_alerts(
         key=lambda item: (
             state_rank.get(str(item.get("state")), 0),
             severity_rank.get(str(item.get("severity")), 0),
-            abs(_safe_float(item.get("drift_from_threshold"), 0.0)),
+            abs(safe_float(item.get("drift_from_threshold"), 0.0)),
         ),
         reverse=True,
     )
@@ -476,7 +466,7 @@ def calculate_portfolio_risk_alerts(
 
     return {
         "schema_version": RISK_ALERTS_SCHEMA_VERSION,
-        "generated_at": generated_at or _utc_now(),
+        "generated_at": generated_at or utc_now_iso(),
         "status": status,
         "breach_count": breach_count,
         "watch_count": watch_count,

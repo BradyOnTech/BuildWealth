@@ -599,10 +599,6 @@ def _resolve_field_value(
     return None
 
 
-def _canonical_row(raw_row: dict[str, str]) -> dict[str, str | None]:
-    return _canonical_row_for_template(raw_row, "generic")
-
-
 def _canonical_row_for_template(
     raw_row: dict[str, str],
     template_id: str,

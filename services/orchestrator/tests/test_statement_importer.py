@@ -1,5 +1,3 @@
-import pytest
-
 from buildwealth_orchestrator.services.statement_importer import (
     parse_statement_csv,
     _normalize_merchant,
@@ -60,7 +58,7 @@ class TestChaseFormat:
         result = parse_statement_csv(CHASE_CSV)
         assert len(result.expense_suggestions) > 0
         labels = [s.label.lower() for s in result.expense_suggestions]
-        assert any("netflix" in l for l in labels)
+        assert any("netflix" in label for label in labels)
 
     def test_recurring_marked_fixed(self):
         result = parse_statement_csv(CHASE_CSV)

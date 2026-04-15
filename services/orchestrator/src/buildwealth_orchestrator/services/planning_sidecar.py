@@ -189,40 +189,28 @@ class IgnidashScenarioService:
             simulation_historical_start_year=simulation_historical_start_year,
             simulation_seed=simulation_seed,
         )
+        local_projection_updates = {
+            "income_projection": income_projection,
+            "expense_projection": expense_projection,
+            "debt_projection": debt_projection,
+            "timeline_projection": timeline_projection,
+            "contribution_allocation": contribution_allocation,
+            "social_security_projection": social_security_projection,
+            "rmd_projection": rmd_projection,
+        }
 
         if sidecar_guard_reason:
             return local_result.model_copy(
                 update={
-                    "engine": "local",
                     "engine_status": "degraded",
                     "fallback_method": "contract_version_guard",
                     "warnings": [f"Ignidash scenario sidecar skipped: {sidecar_guard_reason}"],
-                    "income_projection": income_projection,
-                    "expense_projection": expense_projection,
-                    "debt_projection": debt_projection,
-                    "timeline_projection": timeline_projection,
-                    "contribution_allocation": contribution_allocation,
-                    "social_security_projection": social_security_projection,
-                    "rmd_projection": rmd_projection,
+                    **local_projection_updates,
                 }
             )
 
         if not self.sidecar_enabled or self.sidecar_adapter is None:
-            return local_result.model_copy(
-                update={
-                    "engine": "local",
-                    "engine_status": "ok",
-                    "fallback_method": None,
-                    "warnings": [],
-                    "income_projection": income_projection,
-                    "expense_projection": expense_projection,
-                    "debt_projection": debt_projection,
-                    "timeline_projection": timeline_projection,
-                    "contribution_allocation": contribution_allocation,
-                    "social_security_projection": social_security_projection,
-                    "rmd_projection": rmd_projection,
-                }
-            )
+            return local_result.model_copy(update=local_projection_updates)
 
         request_payload = self._build_request_payload(
             current_portfolio_value_usd=current_portfolio_value_usd,

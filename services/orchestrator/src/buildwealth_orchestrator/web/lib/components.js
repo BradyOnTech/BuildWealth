@@ -49,6 +49,14 @@ export function planSelectOptions(selectId, currentValue = '') {
 export function settingsGridHtml(fields, prefix = '') {
   return fields.map(f => {
     const id = prefix ? f.inputId.replace(/^(setting|diff)-/, `${prefix}-`) : f.inputId;
+    if (f.kind === 'select') {
+      const options = [
+        { value: '', label: f.emptyLabel || 'Select an option' },
+        ...(Array.isArray(f.options) ? f.options : []),
+      ];
+      const optionHtml = options.map(option => `<option value="${option.value}">${option.label}</option>`).join('');
+      return `<label class="field"><span>${f.label}</span><select id="${id}" autocomplete="off">${optionHtml}</select></label>`;
+    }
     const maxAttr = f.max !== undefined ? `max="${f.max}"` : '';
     return `<label class="field"><span>${f.label}</span><input type="number" id="${id}" step="${f.step}" min="${f.min ?? ''}" ${maxAttr} placeholder="${f.placeholder}" /></label>`;
   }).join('');
@@ -59,6 +67,16 @@ export function collectSettingsPayload(fields, { includeNulls }) {
   for (const field of fields) {
     const input = byId(field.inputId);
     if (!input) continue;
+    if (field.kind === 'select') {
+      const value = String(input.value || '').trim();
+      const validValues = new Set((Array.isArray(field.options) ? field.options : []).map(option => String(option.value)));
+      if (!value || (validValues.size && !validValues.has(value))) {
+        if (includeNulls) payload[field.key] = null;
+        continue;
+      }
+      payload[field.key] = value;
+      continue;
+    }
     const parsed = parseOptionalNumericField(input.value, field.key, Boolean(field.integer));
     if (!parsed.present) {
       if (includeNulls) payload[field.key] = null;
@@ -77,6 +95,12 @@ export function setSettingsInputs(fields, settingsPayload) {
     if (!input) continue;
     const raw = settings[field.key];
     if (raw === null || raw === undefined || raw === '') { input.value = ''; continue; }
+    if (field.kind === 'select') {
+      const value = String(raw).trim();
+      const validValues = new Set((Array.isArray(field.options) ? field.options : []).map(option => String(option.value)));
+      input.value = validValues.has(value) ? value : '';
+      continue;
+    }
     input.value = formatNumericInput(Number(raw) * (field.scale || 1));
   }
 }

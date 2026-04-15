@@ -1,5 +1,11 @@
 import { fetchJson } from '../lib/api.js';
-import { state, PLAN_SETTING_FIELDS, DIFF_SETTING_FIELDS } from '../lib/state.js';
+import {
+  state,
+  PLAN_SETTING_FIELDS,
+  PLAN_SETTING_SELECT_FIELDS,
+  DIFF_SETTING_FIELDS,
+  DIFF_SETTING_SELECT_FIELDS,
+} from '../lib/state.js';
 import { byId, fmtCurrency, fmtDate, writeLog, formatNumericInput } from '../lib/utils.js';
 import { settingsGridHtml, collectSettingsPayload, setSettingsInputs } from '../lib/components.js';
 import { initEditor, renderDetail, clearDetail } from './plan-editor.js';
@@ -35,8 +41,8 @@ export function template() {
         <div class="view-header"><h3>Closure Trend (30/90d)</h3><button class="ghost small" id="refresh-plan-closure-trend" disabled>Refresh Trend</button></div>
         <p class="hint tight" id="plan-closure-trend-status">Select a plan to load recommendation quality trend.</p>
         <div id="plan-closure-trend-details" class="item-list"></div>
-        <label class="field"><span>Plan Markdown</span><textarea id="plan-markdown" rows="12" placeholder="Plan markdown will appear here." disabled></textarea></label>
-        <label class="field"><span>Tasks Markdown</span><textarea id="plan-tasks" rows="6" placeholder="Task checklist markdown." disabled></textarea></label>
+        <label class="field"><span>Plan Markdown</span><textarea id="plan-markdown" rows="12" disabled></textarea></label>
+        <label class="field"><span>Tasks Markdown</span><textarea id="plan-tasks" rows="6" disabled></textarea></label>
         <div class="view-header"><h3>Timeline Events</h3><button class="primary small" id="save-plan-timeline" disabled>Save Timeline</button></div>
         <p class="hint tight">Use the event editor for common timeline modeling, or edit JSON directly for advanced payloads.</p>
         <div class="inline-builder">
@@ -124,45 +130,7 @@ export function template() {
         <label class="field"><span>Context Snapshot</span><textarea id="plan-context" rows="6" readonly></textarea></label>
         <div class="view-header"><h3>Plan Settings</h3><button class="primary small" id="save-plan-settings" disabled>Save Settings</button></div>
         <p class="hint tight" id="plan-settings-meta">Blank values use global defaults from planner configuration.</p>
-        <div class="settings-grid">
-          <label class="field">
-            <span>Household Mode</span>
-            <select id="setting-household-mode" disabled>
-              <option value="">Default (Individual)</option>
-              <option value="individual">Individual</option>
-              <option value="couple">Couple</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Filing Status</span>
-            <select id="setting-filing-status" disabled>
-              <option value="">Default</option>
-              <option value="single">Single</option>
-              <option value="married_filing_jointly">Married Filing Jointly</option>
-              <option value="married_filing_separately">Married Filing Separately</option>
-              <option value="head_of_household">Head of Household</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Simulation Mode</span>
-            <select id="setting-simulation-mode" disabled>
-              <option value="">Default (Fixed)</option>
-              <option value="fixed">Fixed</option>
-              <option value="stochastic">Stochastic</option>
-              <option value="historical">Historical Backtest</option>
-              <option value="monte_carlo">Monte Carlo</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Monte Carlo Variant</span>
-            <select id="setting-simulation-monte-carlo-variant" disabled>
-              <option value="">Default (P50)</option>
-              <option value="p10">P10</option>
-              <option value="p50">P50</option>
-              <option value="p90">P90</option>
-            </select>
-          </label>
-        </div>
+        <div class="settings-grid">${settingsGridHtml(PLAN_SETTING_SELECT_FIELDS)}</div>
         <div class="settings-grid">${settingsGridHtml(PLAN_SETTING_FIELDS)}</div>
         <div class="view-header"><h3>Scenario Diff</h3>
           <div class="header-actions"><button class="primary small" id="run-scenario-diff" disabled>Run Diff</button><button class="ghost small" id="apply-scenario-overrides" disabled>Apply Overrides</button></div>
@@ -172,45 +140,7 @@ export function template() {
           <label class="field"><span>Base Assumption Set</span><select id="diff-assumption-set-id" disabled></select></label>
           <label class="field"><span>Candidate Assumption Set</span><select id="diff-candidate-assumption-set-id" disabled></select></label>
         </div>
-        <div class="settings-grid">
-          <label class="field">
-            <span>Household Mode</span>
-            <select id="diff-household-mode" disabled>
-              <option value="">No override</option>
-              <option value="individual">Individual</option>
-              <option value="couple">Couple</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Filing Status</span>
-            <select id="diff-filing-status" disabled>
-              <option value="">No override</option>
-              <option value="single">Single</option>
-              <option value="married_filing_jointly">Married Filing Jointly</option>
-              <option value="married_filing_separately">Married Filing Separately</option>
-              <option value="head_of_household">Head of Household</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Simulation Mode</span>
-            <select id="diff-simulation-mode" disabled>
-              <option value="">No override</option>
-              <option value="fixed">Fixed</option>
-              <option value="stochastic">Stochastic</option>
-              <option value="historical">Historical Backtest</option>
-              <option value="monte_carlo">Monte Carlo</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Monte Carlo Variant</span>
-            <select id="diff-simulation-monte-carlo-variant" disabled>
-              <option value="">No override</option>
-              <option value="p10">P10</option>
-              <option value="p50">P50</option>
-              <option value="p90">P90</option>
-            </select>
-          </label>
-        </div>
+        <div class="settings-grid">${settingsGridHtml(DIFF_SETTING_SELECT_FIELDS)}</div>
         <div class="settings-grid">${settingsGridHtml(DIFF_SETTING_FIELDS)}</div>
         <p class="hint tight" id="scenario-diff-summary">No scenario diff run yet.</p>
         <label class="field"><span>Scenario Diff Output</span><textarea id="scenario-diff-output" rows="8" readonly></textarea></label>
@@ -265,8 +195,8 @@ export function template() {
         <div class="table-wrap"><table><thead><tr><th>Account</th><th>Type</th><th>Final Balance</th><th>Contributions</th><th>Growth</th><th>Withdrawals</th></tr></thead><tbody id="projection-account-body"><tr><td colspan="6">No projection data yet.</td></tr></tbody></table></div>
         <h3 class="section-title">Decisions</h3>
         <div class="decision-form">
-          <label class="field"><span>Decision</span><input type="text" id="decision-summary" placeholder="Decision summary" disabled /></label>
-          <label class="field"><span>Rationale</span><input type="text" id="decision-rationale" placeholder="Why" disabled /></label>
+          <label class="field"><span>Decision</span><input type="text" id="decision-summary" disabled /></label>
+          <label class="field"><span>Rationale</span><input type="text" id="decision-rationale" disabled /></label>
           <label class="field"><span>Status</span><input type="text" id="decision-status" value="proposed" disabled /></label>
           <button class="ghost small" id="add-decision" disabled>Add</button>
         </div>

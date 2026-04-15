@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Mapping, TypedDict, cast
 
 from buildwealth_orchestrator.schemas import PortfolioSnapshot
 
@@ -28,18 +29,58 @@ def _infer_account_type(name: str) -> str:
     return "taxableBrokerage"
 
 
-def build_ignidash_plan_payload(snapshot: PortfolioSnapshot) -> dict[str, Any]:
+class IgnidashAccount(TypedDict):
+    id: str
+    name: str
+    balance: float
+    type: str
+    contributionBasis: int
+
+
+class IgnidashContributionRuleAmount(TypedDict):
+    type: str
+
+
+class IgnidashContributionRule(TypedDict):
+    id: str
+    accountId: str
+    rank: int
+    amount: IgnidashContributionRuleAmount
+    disabled: bool
+
+
+class IgnidashPlanPayload(TypedDict):
+    newPlanName: str
+    isDefault: bool
+    timeline: None
+    incomes: list[object]
+    expenses: list[object]
+    debts: list[object]
+    physicalAssets: list[object]
+    accounts: list[IgnidashAccount]
+    contributionRules: list[IgnidashContributionRule]
+    baseContributionRule: dict[str, str]
+    marketAssumptions: dict[str, float]
+    taxSettings: dict[str, str]
+    privacySettings: dict[str, bool]
+    simulationSettings: dict[str, object]
+    metadata: dict[str, object]
+
+
+def build_ignidash_plan_payload(snapshot: PortfolioSnapshot) -> IgnidashPlanPayload:
     raw_accounts = snapshot.accounts or []
 
-    accounts: list[dict[str, Any]] = []
-    contribution_rules: list[dict[str, Any]] = []
+    accounts: list[IgnidashAccount] = []
+    contribution_rules: list[IgnidashContributionRule] = []
 
     for index, account in enumerate(raw_accounts, start=1):
+        if not isinstance(account, dict):
+            continue
         account_id = str(account.get("id") or f"account-{index}")
         account_name = str(account.get("name") or f"Account {index}")
         account_balance = float(account.get("balance") or 0.0)
 
-        mapped = {
+        mapped: IgnidashAccount = {
             "id": f"gf-{account_id}",
             "name": account_name,
             "balance": account_balance,
@@ -59,25 +100,31 @@ def build_ignidash_plan_payload(snapshot: PortfolioSnapshot) -> dict[str, Any]:
 
     if not accounts:
         accounts = [
-            {
-                "id": "gf-default-taxable",
-                "name": "Taxable Brokerage",
-                "balance": snapshot.total_value_usd,
-                "type": "taxableBrokerage",
-                "contributionBasis": 0,
-            }
+            cast(
+                IgnidashAccount,
+                {
+                    "id": "gf-default-taxable",
+                    "name": "Taxable Brokerage",
+                    "balance": snapshot.total_value_usd,
+                    "type": "taxableBrokerage",
+                    "contributionBasis": 0,
+                },
+            )
         ]
         contribution_rules = [
-            {
-                "id": "rule-1",
-                "accountId": "gf-default-taxable",
-                "rank": 1,
-                "amount": {"type": "unlimited"},
-                "disabled": False,
-            }
+            cast(
+                IgnidashContributionRule,
+                {
+                    "id": "rule-1",
+                    "accountId": "gf-default-taxable",
+                    "rank": 1,
+                    "amount": {"type": "unlimited"},
+                    "disabled": False,
+                },
+            )
         ]
 
-    return {
+    payload: IgnidashPlanPayload = {
         "newPlanName": "BuildWealth Imported Plan",
         "isDefault": False,
         "timeline": None,
@@ -89,12 +136,12 @@ def build_ignidash_plan_payload(snapshot: PortfolioSnapshot) -> dict[str, Any]:
         "contributionRules": contribution_rules,
         "baseContributionRule": {"type": "save"},
         "marketAssumptions": {
-            "stockReturn": 10,
+            "stockReturn": 10.0,
             "stockYield": 3.5,
-            "bondReturn": 5,
+            "bondReturn": 5.0,
             "bondYield": 4.5,
-            "cashReturn": 3,
-            "inflationRate": 3,
+            "cashReturn": 3.0,
+            "inflationRate": 3.0,
         },
         "taxSettings": {"filingStatus": "single"},
         "privacySettings": {"isPrivate": True},
@@ -109,6 +156,7 @@ def build_ignidash_plan_payload(snapshot: PortfolioSnapshot) -> dict[str, Any]:
             "currency": snapshot.base_currency,
         },
     }
+    return payload
 
 
 class IgnidashExportStore:
@@ -116,8 +164,8 @@ class IgnidashExportStore:
         self.export_dir = export_dir
         self.export_dir.mkdir(parents=True, exist_ok=True)
 
-    def write(self, payload: dict[str, Any]) -> Path:
+    def write(self, payload: Mapping[str, object]) -> Path:
         generated = datetime.now(timezone.utc).strftime("ignidash-import-%Y%m%dT%H%M%SZ.json")
         path = self.export_dir / generated
-        path.write_text(__import__("json").dumps(payload, indent=2), encoding="utf-8")
+        path.write_text(json.dumps(dict(payload), indent=2), encoding="utf-8")
         return path

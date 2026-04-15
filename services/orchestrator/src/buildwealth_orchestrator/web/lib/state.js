@@ -33,6 +33,31 @@ export const state = {
   researchDossier: null,
 };
 
+export const HOUSEHOLD_MODE_OPTIONS = [
+  { value: 'individual', label: 'Individual' },
+  { value: 'couple', label: 'Couple' },
+];
+
+export const FILING_STATUS_OPTIONS = [
+  { value: 'single', label: 'Single' },
+  { value: 'married_filing_jointly', label: 'Married Filing Jointly' },
+  { value: 'married_filing_separately', label: 'Married Filing Separately' },
+  { value: 'head_of_household', label: 'Head of Household' },
+];
+
+export const SIMULATION_MODE_OPTIONS = [
+  { value: 'fixed', label: 'Fixed' },
+  { value: 'stochastic', label: 'Stochastic' },
+  { value: 'historical', label: 'Historical Backtest' },
+  { value: 'monte_carlo', label: 'Monte Carlo' },
+];
+
+export const SIMULATION_MONTE_CARLO_VARIANT_OPTIONS = [
+  { value: 'p10', label: 'P10' },
+  { value: 'p50', label: 'P50' },
+  { value: 'p90', label: 'P90' },
+];
+
 export const PLAN_SETTING_FIELDS = [
   { key: 'annual_contribution_usd', inputId: 'setting-annual-contribution', label: 'Annual Contribution (USD)', scale: 1, integer: false, step: 100, min: 0, placeholder: 'e.g. 22000' },
   { key: 'years', inputId: 'setting-years', label: 'Horizon (Years)', scale: 1, integer: true, step: 1, min: 1, max: 80, placeholder: 'e.g. 25' },
@@ -57,8 +82,21 @@ export const PLAN_SETTING_FIELDS = [
   { key: 'expected_return_conservative', inputId: 'setting-return-conservative', label: 'Conservative Return (%)', scale: 100, integer: false, step: 0.01, min: -95, max: 100, placeholder: 'e.g. 5' },
 ];
 
+export const PLAN_SETTING_SELECT_FIELDS = [
+  { key: 'household_mode', inputId: 'setting-household-mode', label: 'Household Mode', kind: 'select', emptyLabel: 'Default (Individual)', options: HOUSEHOLD_MODE_OPTIONS },
+  { key: 'filing_status', inputId: 'setting-filing-status', label: 'Filing Status', kind: 'select', emptyLabel: 'Default', options: FILING_STATUS_OPTIONS },
+  { key: 'simulation_mode', inputId: 'setting-simulation-mode', label: 'Simulation Mode', kind: 'select', emptyLabel: 'Default (Fixed)', options: SIMULATION_MODE_OPTIONS },
+  { key: 'simulation_monte_carlo_variant', inputId: 'setting-simulation-monte-carlo-variant', label: 'Monte Carlo Variant', kind: 'select', emptyLabel: 'Default (P50)', options: SIMULATION_MONTE_CARLO_VARIANT_OPTIONS },
+];
+
 export const DIFF_SETTING_FIELDS = PLAN_SETTING_FIELDS.map(f => ({
   ...f,
   inputId: f.inputId.replace('setting-', 'diff-'),
   placeholder: 'Optional',
+}));
+
+export const DIFF_SETTING_SELECT_FIELDS = PLAN_SETTING_SELECT_FIELDS.map(field => ({
+  ...field,
+  inputId: field.inputId.replace('setting-', 'diff-'),
+  emptyLabel: 'No override',
 }));

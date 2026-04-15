@@ -13,15 +13,11 @@ from buildwealth_orchestrator.services.scenario_engine import (
     MONTE_CARLO_VARIANT_ALIASES,
     SIMULATION_MODE_ALIASES,
 )
+from buildwealth_orchestrator.services.timeline_defaults import (
+    TIMELINE_DEFAULT_IMPACT_BY_EVENT,
+)
 
 PLAN_WORKSPACE_SCHEMA_VERSION = 2
-TIMELINE_DEFAULT_IMPACT_BY_EVENT: dict[str, str] = {
-    "purchase": "expense",
-    "windfall": "income",
-    "job_change": "income",
-    "retirement": "contribution",
-    "milestone": "portfolio",
-}
 
 
 def utc_now() -> datetime:

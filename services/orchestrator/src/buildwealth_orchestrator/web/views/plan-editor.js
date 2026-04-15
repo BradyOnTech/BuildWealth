@@ -1,5 +1,15 @@
 import { fetchJson } from '../lib/api.js';
-import { state, PLAN_SETTING_FIELDS, DIFF_SETTING_FIELDS } from '../lib/state.js';
+import {
+  state,
+  PLAN_SETTING_FIELDS,
+  PLAN_SETTING_SELECT_FIELDS,
+  DIFF_SETTING_FIELDS,
+  DIFF_SETTING_SELECT_FIELDS,
+  HOUSEHOLD_MODE_OPTIONS,
+  FILING_STATUS_OPTIONS,
+  SIMULATION_MODE_OPTIONS,
+  SIMULATION_MONTE_CARLO_VARIANT_OPTIONS,
+} from '../lib/state.js';
 import { byId, fmtCurrency, fmtDate, writeLog } from '../lib/utils.js';
 import { collectSettingsPayload, setSettingsInputs } from '../lib/components.js';
 
@@ -41,10 +51,12 @@ const projectionState = {
 const TIMELINE_EVENT_TYPES = new Set(['purchase', 'windfall', 'job_change', 'retirement', 'milestone']);
 const TIMELINE_IMPACT_TYPES = new Set(['income', 'expense', 'portfolio', 'contribution', 'debt_payment']);
 const TIMELINE_FREQUENCIES = new Set(['one_time', 'monthly', 'yearly']);
-const HOUSEHOLD_MODES = new Set(['individual', 'couple']);
-const FILING_STATUSES = new Set(['single', 'married_filing_jointly', 'married_filing_separately', 'head_of_household']);
-const SIMULATION_MODES = new Set(['fixed', 'stochastic', 'historical', 'monte_carlo']);
-const SIMULATION_MONTE_CARLO_VARIANTS = new Set(['p10', 'p50', 'p90']);
+const HOUSEHOLD_MODES = new Set(HOUSEHOLD_MODE_OPTIONS.map(option => option.value));
+const FILING_STATUSES = new Set(FILING_STATUS_OPTIONS.map(option => option.value));
+const SIMULATION_MODES = new Set(SIMULATION_MODE_OPTIONS.map(option => option.value));
+const SIMULATION_MONTE_CARLO_VARIANTS = new Set(SIMULATION_MONTE_CARLO_VARIANT_OPTIONS.map(option => option.value));
+const PLAN_SETTING_VALUE_FIELDS = [...PLAN_SETTING_FIELDS, ...PLAN_SETTING_SELECT_FIELDS];
+const DIFF_SETTING_VALUE_FIELDS = [...DIFF_SETTING_FIELDS, ...DIFF_SETTING_SELECT_FIELDS];
 const TIMELINE_DEFAULT_IMPACT_BY_EVENT = {
   purchase: 'expense',
   windfall: 'income',
@@ -175,50 +187,6 @@ function collectTimelineRetirementInputs() {
     rmd_birth_year: coerceOptionalInteger(byId('timeline-rmd-birth-year')?.value),
     rmd_start_age: coerceOptionalInteger(byId('timeline-rmd-start-age')?.value),
   };
-}
-
-function setPlanStringSettingInputs(prefix, rawSettings) {
-  const settings = rawSettings && typeof rawSettings === 'object' ? rawSettings : {};
-  const householdModeRaw = String(settings.household_mode || '').trim().toLowerCase();
-  const filingStatusRaw = String(settings.filing_status || '').trim().toLowerCase();
-  const simulationModeRaw = String(settings.simulation_mode || '').trim().toLowerCase();
-  const simulationMonteCarloVariantRaw = String(settings.simulation_monte_carlo_variant || '').trim().toLowerCase();
-
-  const householdModeInput = byId(`${prefix}-household-mode`);
-  if (householdModeInput) householdModeInput.value = HOUSEHOLD_MODES.has(householdModeRaw) ? householdModeRaw : '';
-  const filingStatusInput = byId(`${prefix}-filing-status`);
-  if (filingStatusInput) filingStatusInput.value = FILING_STATUSES.has(filingStatusRaw) ? filingStatusRaw : '';
-  const simulationModeInput = byId(`${prefix}-simulation-mode`);
-  if (simulationModeInput) simulationModeInput.value = SIMULATION_MODES.has(simulationModeRaw) ? simulationModeRaw : '';
-  const simulationMonteCarloVariantInput = byId(`${prefix}-simulation-monte-carlo-variant`);
-  if (simulationMonteCarloVariantInput) {
-    simulationMonteCarloVariantInput.value = SIMULATION_MONTE_CARLO_VARIANTS.has(simulationMonteCarloVariantRaw)
-      ? simulationMonteCarloVariantRaw
-      : '';
-  }
-  updateSimulationModeDependentControls(prefix, { clearIrrelevant: true });
-}
-
-function collectPlanStringSettings(prefix, { includeNulls = false } = {}) {
-  const payload = {};
-  const householdMode = String(byId(`${prefix}-household-mode`)?.value || '').trim().toLowerCase();
-  const filingStatus = String(byId(`${prefix}-filing-status`)?.value || '').trim().toLowerCase();
-  const simulationMode = String(byId(`${prefix}-simulation-mode`)?.value || '').trim().toLowerCase();
-  const simulationMonteCarloVariant = String(byId(`${prefix}-simulation-monte-carlo-variant`)?.value || '').trim().toLowerCase();
-
-  if (householdMode) payload.household_mode = householdMode;
-  else if (includeNulls) payload.household_mode = null;
-
-  if (filingStatus) payload.filing_status = filingStatus;
-  else if (includeNulls) payload.filing_status = null;
-
-  if (simulationMode) payload.simulation_mode = simulationMode;
-  else if (includeNulls) payload.simulation_mode = null;
-
-  if (simulationMonteCarloVariant) payload.simulation_monte_carlo_variant = simulationMonteCarloVariant;
-  else if (includeNulls) payload.simulation_monte_carlo_variant = null;
-
-  return payload;
 }
 
 function updateSimulationModeDependentControls(prefix, { clearIrrelevant = false } = {}) {
@@ -563,8 +531,6 @@ function setControlsEnabled(enabled) {
     'diff-candidate-assumption-set-id', 'withdrawal-assumption-set-id', 'withdrawal-current-portfolio-value',
     'withdrawal-strategies', 'withdrawal-include-raw-results', 'branch-template-id', 'scenario-branch-name',
     'research-bridge-symbols',
-    'setting-household-mode', 'setting-filing-status', 'setting-simulation-mode', 'setting-simulation-monte-carlo-variant',
-    'diff-household-mode', 'diff-filing-status', 'diff-simulation-mode', 'diff-simulation-monte-carlo-variant',
     'branch-assumption-set-id', 'scenario-branch-events', 'decision-summary', 'decision-rationale',
     'decision-status', 'timeline-event-date', 'timeline-event-label', 'timeline-event-type',
     'timeline-event-impact-type', 'timeline-event-amount', 'timeline-event-frequency', 'timeline-event-end-date',
@@ -580,7 +546,7 @@ function setControlsEnabled(enabled) {
     const el = byId(id);
     if (el) el.disabled = !enabled;
   });
-  for (const f of [...PLAN_SETTING_FIELDS, ...DIFF_SETTING_FIELDS]) { const el = byId(f.inputId); if (el) el.disabled = !enabled; }
+  for (const f of [...PLAN_SETTING_VALUE_FIELDS, ...DIFF_SETTING_VALUE_FIELDS]) { const el = byId(f.inputId); if (el) el.disabled = !enabled; }
   if (enabled) {
     updateSimulationModeDependentControls('setting', { clearIrrelevant: false });
     updateSimulationModeDependentControls('diff', { clearIrrelevant: false });
@@ -758,8 +724,7 @@ function applyBranchTemplateToEditor(template) {
   const compareSettings = template.compare_settings && typeof template.compare_settings === 'object'
     ? template.compare_settings
     : {};
-  setSettingsInputs(DIFF_SETTING_FIELDS, compareSettings);
-  setPlanStringSettingInputs('diff', compareSettings);
+  setSettingsInputs(DIFF_SETTING_VALUE_FIELDS, compareSettings);
   return true;
 }
 
@@ -1473,7 +1438,11 @@ export function clearDetail() {
   byId('plan-closure-summary-status').textContent = 'Select a plan to generate recommendation closure analytics.';
   byId('plan-closure-trend-status').textContent = 'Select a plan to load recommendation quality trend.';
   byId('plan-settings-meta').textContent = 'Blank values use global defaults from planner configuration.';
-  ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-contribution-rules', 'plan-branch-templates', 'plan-context', 'scenario-diff-output', 'withdrawal-current-portfolio-value', 'withdrawal-strategies', 'withdrawal-strategy-compare-output', 'scenario-branch-name', 'scenario-branch-events', 'scenario-branch-output', 'research-bridge-symbols', 'artifact-content', 'setting-household-mode', 'setting-filing-status', 'setting-simulation-mode', 'setting-simulation-monte-carlo-variant', 'diff-household-mode', 'diff-filing-status', 'diff-simulation-mode', 'diff-simulation-monte-carlo-variant'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
+  ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-contribution-rules', 'plan-branch-templates', 'plan-context', 'scenario-diff-output', 'withdrawal-current-portfolio-value', 'withdrawal-strategies', 'withdrawal-strategy-compare-output', 'scenario-branch-name', 'scenario-branch-events', 'scenario-branch-output', 'research-bridge-symbols', 'artifact-content'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
+  for (const field of [...PLAN_SETTING_VALUE_FIELDS, ...DIFF_SETTING_VALUE_FIELDS]) {
+    const el = byId(field.inputId);
+    if (el) el.value = '';
+  }
   writeTimelinePayloadToEditor({ events: [], retirement: {} }, { preferFormValues: false });
   resetTimelineEventInputs();
   writeContributionRulesPayloadToEditor({}, { preferFormValues: false });
@@ -1492,10 +1461,8 @@ export function clearDetail() {
   byId('plan-decisions-body').innerHTML = '<tr><td colspan="4">No decisions yet.</td></tr>';
   byId('plan-artifacts-body').innerHTML = '<tr><td colspan="4">No artifacts yet.</td></tr>';
   byId('projection-account-body').innerHTML = '<tr><td colspan="6">No projection data yet.</td></tr>';
-  setSettingsInputs(PLAN_SETTING_FIELDS, {});
-  setSettingsInputs(DIFF_SETTING_FIELDS, {});
-  setPlanStringSettingInputs('setting', {});
-  setPlanStringSettingInputs('diff', {});
+  setSettingsInputs(PLAN_SETTING_VALUE_FIELDS, {});
+  setSettingsInputs(DIFF_SETTING_VALUE_FIELDS, {});
   const scenarioLabelSelect = byId('projection-scenario-label');
   if (scenarioLabelSelect) scenarioLabelSelect.value = 'baseline';
   const metricSelect = byId('projection-account-metric');
@@ -1558,9 +1525,8 @@ export function renderDetail() {
   setProjectionSourceOptions();
   renderNetWorthChart([]);
   renderAccountTypeChart([], 'ending_balance_usd');
-  setSettingsInputs(PLAN_SETTING_FIELDS, d.settings || {});
-  setPlanStringSettingInputs('setting', d.settings || {});
-  setPlanStringSettingInputs('diff', {});
+  setSettingsInputs(PLAN_SETTING_VALUE_FIELDS, d.settings || {});
+  setSettingsInputs(DIFF_SETTING_VALUE_FIELDS, {});
   const su = d.settings?.updated_at ? fmtDate(d.settings.updated_at) : null;
   byId('plan-settings-meta').textContent = su ? `Settings updated ${su}` : 'Blank values use global defaults from planner configuration.';
   renderPlanTopNextActions(Array.isArray(d.top_next_actions) ? d.top_next_actions : []);
@@ -2542,8 +2508,7 @@ export function initEditor(refreshPlans) {
     let payload;
     try {
       payload = {
-        ...collectSettingsPayload(PLAN_SETTING_FIELDS, { includeNulls: true }),
-        ...collectPlanStringSettings('setting', { includeNulls: true }),
+        ...collectSettingsPayload(PLAN_SETTING_VALUE_FIELDS, { includeNulls: true }),
       };
     } catch (e) {
       writeLog(e.message, null, true); return;
@@ -2560,8 +2525,7 @@ export function initEditor(refreshPlans) {
     let compare;
     try {
       compare = {
-        ...collectSettingsPayload(DIFF_SETTING_FIELDS, { includeNulls: false }),
-        ...collectPlanStringSettings('diff', { includeNulls: false }),
+        ...collectSettingsPayload(DIFF_SETTING_VALUE_FIELDS, { includeNulls: false }),
       };
     } catch (e) {
       writeLog(e.message, null, true); return;
@@ -2654,8 +2618,7 @@ export function initEditor(refreshPlans) {
     let compareSettings = {};
     try {
       compareSettings = {
-        ...collectSettingsPayload(DIFF_SETTING_FIELDS, { includeNulls: false }),
-        ...collectPlanStringSettings('diff', { includeNulls: false }),
+        ...collectSettingsPayload(DIFF_SETTING_VALUE_FIELDS, { includeNulls: false }),
       };
     } catch (e) {
       writeLog(e.message, null, true);
@@ -2703,15 +2666,14 @@ export function initEditor(refreshPlans) {
     let payload;
     try {
       payload = {
-        ...collectSettingsPayload(DIFF_SETTING_FIELDS, { includeNulls: false }),
-        ...collectPlanStringSettings('diff', { includeNulls: false }),
+        ...collectSettingsPayload(DIFF_SETTING_VALUE_FIELDS, { includeNulls: false }),
       };
     } catch (e) { writeLog(e.message, null, true); return; }
     if (!Object.keys(payload).length) { writeLog('Enter at least one override.', null, true); return; }
     writeLog(`Applying overrides...`, payload);
     try {
       state.currentPlanDetail = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/settings`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
-      renderDetail(); setSettingsInputs(DIFF_SETTING_FIELDS, {}); setPlanStringSettingInputs('diff', {});
+      renderDetail(); setSettingsInputs(DIFF_SETTING_VALUE_FIELDS, {});
       byId('scenario-diff-summary').textContent = 'Overrides applied to plan settings.';
       await refreshPlans(); writeLog('Overrides applied.');
     } catch (e) { writeLog(`Apply failed: ${e.message}`, null, true); }

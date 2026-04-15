@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any
 
 from buildwealth_orchestrator.services.contribution_rules import normalize_account_type
+from buildwealth_orchestrator.services.service_utils import safe_float, safe_int
 
 
 UNIFORM_LIFETIME_FACTORS: dict[int, float] = {
@@ -68,20 +69,6 @@ UNIFORM_LIFETIME_FACTORS: dict[int, float] = {
 }
 
 RMD_ELIGIBLE_ACCOUNT_TYPES = {"401k", "403b", "ira"}
-
-
-def _safe_float(value: Any, fallback: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return fallback
-
-
-def _safe_int(value: Any, fallback: int) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return fallback
 
 
 def determine_rmd_start_age(
@@ -151,7 +138,7 @@ def estimate_year_rmd_for_accounts(
 
         starting_balance = max(
             0.0,
-            _safe_float(raw.get("balance_usd", raw.get("balance")), 0.0),
+            safe_float(raw.get("balance_usd", raw.get("balance")), 0.0),
         )
         if starting_balance <= 0:
             continue
@@ -189,13 +176,13 @@ def project_rmd_schedule(
     expected_return: float = 0.04,
     start_age_override: int | None = None,
 ) -> dict[str, Any]:
-    resolved_start_year = _safe_int(start_year, datetime.now().year)
-    resolved_years = max(1, min(_safe_int(years, 1), 80))
-    resolved_current_age = max(0, min(_safe_int(current_age, 35), 120))
-    resolved_birth_year = None if birth_year is None else max(1900, min(_safe_int(birth_year, 0), 2500))
-    resolved_expected_return = max(-0.95, min(_safe_float(expected_return, 0.04), 1.0))
+    resolved_start_year = safe_int(start_year, datetime.now().year)
+    resolved_years = max(1, min(safe_int(years, 1), 80))
+    resolved_current_age = max(0, min(safe_int(current_age, 35), 120))
+    resolved_birth_year = None if birth_year is None else max(1900, min(safe_int(birth_year, 0), 2500))
+    resolved_expected_return = max(-0.95, min(safe_float(expected_return, 0.04), 1.0))
     resolved_start_age = (
-        None if start_age_override is None else max(72, min(_safe_int(start_age_override, 73), 120))
+        None if start_age_override is None else max(72, min(safe_int(start_age_override, 73), 120))
     )
     rmd_start_age = determine_rmd_start_age(
         birth_year=resolved_birth_year,
@@ -209,7 +196,7 @@ def project_rmd_schedule(
             continue
         account_id = str(raw.get("account_id") or "").strip()
         account_type = normalize_account_type(raw.get("account_type"))
-        balance = max(0.0, _safe_float(raw.get("balance_usd", raw.get("balance")), 0.0))
+        balance = max(0.0, safe_float(raw.get("balance_usd", raw.get("balance")), 0.0))
         if not account_id:
             continue
         working_accounts.append(
@@ -229,7 +216,7 @@ def project_rmd_schedule(
         warnings.append("No eligible RMD accounts found (eligible: 401k, 403b, ira).")
 
     total_initial_eligible_balance = round(
-        sum(max(0.0, _safe_float(item.get("balance_usd"), 0.0)) for item in eligible_accounts),
+        sum(max(0.0, safe_float(item.get("balance_usd"), 0.0)) for item in eligible_accounts),
         2,
     )
 
@@ -239,7 +226,7 @@ def project_rmd_schedule(
         year = resolved_start_year + offset
         age = resolved_current_age + offset
         before_total = round(
-            sum(max(0.0, _safe_float(item.get("balance_usd"), 0.0)) for item in eligible_accounts),
+            sum(max(0.0, safe_float(item.get("balance_usd"), 0.0)) for item in eligible_accounts),
             2,
         )
         year_rmd = estimate_year_rmd_for_accounts(
@@ -247,13 +234,13 @@ def project_rmd_schedule(
             age=float(age),
             rmd_start_age=rmd_start_age,
         )
-        total_rmd = _safe_float(year_rmd.get("total_rmd_usd"), 0.0)
+        total_rmd = safe_float(year_rmd.get("total_rmd_usd"), 0.0)
         cumulative_rmds += total_rmd
 
-        by_account = {row.get("account_id"): _safe_float(row.get("rmd_usd"), 0.0) for row in year_rmd.get("account_rmds", [])}
+        by_account = {row.get("account_id"): safe_float(row.get("rmd_usd"), 0.0) for row in year_rmd.get("account_rmds", [])}
         for account in eligible_accounts:
             account_id = str(account.get("account_id") or "")
-            balance = max(0.0, _safe_float(account.get("balance_usd"), 0.0))
+            balance = max(0.0, safe_float(account.get("balance_usd"), 0.0))
             withdrawal = max(0.0, by_account.get(account_id, 0.0))
             post_withdrawal = max(0.0, balance - withdrawal)
             account["balance_usd"] = post_withdrawal * (1.0 + resolved_expected_return)

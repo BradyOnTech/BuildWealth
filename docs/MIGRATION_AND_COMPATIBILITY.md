@@ -55,6 +55,7 @@ Key upgrade behaviors:
 Engine probes and adapter guards enforce runtime contract compatibility:
 - Sidecars must expose versioned endpoints and compatible contract major version.
 - On mismatch/unverified version, orchestrator avoids unsafe sidecar calls and degrades safely.
+- This contract compatibility applies only to the versioned sidecar runtime; reference-only upstream app containers are not part of the BuildWealth runtime path.
 
 ## Compatibility Window Policy
 

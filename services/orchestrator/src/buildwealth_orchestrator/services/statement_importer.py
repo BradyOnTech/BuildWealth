@@ -8,7 +8,6 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
 
 
 DATE_FORMATS = (
@@ -97,7 +96,7 @@ def _infer_category(description: str) -> str:
     return "general"
 
 
-def _is_income(description: str, amount: float) -> bool:
+def _is_income(description: str) -> bool:
     lower = description.lower()
     if any(kw in lower for kw in INCOME_KEYWORDS):
         return True
@@ -157,7 +156,7 @@ def parse_statement_csv(
     transactions: list[ParsedTransaction] = []
 
     reader = csv.reader(io.StringIO(content), delimiter=delimiter)
-    rows = list(reader)
+    rows: list[list[str]] = list(reader)
 
     if len(rows) < 2:
         return StatementParseResult(
@@ -243,12 +242,12 @@ def parse_statement_csv(
     income_txns: list[ParsedTransaction] = []
 
     for t in transactions:
-        if _is_income(t.description, t.amount):
+        if _is_income(t.description):
             income_txns.append(t)
         elif t.amount < 0:
             # Negative = charge/expense in most bank formats
             expense_txns.append(t)
-        elif t.amount > 0 and _is_income(t.description, t.amount):
+        elif t.amount > 0 and _is_income(t.description):
             income_txns.append(t)
         else:
             # Positive amounts: could be expense (credit card) or credit (bank)
