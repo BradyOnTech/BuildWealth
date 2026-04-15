@@ -43,6 +43,25 @@ def test_get_buildwealth_context_tool_supports_detail_level_control() -> None:
     assert detail_field.get("enum") == ["light", "full"]
 
 
+def test_compute_tax_tool_supports_state_tax_and_irmaa_inputs() -> None:
+    tool = main.copilot.tools["compute_tax"]
+    properties = tool.parameters.get("properties", {})
+    assert "state_tax_rate" in properties
+    assert "state_tax_deduction_usd" in properties
+    assert "tax_exempt_interest_income_usd" in properties
+    assert "age" in properties
+    assert "include_irmaa" in properties
+    assert "medicare_months_covered" in properties
+
+
+def test_run_planning_tool_supports_roth_conversion_inputs() -> None:
+    tool = main.copilot.tools["run_planning_scenarios"]
+    properties = tool.parameters.get("properties", {})
+    assert "roth_conversion_annual_amount_usd" in properties
+    assert "roth_conversion_start_age" in properties
+    assert "roth_conversion_end_age" in properties
+
+
 def test_apply_recommendation_tool_supports_decision_packet_controls() -> None:
     tool = main.copilot.tools["apply_recommendation"]
     properties = tool.parameters.get("properties", {})

@@ -156,6 +156,11 @@ class ScenarioRequest(BaseModel):
     annual_contribution_usd: float | None = None
     years: int | None = None
     hsa_extra_contribution_usd: float | None = None
+    state_tax_rate: float | None = Field(default=None, ge=0, le=1)
+    include_irmaa: bool = True
+    roth_conversion_annual_amount_usd: float | None = Field(default=None, ge=0)
+    roth_conversion_start_age: int | None = Field(default=None, ge=0, le=120)
+    roth_conversion_end_age: int | None = Field(default=None, ge=0, le=120)
 
 
 class IncomeProjectionIncomeInput(BaseModel):
@@ -499,7 +504,13 @@ class TaxEstimateRequest(BaseModel):
     qualified_dividends_usd: float = 0.0
     interest_income_usd: float = 0.0
     social_security_income_usd: float = 0.0
+    tax_exempt_interest_income_usd: float = Field(default=0.0, ge=0)
     pre_tax_contributions_usd: float = Field(default=0.0, ge=0)
+    state_tax_rate: float = Field(default=0.0, ge=0, le=1)
+    state_tax_deduction_usd: float = Field(default=0.0, ge=0)
+    age: int | None = Field(default=None, ge=0, le=120)
+    include_irmaa: bool = True
+    medicare_months_covered: int = Field(default=12, ge=0, le=12)
     tax_withholding_usd: float = Field(default=0.0, ge=0)
 
 
@@ -512,11 +523,22 @@ class TaxEstimateResponse(BaseModel):
     taxable_ordinary_income_usd: float
     taxable_capital_gains_income_usd: float
     taxable_social_security_income_usd: float
+    modified_adjusted_gross_income_usd: float
     federal_income_tax_usd: float
     capital_gains_tax_usd: float
+    state_taxable_income_usd: float
+    state_income_tax_usd: float
+    state_tax_rate: float
     niit_tax_usd: float
     niit_income_subject_usd: float
     niit_threshold_usd: float
+    irmaa_applied: bool = False
+    irmaa_bracket_label: str | None = None
+    irmaa_medicare_months: int = 0
+    irmaa_part_b_monthly_surcharge_usd: float = 0.0
+    irmaa_part_d_monthly_surcharge_usd: float = 0.0
+    irmaa_total_monthly_surcharge_usd: float = 0.0
+    irmaa_annual_surcharge_usd: float = 0.0
     fica_social_security_tax_usd: float
     fica_medicare_tax_usd: float
     total_fica_tax_usd: float
@@ -540,9 +562,13 @@ class ScenarioTimelinePoint(BaseModel):
     social_security_income_usd: float = 0.0
     expenses_usd: float = 0.0
     taxes_usd: float = 0.0
+    federal_taxes_usd: float = 0.0
+    state_taxes_usd: float = 0.0
+    irmaa_surcharges_usd: float = 0.0
     growth_usd: float = 0.0
     withdrawals_usd: float = 0.0
     rmds_usd: float = 0.0
+    roth_conversions_usd: float = 0.0
     ending_balance_real_usd: float | None = None
 
 
@@ -555,6 +581,8 @@ class ScenarioAccountBalancePoint(BaseModel):
     contribution_usd: float = 0.0
     withdrawal_usd: float = 0.0
     rmd_withdrawal_usd: float = 0.0
+    roth_conversion_out_usd: float = 0.0
+    roth_conversion_in_usd: float = 0.0
     growth_usd: float = 0.0
     ending_balance_usd: float
 
@@ -961,6 +989,7 @@ class TaxProfile(BaseModel):
     ) = None
     marginal_tax_rate: float | None = Field(default=None, ge=0, le=1)
     effective_tax_rate: float | None = Field(default=None, ge=0, le=1)
+    state_tax_rate: float | None = Field(default=None, ge=0, le=1)
     state: str | None = None
 
 
@@ -1354,6 +1383,10 @@ class PlanAssumptionSet(BaseModel):
     expected_return_conservative: float | None = Field(default=None, ge=-0.95, le=1)
     inflation_rate: float | None = Field(default=None, ge=-1, le=1)
     marginal_tax_rate: float | None = Field(default=None, ge=0, le=1)
+    state_tax_rate: float | None = Field(default=None, ge=0, le=1)
+    roth_conversion_annual_amount_usd: float | None = Field(default=None, ge=0)
+    roth_conversion_start_age: int | None = Field(default=None, ge=0, le=120)
+    roth_conversion_end_age: int | None = Field(default=None, ge=0, le=120)
 
 
 class PlanAssumptionSetsResponse(BaseModel):
@@ -1453,6 +1486,10 @@ class PlanSettings(BaseModel):
     years: int | None = None
     hsa_extra_contribution_usd: float | None = None
     marginal_tax_rate: float | None = None
+    state_tax_rate: float | None = None
+    roth_conversion_annual_amount_usd: float | None = None
+    roth_conversion_start_age: int | None = None
+    roth_conversion_end_age: int | None = None
     inflation_rate: float | None = None
     expected_return_baseline: float | None = None
     expected_return_optimistic: float | None = None
@@ -1467,6 +1504,10 @@ class PlanSettingsUpdateRequest(BaseModel):
     years: int | None = None
     hsa_extra_contribution_usd: float | None = None
     marginal_tax_rate: float | None = None
+    state_tax_rate: float | None = None
+    roth_conversion_annual_amount_usd: float | None = None
+    roth_conversion_start_age: int | None = None
+    roth_conversion_end_age: int | None = None
     inflation_rate: float | None = None
     expected_return_baseline: float | None = None
     expected_return_optimistic: float | None = None
@@ -1518,6 +1559,10 @@ class PlanWithdrawalStrategyComparisonRow(BaseModel):
     baseline_real_value_usd: float | None = None
     total_withdrawals_usd: float = 0.0
     total_taxes_usd: float = 0.0
+    total_federal_taxes_usd: float = 0.0
+    total_state_taxes_usd: float = 0.0
+    total_irmaa_surcharges_usd: float = 0.0
+    total_roth_conversions_usd: float = 0.0
     total_rmds_usd: float = 0.0
     terminal_age: int | None = None
     terminal_balance_usd: float | None = None

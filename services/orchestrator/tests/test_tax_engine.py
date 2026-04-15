@@ -64,3 +64,41 @@ def test_tax_engine_falls_back_to_2026_when_year_unknown() -> None:
     assert result["tax_year"] == 2032
     assert result["standard_deduction_usd"] == 16100.0
     assert any("using 2026 federal assumptions" in warning.lower() for warning in result["warnings"])
+
+
+def test_tax_engine_adds_state_tax_and_irmaa_when_configured() -> None:
+    result = estimate_federal_tax(
+        tax_year=2026,
+        filing_status="single",
+        earned_income_usd=220000,
+        social_security_income_usd=36000,
+        state_tax_rate=0.05,
+        age=67,
+        include_irmaa=True,
+    )
+
+    assert result["state_tax_rate"] == 0.05
+    assert result["state_taxable_income_usd"] == 234500.0
+    assert result["state_income_tax_usd"] == 11725.0
+    assert result["irmaa_applied"] is True
+    assert result["irmaa_bracket_label"] == ">205k-<500k"
+    assert result["irmaa_part_b_monthly_surcharge_usd"] == 446.3
+    assert result["irmaa_part_d_monthly_surcharge_usd"] == 83.3
+    assert result["irmaa_annual_surcharge_usd"] == 6355.2
+    assert result["total_estimated_tax_usd"] == 86406.2
+
+
+def test_tax_engine_skips_irmaa_when_disabled() -> None:
+    result = estimate_federal_tax(
+        tax_year=2026,
+        filing_status="single",
+        earned_income_usd=220000,
+        social_security_income_usd=36000,
+        state_tax_rate=0.05,
+        age=67,
+        include_irmaa=False,
+    )
+
+    assert result["irmaa_applied"] is False
+    assert result["irmaa_annual_surcharge_usd"] == 0.0
+    assert result["total_estimated_tax_usd"] == 80051.0

@@ -659,6 +659,10 @@ PLAN_SETTINGS_FIELDS = (
     "years",
     "hsa_extra_contribution_usd",
     "marginal_tax_rate",
+    "state_tax_rate",
+    "roth_conversion_annual_amount_usd",
+    "roth_conversion_start_age",
+    "roth_conversion_end_age",
     "inflation_rate",
     "expected_return_baseline",
     "expected_return_optimistic",
@@ -738,13 +742,19 @@ def build_scenario_engine_for_plan_settings(plan_settings: dict[str, Any]) -> Sc
 
 def build_ignidash_service_for_plan_settings(plan_settings: dict[str, Any]) -> IgnidashScenarioService:
     engine = build_scenario_engine_for_plan_settings(plan_settings)
+    marginal_tax_rate = _coerce_float(
+        plan_settings.get("marginal_tax_rate"),
+        settings.planner_marginal_tax_rate,
+    )
+    state_tax_rate = _coerce_float(plan_settings.get("state_tax_rate"), 0.0)
+    blended_effective_tax_rate = max(0.0, min(1.0, marginal_tax_rate + state_tax_rate))
     return IgnidashScenarioService(
         scenario_engine=engine,
         sidecar_adapter=ignidash_sidecar_adapter,
         sidecar_enabled=settings.enable_ignidash_scenario_sidecar,
         sidecar_path=settings.ignidash_scenario_sidecar_path,
         currency=settings.app_currency,
-        default_tax_rate=float(plan_settings.get("marginal_tax_rate") or settings.planner_marginal_tax_rate),
+        default_tax_rate=blended_effective_tax_rate,
     )
 
 
@@ -948,6 +958,10 @@ def parse_assumption_sets_payload(raw_payload: Any) -> dict[str, Any]:
             "expected_return_conservative": None,
             "inflation_rate": None,
             "marginal_tax_rate": None,
+            "state_tax_rate": None,
+            "roth_conversion_annual_amount_usd": None,
+            "roth_conversion_start_age": None,
+            "roth_conversion_end_age": None,
         },
         {
             "id": "historical_average",
@@ -957,6 +971,10 @@ def parse_assumption_sets_payload(raw_payload: Any) -> dict[str, Any]:
             "expected_return_conservative": 0.05,
             "inflation_rate": 0.03,
             "marginal_tax_rate": None,
+            "state_tax_rate": None,
+            "roth_conversion_annual_amount_usd": None,
+            "roth_conversion_start_age": None,
+            "roth_conversion_end_age": None,
         },
         {
             "id": "conservative",
@@ -966,6 +984,10 @@ def parse_assumption_sets_payload(raw_payload: Any) -> dict[str, Any]:
             "expected_return_conservative": 0.04,
             "inflation_rate": 0.025,
             "marginal_tax_rate": None,
+            "state_tax_rate": None,
+            "roth_conversion_annual_amount_usd": None,
+            "roth_conversion_start_age": None,
+            "roth_conversion_end_age": None,
         },
         {
             "id": "stagflation",
@@ -975,6 +997,10 @@ def parse_assumption_sets_payload(raw_payload: Any) -> dict[str, Any]:
             "expected_return_conservative": 0.02,
             "inflation_rate": 0.05,
             "marginal_tax_rate": None,
+            "state_tax_rate": None,
+            "roth_conversion_annual_amount_usd": None,
+            "roth_conversion_start_age": None,
+            "roth_conversion_end_age": None,
         },
         {
             "id": "japan_scenario",
@@ -984,6 +1010,10 @@ def parse_assumption_sets_payload(raw_payload: Any) -> dict[str, Any]:
             "expected_return_conservative": 0.0,
             "inflation_rate": 0.005,
             "marginal_tax_rate": None,
+            "state_tax_rate": None,
+            "roth_conversion_annual_amount_usd": None,
+            "roth_conversion_start_age": None,
+            "roth_conversion_end_age": None,
         },
     ]
 
@@ -1016,6 +1046,24 @@ def parse_assumption_sets_payload(raw_payload: Any) -> dict[str, Any]:
             return None
         try:
             value = float(raw_value)
+        except (TypeError, ValueError):
+            return None
+        if value < minimum or value > maximum:
+            return None
+        return value
+
+    def _normalize_optional_int(
+        raw_value: Any,
+        *,
+        minimum: int,
+        maximum: int,
+    ) -> int | None:
+        if raw_value is None:
+            return None
+        if isinstance(raw_value, str) and not raw_value.strip():
+            return None
+        try:
+            value = int(float(raw_value))
         except (TypeError, ValueError):
             return None
         if value < minimum or value > maximum:
@@ -1062,6 +1110,35 @@ def parse_assumption_sets_payload(raw_payload: Any) -> dict[str, Any]:
             minimum=0.0,
             maximum=1.0,
         )
+        state_tax_rate = _normalize_optional_rate(
+            raw.get("state_tax_rate"),
+            minimum=0.0,
+            maximum=1.0,
+        )
+        roth_conversion_annual_amount_usd = _normalize_optional_rate(
+            raw.get("roth_conversion_annual_amount_usd"),
+            minimum=0.0,
+            maximum=10_000_000.0,
+        )
+        roth_conversion_start_age = _normalize_optional_int(
+            raw.get("roth_conversion_start_age"),
+            minimum=0,
+            maximum=120,
+        )
+        roth_conversion_end_age = _normalize_optional_int(
+            raw.get("roth_conversion_end_age"),
+            minimum=0,
+            maximum=120,
+        )
+        if (
+            roth_conversion_start_age is not None
+            and roth_conversion_end_age is not None
+            and roth_conversion_start_age > roth_conversion_end_age
+        ):
+            roth_conversion_start_age, roth_conversion_end_age = (
+                roth_conversion_end_age,
+                roth_conversion_start_age,
+            )
         if baseline is not None and optimistic is not None and optimistic < baseline:
             optimistic = baseline
         if baseline is not None and conservative is not None and conservative > baseline:
@@ -1077,6 +1154,10 @@ def parse_assumption_sets_payload(raw_payload: Any) -> dict[str, Any]:
                 "expected_return_conservative": conservative,
                 "inflation_rate": inflation_rate,
                 "marginal_tax_rate": marginal_tax_rate,
+                "state_tax_rate": state_tax_rate,
+                "roth_conversion_annual_amount_usd": roth_conversion_annual_amount_usd,
+                "roth_conversion_start_age": roth_conversion_start_age,
+                "roth_conversion_end_age": roth_conversion_end_age,
             }
         )
 
@@ -1547,6 +1628,10 @@ def apply_assumption_set_to_settings(
         "expected_return_conservative",
         "inflation_rate",
         "marginal_tax_rate",
+        "state_tax_rate",
+        "roth_conversion_annual_amount_usd",
+        "roth_conversion_start_age",
+        "roth_conversion_end_age",
     ):
         value = selected.get(key)
         if value is None:
@@ -2132,6 +2217,38 @@ async def run_scenarios_for_plan_settings(
         rmd_projection_payload = rmd_projection.model_dump(mode="json")
 
     filing_status = str(plan_settings.get("filing_status") or "").strip() or None
+    state_tax_rate_raw = plan_settings.get("state_tax_rate")
+    state_tax_rate = (
+        max(0.0, min(1.0, _coerce_float(state_tax_rate_raw, 0.0)))
+        if state_tax_rate_raw is not None
+        else None
+    )
+    include_irmaa = _coerce_bool(plan_settings.get("include_irmaa"), True)
+    roth_conversion_annual_amount = max(
+        0.0,
+        _coerce_float(plan_settings.get("roth_conversion_annual_amount_usd"), 0.0),
+    )
+    roth_conversion_start_age: int | None = None
+    roth_conversion_end_age: int | None = None
+    if plan_settings.get("roth_conversion_start_age") is not None:
+        roth_conversion_start_age = max(
+            0,
+            min(120, _coerce_int(plan_settings.get("roth_conversion_start_age"), 0)),
+        )
+    if plan_settings.get("roth_conversion_end_age") is not None:
+        roth_conversion_end_age = max(
+            0,
+            min(120, _coerce_int(plan_settings.get("roth_conversion_end_age"), 0)),
+        )
+    if (
+        roth_conversion_start_age is not None
+        and roth_conversion_end_age is not None
+        and roth_conversion_start_age > roth_conversion_end_age
+    ):
+        roth_conversion_start_age, roth_conversion_end_age = (
+            roth_conversion_end_age,
+            roth_conversion_start_age,
+        )
     withdrawal_strategy = str(plan_settings.get("withdrawal_strategy") or "").strip() or None
     if not withdrawal_strategy:
         withdrawal_strategy = str(timeline_withdrawal_strategy or "").strip() or None
@@ -2152,6 +2269,11 @@ async def run_scenarios_for_plan_settings(
         social_security_projection=social_security_projection_payload,
         rmd_projection=rmd_projection_payload,
         filing_status=filing_status,
+        state_tax_rate=state_tax_rate,
+        include_irmaa=include_irmaa,
+        roth_conversion_annual_amount_usd=roth_conversion_annual_amount,
+        roth_conversion_start_age=roth_conversion_start_age,
+        roth_conversion_end_age=roth_conversion_end_age,
         start_year=resolved_start_year,
         withdrawal_strategy=withdrawal_strategy,
         retirement_age=retirement_age,
@@ -6552,15 +6674,55 @@ async def tool_run_planning(arguments: dict[str, object]) -> dict[str, object]:
     annual_contribution = arguments.get("annual_contribution_usd")
     years = arguments.get("years")
     hsa_extra = arguments.get("hsa_extra_contribution_usd")
+    state_tax_rate = arguments.get("state_tax_rate")
+    include_irmaa = _coerce_bool(arguments.get("include_irmaa"), True)
+    roth_conversion_annual_amount = arguments.get("roth_conversion_annual_amount_usd")
+    roth_conversion_start_age = arguments.get("roth_conversion_start_age")
+    roth_conversion_end_age = arguments.get("roth_conversion_end_age")
 
     if current_value is None:
         current_value = snapshot_store.latest().total_value_usd
+
+    resolved_roth_conversion_start_age: int | None = None
+    resolved_roth_conversion_end_age: int | None = None
+    if roth_conversion_start_age is not None:
+        resolved_roth_conversion_start_age = max(
+            0,
+            min(120, _coerce_int(roth_conversion_start_age, 0)),
+        )
+    if roth_conversion_end_age is not None:
+        resolved_roth_conversion_end_age = max(
+            0,
+            min(120, _coerce_int(roth_conversion_end_age, 0)),
+        )
+    if (
+        resolved_roth_conversion_start_age is not None
+        and resolved_roth_conversion_end_age is not None
+        and resolved_roth_conversion_start_age > resolved_roth_conversion_end_age
+    ):
+        resolved_roth_conversion_start_age, resolved_roth_conversion_end_age = (
+            resolved_roth_conversion_end_age,
+            resolved_roth_conversion_start_age,
+        )
 
     result = scenario_engine.run(
         current_portfolio_value_usd=float(current_value),
         annual_contribution_usd=(float(annual_contribution) if annual_contribution is not None else None),
         years=(int(years) if years is not None else None),
         hsa_extra_contribution_usd=(float(hsa_extra) if hsa_extra is not None else None),
+        state_tax_rate=(
+            max(0.0, min(1.0, _coerce_float(state_tax_rate, 0.0)))
+            if state_tax_rate is not None
+            else None
+        ),
+        include_irmaa=include_irmaa,
+        roth_conversion_annual_amount_usd=(
+            max(0.0, _coerce_float(roth_conversion_annual_amount, 0.0))
+            if roth_conversion_annual_amount is not None
+            else None
+        ),
+        roth_conversion_start_age=resolved_roth_conversion_start_age,
+        roth_conversion_end_age=resolved_roth_conversion_end_age,
     )
     return result.model_dump(mode="json")
 
@@ -7210,7 +7372,17 @@ async def tool_compute_tax(arguments: dict[str, object]) -> dict[str, object]:
         qualified_dividends_usd=_coerce_float(arguments.get("qualified_dividends_usd"), 0.0),
         interest_income_usd=_coerce_float(arguments.get("interest_income_usd"), 0.0),
         social_security_income_usd=_coerce_float(arguments.get("social_security_income_usd"), 0.0),
+        tax_exempt_interest_income_usd=max(0.0, _coerce_float(arguments.get("tax_exempt_interest_income_usd"), 0.0)),
         pre_tax_contributions_usd=max(0.0, _coerce_float(arguments.get("pre_tax_contributions_usd"), 0.0)),
+        state_tax_rate=max(0.0, min(1.0, _coerce_float(arguments.get("state_tax_rate"), 0.0))),
+        state_tax_deduction_usd=max(0.0, _coerce_float(arguments.get("state_tax_deduction_usd"), 0.0)),
+        age=(
+            max(0, min(120, _coerce_int(arguments.get("age"), 0)))
+            if arguments.get("age") is not None
+            else None
+        ),
+        include_irmaa=_coerce_bool(arguments.get("include_irmaa"), True),
+        medicare_months_covered=max(0, min(12, _coerce_int(arguments.get("medicare_months_covered"), 12))),
         tax_withholding_usd=max(0.0, _coerce_float(arguments.get("tax_withholding_usd"), 0.0)),
     )
     return TaxEstimateResponse(**payload).model_dump(mode="json")
@@ -7578,6 +7750,34 @@ async def tool_compare_withdrawal_strategies(arguments: dict[str, object]) -> di
         timeline_points = baseline_scenario.timeline_points if baseline_scenario else []
         total_withdrawals_usd = round(sum(float(point.withdrawals_usd) for point in timeline_points), 2)
         total_taxes_usd = round(sum(float(point.taxes_usd) for point in timeline_points), 2)
+        total_federal_taxes_usd = round(
+            _coerce_float(
+                assumptions.get("total_federal_taxes_paid_usd"),
+                sum(_coerce_float(getattr(point, "federal_taxes_usd", 0.0), 0.0) for point in timeline_points),
+            ),
+            2,
+        )
+        total_state_taxes_usd = round(
+            _coerce_float(
+                assumptions.get("total_state_taxes_paid_usd"),
+                sum(_coerce_float(getattr(point, "state_taxes_usd", 0.0), 0.0) for point in timeline_points),
+            ),
+            2,
+        )
+        total_irmaa_surcharges_usd = round(
+            _coerce_float(
+                assumptions.get("total_irmaa_surcharges_paid_usd"),
+                sum(_coerce_float(getattr(point, "irmaa_surcharges_usd", 0.0), 0.0) for point in timeline_points),
+            ),
+            2,
+        )
+        total_roth_conversions_usd = round(
+            _coerce_float(
+                assumptions.get("total_roth_conversions_usd"),
+                sum(_coerce_float(getattr(point, "roth_conversions_usd", 0.0), 0.0) for point in timeline_points),
+            ),
+            2,
+        )
         total_rmds_usd = round(sum(float(point.rmds_usd) for point in timeline_points), 2)
         terminal_age = timeline_points[-1].age if timeline_points else None
         terminal_balance_usd = (
@@ -7598,6 +7798,10 @@ async def tool_compare_withdrawal_strategies(arguments: dict[str, object]) -> di
                 ),
                 "total_withdrawals_usd": total_withdrawals_usd,
                 "total_taxes_usd": total_taxes_usd,
+                "total_federal_taxes_usd": total_federal_taxes_usd,
+                "total_state_taxes_usd": total_state_taxes_usd,
+                "total_irmaa_surcharges_usd": total_irmaa_surcharges_usd,
+                "total_roth_conversions_usd": total_roth_conversions_usd,
                 "total_rmds_usd": total_rmds_usd,
                 "terminal_age": terminal_age,
                 "terminal_balance_usd": terminal_balance_usd,
@@ -7988,6 +8192,10 @@ def configure_copilot_tools() -> None:
         "years": {"type": "integer"},
         "hsa_extra_contribution_usd": {"type": "number"},
         "marginal_tax_rate": {"type": "number"},
+        "state_tax_rate": {"type": "number"},
+        "roth_conversion_annual_amount_usd": {"type": "number"},
+        "roth_conversion_start_age": {"type": "integer"},
+        "roth_conversion_end_age": {"type": "integer"},
         "inflation_rate": {"type": "number"},
         "expected_return_baseline": {"type": "number"},
         "expected_return_optimistic": {"type": "number"},
@@ -8342,7 +8550,9 @@ def configure_copilot_tools() -> None:
         name="run_planning_scenarios",
         description=(
             "Run baseline/optimistic/conservative/HSA planning scenarios. "
-            "Optional fields: current_portfolio_value_usd, annual_contribution_usd, years, hsa_extra_contribution_usd."
+            "Optional fields: current_portfolio_value_usd, annual_contribution_usd, years, "
+            "hsa_extra_contribution_usd, state_tax_rate, include_irmaa, "
+            "roth_conversion_annual_amount_usd, roth_conversion_start_age, roth_conversion_end_age."
         ),
         parameters={
             "type": "object",
@@ -8351,6 +8561,11 @@ def configure_copilot_tools() -> None:
                 "annual_contribution_usd": {"type": "number"},
                 "years": {"type": "integer"},
                 "hsa_extra_contribution_usd": {"type": "number"},
+                "state_tax_rate": {"type": "number"},
+                "include_irmaa": {"type": "boolean"},
+                "roth_conversion_annual_amount_usd": {"type": "number"},
+                "roth_conversion_start_age": {"type": "integer"},
+                "roth_conversion_end_age": {"type": "integer"},
             },
             "additionalProperties": False,
         },
@@ -8359,7 +8574,7 @@ def configure_copilot_tools() -> None:
     copilot.register_tool(
         name="compute_tax",
         description=(
-            "Compute a federal tax estimate (including ordinary income, capital gains, NIIT, and FICA) "
+            "Compute a tax estimate (federal ordinary/capital/NIIT/FICA plus optional state tax and IRMAA surcharges) "
             "for a given tax-year and filing-status assumption."
         ),
         parameters={
@@ -8374,7 +8589,13 @@ def configure_copilot_tools() -> None:
                 "qualified_dividends_usd": {"type": "number"},
                 "interest_income_usd": {"type": "number"},
                 "social_security_income_usd": {"type": "number"},
+                "tax_exempt_interest_income_usd": {"type": "number"},
                 "pre_tax_contributions_usd": {"type": "number"},
+                "state_tax_rate": {"type": "number"},
+                "state_tax_deduction_usd": {"type": "number"},
+                "age": {"type": "integer"},
+                "include_irmaa": {"type": "boolean"},
+                "medicare_months_covered": {"type": "integer"},
                 "tax_withholding_usd": {"type": "number"},
             },
             "additionalProperties": False,
@@ -10720,6 +10941,14 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         else int(scenario_engine.years_to_retirement)
     )
     planning_settings_for_run: dict[str, Any] = {"years": resolved_years}
+    if request.state_tax_rate is not None:
+        planning_settings_for_run["state_tax_rate"] = request.state_tax_rate
+    if request.roth_conversion_annual_amount_usd is not None:
+        planning_settings_for_run["roth_conversion_annual_amount_usd"] = request.roth_conversion_annual_amount_usd
+    if request.roth_conversion_start_age is not None:
+        planning_settings_for_run["roth_conversion_start_age"] = request.roth_conversion_start_age
+    if request.roth_conversion_end_age is not None:
+        planning_settings_for_run["roth_conversion_end_age"] = request.roth_conversion_end_age
     active_assumption_set: dict[str, Any] | None = None
     service = ignidash_scenario_service
     timeline_projection: TimelineImpactProjectionResponse | None = None
@@ -10809,11 +11038,48 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
     profile_payload = get_financial_profile_payload()
     tax_profile = profile_payload.get("tax_profile")
     filing_status: str | None = None
+    state_tax_rate: float | None = None
+    include_irmaa = bool(request.include_irmaa)
     if isinstance(tax_profile, dict):
         filing_status = str(tax_profile.get("filing_status") or "").strip() or None
+        if tax_profile.get("state_tax_rate") is not None:
+            state_tax_rate = max(
+                0.0,
+                min(1.0, _coerce_float(tax_profile.get("state_tax_rate"), 0.0)),
+            )
 
     if planning_settings_for_run.get("filing_status"):
         filing_status = str(planning_settings_for_run.get("filing_status") or "").strip() or filing_status
+    if planning_settings_for_run.get("state_tax_rate") is not None:
+        state_tax_rate = max(
+            0.0,
+            min(1.0, _coerce_float(planning_settings_for_run.get("state_tax_rate"), 0.0)),
+        )
+    roth_conversion_annual_amount = max(
+        0.0,
+        _coerce_float(planning_settings_for_run.get("roth_conversion_annual_amount_usd"), 0.0),
+    )
+    roth_conversion_start_age: int | None = None
+    roth_conversion_end_age: int | None = None
+    if planning_settings_for_run.get("roth_conversion_start_age") is not None:
+        roth_conversion_start_age = max(
+            0,
+            min(120, _coerce_int(planning_settings_for_run.get("roth_conversion_start_age"), 0)),
+        )
+    if planning_settings_for_run.get("roth_conversion_end_age") is not None:
+        roth_conversion_end_age = max(
+            0,
+            min(120, _coerce_int(planning_settings_for_run.get("roth_conversion_end_age"), 0)),
+        )
+    if (
+        roth_conversion_start_age is not None
+        and roth_conversion_end_age is not None
+        and roth_conversion_start_age > roth_conversion_end_age
+    ):
+        roth_conversion_start_age, roth_conversion_end_age = (
+            roth_conversion_end_age,
+            roth_conversion_start_age,
+        )
 
     scenario_guard_reason = await sidecar_contract_guard_reason("ignidash_scenario")
     result = await service.run(
@@ -10842,6 +11108,11 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
             else None
         ),
         filing_status=filing_status,
+        state_tax_rate=state_tax_rate,
+        include_irmaa=include_irmaa,
+        roth_conversion_annual_amount_usd=roth_conversion_annual_amount,
+        roth_conversion_start_age=roth_conversion_start_age,
+        roth_conversion_end_age=roth_conversion_end_age,
         start_year=utc_now().year,
         withdrawal_strategy=active_withdrawal_strategy,
         retirement_age=active_retirement_age,
@@ -11003,7 +11274,13 @@ def planning_tax_estimate(request: TaxEstimateRequest) -> TaxEstimateResponse:
             qualified_dividends_usd=request.qualified_dividends_usd,
             interest_income_usd=request.interest_income_usd,
             social_security_income_usd=request.social_security_income_usd,
+            tax_exempt_interest_income_usd=request.tax_exempt_interest_income_usd,
             pre_tax_contributions_usd=request.pre_tax_contributions_usd,
+            state_tax_rate=request.state_tax_rate,
+            state_tax_deduction_usd=request.state_tax_deduction_usd,
+            age=request.age,
+            include_irmaa=request.include_irmaa,
+            medicare_months_covered=request.medicare_months_covered,
             tax_withholding_usd=request.tax_withholding_usd,
         )
     )

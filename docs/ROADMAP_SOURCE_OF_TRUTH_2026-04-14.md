@@ -10,6 +10,29 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-14 (Completed - Phase 5.0 Slice 1-2, Tax Realism + Roth Conversion Controls)
+1. Expanded tax realism layer in planning simulation surfaces:
+- added state-tax and IRMAA fields to tax-estimate and scenario contracts (`schemas.py`)
+- added state/IRMAA breakdown outputs in scenario timeline points and plan compare responses
+- added profile/plan settings support for state tax in persistence and UI controls.
+2. Implemented Roth conversion planning controls and simulation behavior:
+- new plan/scenario controls: `roth_conversion_annual_amount_usd`, `roth_conversion_start_age`, `roth_conversion_end_age`
+- scenario engine now executes yearly tax-deferred -> Roth transfers in-window, adds conversion dollars to ordinary taxable income, and records conversion totals in assumptions/timeline/account outputs
+- conversion metadata now flows through API and Copilot planning-tool contracts, including sidecar metadata payloads.
+3. Extended planning UX and compare output visibility:
+- Plan Workspace settings now includes Roth conversion controls for both saved settings and diff overlays
+- withdrawal-strategy comparison output now surfaces total Roth conversions by strategy row.
+4. Source-provenance note:
+- tax/simulation extension follows Ignidash tax and simulation-engine structure patterns (`src/lib/calc/taxes.ts`, `src/lib/calc/simulation-engine.ts`)
+- conversion control wiring remains within BuildWealth contracts and does not fork/embed upstream app runtime.
+5. Added regression coverage:
+- scenario conversion behavior (`test_scenario_engine.py`)
+- assumption set parsing/application updates (`test_plan_assumption_sets.py`)
+- plan workspace settings/assumption persistence/validation (`test_plan_workspace.py`)
+- sidecar metadata forwarding (`test_planning_sidecar.py`)
+- Copilot planning tool contract updates (`test_copilot_tool_updates.py`).
+6. Verification: `pytest -q services/orchestrator/tests` passes (`419 passed`).
+
 ### 2026-04-14 (Completed - Phase 4.2 Follow-up, Recommendation Quality Trend Views)
 1. Added Recommendation Quality Trend panel to Today Dashboard:
 - one-click `Refresh Trend` control
@@ -454,9 +477,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Start Phase 5.0 Slice 1: add state tax and IRMAA modeling surfaces in tax engine and scenario outputs.
-2. Start Phase 5.0 Slice 2: add Roth conversion plan controls and scenario-aware conversion simulation.
-3. Start Phase 5.0 Slice 3: add configurable drawdown ordering in withdrawal strategies.
+1. Start Phase 5.0 Slice 3: add configurable drawdown ordering in withdrawal strategies.
+2. Start Phase 5.0 Slice 4: add household/couple planning mode with shared goals and filing assumptions.
+3. Start Phase 5.0 Slice 5: add simulation mode selector (fixed/stochastic/historical/Monte Carlo variants) and comparison outputs.
 
 ## Guardrails
 1. Do not fork or embed full Ghostfolio/Ignidash apps into BuildWealth runtime path.

@@ -149,6 +149,30 @@ def _normalize_retirement_age(value: Any) -> int:
     return max(35, min(age, 100))
 
 
+def _normalize_optional_age(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return max(0, min(120, parsed))
+
+
+def _resolve_roth_conversion_window(
+    *,
+    start_age: int | None,
+    end_age: int | None,
+) -> tuple[int | None, int | None]:
+    resolved_start = _normalize_optional_age(start_age)
+    resolved_end = _normalize_optional_age(end_age)
+    if resolved_start is not None and resolved_end is not None and resolved_start > resolved_end:
+        resolved_start, resolved_end = resolved_end, resolved_start
+    return resolved_start, resolved_end
+
+
 def _is_roth_account_type(account_type: str) -> bool:
     return account_type in {"roth401k", "roth403b", "rothIra"}
 
@@ -625,6 +649,112 @@ class ScenarioEngine:
         return 0.0
 
     @staticmethod
+    def _resolve_roth_conversion_target(
+        *,
+        annual_amount_usd: float,
+        age: int,
+        start_age: int | None,
+        end_age: int | None,
+    ) -> float:
+        if annual_amount_usd <= 0:
+            return 0.0
+        if start_age is not None and age < start_age:
+            return 0.0
+        if end_age is not None and age > end_age:
+            return 0.0
+        return max(0.0, annual_amount_usd)
+
+    @staticmethod
+    def _ensure_roth_destination_account(
+        *,
+        accounts: list[ProjectionAccount],
+    ) -> ProjectionAccount:
+        roth_accounts = [
+            account for account in accounts
+            if account.tax_treatment == "tax_free" and _is_roth_account_type(account.account_type)
+        ]
+        if roth_accounts:
+            return sorted(roth_accounts, key=lambda account: account.account_id)[0]
+
+        generic_tax_free_accounts = [
+            account for account in accounts if account.tax_treatment == "tax_free"
+        ]
+        if generic_tax_free_accounts:
+            return sorted(generic_tax_free_accounts, key=lambda account: account.account_id)[0]
+
+        synthetic = ProjectionAccount(
+            account_id="synthetic-roth-conversion",
+            account_type="rothIra",
+            tax_treatment="tax_free",
+            balance_usd=0.0,
+            contribution_hint_usd=0.0,
+        )
+        accounts.append(synthetic)
+        return synthetic
+
+    @staticmethod
+    def _apply_roth_conversion(
+        *,
+        accounts: list[ProjectionAccount],
+        amount_usd: float,
+    ) -> dict[str, Any]:
+        requested = max(0.0, float(amount_usd))
+        if requested <= 0:
+            return {
+                "requested_usd": 0.0,
+                "converted_usd": 0.0,
+                "shortfall_usd": 0.0,
+                "by_source_account": {},
+                "by_target_account": {},
+            }
+
+        source_accounts = sorted(
+            [
+                account for account in accounts
+                if account.tax_treatment == "tax_deferred" and account.balance_usd > 0
+            ],
+            key=lambda account: account.account_id,
+        )
+        if not source_accounts:
+            return {
+                "requested_usd": requested,
+                "converted_usd": 0.0,
+                "shortfall_usd": requested,
+                "by_source_account": {},
+                "by_target_account": {},
+            }
+
+        remaining = requested
+        by_source_account: dict[str, float] = {}
+        for account in source_accounts:
+            if remaining <= 1e-9:
+                break
+            available = max(0.0, float(account.balance_usd))
+            if available <= 0:
+                continue
+            converted = min(available, remaining)
+            account.balance_usd = max(0.0, account.balance_usd - converted)
+            remaining -= converted
+            by_source_account[account.account_id] = (
+                by_source_account.get(account.account_id, 0.0) + converted
+            )
+
+        total_converted = max(0.0, requested - remaining)
+        by_target_account: dict[str, float] = {}
+        if total_converted > 0:
+            target_account = ScenarioEngine._ensure_roth_destination_account(accounts=accounts)
+            target_account.balance_usd += total_converted
+            by_target_account[target_account.account_id] = total_converted
+
+        return {
+            "requested_usd": requested,
+            "converted_usd": total_converted,
+            "shortfall_usd": max(0.0, remaining),
+            "by_source_account": by_source_account,
+            "by_target_account": by_target_account,
+        }
+
+    @staticmethod
     def _withdraw_from_accounts(
         *,
         accounts: list[ProjectionAccount],
@@ -754,6 +884,11 @@ class ScenarioEngine:
         social_security_projection: dict[str, Any] | None,
         rmd_projection: dict[str, Any] | None,
         filing_status: FilingStatus,
+        state_tax_rate: float,
+        include_irmaa: bool,
+        roth_conversion_annual_amount_usd: float,
+        roth_conversion_start_age: int | None,
+        roth_conversion_end_age: int | None,
         start_year: int,
         start_age: int,
         withdrawal_strategy: WithdrawalStrategy,
@@ -767,10 +902,14 @@ class ScenarioEngine:
         withdrawal_state = WithdrawalStrategyState()
 
         total_taxes_paid = 0.0
+        total_federal_taxes_paid = 0.0
+        total_state_taxes_paid = 0.0
+        total_irmaa_surcharges_paid = 0.0
         total_contributions = 0.0
         total_withdrawals = 0.0
         total_rmds = 0.0
         total_social_security_income = 0.0
+        total_roth_conversions = 0.0
         tax_rates: list[float] = []
         rmd_start_age = _resolve_rmd_start_age(rmd_projection)
 
@@ -827,8 +966,12 @@ class ScenarioEngine:
                 interest_income_usd=0.0,
                 social_security_income_usd=annual_social_security_income,
                 pre_tax_contributions_usd=pre_tax_contributions,
+                state_tax_rate=state_tax_rate,
+                age=age,
+                include_irmaa=include_irmaa,
                 tax_withholding_usd=0.0,
             )
+            active_tax_payload = initial_tax
             taxes = max(0.0, _safe_float(initial_tax.get("total_estimated_tax_usd"), 0.0))
 
             net_cash_after_planned = (
@@ -883,6 +1026,25 @@ class ScenarioEngine:
                 accounts=accounts,
                 contributions_by_account=contributions_by_account,
             )
+            roth_conversion_target = self._resolve_roth_conversion_target(
+                annual_amount_usd=roth_conversion_annual_amount_usd,
+                age=age,
+                start_age=roth_conversion_start_age,
+                end_age=roth_conversion_end_age,
+            )
+            roth_conversion_result = self._apply_roth_conversion(
+                accounts=accounts,
+                amount_usd=roth_conversion_target,
+            )
+            roth_conversions_this_year = _safe_float(roth_conversion_result.get("converted_usd"), 0.0)
+            by_account_roth_conversion_out = {
+                str(account_id): _safe_float(amount, 0.0)
+                for account_id, amount in (roth_conversion_result.get("by_source_account") or {}).items()
+            }
+            by_account_roth_conversion_in = {
+                str(account_id): _safe_float(amount, 0.0)
+                for account_id, amount in (roth_conversion_result.get("by_target_account") or {}).items()
+            }
 
             rmd_withdrawals_result = self._withdraw_from_account_targets(
                 accounts=accounts,
@@ -907,21 +1069,25 @@ class ScenarioEngine:
             for key in ("taxable", "tax_deferred", "tax_free"):
                 by_treatment[key] = _safe_float(by_treatment.get(key), 0.0) + _safe_float(next_by_treatment.get(key), 0.0)
             tax_deferred_withdrawals = _safe_float(by_treatment.get("tax_deferred"), 0.0)
-
-            if tax_deferred_withdrawals > 0:
+            taxable_ordinary_income = tax_deferred_withdrawals + roth_conversions_this_year
+            if taxable_ordinary_income > 0:
                 revised_tax_payload = estimate_federal_tax(
                     tax_year=year,
                     filing_status=filing_status,
                     earned_income_usd=annual_income,
-                    ordinary_income_usd=tax_deferred_withdrawals,
+                    ordinary_income_usd=taxable_ordinary_income,
                     short_term_capital_gains_usd=0.0,
                     long_term_capital_gains_usd=0.0,
                     qualified_dividends_usd=0.0,
                     interest_income_usd=0.0,
                     social_security_income_usd=annual_social_security_income,
                     pre_tax_contributions_usd=pre_tax_contributions,
+                    state_tax_rate=state_tax_rate,
+                    age=age,
+                    include_irmaa=include_irmaa,
                     tax_withholding_usd=0.0,
                 )
+                active_tax_payload = revised_tax_payload
                 revised_taxes = max(0.0, _safe_float(revised_tax_payload.get("total_estimated_tax_usd"), 0.0))
                 additional_tax_due = max(0.0, revised_taxes - taxes)
                 taxes = revised_taxes
@@ -939,31 +1105,39 @@ class ScenarioEngine:
                         by_account_withdrawals[account_id] = by_account_withdrawals.get(account_id, 0.0) + float(amount)
                     extra_by_treatment = extra_withdrawals.get("by_tax_treatment") or {}
                     tax_deferred_withdrawals += _safe_float(extra_by_treatment.get("tax_deferred"), 0.0)
+                    taxable_ordinary_income = tax_deferred_withdrawals + roth_conversions_this_year
 
                     final_tax_payload = estimate_federal_tax(
                         tax_year=year,
                         filing_status=filing_status,
                         earned_income_usd=annual_income,
-                        ordinary_income_usd=tax_deferred_withdrawals,
+                        ordinary_income_usd=taxable_ordinary_income,
                         short_term_capital_gains_usd=0.0,
                         long_term_capital_gains_usd=0.0,
                         qualified_dividends_usd=0.0,
                         interest_income_usd=0.0,
                         social_security_income_usd=annual_social_security_income,
                         pre_tax_contributions_usd=pre_tax_contributions,
+                        state_tax_rate=state_tax_rate,
+                        age=age,
+                        include_irmaa=include_irmaa,
                         tax_withholding_usd=0.0,
                     )
+                    active_tax_payload = final_tax_payload
                     taxes = max(0.0, _safe_float(final_tax_payload.get("total_estimated_tax_usd"), 0.0))
 
-            effective_tax_rate = 0.0
-            total_taxable_income = annual_income + annual_social_security_income
-            if total_taxable_income > 0:
-                effective_tax_rate = max(0.0, min(1.0, taxes / total_taxable_income))
-            else:
-                effective_tax_rate = max(
-                    0.0,
-                    min(1.0, _safe_float(initial_tax.get("effective_tax_rate"), 0.0)),
-                )
+            effective_tax_rate = max(
+                0.0,
+                min(1.0, _safe_float(active_tax_payload.get("effective_tax_rate"), 0.0)),
+            )
+            federal_taxes = (
+                _safe_float(active_tax_payload.get("federal_income_tax_usd"), 0.0)
+                + _safe_float(active_tax_payload.get("capital_gains_tax_usd"), 0.0)
+                + _safe_float(active_tax_payload.get("niit_tax_usd"), 0.0)
+                + _safe_float(active_tax_payload.get("total_fica_tax_usd"), 0.0)
+            )
+            state_taxes = _safe_float(active_tax_payload.get("state_income_tax_usd"), 0.0)
+            irmaa_surcharges = _safe_float(active_tax_payload.get("irmaa_annual_surcharge_usd"), 0.0)
 
             total_growth = 0.0
             ending_by_account: dict[str, float] = {}
@@ -972,6 +1146,8 @@ class ScenarioEngine:
                 contribution = _safe_float(contributions_by_account.get(account_id), 0.0)
                 withdrawal = _safe_float(by_account_withdrawals.get(account_id), 0.0)
                 rmd_withdrawal = _safe_float(rmd_by_account.get(account_id), 0.0)
+                roth_conversion_out = _safe_float(by_account_roth_conversion_out.get(account_id), 0.0)
+                roth_conversion_in = _safe_float(by_account_roth_conversion_in.get(account_id), 0.0)
                 growth = self._apply_growth(
                     account=account,
                     expected_return=assumptions.expected_return,
@@ -989,6 +1165,8 @@ class ScenarioEngine:
                         contribution_usd=round(contribution, 2),
                         withdrawal_usd=round(withdrawal, 2),
                         rmd_withdrawal_usd=round(rmd_withdrawal, 2),
+                        roth_conversion_out_usd=round(roth_conversion_out, 2),
+                        roth_conversion_in_usd=round(roth_conversion_in, 2),
                         growth_usd=round(growth, 2),
                         ending_balance_usd=round(account.balance_usd, 2),
                     )
@@ -1012,17 +1190,25 @@ class ScenarioEngine:
                     social_security_income_usd=round(annual_social_security_income, 2),
                     expenses_usd=round(annual_expenses + annual_debt, 2),
                     taxes_usd=round(taxes, 2),
+                    federal_taxes_usd=round(federal_taxes, 2),
+                    state_taxes_usd=round(state_taxes, 2),
+                    irmaa_surcharges_usd=round(irmaa_surcharges, 2),
                     growth_usd=round(total_growth, 2),
                     withdrawals_usd=round(total_withdrawn, 2),
                     rmds_usd=round(mandatory_rmd_withdrawn, 2),
+                    roth_conversions_usd=round(roth_conversions_this_year, 2),
                     ending_balance_real_usd=round(ending_balance_real, 2),
                 )
             )
 
             total_taxes_paid += taxes
+            total_federal_taxes_paid += federal_taxes
+            total_state_taxes_paid += state_taxes
+            total_irmaa_surcharges_paid += irmaa_surcharges
             total_contributions += total_contribution_this_year
             total_withdrawals += total_withdrawn
             total_social_security_income += annual_social_security_income
+            total_roth_conversions += roth_conversions_this_year
             tax_rates.append(effective_tax_rate)
 
             if starting_balance > 0:
@@ -1066,10 +1252,19 @@ class ScenarioEngine:
                 "retirement_age": retirement_age,
                 "rmd_start_age": rmd_start_age,
                 "total_taxes_paid_usd": round(total_taxes_paid, 2),
+                "total_federal_taxes_paid_usd": round(total_federal_taxes_paid, 2),
+                "total_state_taxes_paid_usd": round(total_state_taxes_paid, 2),
+                "total_irmaa_surcharges_paid_usd": round(total_irmaa_surcharges_paid, 2),
                 "total_contributions_usd": round(total_contributions, 2),
                 "total_withdrawals_usd": round(total_withdrawals, 2),
                 "total_rmds_usd": round(total_rmds, 2),
                 "total_social_security_income_usd": round(total_social_security_income, 2),
+                "total_roth_conversions_usd": round(total_roth_conversions, 2),
+                "state_tax_rate": round(float(state_tax_rate), 6),
+                "include_irmaa": bool(include_irmaa),
+                "roth_conversion_annual_amount_usd": round(float(roth_conversion_annual_amount_usd), 2),
+                "roth_conversion_start_age": roth_conversion_start_age,
+                "roth_conversion_end_age": roth_conversion_end_age,
                 "social_security_claiming_age": social_security_claiming_age,
                 "social_security_optimal_claiming_age": social_security_optimal_claiming_age,
                 "average_effective_tax_rate": round(average_tax_rate, 6),
@@ -1129,6 +1324,11 @@ class ScenarioEngine:
         social_security_projection: dict[str, Any] | None = None,
         rmd_projection: dict[str, Any] | None = None,
         filing_status: str | None = None,
+        state_tax_rate: float | None = None,
+        include_irmaa: bool = True,
+        roth_conversion_annual_amount_usd: float | None = None,
+        roth_conversion_start_age: int | None = None,
+        roth_conversion_end_age: int | None = None,
         start_year: int | None = None,
         start_age: int = 35,
         withdrawal_strategy: str | None = None,
@@ -1148,6 +1348,19 @@ class ScenarioEngine:
         resolved_start_year = _safe_int(start_year, datetime.now().year)
         resolved_start_age = max(0, _safe_int(start_age, 35))
         resolved_filing_status = _normalize_filing_status(filing_status)
+        resolved_state_tax_rate = max(0.0, min(1.0, _safe_float(state_tax_rate, 0.0)))
+        resolved_include_irmaa = bool(include_irmaa)
+        resolved_roth_conversion_annual_amount = max(
+            0.0,
+            _safe_float(roth_conversion_annual_amount_usd, 0.0),
+        )
+        (
+            resolved_roth_conversion_start_age,
+            resolved_roth_conversion_end_age,
+        ) = _resolve_roth_conversion_window(
+            start_age=roth_conversion_start_age,
+            end_age=roth_conversion_end_age,
+        )
         resolved_withdrawal_strategy = _normalize_withdrawal_strategy(withdrawal_strategy)
         resolved_retirement_age = _normalize_retirement_age(retirement_age)
 
@@ -1175,6 +1388,11 @@ class ScenarioEngine:
             social_security_projection=social_security_projection,
             rmd_projection=rmd_projection,
             filing_status=resolved_filing_status,
+            state_tax_rate=resolved_state_tax_rate,
+            include_irmaa=resolved_include_irmaa,
+            roth_conversion_annual_amount_usd=resolved_roth_conversion_annual_amount,
+            roth_conversion_start_age=resolved_roth_conversion_start_age,
+            roth_conversion_end_age=resolved_roth_conversion_end_age,
             start_year=resolved_start_year,
             start_age=resolved_start_age,
             withdrawal_strategy=resolved_withdrawal_strategy,
@@ -1199,6 +1417,11 @@ class ScenarioEngine:
             social_security_projection=social_security_projection,
             rmd_projection=rmd_projection,
             filing_status=resolved_filing_status,
+            state_tax_rate=resolved_state_tax_rate,
+            include_irmaa=resolved_include_irmaa,
+            roth_conversion_annual_amount_usd=resolved_roth_conversion_annual_amount,
+            roth_conversion_start_age=resolved_roth_conversion_start_age,
+            roth_conversion_end_age=resolved_roth_conversion_end_age,
             start_year=resolved_start_year,
             start_age=resolved_start_age,
             withdrawal_strategy=resolved_withdrawal_strategy,
@@ -1223,6 +1446,11 @@ class ScenarioEngine:
             social_security_projection=social_security_projection,
             rmd_projection=rmd_projection,
             filing_status=resolved_filing_status,
+            state_tax_rate=resolved_state_tax_rate,
+            include_irmaa=resolved_include_irmaa,
+            roth_conversion_annual_amount_usd=resolved_roth_conversion_annual_amount,
+            roth_conversion_start_age=resolved_roth_conversion_start_age,
+            roth_conversion_end_age=resolved_roth_conversion_end_age,
             start_year=resolved_start_year,
             start_age=resolved_start_age,
             withdrawal_strategy=resolved_withdrawal_strategy,
@@ -1247,6 +1475,11 @@ class ScenarioEngine:
             social_security_projection=social_security_projection,
             rmd_projection=rmd_projection,
             filing_status=resolved_filing_status,
+            state_tax_rate=resolved_state_tax_rate,
+            include_irmaa=resolved_include_irmaa,
+            roth_conversion_annual_amount_usd=resolved_roth_conversion_annual_amount,
+            roth_conversion_start_age=resolved_roth_conversion_start_age,
+            roth_conversion_end_age=resolved_roth_conversion_end_age,
             start_year=resolved_start_year,
             start_age=resolved_start_age,
             withdrawal_strategy=resolved_withdrawal_strategy,

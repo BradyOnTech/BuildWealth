@@ -1688,8 +1688,19 @@ function formatWithdrawalStrategyCompareOutput(result) {
       );
       lines.push(
         `  withdrawals ${fmtCurrency(row?.total_withdrawals_usd)}, taxes ${fmtCurrency(row?.total_taxes_usd)}, `
-        + `RMDs ${fmtCurrency(row?.total_rmds_usd)}, MC P50 ${fmtCurrency(row?.monte_carlo_p50_future_value_usd)}`
+        + `RMDs ${fmtCurrency(row?.total_rmds_usd)}, Roth conv ${fmtCurrency(row?.total_roth_conversions_usd)}, `
+        + `MC P50 ${fmtCurrency(row?.monte_carlo_p50_future_value_usd)}`
       );
+      if (
+        Number.isFinite(Number(row?.total_federal_taxes_usd))
+        || Number.isFinite(Number(row?.total_state_taxes_usd))
+        || Number.isFinite(Number(row?.total_irmaa_surcharges_usd))
+      ) {
+        lines.push(
+          `  tax breakdown: federal ${fmtCurrency(row?.total_federal_taxes_usd)}, `
+          + `state ${fmtCurrency(row?.total_state_taxes_usd)}, IRMAA ${fmtCurrency(row?.total_irmaa_surcharges_usd)}`
+        );
+      }
       lines.push(`  engine ${engine}/${status}${row?.fallback_method ? ` (fallback: ${row.fallback_method})` : ''}`);
       if (Array.isArray(row?.warnings) && row.warnings.length) {
         lines.push(`  warnings: ${row.warnings.join(' | ')}`);

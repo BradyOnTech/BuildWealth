@@ -131,6 +131,11 @@ class IgnidashScenarioService:
         assumption_set_id: str | None = None,
         assumption_set_name: str | None = None,
         filing_status: str | None = None,
+        state_tax_rate: float | None = None,
+        include_irmaa: bool = True,
+        roth_conversion_annual_amount_usd: float | None = None,
+        roth_conversion_start_age: int | None = None,
+        roth_conversion_end_age: int | None = None,
         start_year: int | None = None,
         start_age: int = 35,
         withdrawal_strategy: str | None = None,
@@ -153,6 +158,11 @@ class IgnidashScenarioService:
             assumption_set_id=assumption_set_id,
             assumption_set_name=assumption_set_name,
             filing_status=filing_status,
+            state_tax_rate=state_tax_rate,
+            include_irmaa=include_irmaa,
+            roth_conversion_annual_amount_usd=roth_conversion_annual_amount_usd,
+            roth_conversion_start_age=roth_conversion_start_age,
+            roth_conversion_end_age=roth_conversion_end_age,
             start_year=start_year,
             start_age=start_age,
             withdrawal_strategy=withdrawal_strategy,
@@ -209,6 +219,11 @@ class IgnidashScenarioService:
             assumption_set_id=assumption_set_id,
             assumption_set_name=assumption_set_name,
             filing_status=filing_status,
+            state_tax_rate=state_tax_rate,
+            include_irmaa=include_irmaa,
+            roth_conversion_annual_amount_usd=roth_conversion_annual_amount_usd,
+            roth_conversion_start_age=roth_conversion_start_age,
+            roth_conversion_end_age=roth_conversion_end_age,
             start_year=start_year,
             withdrawal_strategy=withdrawal_strategy,
             retirement_age=retirement_age,
@@ -275,6 +290,11 @@ class IgnidashScenarioService:
         assumption_set_id: str | None,
         assumption_set_name: str | None,
         filing_status: str | None,
+        state_tax_rate: float | None,
+        include_irmaa: bool,
+        roth_conversion_annual_amount_usd: float | None,
+        roth_conversion_start_age: int | None,
+        roth_conversion_end_age: int | None,
         start_year: int | None,
         withdrawal_strategy: str | None,
         retirement_age: int | None,
@@ -391,6 +411,15 @@ class IgnidashScenarioService:
             metadata["assumption_set_name"] = str(assumption_set_name)
         if filing_status:
             metadata["filing_status"] = filing_status
+        if state_tax_rate is not None:
+            metadata["state_tax_rate"] = float(state_tax_rate)
+        metadata["include_irmaa"] = bool(include_irmaa)
+        if roth_conversion_annual_amount_usd is not None:
+            metadata["roth_conversion_annual_amount_usd"] = float(roth_conversion_annual_amount_usd)
+        if roth_conversion_start_age is not None:
+            metadata["roth_conversion_start_age"] = int(roth_conversion_start_age)
+        if roth_conversion_end_age is not None:
+            metadata["roth_conversion_end_age"] = int(roth_conversion_end_age)
         if withdrawal_strategy:
             metadata["withdrawal_strategy"] = withdrawal_strategy
         if retirement_age is not None:

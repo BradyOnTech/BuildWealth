@@ -20,6 +20,7 @@ export function template() {
       <label class="field"><span>Filing Status</span><select id="profile-filing-status"><option value="">Select</option><option value="single">Single</option><option value="married_filing_jointly">Married Filing Jointly</option><option value="married_filing_separately">Married Filing Separately</option><option value="head_of_household">Head of Household</option></select></label>
       <label class="field"><span>Marginal Tax Rate (%)</span><input type="number" id="profile-marginal-tax-rate" step="0.01" min="0" max="100" placeholder="e.g. 24" /></label>
       <label class="field"><span>Effective Tax Rate (%)</span><input type="number" id="profile-effective-tax-rate" step="0.01" min="0" max="100" placeholder="e.g. 18" /></label>
+      <label class="field"><span>State Tax Rate (%)</span><input type="number" id="profile-state-tax-rate" step="0.01" min="0" max="100" placeholder="e.g. 5" /></label>
       <label class="field"><span>State</span><input type="text" id="profile-state" placeholder="MN" /></label>
       <label class="field"><span>No Debt</span><label class="inline-check"><input type="checkbox" id="profile-no-debt" /> I have no debt</label></label>
       <label class="field"><span>No Goals Yet</span><label class="inline-check"><input type="checkbox" id="profile-no-goals" /> Not tracking goals yet</label></label>
@@ -160,6 +161,7 @@ function renderForm() {
   byId('profile-filing-status').value = tax.filing_status || '';
   byId('profile-marginal-tax-rate').value = typeof tax.marginal_tax_rate === 'number' ? (tax.marginal_tax_rate * 100).toString() : '';
   byId('profile-effective-tax-rate').value = typeof tax.effective_tax_rate === 'number' ? (tax.effective_tax_rate * 100).toString() : '';
+  byId('profile-state-tax-rate').value = typeof tax.state_tax_rate === 'number' ? (tax.state_tax_rate * 100).toString() : '';
   byId('profile-state').value = tax.state || '';
   byId('profile-no-debt').checked = Boolean(flags.no_debt);
   byId('profile-no-goals').checked = Boolean(flags.no_goals);
@@ -185,9 +187,17 @@ function collectFromInputs() {
   const p = state.financialProfile;
   const mr = parseOptionalNumber(byId('profile-marginal-tax-rate').value, 'Marginal tax rate');
   const er = parseOptionalNumber(byId('profile-effective-tax-rate').value, 'Effective tax rate');
+  const sr = parseOptionalNumber(byId('profile-state-tax-rate').value, 'State tax rate');
   if (mr !== null && (mr < 0 || mr > 100)) throw new Error('Marginal tax rate must be 0-100.');
   if (er !== null && (er < 0 || er > 100)) throw new Error('Effective tax rate must be 0-100.');
-  p.tax_profile = { filing_status: byId('profile-filing-status').value || null, marginal_tax_rate: mr === null ? null : mr / 100, effective_tax_rate: er === null ? null : er / 100, state: byId('profile-state').value.trim() || null };
+  if (sr !== null && (sr < 0 || sr > 100)) throw new Error('State tax rate must be 0-100.');
+  p.tax_profile = {
+    filing_status: byId('profile-filing-status').value || null,
+    marginal_tax_rate: mr === null ? null : mr / 100,
+    effective_tax_rate: er === null ? null : er / 100,
+    state_tax_rate: sr === null ? null : sr / 100,
+    state: byId('profile-state').value.trim() || null,
+  };
   p.flags = { no_debt: byId('profile-no-debt').checked, no_goals: byId('profile-no-goals').checked };
   p.notes = byId('profile-notes').value.trim();
 }

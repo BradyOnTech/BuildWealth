@@ -174,6 +174,10 @@ class PlanWorkspace:
             "years": None,
             "hsa_extra_contribution_usd": None,
             "marginal_tax_rate": None,
+            "state_tax_rate": None,
+            "roth_conversion_annual_amount_usd": None,
+            "roth_conversion_start_age": None,
+            "roth_conversion_end_age": None,
             "inflation_rate": None,
             "expected_return_baseline": None,
             "expected_return_optimistic": None,
@@ -226,6 +230,10 @@ class PlanWorkspace:
                     "expected_return_conservative": None,
                     "inflation_rate": None,
                     "marginal_tax_rate": None,
+                    "state_tax_rate": None,
+                    "roth_conversion_annual_amount_usd": None,
+                    "roth_conversion_start_age": None,
+                    "roth_conversion_end_age": None,
                 },
                 {
                     "id": "historical_average",
@@ -235,6 +243,10 @@ class PlanWorkspace:
                     "expected_return_conservative": 0.05,
                     "inflation_rate": 0.03,
                     "marginal_tax_rate": None,
+                    "state_tax_rate": None,
+                    "roth_conversion_annual_amount_usd": None,
+                    "roth_conversion_start_age": None,
+                    "roth_conversion_end_age": None,
                 },
                 {
                     "id": "conservative",
@@ -244,6 +256,10 @@ class PlanWorkspace:
                     "expected_return_conservative": 0.04,
                     "inflation_rate": 0.025,
                     "marginal_tax_rate": None,
+                    "state_tax_rate": None,
+                    "roth_conversion_annual_amount_usd": None,
+                    "roth_conversion_start_age": None,
+                    "roth_conversion_end_age": None,
                 },
                 {
                     "id": "stagflation",
@@ -253,6 +269,10 @@ class PlanWorkspace:
                     "expected_return_conservative": 0.02,
                     "inflation_rate": 0.05,
                     "marginal_tax_rate": None,
+                    "state_tax_rate": None,
+                    "roth_conversion_annual_amount_usd": None,
+                    "roth_conversion_start_age": None,
+                    "roth_conversion_end_age": None,
                 },
                 {
                     "id": "japan_scenario",
@@ -262,6 +282,10 @@ class PlanWorkspace:
                     "expected_return_conservative": 0.0,
                     "inflation_rate": 0.005,
                     "marginal_tax_rate": None,
+                    "state_tax_rate": None,
+                    "roth_conversion_annual_amount_usd": None,
+                    "roth_conversion_start_age": None,
+                    "roth_conversion_end_age": None,
                 }
             ],
         }
@@ -356,12 +380,13 @@ class PlanWorkspace:
         if value is None:
             return "default"
 
-        if key in {"annual_contribution_usd", "hsa_extra_contribution_usd"}:
+        if key in {"annual_contribution_usd", "hsa_extra_contribution_usd", "roth_conversion_annual_amount_usd"}:
             return f"${float(value):,.2f}"
-        if key == "years":
+        if key in {"years", "roth_conversion_start_age", "roth_conversion_end_age"}:
             return f"{int(value)} years"
         if key in {
             "marginal_tax_rate",
+            "state_tax_rate",
             "inflation_rate",
             "expected_return_baseline",
             "expected_return_optimistic",
@@ -745,6 +770,39 @@ class PlanWorkspace:
                 minimum=0.0,
                 maximum=1.0,
             )
+            state_tax_rate = _normalize_optional_rate(
+                raw_value=raw.get("state_tax_rate"),
+                field=f"sets[{index}].state_tax_rate",
+                minimum=0.0,
+                maximum=1.0,
+            )
+            roth_conversion_annual_amount_usd = _normalize_optional_rate(
+                raw_value=raw.get("roth_conversion_annual_amount_usd"),
+                field=f"sets[{index}].roth_conversion_annual_amount_usd",
+                minimum=0.0,
+                maximum=10_000_000.0,
+            )
+            roth_conversion_start_age = _normalize_optional_rate(
+                raw_value=raw.get("roth_conversion_start_age"),
+                field=f"sets[{index}].roth_conversion_start_age",
+                minimum=0.0,
+                maximum=120.0,
+            )
+            roth_conversion_end_age = _normalize_optional_rate(
+                raw_value=raw.get("roth_conversion_end_age"),
+                field=f"sets[{index}].roth_conversion_end_age",
+                minimum=0.0,
+                maximum=120.0,
+            )
+            if (
+                roth_conversion_start_age is not None
+                and roth_conversion_end_age is not None
+                and roth_conversion_start_age > roth_conversion_end_age
+            ):
+                roth_conversion_start_age, roth_conversion_end_age = (
+                    roth_conversion_end_age,
+                    roth_conversion_start_age,
+                )
 
             if baseline is not None and optimistic is not None and optimistic < baseline:
                 raise ValueError(
@@ -768,6 +826,18 @@ class PlanWorkspace:
                     "expected_return_conservative": conservative,
                     "inflation_rate": inflation,
                     "marginal_tax_rate": marginal_tax_rate,
+                    "state_tax_rate": state_tax_rate,
+                    "roth_conversion_annual_amount_usd": roth_conversion_annual_amount_usd,
+                    "roth_conversion_start_age": (
+                        int(roth_conversion_start_age)
+                        if roth_conversion_start_age is not None
+                        else None
+                    ),
+                    "roth_conversion_end_age": (
+                        int(roth_conversion_end_age)
+                        if roth_conversion_end_age is not None
+                        else None
+                    ),
                 }
             )
 
@@ -970,6 +1040,10 @@ class PlanWorkspace:
             "years",
             "hsa_extra_contribution_usd",
             "marginal_tax_rate",
+            "state_tax_rate",
+            "roth_conversion_annual_amount_usd",
+            "roth_conversion_start_age",
+            "roth_conversion_end_age",
             "inflation_rate",
             "expected_return_baseline",
             "expected_return_optimistic",
@@ -1002,16 +1076,29 @@ class PlanWorkspace:
                 sanitized[key] = years
                 continue
 
+            if key in {"roth_conversion_start_age", "roth_conversion_end_age"}:
+                try:
+                    age_value = int(raw_value)
+                except Exception as exc:
+                    raise ValueError(f"{key} must be an integer between 0 and 120") from exc
+                if age_value < 0 or age_value > 120:
+                    raise ValueError(f"{key} must be between 0 and 120")
+                sanitized[key] = age_value
+                continue
+
             try:
                 value = float(raw_value)
             except Exception as exc:
                 raise ValueError(f"{key} must be numeric") from exc
 
-            if key in {"annual_contribution_usd", "hsa_extra_contribution_usd"} and value < 0:
+            if key in {"annual_contribution_usd", "hsa_extra_contribution_usd", "roth_conversion_annual_amount_usd"} and value < 0:
                 raise ValueError(f"{key} must be >= 0")
 
             if key == "marginal_tax_rate" and not (0 <= value <= 1):
                 raise ValueError("marginal_tax_rate must be between 0 and 1")
+
+            if key == "state_tax_rate" and not (0 <= value <= 1):
+                raise ValueError("state_tax_rate must be between 0 and 1")
 
             if key == "inflation_rate" and not (-1 <= value <= 1):
                 raise ValueError("inflation_rate must be between -1 and 1")
@@ -1020,6 +1107,15 @@ class PlanWorkspace:
                 raise ValueError(f"{key} must be between -0.95 and 1")
 
             sanitized[key] = value
+
+        start_age = sanitized.get("roth_conversion_start_age")
+        end_age = sanitized.get("roth_conversion_end_age")
+        if (
+            start_age is not None
+            and end_age is not None
+            and int(start_age) > int(end_age)
+        ):
+            raise ValueError("roth_conversion_start_age must be <= roth_conversion_end_age")
 
         return sanitized
 
@@ -1035,6 +1131,15 @@ class PlanWorkspace:
             raise ValueError("expected_return_conservative must be <= expected_return_baseline")
         if optimistic is not None and conservative is not None and float(conservative) > float(optimistic):
             raise ValueError("expected_return_conservative must be <= expected_return_optimistic")
+
+    @staticmethod
+    def _validate_roth_conversion_window(settings_payload: dict[str, Any]) -> None:
+        start_age = settings_payload.get("roth_conversion_start_age")
+        end_age = settings_payload.get("roth_conversion_end_age")
+        if start_age is None or end_age is None:
+            return
+        if int(start_age) > int(end_age):
+            raise ValueError("roth_conversion_start_age must be <= roth_conversion_end_age")
 
     def create_plan(self, title: str, description: str = "") -> dict[str, Any]:
         cleaned_title = title.strip()
@@ -1359,6 +1464,7 @@ class PlanWorkspace:
         merged_settings = dict(current_settings)
         merged_settings.update(sanitized)
         self._validate_return_relationships(merged_settings)
+        self._validate_roth_conversion_window(merged_settings)
         self._write_settings(plan_id, merged_settings)
 
         index_payload = self._load_index()
@@ -1606,6 +1712,10 @@ class PlanWorkspace:
             f"- Horizon: {self._format_setting_value('years', settings_payload.get('years'))}",
             f"- HSA extra contribution: {self._format_setting_value('hsa_extra_contribution_usd', settings_payload.get('hsa_extra_contribution_usd'))}",
             f"- Marginal tax rate: {self._format_setting_value('marginal_tax_rate', settings_payload.get('marginal_tax_rate'))}",
+            f"- State tax rate: {self._format_setting_value('state_tax_rate', settings_payload.get('state_tax_rate'))}",
+            f"- Roth conversion annual target: {self._format_setting_value('roth_conversion_annual_amount_usd', settings_payload.get('roth_conversion_annual_amount_usd'))}",
+            f"- Roth conversion start age: {self._format_setting_value('roth_conversion_start_age', settings_payload.get('roth_conversion_start_age'))}",
+            f"- Roth conversion end age: {self._format_setting_value('roth_conversion_end_age', settings_payload.get('roth_conversion_end_age'))}",
             f"- Inflation rate: {self._format_setting_value('inflation_rate', settings_payload.get('inflation_rate'))}",
             f"- Baseline return: {self._format_setting_value('expected_return_baseline', settings_payload.get('expected_return_baseline'))}",
             f"- Optimistic return: {self._format_setting_value('expected_return_optimistic', settings_payload.get('expected_return_optimistic'))}",

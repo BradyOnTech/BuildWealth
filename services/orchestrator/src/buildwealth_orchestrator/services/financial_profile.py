@@ -36,6 +36,7 @@ class FinancialProfileStore:
                 "filing_status": None,
                 "marginal_tax_rate": None,
                 "effective_tax_rate": None,
+                "state_tax_rate": None,
                 "state": None,
             },
             "flags": {

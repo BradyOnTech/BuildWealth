@@ -99,6 +99,10 @@ def test_plan_workspace_settings_update_and_validation(tmp_path: Path) -> None:
             "annual_contribution_usd": 22000,
             "years": 22,
             "marginal_tax_rate": 0.24,
+            "state_tax_rate": 0.05,
+            "roth_conversion_annual_amount_usd": 12000,
+            "roth_conversion_start_age": 60,
+            "roth_conversion_end_age": 72,
             "expected_return_baseline": 0.07,
             "expected_return_optimistic": 0.09,
             "expected_return_conservative": 0.05,
@@ -110,6 +114,10 @@ def test_plan_workspace_settings_update_and_validation(tmp_path: Path) -> None:
     assert updated["settings"]["annual_contribution_usd"] == 22000
     assert updated["settings"]["years"] == 22
     assert updated["settings"]["marginal_tax_rate"] == 0.24
+    assert updated["settings"]["state_tax_rate"] == 0.05
+    assert updated["settings"]["roth_conversion_annual_amount_usd"] == 12000
+    assert updated["settings"]["roth_conversion_start_age"] == 60
+    assert updated["settings"]["roth_conversion_end_age"] == 72
     assert updated["settings"]["filing_status"] == "single"
     assert updated["settings"]["withdrawal_strategy"] == "4_percent_rule"
     assert "## Plan Settings" in updated["files"]["context_markdown"]
@@ -122,6 +130,15 @@ def test_plan_workspace_settings_update_and_validation(tmp_path: Path) -> None:
             updates={
                 "expected_return_baseline": 0.07,
                 "expected_return_optimistic": 0.06,
+            },
+        )
+
+    with pytest.raises(ValueError):
+        workspace.update_plan_settings(
+            plan_id=detail["id"],
+            updates={
+                "roth_conversion_start_age": 72,
+                "roth_conversion_end_age": 60,
             },
         )
 
@@ -366,6 +383,10 @@ def test_plan_workspace_assumption_sets_round_trip(tmp_path: Path) -> None:
                     "expected_return_conservative": None,
                     "inflation_rate": None,
                     "marginal_tax_rate": None,
+                    "state_tax_rate": None,
+                    "roth_conversion_annual_amount_usd": None,
+                    "roth_conversion_start_age": None,
+                    "roth_conversion_end_age": None,
                 },
                 {
                     "id": "stagflation",
@@ -375,6 +396,10 @@ def test_plan_workspace_assumption_sets_round_trip(tmp_path: Path) -> None:
                     "expected_return_conservative": 0.02,
                     "inflation_rate": 0.05,
                     "marginal_tax_rate": 0.27,
+                    "state_tax_rate": 0.06,
+                    "roth_conversion_annual_amount_usd": 10000,
+                    "roth_conversion_start_age": 60,
+                    "roth_conversion_end_age": 70,
                 },
                 {
                     "id": "custom_growth",
@@ -384,6 +409,10 @@ def test_plan_workspace_assumption_sets_round_trip(tmp_path: Path) -> None:
                     "expected_return_conservative": 0.045,
                     "inflation_rate": 0.028,
                     "marginal_tax_rate": 0.24,
+                    "state_tax_rate": 0.05,
+                    "roth_conversion_annual_amount_usd": 8000,
+                    "roth_conversion_start_age": 62,
+                    "roth_conversion_end_age": 72,
                 },
             ],
         },
@@ -395,6 +424,10 @@ def test_plan_workspace_assumption_sets_round_trip(tmp_path: Path) -> None:
     custom = next(item for item in updated["sets"] if item["id"] == "custom_growth")
     assert custom["expected_return_baseline"] == pytest.approx(0.065)
     assert custom["inflation_rate"] == pytest.approx(0.028)
+    assert custom["state_tax_rate"] == pytest.approx(0.05)
+    assert custom["roth_conversion_annual_amount_usd"] == pytest.approx(8000.0)
+    assert custom["roth_conversion_start_age"] == 62
+    assert custom["roth_conversion_end_age"] == 72
 
     refreshed = workspace.get_plan(detail["id"])
     assert refreshed["decisions"]

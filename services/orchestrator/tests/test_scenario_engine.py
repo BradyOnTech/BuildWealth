@@ -574,3 +574,118 @@ def test_scenario_engine_honors_rmd_start_age_override() -> None:
     assert account_point.rmd_withdrawal_usd == 0
     assert baseline.assumptions["total_rmds_usd"] == 0
     assert baseline.assumptions["rmd_start_age"] == 75
+
+
+def test_scenario_engine_surfaces_state_tax_and_irmaa_breakdown() -> None:
+    engine = ScenarioEngine(
+        years_to_retirement=1,
+        annual_contribution_usd=0,
+        baseline_return=0.0,
+        optimistic_return=0.0,
+        conservative_return=0.0,
+        return_volatility=0.0,
+        inflation=0.0,
+        monte_carlo_runs=10,
+        hsa_delta_default=0,
+        marginal_tax_rate=0.25,
+    )
+
+    result = engine.run(
+        current_portfolio_value_usd=500000,
+        annual_contribution_usd=0,
+        years=1,
+        accounts=[
+            {
+                "account_id": "taxable",
+                "account_type": "taxableBrokerage",
+                "tax_treatment": "taxable",
+                "balance_usd": 500000,
+            }
+        ],
+        income_projection={"yearly_points": [{"year": 2026, "gross_income_usd": 260000}]},
+        expense_projection={"yearly_points": [{"year": 2026, "total_expenses_usd": 120000}]},
+        social_security_projection={"yearly_points": [{"year": 2026, "age": 67, "annual_benefit_usd": 36000}]},
+        state_tax_rate=0.05,
+        include_irmaa=True,
+        start_year=2026,
+        start_age=67,
+        retirement_age=67,
+    )
+
+    baseline = next(item for item in result.scenarios if item.label == "baseline")
+    point = baseline.timeline_points[0]
+    assert point.federal_taxes_usd > 0
+    assert point.state_taxes_usd > 0
+    assert point.irmaa_surcharges_usd > 0
+    assert baseline.assumptions["state_tax_rate"] == pytest.approx(0.05, abs=1e-6)
+    assert baseline.assumptions["total_federal_taxes_paid_usd"] > 0
+    assert baseline.assumptions["total_state_taxes_paid_usd"] > 0
+    assert baseline.assumptions["total_irmaa_surcharges_paid_usd"] > 0
+
+
+def test_scenario_engine_applies_roth_conversion_window_and_balances() -> None:
+    engine = ScenarioEngine(
+        years_to_retirement=3,
+        annual_contribution_usd=0,
+        baseline_return=0.0,
+        optimistic_return=0.0,
+        conservative_return=0.0,
+        return_volatility=0.0,
+        inflation=0.0,
+        monte_carlo_runs=10,
+        hsa_delta_default=0,
+        marginal_tax_rate=0.25,
+    )
+
+    result = engine.run(
+        current_portfolio_value_usd=210000,
+        annual_contribution_usd=0,
+        years=3,
+        accounts=[
+            {
+                "account_id": "deferred",
+                "account_type": "401k",
+                "tax_treatment": "tax_deferred",
+                "balance_usd": 200000,
+            },
+            {
+                "account_id": "roth",
+                "account_type": "rothIra",
+                "tax_treatment": "tax_free",
+                "balance_usd": 10000,
+            },
+        ],
+        income_projection={
+            "yearly_points": [
+                {"year": 2026, "gross_income_usd": 0},
+                {"year": 2027, "gross_income_usd": 0},
+                {"year": 2028, "gross_income_usd": 0},
+            ]
+        },
+        expense_projection={
+            "yearly_points": [
+                {"year": 2026, "total_expenses_usd": 0},
+                {"year": 2027, "total_expenses_usd": 0},
+                {"year": 2028, "total_expenses_usd": 0},
+            ]
+        },
+        filing_status="single",
+        start_year=2026,
+        start_age=60,
+        retirement_age=65,
+        roth_conversion_annual_amount_usd=50000,
+        roth_conversion_start_age=60,
+        roth_conversion_end_age=61,
+    )
+
+    baseline = next(item for item in result.scenarios if item.label == "baseline")
+    assert baseline.timeline_points[0].roth_conversions_usd == pytest.approx(50000.0, abs=0.01)
+    assert baseline.timeline_points[1].roth_conversions_usd == pytest.approx(50000.0, abs=0.01)
+    assert baseline.timeline_points[2].roth_conversions_usd == pytest.approx(0.0, abs=0.01)
+    assert baseline.assumptions["total_roth_conversions_usd"] == pytest.approx(100000.0, abs=0.01)
+
+    year_2026_points = [point for point in baseline.account_balance_points if point.year == 2026]
+    deferred_2026 = next(point for point in year_2026_points if point.account_id == "deferred")
+    roth_2026 = next(point for point in year_2026_points if point.account_id == "roth")
+    assert deferred_2026.roth_conversion_out_usd == pytest.approx(50000.0, abs=0.01)
+    assert roth_2026.roth_conversion_in_usd == pytest.approx(50000.0, abs=0.01)

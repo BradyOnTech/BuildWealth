@@ -14,6 +14,7 @@ def test_financial_profile_store_defaults(tmp_path: Path) -> None:
     assert payload["goal_items"] == []
     assert payload["physical_assets"] == []
     assert payload["tax_profile"]["filing_status"] is None
+    assert payload["tax_profile"]["state_tax_rate"] is None
     assert payload["flags"]["no_debt"] is False
     assert payload["updated_at"]
 

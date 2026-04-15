@@ -200,6 +200,11 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
         assert payload["metadata"]["social_security_projection"]["selected_annual_benefit_usd"] == 18000
         assert payload["metadata"]["rmd_projection"]["rmd_start_age"] == 75
         assert payload["metadata"]["filing_status"] == "single"
+        assert payload["metadata"]["state_tax_rate"] == 0.05
+        assert payload["metadata"]["include_irmaa"] is False
+        assert payload["metadata"]["roth_conversion_annual_amount_usd"] == 12000.0
+        assert payload["metadata"]["roth_conversion_start_age"] == 60
+        assert payload["metadata"]["roth_conversion_end_age"] == 72
         assert payload["metadata"]["withdrawal_strategy"] == "4_percent_rule"
         assert payload["metadata"]["retirement_age"] == 60
         return httpx.Response(
@@ -413,6 +418,11 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
                 "warnings": [],
             },
             filing_status="single",
+            state_tax_rate=0.05,
+            include_irmaa=False,
+            roth_conversion_annual_amount_usd=12000,
+            roth_conversion_start_age=60,
+            roth_conversion_end_age=72,
             withdrawal_strategy="4_percent_rule",
             retirement_age=60,
         )
