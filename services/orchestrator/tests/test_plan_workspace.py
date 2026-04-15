@@ -100,6 +100,14 @@ def test_plan_workspace_settings_update_and_validation(tmp_path: Path) -> None:
             "years": 22,
             "marginal_tax_rate": 0.24,
             "state_tax_rate": 0.05,
+            "household_mode": "couple",
+            "household_partner_income_usd": 90000,
+            "household_partner_income_growth_rate": 0.03,
+            "household_partner_retirement_age": 65,
+            "household_partner_social_security_annual_usd": 24000,
+            "household_partner_social_security_claiming_age": 67,
+            "household_shared_goal_target_usd": 150000,
+            "household_shared_goal_target_year": 2035,
             "drawdown_order": "cash,taxable,tax_deferred,tax_free",
             "roth_conversion_annual_amount_usd": 12000,
             "roth_conversion_start_age": 60,
@@ -116,6 +124,14 @@ def test_plan_workspace_settings_update_and_validation(tmp_path: Path) -> None:
     assert updated["settings"]["years"] == 22
     assert updated["settings"]["marginal_tax_rate"] == 0.24
     assert updated["settings"]["state_tax_rate"] == 0.05
+    assert updated["settings"]["household_mode"] == "couple"
+    assert updated["settings"]["household_partner_income_usd"] == 90000
+    assert updated["settings"]["household_partner_income_growth_rate"] == 0.03
+    assert updated["settings"]["household_partner_retirement_age"] == 65
+    assert updated["settings"]["household_partner_social_security_annual_usd"] == 24000
+    assert updated["settings"]["household_partner_social_security_claiming_age"] == 67
+    assert updated["settings"]["household_shared_goal_target_usd"] == 150000
+    assert updated["settings"]["household_shared_goal_target_year"] == 2035
     assert updated["settings"]["drawdown_order"] == "cash,taxable,tax_deferred,tax_free"
     assert updated["settings"]["roth_conversion_annual_amount_usd"] == 12000
     assert updated["settings"]["roth_conversion_start_age"] == 60
@@ -141,6 +157,22 @@ def test_plan_workspace_settings_update_and_validation(tmp_path: Path) -> None:
             updates={
                 "roth_conversion_start_age": 72,
                 "roth_conversion_end_age": 60,
+            },
+        )
+
+    with pytest.raises(ValueError):
+        workspace.update_plan_settings(
+            plan_id=detail["id"],
+            updates={
+                "household_mode": "family",
+            },
+        )
+
+    with pytest.raises(ValueError):
+        workspace.update_plan_settings(
+            plan_id=detail["id"],
+            updates={
+                "filing_status": "married_jointly_invalid",
             },
         )
 

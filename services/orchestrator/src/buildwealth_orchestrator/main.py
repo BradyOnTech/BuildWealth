@@ -66,6 +66,7 @@ from buildwealth_orchestrator.schemas import (
     PlanSummary,
     PlanUpdateRequest,
     PlanningResponse,
+    HouseholdPlanningContext,
     PortfolioSnapshot,
     PortfolioBenchmarkResponse,
     PortfolioAttributionResponse,
@@ -660,6 +661,15 @@ PLAN_SETTINGS_FIELDS = (
     "hsa_extra_contribution_usd",
     "marginal_tax_rate",
     "state_tax_rate",
+    "household_mode",
+    "household_partner_income_usd",
+    "household_partner_income_growth_rate",
+    "household_partner_retirement_age",
+    "household_partner_social_security_annual_usd",
+    "household_partner_social_security_claiming_age",
+    "household_shared_goal_target_usd",
+    "household_shared_goal_target_year",
+    "filing_status",
     "drawdown_order",
     "roth_conversion_annual_amount_usd",
     "roth_conversion_start_age",
@@ -784,6 +794,381 @@ def _coerce_bool(value: Any, fallback: bool = False) -> bool:
     if normalized in {"0", "false", "no", "n", "off"}:
         return False
     return fallback
+
+
+HOUSEHOLD_MODE_INDIVIDUAL = "individual"
+HOUSEHOLD_MODE_COUPLE = "couple"
+DEFAULT_COUPLE_FILING_STATUS = "married_filing_jointly"
+VALID_FILING_STATUSES = {
+    "single",
+    "married_filing_jointly",
+    "married_filing_separately",
+    "head_of_household",
+}
+
+
+def _normalize_household_mode(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"couple", "joint", "married", "household"}:
+        return HOUSEHOLD_MODE_COUPLE
+    return HOUSEHOLD_MODE_INDIVIDUAL
+
+
+def _resolve_filing_status_for_household(
+    *,
+    filing_status: Any,
+    household_mode: str,
+) -> str | None:
+    normalized = str(filing_status or "").strip().lower()
+    if normalized in VALID_FILING_STATUSES:
+        return normalized
+    if household_mode == HOUSEHOLD_MODE_COUPLE:
+        return DEFAULT_COUPLE_FILING_STATUS
+    return None
+
+
+def _normalize_optional_household_age(value: Any) -> int | None:
+    if value is None:
+        return None
+    age_value = _coerce_int(value, -1)
+    if age_value < 0 or age_value > 120:
+        return None
+    return age_value
+
+
+def _normalize_optional_household_year(value: Any) -> int | None:
+    if value is None:
+        return None
+    year_value = _coerce_int(value, -1)
+    if year_value < 1900 or year_value > 2500:
+        return None
+    return year_value
+
+
+def _resolve_household_settings(
+    *,
+    plan_settings: dict[str, Any],
+    start_year: int,
+    years: int,
+) -> dict[str, Any]:
+    household_mode = _normalize_household_mode(plan_settings.get("household_mode"))
+    household_partner_income_usd = max(
+        0.0,
+        _coerce_float(plan_settings.get("household_partner_income_usd"), 0.0),
+    )
+    household_partner_income_growth_rate = max(
+        -1.0,
+        min(1.0, _coerce_float(plan_settings.get("household_partner_income_growth_rate"), 0.0)),
+    )
+    household_partner_retirement_age = _normalize_optional_household_age(
+        plan_settings.get("household_partner_retirement_age"),
+    )
+    household_partner_social_security_annual_usd = max(
+        0.0,
+        _coerce_float(plan_settings.get("household_partner_social_security_annual_usd"), 0.0),
+    )
+    household_partner_social_security_claiming_age = _normalize_optional_household_age(
+        plan_settings.get("household_partner_social_security_claiming_age"),
+    )
+    household_shared_goal_target_usd = max(
+        0.0,
+        _coerce_float(plan_settings.get("household_shared_goal_target_usd"), 0.0),
+    )
+    household_shared_goal_target_year = _normalize_optional_household_year(
+        plan_settings.get("household_shared_goal_target_year"),
+    )
+    if household_shared_goal_target_usd > 0 and household_shared_goal_target_year is None:
+        household_shared_goal_target_year = start_year + max(0, years - 1)
+
+    return {
+        "household_mode": household_mode,
+        "household_partner_income_usd": household_partner_income_usd,
+        "household_partner_income_growth_rate": household_partner_income_growth_rate,
+        "household_partner_retirement_age": household_partner_retirement_age,
+        "household_partner_social_security_annual_usd": household_partner_social_security_annual_usd,
+        "household_partner_social_security_claiming_age": household_partner_social_security_claiming_age,
+        "household_shared_goal_target_usd": household_shared_goal_target_usd,
+        "household_shared_goal_target_year": household_shared_goal_target_year,
+    }
+
+
+def _apply_household_adjustments_to_projection_payloads(
+    *,
+    income_projection: dict[str, Any] | None,
+    expense_projection: dict[str, Any] | None,
+    household_settings: dict[str, Any],
+    start_year: int,
+    start_age: int,
+    years: int,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any]]:
+    household_mode = str(household_settings.get("household_mode") or HOUSEHOLD_MODE_INDIVIDUAL)
+    result_payload = {
+        "mode": household_mode,
+        "partner_income_added_first_year_usd": 0.0,
+        "partner_income_added_total_usd": 0.0,
+        "shared_goal_target_usd": 0.0,
+        "shared_goal_target_year": None,
+        "shared_goal_annual_funding_usd": 0.0,
+    }
+    if household_mode != HOUSEHOLD_MODE_COUPLE:
+        return income_projection, expense_projection, result_payload
+
+    adjusted_income = dict(income_projection) if isinstance(income_projection, dict) else None
+    adjusted_expenses = dict(expense_projection) if isinstance(expense_projection, dict) else None
+
+    partner_income = max(0.0, _coerce_float(household_settings.get("household_partner_income_usd"), 0.0))
+    partner_growth = max(
+        -1.0,
+        min(1.0, _coerce_float(household_settings.get("household_partner_income_growth_rate"), 0.0)),
+    )
+    partner_retirement_age = _normalize_optional_household_age(
+        household_settings.get("household_partner_retirement_age"),
+    )
+    partner_ss_income = max(
+        0.0,
+        _coerce_float(household_settings.get("household_partner_social_security_annual_usd"), 0.0),
+    )
+    partner_ss_claim_age = _normalize_optional_household_age(
+        household_settings.get("household_partner_social_security_claiming_age"),
+    )
+
+    partner_income_added_total = 0.0
+    partner_income_added_first_year = 0.0
+    if adjusted_income is not None:
+        projection_start_year = _coerce_int(adjusted_income.get("start_year"), start_year)
+        projection_years = max(1, _coerce_int(adjusted_income.get("years"), years))
+        raw_points = adjusted_income.get("yearly_points")
+        yearly_points = [dict(item) for item in raw_points if isinstance(item, dict)] if isinstance(raw_points, list) else []
+        if not yearly_points:
+            first_year_income = max(0.0, _coerce_float(adjusted_income.get("first_year_gross_income_usd"), 0.0))
+            yearly_points = [
+                {
+                    "year": projection_start_year + offset,
+                    "gross_income_usd": first_year_income,
+                    "pre_tax_income_usd": 0.0,
+                    "post_tax_income_usd": first_year_income,
+                    "active_income_items": 0,
+                }
+                for offset in range(projection_years)
+            ]
+
+        for point in yearly_points:
+            year_value = _coerce_int(point.get("year"), projection_start_year)
+            offset = max(0, year_value - start_year)
+            age_value = start_age + offset
+            additional_income = 0.0
+            if partner_income > 0 and (
+                partner_retirement_age is None or age_value < int(partner_retirement_age)
+            ):
+                additional_income += partner_income * ((1.0 + partner_growth) ** offset)
+            if partner_ss_income > 0 and partner_ss_claim_age is not None and age_value >= int(partner_ss_claim_age):
+                additional_income += partner_ss_income
+            if additional_income <= 0:
+                continue
+
+            partner_income_added_total += additional_income
+            if year_value == start_year:
+                partner_income_added_first_year += additional_income
+
+            point["gross_income_usd"] = max(0.0, _coerce_float(point.get("gross_income_usd"), 0.0) + additional_income)
+            point["post_tax_income_usd"] = max(0.0, _coerce_float(point.get("post_tax_income_usd"), 0.0) + additional_income)
+            point["active_income_items"] = max(0, _coerce_int(point.get("active_income_items"), 0)) + 1
+
+        yearly_points.sort(key=lambda item: _coerce_int(item.get("year"), projection_start_year))
+        gross_values = [max(0.0, _coerce_float(item.get("gross_income_usd"), 0.0)) for item in yearly_points]
+        if gross_values:
+            adjusted_income["first_year_gross_income_usd"] = gross_values[0]
+            adjusted_income["final_year_gross_income_usd"] = gross_values[-1]
+            adjusted_income["cumulative_gross_income_usd"] = float(sum(gross_values))
+            if len(gross_values) > 1 and gross_values[0] > 0 and gross_values[-1] > 0:
+                adjusted_income["annualized_income_growth_rate"] = (
+                    (gross_values[-1] / gross_values[0]) ** (1.0 / (len(gross_values) - 1))
+                ) - 1.0
+        adjusted_income["yearly_points"] = yearly_points
+
+    shared_goal_target_usd = max(
+        0.0,
+        _coerce_float(household_settings.get("household_shared_goal_target_usd"), 0.0),
+    )
+    shared_goal_target_year = _normalize_optional_household_year(
+        household_settings.get("household_shared_goal_target_year"),
+    )
+    shared_goal_annual_funding = 0.0
+    resolved_shared_goal_target_year: int | None = None
+    if adjusted_expenses is not None:
+        projection_start_year = _coerce_int(adjusted_expenses.get("start_year"), start_year)
+        projection_years = max(1, _coerce_int(adjusted_expenses.get("years"), years))
+        raw_points = adjusted_expenses.get("yearly_points")
+        yearly_points = [dict(item) for item in raw_points if isinstance(item, dict)] if isinstance(raw_points, list) else []
+        if not yearly_points:
+            first_year_expenses = max(0.0, _coerce_float(adjusted_expenses.get("first_year_expenses_usd"), 0.0))
+            yearly_points = [
+                {
+                    "year": projection_start_year + offset,
+                    "total_expenses_usd": first_year_expenses,
+                    "fixed_expenses_usd": first_year_expenses,
+                    "variable_expenses_usd": 0.0,
+                    "active_expense_items": 0,
+                }
+                for offset in range(projection_years)
+            ]
+
+        if shared_goal_target_usd > 0:
+            if shared_goal_target_year is None:
+                shared_goal_target_year = projection_start_year + projection_years - 1
+            resolved_shared_goal_target_year = max(projection_start_year, int(shared_goal_target_year))
+            runway_years = max(
+                1,
+                min(projection_years, resolved_shared_goal_target_year - projection_start_year + 1),
+            )
+            shared_goal_annual_funding = shared_goal_target_usd / float(runway_years)
+            for point in yearly_points:
+                year_value = _coerce_int(point.get("year"), projection_start_year)
+                if year_value > resolved_shared_goal_target_year:
+                    continue
+                point["total_expenses_usd"] = max(
+                    0.0,
+                    _coerce_float(point.get("total_expenses_usd"), 0.0) + shared_goal_annual_funding,
+                )
+
+        yearly_points.sort(key=lambda item: _coerce_int(item.get("year"), projection_start_year))
+        expense_values = [max(0.0, _coerce_float(item.get("total_expenses_usd"), 0.0)) for item in yearly_points]
+        if expense_values:
+            adjusted_expenses["first_year_expenses_usd"] = expense_values[0]
+            adjusted_expenses["final_year_expenses_usd"] = expense_values[-1]
+            adjusted_expenses["cumulative_expenses_usd"] = float(sum(expense_values))
+            if len(expense_values) > 1 and expense_values[0] > 0 and expense_values[-1] > 0:
+                adjusted_expenses["annualized_expense_growth_rate"] = (
+                    (expense_values[-1] / expense_values[0]) ** (1.0 / (len(expense_values) - 1))
+                ) - 1.0
+        adjusted_expenses["yearly_points"] = yearly_points
+
+    result_payload["partner_income_added_first_year_usd"] = round(partner_income_added_first_year, 2)
+    result_payload["partner_income_added_total_usd"] = round(partner_income_added_total, 2)
+    result_payload["shared_goal_target_usd"] = round(shared_goal_target_usd, 2)
+    result_payload["shared_goal_target_year"] = resolved_shared_goal_target_year
+    result_payload["shared_goal_annual_funding_usd"] = round(shared_goal_annual_funding, 2)
+    return adjusted_income, adjusted_expenses, result_payload
+
+
+def _build_household_response_context(
+    *,
+    household_settings: dict[str, Any],
+    household_adjustments: dict[str, Any],
+    filing_status: str | None,
+    source: str,
+) -> dict[str, Any]:
+    mode = _normalize_household_mode(household_settings.get("household_mode"))
+    return {
+        "mode": mode,
+        "source": str(source or "").strip() or None,
+        "enabled": mode == HOUSEHOLD_MODE_COUPLE,
+        "filing_status": str(filing_status).strip().lower() if filing_status else None,
+        "partner_income_usd": max(
+            0.0,
+            _coerce_float(household_settings.get("household_partner_income_usd"), 0.0),
+        ),
+        "partner_income_growth_rate": max(
+            -1.0,
+            min(1.0, _coerce_float(household_settings.get("household_partner_income_growth_rate"), 0.0)),
+        ),
+        "partner_retirement_age": _normalize_optional_household_age(
+            household_settings.get("household_partner_retirement_age"),
+        ),
+        "partner_social_security_annual_usd": max(
+            0.0,
+            _coerce_float(household_settings.get("household_partner_social_security_annual_usd"), 0.0),
+        ),
+        "partner_social_security_claiming_age": _normalize_optional_household_age(
+            household_settings.get("household_partner_social_security_claiming_age"),
+        ),
+        "shared_goal_target_usd": max(
+            0.0,
+            _coerce_float(household_settings.get("household_shared_goal_target_usd"), 0.0),
+        ),
+        "shared_goal_target_year": _normalize_optional_household_year(
+            household_settings.get("household_shared_goal_target_year"),
+        ),
+        "shared_goal_annual_funding_usd": max(
+            0.0,
+            _coerce_float(household_adjustments.get("shared_goal_annual_funding_usd"), 0.0),
+        ),
+        "partner_income_added_first_year_usd": max(
+            0.0,
+            _coerce_float(household_adjustments.get("partner_income_added_first_year_usd"), 0.0),
+        ),
+        "partner_income_added_total_usd": max(
+            0.0,
+            _coerce_float(household_adjustments.get("partner_income_added_total_usd"), 0.0),
+        ),
+    }
+
+
+def _apply_household_context_to_planning_response(
+    *,
+    response: PlanningResponse,
+    household_context: dict[str, Any],
+) -> PlanningResponse:
+    assumption_patch: dict[str, float | int | str | bool | None] = {
+        "household_mode": str(household_context.get("mode") or HOUSEHOLD_MODE_INDIVIDUAL),
+        "filing_status": str(household_context.get("filing_status")).strip().lower()
+        if household_context.get("filing_status")
+        else None,
+        "household_partner_income_usd": round(
+            _coerce_float(household_context.get("partner_income_usd"), 0.0),
+            2,
+        ),
+        "household_partner_income_growth_rate": round(
+            _coerce_float(household_context.get("partner_income_growth_rate"), 0.0),
+            6,
+        ),
+        "household_partner_retirement_age": _normalize_optional_household_age(
+            household_context.get("partner_retirement_age"),
+        ),
+        "household_partner_social_security_annual_usd": round(
+            _coerce_float(household_context.get("partner_social_security_annual_usd"), 0.0),
+            2,
+        ),
+        "household_partner_social_security_claiming_age": _normalize_optional_household_age(
+            household_context.get("partner_social_security_claiming_age"),
+        ),
+        "household_shared_goal_target_usd": round(
+            _coerce_float(household_context.get("shared_goal_target_usd"), 0.0),
+            2,
+        ),
+        "household_shared_goal_target_year": _normalize_optional_household_year(
+            household_context.get("shared_goal_target_year"),
+        ),
+        "household_shared_goal_annual_funding_usd": round(
+            _coerce_float(household_context.get("shared_goal_annual_funding_usd"), 0.0),
+            2,
+        ),
+        "household_partner_income_added_first_year_usd": round(
+            _coerce_float(household_context.get("partner_income_added_first_year_usd"), 0.0),
+            2,
+        ),
+        "household_partner_income_added_total_usd": round(
+            _coerce_float(household_context.get("partner_income_added_total_usd"), 0.0),
+            2,
+        ),
+    }
+
+    updated_scenarios = []
+    for scenario in response.scenarios:
+        assumptions = (
+            dict(scenario.assumptions)
+            if isinstance(scenario.assumptions, dict)
+            else {}
+        )
+        assumptions.update(assumption_patch)
+        updated_scenarios.append(scenario.model_copy(update={"assumptions": assumptions}))
+
+    return response.model_copy(
+        update={
+            "scenarios": updated_scenarios,
+            "household": HouseholdPlanningContext(**household_context),
+        }
+    )
 
 
 def _coerce_optional_date(value: Any) -> date | None:
@@ -2162,12 +2547,20 @@ async def run_scenarios_for_plan_settings(
     retirement_age: int | None = None,
     timeline_withdrawal_strategy: str | None = None,
     timeline_drawdown_order: str | None = None,
+    household_source: str = "plan_settings",
 ) -> PlanningResponse:
     validate_plan_return_relationships(plan_settings)
     service = build_ignidash_service_for_plan_settings(plan_settings)
     annual_contribution = plan_settings.get("annual_contribution_usd")
     years = plan_settings.get("years")
     hsa_extra = plan_settings.get("hsa_extra_contribution_usd")
+    resolved_years = int(years) if years is not None else int(service.scenario_engine.years_to_retirement)
+    resolved_start_year = utc_now().year
+    household_settings = _resolve_household_settings(
+        plan_settings=plan_settings,
+        start_year=resolved_start_year,
+        years=resolved_years,
+    )
 
     resolved_annual_contribution = (
         float(annual_contribution)
@@ -2189,6 +2582,23 @@ async def run_scenarios_for_plan_settings(
 
     if expense_projection is not None:
         expense_projection_payload = expense_projection.model_dump(mode="json")
+
+    (
+        income_projection_payload,
+        expense_projection_payload,
+        household_adjustments_payload,
+    ) = _apply_household_adjustments_to_projection_payloads(
+        income_projection=income_projection_payload,
+        expense_projection=expense_projection_payload,
+        household_settings=household_settings,
+        start_year=resolved_start_year,
+        start_age=35,
+        years=resolved_years,
+    )
+    if income_projection_payload is not None:
+        income_projection = IncomeProjectionResponse(**income_projection_payload)
+    if expense_projection_payload is not None:
+        expense_projection = ExpenseProjectionResponse(**expense_projection_payload)
 
     if debt_projection is not None:
         debt_projection_payload = debt_projection.model_dump(mode="json")
@@ -2229,7 +2639,10 @@ async def run_scenarios_for_plan_settings(
     if rmd_projection is not None:
         rmd_projection_payload = rmd_projection.model_dump(mode="json")
 
-    filing_status = str(plan_settings.get("filing_status") or "").strip() or None
+    filing_status = _resolve_filing_status_for_household(
+        filing_status=plan_settings.get("filing_status"),
+        household_mode=str(household_settings.get("household_mode") or HOUSEHOLD_MODE_INDIVIDUAL),
+    )
     state_tax_rate_raw = plan_settings.get("state_tax_rate")
     state_tax_rate = (
         max(0.0, min(1.0, _coerce_float(state_tax_rate_raw, 0.0)))
@@ -2268,13 +2681,12 @@ async def run_scenarios_for_plan_settings(
     drawdown_order = str(plan_settings.get("drawdown_order") or "").strip() or None
     if not drawdown_order:
         drawdown_order = str(timeline_drawdown_order or "").strip() or None
-    resolved_start_year = utc_now().year
     scenario_guard_reason = await sidecar_contract_guard_reason("ignidash_scenario")
 
     result = await service.run(
         current_portfolio_value_usd=resolved_portfolio_value,
         annual_contribution_usd=resolved_annual_contribution,
-        years=int(years) if years is not None else None,
+        years=resolved_years,
         hsa_extra_contribution_usd=(float(hsa_extra) if hsa_extra is not None else None),
         accounts=sidecar_accounts,
         income_projection=income_projection_payload,
@@ -2291,6 +2703,17 @@ async def run_scenarios_for_plan_settings(
         roth_conversion_start_age=roth_conversion_start_age,
         roth_conversion_end_age=roth_conversion_end_age,
         drawdown_order=drawdown_order,
+        household_mode=str(household_settings.get("household_mode") or HOUSEHOLD_MODE_INDIVIDUAL),
+        household_partner_income_usd=household_settings.get("household_partner_income_usd"),
+        household_partner_income_growth_rate=household_settings.get("household_partner_income_growth_rate"),
+        household_partner_retirement_age=household_settings.get("household_partner_retirement_age"),
+        household_partner_social_security_annual_usd=household_settings.get("household_partner_social_security_annual_usd"),
+        household_partner_social_security_claiming_age=household_settings.get("household_partner_social_security_claiming_age"),
+        household_shared_goal_target_usd=household_settings.get("household_shared_goal_target_usd"),
+        household_shared_goal_target_year=household_settings.get("household_shared_goal_target_year"),
+        household_shared_goal_annual_funding_usd=household_adjustments_payload.get("shared_goal_annual_funding_usd"),
+        household_partner_income_added_first_year_usd=household_adjustments_payload.get("partner_income_added_first_year_usd"),
+        household_partner_income_added_total_usd=household_adjustments_payload.get("partner_income_added_total_usd"),
         start_year=resolved_start_year,
         withdrawal_strategy=withdrawal_strategy,
         retirement_age=retirement_age,
@@ -2303,8 +2726,16 @@ async def run_scenarios_for_plan_settings(
             "ignidash_scenario",
             reason=result.warnings[0] if result.warnings else None,
         )
-
-    return result
+    household_context = _build_household_response_context(
+        household_settings=household_settings,
+        household_adjustments=household_adjustments_payload,
+        filing_status=filing_status,
+        source=household_source,
+    )
+    return _apply_household_context_to_planning_response(
+        response=result,
+        household_context=household_context,
+    )
 
 
 def resolve_portfolio_value(
@@ -5822,6 +6253,18 @@ async def build_buildwealth_context_payload(
         "source": "default",
         "options": DEFAULT_WITHDRAWAL_STRATEGIES,
     }
+    plan_household_payload: dict[str, Any] = {
+        "mode": HOUSEHOLD_MODE_INDIVIDUAL,
+        "source": "default",
+        "filing_status": "single",
+        "partner_income_usd": 0.0,
+        "partner_income_growth_rate": 0.0,
+        "partner_retirement_age": None,
+        "partner_social_security_annual_usd": 0.0,
+        "partner_social_security_claiming_age": None,
+        "shared_goal_target_usd": 0.0,
+        "shared_goal_target_year": None,
+    }
     plan_tracking_payload: dict[str, Any] = {}
     plan_decisions_payload: list[dict[str, Any]] = []
     baseline_projection_payload: dict[str, Any] | None = None
@@ -5852,6 +6295,25 @@ async def build_buildwealth_context_payload(
             raw_settings = resolved_plan_detail.get("settings", {})
             if not isinstance(raw_settings, dict):
                 raw_settings = {}
+            household_mode = _normalize_household_mode(raw_settings.get("household_mode"))
+            household_source = (
+                "settings"
+                if any(
+                    raw_settings.get(field) not in {None, ""}
+                    for field in (
+                        "household_mode",
+                        "household_partner_income_usd",
+                        "household_partner_income_growth_rate",
+                        "household_partner_retirement_age",
+                        "household_partner_social_security_annual_usd",
+                        "household_partner_social_security_claiming_age",
+                        "household_shared_goal_target_usd",
+                        "household_shared_goal_target_year",
+                        "filing_status",
+                    )
+                )
+                else "default"
+            )
             settings_strategy = normalize_withdrawal_strategy_value(raw_settings.get("withdrawal_strategy"))
             settings_drawdown_order = str(raw_settings.get("drawdown_order") or "").strip() or None
             timeline_retirement_payload = (
@@ -5882,6 +6344,36 @@ async def build_buildwealth_context_payload(
                 "options": DEFAULT_WITHDRAWAL_STRATEGIES,
                 "drawdown_order": active_drawdown_order,
                 "drawdown_order_source": drawdown_source,
+            }
+            plan_household_payload = {
+                "mode": household_mode,
+                "source": household_source,
+                "filing_status": _resolve_filing_status_for_household(
+                    filing_status=raw_settings.get("filing_status"),
+                    household_mode=household_mode,
+                ) or "single",
+                "partner_income_usd": max(0.0, _coerce_float(raw_settings.get("household_partner_income_usd"), 0.0)),
+                "partner_income_growth_rate": max(
+                    -1.0,
+                    min(1.0, _coerce_float(raw_settings.get("household_partner_income_growth_rate"), 0.0)),
+                ),
+                "partner_retirement_age": _normalize_optional_household_age(
+                    raw_settings.get("household_partner_retirement_age"),
+                ),
+                "partner_social_security_annual_usd": max(
+                    0.0,
+                    _coerce_float(raw_settings.get("household_partner_social_security_annual_usd"), 0.0),
+                ),
+                "partner_social_security_claiming_age": _normalize_optional_household_age(
+                    raw_settings.get("household_partner_social_security_claiming_age"),
+                ),
+                "shared_goal_target_usd": max(
+                    0.0,
+                    _coerce_float(raw_settings.get("household_shared_goal_target_usd"), 0.0),
+                ),
+                "shared_goal_target_year": _normalize_optional_household_year(
+                    raw_settings.get("household_shared_goal_target_year"),
+                ),
             }
         except Exception as exc:
             warnings.append(f"Withdrawal strategy context unavailable: {exc}")
@@ -6211,6 +6703,7 @@ async def build_buildwealth_context_payload(
             "contribution_rules": plan_contribution_rules_payload,
             "contribution_allocation_preview": plan_contribution_allocation_preview_payload,
             "withdrawal_strategy": plan_withdrawal_strategy_payload,
+            "household": plan_household_payload,
             "branch_templates": plan_branch_templates_payload,
             "baseline_projection": baseline_projection_payload,
         },
@@ -8232,6 +8725,15 @@ def configure_copilot_tools() -> None:
         "hsa_extra_contribution_usd": {"type": "number"},
         "marginal_tax_rate": {"type": "number"},
         "state_tax_rate": {"type": "number"},
+        "household_mode": {"type": "string"},
+        "household_partner_income_usd": {"type": "number"},
+        "household_partner_income_growth_rate": {"type": "number"},
+        "household_partner_retirement_age": {"type": "integer"},
+        "household_partner_social_security_annual_usd": {"type": "number"},
+        "household_partner_social_security_claiming_age": {"type": "integer"},
+        "household_shared_goal_target_usd": {"type": "number"},
+        "household_shared_goal_target_year": {"type": "integer"},
+        "filing_status": {"type": "string"},
         "drawdown_order": {"type": "string"},
         "roth_conversion_annual_amount_usd": {"type": "number"},
         "roth_conversion_start_age": {"type": "integer"},
@@ -10995,6 +11497,42 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         planning_settings_for_run["roth_conversion_end_age"] = request.roth_conversion_end_age
     if request.drawdown_order is not None:
         planning_settings_for_run["drawdown_order"] = request.drawdown_order
+    if request.household_mode is not None:
+        planning_settings_for_run["household_mode"] = request.household_mode
+    if request.household_partner_income_usd is not None:
+        planning_settings_for_run["household_partner_income_usd"] = request.household_partner_income_usd
+    if request.household_partner_income_growth_rate is not None:
+        planning_settings_for_run["household_partner_income_growth_rate"] = request.household_partner_income_growth_rate
+    if request.household_partner_retirement_age is not None:
+        planning_settings_for_run["household_partner_retirement_age"] = request.household_partner_retirement_age
+    if request.household_partner_social_security_annual_usd is not None:
+        planning_settings_for_run["household_partner_social_security_annual_usd"] = (
+            request.household_partner_social_security_annual_usd
+        )
+    if request.household_partner_social_security_claiming_age is not None:
+        planning_settings_for_run["household_partner_social_security_claiming_age"] = (
+            request.household_partner_social_security_claiming_age
+        )
+    if request.household_shared_goal_target_usd is not None:
+        planning_settings_for_run["household_shared_goal_target_usd"] = request.household_shared_goal_target_usd
+    if request.household_shared_goal_target_year is not None:
+        planning_settings_for_run["household_shared_goal_target_year"] = request.household_shared_goal_target_year
+    if request.filing_status is not None:
+        planning_settings_for_run["filing_status"] = request.filing_status
+    request_household_overrides_provided = any(
+        value is not None
+        for value in (
+            request.household_mode,
+            request.household_partner_income_usd,
+            request.household_partner_income_growth_rate,
+            request.household_partner_retirement_age,
+            request.household_partner_social_security_annual_usd,
+            request.household_partner_social_security_claiming_age,
+            request.household_shared_goal_target_usd,
+            request.household_shared_goal_target_year,
+            request.filing_status,
+        )
+    )
     active_assumption_set: dict[str, Any] | None = None
     service = ignidash_scenario_service
     timeline_projection: TimelineImpactProjectionResponse | None = None
@@ -11041,9 +11579,30 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
             active_drawdown_order = None
             active_retirement_age = None
 
+    resolved_start_year = utc_now().year
+    household_settings = _resolve_household_settings(
+        plan_settings=planning_settings_for_run,
+        start_year=resolved_start_year,
+        years=resolved_years,
+    )
+
     income_projection = build_income_projection_for_plan_settings(planning_settings_for_run)
     expense_projection = build_expense_projection_for_plan_settings(planning_settings_for_run)
     debt_projection = build_debt_projection_for_plan_settings(planning_settings_for_run)
+    income_projection_payload = income_projection.model_dump(mode="json") if income_projection is not None else None
+    expense_projection_payload = expense_projection.model_dump(mode="json") if expense_projection is not None else None
+    (
+        income_projection_payload,
+        expense_projection_payload,
+        household_adjustments_payload,
+    ) = _apply_household_adjustments_to_projection_payloads(
+        income_projection=income_projection_payload,
+        expense_projection=expense_projection_payload,
+        household_settings=household_settings,
+        start_year=resolved_start_year,
+        start_age=35,
+        years=resolved_years,
+    )
 
     resolved_annual_contribution = (
         float(request.annual_contribution_usd)
@@ -11093,7 +11652,10 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
     state_tax_rate: float | None = None
     include_irmaa = bool(request.include_irmaa)
     if isinstance(tax_profile, dict):
-        filing_status = str(tax_profile.get("filing_status") or "").strip() or None
+        filing_status = _resolve_filing_status_for_household(
+            filing_status=tax_profile.get("filing_status"),
+            household_mode=str(household_settings.get("household_mode") or HOUSEHOLD_MODE_INDIVIDUAL),
+        )
         if tax_profile.get("state_tax_rate") is not None:
             state_tax_rate = max(
                 0.0,
@@ -11101,7 +11663,15 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
             )
 
     if planning_settings_for_run.get("filing_status"):
-        filing_status = str(planning_settings_for_run.get("filing_status") or "").strip() or filing_status
+        filing_status = _resolve_filing_status_for_household(
+            filing_status=planning_settings_for_run.get("filing_status"),
+            household_mode=str(household_settings.get("household_mode") or HOUSEHOLD_MODE_INDIVIDUAL),
+        )
+    if filing_status is None:
+        filing_status = _resolve_filing_status_for_household(
+            filing_status=None,
+            household_mode=str(household_settings.get("household_mode") or HOUSEHOLD_MODE_INDIVIDUAL),
+        )
     if planning_settings_for_run.get("state_tax_rate") is not None:
         state_tax_rate = max(
             0.0,
@@ -11145,8 +11715,8 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         years=request.years,
         hsa_extra_contribution_usd=request.hsa_extra_contribution_usd,
         accounts=build_planning_accounts_from_portfolio(),
-        income_projection=income_projection.model_dump(mode="json") if income_projection is not None else None,
-        expense_projection=expense_projection.model_dump(mode="json") if expense_projection is not None else None,
+        income_projection=income_projection_payload,
+        expense_projection=expense_projection_payload,
         debt_projection=debt_projection.model_dump(mode="json") if debt_projection is not None else None,
         timeline_projection=timeline_projection.model_dump(mode="json") if timeline_projection is not None else None,
         contribution_allocation=(
@@ -11171,7 +11741,18 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         roth_conversion_start_age=roth_conversion_start_age,
         roth_conversion_end_age=roth_conversion_end_age,
         drawdown_order=active_drawdown_order,
-        start_year=utc_now().year,
+        household_mode=str(household_settings.get("household_mode") or HOUSEHOLD_MODE_INDIVIDUAL),
+        household_partner_income_usd=household_settings.get("household_partner_income_usd"),
+        household_partner_income_growth_rate=household_settings.get("household_partner_income_growth_rate"),
+        household_partner_retirement_age=household_settings.get("household_partner_retirement_age"),
+        household_partner_social_security_annual_usd=household_settings.get("household_partner_social_security_annual_usd"),
+        household_partner_social_security_claiming_age=household_settings.get("household_partner_social_security_claiming_age"),
+        household_shared_goal_target_usd=household_settings.get("household_shared_goal_target_usd"),
+        household_shared_goal_target_year=household_settings.get("household_shared_goal_target_year"),
+        household_shared_goal_annual_funding_usd=household_adjustments_payload.get("shared_goal_annual_funding_usd"),
+        household_partner_income_added_first_year_usd=household_adjustments_payload.get("partner_income_added_first_year_usd"),
+        household_partner_income_added_total_usd=household_adjustments_payload.get("partner_income_added_total_usd"),
+        start_year=resolved_start_year,
         withdrawal_strategy=active_withdrawal_strategy,
         retirement_age=active_retirement_age,
         sidecar_guard_reason=scenario_guard_reason,
@@ -11191,7 +11772,22 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
             "ignidash_scenario",
             reason=result.warnings[0] if result.warnings else None,
         )
-    return result
+    if request_household_overrides_provided:
+        household_source = "scenario_request_overrides"
+    elif active_plan_detail is not None:
+        household_source = "active_plan_settings"
+    else:
+        household_source = "scenario_request_defaults"
+    household_context = _build_household_response_context(
+        household_settings=household_settings,
+        household_adjustments=household_adjustments_payload,
+        filing_status=filing_status,
+        source=household_source,
+    )
+    return _apply_household_context_to_planning_response(
+        response=result,
+        household_context=household_context,
+    )
 
 
 @app.post("/api/planning/income-projection", response_model=IncomeProjectionResponse)

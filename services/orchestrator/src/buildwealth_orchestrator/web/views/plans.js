@@ -124,6 +124,26 @@ export function template() {
         <label class="field"><span>Context Snapshot</span><textarea id="plan-context" rows="6" readonly></textarea></label>
         <div class="view-header"><h3>Plan Settings</h3><button class="primary small" id="save-plan-settings" disabled>Save Settings</button></div>
         <p class="hint tight" id="plan-settings-meta">Blank values use global defaults from planner configuration.</p>
+        <div class="settings-grid">
+          <label class="field">
+            <span>Household Mode</span>
+            <select id="setting-household-mode" disabled>
+              <option value="">Default (Individual)</option>
+              <option value="individual">Individual</option>
+              <option value="couple">Couple</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Filing Status</span>
+            <select id="setting-filing-status" disabled>
+              <option value="">Default</option>
+              <option value="single">Single</option>
+              <option value="married_filing_jointly">Married Filing Jointly</option>
+              <option value="married_filing_separately">Married Filing Separately</option>
+              <option value="head_of_household">Head of Household</option>
+            </select>
+          </label>
+        </div>
         <div class="settings-grid">${settingsGridHtml(PLAN_SETTING_FIELDS)}</div>
         <div class="view-header"><h3>Scenario Diff</h3>
           <div class="header-actions"><button class="primary small" id="run-scenario-diff" disabled>Run Diff</button><button class="ghost small" id="apply-scenario-overrides" disabled>Apply Overrides</button></div>
@@ -132,6 +152,26 @@ export function template() {
         <div class="settings-grid">
           <label class="field"><span>Base Assumption Set</span><select id="diff-assumption-set-id" disabled></select></label>
           <label class="field"><span>Candidate Assumption Set</span><select id="diff-candidate-assumption-set-id" disabled></select></label>
+        </div>
+        <div class="settings-grid">
+          <label class="field">
+            <span>Household Mode</span>
+            <select id="diff-household-mode" disabled>
+              <option value="">No override</option>
+              <option value="individual">Individual</option>
+              <option value="couple">Couple</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Filing Status</span>
+            <select id="diff-filing-status" disabled>
+              <option value="">No override</option>
+              <option value="single">Single</option>
+              <option value="married_filing_jointly">Married Filing Jointly</option>
+              <option value="married_filing_separately">Married Filing Separately</option>
+              <option value="head_of_household">Head of Household</option>
+            </select>
+          </label>
         </div>
         <div class="settings-grid">${settingsGridHtml(DIFF_SETTING_FIELDS)}</div>
         <p class="hint tight" id="scenario-diff-summary">No scenario diff run yet.</p>

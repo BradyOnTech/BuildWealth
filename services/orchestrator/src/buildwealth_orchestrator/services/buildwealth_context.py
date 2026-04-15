@@ -249,6 +249,9 @@ def build_context_summary_with_metadata(
     withdrawal_strategy = planning.get("withdrawal_strategy")
     if not isinstance(withdrawal_strategy, dict):
         withdrawal_strategy = {}
+    household = planning.get("household")
+    if not isinstance(household, dict):
+        household = {}
     baseline_projection = planning.get("baseline_projection")
     if not isinstance(baseline_projection, dict):
         baseline_projection = {}
@@ -350,6 +353,11 @@ def build_context_summary_with_metadata(
         (
             f"- Drawdown order: {str(withdrawal_strategy.get('drawdown_order') or 'age_aware')} "
             f"(source: {str(withdrawal_strategy.get('drawdown_order_source') or 'default')})."
+        ),
+        (
+            f"- Household mode: {str(household.get('mode') or 'individual')} "
+            f"(filing: {str(household.get('filing_status') or 'single')}, "
+            f"source: {str(household.get('source') or 'default')})."
         ),
     ]
 

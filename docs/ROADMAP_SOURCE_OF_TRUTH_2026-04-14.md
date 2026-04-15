@@ -10,6 +10,28 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 5.0 Slice 4, Household/Couple Planning Mode)
+1. Added household-mode planning controls and persistence across planning contracts:
+- `household_mode`, partner-income/retirement/Social-Security fields, shared-goal target fields, and filing-status fields are now available in scenario request + plan settings surfaces.
+- Plan Workspace settings validation now enforces valid household mode and filing-status enumerations.
+2. Added household-aware projection adjustments to planning execution:
+- couple mode now layers partner-income growth and partner Social Security into income projections.
+- shared-goal targets are converted into annual funding runways and injected into expense projections through target year.
+- household defaults now resolve filing status to `married_filing_jointly` when couple mode is active and filing status is unset/invalid.
+3. Added household context explainability in planning results:
+- planning responses now carry a first-class `household` context object (mode, filing, partner assumptions, modeled first-year/total partner-income lift, shared-goal annual funding).
+- scenario assumptions are annotated with household/filing fields so diff/branch comparisons preserve assumption provenance.
+4. Extended Plan Workspace UX visibility:
+- settings and scenario-diff editors include household mode + filing status selectors and partner/shared-goal numeric controls.
+- diff/branch output rendering now includes household context sections and summary-line transitions (`mode`/`filing` base->candidate).
+5. Source-provenance note:
+- approach follows Ignidash-style assumption layering (explicit scenario assumption overlays) and tax-filing semantics from Ignidash tax model structure while keeping BuildWealth API/UI contracts first-class.
+6. Added regression coverage:
+- household projection adjustments and filing-status defaults (`test_household_planning.py`)
+- plan settings household/filing validation (`test_plan_workspace.py`)
+- sidecar metadata forwarding + Copilot settings-contract coverage remain in place (`test_planning_sidecar.py`, `test_copilot_tool_updates.py`).
+7. Verification: `pytest -q services/orchestrator/tests` passes (`424 passed`).
+
 ### 2026-04-15 (Completed - Phase 5.0 Slice 3, Configurable Drawdown Ordering)
 1. Added configurable drawdown-order controls in the planning simulation engine:
 - introduced drawdown buckets/presets (`cash`, `taxable`, `tax_deferred`, `tax_free`) and alias normalization.

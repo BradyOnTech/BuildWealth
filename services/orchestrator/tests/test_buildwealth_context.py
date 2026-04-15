@@ -140,6 +140,7 @@ def test_build_context_summary_includes_planning_controls() -> None:
                 "employer_match_usd": 6000.0,
             },
             "withdrawal_strategy": {"active": "dynamic_guardrails", "source": "settings"},
+            "household": {"mode": "couple", "filing_status": "married_filing_jointly", "source": "settings"},
         },
         "decisions": {"recommendations": {"open_count": 2, "high_priority_count": 1}},
         "research": {"items": []},
@@ -152,6 +153,7 @@ def test_build_context_summary_includes_planning_controls() -> None:
     assert "Contribution allocation preview:" in summary
     assert "Watchlist: 2 item(s) (NVDA, MSFT)." in summary
     assert "Withdrawal strategy: dynamic_guardrails" in summary
+    assert "Household mode: couple" in summary
 
 
 def test_build_context_summary_with_metadata_reports_truncation() -> None:

@@ -206,6 +206,17 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
         assert payload["metadata"]["roth_conversion_start_age"] == 60
         assert payload["metadata"]["roth_conversion_end_age"] == 72
         assert payload["metadata"]["drawdown_order"] == "tax_deferred, taxable, tax_free, cash"
+        assert payload["metadata"]["household_mode"] == "couple"
+        assert payload["metadata"]["household_partner_income_usd"] == 90000.0
+        assert payload["metadata"]["household_partner_income_growth_rate"] == 0.03
+        assert payload["metadata"]["household_partner_retirement_age"] == 65
+        assert payload["metadata"]["household_partner_social_security_annual_usd"] == 24000.0
+        assert payload["metadata"]["household_partner_social_security_claiming_age"] == 67
+        assert payload["metadata"]["household_shared_goal_target_usd"] == 150000.0
+        assert payload["metadata"]["household_shared_goal_target_year"] == 2035
+        assert payload["metadata"]["household_shared_goal_annual_funding_usd"] == 10000.0
+        assert payload["metadata"]["household_partner_income_added_first_year_usd"] == 90000.0
+        assert payload["metadata"]["household_partner_income_added_total_usd"] == 920000.0
         assert payload["metadata"]["withdrawal_strategy"] == "4_percent_rule"
         assert payload["metadata"]["retirement_age"] == 60
         return httpx.Response(
@@ -425,6 +436,17 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
             roth_conversion_start_age=60,
             roth_conversion_end_age=72,
             drawdown_order=["tax_deferred", "taxable", "tax_free", "cash"],
+            household_mode="couple",
+            household_partner_income_usd=90000,
+            household_partner_income_growth_rate=0.03,
+            household_partner_retirement_age=65,
+            household_partner_social_security_annual_usd=24000,
+            household_partner_social_security_claiming_age=67,
+            household_shared_goal_target_usd=150000,
+            household_shared_goal_target_year=2035,
+            household_shared_goal_annual_funding_usd=10000,
+            household_partner_income_added_first_year_usd=90000,
+            household_partner_income_added_total_usd=920000,
             withdrawal_strategy="4_percent_rule",
             retirement_age=60,
         )

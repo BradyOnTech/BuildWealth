@@ -175,6 +175,14 @@ class PlanWorkspace:
             "hsa_extra_contribution_usd": None,
             "marginal_tax_rate": None,
             "state_tax_rate": None,
+            "household_mode": None,
+            "household_partner_income_usd": None,
+            "household_partner_income_growth_rate": None,
+            "household_partner_retirement_age": None,
+            "household_partner_social_security_annual_usd": None,
+            "household_partner_social_security_claiming_age": None,
+            "household_shared_goal_target_usd": None,
+            "household_shared_goal_target_year": None,
             "roth_conversion_annual_amount_usd": None,
             "roth_conversion_start_age": None,
             "roth_conversion_end_age": None,
@@ -1045,6 +1053,14 @@ class PlanWorkspace:
             "hsa_extra_contribution_usd",
             "marginal_tax_rate",
             "state_tax_rate",
+            "household_mode",
+            "household_partner_income_usd",
+            "household_partner_income_growth_rate",
+            "household_partner_retirement_age",
+            "household_partner_social_security_annual_usd",
+            "household_partner_social_security_claiming_age",
+            "household_shared_goal_target_usd",
+            "household_shared_goal_target_year",
             "roth_conversion_annual_amount_usd",
             "roth_conversion_start_age",
             "roth_conversion_end_age",
@@ -1066,7 +1082,7 @@ class PlanWorkspace:
                 sanitized[key] = None
                 continue
 
-            if key in {"filing_status", "withdrawal_strategy", "drawdown_order"}:
+            if key in {"filing_status", "withdrawal_strategy", "drawdown_order", "household_mode"}:
                 value = str(raw_value).strip()
                 sanitized[key] = value or None
                 continue
@@ -1081,7 +1097,12 @@ class PlanWorkspace:
                 sanitized[key] = years
                 continue
 
-            if key in {"roth_conversion_start_age", "roth_conversion_end_age"}:
+            if key in {
+                "roth_conversion_start_age",
+                "roth_conversion_end_age",
+                "household_partner_retirement_age",
+                "household_partner_social_security_claiming_age",
+            }:
                 try:
                     age_value = int(raw_value)
                 except Exception as exc:
@@ -1091,12 +1112,29 @@ class PlanWorkspace:
                 sanitized[key] = age_value
                 continue
 
+            if key == "household_shared_goal_target_year":
+                try:
+                    target_year = int(raw_value)
+                except Exception as exc:
+                    raise ValueError("household_shared_goal_target_year must be an integer between 1900 and 2500") from exc
+                if target_year < 1900 or target_year > 2500:
+                    raise ValueError("household_shared_goal_target_year must be between 1900 and 2500")
+                sanitized[key] = target_year
+                continue
+
             try:
                 value = float(raw_value)
             except Exception as exc:
                 raise ValueError(f"{key} must be numeric") from exc
 
-            if key in {"annual_contribution_usd", "hsa_extra_contribution_usd", "roth_conversion_annual_amount_usd"} and value < 0:
+            if key in {
+                "annual_contribution_usd",
+                "hsa_extra_contribution_usd",
+                "roth_conversion_annual_amount_usd",
+                "household_partner_income_usd",
+                "household_partner_social_security_annual_usd",
+                "household_shared_goal_target_usd",
+            } and value < 0:
                 raise ValueError(f"{key} must be >= 0")
 
             if key == "marginal_tax_rate" and not (0 <= value <= 1):
@@ -1104,6 +1142,9 @@ class PlanWorkspace:
 
             if key == "state_tax_rate" and not (0 <= value <= 1):
                 raise ValueError("state_tax_rate must be between 0 and 1")
+
+            if key == "household_partner_income_growth_rate" and not (-1 <= value <= 1):
+                raise ValueError("household_partner_income_growth_rate must be between -1 and 1")
 
             if key == "inflation_rate" and not (-1 <= value <= 1):
                 raise ValueError("inflation_rate must be between -1 and 1")
@@ -1121,6 +1162,24 @@ class PlanWorkspace:
             and int(start_age) > int(end_age)
         ):
             raise ValueError("roth_conversion_start_age must be <= roth_conversion_end_age")
+
+        household_mode = str(sanitized.get("household_mode") or "").strip().lower()
+        if household_mode and household_mode not in {"individual", "couple"}:
+            raise ValueError("household_mode must be one of: individual, couple")
+
+        filing_status = str(sanitized.get("filing_status") or "").strip().lower()
+        if filing_status and filing_status not in {
+            "single",
+            "married_filing_jointly",
+            "married_filing_separately",
+            "head_of_household",
+        }:
+            raise ValueError(
+                "filing_status must be one of: single, married_filing_jointly, "
+                "married_filing_separately, head_of_household"
+            )
+        if "filing_status" in sanitized:
+            sanitized["filing_status"] = filing_status or None
 
         return sanitized
 
@@ -1721,6 +1780,14 @@ class PlanWorkspace:
             f"- Roth conversion annual target: {self._format_setting_value('roth_conversion_annual_amount_usd', settings_payload.get('roth_conversion_annual_amount_usd'))}",
             f"- Roth conversion start age: {self._format_setting_value('roth_conversion_start_age', settings_payload.get('roth_conversion_start_age'))}",
             f"- Roth conversion end age: {self._format_setting_value('roth_conversion_end_age', settings_payload.get('roth_conversion_end_age'))}",
+            f"- Household mode: {settings_payload.get('household_mode') or 'individual'}",
+            f"- Household partner income: {self._format_setting_value('household_partner_income_usd', settings_payload.get('household_partner_income_usd'))}",
+            f"- Household partner growth: {self._format_setting_value('household_partner_income_growth_rate', settings_payload.get('household_partner_income_growth_rate'))}",
+            f"- Household partner retirement age: {self._format_setting_value('household_partner_retirement_age', settings_payload.get('household_partner_retirement_age'))}",
+            f"- Household partner Social Security annual: {self._format_setting_value('household_partner_social_security_annual_usd', settings_payload.get('household_partner_social_security_annual_usd'))}",
+            f"- Household partner Social Security claiming age: {self._format_setting_value('household_partner_social_security_claiming_age', settings_payload.get('household_partner_social_security_claiming_age'))}",
+            f"- Household shared-goal target: {self._format_setting_value('household_shared_goal_target_usd', settings_payload.get('household_shared_goal_target_usd'))}",
+            f"- Household shared-goal target year: {self._format_setting_value('household_shared_goal_target_year', settings_payload.get('household_shared_goal_target_year'))}",
             f"- Inflation rate: {self._format_setting_value('inflation_rate', settings_payload.get('inflation_rate'))}",
             f"- Baseline return: {self._format_setting_value('expected_return_baseline', settings_payload.get('expected_return_baseline'))}",
             f"- Optimistic return: {self._format_setting_value('expected_return_optimistic', settings_payload.get('expected_return_optimistic'))}",

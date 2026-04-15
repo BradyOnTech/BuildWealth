@@ -63,6 +63,20 @@ def test_run_planning_tool_supports_roth_conversion_and_drawdown_inputs() -> Non
     assert "drawdown_order" in properties
 
 
+def test_update_plan_settings_tool_supports_household_inputs() -> None:
+    tool = main.copilot.tools["update_plan_settings"]
+    properties = tool.parameters.get("properties", {})
+    assert "household_mode" in properties
+    assert "household_partner_income_usd" in properties
+    assert "household_partner_income_growth_rate" in properties
+    assert "household_partner_retirement_age" in properties
+    assert "household_partner_social_security_annual_usd" in properties
+    assert "household_partner_social_security_claiming_age" in properties
+    assert "household_shared_goal_target_usd" in properties
+    assert "household_shared_goal_target_year" in properties
+    assert "filing_status" in properties
+
+
 def test_apply_recommendation_tool_supports_decision_packet_controls() -> None:
     tool = main.copilot.tools["apply_recommendation"]
     properties = tool.parameters.get("properties", {})

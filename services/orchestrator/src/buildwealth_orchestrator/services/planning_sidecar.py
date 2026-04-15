@@ -137,6 +137,17 @@ class IgnidashScenarioService:
         roth_conversion_start_age: int | None = None,
         roth_conversion_end_age: int | None = None,
         drawdown_order: str | list[str] | None = None,
+        household_mode: str | None = None,
+        household_partner_income_usd: float | None = None,
+        household_partner_income_growth_rate: float | None = None,
+        household_partner_retirement_age: int | None = None,
+        household_partner_social_security_annual_usd: float | None = None,
+        household_partner_social_security_claiming_age: int | None = None,
+        household_shared_goal_target_usd: float | None = None,
+        household_shared_goal_target_year: int | None = None,
+        household_shared_goal_annual_funding_usd: float | None = None,
+        household_partner_income_added_first_year_usd: float | None = None,
+        household_partner_income_added_total_usd: float | None = None,
         start_year: int | None = None,
         start_age: int = 35,
         withdrawal_strategy: str | None = None,
@@ -227,6 +238,17 @@ class IgnidashScenarioService:
             roth_conversion_start_age=roth_conversion_start_age,
             roth_conversion_end_age=roth_conversion_end_age,
             drawdown_order=drawdown_order,
+            household_mode=household_mode,
+            household_partner_income_usd=household_partner_income_usd,
+            household_partner_income_growth_rate=household_partner_income_growth_rate,
+            household_partner_retirement_age=household_partner_retirement_age,
+            household_partner_social_security_annual_usd=household_partner_social_security_annual_usd,
+            household_partner_social_security_claiming_age=household_partner_social_security_claiming_age,
+            household_shared_goal_target_usd=household_shared_goal_target_usd,
+            household_shared_goal_target_year=household_shared_goal_target_year,
+            household_shared_goal_annual_funding_usd=household_shared_goal_annual_funding_usd,
+            household_partner_income_added_first_year_usd=household_partner_income_added_first_year_usd,
+            household_partner_income_added_total_usd=household_partner_income_added_total_usd,
             start_year=start_year,
             withdrawal_strategy=withdrawal_strategy,
             retirement_age=retirement_age,
@@ -299,6 +321,17 @@ class IgnidashScenarioService:
         roth_conversion_start_age: int | None,
         roth_conversion_end_age: int | None,
         drawdown_order: str | list[str] | None,
+        household_mode: str | None,
+        household_partner_income_usd: float | None,
+        household_partner_income_growth_rate: float | None,
+        household_partner_retirement_age: int | None,
+        household_partner_social_security_annual_usd: float | None,
+        household_partner_social_security_claiming_age: int | None,
+        household_shared_goal_target_usd: float | None,
+        household_shared_goal_target_year: int | None,
+        household_shared_goal_annual_funding_usd: float | None,
+        household_partner_income_added_first_year_usd: float | None,
+        household_partner_income_added_total_usd: float | None,
         start_year: int | None,
         withdrawal_strategy: str | None,
         retirement_age: int | None,
@@ -431,6 +464,28 @@ class IgnidashScenarioService:
         )
         if drawdown_order_text:
             metadata["drawdown_order"] = drawdown_order_text
+        if household_mode:
+            metadata["household_mode"] = str(household_mode).strip().lower()
+        if household_partner_income_usd is not None:
+            metadata["household_partner_income_usd"] = float(household_partner_income_usd)
+        if household_partner_income_growth_rate is not None:
+            metadata["household_partner_income_growth_rate"] = float(household_partner_income_growth_rate)
+        if household_partner_retirement_age is not None:
+            metadata["household_partner_retirement_age"] = int(household_partner_retirement_age)
+        if household_partner_social_security_annual_usd is not None:
+            metadata["household_partner_social_security_annual_usd"] = float(household_partner_social_security_annual_usd)
+        if household_partner_social_security_claiming_age is not None:
+            metadata["household_partner_social_security_claiming_age"] = int(household_partner_social_security_claiming_age)
+        if household_shared_goal_target_usd is not None:
+            metadata["household_shared_goal_target_usd"] = float(household_shared_goal_target_usd)
+        if household_shared_goal_target_year is not None:
+            metadata["household_shared_goal_target_year"] = int(household_shared_goal_target_year)
+        if household_shared_goal_annual_funding_usd is not None:
+            metadata["household_shared_goal_annual_funding_usd"] = float(household_shared_goal_annual_funding_usd)
+        if household_partner_income_added_first_year_usd is not None:
+            metadata["household_partner_income_added_first_year_usd"] = float(household_partner_income_added_first_year_usd)
+        if household_partner_income_added_total_usd is not None:
+            metadata["household_partner_income_added_total_usd"] = float(household_partner_income_added_total_usd)
         if withdrawal_strategy:
             metadata["withdrawal_strategy"] = withdrawal_strategy
         if retirement_age is not None:

@@ -41,6 +41,8 @@ const projectionState = {
 const TIMELINE_EVENT_TYPES = new Set(['purchase', 'windfall', 'job_change', 'retirement', 'milestone']);
 const TIMELINE_IMPACT_TYPES = new Set(['income', 'expense', 'portfolio', 'contribution', 'debt_payment']);
 const TIMELINE_FREQUENCIES = new Set(['one_time', 'monthly', 'yearly']);
+const HOUSEHOLD_MODES = new Set(['individual', 'couple']);
+const FILING_STATUSES = new Set(['single', 'married_filing_jointly', 'married_filing_separately', 'head_of_household']);
 const TIMELINE_DEFAULT_IMPACT_BY_EVENT = {
   purchase: 'expense',
   windfall: 'income',
@@ -171,6 +173,31 @@ function collectTimelineRetirementInputs() {
     rmd_birth_year: coerceOptionalInteger(byId('timeline-rmd-birth-year')?.value),
     rmd_start_age: coerceOptionalInteger(byId('timeline-rmd-start-age')?.value),
   };
+}
+
+function setPlanStringSettingInputs(prefix, rawSettings) {
+  const settings = rawSettings && typeof rawSettings === 'object' ? rawSettings : {};
+  const householdModeRaw = String(settings.household_mode || '').trim().toLowerCase();
+  const filingStatusRaw = String(settings.filing_status || '').trim().toLowerCase();
+
+  const householdModeInput = byId(`${prefix}-household-mode`);
+  if (householdModeInput) householdModeInput.value = HOUSEHOLD_MODES.has(householdModeRaw) ? householdModeRaw : '';
+  const filingStatusInput = byId(`${prefix}-filing-status`);
+  if (filingStatusInput) filingStatusInput.value = FILING_STATUSES.has(filingStatusRaw) ? filingStatusRaw : '';
+}
+
+function collectPlanStringSettings(prefix, { includeNulls = false } = {}) {
+  const payload = {};
+  const householdMode = String(byId(`${prefix}-household-mode`)?.value || '').trim().toLowerCase();
+  const filingStatus = String(byId(`${prefix}-filing-status`)?.value || '').trim().toLowerCase();
+
+  if (householdMode) payload.household_mode = householdMode;
+  else if (includeNulls) payload.household_mode = null;
+
+  if (filingStatus) payload.filing_status = filingStatus;
+  else if (includeNulls) payload.filing_status = null;
+
+  return payload;
 }
 
 function renderTimelineEventsTable(payload) {
@@ -471,6 +498,7 @@ function setControlsEnabled(enabled) {
     'diff-candidate-assumption-set-id', 'withdrawal-assumption-set-id', 'withdrawal-current-portfolio-value',
     'withdrawal-strategies', 'withdrawal-include-raw-results', 'branch-template-id', 'scenario-branch-name',
     'research-bridge-symbols',
+    'setting-household-mode', 'setting-filing-status', 'diff-household-mode', 'diff-filing-status',
     'branch-assumption-set-id', 'scenario-branch-events', 'decision-summary', 'decision-rationale',
     'decision-status', 'timeline-event-date', 'timeline-event-label', 'timeline-event-type',
     'timeline-event-impact-type', 'timeline-event-amount', 'timeline-event-frequency', 'timeline-event-end-date',
@@ -1374,7 +1402,7 @@ export function clearDetail() {
   byId('plan-closure-summary-status').textContent = 'Select a plan to generate recommendation closure analytics.';
   byId('plan-closure-trend-status').textContent = 'Select a plan to load recommendation quality trend.';
   byId('plan-settings-meta').textContent = 'Blank values use global defaults from planner configuration.';
-  ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-contribution-rules', 'plan-branch-templates', 'plan-context', 'scenario-diff-output', 'withdrawal-current-portfolio-value', 'withdrawal-strategies', 'withdrawal-strategy-compare-output', 'scenario-branch-name', 'scenario-branch-events', 'scenario-branch-output', 'research-bridge-symbols', 'artifact-content'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
+  ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-contribution-rules', 'plan-branch-templates', 'plan-context', 'scenario-diff-output', 'withdrawal-current-portfolio-value', 'withdrawal-strategies', 'withdrawal-strategy-compare-output', 'scenario-branch-name', 'scenario-branch-events', 'scenario-branch-output', 'research-bridge-symbols', 'artifact-content', 'setting-household-mode', 'setting-filing-status', 'diff-household-mode', 'diff-filing-status'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
   writeTimelinePayloadToEditor({ events: [], retirement: {} }, { preferFormValues: false });
   resetTimelineEventInputs();
   writeContributionRulesPayloadToEditor({}, { preferFormValues: false });
@@ -1395,6 +1423,8 @@ export function clearDetail() {
   byId('projection-account-body').innerHTML = '<tr><td colspan="6">No projection data yet.</td></tr>';
   setSettingsInputs(PLAN_SETTING_FIELDS, {});
   setSettingsInputs(DIFF_SETTING_FIELDS, {});
+  setPlanStringSettingInputs('setting', {});
+  setPlanStringSettingInputs('diff', {});
   const scenarioLabelSelect = byId('projection-scenario-label');
   if (scenarioLabelSelect) scenarioLabelSelect.value = 'baseline';
   const metricSelect = byId('projection-account-metric');
@@ -1458,6 +1488,8 @@ export function renderDetail() {
   renderNetWorthChart([]);
   renderAccountTypeChart([], 'ending_balance_usd');
   setSettingsInputs(PLAN_SETTING_FIELDS, d.settings || {});
+  setPlanStringSettingInputs('setting', d.settings || {});
+  setPlanStringSettingInputs('diff', {});
   const su = d.settings?.updated_at ? fmtDate(d.settings.updated_at) : null;
   byId('plan-settings-meta').textContent = su ? `Settings updated ${su}` : 'Blank values use global defaults from planner configuration.';
   renderPlanTopNextActions(Array.isArray(d.top_next_actions) ? d.top_next_actions : []);
@@ -1541,6 +1573,94 @@ async function loadArtifact(artifactId) {
   byId('artifact-content').value = a.content || '';
 }
 
+function formatHouseholdLabel(rawValue, fallback = 'default') {
+  const text = String(rawValue || '').trim().toLowerCase();
+  if (!text) return fallback;
+  return text.replace(/_/g, ' ');
+}
+
+function extractHouseholdContextFromResult(resultPayload) {
+  if (!resultPayload || typeof resultPayload !== 'object') return null;
+  const household = resultPayload.household;
+  if (household && typeof household === 'object' && !Array.isArray(household)) {
+    return household;
+  }
+  const scenarios = Array.isArray(resultPayload.scenarios) ? resultPayload.scenarios : [];
+  const baseline = scenarios.find((item) => String(item?.label || '').toLowerCase() === 'baseline') || scenarios[0];
+  const assumptions = baseline?.assumptions;
+  if (!assumptions || typeof assumptions !== 'object') return null;
+  const mode = String(assumptions.household_mode || '').trim().toLowerCase() || 'individual';
+  const filingStatus = String(assumptions.filing_status || '').trim().toLowerCase() || null;
+  return {
+    mode,
+    source: null,
+    enabled: mode === 'couple',
+    filing_status: filingStatus,
+    partner_income_usd: Number(coerceOptionalNumber(assumptions.household_partner_income_usd) || 0),
+    partner_income_growth_rate: Number(coerceOptionalNumber(assumptions.household_partner_income_growth_rate) || 0),
+    partner_retirement_age: coerceOptionalInteger(assumptions.household_partner_retirement_age),
+    partner_social_security_annual_usd: Number(coerceOptionalNumber(assumptions.household_partner_social_security_annual_usd) || 0),
+    partner_social_security_claiming_age: coerceOptionalInteger(assumptions.household_partner_social_security_claiming_age),
+    shared_goal_target_usd: Number(coerceOptionalNumber(assumptions.household_shared_goal_target_usd) || 0),
+    shared_goal_target_year: coerceOptionalInteger(assumptions.household_shared_goal_target_year),
+    shared_goal_annual_funding_usd: Number(coerceOptionalNumber(assumptions.household_shared_goal_annual_funding_usd) || 0),
+    partner_income_added_first_year_usd: Number(coerceOptionalNumber(assumptions.household_partner_income_added_first_year_usd) || 0),
+    partner_income_added_total_usd: Number(coerceOptionalNumber(assumptions.household_partner_income_added_total_usd) || 0),
+  };
+}
+
+function describeHouseholdContext(context) {
+  if (!context || typeof context !== 'object') return 'Not available';
+  const mode = String(context.mode || '').trim().toLowerCase() || 'individual';
+  const filingStatus = String(context.filing_status || '').trim().toLowerCase();
+  const partnerIncome = Number(coerceOptionalNumber(context.partner_income_usd) || 0);
+  const partnerGrowth = Number(coerceOptionalNumber(context.partner_income_growth_rate) || 0);
+  const partnerRetirementAge = coerceOptionalInteger(context.partner_retirement_age);
+  const partnerSsAnnual = Number(coerceOptionalNumber(context.partner_social_security_annual_usd) || 0);
+  const partnerSsClaimAge = coerceOptionalInteger(context.partner_social_security_claiming_age);
+  const sharedGoalTarget = Number(coerceOptionalNumber(context.shared_goal_target_usd) || 0);
+  const sharedGoalTargetYear = coerceOptionalInteger(context.shared_goal_target_year);
+  const sharedGoalAnnualFunding = Number(coerceOptionalNumber(context.shared_goal_annual_funding_usd) || 0);
+  const partnerIncomeFirstYear = Number(coerceOptionalNumber(context.partner_income_added_first_year_usd) || 0);
+  const partnerIncomeTotal = Number(coerceOptionalNumber(context.partner_income_added_total_usd) || 0);
+
+  const parts = [
+    `mode ${formatHouseholdLabel(mode, 'individual')}`,
+    `filing ${formatHouseholdLabel(filingStatus, 'default')}`,
+  ];
+  if (mode === 'couple') {
+    if (partnerIncome > 0) {
+      parts.push(`partner income ${fmtCurrency(partnerIncome)}/yr @ ${(partnerGrowth * 100).toFixed(2)}%`);
+    }
+    if (partnerRetirementAge !== null) {
+      parts.push(`partner retirement age ${partnerRetirementAge}`);
+    }
+    if (partnerSsAnnual > 0) {
+      const ssClaimLabel = partnerSsClaimAge === null ? 'n/a' : `age ${partnerSsClaimAge}`;
+      parts.push(`partner SS ${fmtCurrency(partnerSsAnnual)}/yr (${ssClaimLabel})`);
+    }
+    if (sharedGoalTarget > 0) {
+      const targetLabel = sharedGoalTargetYear === null ? 'target year n/a' : `target ${sharedGoalTargetYear}`;
+      parts.push(`shared goal ${fmtCurrency(sharedGoalTarget)} (${targetLabel}, annual ${fmtCurrency(sharedGoalAnnualFunding)})`);
+    }
+    if (partnerIncomeFirstYear > 0 || partnerIncomeTotal > 0) {
+      parts.push(`modeled partner income +${fmtCurrency(partnerIncomeFirstYear)} first year, +${fmtCurrency(partnerIncomeTotal)} total`);
+    }
+  }
+  const source = String(context.source || '').trim();
+  if (source) parts.push(`source ${source}`);
+  return parts.join(', ');
+}
+
+function summarizeHouseholdTransition(baseContext, candidateContext) {
+  if (!baseContext && !candidateContext) return '';
+  const baseMode = formatHouseholdLabel(baseContext?.mode, 'individual');
+  const candidateMode = formatHouseholdLabel(candidateContext?.mode, 'individual');
+  const baseFiling = formatHouseholdLabel(baseContext?.filing_status, 'default');
+  const candidateFiling = formatHouseholdLabel(candidateContext?.filing_status, 'default');
+  return `household ${baseMode} -> ${candidateMode}, filing ${baseFiling} -> ${candidateFiling}`;
+}
+
 function formatDiffOutput(diff) {
   const rows = Array.isArray(diff?.scenario_deltas) ? diff.scenario_deltas : [];
   const lines = [`Plan: ${diff?.plan_id || '-'}`, `Current Portfolio: ${fmtCurrency(diff?.current_portfolio_value_usd)}`, '', 'Scenario Delta (Candidate - Base):'];
@@ -1556,6 +1676,12 @@ function formatDiffOutput(diff) {
     lines.push(`- Base: ${describeAssumptionSetSummary(baseAssumptionSet)}`);
     lines.push(`- Candidate: ${describeAssumptionSetSummary(candidateAssumptionSet)}`);
   }
+
+  const baseHousehold = extractHouseholdContextFromResult(diff?.base_result);
+  const candidateHousehold = extractHouseholdContextFromResult(diff?.candidate_result);
+  lines.push('', 'Household Context:');
+  lines.push(`- Base: ${describeHouseholdContext(baseHousehold)}`);
+  lines.push(`- Candidate: ${describeHouseholdContext(candidateHousehold)}`);
 
   const baseIncome = diff?.base_result?.income_projection;
   const candidateIncome = diff?.candidate_result?.income_projection;
@@ -1737,6 +1863,9 @@ function formatBranchOutput(branch) {
   else for (const row of rows) lines.push(`- ${row.label}: Future ${fmtCurrency(row.delta_future_value_usd)}, Real ${fmtCurrency(row.delta_real_value_usd)}`);
 
   lines.push('', 'Assumption Set Context:', `- ${describeAssumptionSetSummary(branch?.assumption_set || extractAssumptionSetSummary(branch?.base_result))}`);
+  lines.push('', 'Household Context:');
+  lines.push(`- Base: ${describeHouseholdContext(extractHouseholdContextFromResult(branch?.base_result))}`);
+  lines.push(`- Branch: ${describeHouseholdContext(extractHouseholdContextFromResult(branch?.branch_result))}`);
 
   const events = Array.isArray(branch?.branch_events) ? branch.branch_events : [];
   lines.push('', 'Branch Events:');
@@ -2243,7 +2372,15 @@ export function initEditor(refreshPlans) {
 
   byId('save-plan-settings').addEventListener('click', async () => {
     if (!state.currentPlanId) { writeLog('Select a plan first.', null, true); return; }
-    let payload; try { payload = collectSettingsPayload(PLAN_SETTING_FIELDS, { includeNulls: true }); } catch (e) { writeLog(e.message, null, true); return; }
+    let payload;
+    try {
+      payload = {
+        ...collectSettingsPayload(PLAN_SETTING_FIELDS, { includeNulls: true }),
+        ...collectPlanStringSettings('setting', { includeNulls: true }),
+      };
+    } catch (e) {
+      writeLog(e.message, null, true); return;
+    }
     writeLog(`Saving settings...`, payload);
     try {
       state.currentPlanDetail = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/settings`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
@@ -2253,7 +2390,15 @@ export function initEditor(refreshPlans) {
 
   byId('run-scenario-diff').addEventListener('click', async () => {
     if (!state.currentPlanId) { writeLog('Select a plan first.', null, true); return; }
-    let compare; try { compare = collectSettingsPayload(DIFF_SETTING_FIELDS, { includeNulls: false }); } catch (e) { writeLog(e.message, null, true); return; }
+    let compare;
+    try {
+      compare = {
+        ...collectSettingsPayload(DIFF_SETTING_FIELDS, { includeNulls: false }),
+        ...collectPlanStringSettings('diff', { includeNulls: false }),
+      };
+    } catch (e) {
+      writeLog(e.message, null, true); return;
+    }
     const assumptionSetId = String(byId('diff-assumption-set-id')?.value || '').trim();
     const candidateAssumptionSetId = String(byId('diff-candidate-assumption-set-id')?.value || '').trim();
     const payload = { compare_settings: compare };
@@ -2263,7 +2408,13 @@ export function initEditor(refreshPlans) {
     try {
       const result = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/scenario-diff`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
       const bl = (result.scenario_deltas || []).find(r => r.label === 'baseline');
-      byId('scenario-diff-summary').textContent = bl ? `Baseline delta: ${fmtCurrency(bl.delta_future_value_usd)} (real: ${fmtCurrency(bl.delta_real_value_usd)})` : 'Diff completed.';
+      const householdSummary = summarizeHouseholdTransition(
+        extractHouseholdContextFromResult(result?.base_result),
+        extractHouseholdContextFromResult(result?.candidate_result),
+      );
+      byId('scenario-diff-summary').textContent = bl
+        ? `Baseline delta: ${fmtCurrency(bl.delta_future_value_usd)} (real: ${fmtCurrency(bl.delta_real_value_usd)})${householdSummary ? ` • ${householdSummary}` : ''}`
+        : (householdSummary ? `Diff completed • ${householdSummary}` : 'Diff completed.');
       byId('scenario-diff-output').value = formatDiffOutput(result);
       projectionState.diffResult = result;
       setProjectionSourceOptions('diff_base');
@@ -2335,7 +2486,10 @@ export function initEditor(refreshPlans) {
 
     let compareSettings = {};
     try {
-      compareSettings = collectSettingsPayload(DIFF_SETTING_FIELDS, { includeNulls: false });
+      compareSettings = {
+        ...collectSettingsPayload(DIFF_SETTING_FIELDS, { includeNulls: false }),
+        ...collectPlanStringSettings('diff', { includeNulls: false }),
+      };
     } catch (e) {
       writeLog(e.message, null, true);
       return;
@@ -2358,7 +2512,13 @@ export function initEditor(refreshPlans) {
     try {
       const result = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/scenario-branch`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
       const bl = (result.scenario_deltas || []).find(r => r.label === 'baseline');
-      byId('scenario-branch-summary').textContent = bl ? `Baseline delta: ${fmtCurrency(bl.delta_future_value_usd)} (real: ${fmtCurrency(bl.delta_real_value_usd)})` : 'Branch completed.';
+      const householdSummary = summarizeHouseholdTransition(
+        extractHouseholdContextFromResult(result?.base_result),
+        extractHouseholdContextFromResult(result?.branch_result),
+      );
+      byId('scenario-branch-summary').textContent = bl
+        ? `Baseline delta: ${fmtCurrency(bl.delta_future_value_usd)} (real: ${fmtCurrency(bl.delta_real_value_usd)})${householdSummary ? ` • ${householdSummary}` : ''}`
+        : (householdSummary ? `Branch completed • ${householdSummary}` : 'Branch completed.');
       if (result?.branch_template_id) setBranchTemplateOptions(String(byId('plan-branch-templates')?.value || ''), String(result.branch_template_id));
       byId('scenario-branch-output').value = formatBranchOutput(result);
       projectionState.branchResult = result;
@@ -2373,12 +2533,18 @@ export function initEditor(refreshPlans) {
 
   byId('apply-scenario-overrides').addEventListener('click', async () => {
     if (!state.currentPlanId) { writeLog('Select a plan first.', null, true); return; }
-    let payload; try { payload = collectSettingsPayload(DIFF_SETTING_FIELDS, { includeNulls: false }); } catch (e) { writeLog(e.message, null, true); return; }
+    let payload;
+    try {
+      payload = {
+        ...collectSettingsPayload(DIFF_SETTING_FIELDS, { includeNulls: false }),
+        ...collectPlanStringSettings('diff', { includeNulls: false }),
+      };
+    } catch (e) { writeLog(e.message, null, true); return; }
     if (!Object.keys(payload).length) { writeLog('Enter at least one override.', null, true); return; }
     writeLog(`Applying overrides...`, payload);
     try {
       state.currentPlanDetail = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/settings`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
-      renderDetail(); setSettingsInputs(DIFF_SETTING_FIELDS, {});
+      renderDetail(); setSettingsInputs(DIFF_SETTING_FIELDS, {}); setPlanStringSettingInputs('diff', {});
       byId('scenario-diff-summary').textContent = 'Overrides applied to plan settings.';
       await refreshPlans(); writeLog('Overrides applied.');
     } catch (e) { writeLog(`Apply failed: ${e.message}`, null, true); }

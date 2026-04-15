@@ -158,6 +158,15 @@ class ScenarioRequest(BaseModel):
     hsa_extra_contribution_usd: float | None = None
     state_tax_rate: float | None = Field(default=None, ge=0, le=1)
     include_irmaa: bool = True
+    household_mode: str | None = None
+    household_partner_income_usd: float | None = Field(default=None, ge=0)
+    household_partner_income_growth_rate: float | None = Field(default=None, ge=-1, le=1)
+    household_partner_retirement_age: int | None = Field(default=None, ge=0, le=120)
+    household_partner_social_security_annual_usd: float | None = Field(default=None, ge=0)
+    household_partner_social_security_claiming_age: int | None = Field(default=None, ge=0, le=120)
+    household_shared_goal_target_usd: float | None = Field(default=None, ge=0)
+    household_shared_goal_target_year: int | None = Field(default=None, ge=1900, le=2500)
+    filing_status: str | None = None
     drawdown_order: str | None = None
     roth_conversion_annual_amount_usd: float | None = Field(default=None, ge=0)
     roth_conversion_start_age: int | None = Field(default=None, ge=0, le=120)
@@ -597,6 +606,23 @@ class ScenarioResult(BaseModel):
     account_balance_points: list[ScenarioAccountBalancePoint] = Field(default_factory=list)
 
 
+class HouseholdPlanningContext(BaseModel):
+    mode: str = "individual"
+    source: str | None = None
+    enabled: bool = False
+    filing_status: str | None = None
+    partner_income_usd: float = 0.0
+    partner_income_growth_rate: float = 0.0
+    partner_retirement_age: int | None = None
+    partner_social_security_annual_usd: float = 0.0
+    partner_social_security_claiming_age: int | None = None
+    shared_goal_target_usd: float = 0.0
+    shared_goal_target_year: int | None = None
+    shared_goal_annual_funding_usd: float = 0.0
+    partner_income_added_first_year_usd: float = 0.0
+    partner_income_added_total_usd: float = 0.0
+
+
 class PlanningResponse(BaseModel):
     scenarios: list[ScenarioResult]
     monte_carlo: dict[str, Any]
@@ -604,6 +630,7 @@ class PlanningResponse(BaseModel):
     engine_status: Literal["ok", "degraded"] = "ok"
     fallback_method: str | None = None
     warnings: list[str] = Field(default_factory=list)
+    household: HouseholdPlanningContext | None = None
     income_projection: IncomeProjectionResponse | None = None
     expense_projection: ExpenseProjectionResponse | None = None
     debt_projection: DebtProjectionResponse | None = None
@@ -1489,6 +1516,14 @@ class PlanSettings(BaseModel):
     hsa_extra_contribution_usd: float | None = None
     marginal_tax_rate: float | None = None
     state_tax_rate: float | None = None
+    household_mode: str | None = None
+    household_partner_income_usd: float | None = None
+    household_partner_income_growth_rate: float | None = None
+    household_partner_retirement_age: int | None = None
+    household_partner_social_security_annual_usd: float | None = None
+    household_partner_social_security_claiming_age: int | None = None
+    household_shared_goal_target_usd: float | None = None
+    household_shared_goal_target_year: int | None = None
     roth_conversion_annual_amount_usd: float | None = None
     roth_conversion_start_age: int | None = None
     roth_conversion_end_age: int | None = None
@@ -1508,6 +1543,14 @@ class PlanSettingsUpdateRequest(BaseModel):
     hsa_extra_contribution_usd: float | None = None
     marginal_tax_rate: float | None = None
     state_tax_rate: float | None = None
+    household_mode: str | None = None
+    household_partner_income_usd: float | None = None
+    household_partner_income_growth_rate: float | None = None
+    household_partner_retirement_age: int | None = None
+    household_partner_social_security_annual_usd: float | None = None
+    household_partner_social_security_claiming_age: int | None = None
+    household_shared_goal_target_usd: float | None = None
+    household_shared_goal_target_year: int | None = None
     roth_conversion_annual_amount_usd: float | None = None
     roth_conversion_start_age: int | None = None
     roth_conversion_end_age: int | None = None
