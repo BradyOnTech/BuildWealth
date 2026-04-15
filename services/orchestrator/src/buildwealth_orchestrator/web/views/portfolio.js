@@ -229,6 +229,20 @@ export function template() {
     <div class="table-wrap"><table>
       <thead><tr><th>Date</th><th>Account</th><th>Symbol</th><th>Action</th><th>Qty</th><th>Price</th><th>Total</th><th>Fee</th><th></th></tr></thead>
       <tbody id="port-txn-body"><tr><td colspan="9">Loading...</td></tr></tbody>
+    </table></div>
+
+    <h3 class="section-title">Corporate Actions</h3>
+    <p class="hint" id="port-corporate-actions-summary">No corporate actions recorded yet.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Date</th><th>Account</th><th>Symbol</th><th>Action</th><th>Impact</th></tr></thead>
+      <tbody id="port-corporate-actions-body"><tr><td colspan="5">No corporate actions recorded yet.</td></tr></tbody>
+    </table></div>
+
+    <h3 class="section-title">Lot Audit Trail</h3>
+    <p class="hint" id="port-lot-audit-summary">No lot-audit events recorded yet.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Date</th><th>Account</th><th>Symbol</th><th>Action</th><th>Qty (Before → After)</th><th>Method</th><th>Details</th></tr></thead>
+      <tbody id="port-lot-audit-body"><tr><td colspan="7">No lot-audit events recorded yet.</td></tr></tbody>
     </table></div>`;
 }
 
@@ -874,6 +888,113 @@ function renderTransactions(txns) {
   }
 }
 
+function buildLotAuditDetailText(details) {
+  const payload = details && typeof details === 'object' ? details : {};
+  const parts = [];
+  if (Array.isArray(payload.lots_consumed) && payload.lots_consumed.length) {
+    const consumedQty = payload.lots_consumed.reduce((sum, row) => sum + Number(row?.quantity_consumed || 0), 0);
+    parts.push(`Consumed ${payload.lots_consumed.length} lot(s), ${consumedQty.toFixed(4)} shares`);
+  }
+  if (Array.isArray(payload.lots_added) && payload.lots_added.length) {
+    const addedQty = payload.lots_added.reduce((sum, row) => sum + Number(row?.quantity_added || 0), 0);
+    parts.push(`Added ${payload.lots_added.length} lot(s), ${addedQty.toFixed(4)} shares`);
+  }
+  if (Number.isFinite(Number(payload.split_factor))) {
+    parts.push(`Split factor ${Number(payload.split_factor).toFixed(6)}`);
+  }
+  if (Number.isFinite(Number(payload.realized_gain_native))) {
+    parts.push(`Realized ${fmtCurrency(Number(payload.realized_gain_native))}`);
+  }
+  if (!parts.length) return '-';
+  return parts.join(' | ');
+}
+
+function renderLotAudit(data) {
+  const summary = byId('port-lot-audit-summary');
+  const tbody = byId('port-lot-audit-body');
+  const payload = data?.lot_audit && typeof data.lot_audit === 'object' ? data.lot_audit : {};
+  const allEvents = Array.isArray(payload.events) ? payload.events : [];
+  const events = activeAccountFilter
+    ? allEvents.filter((event) => String(event?.account || '').trim() === activeAccountFilter)
+    : allEvents;
+  const rows = events.slice(-30).reverse();
+
+  if (!rows.length) {
+    const scope = activeAccountFilter ? ` for ${accountLabel(activeAccountFilter)}` : '';
+    summary.textContent = `No lot-audit events${scope}.`;
+    tbody.innerHTML = '<tr><td colspan="7">No lot-audit events recorded yet.</td></tr>';
+    return;
+  }
+
+  const truncated = payload.events_truncated ? ' (truncated)' : '';
+  summary.textContent = `Lot events: ${events.length} (showing ${rows.length})${truncated}`;
+  tbody.innerHTML = '';
+  for (const row of rows) {
+    const qty = Number(row.quantity || 0);
+    const qtyBefore = Number(row.quantity_before || 0);
+    const qtyAfter = Number(row.quantity_after || 0);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${row.transaction_date || '-'}</td>
+      <td>${accountLabel(row.account)}</td>
+      <td><strong>${row.symbol || '-'}</strong></td>
+      <td>${row.action || '-'}</td>
+      <td>${qty.toFixed(4)} (${qtyBefore.toFixed(4)} → ${qtyAfter.toFixed(4)})</td>
+      <td>${row.lot_method || '-'}</td>
+      <td>${buildLotAuditDetailText(row.details)}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function renderCorporateActions(data) {
+  const summary = byId('port-corporate-actions-summary');
+  const tbody = byId('port-corporate-actions-body');
+  const payload = data?.corporate_actions && typeof data.corporate_actions === 'object' ? data.corporate_actions : {};
+  const allEvents = Array.isArray(payload.events) ? payload.events : [];
+  const events = activeAccountFilter
+    ? allEvents.filter((event) => String(event?.account || '').trim() === activeAccountFilter)
+    : allEvents;
+  const rows = events.slice(-20).reverse();
+
+  if (!rows.length) {
+    const scope = activeAccountFilter ? ` for ${accountLabel(activeAccountFilter)}` : '';
+    summary.textContent = `No corporate actions${scope}.`;
+    tbody.innerHTML = '<tr><td colspan="5">No corporate actions recorded yet.</td></tr>';
+    return;
+  }
+
+  const summaryBySymbol = payload.summary_by_symbol && typeof payload.summary_by_symbol === 'object'
+    ? payload.summary_by_symbol
+    : {};
+  summary.textContent = `Corporate actions: ${events.length} | Symbols: ${Object.keys(summaryBySymbol).length}`;
+  tbody.innerHTML = '';
+  for (const row of rows) {
+    const details = row.details && typeof row.details === 'object' ? row.details : {};
+    let impactText = '-';
+    if (row.action === 'STOCK_SPLIT') {
+      const splitFactor = Number(details.split_factor || 0);
+      impactText = `Factor ${Number.isFinite(splitFactor) ? splitFactor.toFixed(6) : '-'} | Qty ${Number(details.quantity_before || 0).toFixed(4)} → ${Number(details.quantity_after || 0).toFixed(4)}`;
+    } else if (row.action === 'MERGER') {
+      const mergedQty = Number(details.quantity_merged || 0);
+      const realized = Number(details.realized_gain_native || 0);
+      const target = String(details.target_symbol || '').trim();
+      const ratio = Number(details.exchange_ratio);
+      const targetText = target
+        ? ` | Target ${target}${Number.isFinite(ratio) ? ` @ ${ratio.toFixed(6)}` : ''}`
+        : '';
+      impactText = `Merged ${mergedQty.toFixed(4)} | Realized ${fmtCurrency(realized)}${targetText}`;
+    }
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${row.transaction_date || '-'}</td>
+      <td>${accountLabel(row.account)}</td>
+      <td><strong>${row.symbol || '-'}</strong></td>
+      <td>${row.action || '-'}</td>
+      <td>${impactText}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
 async function loadAll() {
   try {
     const benchmarkQuery = benchmarkSymbolsFilter ? `&symbols=${encodeURIComponent(benchmarkSymbolsFilter)}` : '';
@@ -912,6 +1033,8 @@ async function loadAll() {
     renderCustomAssets(holdings);
     renderWatchlist(watchlistResult.status === 'fulfilled' ? watchlistResult.value : null);
     renderTransactions(txns);
+    renderCorporateActions(holdings);
+    renderLotAudit(holdings);
   } catch (e) {
     writeLog(`Portfolio load failed: ${e.message}`, null, true);
   }
@@ -1204,6 +1327,8 @@ function applyAccountFilter() {
   renderHoldings(latestHoldingsPayload);
   renderBreakdowns(latestHoldingsPayload);
   renderCustomAssets(latestHoldingsPayload);
+  renderCorporateActions(latestHoldingsPayload);
+  renderLotAudit(latestHoldingsPayload);
 }
 
 async function deleteTxn(id) {

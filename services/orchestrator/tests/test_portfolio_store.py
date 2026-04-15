@@ -210,6 +210,45 @@ class TestExtendedActivities:
         assert holding["realized_gains"] == pytest.approx(19.0, abs=0.01)
         assert holdings["account_cash"]["default"] == pytest.approx(959.0, abs=0.01)
 
+    def test_lot_audit_records_sell_consumed_lots(self, store):
+        store.add_transaction(date="2026-01-01", symbol="AAPL", action="BUY", quantity=3, unit_price=100)
+        store.add_transaction(date="2026-01-02", symbol="AAPL", action="BUY", quantity=2, unit_price=120)
+        store.add_transaction(date="2026-01-03", symbol="AAPL", action="SELL", quantity=4, unit_price=130)
+
+        holdings = store.get_holdings()
+        lot_audit = holdings["lot_audit"]
+        events = lot_audit["events"]
+        sell_event = next(event for event in events if event["action"] == "SELL")
+        consumed = sell_event["details"]["lots_consumed"]
+        assert len(consumed) >= 1
+        assert sum(item["quantity_consumed"] for item in consumed) == pytest.approx(4.0, abs=1e-6)
+
+    def test_corporate_action_payload_records_split_and_merger(self, store):
+        store.add_transaction(date="2026-01-01", symbol="AAPL", action="BUY", quantity=10, unit_price=10)
+        store.add_transaction(date="2026-01-02", symbol="AAPL", action="STOCK_SPLIT", quantity=2, unit_price=0)
+        store.add_transaction(
+            date="2026-01-03",
+            symbol="AAPL",
+            action="MERGER",
+            quantity=4,
+            unit_price=12,
+            note='{"target_symbol":"MSFT","exchange_ratio":0.5}',
+        )
+
+        holdings = store.get_holdings()
+        corporate = holdings["corporate_actions"]
+        events = corporate["events"]
+        assert [event["action"] for event in events] == ["STOCK_SPLIT", "MERGER"]
+        split_event = events[0]
+        assert split_event["details"]["split_factor"] == pytest.approx(2.0, abs=1e-6)
+        merger_event = events[1]
+        assert merger_event["details"]["target_symbol"] == "MSFT"
+        assert merger_event["details"]["exchange_ratio"] == pytest.approx(0.5, abs=1e-6)
+        summary = corporate["summary_by_symbol"]["AAPL"]
+        assert summary["events"] == 2
+        assert summary["stock_split_events"] == 1
+        assert summary["merger_events"] == 1
+
 
 class TestPriceUpdate:
     def test_update_prices(self, store):
@@ -650,6 +689,8 @@ class TestPersistence:
 
         store = PortfolioStore(dir_)
         holdings = store.get_holdings()
-        assert holdings["schema_version"] == 6
+        assert holdings["schema_version"] == 7
         assert holdings["performance"]["as_of"] == "2026-01-31T00:00:00+00:00"
         assert holdings["holdings"][_position_key("AAPL")]["realized_gains"] == 0.0
+        assert holdings["lot_audit"]["events"] == []
+        assert holdings["corporate_actions"]["events"] == []

@@ -10,6 +10,25 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 5.1 Slice 2, Corporate Actions + Lot Audit Explainability)
+1. Expanded local portfolio holdings contract with persisted audit payloads:
+- added first-class `lot_audit` and `corporate_actions` payload blocks to holdings responses.
+- bumped holdings schema version to `7` with migration defaults for legacy payloads.
+2. Added deterministic replay-time event artifacts in `portfolio_store.py`:
+- BUY/SELL/STOCK_SPLIT/MERGER now emit lot-audit events with quantity before/after, lot method, and cash delta.
+- SELL/MERGER now include consumed-lot breakdowns (lot id, acquired date, consumed quantity, cost, and remaining balances).
+- STOCK_SPLIT/MERGER now emit corporate-action events and per-symbol action summaries.
+3. Added corporate-action note parsing for explainability metadata:
+- merger notes can now carry optional `target_symbol` / `exchange_ratio` hints that are persisted in action artifacts for operator review.
+4. Expanded Portfolio UI visibility:
+- added `Corporate Actions` section with impact summaries for split/merger events.
+- added `Lot Audit Trail` section with account-filter-aware event rendering and lot-consumption details.
+5. Source-provenance note:
+- event-oriented activity/cashflow packaging follows Ghostfolio activity and account-balance service patterns (`apps/api/src/app/activities/activities.service.ts`, `apps/api/src/app/account-balance/account-balance.service.ts`) while preserving BuildWealth standalone contracts.
+6. Verification:
+- targeted: `pytest -q tests/test_portfolio_store.py tests/test_portfolio_performance.py` (`58 passed`).
+- full: `pytest -q` (`436 passed`).
+
 ### 2026-04-15 (Completed - Phase 5.1 Slice 1, Import Reconciliation Report)
 1. Added deterministic reconciliation output to CSV import responses:
 - row-level status (`accepted`, `rejected`)
@@ -583,9 +602,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Start Phase 5.0 Slice 4: add household/couple planning mode with shared goals and filing assumptions.
-2. Start Phase 5.0 Slice 5: add simulation mode selector (fixed/stochastic/historical/Monte Carlo variants) and comparison outputs.
-3. Start Phase 5.1 Slice 1: add import reconciliation report (accepted/rejected/normalized rows and confidence flags).
+1. Start Phase 5.1 Slice 3: add portfolio drift/risk alerts tied to allocation and concentration thresholds.
+2. Start Phase 5.1 Slice 4: add export/report package endpoints for periodic review packets.
+3. Start Phase 6.0 Slice 1: implement durable storage strategy upgrade path with migration and rollback checks.
 
 ## Guardrails
 1. Do not fork or embed full Ghostfolio/Ignidash apps into BuildWealth runtime path.

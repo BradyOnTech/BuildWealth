@@ -21,7 +21,7 @@ from buildwealth_orchestrator.services.asset_metadata_seed import (
 )
 from buildwealth_orchestrator.services.portfolio_performance import calculate_portfolio_performance
 
-PORTFOLIO_STORE_SCHEMA_VERSION = 6
+PORTFOLIO_STORE_SCHEMA_VERSION = 7
 ACCOUNTS_SCHEMA_VERSION = 2
 ASSET_METADATA_SCHEMA_VERSION = 1
 COST_BASIS_METHODS_SCHEMA_VERSION = 1
@@ -29,6 +29,10 @@ MANUAL_PRICES_SCHEMA_VERSION = 1
 FX_RATES_SCHEMA_VERSION = 1
 FX_RATES_HISTORY_SCHEMA_VERSION = 1
 WATCHLIST_SCHEMA_VERSION = 1
+LOT_AUDIT_SCHEMA_VERSION = 1
+CORPORATE_ACTIONS_SCHEMA_VERSION = 1
+LOT_AUDIT_MAX_EVENTS = 1500
+CORPORATE_ACTION_MAX_EVENTS = 600
 DEFAULT_ACCOUNT_ID = "default"
 DEFAULT_ACCOUNT_NAME = "Default Brokerage"
 DEFAULT_CURRENCY = "USD"
@@ -171,6 +175,21 @@ class PortfolioStore:
                 "total_return_pct": None,
                 "return_denominator_usd": 0.0,
                 "calculation_basis": "transaction_price_estimate",
+            },
+            "lot_audit": {
+                "schema_version": LOT_AUDIT_SCHEMA_VERSION,
+                "events": [],
+                "events_truncated": False,
+                "max_events": LOT_AUDIT_MAX_EVENTS,
+                "generated_at": None,
+            },
+            "corporate_actions": {
+                "schema_version": CORPORATE_ACTIONS_SCHEMA_VERSION,
+                "events": [],
+                "events_truncated": False,
+                "max_events": CORPORATE_ACTION_MAX_EVENTS,
+                "summary_by_symbol": {},
+                "generated_at": None,
             },
             "total_cash": 0.0,
             "total_portfolio_value": 0.0,
@@ -1142,6 +1161,8 @@ class PortfolioStore:
             "base_currency": base_currency,
             "fx_rates": fx_rates,
             "performance": performance,
+            "lot_audit": self._normalize_lot_audit_payload(payload.get("lot_audit")),
+            "corporate_actions": self._normalize_corporate_actions_payload(payload.get("corporate_actions")),
             "total_value": round(total_market_value, 2),
             "total_cost_basis": round(total_cost, 2),
             "total_cash": total_cash,
@@ -1301,6 +1322,113 @@ class PortfolioStore:
         if gross <= 0 and fee > 0:
             return abs(fee)
         return gross
+
+    @staticmethod
+    def _parse_corporate_action_note(note: Any) -> dict[str, Any]:
+        if isinstance(note, dict):
+            return dict(note)
+
+        text = str(note or "").strip()
+        if not text:
+            return {}
+
+        if text.startswith("{") and text.endswith("}"):
+            try:
+                parsed = json.loads(text)
+            except Exception:
+                parsed = None
+            if isinstance(parsed, dict):
+                return parsed
+
+        parsed: dict[str, Any] = {}
+        for part in re.split(r"[;,]\s*", text):
+            item = part.strip()
+            if not item:
+                continue
+            if "=" in item:
+                key, value = item.split("=", 1)
+            elif ":" in item:
+                key, value = item.split(":", 1)
+            else:
+                continue
+            key_normalized = str(key).strip().lower().replace(" ", "_")
+            value_normalized = str(value).strip()
+            if key_normalized:
+                parsed[key_normalized] = value_normalized
+        return parsed
+
+    def _normalize_lot_audit_payload(self, payload: Any) -> dict[str, Any]:
+        default_payload = {
+            "schema_version": LOT_AUDIT_SCHEMA_VERSION,
+            "events": [],
+            "events_truncated": False,
+            "max_events": LOT_AUDIT_MAX_EVENTS,
+            "generated_at": None,
+        }
+        if not isinstance(payload, dict):
+            return default_payload
+
+        max_events = int(_safe_float(payload.get("max_events"), LOT_AUDIT_MAX_EVENTS))
+        max_events = max(100, min(max_events, 5000))
+        raw_events = payload.get("events") if isinstance(payload.get("events"), list) else []
+        events = [dict(item) for item in raw_events if isinstance(item, dict)]
+        events_truncated = bool(payload.get("events_truncated")) or len(events) > max_events
+        if len(events) > max_events:
+            events = events[-max_events:]
+
+        return {
+            "schema_version": LOT_AUDIT_SCHEMA_VERSION,
+            "events": events,
+            "events_truncated": events_truncated,
+            "max_events": max_events,
+            "generated_at": str(payload.get("generated_at") or "") or None,
+        }
+
+    def _normalize_corporate_actions_payload(self, payload: Any) -> dict[str, Any]:
+        default_payload = {
+            "schema_version": CORPORATE_ACTIONS_SCHEMA_VERSION,
+            "events": [],
+            "events_truncated": False,
+            "max_events": CORPORATE_ACTION_MAX_EVENTS,
+            "summary_by_symbol": {},
+            "generated_at": None,
+        }
+        if not isinstance(payload, dict):
+            return default_payload
+
+        max_events = int(_safe_float(payload.get("max_events"), CORPORATE_ACTION_MAX_EVENTS))
+        max_events = max(50, min(max_events, 2000))
+        raw_events = payload.get("events") if isinstance(payload.get("events"), list) else []
+        events = [dict(item) for item in raw_events if isinstance(item, dict)]
+        events_truncated = bool(payload.get("events_truncated")) or len(events) > max_events
+        if len(events) > max_events:
+            events = events[-max_events:]
+
+        summary_raw = payload.get("summary_by_symbol") if isinstance(payload.get("summary_by_symbol"), dict) else {}
+        summary_by_symbol: dict[str, dict[str, Any]] = {}
+        for symbol_ref, raw_summary in summary_raw.items():
+            symbol = self._normalize_symbol(
+                symbol_ref if symbol_ref else (raw_summary.get("symbol") if isinstance(raw_summary, dict) else "")
+            )
+            if not symbol:
+                continue
+            row = raw_summary if isinstance(raw_summary, dict) else {}
+            summary_by_symbol[symbol] = {
+                "symbol": symbol,
+                "events": max(0, int(_safe_float(row.get("events"), 0))),
+                "stock_split_events": max(0, int(_safe_float(row.get("stock_split_events"), 0))),
+                "merger_events": max(0, int(_safe_float(row.get("merger_events"), 0))),
+                "last_event_date": str(row.get("last_event_date") or ""),
+            }
+
+        return {
+            "schema_version": CORPORATE_ACTIONS_SCHEMA_VERSION,
+            "events": events,
+            "events_truncated": events_truncated,
+            "max_events": max_events,
+            "summary_by_symbol": summary_by_symbol,
+            "generated_at": str(payload.get("generated_at") or "") or None,
+        }
 
     def _summarize_holdings_by_symbol(self, holdings: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
         summary: dict[str, dict[str, Any]] = {}
@@ -1552,6 +1680,8 @@ class PortfolioStore:
         prices_updated_at: str | None = None,
         account_cash: dict[str, float] | None = None,
         return_components_override: dict[str, float] | None = None,
+        lot_audit: dict[str, Any] | None = None,
+        corporate_actions: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         total_market_value = 0.0
         total_cost = 0.0
@@ -1710,6 +1840,8 @@ class PortfolioStore:
             as_of=prices_updated_at or _utc_now(),
             return_components_override=return_components_override,
         )
+        payload["lot_audit"] = self._normalize_lot_audit_payload(lot_audit)
+        payload["corporate_actions"] = self._normalize_corporate_actions_payload(corporate_actions)
         payload["prices_updated_at"] = prices_updated_at
         payload["asset_metadata_updated_at"] = self._read_asset_metadata_payload().get("updated_at")
         payload["cost_basis_methods"] = self._read_cost_basis_methods_payload()
@@ -1870,6 +2002,7 @@ class PortfolioStore:
         method: str,
         *,
         unit_cost_key: str = "unit_cost",
+        audit_items: list[dict[str, Any]] | None = None,
     ) -> float:
         remaining = quantity_to_sell
         consumed_cost = 0.0
@@ -1887,7 +2020,20 @@ class PortfolioStore:
 
             unit_cost = _safe_float(lot.get(unit_cost_key), 0.0)
             consumed_cost += take * unit_cost
-            lot["remaining_quantity"] = round(lot_remaining - take, 8)
+            next_remaining = round(max(lot_remaining - take, 0.0), 8)
+            lot["remaining_quantity"] = next_remaining
+            if audit_items is not None:
+                audit_items.append(
+                    {
+                        "lot_id": str(lot.get("lot_id") or ""),
+                        "acquired_date": str(lot.get("acquired_date") or ""),
+                        "quantity_consumed": round(take, 8),
+                        "unit_cost_native": round(unit_cost, 8),
+                        "cost_consumed_native": round(take * unit_cost, 8),
+                        "remaining_before": round(lot_remaining, 8),
+                        "remaining_after": next_remaining,
+                    }
+                )
             remaining -= take
 
             if remaining <= 1e-9:
@@ -1910,12 +2056,18 @@ class PortfolioStore:
 
         positions: dict[str, dict[str, Any]] = {}
         account_cash: dict[str, float] = {}
+        lot_audit_events: list[dict[str, Any]] = []
+        corporate_action_events: list[dict[str, Any]] = []
+        lot_audit_counter = 0
+        corporate_action_counter = 0
         sorted_txns = sorted(
             txns,
             key=lambda t: (str(t.get("date", "")), str(t.get("created_at", "")), str(t.get("id", ""))),
         )
 
         for txn in sorted_txns:
+            transaction_id = str(txn.get("id") or "")
+            transaction_date = str(txn.get("date") or "")
             account_record = self._ensure_account(str(txn.get("account") or DEFAULT_ACCOUNT_ID), create_if_missing=True)
             account_id = str(account_record.get("id") or DEFAULT_ACCOUNT_ID)
             action = self._normalize_action(txn.get("action"), "BUY")
@@ -2009,6 +2161,8 @@ class PortfolioStore:
             if action == "BUY":
                 if quantity <= 0:
                     continue
+                quantity_before = _safe_float(position.get("quantity"), 0.0)
+                created_lots: list[dict[str, Any]] = []
                 if resolved_method == "AVERAGE":
                     existing_qty = sum(_safe_float(lot.get("remaining_quantity"), 0.0) for lot in position["lots"])
                     existing_cost = sum(
@@ -2020,35 +2174,81 @@ class PortfolioStore:
                     if new_qty <= 0:
                         continue
                     avg_unit_cost = (existing_cost + buy_cost) / new_qty
+                    lot_id = str(txn.get("id") or f"{key}-avg")
                     position["quantity"] = new_qty
                     position["lots"] = [
                         {
-                            "lot_id": str(txn.get("id") or f"{key}-avg"),
+                            "lot_id": lot_id,
                             "acquired_date": str(txn.get("date") or ""),
                             "quantity": round(new_qty, 8),
                             "remaining_quantity": round(new_qty, 8),
                             "unit_cost_native": round(avg_unit_cost, 8),
                         }
                     ]
+                    created_lots.append(
+                        {
+                            "lot_id": lot_id,
+                            "quantity_added": round(quantity, 8),
+                            "remaining_quantity": round(new_qty, 8),
+                            "unit_cost_native": round(avg_unit_cost, 8),
+                            "mode": "average_rollup",
+                        }
+                    )
                 else:
                     unit_cost = price_in_position_currency + (fee_in_position_currency / quantity if quantity > 0 else 0.0)
                     position["quantity"] += quantity
+                    lot_id = str(txn.get("id") or f"{key}-{len(position['lots']) + 1}")
                     position["lots"].append(
                         {
-                            "lot_id": str(txn.get("id") or f"{key}-{len(position['lots']) + 1}"),
+                            "lot_id": lot_id,
                             "acquired_date": str(txn.get("date") or ""),
                             "quantity": round(quantity, 8),
                             "remaining_quantity": round(quantity, 8),
                             "unit_cost_native": round(unit_cost, 8),
                         }
                     )
-                apply_cash_delta(-(((quantity * price_native) + fee_native) * txn_rate_to_base))
+                    created_lots.append(
+                        {
+                            "lot_id": lot_id,
+                            "quantity_added": round(quantity, 8),
+                            "remaining_quantity": round(quantity, 8),
+                            "unit_cost_native": round(unit_cost, 8),
+                            "mode": "discrete_lot",
+                        }
+                    )
+                cash_delta_base = -(((quantity * price_native) + fee_native) * txn_rate_to_base)
+                apply_cash_delta(cash_delta_base)
+
+                lot_audit_counter += 1
+                lot_audit_events.append(
+                    {
+                        "event_id": f"lot-{lot_audit_counter}",
+                        "transaction_id": transaction_id,
+                        "transaction_date": transaction_date,
+                        "action": action,
+                        "account": account_id,
+                        "symbol": symbol,
+                        "currency": position_currency,
+                        "lot_method": resolved_method,
+                        "quantity": round(quantity, 8),
+                        "quantity_before": round(quantity_before, 8),
+                        "quantity_after": round(_safe_float(position.get("quantity"), 0.0), 8),
+                        "cash_delta_base": round(cash_delta_base, 2),
+                        "details": {
+                            "lots_added": created_lots,
+                            "unit_price_native": round(price_in_position_currency, 8),
+                            "fee_native": round(fee_in_position_currency, 8),
+                        },
+                    }
+                )
             elif action == "SELL":
                 available_qty = sum(_safe_float(lot.get("remaining_quantity"), 0.0) for lot in position["lots"])
                 sell_qty = min(quantity, available_qty)
                 if sell_qty <= 0:
                     continue
 
+                quantity_before = _safe_float(position.get("quantity"), 0.0)
+                consumed_lots: list[dict[str, Any]] = []
                 if resolved_method == "AVERAGE":
                     total_cost = sum(
                         _safe_float(lot.get("remaining_quantity"), 0.0) * _safe_float(lot.get("unit_cost_native"), 0.0)
@@ -2056,6 +2256,18 @@ class PortfolioStore:
                     )
                     avg_unit = (total_cost / available_qty) if available_qty > 0 else 0.0
                     consumed_cost = sell_qty * avg_unit
+                    if sell_qty > 0:
+                        consumed_lots.append(
+                            {
+                                "lot_id": str(position["lots"][0].get("lot_id")) if position["lots"] else "",
+                                "acquired_date": str(position["lots"][0].get("acquired_date")) if position["lots"] else "",
+                                "quantity_consumed": round(sell_qty, 8),
+                                "unit_cost_native": round(avg_unit, 8),
+                                "cost_consumed_native": round(consumed_cost, 8),
+                                "remaining_before": round(available_qty, 8),
+                                "remaining_after": round(max(available_qty - sell_qty, 0.0), 8),
+                            }
+                        )
                     remaining_qty = max(available_qty - sell_qty, 0.0)
                     if position["lots"]:
                         position["lots"][0]["remaining_quantity"] = round(remaining_qty, 8)
@@ -2070,6 +2282,7 @@ class PortfolioStore:
                         sell_qty,
                         resolved_method,
                         unit_cost_key="unit_cost_native",
+                        audit_items=consumed_lots,
                     )
                 proceeds = (sell_qty * price_in_position_currency) - fee_in_position_currency
                 realized_gain = proceeds - consumed_cost
@@ -2077,7 +2290,34 @@ class PortfolioStore:
                 position["quantity"] = max(position["quantity"] - sell_qty, 0.0)
                 position["realized_gains_native"] += realized_gain
                 position["fees_native"] += fee_in_position_currency
-                apply_cash_delta(((sell_qty * price_native) - fee_native) * txn_rate_to_base)
+                cash_delta_base = ((sell_qty * price_native) - fee_native) * txn_rate_to_base
+                apply_cash_delta(cash_delta_base)
+
+                lot_audit_counter += 1
+                lot_audit_events.append(
+                    {
+                        "event_id": f"lot-{lot_audit_counter}",
+                        "transaction_id": transaction_id,
+                        "transaction_date": transaction_date,
+                        "action": action,
+                        "account": account_id,
+                        "symbol": symbol,
+                        "currency": position_currency,
+                        "lot_method": resolved_method,
+                        "quantity": round(sell_qty, 8),
+                        "quantity_before": round(quantity_before, 8),
+                        "quantity_after": round(_safe_float(position.get("quantity"), 0.0), 8),
+                        "cash_delta_base": round(cash_delta_base, 2),
+                        "details": {
+                            "lots_consumed": consumed_lots,
+                            "proceeds_native": round(proceeds, 8),
+                            "consumed_cost_native": round(consumed_cost, 8),
+                            "realized_gain_native": round(realized_gain, 8),
+                            "unit_price_native": round(price_in_position_currency, 8),
+                            "fee_native": round(fee_in_position_currency, 8),
+                        },
+                    }
+                )
             elif action in {"DIVIDEND", "INTEREST"}:
                 income = (quantity * price_in_position_currency) - fee_in_position_currency
                 position["dividends_native"] += income
@@ -2102,6 +2342,8 @@ class PortfolioStore:
                 split_factor = quantity
                 if split_factor <= 0:
                     continue
+                quantity_before = _safe_float(position.get("quantity"), 0.0)
+                lot_adjustments: list[dict[str, Any]] = []
                 position["quantity"] *= split_factor
                 for lot in position["lots"]:
                     lot_qty = _safe_float(lot.get("quantity"), 0.0)
@@ -2110,12 +2352,64 @@ class PortfolioStore:
                     lot["quantity"] = round(lot_qty * split_factor, 8)
                     lot["remaining_quantity"] = round(lot_remaining * split_factor, 8)
                     lot["unit_cost_native"] = round(unit_cost / split_factor, 8) if split_factor > 0 else round(unit_cost, 8)
+                    lot_adjustments.append(
+                        {
+                            "lot_id": str(lot.get("lot_id") or ""),
+                            "quantity_before": round(lot_qty, 8),
+                            "quantity_after": round(_safe_float(lot.get("quantity"), 0.0), 8),
+                            "remaining_before": round(lot_remaining, 8),
+                            "remaining_after": round(_safe_float(lot.get("remaining_quantity"), 0.0), 8),
+                            "unit_cost_before_native": round(unit_cost, 8),
+                            "unit_cost_after_native": round(_safe_float(lot.get("unit_cost_native"), 0.0), 8),
+                        }
+                    )
+
+                lot_audit_counter += 1
+                lot_audit_events.append(
+                    {
+                        "event_id": f"lot-{lot_audit_counter}",
+                        "transaction_id": transaction_id,
+                        "transaction_date": transaction_date,
+                        "action": action,
+                        "account": account_id,
+                        "symbol": symbol,
+                        "currency": position_currency,
+                        "lot_method": resolved_method,
+                        "quantity": round(split_factor, 8),
+                        "quantity_before": round(quantity_before, 8),
+                        "quantity_after": round(_safe_float(position.get("quantity"), 0.0), 8),
+                        "cash_delta_base": 0.0,
+                        "details": {
+                            "split_factor": round(split_factor, 8),
+                            "lots_adjusted": lot_adjustments,
+                        },
+                    }
+                )
+                corporate_action_counter += 1
+                corporate_action_events.append(
+                    {
+                        "event_id": f"corporate-{corporate_action_counter}",
+                        "transaction_id": transaction_id,
+                        "transaction_date": transaction_date,
+                        "account": account_id,
+                        "symbol": symbol,
+                        "action": action,
+                        "details": {
+                            "split_factor": round(split_factor, 8),
+                            "quantity_before": round(quantity_before, 8),
+                            "quantity_after": round(_safe_float(position.get("quantity"), 0.0), 8),
+                            "lot_count": len(position.get("lots", [])),
+                        },
+                    }
+                )
             elif action == "MERGER":
                 available_qty = sum(_safe_float(lot.get("remaining_quantity"), 0.0) for lot in position["lots"])
                 merge_qty = min(quantity if quantity > 0 else available_qty, available_qty)
                 if merge_qty <= 0:
                     continue
 
+                quantity_before = _safe_float(position.get("quantity"), 0.0)
+                consumed_lots: list[dict[str, Any]] = []
                 if resolved_method == "AVERAGE":
                     total_cost = sum(
                         _safe_float(lot.get("remaining_quantity"), 0.0) * _safe_float(lot.get("unit_cost_native"), 0.0)
@@ -2123,6 +2417,17 @@ class PortfolioStore:
                     )
                     avg_unit = (total_cost / available_qty) if available_qty > 0 else 0.0
                     consumed_cost = merge_qty * avg_unit
+                    consumed_lots.append(
+                        {
+                            "lot_id": str(position["lots"][0].get("lot_id")) if position["lots"] else "",
+                            "acquired_date": str(position["lots"][0].get("acquired_date")) if position["lots"] else "",
+                            "quantity_consumed": round(merge_qty, 8),
+                            "unit_cost_native": round(avg_unit, 8),
+                            "cost_consumed_native": round(consumed_cost, 8),
+                            "remaining_before": round(available_qty, 8),
+                            "remaining_after": round(max(available_qty - merge_qty, 0.0), 8),
+                        }
+                    )
                     remaining_qty = max(available_qty - merge_qty, 0.0)
                     if position["lots"]:
                         position["lots"][0]["remaining_quantity"] = round(remaining_qty, 8)
@@ -2137,6 +2442,7 @@ class PortfolioStore:
                         merge_qty,
                         resolved_method,
                         unit_cost_key="unit_cost_native",
+                        audit_items=consumed_lots,
                     )
 
                 proceeds = (merge_qty * price_in_position_currency) - fee_in_position_currency
@@ -2144,7 +2450,72 @@ class PortfolioStore:
                 position["quantity"] = max(position["quantity"] - merge_qty, 0.0)
                 position["realized_gains_native"] += realized_gain
                 position["fees_native"] += fee_in_position_currency
-                apply_cash_delta(((merge_qty * price_native) - fee_native) * txn_rate_to_base)
+                cash_delta_base = ((merge_qty * price_native) - fee_native) * txn_rate_to_base
+                apply_cash_delta(cash_delta_base)
+
+                lot_audit_counter += 1
+                lot_audit_events.append(
+                    {
+                        "event_id": f"lot-{lot_audit_counter}",
+                        "transaction_id": transaction_id,
+                        "transaction_date": transaction_date,
+                        "action": action,
+                        "account": account_id,
+                        "symbol": symbol,
+                        "currency": position_currency,
+                        "lot_method": resolved_method,
+                        "quantity": round(merge_qty, 8),
+                        "quantity_before": round(quantity_before, 8),
+                        "quantity_after": round(_safe_float(position.get("quantity"), 0.0), 8),
+                        "cash_delta_base": round(cash_delta_base, 2),
+                        "details": {
+                            "lots_consumed": consumed_lots,
+                            "proceeds_native": round(proceeds, 8),
+                            "consumed_cost_native": round(consumed_cost, 8),
+                            "realized_gain_native": round(realized_gain, 8),
+                            "unit_price_native": round(price_in_position_currency, 8),
+                            "fee_native": round(fee_in_position_currency, 8),
+                        },
+                    }
+                )
+
+                corporate_note = self._parse_corporate_action_note(txn.get("note"))
+                target_symbol = self._normalize_symbol(
+                    corporate_note.get("target_symbol")
+                    or corporate_note.get("new_symbol")
+                    or corporate_note.get("exchange_symbol")
+                )
+                exchange_ratio = _safe_float(
+                    corporate_note.get("exchange_ratio")
+                    or corporate_note.get("ratio")
+                    or corporate_note.get("new_shares_per_old"),
+                    0.0,
+                )
+                if exchange_ratio <= 0:
+                    exchange_ratio = None
+
+                corporate_action_counter += 1
+                corporate_action_events.append(
+                    {
+                        "event_id": f"corporate-{corporate_action_counter}",
+                        "transaction_id": transaction_id,
+                        "transaction_date": transaction_date,
+                        "account": account_id,
+                        "symbol": symbol,
+                        "action": action,
+                        "details": {
+                            "quantity_before": round(quantity_before, 8),
+                            "quantity_after": round(_safe_float(position.get("quantity"), 0.0), 8),
+                            "quantity_merged": round(merge_qty, 8),
+                            "consumed_cost_native": round(consumed_cost, 8),
+                            "proceeds_native": round(proceeds, 8),
+                            "realized_gain_native": round(realized_gain, 8),
+                            "target_symbol": target_symbol or None,
+                            "exchange_ratio": round(exchange_ratio, 8) if isinstance(exchange_ratio, float) else None,
+                            "note": str(txn.get("note") or ""),
+                        },
+                    }
+                )
 
         holdings: dict[str, dict[str, Any]] = {}
         for key, position in positions.items():
@@ -2265,6 +2636,54 @@ class PortfolioStore:
             ),
         }
 
+        lot_events_truncated = len(lot_audit_events) > LOT_AUDIT_MAX_EVENTS
+        if lot_events_truncated:
+            lot_audit_events = lot_audit_events[-LOT_AUDIT_MAX_EVENTS:]
+        lot_audit_payload = {
+            "schema_version": LOT_AUDIT_SCHEMA_VERSION,
+            "events": lot_audit_events,
+            "events_truncated": lot_events_truncated,
+            "max_events": LOT_AUDIT_MAX_EVENTS,
+            "generated_at": _utc_now(),
+        }
+
+        corporate_events_truncated = len(corporate_action_events) > CORPORATE_ACTION_MAX_EVENTS
+        if corporate_events_truncated:
+            corporate_action_events = corporate_action_events[-CORPORATE_ACTION_MAX_EVENTS:]
+        corporate_summary_by_symbol: dict[str, dict[str, Any]] = {}
+        for event in corporate_action_events:
+            symbol = self._normalize_symbol(event.get("symbol"))
+            if not symbol:
+                continue
+            row = corporate_summary_by_symbol.setdefault(
+                symbol,
+                {
+                    "symbol": symbol,
+                    "events": 0,
+                    "stock_split_events": 0,
+                    "merger_events": 0,
+                    "last_event_date": "",
+                },
+            )
+            row["events"] = int(row["events"]) + 1
+            action = str(event.get("action") or "").strip().upper()
+            if action == "STOCK_SPLIT":
+                row["stock_split_events"] = int(row["stock_split_events"]) + 1
+            elif action == "MERGER":
+                row["merger_events"] = int(row["merger_events"]) + 1
+            event_date = str(event.get("transaction_date") or "")
+            if event_date and (not row["last_event_date"] or event_date > str(row["last_event_date"])):
+                row["last_event_date"] = event_date
+
+        corporate_actions_payload = {
+            "schema_version": CORPORATE_ACTIONS_SCHEMA_VERSION,
+            "events": corporate_action_events,
+            "events_truncated": corporate_events_truncated,
+            "max_events": CORPORATE_ACTION_MAX_EVENTS,
+            "summary_by_symbol": corporate_summary_by_symbol,
+            "generated_at": _utc_now(),
+        }
+
         try:
             prices_updated_at = self._read_holdings_payload().get("prices_updated_at")
         except Exception:
@@ -2276,6 +2695,8 @@ class PortfolioStore:
             prices_updated_at=prices_updated_at,
             account_cash=account_cash,
             return_components_override=return_components_override,
+            lot_audit=lot_audit_payload,
+            corporate_actions=corporate_actions_payload,
         )
         self._write_json(self._holdings_path, data)
         return data
@@ -2304,6 +2725,8 @@ class PortfolioStore:
                 "income_received_usd": _safe_float(performance_seed.get("income_received_usd"), 0.0),
                 "fees_paid_usd": _safe_float(performance_seed.get("fees_paid_usd"), 0.0),
             },
+            lot_audit=self._normalize_lot_audit_payload(data.get("lot_audit")),
+            corporate_actions=self._normalize_corporate_actions_payload(data.get("corporate_actions")),
         )
         self._write_json(self._holdings_path, data)
         return data

@@ -63,6 +63,25 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 5.1 Slice 2, Corporate Actions + Lot Audit Explainability)
+- Expanded local holdings contract with persisted explainability payloads:
+  - added `lot_audit` event stream and `corporate_actions` event stream to `holdings.json` payloads.
+  - bumped portfolio holdings schema version to `7` and added migration defaults for legacy payloads.
+- Added deterministic lot/corporate event capture in portfolio replay:
+  - BUY/SELL/STOCK_SPLIT/MERGER now emit lot-level audit entries (quantity before/after, lot method, cash deltas).
+  - SELL/MERGER now persist consumed-lot details (lot id, acquired date, consumed quantity, unit cost, remaining balances).
+  - STOCK_SPLIT/MERGER now persist corporate-action events and per-symbol summary counts.
+- Added merger-note explainability metadata parsing (`target_symbol`, `exchange_ratio`) and included those hints in persisted corporate-action artifacts.
+- Extended Portfolio UI with:
+  - `Corporate Actions` section for split/merger impact summaries.
+  - `Lot Audit Trail` section for account-filtered lot-event review.
+- Source-provenance note:
+  - event-oriented activity/cashflow packaging follows Ghostfolio service patterns (`apps/api/src/app/activities/activities.service.ts`, `apps/api/src/app/account-balance/account-balance.service.ts`) while remaining BuildWealth contract-first and standalone.
+- Added focused regression coverage in `test_portfolio_store.py` for:
+  - lot-consumption audit events
+  - corporate-action artifact and summary persistence.
+- Verification: `pytest -q` in `services/orchestrator` passes (`436 passed`).
+
 ### 2026-04-15 (Completed - Phase 5.1 Slice 1, Import Reconciliation Report)
 - Added deterministic import reconciliation reporting to CSV import flows:
   - per-row accepted/rejected tracking
