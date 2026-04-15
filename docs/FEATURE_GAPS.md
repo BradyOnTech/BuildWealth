@@ -5,7 +5,7 @@
 ## Status
 Archived snapshot from early pre-standalone planning. Many items below have since been implemented.
 For current execution priority and status, use:
-- [ROADMAP_SOURCE_OF_TRUTH_2026-04-14.md](./ROADMAP_SOURCE_OF_TRUTH_2026-04-14.md)
+- [ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md](./ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md)
 - [STANDALONE_BUILD_PLAN.md](./STANDALONE_BUILD_PLAN.md)
 - [NEXT_EXECUTION_STEPS_2026-04-14.md](./NEXT_EXECUTION_STEPS_2026-04-14.md)
 

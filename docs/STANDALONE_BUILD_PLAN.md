@@ -6,7 +6,7 @@
 Historical implementation plan and progress log.
 
 For active roadmap sequencing and current priorities, use:
-- [BuildWealth Product Roadmap (Source of Truth, 2026-04-14)](./ROADMAP_SOURCE_OF_TRUTH_2026-04-14.md)
+- [BuildWealth Product Roadmap (Source of Truth, 2026-04-15)](./ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md)
 
 Notes:
 - The Progress Log below remains the canonical historical record of completed slices.
@@ -20,7 +20,7 @@ License note:
 - This historical plan was originally written under an MIT-license assumption for upstream reuse.
 - Upstream licenses should now be treated as version-specific and verified at implementation time.
 - See active guidance in:
-  - `docs/ROADMAP_SOURCE_OF_TRUTH_2026-04-14.md` (Licensing and Compliance Gate)
+  - `docs/ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md` (Licensing and Compliance Gate)
   - `ATTRIBUTIONS.md`
 
 ## Why This Approach (vs. Full Rewrite)

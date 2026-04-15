@@ -7,7 +7,7 @@ This document is retained for traceability of the Phase 3.1 to 3.7 workstream th
 
 ## Active Source of Truth
 Use the canonical roadmap instead:
-- [BuildWealth Product Roadmap (Source of Truth, 2026-04-14)](./ROADMAP_SOURCE_OF_TRUTH_2026-04-14.md)
+- [BuildWealth Product Roadmap (Source of Truth, 2026-04-15)](./ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md)
 
 ## Historical Summary
 As of 2026-04-14, the tracked "next execution" priorities in this document were completed:

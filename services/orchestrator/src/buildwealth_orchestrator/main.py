@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -220,7 +220,18 @@ from buildwealth_orchestrator.services.user_settings import UserSettingsStore
 from buildwealth_orchestrator.settings import get_settings
 
 settings = get_settings()
-app = FastAPI(title=settings.app_name)
+
+
+@asynccontextmanager
+async def _app_lifespan(_: FastAPI):
+    await on_startup()
+    try:
+        yield
+    finally:
+        await on_shutdown()
+
+
+app = FastAPI(title=settings.app_name, lifespan=_app_lifespan)
 
 web_dir = Path(__file__).resolve().parent / "web"
 if web_dir.exists():
@@ -10108,7 +10119,6 @@ def update_user_settings(request: dict[str, Any]) -> dict[str, Any]:
     return user_settings_store.load_masked()
 
 
-@app.on_event("startup")
 async def on_startup() -> None:
     settings.import_inbox_dir.mkdir(parents=True, exist_ok=True)
     settings.import_archive_dir.mkdir(parents=True, exist_ok=True)
@@ -10126,7 +10136,6 @@ async def on_startup() -> None:
         engine_health_task = asyncio.create_task(engine_probe_loop())
 
 
-@app.on_event("shutdown")
 async def on_shutdown() -> None:
     global scheduler_task, engine_health_task
     if scheduler_task is not None:

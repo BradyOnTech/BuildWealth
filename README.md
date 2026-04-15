@@ -117,4 +117,4 @@ make down
 - [Standalone Operations](./docs/OPERATIONS_STANDALONE.md)
 - [Migration and Compatibility](./docs/MIGRATION_AND_COMPATIBILITY.md)
 - [Standalone Build Plan](./docs/STANDALONE_BUILD_PLAN.md)
-- [Product Roadmap (Source of Truth, 2026-04-14)](./docs/ROADMAP_SOURCE_OF_TRUTH_2026-04-14.md)
+- [Product Roadmap (Source of Truth, 2026-04-15)](./docs/ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md)

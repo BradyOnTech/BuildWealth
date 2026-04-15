@@ -9,7 +9,7 @@ Build a production-grade all-in-one financial command center that combines:
 
 ## Planning Source of Truth
 Detailed implementation sequencing lives in:
-- [BuildWealth Product Roadmap (Source of Truth, 2026-04-14)](./ROADMAP_SOURCE_OF_TRUTH_2026-04-14.md)
+- [BuildWealth Product Roadmap (Source of Truth, 2026-04-15)](./ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md)
 - [Standalone Build Plan (historical progress log)](./STANDALONE_BUILD_PLAN.md)
 - [Next Execution Steps (2026-04-14, historical)](./NEXT_EXECUTION_STEPS_2026-04-14.md)
 
