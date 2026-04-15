@@ -63,6 +63,24 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 6.0 Slice 3, Local Data Protection Options)
+- Added data-protection policy service (`data_protection.py`) for local sensitive stores with `standard` and `hardened` permission levels.
+- Added data-protection API endpoints:
+  - `GET /api/storage/protection/status`
+  - `PUT /api/storage/protection/policy`
+  - `POST /api/storage/protection/apply`
+- Added data-protection controls in Settings UI:
+  - policy controls (level/include backups/auto-apply on startup)
+  - compliance summary status
+  - one-click protection apply action.
+- Added new env/settings surface:
+  - `PROTECTION_POLICY_PATH` (default `data/security/protection_policy.json`).
+- Added operator command entrypoints in `Makefile`:
+  - `make protection-status`
+  - `make protection-apply LEVEL=hardened INCLUDE_BACKUPS=true`
+- Added regression coverage in `test_data_protection.py`.
+- Verification: `pytest -q` in `services/orchestrator` passes (`459 passed`).
+
 ### 2026-04-15 (Completed - Phase 6.0 Slice 2, Backup/Restore Command + UI Entrypoint)
 - Added a new backup/restore service (`backup_restore.py`) with archive-manifest integrity checks and restore-time validation.
 - Added backup API endpoints:

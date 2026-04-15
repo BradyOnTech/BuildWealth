@@ -41,6 +41,47 @@ export function template() {
         <button class="primary small" id="restore-backup">Restore Selected</button>
       </div>
       <p class="hint" id="backup-status"></p>
+      <h3 class="section-title">Data Protection</h3>
+      <p class="hint tight">Control local file-permission hardening for sensitive stores.</p>
+      <div class="settings-grid">
+        <label class="field">
+          <span>Protection Level</span>
+          <select id="protection-level">
+            <option value="standard">Standard (owner/group)</option>
+            <option value="hardened">Hardened (owner only)</option>
+          </select>
+          <span class="field-hint">Hardened mode applies strict owner-only file permissions.</span>
+        </label>
+        <label class="field">
+          <span>Include Backups</span>
+          <select id="protection-include-backups">
+            <option value="false">No</option>
+            <option value="true">Yes</option>
+          </select>
+          <span class="field-hint">Apply permission hardening to backup archives too.</span>
+        </label>
+      </div>
+      <div class="settings-grid">
+        <label class="field">
+          <span>Auto Apply On Startup</span>
+          <select id="protection-auto-apply">
+            <option value="false">Disabled</option>
+            <option value="true">Enabled</option>
+          </select>
+          <span class="field-hint">Re-apply protection policy when orchestrator starts.</span>
+        </label>
+        <label class="field">
+          <span>Current Compliance</span>
+          <input type="text" id="protection-compliance" readonly value="Unknown" />
+          <span class="field-hint">Detected non-compliant files/directories against active policy.</span>
+        </label>
+      </div>
+      <div class="header-actions">
+        <button class="ghost small" id="refresh-protection-status">Refresh Status</button>
+        <button class="ghost small" id="save-protection-policy">Save Protection Policy</button>
+        <button class="primary small" id="apply-protection-now">Apply Protection Now</button>
+      </div>
+      <p class="hint" id="protection-status"></p>
     </div>
     <p class="hint">Engine sidecar endpoints and health probes are configured via environment variables (<code>infra/env/orchestrator.env</code>).</p>
     <p class="hint" id="settings-status"></p>`;
@@ -72,6 +113,36 @@ function setBackupStatus(message, isError = false) {
   if (!el) return;
   el.textContent = message || '';
   el.style.color = isError ? 'var(--danger)' : '';
+}
+
+function setProtectionStatus(message, isError = false) {
+  const el = byId('protection-status');
+  if (!el) return;
+  el.textContent = message || '';
+  el.style.color = isError ? 'var(--danger)' : '';
+}
+
+function setProtectionInputs(policy = {}, status = null) {
+  const level = String(policy.protection_level || 'standard');
+  const includeBackups = Boolean(policy.include_backups);
+  const autoApply = Boolean(policy.auto_apply_on_startup);
+
+  const levelSelect = byId('protection-level');
+  if (levelSelect) levelSelect.value = level === 'hardened' ? 'hardened' : 'standard';
+  const includeSelect = byId('protection-include-backups');
+  if (includeSelect) includeSelect.value = includeBackups ? 'true' : 'false';
+  const autoApplySelect = byId('protection-auto-apply');
+  if (autoApplySelect) autoApplySelect.value = autoApply ? 'true' : 'false';
+
+  const complianceInput = byId('protection-compliance');
+  if (!complianceInput) return;
+  if (!status) {
+    complianceInput.value = 'Unknown';
+    return;
+  }
+  const files = Number(status.total_non_compliant_files || 0);
+  const dirs = Number(status.total_non_compliant_directories || 0);
+  complianceInput.value = `${files} files, ${dirs} dirs non-compliant`;
 }
 
 async function loadBackups() {
@@ -160,6 +231,67 @@ async function restoreBackup() {
   }
 }
 
+async function loadProtectionStatus() {
+  try {
+    const status = await fetchJson('/api/storage/protection/status');
+    setProtectionInputs(status.policy || {}, status);
+    const files = Number(status.total_non_compliant_files || 0);
+    const dirs = Number(status.total_non_compliant_directories || 0);
+    setProtectionStatus(`Protection status loaded. Non-compliant: ${files} files, ${dirs} directories.`);
+  } catch (e) {
+    setProtectionStatus(`Protection status failed: ${e.message}`, true);
+    writeLog(`Protection status failed: ${e.message}`, null, true);
+  }
+}
+
+async function saveProtectionPolicy() {
+  const payload = {
+    protection_level: byId('protection-level')?.value || 'standard',
+    include_backups: byId('protection-include-backups')?.value === 'true',
+    auto_apply_on_startup: byId('protection-auto-apply')?.value === 'true',
+  };
+  try {
+    const policy = await fetchJson('/api/storage/protection/policy', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    setProtectionInputs(policy, null);
+    setProtectionStatus('Protection policy saved.');
+    writeLog('Protection policy saved.');
+    await loadProtectionStatus();
+  } catch (e) {
+    setProtectionStatus(`Protection policy save failed: ${e.message}`, true);
+    writeLog(`Protection policy save failed: ${e.message}`, null, true);
+  }
+}
+
+async function applyProtectionNow() {
+  const payload = {
+    protection_level: byId('protection-level')?.value || 'standard',
+    include_backups: byId('protection-include-backups')?.value === 'true',
+  };
+  const button = byId('apply-protection-now');
+  if (button) button.disabled = true;
+  try {
+    const report = await fetchJson('/api/storage/protection/apply', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    setProtectionStatus(
+      `Protection applied. Updated ${report.files_updated} files and ${report.directories_updated} directories.`
+    );
+    writeLog('Protection hardening applied.');
+    await loadProtectionStatus();
+  } catch (e) {
+    setProtectionStatus(`Protection apply failed: ${e.message}`, true);
+    writeLog(`Protection apply failed: ${e.message}`, null, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 async function load() {
   try {
     const data = await fetchJson('/api/settings');
@@ -197,6 +329,10 @@ export function init() {
   byId('refresh-backups').addEventListener('click', loadBackups);
   byId('create-backup').addEventListener('click', createBackup);
   byId('restore-backup').addEventListener('click', restoreBackup);
+  byId('refresh-protection-status').addEventListener('click', loadProtectionStatus);
+  byId('save-protection-policy').addEventListener('click', saveProtectionPolicy);
+  byId('apply-protection-now').addEventListener('click', applyProtectionNow);
   load();
   loadBackups();
+  loadProtectionStatus();
 }

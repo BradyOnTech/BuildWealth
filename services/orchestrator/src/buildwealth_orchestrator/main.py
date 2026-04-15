@@ -117,6 +117,11 @@ from buildwealth_orchestrator.schemas import (
     BackupCreateResponse,
     BackupRestoreRequest,
     BackupRestoreResponse,
+    StorageProtectionStatusResponse,
+    StorageProtectionPolicyUpdateRequest,
+    StorageProtectionPolicyResponse,
+    StorageProtectionApplyRequest,
+    StorageProtectionApplyResponse,
     TodayDashboardResponse,
     TopNextAction,
     PortfolioReviewPacketListResponse,
@@ -207,6 +212,10 @@ from buildwealth_orchestrator.services.backup_restore import (
     BackupRestoreError,
     BackupRestoreService,
 )
+from buildwealth_orchestrator.services.data_protection import (
+    DataProtectionError,
+    DataProtectionService,
+)
 from buildwealth_orchestrator.services.tax_engine import estimate_federal_tax
 from buildwealth_orchestrator.services.today_dashboard import build_today_dashboard_payload
 from buildwealth_orchestrator.services.buildwealth_context import (
@@ -283,6 +292,7 @@ snapshot_store = SnapshotStore(settings.snapshot_dir)
 portfolio_store = PortfolioStore(settings.snapshot_dir.parent / "portfolio")
 durable_storage_service = DurableStorageMigrationService.from_settings(settings)
 backup_restore_service = BackupRestoreService.from_settings(settings)
+data_protection_service = DataProtectionService.from_settings(settings)
 ignidash_export_store = IgnidashExportStore(settings.ignidash_export_dir)
 portfolio_review_packet_store = PortfolioReviewPacketStore(settings.portfolio_review_packet_dir)
 scenario_engine = ScenarioEngine(
@@ -10175,6 +10185,33 @@ def restore_backup(request: BackupRestoreRequest) -> BackupRestoreResponse:
     return BackupRestoreResponse.model_validate(report)
 
 
+@app.get("/api/storage/protection/status", response_model=StorageProtectionStatusResponse)
+def get_storage_protection_status() -> StorageProtectionStatusResponse:
+    return StorageProtectionStatusResponse.model_validate(data_protection_service.get_status())
+
+
+@app.put("/api/storage/protection/policy", response_model=StorageProtectionPolicyResponse)
+def update_storage_protection_policy(
+    request: StorageProtectionPolicyUpdateRequest,
+) -> StorageProtectionPolicyResponse:
+    try:
+        policy = data_protection_service.update_policy(request.model_dump(exclude_none=True))
+    except DataProtectionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return StorageProtectionPolicyResponse.model_validate(policy)
+
+
+@app.post("/api/storage/protection/apply", response_model=StorageProtectionApplyResponse)
+def apply_storage_protection(
+    request: StorageProtectionApplyRequest,
+) -> StorageProtectionApplyResponse:
+    try:
+        report = data_protection_service.apply_protection(request.model_dump(exclude_none=True))
+    except DataProtectionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return StorageProtectionApplyResponse.model_validate(report)
+
+
 @app.get("/api/settings")
 def get_user_settings() -> dict[str, Any]:
     return user_settings_store.load_masked()
@@ -10203,10 +10240,18 @@ async def on_startup() -> None:
     settings.import_archive_dir.mkdir(parents=True, exist_ok=True)
     settings.durable_storage_dir.mkdir(parents=True, exist_ok=True)
     settings.backup_archive_dir.mkdir(parents=True, exist_ok=True)
+    settings.protection_policy_path.parent.mkdir(parents=True, exist_ok=True)
     settings.conversation_dir.mkdir(parents=True, exist_ok=True)
     settings.plans_dir.mkdir(parents=True, exist_ok=True)
     settings.financial_profile_path.parent.mkdir(parents=True, exist_ok=True)
     settings.recommendations_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        protection_policy = data_protection_service.get_policy()
+        if protection_policy.get("auto_apply_on_startup"):
+            data_protection_service.apply_protection()
+    except DataProtectionError as exc:
+        print(f"Data protection auto-apply skipped: {exc}")
 
     global scheduler_task, engine_health_task
     await engine_status_tracker.probe_all()

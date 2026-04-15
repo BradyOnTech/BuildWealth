@@ -86,6 +86,9 @@ docker compose -f infra/docker-compose.yml --profile legacy-upstream up -d
 - `GET /api/storage/backups`
 - `POST /api/storage/backups`
 - `POST /api/storage/backups/restore`
+- `GET /api/storage/protection/status`
+- `PUT /api/storage/protection/policy`
+- `POST /api/storage/protection/apply`
 - `POST /api/snapshot/sync`
 - `GET /api/snapshot/latest`
 - `GET /api/portfolio/benchmark`
@@ -116,6 +119,8 @@ make sync
 make backup
 make backup-list
 make backup-restore BACKUP_ID=...
+make protection-status
+make protection-apply LEVEL=hardened INCLUDE_BACKUPS=true
 make down
 ```
 

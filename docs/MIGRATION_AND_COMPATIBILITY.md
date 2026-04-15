@@ -84,6 +84,20 @@ Behavior:
 - restore validates manifest checksums before replacing active data.
 - restore can create a pre-restore safety backup (`create_pre_restore_backup=true` by default).
 
+### 7) Local Data Protection Options (Phase 6.0 Slice 3)
+BuildWealth now includes policy-driven local permission hardening for sensitive stores:
+- `GET /api/storage/protection/status`
+- `PUT /api/storage/protection/policy`
+- `POST /api/storage/protection/apply`
+
+Behavior:
+- policy is stored at `PROTECTION_POLICY_PATH` (default `data/security/protection_policy.json`).
+- levels:
+  - `standard`: owner/group read + owner write.
+  - `hardened`: owner-only permissions.
+- policy can include backup archives and can auto-apply on startup.
+- status reports non-compliant file/directory counts against active policy.
+
 ## Compatibility Window Policy
 
 1. Forward upgrades
@@ -104,5 +118,8 @@ Before upgrading BuildWealth:
 2. Upgrade and start orchestrator.
 3. Optionally stage a durable snapshot with rollback checks:
    - `POST /api/storage/durable/migrate` (default `run_rollback_check=true`)
-4. Trigger a read path (for example `/api/snapshot/latest`, `/api/financial-profile`, plan APIs) so schema migrations run.
-5. Validate engine compatibility via `/api/engines/status` when sidecars are enabled.
+4. Optionally set and apply local protection policy:
+   - `PUT /api/storage/protection/policy`
+   - `POST /api/storage/protection/apply`
+5. Trigger a read path (for example `/api/snapshot/latest`, `/api/financial-profile`, plan APIs) so schema migrations run.
+6. Validate engine compatibility via `/api/engines/status` when sidecars are enabled.

@@ -2094,3 +2094,57 @@ class BackupRestoreResponse(BaseModel):
     files_restored: int
     bytes_restored: int
     pre_restore_backup_id: str | None = None
+
+
+class StorageProtectionPolicyResponse(BaseModel):
+    schema_version: int
+    protection_level: Literal["standard", "hardened"]
+    auto_apply_on_startup: bool
+    include_backups: bool
+    updated_at: datetime
+    last_applied_at: datetime | None = None
+
+
+class StorageProtectionTargetStatus(BaseModel):
+    path: str
+    exists: bool
+    files_scanned: int = 0
+    directories_scanned: int = 0
+    non_compliant_files: int = 0
+    non_compliant_directories: int = 0
+    sample_non_compliant_paths: list[str] = Field(default_factory=list)
+    compliant: bool | None = None
+
+
+class StorageProtectionStatusResponse(BaseModel):
+    supported: bool
+    strategy: str
+    policy: StorageProtectionPolicyResponse
+    targets: list[StorageProtectionTargetStatus] = Field(default_factory=list)
+    total_non_compliant_files: int = 0
+    total_non_compliant_directories: int = 0
+
+
+class StorageProtectionPolicyUpdateRequest(BaseModel):
+    protection_level: Literal["standard", "hardened"] | None = None
+    auto_apply_on_startup: bool | None = None
+    include_backups: bool | None = None
+
+
+class StorageProtectionApplyRequest(BaseModel):
+    protection_level: Literal["standard", "hardened"] | None = None
+    include_backups: bool | None = None
+
+
+class StorageProtectionApplyResponse(BaseModel):
+    applied_at: datetime
+    supported: bool
+    protection_level: Literal["standard", "hardened"]
+    include_backups: bool
+    files_scanned: int
+    directories_scanned: int
+    files_updated: int
+    directories_updated: int
+    non_compliant_files_after: int
+    non_compliant_directories_after: int
+    warnings: list[str] = Field(default_factory=list)

@@ -144,6 +144,27 @@ curl -s -X POST http://localhost:8090/api/storage/backups/restore \
   -d '{"backup_id":"<backup-id>","create_pre_restore_backup":true}' | jq
 ```
 
+## Local Data Protection (Phase 6.0 Slice 3)
+
+Inspect policy and compliance status:
+```bash
+curl -s http://localhost:8090/api/storage/protection/status | jq
+```
+
+Update policy (hardened mode, include backups, auto-apply on startup):
+```bash
+curl -s -X PUT http://localhost:8090/api/storage/protection/policy \
+  -H 'Content-Type: application/json' \
+  -d '{"protection_level":"hardened","include_backups":true,"auto_apply_on_startup":true}' | jq
+```
+
+Apply permission hardening now:
+```bash
+curl -s -X POST http://localhost:8090/api/storage/protection/apply \
+  -H 'Content-Type: application/json' \
+  -d '{"protection_level":"hardened","include_backups":true}' | jq
+```
+
 ## Useful Commands
 
 ```bash
@@ -155,5 +176,7 @@ make sync
 make backup
 make backup-list
 make backup-restore BACKUP_ID=...
+make protection-status
+make protection-apply LEVEL=hardened INCLUDE_BACKUPS=true
 make down
 ```

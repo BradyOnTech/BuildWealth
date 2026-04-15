@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     snapshot_dir: Path = Field(default=Path("data/snapshots"), alias="SNAPSHOT_DIR")
     durable_storage_dir: Path = Field(default=Path("data/storage"), alias="DURABLE_STORAGE_DIR")
     backup_archive_dir: Path = Field(default=Path("data/backups"), alias="BACKUP_ARCHIVE_DIR")
+    protection_policy_path: Path = Field(
+        default=Path("data/security/protection_policy.json"),
+        alias="PROTECTION_POLICY_PATH",
+    )
     ignidash_export_dir: Path = Field(default=Path("data/ignidash"), alias="IGNIDASH_EXPORT_DIR")
     portfolio_review_packet_dir: Path = Field(
         default=Path("data/reports/portfolio_review_packets"),

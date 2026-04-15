@@ -10,6 +10,27 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 6.0 Slice 3, Local Data Protection Options)
+1. Added policy-driven local data-protection service (`data_protection.py`) for sensitive local stores:
+- supports protection levels: `standard` and `hardened`.
+- supports optional backup-archive inclusion and auto-apply-on-startup policy behavior.
+- scans target paths and reports non-compliant files/directories against active policy.
+2. Added data-protection API surfaces:
+- `GET /api/storage/protection/status`
+- `PUT /api/storage/protection/policy`
+- `POST /api/storage/protection/apply`
+3. Added Settings UI entrypoint:
+- Settings now includes a `Data Protection` section with policy controls (level/include-backups/auto-apply), compliance summary, and one-click apply action.
+4. Added operator command surfaces:
+- Make targets:
+  - `make protection-status`
+  - `make protection-apply LEVEL=hardened INCLUDE_BACKUPS=true`
+5. Added settings/env surface:
+- new setting/env: `PROTECTION_POLICY_PATH` (default `data/security/protection_policy.json`).
+6. Verification:
+- targeted: `pytest -q tests/test_data_protection.py tests/test_backup_restore.py tests/test_durable_storage.py` (`6 passed`).
+- full: `pytest -q` (`459 passed`).
+
 ### 2026-04-15 (Completed - Phase 6.0 Slice 2, Backup/Restore Command + UI Entrypoint)
 1. Added first-class backup/restore service (`backup_restore.py`) for local data stores:
 - creates timestamped tar archives under `BACKUP_ARCHIVE_DIR` with per-file + aggregate checksum manifest verification.
@@ -685,9 +706,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Start Phase 6.0 Slice 3: add local data protection options for sensitive stores.
-2. Start Phase 6.0 Slice 4: add runtime telemetry dashboards for API latency, context freshness, and cache quality.
-3. Start cross-cutting follow-up: engine policy/envelope unification + sidecar matrix tests.
+1. Start Phase 6.0 Slice 4: add runtime telemetry dashboards for API latency, context freshness, and cache quality.
+2. Start cross-cutting follow-up: engine policy/envelope unification + sidecar matrix tests.
+3. Add backup/restore and protection-policy smoke validation into scripted reliability checks.
 
 ## Cross-Cutting Engineering Follow-Up
 1. Post-refactor helper indirection and intentional sidecar complexity are documented in [`docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`](./CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md).

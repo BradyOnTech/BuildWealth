@@ -2,7 +2,7 @@ SHELL := /bin/zsh
 
 COMPOSE := docker compose -f infra/docker-compose.yml
 
-.PHONY: init-env up up-legacy down restart ps logs sync sync-status engine-status backup backup-list backup-restore import-csv test
+.PHONY: init-env up up-legacy down restart ps logs sync sync-status engine-status backup backup-list backup-restore protection-status protection-apply import-csv test
 
 init-env:
 	./scripts/init-env.sh
@@ -47,6 +47,14 @@ backup-restore:
 	curl -s -X POST http://localhost:8090/api/storage/backups/restore \
 	  -H 'content-type: application/json' \
 	  -d "{\"backup_id\":\"$${BACKUP_ID}\",\"create_pre_restore_backup\":$${PRE_BACKUP:-true}}" | jq
+
+protection-status:
+	curl -s http://localhost:8090/api/storage/protection/status | jq
+
+protection-apply:
+	curl -s -X POST http://localhost:8090/api/storage/protection/apply \
+	  -H 'content-type: application/json' \
+	  -d "{\"protection_level\":\"$${LEVEL:-hardened}\",\"include_backups\":$${INCLUDE_BACKUPS:-false}}" | jq
 
 import-csv:
 	@echo "Usage: make import-csv FILE=broker.csv DRY_RUN=true"
