@@ -16,7 +16,7 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import datetime
 from statistics import median
 from typing import Any, Literal
 
@@ -29,6 +29,12 @@ from buildwealth_orchestrator.schemas import (
 from buildwealth_orchestrator.services.contribution_rules import (
     normalize_account_type,
     tax_treatment_for_account_type,
+)
+from buildwealth_orchestrator.services.service_utils import (
+    clamp as _clamp,
+    parse_optional_date as _parse_optional_date,
+    safe_float as _safe_float,
+    safe_int as _safe_int,
 )
 from buildwealth_orchestrator.services.rmd_projection import (
     determine_rmd_start_age,
@@ -268,39 +274,6 @@ class WithdrawalStrategyState:
     retirement_years_elapsed: int = 0
 
 
-def _safe_float(value: Any, fallback: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return fallback
-
-
-def _safe_int(value: Any, fallback: int) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return fallback
-
-
-def _parse_optional_date(value: Any) -> date | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    text = str(value).strip()
-    if not text:
-        return None
-    text = text.replace("Z", "+00:00")
-    try:
-        if "T" in text:
-            return datetime.fromisoformat(text).date()
-        return date.fromisoformat(text[:10])
-    except ValueError:
-        return None
-
-
 def _normalize_filing_status(value: Any) -> FilingStatus:
     text = str(value or "").strip().lower()
     if text in VALID_FILING_STATUSES:
@@ -315,7 +288,7 @@ def _normalize_withdrawal_strategy(value: Any) -> WithdrawalStrategy:
 
 def _normalize_retirement_age(value: Any) -> int:
     age = _safe_int(value, 65)
-    return max(35, min(age, 100))
+    return int(_clamp(float(age), 35, 100))
 
 
 def _normalize_drawdown_order(value: Any) -> tuple[DrawdownBucket, ...] | None:
@@ -360,7 +333,7 @@ def _normalize_optional_age(value: Any) -> int | None:
         parsed = int(value)
     except (TypeError, ValueError):
         return None
-    return max(0, min(120, parsed))
+    return int(_clamp(float(parsed), 0, 120))
 
 
 def _normalize_simulation_mode(value: Any) -> SimulationMode:

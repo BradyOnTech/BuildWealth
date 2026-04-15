@@ -26,7 +26,7 @@ export function template() {
       <h3 class="section-title">AI Copilot</h3>
       <div class="settings-grid">${FIELDS.filter(f => f.key.startsWith('openai')).map(fieldHtml).join('')}</div>
     </div>
-    <p class="hint">Engine sidecar endpoints and health probes are configured via environment variables (`infra/env/orchestrator.env`).</p>
+    <p class="hint">Engine sidecar endpoints and health probes are configured via environment variables (<code>infra/env/orchestrator.env</code>).</p>
     <p class="hint" id="settings-status"></p>`;
 }
 

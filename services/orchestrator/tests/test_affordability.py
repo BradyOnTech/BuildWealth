@@ -6,7 +6,6 @@ from buildwealth_orchestrator.services.affordability import assess_affordability
 
 INCOME = [IncomeItem(id="i1", label="Salary", monthly_amount_usd=8000)]
 EXPENSES = [ExpenseItem(id="e1", label="Rent", monthly_amount_usd=2000)]
-# Surplus = 8000 - 2000 = 6000, savings rate = 75%
 
 
 def _assess(**kwargs):

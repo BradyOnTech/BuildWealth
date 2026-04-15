@@ -646,6 +646,10 @@ Use this scoring when selecting the next slice:
 2. Start Phase 6.0 Slice 2: add backup/restore command and UI entrypoint.
 3. Start Phase 6.0 Slice 3: add local data protection options for sensitive stores.
 
+## Cross-Cutting Engineering Follow-Up
+1. Post-refactor helper indirection and intentional sidecar complexity are documented in [`docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`](./CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md).
+2. Execute those cleanup slices when they reduce operational risk or readability without displacing higher-value product slices.
+
 ## Guardrails
 1. Do not fork or embed full Ghostfolio/Ignidash apps into BuildWealth runtime path.
 2. Reuse upstream logic selectively where it improves correctness and speed.

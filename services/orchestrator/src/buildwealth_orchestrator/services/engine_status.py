@@ -58,7 +58,6 @@ class EngineStatusTracker:
     async def probe_all(self) -> None:
         results = await asyncio.gather(
             *(self._probe_one(config) for config in self._configs.values()),
-            return_exceptions=False,
         )
 
         async with self._lock:
@@ -69,17 +68,18 @@ class EngineStatusTracker:
 
     async def _probe_one(self, config: EngineProbeConfig) -> tuple[str, dict[str, Any]]:
         checked_at = datetime.now(timezone.utc)
+        expected_contract_version = (
+            int(config.expected_contract_version)
+            if config.expected_contract_version is not None
+            else None
+        )
 
         if not config.enabled:
             return config.name, {
                 "enabled": False,
                 "reachable": False,
                 "contract_version": None,
-                "expected_contract_version": (
-                    int(config.expected_contract_version)
-                    if config.expected_contract_version is not None
-                    else None
-                ),
+                "expected_contract_version": expected_contract_version,
                 "contract_compatible": None,
                 "last_error": None,
                 "last_checked_at": checked_at,
@@ -129,11 +129,7 @@ class EngineStatusTracker:
             "enabled": True,
             "reachable": reachable,
             "contract_version": contract_version,
-            "expected_contract_version": (
-                int(config.expected_contract_version)
-                if config.expected_contract_version is not None
-                else None
-            ),
+            "expected_contract_version": expected_contract_version,
             "contract_compatible": contract_compatible,
             "last_error": last_error,
             "last_checked_at": checked_at,

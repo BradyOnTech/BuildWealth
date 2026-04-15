@@ -24,7 +24,6 @@ PORTFOLIO = _snap([
     ("MSFT", "Microsoft Corp", 30000),
     ("GOOGL", "Alphabet Inc", 20000),
 ])
-# Total = 100k, AAPL = 50%, MSFT = 30%, GOOGL = 20%
 
 
 def _sim(symbol="AAPL", action="buy", amount=10000, snapshot=None, name=None):
@@ -44,7 +43,6 @@ class TestBuyExisting:
 
     def test_allocation_recalculated(self):
         r = _sim("MSFT", "buy", 20000)
-        # MSFT: 30k + 20k = 50k out of 120k = 41.67%
         msft = next(h for h in r.top_holdings if h.symbol == "MSFT")
         assert msft.new_allocation_pct == pytest.approx(41.67, abs=0.1)
 
@@ -121,14 +119,7 @@ class TestConcentrationRisk:
         assert r.new_top_holding_pct < r.current_top_holding_pct
 
     def test_sell_top_holding_improves(self):
-        # Use a portfolio where selling the top actually changes the risk level
-        portfolio = _snap([("AAPL", "Apple", 40000), ("MSFT", "Microsoft", 30000), ("GOOGL", "Alphabet", 30000)])
-        # AAPL = 40% → medium. Sell 25k → AAPL=15k, total=75k, top=MSFT at 30k/75k=40% still medium
-        # Need a bigger sell. Sell 30k → AAPL=10k, total=70k, top=MSFT at 30k/70k=42.8% still high hmm
-        # Actually: portfolio with AAPL at 35% (high). Sell enough to get below 20% (low).
         skewed = _snap([("AAPL", "Apple", 36000), ("MSFT", "Microsoft", 32000), ("GOOGL", "Alphabet", 32000)])
-        # AAPL=36%, high risk. Sell 20k → AAPL=16k, total=80k, top = MSFT at 32k/80k = 40% → high still
-        # This is tricky. Let's just verify the concentration numbers are correct.
         r = simulate_trade(snapshot=skewed, symbol="AAPL", action="sell", amount_usd=20000)
         assert r.current_top_holding_pct > r.new_top_holding_pct or r.new_top_holding_symbol != "AAPL"
 

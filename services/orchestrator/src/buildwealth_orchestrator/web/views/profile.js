@@ -1,5 +1,5 @@
 import { fetchJson } from '../lib/api.js';
-import { state } from '../lib/state.js';
+import { state, FILING_STATUS_OPTIONS } from '../lib/state.js';
 import { byId, fmtCurrency, fmtDate, uid, parseOptionalNumber, writeLog } from '../lib/utils.js';
 import { emptyFinancialProfile, renderItemList } from '../lib/components.js';
 
@@ -17,7 +17,7 @@ export function template() {
     <div id="onboarding-steps" class="item-list"></div>
     <h3 class="section-title">Tax & Preferences</h3>
     <div class="settings-grid">
-      <label class="field"><span>Filing Status</span><select id="profile-filing-status"><option value="">Select</option><option value="single">Single</option><option value="married_filing_jointly">Married Filing Jointly</option><option value="married_filing_separately">Married Filing Separately</option><option value="head_of_household">Head of Household</option></select></label>
+      <label class="field"><span>Filing Status</span><select id="profile-filing-status"><option value="">Select</option>${FILING_STATUS_OPTIONS.map(option => `<option value="${option.value}">${option.label}</option>`).join('')}</select></label>
       <label class="field"><span>Marginal Tax Rate (%)</span><input type="number" id="profile-marginal-tax-rate" step="0.01" min="0" max="100" placeholder="e.g. 24" /></label>
       <label class="field"><span>Effective Tax Rate (%)</span><input type="number" id="profile-effective-tax-rate" step="0.01" min="0" max="100" placeholder="e.g. 18" /></label>
       <label class="field"><span>State Tax Rate (%)</span><input type="number" id="profile-state-tax-rate" step="0.01" min="0" max="100" placeholder="e.g. 5" /></label>
@@ -25,7 +25,7 @@ export function template() {
       <label class="field"><span>No Debt</span><label class="inline-check"><input type="checkbox" id="profile-no-debt" /> I have no debt</label></label>
       <label class="field"><span>No Goals Yet</span><label class="inline-check"><input type="checkbox" id="profile-no-goals" /> Not tracking goals yet</label></label>
     </div>
-    <label class="field"><span>Profile Notes</span><textarea id="profile-notes" rows="2" placeholder="Optional context for Copilot."></textarea></label>
+    <label class="field"><span>Profile Notes</span><textarea id="profile-notes" rows="2" placeholder="Optional notes for this profile."></textarea></label>
     ${section('Income', 'income', ['Label|text|income-label|Source label', 'Monthly USD|number|income-amount|0', 'Type|select|income-source-type|salary:Salary,bonus:Bonus,business:Business,rental:Rental,other:Other', 'Pre-tax|checkbox|income-pre-tax|', 'Growth %/Yr|number|income-growth-rate|Optional', 'Start Date|date|income-start-date|', 'End Date|date|income-end-date|'], ['Label', 'Monthly', 'Type', 'Pre-Tax', 'Growth', 'Start', 'End'])}
     ${section('Expenses', 'expense', ['Label|text|expense-label|Expense label', 'Monthly USD|number|expense-amount|0', 'Category|text|expense-category|Category', 'Fixed|checkbox|expense-fixed|checked', 'Inflation %/Yr|number|expense-inflation-rate|Optional', 'Start Date|date|expense-start-date|', 'End Date|date|expense-end-date|'], ['Label', 'Monthly', 'Category', 'Fixed', 'Inflation', 'Start', 'End'])}
     ${section('Debt', 'debt', ['Label|text|debt-label|Debt label', 'Balance USD|number|debt-balance|0', 'Rate %|number|debt-rate|0', 'Min Payment|number|debt-min-payment|0', 'Strategy|select|debt-strategy|minimum:Minimum,snowball:Snowball,avalanche:Avalanche,custom:Custom', 'Custom Payment|number|debt-custom-payment|Optional'], ['Label', 'Balance', 'Rate', 'Min Payment', 'Strategy', 'Custom'])}
@@ -221,7 +221,12 @@ async function save() {
   try {
     state.financialProfile = await fetchJson('/api/financial-profile', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(state.financialProfile) });
     renderForm();
-    try { renderOnboarding(await fetchJson('/api/onboarding/status')); } catch (_) {}
+    try {
+      renderOnboarding(await fetchJson('/api/onboarding/status'));
+    } catch (e) {
+      byId('onboarding-summary').textContent = `Onboarding unavailable: ${e.message}`;
+      writeLog(`Onboarding refresh failed: ${e.message}`, null, true);
+    }
     writeLog('Profile saved.', { updated_at: state.financialProfile.updated_at });
   } catch (e) { writeLog(`Save failed: ${e.message}`, null, true); }
 }

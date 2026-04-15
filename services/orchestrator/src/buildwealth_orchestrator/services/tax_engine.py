@@ -18,6 +18,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from buildwealth_orchestrator.services.service_utils import safe_float
+
 
 FilingStatus = Literal[
     "single",
@@ -179,13 +181,6 @@ TAX_CONFIG_BY_YEAR: dict[int, TaxYearConfig] = {
 NIIT_RATE = 0.038
 
 
-def _safe_float(value: object, fallback: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return fallback
-
-
 def _round_money(value: float) -> float:
     return round(float(value), 2)
 
@@ -327,19 +322,19 @@ def estimate_federal_tax(
             f"Tax year {tax_year} is not configured; using 2026 federal assumptions."
         )
 
-    earned_income = _safe_float(earned_income_usd)
-    ordinary_income = _safe_float(ordinary_income_usd)
-    short_term_capital_gains = _safe_float(short_term_capital_gains_usd)
-    long_term_capital_gains = _safe_float(long_term_capital_gains_usd)
-    qualified_dividends = _safe_float(qualified_dividends_usd)
-    interest_income = _safe_float(interest_income_usd)
-    social_security_income = _safe_float(social_security_income_usd)
-    tax_exempt_interest_income = max(0.0, _safe_float(tax_exempt_interest_income_usd))
-    pre_tax_contributions = max(0.0, _safe_float(pre_tax_contributions_usd))
-    resolved_state_tax_rate = max(0.0, min(1.0, _safe_float(state_tax_rate)))
-    state_tax_deduction = max(0.0, _safe_float(state_tax_deduction_usd))
+    earned_income = safe_float(earned_income_usd)
+    ordinary_income = safe_float(ordinary_income_usd)
+    short_term_capital_gains = safe_float(short_term_capital_gains_usd)
+    long_term_capital_gains = safe_float(long_term_capital_gains_usd)
+    qualified_dividends = safe_float(qualified_dividends_usd)
+    interest_income = safe_float(interest_income_usd)
+    social_security_income = safe_float(social_security_income_usd)
+    tax_exempt_interest_income = max(0.0, safe_float(tax_exempt_interest_income_usd))
+    pre_tax_contributions = max(0.0, safe_float(pre_tax_contributions_usd))
+    resolved_state_tax_rate = max(0.0, min(1.0, safe_float(state_tax_rate)))
+    state_tax_deduction = max(0.0, safe_float(state_tax_deduction_usd))
     resolved_age = (
-        max(0, min(120, int(_safe_float(age, 0.0))))
+        max(0, min(120, int(safe_float(age, 0.0))))
         if age is not None
         else None
     )
@@ -348,7 +343,7 @@ def estimate_federal_tax(
     except (TypeError, ValueError):
         irmaa_months_value = 12
     irmaa_months = max(0, min(12, irmaa_months_value))
-    tax_withholding = max(0.0, _safe_float(tax_withholding_usd))
+    tax_withholding = max(0.0, safe_float(tax_withholding_usd))
 
     filing_key = filing_status
     if filing_key not in config.standard_deduction:

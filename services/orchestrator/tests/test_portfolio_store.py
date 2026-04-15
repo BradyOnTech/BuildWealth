@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 import pytest
 
@@ -38,7 +37,6 @@ class TestAssetMetadataSeed:
                 "metadata_source": "manual_override",
             },
         )
-        # Re-read through the migration/seed path.
         metadata = store.get_asset_metadata_map()["AAPL"]
         assert metadata["sector"] == "Custom Sector"
         assert metadata["metadata_source"] == "manual_override"
@@ -84,7 +82,6 @@ class TestTransactions:
         store.add_transaction(date="2026-01-20", symbol="MSFT", action="BUY", quantity=5, unit_price=400)
         txns = store.list_transactions()
         assert len(txns) == 2
-        # Most recent first
         assert txns[0]["symbol"] == "MSFT"
 
     def test_delete_transaction(self, store):

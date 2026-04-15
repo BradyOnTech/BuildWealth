@@ -3,7 +3,7 @@
 ## Date: 2026-04-08
 
 ## Status
-Historical snapshot from early pre-standalone planning. Many items in this file have been implemented.
+Archived snapshot from early pre-standalone planning. Many items below have since been implemented.
 For current execution priority and status, use:
 - [ROADMAP_SOURCE_OF_TRUTH_2026-04-14.md](./ROADMAP_SOURCE_OF_TRUTH_2026-04-14.md)
 - [STANDALONE_BUILD_PLAN.md](./STANDALONE_BUILD_PLAN.md)
@@ -92,7 +92,7 @@ A copilot tool + dashboard integration that computes:
 - Emergency fund coverage (liquid portfolio / monthly expenses in months)
 - Financial health status (healthy / needs attention / critical)
 
-**Why:** All the data already exists in the financial profile and portfolio snapshot. This is purely a computation + display gap. Highest-leverage improvement.
+This is a computation and display gap because the data already exists in the financial profile and portfolio snapshot. It is the highest-leverage improvement.
 
 ### 2. Affordability Calculator
 

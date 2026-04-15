@@ -12,41 +12,9 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Literal
 
+from buildwealth_orchestrator.services.service_utils import safe_float, safe_int
+
 PayoffStrategy = Literal["minimum", "snowball", "avalanche", "custom"]
-
-
-def _safe_float(value: Any, fallback: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return fallback
-
-
-def _safe_int(value: Any, fallback: int) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return fallback
-
-
-def _parse_optional_date(value: Any) -> date | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-
-    text = str(value).strip()
-    if not text:
-        return None
-    text = text.replace("Z", "+00:00")
-    try:
-        if "T" in text:
-            return datetime.fromisoformat(text).date()
-        return date.fromisoformat(text[:10])
-    except ValueError:
-        return None
 
 
 def _add_months(base: date, months: int) -> date:
@@ -93,20 +61,20 @@ def _build_debt_states(
             continue
 
         label = str(raw.get("label") or f"Debt {index}").strip() or f"Debt {index}"
-        balance = max(0.0, _safe_float(raw.get("balance_usd", raw.get("balance")), 0.0))
+        balance = max(0.0, safe_float(raw.get("balance_usd", raw.get("balance")), 0.0))
         if balance <= 0:
             continue
 
-        raw_rate = _safe_float(raw.get("interest_rate", raw.get("apr")), 0.0)
+        raw_rate = safe_float(raw.get("interest_rate", raw.get("apr")), 0.0)
         if raw_rate > 1.0:
             raw_rate = raw_rate / 100.0
         annual_rate = max(0.0, min(1.0, raw_rate))
-        minimum_payment = max(0.0, _safe_float(raw.get("minimum_payment_usd", raw.get("monthlyPayment")), 0.0))
+        minimum_payment = max(0.0, safe_float(raw.get("minimum_payment_usd", raw.get("monthlyPayment")), 0.0))
         if minimum_payment <= 0:
             warnings.append(f"Skipped debt '{label}': minimum payment must be greater than zero.")
             continue
 
-        custom_monthly = max(0.0, _safe_float(raw.get("custom_monthly_payment_usd"), 0.0))
+        custom_monthly = max(0.0, safe_float(raw.get("custom_monthly_payment_usd"), 0.0))
         debts.append(
             _DebtState(
                 id=str(raw.get("id") or f"debt-{index}"),
@@ -294,10 +262,10 @@ def project_debt_payoff(
     monthly_accelerated_payment_usd: float = 0.0,
 ) -> dict[str, Any]:
     resolved_start = start_date or datetime.now().date().replace(day=1)
-    resolved_years = max(1, min(_safe_int(max_years, 40), 80))
+    resolved_years = max(1, min(safe_int(max_years, 40), 80))
     max_months = resolved_years * 12
     resolved_strategy = _resolve_strategy(strategy)
-    resolved_monthly_extra = max(0.0, _safe_float(monthly_accelerated_payment_usd, 0.0))
+    resolved_monthly_extra = max(0.0, safe_float(monthly_accelerated_payment_usd, 0.0))
 
     minimum = _run_projection_scenario(
         debt_items,

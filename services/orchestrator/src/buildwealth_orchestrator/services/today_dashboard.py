@@ -12,7 +12,7 @@ from buildwealth_orchestrator.schemas import (
     TodayDashboardResponse,
     TodayRecommendation,
 )
-from buildwealth_orchestrator.services.research import concentration_metrics
+from buildwealth_orchestrator.services.portfolio_metrics import concentration_metrics
 
 PLAN_SETTINGS_KEYS = (
     "annual_contribution_usd",

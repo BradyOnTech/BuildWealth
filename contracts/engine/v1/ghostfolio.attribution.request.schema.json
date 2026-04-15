@@ -47,69 +47,74 @@
     "positions": {
       "type": "array",
       "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "symbol",
-          "current_value_base",
-          "price_return_base",
-          "income_return_base",
-          "total_return_base",
-          "allocation_pct"
-        ],
-        "properties": {
-          "symbol": {
-            "type": "string",
-            "minLength": 1
-          },
-          "name": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "account_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "asset_class": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "current_value_base": {
-            "type": "number"
-          },
-          "cost_basis_base": {
-            "type": "number"
-          },
-          "price_return_base": {
-            "type": "number"
-          },
-          "income_return_base": {
-            "type": "number"
-          },
-          "total_return_base": {
-            "type": "number"
-          },
-          "total_return_pct": {
-            "type": [
-              "number",
-              "null"
-            ]
-          },
-          "allocation_pct": {
-            "type": "number"
-          }
-        }
+        "$ref": "#/$defs/attribution_position_request"
       }
     },
     "metadata": {
       "type": "object",
       "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "attribution_position_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "current_value_base",
+        "price_return_base",
+        "income_return_base",
+        "total_return_base",
+        "allocation_pct"
+      ],
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "account_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "asset_class": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "current_value_base": {
+          "type": "number"
+        },
+        "cost_basis_base": {
+          "type": "number"
+        },
+        "price_return_base": {
+          "type": "number"
+        },
+        "income_return_base": {
+          "type": "number"
+        },
+        "total_return_base": {
+          "type": "number"
+        },
+        "total_return_pct": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "allocation_pct": {
+          "type": "number"
+        }
+      }
     }
   }
 }

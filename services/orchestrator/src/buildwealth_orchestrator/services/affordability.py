@@ -167,8 +167,8 @@ def assess_affordability(
 
     assessment_detail = {
         "affordable": f"This expense fits within your current cash flow. You'd still save {new_savings_rate:.1f}% of income.",
-        "stretch": f"This is technically affordable but would significantly reduce your savings capacity.",
-        "not_affordable": f"This expense would strain your finances beyond sustainable limits.",
+        "stretch": "This is technically affordable but would significantly reduce your savings capacity.",
+        "not_affordable": "This expense would strain your finances beyond sustainable limits.",
         "insufficient_data": "Not enough data to assess.",
     }[assessment]
 

@@ -81,6 +81,15 @@ class EngineStatusResponse(BaseModel):
     engines: list[EngineStatusItem] = Field(default_factory=list)
 
 
+class _EngineContractResponseBase(BaseModel):
+    contract_version: Literal[1] = 1
+    request_id: str
+    engine_status: Literal["ok", "degraded"]
+    fallback_method: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+    generated_at: datetime | None = None
+
+
 class PortfolioBenchmarkSummary(BaseModel):
     portfolio_return_pct: float
     benchmark_return_pct_by_symbol: dict[str, float] = Field(default_factory=dict)
@@ -96,19 +105,13 @@ class PortfolioBenchmarkSeriesPoint(BaseModel):
     alpha_index_by_symbol: dict[str, float] = Field(default_factory=dict)
 
 
-class PortfolioBenchmarkResponse(BaseModel):
-    request_id: str
-    contract_version: int
+class PortfolioBenchmarkResponse(_EngineContractResponseBase):
     engine: str
-    engine_status: Literal["ok", "degraded"]
-    fallback_method: str | None = None
     benchmark_symbols: list[str] = Field(default_factory=list)
     start_date: date
     end_date: date
     summary: PortfolioBenchmarkSummary
     series: list[PortfolioBenchmarkSeriesPoint] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    generated_at: datetime | None = None
 
 
 class PortfolioAttributionSummary(BaseModel):
@@ -135,20 +138,14 @@ class PortfolioAttributionPosition(BaseModel):
     allocation_pct: float = 0.0
 
 
-class PortfolioAttributionResponse(BaseModel):
-    request_id: str
-    contract_version: int
+class PortfolioAttributionResponse(_EngineContractResponseBase):
     engine: str
-    engine_status: Literal["ok", "degraded"]
-    fallback_method: str | None = None
     as_of: datetime | None = None
     top_n: int = 5
     summary: PortfolioAttributionSummary
     contributors: list[PortfolioAttributionPosition] = Field(default_factory=list)
     detractors: list[PortfolioAttributionPosition] = Field(default_factory=list)
     positions: list[PortfolioAttributionPosition] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    generated_at: datetime | None = None
 
 
 class ScenarioRequest(BaseModel):
@@ -1548,8 +1545,7 @@ class PlanFiles(BaseModel):
     branch_templates_json: str = ""
 
 
-class PlanSettings(BaseModel):
-    schema_version: int = 1
+class _PlanSettingsBase(BaseModel):
     annual_contribution_usd: float | None = None
     years: int | None = None
     hsa_extra_contribution_usd: float | None = None
@@ -1577,42 +1573,23 @@ class PlanSettings(BaseModel):
     filing_status: str | None = None
     withdrawal_strategy: str | None = None
     drawdown_order: str | None = None
+
+
+class PlanSettings(_PlanSettingsBase):
+    schema_version: int = 1
     updated_at: datetime | None = None
 
 
-class PlanSettingsUpdateRequest(BaseModel):
-    annual_contribution_usd: float | None = None
-    years: int | None = None
-    hsa_extra_contribution_usd: float | None = None
-    marginal_tax_rate: float | None = None
-    state_tax_rate: float | None = None
-    simulation_mode: str | None = None
-    simulation_monte_carlo_variant: str | None = None
-    simulation_historical_start_year: int | None = None
-    simulation_seed: int | None = None
-    household_mode: str | None = None
-    household_partner_income_usd: float | None = None
-    household_partner_income_growth_rate: float | None = None
-    household_partner_retirement_age: int | None = None
-    household_partner_social_security_annual_usd: float | None = None
-    household_partner_social_security_claiming_age: int | None = None
-    household_shared_goal_target_usd: float | None = None
-    household_shared_goal_target_year: int | None = None
-    roth_conversion_annual_amount_usd: float | None = None
-    roth_conversion_start_age: int | None = None
-    roth_conversion_end_age: int | None = None
-    inflation_rate: float | None = None
-    expected_return_baseline: float | None = None
-    expected_return_optimistic: float | None = None
-    expected_return_conservative: float | None = None
-    filing_status: str | None = None
-    withdrawal_strategy: str | None = None
-    drawdown_order: str | None = None
+class PlanSettingsUpdateRequest(_PlanSettingsBase):
+    pass
 
 
-class PlanScenarioDiffRequest(BaseModel):
+class _PlanScenarioComparisonRequestBase(BaseModel):
     current_portfolio_value_usd: float | None = None
     assumption_set_id: str | None = None
+
+
+class PlanScenarioDiffRequest(_PlanScenarioComparisonRequestBase):
     candidate_assumption_set_id: str | None = None
     compare_settings: PlanSettingsUpdateRequest = Field(default_factory=PlanSettingsUpdateRequest)
 
@@ -1641,9 +1618,7 @@ class PlanScenarioDiffResponse(BaseModel):
     simulation_delta: dict[str, Any] = Field(default_factory=dict)
 
 
-class PlanWithdrawalStrategyCompareRequest(BaseModel):
-    current_portfolio_value_usd: float | None = None
-    assumption_set_id: str | None = None
+class PlanWithdrawalStrategyCompareRequest(_PlanScenarioComparisonRequestBase):
     strategies: list[str] = Field(default_factory=list)
     include_raw_results: bool = False
 
@@ -1696,10 +1671,8 @@ class PlanScenarioBranchEvent(BaseModel):
     notes: str = ""
 
 
-class PlanScenarioBranchRequest(BaseModel):
+class PlanScenarioBranchRequest(_PlanScenarioComparisonRequestBase):
     branch_name: str = "What-If Branch"
-    current_portfolio_value_usd: float | None = None
-    assumption_set_id: str | None = None
     branch_template_id: str | None = None
     compare_settings: PlanSettingsUpdateRequest = Field(default_factory=PlanSettingsUpdateRequest)
     branch_events: list[PlanScenarioBranchEvent] = Field(default_factory=list)

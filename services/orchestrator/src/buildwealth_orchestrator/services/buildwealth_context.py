@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from collections.abc import Mapping, Sequence
 import re
 from datetime import datetime, timezone
-from typing import Any
+from typing import TypedDict
+
+from buildwealth_orchestrator.services.service_utils import (
+    parse_optional_datetime as _parse_iso_datetime,
+    safe_float_or_none as _safe_float,
+    trim_text as _trim_text,
+    utc_now_iso,
+)
 
 DEFAULT_RESEARCH_SYMBOL_LIMIT = 5
 DEFAULT_CONTEXT_SUMMARY_MAX_CHARS = 2400
@@ -16,59 +24,59 @@ VALID_CONTEXT_DETAIL_LEVELS = {"full", "light"}
 _SYMBOL_PATTERN = re.compile(r"[^A-Z0-9._-]+")
 
 
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+class ContextSummaryMetadata(TypedDict):
+    max_chars: int
+    full_chars: int
+    actual_chars: int
+    truncated: bool
 
 
-def _safe_float(value: Any) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+class ContextFreshness(TypedDict):
+    generated_at: str
+    snapshot_as_of: str | None
+    snapshot_age_seconds: float | None
+    snapshot_stale: bool | None
+    snapshot_stale_threshold_seconds: float
 
 
-def _format_currency(value: Any) -> str:
+class ContextQualityCoverage(TypedDict):
+    score_pct: float
+    checks: dict[str, bool]
+    missing_sections: list[str]
+
+
+class ContextQualityWarnings(TypedDict):
+    count: int
+    has_warnings: bool
+
+
+class ContextQuality(TypedDict):
+    freshness: ContextFreshness
+    coverage: ContextQualityCoverage
+    warnings: ContextQualityWarnings
+    summary: ContextSummaryMetadata
+
+
+def _format_currency(value: object) -> str:
     numeric = _safe_float(value)
     if numeric is None:
         return "n/a"
     return f"${numeric:,.2f}"
 
 
-def _format_percent(value: Any, *, digits: int = 2) -> str:
+def _format_percent(value: object, *, digits: int = 2) -> str:
     numeric = _safe_float(value)
     if numeric is None:
         return "n/a"
     return f"{numeric:.{digits}f}%"
 
 
-def _trim_text(value: Any, *, limit: int = 220) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    if len(text) <= limit:
-        return text
-    return f"{text[: max(0, limit - 3)].rstrip()}..."
-
-
-def _parse_iso_datetime(value: Any) -> datetime | None:
-    text = str(value or "").strip()
-    if not text:
-        return None
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
-
-
 def normalize_context_warnings(
-    raw_warnings: list[Any] | None,
+    raw_warnings: Sequence[object] | None,
     *,
     max_warnings: int = DEFAULT_CONTEXT_WARNING_LIMIT,
 ) -> list[str]:
-    if not isinstance(raw_warnings, list):
+    if not isinstance(raw_warnings, Sequence) or isinstance(raw_warnings, (str, bytes)):
         return []
 
     resolved_limit = max(0, min(int(max_warnings), 200))
@@ -92,7 +100,7 @@ def normalize_context_warnings(
 
 
 def normalize_context_detail_level(
-    raw_level: Any,
+    raw_level: object,
     *,
     default: str = DEFAULT_CONTEXT_DETAIL_LEVEL,
 ) -> str:
@@ -105,8 +113,8 @@ def normalize_context_detail_level(
     return fallback
 
 
-def normalize_research_symbols(raw_symbols: list[Any] | None, *, max_symbols: int = DEFAULT_RESEARCH_SYMBOL_LIMIT) -> list[str]:
-    if not isinstance(raw_symbols, list):
+def normalize_research_symbols(raw_symbols: Sequence[object] | None, *, max_symbols: int = DEFAULT_RESEARCH_SYMBOL_LIMIT) -> list[str]:
+    if raw_symbols is None or not isinstance(raw_symbols, Sequence) or isinstance(raw_symbols, (str, bytes)):
         return []
 
     resolved_limit = max(0, min(int(max_symbols), 20))
@@ -132,9 +140,9 @@ def normalize_research_symbols(raw_symbols: list[Any] | None, *, max_symbols: in
 
 def derive_research_symbols(
     *,
-    requested_symbols: list[Any] | None,
-    snapshot_summary: dict[str, Any] | None,
-    watchlist_symbols: list[Any] | None = None,
+    requested_symbols: Sequence[object] | None,
+    snapshot_summary: Mapping[str, object] | None,
+    watchlist_symbols: Sequence[object] | None = None,
     max_symbols: int = DEFAULT_RESEARCH_SYMBOL_LIMIT,
 ) -> list[str]:
     resolved_limit = max(0, min(int(max_symbols), 20))
@@ -158,8 +166,8 @@ def derive_research_symbols(
                 break
         return merged
 
-    holdings_symbols: list[Any] = []
-    if isinstance(snapshot_summary, dict):
+    holdings_symbols: list[object] = []
+    if snapshot_summary is not None:
         top_holdings = snapshot_summary.get("top_holdings")
         if isinstance(top_holdings, list):
             holdings_symbols = [
@@ -183,9 +191,9 @@ def derive_research_symbols(
 
 def _compute_snapshot_freshness(
     *,
-    context_payload: dict[str, Any],
+    context_payload: Mapping[str, object],
     snapshot_stale_after_seconds: float = DEFAULT_CONTEXT_SNAPSHOT_STALE_AFTER_SECONDS,
-) -> dict[str, Any]:
+) -> ContextFreshness:
     financial_picture = context_payload.get("financial_picture")
     if not isinstance(financial_picture, dict):
         financial_picture = {}
@@ -214,9 +222,9 @@ def _compute_snapshot_freshness(
 
 def build_context_summary_with_metadata(
     *,
-    context_payload: dict[str, Any],
+    context_payload: Mapping[str, object],
     max_chars: int = DEFAULT_CONTEXT_SUMMARY_MAX_CHARS,
-) -> tuple[str, dict[str, Any]]:
+) -> tuple[str, ContextSummaryMetadata]:
     summary_limit = max(300, min(int(max_chars), 12_000))
     financial_picture = context_payload.get("financial_picture")
     if not isinstance(financial_picture, dict):
@@ -363,7 +371,7 @@ def build_context_summary_with_metadata(
 
     if baseline_projection:
         scenario_rows = baseline_projection.get("scenarios")
-        baseline_row: dict[str, Any] | None = None
+        baseline_row: dict[str, object] | None = None
         if isinstance(scenario_rows, list):
             for item in scenario_rows:
                 if not isinstance(item, dict):
@@ -431,10 +439,10 @@ def build_context_summary_with_metadata(
 
 def build_context_quality(
     *,
-    context_payload: dict[str, Any],
-    summary_metadata: dict[str, Any] | None = None,
+    context_payload: Mapping[str, object],
+    summary_metadata: Mapping[str, object] | None = None,
     snapshot_stale_after_seconds: float = DEFAULT_CONTEXT_SNAPSHOT_STALE_AFTER_SECONDS,
-) -> dict[str, Any]:
+) -> ContextQuality:
     scope = context_payload.get("scope")
     if not isinstance(scope, dict):
         scope = {}
@@ -525,9 +533,9 @@ def build_context_quality(
 
 def shape_context_payload(
     *,
-    context_payload: dict[str, Any],
+    context_payload: dict[str, object],
     detail_level: str = DEFAULT_CONTEXT_DETAIL_LEVEL,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     resolved_level = normalize_context_detail_level(detail_level)
     if resolved_level == "full":
         return context_payload
@@ -776,7 +784,7 @@ def shape_context_payload(
 
 def build_context_summary(
     *,
-    context_payload: dict[str, Any],
+    context_payload: Mapping[str, object],
     max_chars: int = DEFAULT_CONTEXT_SUMMARY_MAX_CHARS,
 ) -> str:
     summary, _ = build_context_summary_with_metadata(

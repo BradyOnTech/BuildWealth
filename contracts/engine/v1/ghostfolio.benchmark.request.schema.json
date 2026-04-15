@@ -38,25 +38,7 @@
       "type": "array",
       "minItems": 2,
       "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "date",
-          "total_value_base"
-        ],
-        "properties": {
-          "date": {
-            "type": "string",
-            "format": "date"
-          },
-          "total_value_base": {
-            "type": "number"
-          },
-          "net_external_flow_base": {
-            "type": "number",
-            "default": 0
-          }
-        }
+        "$ref": "#/$defs/portfolio_point"
       }
     },
     "benchmark_symbols": {
@@ -79,6 +61,29 @@
     "metadata": {
       "type": "object",
       "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "portfolio_point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "date",
+        "total_value_base"
+      ],
+      "properties": {
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "total_value_base": {
+          "type": "number"
+        },
+        "net_external_flow_base": {
+          "type": "number",
+          "default": 0
+        }
+      }
     }
   }
 }

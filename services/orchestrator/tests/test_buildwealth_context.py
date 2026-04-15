@@ -19,6 +19,12 @@ def test_normalize_research_symbols_dedupes_and_bounds() -> None:
     assert symbols == ["AAPL", "MSFT", "BRK.B", "BAD"]
 
 
+def test_normalize_research_symbols_accepts_tuple_inputs() -> None:
+    symbols = normalize_research_symbols(("msft", "aapl", "msft", "", None))
+
+    assert symbols == ["MSFT", "AAPL"]
+
+
 def test_derive_research_symbols_uses_requested_then_top_holdings() -> None:
     snapshot_summary = {
         "top_holdings": [

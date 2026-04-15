@@ -41,36 +41,7 @@
       ]
     },
     "summary": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "portfolio_total_return_base",
-        "portfolio_total_value_base",
-        "accounted_return_base",
-        "residual_return_base",
-        "contributors_count",
-        "detractors_count"
-      ],
-      "properties": {
-        "portfolio_total_return_base": {
-          "type": "number"
-        },
-        "portfolio_total_value_base": {
-          "type": "number"
-        },
-        "accounted_return_base": {
-          "type": "number"
-        },
-        "residual_return_base": {
-          "type": "number"
-        },
-        "contributors_count": {
-          "type": "integer"
-        },
-        "detractors_count": {
-          "type": "integer"
-        }
-      }
+      "$ref": "#/$defs/attribution_summary"
     },
     "contributors": {
       "type": "array",
@@ -102,6 +73,38 @@
     }
   },
   "$defs": {
+    "attribution_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "portfolio_total_return_base",
+        "portfolio_total_value_base",
+        "accounted_return_base",
+        "residual_return_base",
+        "contributors_count",
+        "detractors_count"
+      ],
+      "properties": {
+        "portfolio_total_return_base": {
+          "type": "number"
+        },
+        "portfolio_total_value_base": {
+          "type": "number"
+        },
+        "accounted_return_base": {
+          "type": "number"
+        },
+        "residual_return_base": {
+          "type": "number"
+        },
+        "contributors_count": {
+          "type": "integer"
+        },
+        "detractors_count": {
+          "type": "integer"
+        }
+      }
+    },
     "attribution_position": {
       "type": "object",
       "additionalProperties": false,

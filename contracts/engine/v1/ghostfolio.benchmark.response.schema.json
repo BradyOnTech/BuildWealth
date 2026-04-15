@@ -39,6 +39,27 @@
       ]
     },
     "summary": {
+      "$ref": "#/$defs/benchmark_summary"
+    },
+    "series": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/benchmark_series_point"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "benchmark_summary": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -70,49 +91,36 @@
         }
       }
     },
-    "series": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "date",
-          "portfolio_index",
-          "benchmark_index_by_symbol",
-          "alpha_index_by_symbol"
-        ],
-        "properties": {
-          "date": {
-            "type": "string",
-            "format": "date"
-          },
-          "portfolio_index": {
+    "benchmark_series_point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "date",
+        "portfolio_index",
+        "benchmark_index_by_symbol",
+        "alpha_index_by_symbol"
+      ],
+      "properties": {
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "portfolio_index": {
+          "type": "number"
+        },
+        "benchmark_index_by_symbol": {
+          "type": "object",
+          "additionalProperties": {
             "type": "number"
-          },
-          "benchmark_index_by_symbol": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "number"
-            }
-          },
-          "alpha_index_by_symbol": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "number"
-            }
+          }
+        },
+        "alpha_index_by_symbol": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
           }
         }
       }
-    },
-    "warnings": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "generated_at": {
-      "type": "string",
-      "format": "date-time"
     }
   }
 }

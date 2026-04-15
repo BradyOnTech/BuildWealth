@@ -1,15 +1,60 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime, timezone
-from typing import Any
+from typing import TypedDict, cast
 
-from buildwealth_orchestrator.schemas import PortfolioSnapshot
-from buildwealth_orchestrator.services.research import concentration_metrics
+from buildwealth_orchestrator.schemas import PlanningResponse, PortfolioSnapshot
+from buildwealth_orchestrator.services.portfolio_metrics import concentration_metrics
 from buildwealth_orchestrator.services.scenario_engine import ScenarioEngine
 
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+class WorkflowTemplate(TypedDict):
+    id: str
+    title: str
+    description: str
+    default_params: dict[str, object]
+
+
+class WorkflowResult(TypedDict):
+    workflow_id: str
+    summary: str
+    generated_at: str
+    data: dict[str, object]
+    report_markdown: str
+
+
+class ConcentrationPosition(TypedDict):
+    symbol: str | None
+    name: str | None
+    weight: float
+    value_usd: float
+
+
+class ConcentrationMetrics(TypedDict):
+    top_positions: list[ConcentrationPosition]
+    herfindahl_index: float
+    effective_number_of_positions: float
+
+
+class ContributionRun(TypedDict):
+    increment_usd: float
+    annual_contribution_usd: float
+    future_value_usd: float
+    real_value_usd: float
+    monte_carlo_p50_usd: float
+
+
+class PositionChange(TypedDict):
+    symbol: str
+    name: str
+    value_delta_usd: float
+    allocation_delta_percent: float
+    current_value_usd: float
 
 
 class WorkflowRunner:
@@ -25,7 +70,7 @@ class WorkflowRunner:
         self.default_years = default_years
         self.default_hsa_delta = default_hsa_delta
 
-    def templates(self) -> list[dict[str, Any]]:
+    def templates(self) -> list[WorkflowTemplate]:
         return [
             {
                 "id": "risk_concentration_review",
@@ -86,10 +131,10 @@ class WorkflowRunner:
         self,
         workflow_id: str,
         snapshot: PortfolioSnapshot,
-        params: dict[str, Any] | None = None,
+        params: Mapping[str, object] | None = None,
         previous_snapshot: PortfolioSnapshot | None = None,
-    ) -> dict[str, Any]:
-        resolved = (params or {}).copy()
+    ) -> WorkflowResult:
+        resolved = dict(params or {})
         if workflow_id == "risk_concentration_review":
             return self._run_risk_concentration(snapshot=snapshot, params=resolved)
         if workflow_id == "contribution_optimization":
@@ -105,14 +150,14 @@ class WorkflowRunner:
     def _run_risk_concentration(
         self,
         snapshot: PortfolioSnapshot,
-        params: dict[str, Any],
-    ) -> dict[str, Any]:
+        params: Mapping[str, object],
+    ) -> WorkflowResult:
         max_single = float(params.get("max_single_holding_percent", 25.0))
         max_top3 = float(params.get("max_top3_percent", 60.0))
 
         holding_payloads = [holding.model_dump(mode="python") for holding in snapshot.holdings]
-        metrics = concentration_metrics(holding_payloads)
-        top_positions = metrics.get("top_positions", [])
+        metrics = cast(ConcentrationMetrics, concentration_metrics(holding_payloads))
+        top_positions = metrics["top_positions"]
 
         top1_pct = self._round(float(top_positions[0]["weight"]) * 100) if top_positions else 0.0
         top3_pct = (
@@ -161,8 +206,8 @@ class WorkflowRunner:
             "",
             f"- Top holding: {top1_pct:.2f}%",
             f"- Top 3 holdings: {top3_pct:.2f}%",
-            f"- Herfindahl index: {float(metrics.get('herfindahl_index', 0.0)):.4f}",
-            f"- Effective positions: {float(metrics.get('effective_number_of_positions', 0.0)):.2f}",
+            f"- Herfindahl index: {metrics['herfindahl_index']:.4f}",
+            f"- Effective positions: {metrics['effective_number_of_positions']:.2f}",
             f"- Risk level: {risk_level}",
             "",
             "## Top Positions",
@@ -222,8 +267,8 @@ class WorkflowRunner:
     def _run_contribution_optimization(
         self,
         snapshot: PortfolioSnapshot,
-        params: dict[str, Any],
-    ) -> dict[str, Any]:
+        params: Mapping[str, object],
+    ) -> WorkflowResult:
         years = int(params.get("years", self.default_years))
         base_contribution = float(
             params.get("annual_contribution_usd", self.default_annual_contribution_usd)
@@ -241,10 +286,10 @@ class WorkflowRunner:
         if not increments:
             increments = [0.0, 1000.0, 3000.0, 5000.0]
 
-        runs: list[dict[str, Any]] = []
+        runs: list[ContributionRun] = []
         for increment in sorted(set(increments)):
             annual = base_contribution + increment
-            planning = self.scenario_engine.run(
+            planning: PlanningResponse = self.scenario_engine.run(
                 current_portfolio_value_usd=snapshot.total_value_usd,
                 annual_contribution_usd=annual,
                 years=years,
@@ -272,7 +317,7 @@ class WorkflowRunner:
         baseline_run = min(runs, key=lambda item: item["increment_usd"])
         best_delta_real = self._round(best_run["real_value_usd"] - baseline_run["real_value_usd"])
 
-        hsa_plan = self.scenario_engine.run(
+        hsa_plan: PlanningResponse = self.scenario_engine.run(
             current_portfolio_value_usd=snapshot.total_value_usd,
             annual_contribution_usd=base_contribution,
             years=years,
@@ -365,8 +410,8 @@ class WorkflowRunner:
         self,
         snapshot: PortfolioSnapshot,
         previous_snapshot: PortfolioSnapshot | None,
-        params: dict[str, Any],
-    ) -> dict[str, Any]:
+        params: Mapping[str, object],
+    ) -> WorkflowResult:
         lookback_days = int(params.get("lookback_days", 7))
 
         if previous_snapshot is None:
@@ -445,7 +490,7 @@ class WorkflowRunner:
             reverse=True,
         )
 
-        changed_positions: list[dict[str, Any]] = []
+        changed_positions: list[PositionChange] = []
         for symbol, current_item in curr_holdings.items():
             previous_item = prev_holdings.get(symbol)
             if previous_item is None:
