@@ -1,13 +1,13 @@
 import { fetchJson } from '../lib/api.js';
+import { state } from '../lib/state.js';
 import {
-  state,
   PLAN_SETTING_FIELDS,
   PLAN_SETTING_SELECT_FIELDS,
   DIFF_SETTING_FIELDS,
   DIFF_SETTING_SELECT_FIELDS,
-} from '../lib/state.js';
-import { byId, fmtCurrency, fmtDate, writeLog, formatNumericInput } from '../lib/utils.js';
-import { settingsGridHtml, collectSettingsPayload, setSettingsInputs } from '../lib/components.js';
+} from '../lib/plan_setting_fields.js';
+import { byId, fmtCurrency, fmtDate, writeLog } from '../lib/utils.js';
+import { planSettingsGridHtml } from '../lib/components.js';
 import { initEditor, renderDetail, clearDetail } from './plan-editor.js';
 
 export const id = 'plans';
@@ -130,8 +130,8 @@ export function template() {
         <label class="field"><span>Context Snapshot</span><textarea id="plan-context" rows="6" readonly></textarea></label>
         <div class="view-header"><h3>Plan Settings</h3><button class="primary small" id="save-plan-settings" disabled>Save Settings</button></div>
         <p class="hint tight" id="plan-settings-meta">Blank values use global defaults from planner configuration.</p>
-        <div class="settings-grid">${settingsGridHtml(PLAN_SETTING_SELECT_FIELDS)}</div>
-        <div class="settings-grid">${settingsGridHtml(PLAN_SETTING_FIELDS)}</div>
+        <div class="settings-grid">${planSettingsGridHtml(PLAN_SETTING_SELECT_FIELDS)}</div>
+        <div class="settings-grid">${planSettingsGridHtml(PLAN_SETTING_FIELDS)}</div>
         <div class="view-header"><h3>Scenario Diff</h3>
           <div class="header-actions"><button class="primary small" id="run-scenario-diff" disabled>Run Diff</button><button class="ghost small" id="apply-scenario-overrides" disabled>Apply Overrides</button></div>
         </div>
@@ -140,8 +140,8 @@ export function template() {
           <label class="field"><span>Base Assumption Set</span><select id="diff-assumption-set-id" disabled></select></label>
           <label class="field"><span>Candidate Assumption Set</span><select id="diff-candidate-assumption-set-id" disabled></select></label>
         </div>
-        <div class="settings-grid">${settingsGridHtml(DIFF_SETTING_SELECT_FIELDS)}</div>
-        <div class="settings-grid">${settingsGridHtml(DIFF_SETTING_FIELDS)}</div>
+        <div class="settings-grid">${planSettingsGridHtml(DIFF_SETTING_SELECT_FIELDS)}</div>
+        <div class="settings-grid">${planSettingsGridHtml(DIFF_SETTING_FIELDS)}</div>
         <p class="hint tight" id="scenario-diff-summary">No scenario diff run yet.</p>
         <label class="field"><span>Scenario Diff Output</span><textarea id="scenario-diff-output" rows="8" readonly></textarea></label>
         <div class="view-header"><h3>Withdrawal Strategy Compare</h3><button class="primary small" id="run-withdrawal-strategy-compare" disabled>Run Compare</button></div>

@@ -63,6 +63,25 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Cross-Cutting Follow-up, Slice B Frontend Field Schema Isolation)
+- Isolated plan-setting field schema metadata into dedicated frontend module:
+  - added `web/lib/plan_setting_fields.js` as canonical field/option registry for plan settings and diff overrides.
+  - removed field/option constants from `web/lib/state.js` so state ownership remains runtime data only.
+- Rewired plan/profile UI modules to the dedicated schema module:
+  - `views/plan-editor.js`
+  - `views/plans.js`
+  - `views/profile.js`
+- Added explicit plan-setting helper wrappers in `web/lib/components.js`:
+  - `planSettingsGridHtml`
+  - `collectPlanSettingsPayload`
+  - `setPlanSettingsInputs`
+- Added focused frontend round-trip smoke coverage:
+  - `web/tests/plan_setting_fields_roundtrip.test.mjs`
+  - `tests/test_web_plan_setting_fields_smoke.py`
+- Verification:
+  - targeted: `pytest -q tests/test_web_plan_setting_fields_smoke.py` (`1 passed`)
+  - full: `pytest -q` in `services/orchestrator` passes (`475 passed`).
+
 ### 2026-04-15 (Completed - Cross-Cutting Follow-up, Slice A Shared Helper Cohesion)
 - Split mixed service helpers into focused modules:
   - added `services/value_coercion.py` for shared coercion/parsing/time helpers.

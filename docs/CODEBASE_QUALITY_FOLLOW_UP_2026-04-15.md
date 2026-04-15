@@ -25,9 +25,9 @@ The tradeoff is that some shared helpers now sit one layer farther away from the
 
 ## Execution Status (2026-04-15)
 - Completed: Slice A (Shared Helper Cohesion)
+- Completed: Slice B (Frontend Field Schema Isolation)
 - Completed: Slice C (Engine Policy and Envelope Unification)
 - Completed: Slice E (Sidecar Matrix Test Hardening)
-- Pending: Slice B (Frontend Field Schema Isolation)
 - Pending: Slice D (Planning Sidecar Decomposition)
 
 ## Areas With New Indirection
@@ -99,31 +99,35 @@ How to fix it:
 4. Do not create a generic dumping ground. If the shared area grows beyond a handful of focused helpers, split by domain.
 
 ### 3. Frontend Plan-Setting Registry Centralization
+Status:
+- Completed (2026-04-15, Slice B)
+
 Files:
-- `services/orchestrator/src/buildwealth_orchestrator/web/lib/state.js`
+- `services/orchestrator/src/buildwealth_orchestrator/web/lib/plan_setting_fields.js`
 - `services/orchestrator/src/buildwealth_orchestrator/web/lib/components.js`
 - `services/orchestrator/src/buildwealth_orchestrator/web/views/plan-editor.js`
 - `services/orchestrator/src/buildwealth_orchestrator/web/views/plans.js`
 - `services/orchestrator/src/buildwealth_orchestrator/web/views/profile.js`
 
 What happened:
-- numeric and select field definitions were centralized so plan settings are rendered and parsed from shared metadata instead of duplicated view logic
+- plan-setting field metadata moved from `state.js` into `plan_setting_fields.js`
+- plan-setting form usage now goes through explicit helper wrappers in `components.js`
+- added a focused round-trip smoke test for field-registry render/parse behavior
 
 Why this is better:
 - lower UI drift
 - fewer duplicated option lists
 - shared parsing/rendering behavior
+- runtime state and form-schema ownership are now separated
 
 Why this is more indirect:
-- `state.js` now holds both runtime state and form-schema metadata
-- `components.js` now contains generic form rendering/parsing behavior that is coupled to the plan setting metadata shape
+- there is still one extra jump between plan views and metadata module
+- wrappers in `components.js` add a small layer, but make the metadata contract explicit
 
-How to fix it:
-1. Move field metadata out of `state.js` into a dedicated file:
-   - `web/lib/plan_setting_fields.js`
-2. Keep `state.js` for runtime mutable state only.
-3. Keep `components.js` generic, but add a narrow helper for plan-setting forms so the metadata contract is explicit.
-4. Add one focused frontend test or smoke check for field-registry round-trip behavior.
+Guardrails after split:
+1. Keep `plan_setting_fields.js` limited to declarative field/option metadata.
+2. Keep `state.js` runtime-mutable only.
+3. Keep plan-setting wrappers explicit if generic component helpers evolve.
 
 ### 4. Shared Schema Base Classes
 Files:
@@ -259,7 +263,7 @@ Definition of done:
 - no mixed coercion/projection helper module remains
 - all touched services still pass targeted tests
 
-### Slice B: Frontend Field Schema Isolation
+### Slice B: Frontend Field Schema Isolation (Completed 2026-04-15)
 Goal:
 - move plan-setting field metadata out of `state.js`
 

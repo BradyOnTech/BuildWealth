@@ -1,5 +1,6 @@
 import { fetchJson } from '../lib/api.js';
-import { state, FILING_STATUS_OPTIONS } from '../lib/state.js';
+import { state } from '../lib/state.js';
+import { FILING_STATUS_OPTIONS } from '../lib/plan_setting_fields.js';
 import { byId, fmtCurrency, fmtDate, uid, parseOptionalNumber, writeLog } from '../lib/utils.js';
 import { emptyFinancialProfile, renderItemList } from '../lib/components.js';
 

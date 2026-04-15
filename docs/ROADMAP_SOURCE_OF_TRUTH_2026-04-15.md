@@ -10,6 +10,21 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Cross-Cutting Follow-up, Slice B Frontend Field Schema Isolation)
+1. Isolated plan-setting schema metadata from runtime state:
+- added `web/lib/plan_setting_fields.js` as canonical plan-setting field/option registry.
+- removed plan-setting field/option constants from `web/lib/state.js` so it remains runtime mutable state only.
+2. Rewired plan/profile view imports to dedicated schema module:
+- updated `views/plan-editor.js`, `views/plans.js`, and `views/profile.js` to import plan-setting and filing-status metadata from `plan_setting_fields.js`.
+3. Added explicit plan-setting helpers in `components.js`:
+- added `planSettingsGridHtml`, `collectPlanSettingsPayload`, and `setPlanSettingsInputs` wrappers to keep generic component utilities while making plan-setting metadata usage explicit.
+4. Added focused frontend round-trip smoke coverage:
+- new frontend smoke test: `web/tests/plan_setting_fields_roundtrip.test.mjs`.
+- new pytest wrapper: `tests/test_web_plan_setting_fields_smoke.py` to execute the node smoke test in CI/test workflow.
+5. Verification:
+- targeted: `pytest -q tests/test_web_plan_setting_fields_smoke.py` (`1 passed`).
+- full: `pytest -q` (`475 passed`).
+
 ### 2026-04-15 (Completed - Cross-Cutting Follow-up, Slice A Shared Helper Cohesion)
 1. Split mixed helper responsibilities into focused modules:
 - added `services/value_coercion.py` for shared coercion/parsing/time helpers.
@@ -777,9 +792,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Start Codebase Quality Follow-Up Slice B: isolate frontend plan-setting field schema from runtime state module.
-2. Start Codebase Quality Follow-Up Slice D: decompose planning sidecar responsibilities into smaller internal helpers.
-3. Migrate FastAPI startup/shutdown hooks to lifespan handlers to clear deprecation warnings and preserve forward compatibility.
+1. Start Codebase Quality Follow-Up Slice D: decompose planning sidecar responsibilities into smaller internal helpers.
+2. Migrate FastAPI startup/shutdown hooks to lifespan handlers to clear deprecation warnings and preserve forward compatibility.
+3. Add schema-base clarity follow-up in `schemas.py` (document inheritance ownership and keep base depth flat).
 
 ## Cross-Cutting Engineering Follow-Up
 1. Post-refactor helper indirection and intentional sidecar complexity are documented in [`docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`](./CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md).

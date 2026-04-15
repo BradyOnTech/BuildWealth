@@ -62,10 +62,29 @@ export function settingsGridHtml(fields, prefix = '') {
   }).join('');
 }
 
-export function collectSettingsPayload(fields, { includeNulls }) {
+function resolveInputElement(field, getInputById) {
+  const resolver = typeof getInputById === 'function' ? getInputById : byId;
+  return resolver(field.inputId);
+}
+
+function isPlanSettingFieldMetadata(field) {
+  if (!field || typeof field !== 'object') return false;
+  if (!String(field.key || '').trim()) return false;
+  if (!String(field.inputId || '').trim()) return false;
+  if (field.kind === 'select') return Array.isArray(field.options);
+  return true;
+}
+
+function assertPlanSettingFieldMetadata(fields, contextLabel = 'plan settings') {
+  if (!Array.isArray(fields) || fields.some(field => !isPlanSettingFieldMetadata(field))) {
+    throw new Error(`Invalid ${contextLabel} field metadata.`);
+  }
+}
+
+export function collectSettingsPayload(fields, { includeNulls = false, getInputById } = {}) {
   const payload = {};
   for (const field of fields) {
-    const input = byId(field.inputId);
+    const input = resolveInputElement(field, getInputById);
     if (!input) continue;
     if (field.kind === 'select') {
       const value = String(input.value || '').trim();
@@ -88,10 +107,10 @@ export function collectSettingsPayload(fields, { includeNulls }) {
   return payload;
 }
 
-export function setSettingsInputs(fields, settingsPayload) {
+export function setSettingsInputs(fields, settingsPayload, { getInputById } = {}) {
   const settings = settingsPayload && typeof settingsPayload === 'object' ? settingsPayload : {};
   for (const field of fields) {
-    const input = byId(field.inputId);
+    const input = resolveInputElement(field, getInputById);
     if (!input) continue;
     const raw = settings[field.key];
     if (raw === null || raw === undefined || raw === '') { input.value = ''; continue; }
@@ -103,4 +122,19 @@ export function setSettingsInputs(fields, settingsPayload) {
     }
     input.value = formatNumericInput(Number(raw) * (field.scale || 1));
   }
+}
+
+export function planSettingsGridHtml(fields, prefix = '') {
+  assertPlanSettingFieldMetadata(fields, 'plan settings grid');
+  return settingsGridHtml(fields, prefix);
+}
+
+export function collectPlanSettingsPayload(fields, options = {}) {
+  assertPlanSettingFieldMetadata(fields, 'plan settings');
+  return collectSettingsPayload(fields, options);
+}
+
+export function setPlanSettingsInputs(fields, settingsPayload, options = {}) {
+  assertPlanSettingFieldMetadata(fields, 'plan settings');
+  setSettingsInputs(fields, settingsPayload, options);
 }

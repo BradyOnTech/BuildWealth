@@ -1,17 +1,15 @@
 import { fetchJson } from '../lib/api.js';
+import { state } from '../lib/state.js';
 import {
-  state,
-  PLAN_SETTING_FIELDS,
-  PLAN_SETTING_SELECT_FIELDS,
-  DIFF_SETTING_FIELDS,
-  DIFF_SETTING_SELECT_FIELDS,
+  PLAN_SETTING_VALUE_FIELDS,
+  DIFF_SETTING_VALUE_FIELDS,
   HOUSEHOLD_MODE_OPTIONS,
   FILING_STATUS_OPTIONS,
   SIMULATION_MODE_OPTIONS,
   SIMULATION_MONTE_CARLO_VARIANT_OPTIONS,
-} from '../lib/state.js';
+} from '../lib/plan_setting_fields.js';
 import { byId, fmtCurrency, fmtDate, writeLog } from '../lib/utils.js';
-import { collectSettingsPayload, setSettingsInputs } from '../lib/components.js';
+import { collectPlanSettingsPayload, setPlanSettingsInputs } from '../lib/components.js';
 
 const PROJECTION_SOURCE_OPTIONS = [
   { value: 'diff_base', label: 'Scenario Diff - Base' },
@@ -55,8 +53,6 @@ const HOUSEHOLD_MODES = new Set(HOUSEHOLD_MODE_OPTIONS.map(option => option.valu
 const FILING_STATUSES = new Set(FILING_STATUS_OPTIONS.map(option => option.value));
 const SIMULATION_MODES = new Set(SIMULATION_MODE_OPTIONS.map(option => option.value));
 const SIMULATION_MONTE_CARLO_VARIANTS = new Set(SIMULATION_MONTE_CARLO_VARIANT_OPTIONS.map(option => option.value));
-const PLAN_SETTING_VALUE_FIELDS = [...PLAN_SETTING_FIELDS, ...PLAN_SETTING_SELECT_FIELDS];
-const DIFF_SETTING_VALUE_FIELDS = [...DIFF_SETTING_FIELDS, ...DIFF_SETTING_SELECT_FIELDS];
 const TIMELINE_DEFAULT_IMPACT_BY_EVENT = {
   purchase: 'expense',
   windfall: 'income',
@@ -724,7 +720,7 @@ function applyBranchTemplateToEditor(template) {
   const compareSettings = template.compare_settings && typeof template.compare_settings === 'object'
     ? template.compare_settings
     : {};
-  setSettingsInputs(DIFF_SETTING_VALUE_FIELDS, compareSettings);
+  setPlanSettingsInputs(DIFF_SETTING_VALUE_FIELDS, compareSettings);
   return true;
 }
 
@@ -1461,8 +1457,8 @@ export function clearDetail() {
   byId('plan-decisions-body').innerHTML = '<tr><td colspan="4">No decisions yet.</td></tr>';
   byId('plan-artifacts-body').innerHTML = '<tr><td colspan="4">No artifacts yet.</td></tr>';
   byId('projection-account-body').innerHTML = '<tr><td colspan="6">No projection data yet.</td></tr>';
-  setSettingsInputs(PLAN_SETTING_VALUE_FIELDS, {});
-  setSettingsInputs(DIFF_SETTING_VALUE_FIELDS, {});
+  setPlanSettingsInputs(PLAN_SETTING_VALUE_FIELDS, {});
+  setPlanSettingsInputs(DIFF_SETTING_VALUE_FIELDS, {});
   const scenarioLabelSelect = byId('projection-scenario-label');
   if (scenarioLabelSelect) scenarioLabelSelect.value = 'baseline';
   const metricSelect = byId('projection-account-metric');
@@ -1525,8 +1521,8 @@ export function renderDetail() {
   setProjectionSourceOptions();
   renderNetWorthChart([]);
   renderAccountTypeChart([], 'ending_balance_usd');
-  setSettingsInputs(PLAN_SETTING_VALUE_FIELDS, d.settings || {});
-  setSettingsInputs(DIFF_SETTING_VALUE_FIELDS, {});
+  setPlanSettingsInputs(PLAN_SETTING_VALUE_FIELDS, d.settings || {});
+  setPlanSettingsInputs(DIFF_SETTING_VALUE_FIELDS, {});
   const su = d.settings?.updated_at ? fmtDate(d.settings.updated_at) : null;
   byId('plan-settings-meta').textContent = su ? `Settings updated ${su}` : 'Blank values use global defaults from planner configuration.';
   renderPlanTopNextActions(Array.isArray(d.top_next_actions) ? d.top_next_actions : []);
@@ -2508,7 +2504,7 @@ export function initEditor(refreshPlans) {
     let payload;
     try {
       payload = {
-        ...collectSettingsPayload(PLAN_SETTING_VALUE_FIELDS, { includeNulls: true }),
+        ...collectPlanSettingsPayload(PLAN_SETTING_VALUE_FIELDS, { includeNulls: true }),
       };
     } catch (e) {
       writeLog(e.message, null, true); return;
@@ -2525,7 +2521,7 @@ export function initEditor(refreshPlans) {
     let compare;
     try {
       compare = {
-        ...collectSettingsPayload(DIFF_SETTING_VALUE_FIELDS, { includeNulls: false }),
+        ...collectPlanSettingsPayload(DIFF_SETTING_VALUE_FIELDS, { includeNulls: false }),
       };
     } catch (e) {
       writeLog(e.message, null, true); return;
@@ -2618,7 +2614,7 @@ export function initEditor(refreshPlans) {
     let compareSettings = {};
     try {
       compareSettings = {
-        ...collectSettingsPayload(DIFF_SETTING_VALUE_FIELDS, { includeNulls: false }),
+        ...collectPlanSettingsPayload(DIFF_SETTING_VALUE_FIELDS, { includeNulls: false }),
       };
     } catch (e) {
       writeLog(e.message, null, true);
@@ -2666,14 +2662,14 @@ export function initEditor(refreshPlans) {
     let payload;
     try {
       payload = {
-        ...collectSettingsPayload(DIFF_SETTING_VALUE_FIELDS, { includeNulls: false }),
+        ...collectPlanSettingsPayload(DIFF_SETTING_VALUE_FIELDS, { includeNulls: false }),
       };
     } catch (e) { writeLog(e.message, null, true); return; }
     if (!Object.keys(payload).length) { writeLog('Enter at least one override.', null, true); return; }
     writeLog(`Applying overrides...`, payload);
     try {
       state.currentPlanDetail = await fetchJson(`/api/plans/${encodeURIComponent(state.currentPlanId)}/settings`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
-      renderDetail(); setSettingsInputs(DIFF_SETTING_VALUE_FIELDS, {});
+      renderDetail(); setPlanSettingsInputs(DIFF_SETTING_VALUE_FIELDS, {});
       byId('scenario-diff-summary').textContent = 'Overrides applied to plan settings.';
       await refreshPlans(); writeLog('Overrides applied.');
     } catch (e) { writeLog(`Apply failed: ${e.message}`, null, true); }
