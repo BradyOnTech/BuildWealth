@@ -39,6 +39,8 @@ export const PLAN_SETTING_FIELDS = [
   { key: 'hsa_extra_contribution_usd', inputId: 'setting-hsa-extra', label: 'HSA Extra (USD)', scale: 1, integer: false, step: 100, min: 0, placeholder: 'e.g. 1000' },
   { key: 'marginal_tax_rate', inputId: 'setting-marginal-tax-rate', label: 'Tax Rate (%)', scale: 100, integer: false, step: 0.01, min: 0, max: 100, placeholder: 'e.g. 24' },
   { key: 'state_tax_rate', inputId: 'setting-state-tax-rate', label: 'State Tax Rate (%)', scale: 100, integer: false, step: 0.01, min: 0, max: 100, placeholder: 'e.g. 5' },
+  { key: 'simulation_historical_start_year', inputId: 'setting-simulation-historical-start-year', label: 'Historical Start Year', scale: 1, integer: true, step: 1, min: 1928, max: 2024, placeholder: 'e.g. 1980' },
+  { key: 'simulation_seed', inputId: 'setting-simulation-seed', label: 'Simulation Seed', scale: 1, integer: true, step: 1, min: 0, max: 2147483647, placeholder: 'e.g. 9521' },
   { key: 'household_partner_income_usd', inputId: 'setting-household-partner-income', label: 'Partner Income Annual (USD)', scale: 1, integer: false, step: 100, min: 0, placeholder: 'e.g. 90000' },
   { key: 'household_partner_income_growth_rate', inputId: 'setting-household-partner-income-growth-rate', label: 'Partner Income Growth (%)', scale: 100, integer: false, step: 0.01, min: -100, max: 100, placeholder: 'e.g. 3' },
   { key: 'household_partner_retirement_age', inputId: 'setting-household-partner-retirement-age', label: 'Partner Retirement Age', scale: 1, integer: true, step: 1, min: 0, max: 120, placeholder: 'e.g. 65' },

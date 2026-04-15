@@ -61,11 +61,19 @@ def test_run_planning_tool_supports_roth_conversion_and_drawdown_inputs() -> Non
     assert "roth_conversion_start_age" in properties
     assert "roth_conversion_end_age" in properties
     assert "drawdown_order" in properties
+    assert "simulation_mode" in properties
+    assert "simulation_monte_carlo_variant" in properties
+    assert "simulation_historical_start_year" in properties
+    assert "simulation_seed" in properties
 
 
 def test_update_plan_settings_tool_supports_household_inputs() -> None:
     tool = main.copilot.tools["update_plan_settings"]
     properties = tool.parameters.get("properties", {})
+    assert "simulation_mode" in properties
+    assert "simulation_monte_carlo_variant" in properties
+    assert "simulation_historical_start_year" in properties
+    assert "simulation_seed" in properties
     assert "household_mode" in properties
     assert "household_partner_income_usd" in properties
     assert "household_partner_income_growth_rate" in properties

@@ -75,6 +75,121 @@ def test_scenario_engine_propagates_assumption_set_metadata() -> None:
         assert scenario.assumptions["assumption_set_name"] == "Stagflation"
 
 
+def test_scenario_engine_stochastic_mode_is_seeded() -> None:
+    engine = ScenarioEngine(
+        years_to_retirement=10,
+        annual_contribution_usd=12000,
+        baseline_return=0.06,
+        optimistic_return=0.08,
+        conservative_return=0.04,
+        return_volatility=0.18,
+        inflation=0.025,
+        monte_carlo_runs=100,
+        hsa_delta_default=1000,
+        marginal_tax_rate=0.25,
+    )
+
+    first = engine.run(
+        current_portfolio_value_usd=100000,
+        simulation_mode="stochastic",
+        simulation_seed=2026,
+    )
+    second = engine.run(
+        current_portfolio_value_usd=100000,
+        simulation_mode="stochastic",
+        simulation_seed=2026,
+    )
+    third = engine.run(
+        current_portfolio_value_usd=100000,
+        simulation_mode="stochastic",
+        simulation_seed=2027,
+    )
+
+    baseline_first = next(item for item in first.scenarios if item.label == "baseline")
+    baseline_second = next(item for item in second.scenarios if item.label == "baseline")
+    baseline_third = next(item for item in third.scenarios if item.label == "baseline")
+    points_first = [point.ending_balance_usd for point in baseline_first.timeline_points]
+    points_second = [point.ending_balance_usd for point in baseline_second.timeline_points]
+    points_third = [point.ending_balance_usd for point in baseline_third.timeline_points]
+
+    assert first.simulation["mode"] == "stochastic"
+    assert first.simulation["seed"] == 2026
+    assert points_first == points_second
+    assert points_first != points_third
+
+
+def test_scenario_engine_historical_mode_respects_start_year() -> None:
+    engine = ScenarioEngine(
+        years_to_retirement=6,
+        annual_contribution_usd=12000,
+        baseline_return=0.06,
+        optimistic_return=0.08,
+        conservative_return=0.04,
+        return_volatility=0.12,
+        inflation=0.025,
+        monte_carlo_runs=100,
+        hsa_delta_default=1000,
+        marginal_tax_rate=0.25,
+    )
+
+    result = engine.run(
+        current_portfolio_value_usd=100000,
+        simulation_mode="historical",
+        simulation_historical_start_year=1980,
+        simulation_seed=777,
+    )
+
+    baseline = next(item for item in result.scenarios if item.label == "baseline")
+    assert result.simulation["mode"] == "historical"
+    assert result.simulation["requested_historical_start_year"] == 1980
+    assert baseline.assumptions["simulation_timeline_mode"] == "historical"
+    assert baseline.assumptions["simulation_historical_start_year"] == 1980
+
+
+def test_scenario_engine_monte_carlo_variant_controls_terminal_values() -> None:
+    engine = ScenarioEngine(
+        years_to_retirement=15,
+        annual_contribution_usd=12000,
+        baseline_return=0.06,
+        optimistic_return=0.08,
+        conservative_return=0.04,
+        return_volatility=0.15,
+        inflation=0.025,
+        monte_carlo_runs=300,
+        hsa_delta_default=1000,
+        marginal_tax_rate=0.25,
+    )
+
+    p10 = engine.run(
+        current_portfolio_value_usd=100000,
+        simulation_mode="monte_carlo",
+        simulation_monte_carlo_variant="p10",
+        simulation_seed=42,
+    )
+    p90 = engine.run(
+        current_portfolio_value_usd=100000,
+        simulation_mode="monte_carlo",
+        simulation_monte_carlo_variant="p90",
+        simulation_seed=42,
+    )
+
+    baseline_p10 = next(item for item in p10.scenarios if item.label == "baseline")
+    baseline_p90 = next(item for item in p90.scenarios if item.label == "baseline")
+
+    assert p10.simulation["mode"] == "monte_carlo"
+    assert p10.simulation["monte_carlo_variant"] == "p10"
+    assert p90.simulation["monte_carlo_variant"] == "p90"
+    assert baseline_p10.future_value_usd == pytest.approx(
+        float(p10.monte_carlo["p10_future_value_usd"]),
+        abs=0.01,
+    )
+    assert baseline_p90.future_value_usd == pytest.approx(
+        float(p90.monte_carlo["p90_future_value_usd"]),
+        abs=0.01,
+    )
+    assert baseline_p90.future_value_usd >= baseline_p10.future_value_usd
+
+
 def test_scenario_engine_projects_tax_and_account_timelines() -> None:
     engine = ScenarioEngine(
         years_to_retirement=3,

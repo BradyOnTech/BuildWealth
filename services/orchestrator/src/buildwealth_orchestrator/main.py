@@ -129,7 +129,14 @@ from buildwealth_orchestrator.services.ignidash_exporter import (
     IgnidashExportStore,
 )
 from buildwealth_orchestrator.services.research import OpenBBResearchService
-from buildwealth_orchestrator.services.scenario_engine import STRATEGY_ALIASES, ScenarioEngine
+from buildwealth_orchestrator.services.scenario_engine import (
+    DEFAULT_SIMULATION_SEED,
+    HISTORICAL_YEARS,
+    MONTE_CARLO_VARIANT_ALIASES,
+    SIMULATION_MODE_ALIASES,
+    STRATEGY_ALIASES,
+    ScenarioEngine,
+)
 from buildwealth_orchestrator.services.snapshot_store import (
     SnapshotStore,
 )
@@ -661,6 +668,10 @@ PLAN_SETTINGS_FIELDS = (
     "hsa_extra_contribution_usd",
     "marginal_tax_rate",
     "state_tax_rate",
+    "simulation_mode",
+    "simulation_monte_carlo_variant",
+    "simulation_historical_start_year",
+    "simulation_seed",
     "household_mode",
     "household_partner_income_usd",
     "household_partner_income_growth_rate",
@@ -1334,6 +1345,63 @@ def normalize_withdrawal_strategies(
     return resolved, invalid
 
 
+def _normalize_optional_simulation_mode(raw_value: Any) -> str | None:
+    if raw_value is None:
+        return None
+    text = str(raw_value).strip().lower()
+    if not text:
+        return None
+    candidates = (
+        text,
+        text.replace("-", "_"),
+        text.replace(" ", "_"),
+        re.sub(r"[^a-z0-9_]+", "", text),
+    )
+    for candidate in candidates:
+        normalized = SIMULATION_MODE_ALIASES.get(candidate)
+        if normalized is not None:
+            return normalized
+    return None
+
+
+def _normalize_optional_simulation_monte_carlo_variant(raw_value: Any) -> str | None:
+    if raw_value is None:
+        return None
+    text = str(raw_value).strip().lower()
+    if not text:
+        return None
+    candidates = (
+        text,
+        text.replace("-", "_"),
+        text.replace(" ", "_"),
+        re.sub(r"[^a-z0-9_]+", "", text),
+    )
+    for candidate in candidates:
+        normalized = MONTE_CARLO_VARIANT_ALIASES.get(candidate)
+        if normalized is not None:
+            return normalized
+    return None
+
+
+def _normalize_optional_simulation_int(
+    raw_value: Any,
+    *,
+    minimum: int,
+    maximum: int,
+) -> int | None:
+    if raw_value is None:
+        return None
+    if isinstance(raw_value, str) and not raw_value.strip():
+        return None
+    try:
+        value = int(float(raw_value))
+    except (TypeError, ValueError):
+        return None
+    if value < minimum or value > maximum:
+        return None
+    return value
+
+
 def parse_assumption_sets_payload(raw_payload: Any) -> dict[str, Any]:
     fallback_sets = [
         {
@@ -1345,6 +1413,10 @@ def parse_assumption_sets_payload(raw_payload: Any) -> dict[str, Any]:
             "inflation_rate": None,
             "marginal_tax_rate": None,
             "state_tax_rate": None,
+            "simulation_mode": None,
+            "simulation_monte_carlo_variant": None,
+            "simulation_historical_start_year": None,
+            "simulation_seed": None,
             "roth_conversion_annual_amount_usd": None,
             "roth_conversion_start_age": None,
             "roth_conversion_end_age": None,
@@ -1358,6 +1430,10 @@ def parse_assumption_sets_payload(raw_payload: Any) -> dict[str, Any]:
             "inflation_rate": 0.03,
             "marginal_tax_rate": None,
             "state_tax_rate": None,
+            "simulation_mode": None,
+            "simulation_monte_carlo_variant": None,
+            "simulation_historical_start_year": None,
+            "simulation_seed": None,
             "roth_conversion_annual_amount_usd": None,
             "roth_conversion_start_age": None,
             "roth_conversion_end_age": None,
@@ -1371,6 +1447,10 @@ def parse_assumption_sets_payload(raw_payload: Any) -> dict[str, Any]:
             "inflation_rate": 0.025,
             "marginal_tax_rate": None,
             "state_tax_rate": None,
+            "simulation_mode": None,
+            "simulation_monte_carlo_variant": None,
+            "simulation_historical_start_year": None,
+            "simulation_seed": None,
             "roth_conversion_annual_amount_usd": None,
             "roth_conversion_start_age": None,
             "roth_conversion_end_age": None,
@@ -1384,6 +1464,10 @@ def parse_assumption_sets_payload(raw_payload: Any) -> dict[str, Any]:
             "inflation_rate": 0.05,
             "marginal_tax_rate": None,
             "state_tax_rate": None,
+            "simulation_mode": None,
+            "simulation_monte_carlo_variant": None,
+            "simulation_historical_start_year": None,
+            "simulation_seed": None,
             "roth_conversion_annual_amount_usd": None,
             "roth_conversion_start_age": None,
             "roth_conversion_end_age": None,
@@ -1397,6 +1481,10 @@ def parse_assumption_sets_payload(raw_payload: Any) -> dict[str, Any]:
             "inflation_rate": 0.005,
             "marginal_tax_rate": None,
             "state_tax_rate": None,
+            "simulation_mode": None,
+            "simulation_monte_carlo_variant": None,
+            "simulation_historical_start_year": None,
+            "simulation_seed": None,
             "roth_conversion_annual_amount_usd": None,
             "roth_conversion_start_age": None,
             "roth_conversion_end_age": None,
@@ -1501,6 +1589,30 @@ def parse_assumption_sets_payload(raw_payload: Any) -> dict[str, Any]:
             minimum=0.0,
             maximum=1.0,
         )
+        simulation_mode = _normalize_optional_simulation_mode(
+            raw.get("simulation_mode")
+        )
+        simulation_monte_carlo_variant = _normalize_optional_simulation_monte_carlo_variant(
+            raw.get("simulation_monte_carlo_variant")
+        )
+        simulation_historical_start_year = _normalize_optional_simulation_int(
+            raw.get("simulation_historical_start_year"),
+            minimum=min(HISTORICAL_YEARS),
+            maximum=max(HISTORICAL_YEARS),
+        )
+        simulation_seed_value = raw.get("simulation_seed")
+        if simulation_seed_value is None or (
+            isinstance(simulation_seed_value, str) and not simulation_seed_value.strip()
+        ):
+            simulation_seed = None
+        else:
+            simulation_seed = _normalize_optional_simulation_int(
+                simulation_seed_value,
+                minimum=0,
+                maximum=2_147_483_647,
+            )
+            if simulation_seed is None:
+                simulation_seed = DEFAULT_SIMULATION_SEED
         roth_conversion_annual_amount_usd = _normalize_optional_rate(
             raw.get("roth_conversion_annual_amount_usd"),
             minimum=0.0,
@@ -1541,6 +1653,10 @@ def parse_assumption_sets_payload(raw_payload: Any) -> dict[str, Any]:
                 "inflation_rate": inflation_rate,
                 "marginal_tax_rate": marginal_tax_rate,
                 "state_tax_rate": state_tax_rate,
+                "simulation_mode": simulation_mode,
+                "simulation_monte_carlo_variant": simulation_monte_carlo_variant,
+                "simulation_historical_start_year": simulation_historical_start_year,
+                "simulation_seed": simulation_seed,
                 "roth_conversion_annual_amount_usd": roth_conversion_annual_amount_usd,
                 "roth_conversion_start_age": roth_conversion_start_age,
                 "roth_conversion_end_age": roth_conversion_end_age,
@@ -2015,6 +2131,10 @@ def apply_assumption_set_to_settings(
         "inflation_rate",
         "marginal_tax_rate",
         "state_tax_rate",
+        "simulation_mode",
+        "simulation_monte_carlo_variant",
+        "simulation_historical_start_year",
+        "simulation_seed",
         "roth_conversion_annual_amount_usd",
         "roth_conversion_start_age",
         "roth_conversion_end_age",
@@ -2717,6 +2837,10 @@ async def run_scenarios_for_plan_settings(
         start_year=resolved_start_year,
         withdrawal_strategy=withdrawal_strategy,
         retirement_age=retirement_age,
+        simulation_mode=plan_settings.get("simulation_mode"),
+        simulation_monte_carlo_variant=plan_settings.get("simulation_monte_carlo_variant"),
+        simulation_historical_start_year=plan_settings.get("simulation_historical_start_year"),
+        simulation_seed=plan_settings.get("simulation_seed"),
         sidecar_guard_reason=scenario_guard_reason,
         assumption_set_id=(str(assumption_set.get("id")) if isinstance(assumption_set, dict) and assumption_set.get("id") else None),
         assumption_set_name=(str(assumption_set.get("name")) if isinstance(assumption_set, dict) and assumption_set.get("name") else None),
@@ -2758,7 +2882,86 @@ def resolve_portfolio_value(
 def build_scenario_diff_payload(
     base_result: PlanningResponse,
     candidate_result: PlanningResponse,
-) -> tuple[list[dict[str, Any]], dict[str, float | int | None]]:
+) -> tuple[list[dict[str, Any]], dict[str, float | int | None], dict[str, Any]]:
+    return _build_scenario_diff_payload(
+        base_result=base_result,
+        candidate_result=candidate_result,
+        candidate_label="candidate",
+    )
+
+
+def _normalize_simulation_summary(raw_payload: Any) -> dict[str, Any]:
+    if not isinstance(raw_payload, dict):
+        return {}
+
+    mode = _normalize_optional_simulation_mode(raw_payload.get("mode"))
+    timeline_mode = _normalize_optional_simulation_mode(raw_payload.get("timeline_mode"))
+    monte_carlo_variant = _normalize_optional_simulation_monte_carlo_variant(
+        raw_payload.get("monte_carlo_variant")
+    )
+    seed = _normalize_optional_simulation_int(
+        raw_payload.get("seed"),
+        minimum=0,
+        maximum=2_147_483_647,
+    )
+    requested_historical_start_year = _normalize_optional_simulation_int(
+        raw_payload.get("requested_historical_start_year"),
+        minimum=min(HISTORICAL_YEARS),
+        maximum=max(HISTORICAL_YEARS),
+    )
+    resolved_historical_raw = raw_payload.get("resolved_historical_start_year_by_scenario")
+    resolved_historical: dict[str, int] = {}
+    if isinstance(resolved_historical_raw, dict):
+        for label, raw_value in resolved_historical_raw.items():
+            normalized_year = _normalize_optional_simulation_int(
+                raw_value,
+                minimum=min(HISTORICAL_YEARS),
+                maximum=max(HISTORICAL_YEARS),
+            )
+            if normalized_year is None:
+                continue
+            label_text = str(label or "").strip().lower()
+            if not label_text:
+                continue
+            resolved_historical[label_text] = normalized_year
+
+    normalized: dict[str, Any] = {}
+    if mode is not None:
+        normalized["mode"] = mode
+    if timeline_mode is not None:
+        normalized["timeline_mode"] = timeline_mode
+    if monte_carlo_variant is not None:
+        normalized["monte_carlo_variant"] = monte_carlo_variant
+    if seed is not None:
+        normalized["seed"] = seed
+    if requested_historical_start_year is not None:
+        normalized["requested_historical_start_year"] = requested_historical_start_year
+    if resolved_historical:
+        normalized["resolved_historical_start_year_by_scenario"] = resolved_historical
+    return normalized
+
+
+def _build_simulation_delta_payload(
+    *,
+    base_result: PlanningResponse,
+    candidate_result: PlanningResponse,
+    candidate_label: str,
+) -> dict[str, Any]:
+    base_simulation = _normalize_simulation_summary(base_result.simulation)
+    candidate_simulation = _normalize_simulation_summary(candidate_result.simulation)
+    return {
+        "base": base_simulation,
+        candidate_label: candidate_simulation,
+        "changed": base_simulation != candidate_simulation,
+    }
+
+
+def _build_scenario_diff_payload(
+    *,
+    base_result: PlanningResponse,
+    candidate_result: PlanningResponse,
+    candidate_label: str,
+) -> tuple[list[dict[str, Any]], dict[str, float | int | None], dict[str, Any]]:
     scenario_deltas: list[dict[str, Any]] = []
     base_by_label = {item.label: item for item in base_result.scenarios}
     candidate_by_label = {item.label: item for item in candidate_result.scenarios}
@@ -2804,7 +3007,13 @@ def build_scenario_diff_payload(
         else:
             monte_delta[f"delta_{key}"] = round(candidate_float - base_float, 2)
 
-    return scenario_deltas, monte_delta
+    simulation_delta = _build_simulation_delta_payload(
+        base_result=base_result,
+        candidate_result=candidate_result,
+        candidate_label=candidate_label,
+    )
+
+    return scenario_deltas, monte_delta, simulation_delta
 
 
 async def compute_plan_scenario_branch(
@@ -2981,7 +3190,11 @@ async def compute_plan_scenario_branch(
         timeline_withdrawal_strategy=timeline_withdrawal_strategy,
         timeline_drawdown_order=timeline_drawdown_order,
     )
-    scenario_deltas, monte_carlo_delta = build_scenario_diff_payload(base_result, branch_result)
+    scenario_deltas, monte_carlo_delta, simulation_delta = _build_scenario_diff_payload(
+        base_result=base_result,
+        candidate_result=branch_result,
+        candidate_label="branch",
+    )
 
     return {
         "plan_id": plan_id,
@@ -3005,6 +3218,7 @@ async def compute_plan_scenario_branch(
         "branch_result": branch_result.model_dump(mode="json"),
         "scenario_deltas": scenario_deltas,
         "monte_carlo_delta": monte_carlo_delta,
+        "simulation_delta": simulation_delta,
     }
 
 
@@ -7205,6 +7419,28 @@ async def tool_run_planning(arguments: dict[str, object]) -> dict[str, object]:
     roth_conversion_start_age = arguments.get("roth_conversion_start_age")
     roth_conversion_end_age = arguments.get("roth_conversion_end_age")
     drawdown_order = str(arguments.get("drawdown_order") or "").strip() or None
+    simulation_mode = _normalize_optional_simulation_mode(arguments.get("simulation_mode"))
+    simulation_monte_carlo_variant = _normalize_optional_simulation_monte_carlo_variant(
+        arguments.get("simulation_monte_carlo_variant")
+    )
+    simulation_historical_start_year = _normalize_optional_simulation_int(
+        arguments.get("simulation_historical_start_year"),
+        minimum=min(HISTORICAL_YEARS),
+        maximum=max(HISTORICAL_YEARS),
+    )
+    simulation_seed_raw = arguments.get("simulation_seed")
+    if simulation_seed_raw is None or (
+        isinstance(simulation_seed_raw, str) and not simulation_seed_raw.strip()
+    ):
+        simulation_seed = None
+    else:
+        simulation_seed = _normalize_optional_simulation_int(
+            simulation_seed_raw,
+            minimum=0,
+            maximum=2_147_483_647,
+        )
+        if simulation_seed is None:
+            simulation_seed = DEFAULT_SIMULATION_SEED
 
     if current_value is None:
         current_value = snapshot_store.latest().total_value_usd
@@ -7250,6 +7486,10 @@ async def tool_run_planning(arguments: dict[str, object]) -> dict[str, object]:
         roth_conversion_start_age=resolved_roth_conversion_start_age,
         roth_conversion_end_age=resolved_roth_conversion_end_age,
         drawdown_order=drawdown_order,
+        simulation_mode=simulation_mode,
+        simulation_monte_carlo_variant=simulation_monte_carlo_variant,
+        simulation_historical_start_year=simulation_historical_start_year,
+        simulation_seed=simulation_seed,
     )
     return result.model_dump(mode="json")
 
@@ -8316,6 +8556,8 @@ async def tool_compare_withdrawal_strategies(arguments: dict[str, object]) -> di
         )
 
         monte_carlo = result.monte_carlo if isinstance(result.monte_carlo, dict) else {}
+        simulation_raw = getattr(result, "simulation", None)
+        simulation = simulation_raw if isinstance(simulation_raw, dict) else {}
         comparisons.append(
             {
                 "strategy": strategy,
@@ -8345,6 +8587,18 @@ async def tool_compare_withdrawal_strategies(arguments: dict[str, object]) -> di
                 "monte_carlo_p90_future_value_usd": _coerce_float(
                     monte_carlo.get("p90_future_value_usd"),
                     0.0,
+                ),
+                "simulation_mode": (
+                    _normalize_optional_simulation_mode(simulation.get("mode"))
+                    or _normalize_optional_simulation_mode(assumptions.get("simulation_mode"))
+                ),
+                "simulation_monte_carlo_variant": (
+                    _normalize_optional_simulation_monte_carlo_variant(
+                        simulation.get("monte_carlo_variant")
+                    )
+                    or _normalize_optional_simulation_monte_carlo_variant(
+                        assumptions.get("simulation_monte_carlo_variant")
+                    )
                 ),
                 "average_effective_tax_rate": assumptions.get("average_effective_tax_rate"),
                 "engine": result.engine,
@@ -8575,7 +8829,10 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         timeline_withdrawal_strategy=timeline_withdrawal_strategy,
         timeline_drawdown_order=timeline_drawdown_order,
     )
-    scenario_deltas, monte_carlo_delta = build_scenario_diff_payload(base_result, candidate_result)
+    scenario_deltas, monte_carlo_delta, simulation_delta = build_scenario_diff_payload(
+        base_result,
+        candidate_result,
+    )
 
     apply_to_plan = bool(arguments.get("apply_to_plan", False))
     applied = False
@@ -8605,6 +8862,7 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         "candidate_result": candidate_result.model_dump(mode="json"),
         "scenario_deltas": scenario_deltas,
         "monte_carlo_delta": monte_carlo_delta,
+        "simulation_delta": simulation_delta,
         "applied_to_plan": applied,
     }
 
@@ -8725,6 +8983,16 @@ def configure_copilot_tools() -> None:
         "hsa_extra_contribution_usd": {"type": "number"},
         "marginal_tax_rate": {"type": "number"},
         "state_tax_rate": {"type": "number"},
+        "simulation_mode": {
+            "type": "string",
+            "enum": ["fixed", "stochastic", "historical", "monte_carlo"],
+        },
+        "simulation_monte_carlo_variant": {
+            "type": "string",
+            "enum": ["p10", "p50", "p90"],
+        },
+        "simulation_historical_start_year": {"type": "integer"},
+        "simulation_seed": {"type": "integer"},
         "household_mode": {"type": "string"},
         "household_partner_income_usd": {"type": "number"},
         "household_partner_income_growth_rate": {"type": "number"},
@@ -9094,7 +9362,8 @@ def configure_copilot_tools() -> None:
             "Run baseline/optimistic/conservative/HSA planning scenarios. "
             "Optional fields: current_portfolio_value_usd, annual_contribution_usd, years, "
             "hsa_extra_contribution_usd, state_tax_rate, include_irmaa, "
-            "roth_conversion_annual_amount_usd, roth_conversion_start_age, roth_conversion_end_age, drawdown_order."
+            "roth_conversion_annual_amount_usd, roth_conversion_start_age, roth_conversion_end_age, drawdown_order, "
+            "simulation_mode, simulation_monte_carlo_variant, simulation_historical_start_year, simulation_seed."
         ),
         parameters={
             "type": "object",
@@ -9109,6 +9378,16 @@ def configure_copilot_tools() -> None:
                 "roth_conversion_start_age": {"type": "integer"},
                 "roth_conversion_end_age": {"type": "integer"},
                 "drawdown_order": {"type": "string"},
+                "simulation_mode": {
+                    "type": "string",
+                    "enum": ["fixed", "stochastic", "historical", "monte_carlo"],
+                },
+                "simulation_monte_carlo_variant": {
+                    "type": "string",
+                    "enum": ["p10", "p50", "p90"],
+                },
+                "simulation_historical_start_year": {"type": "integer"},
+                "simulation_seed": {"type": "integer"},
             },
             "additionalProperties": False,
         },
@@ -11014,7 +11293,10 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    scenario_deltas, monte_carlo_delta = build_scenario_diff_payload(base_result, candidate_result)
+    scenario_deltas, monte_carlo_delta, simulation_delta = build_scenario_diff_payload(
+        base_result,
+        candidate_result,
+    )
 
     return PlanScenarioDiffResponse(
         plan_id=plan_id,
@@ -11027,6 +11309,7 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
         candidate_result=candidate_result,
         scenario_deltas=[ScenarioComparisonRow(**item) for item in scenario_deltas],
         monte_carlo_delta=monte_carlo_delta,
+        simulation_delta=simulation_delta,
     )
 
 
@@ -11497,6 +11780,14 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         planning_settings_for_run["roth_conversion_end_age"] = request.roth_conversion_end_age
     if request.drawdown_order is not None:
         planning_settings_for_run["drawdown_order"] = request.drawdown_order
+    if request.simulation_mode is not None:
+        planning_settings_for_run["simulation_mode"] = request.simulation_mode
+    if request.simulation_monte_carlo_variant is not None:
+        planning_settings_for_run["simulation_monte_carlo_variant"] = request.simulation_monte_carlo_variant
+    if request.simulation_historical_start_year is not None:
+        planning_settings_for_run["simulation_historical_start_year"] = request.simulation_historical_start_year
+    if request.simulation_seed is not None:
+        planning_settings_for_run["simulation_seed"] = request.simulation_seed
     if request.household_mode is not None:
         planning_settings_for_run["household_mode"] = request.household_mode
     if request.household_partner_income_usd is not None:
@@ -11578,6 +11869,15 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
             active_withdrawal_strategy = None
             active_drawdown_order = None
             active_retirement_age = None
+
+    if request.simulation_mode is not None:
+        planning_settings_for_run["simulation_mode"] = request.simulation_mode
+    if request.simulation_monte_carlo_variant is not None:
+        planning_settings_for_run["simulation_monte_carlo_variant"] = request.simulation_monte_carlo_variant
+    if request.simulation_historical_start_year is not None:
+        planning_settings_for_run["simulation_historical_start_year"] = request.simulation_historical_start_year
+    if request.simulation_seed is not None:
+        planning_settings_for_run["simulation_seed"] = request.simulation_seed
 
     resolved_start_year = utc_now().year
     household_settings = _resolve_household_settings(
@@ -11755,6 +12055,10 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         start_year=resolved_start_year,
         withdrawal_strategy=active_withdrawal_strategy,
         retirement_age=active_retirement_age,
+        simulation_mode=planning_settings_for_run.get("simulation_mode"),
+        simulation_monte_carlo_variant=planning_settings_for_run.get("simulation_monte_carlo_variant"),
+        simulation_historical_start_year=planning_settings_for_run.get("simulation_historical_start_year"),
+        simulation_seed=planning_settings_for_run.get("simulation_seed"),
         sidecar_guard_reason=scenario_guard_reason,
         assumption_set_id=(
             str(active_assumption_set.get("id"))

@@ -10,6 +10,27 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 5.0 Slice 5, Simulation Mode Expansion)
+1. Added full simulation mode controls across planning contracts and persistence:
+- new settings/request fields: `simulation_mode`, `simulation_monte_carlo_variant`, `simulation_historical_start_year`, `simulation_seed`.
+- assumption sets now support simulation controls and apply them into merged plan settings.
+- plan workspace defaults/context now include simulation settings with validation/sanitization.
+2. Completed mode-aware scenario execution wiring:
+- planning engine now executes fixed, stochastic, historical-backtest, and Monte Carlo-variant paths with deterministic seed support and NYU historical return data.
+- scenario, plan-scenarios, plan-diff, plan-branch, strategy-compare, and Copilot planning tool paths now thread simulation controls end-to-end.
+3. Added compare/output surfaces:
+- diff and branch responses now include `simulation_delta` payloads alongside scenario/Monte-Carlo deltas.
+- withdrawal strategy compare rows now include simulation mode/variant context.
+- plan editor now includes simulation selectors in settings + diff, numeric controls for historical start year/seed, and simulation sections in diff/branch/compare output text.
+4. Sidecar/adapter parity updates:
+- planning sidecar request metadata now includes simulation fields.
+- sidecar-merged planning responses preserve local simulation summaries for consistent downstream compare/reporting behavior.
+5. Source-provenance note:
+- implementation follows Ignidash simulation/returns-provider patterns and historical return dataset structure (`simulation-engine.ts`, `returns-providers/*`, `historical-data/nyu-returns.ts`).
+6. Verification:
+- targeted suite: `pytest -q tests/test_scenario_engine.py tests/test_plan_assumption_sets.py tests/test_plan_workspace.py tests/test_planning_sidecar.py tests/test_copilot_tool_updates.py` (`70 passed`).
+- full suite: `pytest -q` (`427 passed`).
+
 ### 2026-04-15 (Completed - Phase 5.0 Slice 4, Household/Couple Planning Mode)
 1. Added household-mode planning controls and persistence across planning contracts:
 - `household_mode`, partner-income/retirement/Social-Security fields, shared-goal target fields, and filing-status fields are now available in scenario request + plan settings surfaces.

@@ -3,6 +3,9 @@
 Projection structure and account/phase processing patterns are adapted from
 Ignidash (MIT):
 - src/lib/calc/simulation-engine.ts
+- src/lib/calc/returns-providers/stochastic-returns-provider.ts
+- src/lib/calc/returns-providers/lcg-historical-backtest-returns-provider.ts
+- src/lib/calc/historical-data/nyu-returns.ts
 - src/lib/calc/portfolio.ts
 - src/lib/calc/account.ts
 - src/lib/calc/phase.ts
@@ -100,6 +103,145 @@ DRAWDOWN_PRESETS: dict[str, tuple[DrawdownBucket, ...] | None] = {
     "tax_deferred_first": ("cash", "tax_deferred", "taxable", "tax_free"),
     "tax_free_first": ("cash", "tax_free", "taxable", "tax_deferred"),
 }
+
+SimulationMode = Literal["fixed", "stochastic", "historical", "monte_carlo"]
+SIMULATION_MODE_ALIASES: dict[str, SimulationMode] = {
+    "": "fixed",
+    "fixed": "fixed",
+    "fixed_returns": "fixed",
+    "fixedreturns": "fixed",
+    "stochastic": "stochastic",
+    "stochastic_returns": "stochastic",
+    "stochasticreturns": "stochastic",
+    "historical": "historical",
+    "historical_backtest": "historical",
+    "historicalbacktest": "historical",
+    "lcg_historical_backtest": "historical",
+    "lcghistoricalbacktest": "historical",
+    "monte_carlo": "monte_carlo",
+    "montecarlo": "monte_carlo",
+    "monte_carlo_p10": "monte_carlo",
+    "monte_carlo_p50": "monte_carlo",
+    "monte_carlo_p90": "monte_carlo",
+}
+
+MonteCarloVariant = Literal["p10", "p50", "p90"]
+MONTE_CARLO_VARIANT_ALIASES: dict[str, MonteCarloVariant] = {
+    "": "p50",
+    "p50": "p50",
+    "median": "p50",
+    "p10": "p10",
+    "p90": "p90",
+}
+
+DEFAULT_SIMULATION_SEED = 9521
+
+# Adapted from Ignidash NYU historical market dataset (MIT):
+# src/lib/calc/historical-data/nyu-returns.ts
+HISTORICAL_STOCK_RETURNS: tuple[tuple[int, float, float], ...] = (
+    (1928, 0.4549, -0.0116),
+    (1929, -0.0883, 0.0058),
+    (1930, -0.2001, -0.064),
+    (1931, -0.3807, -0.0932),
+    (1932, 0.0182, -0.1027),
+    (1933, 0.4885, 0.0076),
+    (1934, -0.0266, 0.0152),
+    (1935, 0.4249, 0.0299),
+    (1936, 0.3006, 0.0145),
+    (1937, -0.3713, 0.0286),
+    (1938, 0.3298, -0.0278),
+    (1939, -0.011, 0.0),
+    (1940, -0.1131, 0.0071),
+    (1941, -0.2065, 0.0993),
+    (1942, 0.093, 0.0903),
+    (1943, 0.2147, 0.0296),
+    (1944, 0.1636, 0.023),
+    (1945, 0.3284, 0.0225),
+    (1946, -0.2248, 0.1813),
+    (1947, -0.0334, 0.0884),
+    (1948, 0.0263, 0.0299),
+    (1949, 0.2081, -0.0207),
+    (1950, 0.2348, 0.0593),
+    (1951, 0.1668, 0.06),
+    (1952, 0.1727, 0.0075),
+    (1953, -0.0194, 0.0075),
+    (1954, 0.5371, -0.0074),
+    (1955, 0.321, 0.0037),
+    (1956, 0.0433, 0.0299),
+    (1957, -0.1298, 0.029),
+    (1958, 0.4123, 0.0176),
+    (1959, 0.1015, 0.0173),
+    (1960, -0.0101, 0.0136),
+    (1961, 0.2579, 0.0067),
+    (1962, -0.1001, 0.0133),
+    (1963, 0.2063, 0.0164),
+    (1964, 0.153, 0.0097),
+    (1965, 0.1028, 0.0192),
+    (1966, -0.1298, 0.0346),
+    (1967, 0.2015, 0.0304),
+    (1968, 0.0582, 0.0472),
+    (1969, -0.136, 0.062),
+    (1970, -0.019, 0.0557),
+    (1971, 0.1061, 0.0327),
+    (1972, 0.1484, 0.0341),
+    (1973, -0.2117, 0.0871),
+    (1974, -0.3404, 0.1234),
+    (1975, 0.2811, 0.0694),
+    (1976, 0.1809, 0.0486),
+    (1977, -0.1282, 0.067),
+    (1978, -0.023, 0.0902),
+    (1979, 0.0461, 0.1329),
+    (1980, 0.1708, 0.1252),
+    (1981, -0.1251, 0.0892),
+    (1982, 0.1598, 0.0383),
+    (1983, 0.1787, 0.0379),
+    (1984, 0.0211, 0.0395),
+    (1985, 0.2643, 0.038),
+    (1986, 0.1721, 0.011),
+    (1987, 0.0132, 0.0443),
+    (1988, 0.116, 0.0442),
+    (1989, 0.2564, 0.0465),
+    (1990, -0.0864, 0.0611),
+    (1991, 0.2636, 0.0306),
+    (1992, 0.0446, 0.029),
+    (1993, 0.0703, 0.0275),
+    (1994, -0.0131, 0.0267),
+    (1995, 0.338, 0.0254),
+    (1996, 0.1874, 0.0332),
+    (1997, 0.3088, 0.017),
+    (1998, 0.263, 0.0161),
+    (1999, 0.1772, 0.0268),
+    (2000, -0.1201, 0.0339),
+    (2001, -0.132, 0.0155),
+    (2002, -0.2378, 0.0238),
+    (2003, 0.2599, 0.0188),
+    (2004, 0.0725, 0.0326),
+    (2005, 0.0137, 0.0342),
+    (2006, 0.1275, 0.0254),
+    (2007, 0.0135, 0.0408),
+    (2008, -0.3661, 0.0009),
+    (2009, 0.226, 0.0272),
+    (2010, 0.1313, 0.015),
+    (2011, -0.0084, 0.0296),
+    (2012, 0.1391, 0.0174),
+    (2013, 0.3019, 0.015),
+    (2014, 0.1267, 0.0076),
+    (2015, 0.0064, 0.0073),
+    (2016, 0.095, 0.0207),
+    (2017, 0.1909, 0.0211),
+    (2018, -0.0602, 0.0191),
+    (2019, 0.2828, 0.0229),
+    (2020, 0.1644, 0.0136),
+    (2021, 0.2002, 0.0704),
+    (2022, -0.2301, 0.0645),
+    (2023, 0.2197, 0.0335),
+    (2024, 0.2154, 0.0275),
+)
+
+HISTORICAL_YEARS: tuple[int, ...] = tuple(row[0] for row in HISTORICAL_STOCK_RETURNS)
+HISTORICAL_YEAR_TO_INDEX: dict[int, int] = {year: index for index, year in enumerate(HISTORICAL_YEARS)}
+HISTORICAL_RETURN_VALUES: tuple[float, ...] = tuple(row[1] for row in HISTORICAL_STOCK_RETURNS)
+HISTORICAL_INFLATION_VALUES: tuple[float, ...] = tuple(row[2] for row in HISTORICAL_STOCK_RETURNS)
 
 
 @dataclass
@@ -219,6 +361,32 @@ def _normalize_optional_age(value: Any) -> int | None:
     except (TypeError, ValueError):
         return None
     return max(0, min(120, parsed))
+
+
+def _normalize_simulation_mode(value: Any) -> SimulationMode:
+    text = str(value or "").strip().lower()
+    return SIMULATION_MODE_ALIASES.get(text, "fixed")
+
+
+def _normalize_monte_carlo_variant(value: Any) -> MonteCarloVariant:
+    text = str(value or "").strip().lower()
+    return MONTE_CARLO_VARIANT_ALIASES.get(text, "p50")
+
+
+def _normalize_simulation_seed(value: Any) -> int:
+    seed = _safe_int(value, DEFAULT_SIMULATION_SEED)
+    return max(0, min(seed, 2_147_483_647))
+
+
+def _normalize_historical_start_year(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    year = _safe_int(value, 0)
+    if year in HISTORICAL_YEAR_TO_INDEX:
+        return year
+    return None
 
 
 def _resolve_roth_conversion_window(
@@ -412,6 +580,71 @@ class ScenarioEngine:
         if years <= 0:
             return nominal_future_value
         return nominal_future_value / ((1 + inflation) ** years)
+
+    def _resolve_historical_start_index(
+        self,
+        *,
+        simulation_seed: int,
+        requested_start_year: int | None,
+    ) -> tuple[int, int]:
+        if requested_start_year is not None and requested_start_year in HISTORICAL_YEAR_TO_INDEX:
+            index = HISTORICAL_YEAR_TO_INDEX[requested_start_year]
+            return index, requested_start_year
+        rng = random.Random(simulation_seed)
+        index = rng.randrange(len(HISTORICAL_RETURN_VALUES))
+        return index, HISTORICAL_YEARS[index]
+
+    def _historical_average_inflation(
+        self,
+        *,
+        start_index: int,
+        years: int,
+    ) -> float:
+        bounded_years = max(1, years)
+        values: list[float] = []
+        for offset in range(bounded_years):
+            index = (start_index + offset) % len(HISTORICAL_INFLATION_VALUES)
+            values.append(float(HISTORICAL_INFLATION_VALUES[index]))
+        return sum(values) / len(values)
+
+    def _build_annual_return_series(
+        self,
+        *,
+        mode: SimulationMode,
+        years: int,
+        expected_return: float,
+        simulation_seed: int,
+        historical_start_year: int | None,
+    ) -> tuple[list[float], dict[str, float | int]]:
+        bounded_years = max(1, years)
+        metadata: dict[str, float | int] = {}
+        if mode == "fixed":
+            return [float(expected_return)] * bounded_years, metadata
+
+        if mode == "stochastic":
+            rng = random.Random(simulation_seed)
+            series: list[float] = []
+            for _ in range(bounded_years):
+                draw = rng.gauss(float(expected_return), float(self.return_volatility))
+                series.append(max(-0.95, float(draw)))
+            return series, metadata
+
+        start_index, resolved_start_year = self._resolve_historical_start_index(
+            simulation_seed=simulation_seed,
+            requested_start_year=historical_start_year,
+        )
+        baseline_delta = float(expected_return) - float(self.baseline_return)
+        series = []
+        for offset in range(bounded_years):
+            index = (start_index + offset) % len(HISTORICAL_RETURN_VALUES)
+            adjusted = float(HISTORICAL_RETURN_VALUES[index]) + baseline_delta
+            series.append(max(-0.95, min(1.5, adjusted)))
+        metadata["historical_start_year"] = int(resolved_start_year)
+        metadata["historical_average_inflation"] = self._historical_average_inflation(
+            start_index=start_index,
+            years=bounded_years,
+        )
+        return series, metadata
 
     @staticmethod
     def _copy_accounts(accounts: list[ProjectionAccount]) -> list[ProjectionAccount]:
@@ -972,6 +1205,8 @@ class ScenarioEngine:
         start_age: int,
         withdrawal_strategy: WithdrawalStrategy,
         retirement_age: int,
+        annual_return_series: list[float] | None = None,
+        simulation_metadata: dict[str, float | int | str | bool | None] | None = None,
         assumption_set_id: str | None = None,
         assumption_set_name: str | None = None,
     ) -> ScenarioResult:
@@ -1222,6 +1457,11 @@ class ScenarioEngine:
 
             total_growth = 0.0
             ending_by_account: dict[str, float] = {}
+            expected_return_for_year = (
+                float(annual_return_series[offset])
+                if isinstance(annual_return_series, list) and offset < len(annual_return_series)
+                else float(assumptions.expected_return)
+            )
             for account in accounts:
                 account_id = account.account_id
                 contribution = _safe_float(contributions_by_account.get(account_id), 0.0)
@@ -1231,7 +1471,7 @@ class ScenarioEngine:
                 roth_conversion_in = _safe_float(by_account_roth_conversion_in.get(account_id), 0.0)
                 growth = self._apply_growth(
                     account=account,
-                    expected_return=assumptions.expected_return,
+                    expected_return=expected_return_for_year,
                     effective_tax_rate=effective_tax_rate,
                 )
                 total_growth += growth
@@ -1312,6 +1552,42 @@ class ScenarioEngine:
             if optimal_age_raw is not None:
                 social_security_optimal_claiming_age = _safe_int(optimal_age_raw, 0)
 
+        assumption_payload: dict[str, float | int | str | bool | None] = {
+            "years": assumptions.years,
+            "annual_contribution_usd": round(assumptions.annual_contribution_usd, 2),
+            "expected_return": assumptions.expected_return,
+            "inflation": assumptions.inflation,
+            "account_count": len(accounts),
+            "withdrawal_strategy": withdrawal_strategy,
+            "drawdown_order": ",".join(drawdown_order) if drawdown_order else "age_aware",
+            "retirement_age": retirement_age,
+            "rmd_start_age": rmd_start_age,
+            "total_taxes_paid_usd": round(total_taxes_paid, 2),
+            "total_federal_taxes_paid_usd": round(total_federal_taxes_paid, 2),
+            "total_state_taxes_paid_usd": round(total_state_taxes_paid, 2),
+            "total_irmaa_surcharges_paid_usd": round(total_irmaa_surcharges_paid, 2),
+            "total_contributions_usd": round(total_contributions, 2),
+            "total_withdrawals_usd": round(total_withdrawals, 2),
+            "total_rmds_usd": round(total_rmds, 2),
+            "total_social_security_income_usd": round(total_social_security_income, 2),
+            "total_roth_conversions_usd": round(total_roth_conversions, 2),
+            "state_tax_rate": round(float(state_tax_rate), 6),
+            "include_irmaa": bool(include_irmaa),
+            "roth_conversion_annual_amount_usd": round(float(roth_conversion_annual_amount_usd), 2),
+            "roth_conversion_start_age": roth_conversion_start_age,
+            "roth_conversion_end_age": roth_conversion_end_age,
+            "social_security_claiming_age": social_security_claiming_age,
+            "social_security_optimal_claiming_age": social_security_optimal_claiming_age,
+            "average_effective_tax_rate": round(average_tax_rate, 6),
+            "assumption_set_id": (str(assumption_set_id).strip() or None),
+            "assumption_set_name": (str(assumption_set_name).strip() or None),
+        }
+        if isinstance(simulation_metadata, dict):
+            for key, value in simulation_metadata.items():
+                if value is None:
+                    continue
+                assumption_payload[str(key)] = value
+
         return ScenarioResult(
             label=label,  # type: ignore[arg-type]
             future_value_usd=round(ending_nominal, 2),
@@ -1323,36 +1599,7 @@ class ScenarioEngine:
                 ),
                 2,
             ),
-            assumptions={
-                "years": assumptions.years,
-                "annual_contribution_usd": round(assumptions.annual_contribution_usd, 2),
-                "expected_return": assumptions.expected_return,
-                "inflation": assumptions.inflation,
-                "account_count": len(accounts),
-                "withdrawal_strategy": withdrawal_strategy,
-                "drawdown_order": ",".join(drawdown_order) if drawdown_order else "age_aware",
-                "retirement_age": retirement_age,
-                "rmd_start_age": rmd_start_age,
-                "total_taxes_paid_usd": round(total_taxes_paid, 2),
-                "total_federal_taxes_paid_usd": round(total_federal_taxes_paid, 2),
-                "total_state_taxes_paid_usd": round(total_state_taxes_paid, 2),
-                "total_irmaa_surcharges_paid_usd": round(total_irmaa_surcharges_paid, 2),
-                "total_contributions_usd": round(total_contributions, 2),
-                "total_withdrawals_usd": round(total_withdrawals, 2),
-                "total_rmds_usd": round(total_rmds, 2),
-                "total_social_security_income_usd": round(total_social_security_income, 2),
-                "total_roth_conversions_usd": round(total_roth_conversions, 2),
-                "state_tax_rate": round(float(state_tax_rate), 6),
-                "include_irmaa": bool(include_irmaa),
-                "roth_conversion_annual_amount_usd": round(float(roth_conversion_annual_amount_usd), 2),
-                "roth_conversion_start_age": roth_conversion_start_age,
-                "roth_conversion_end_age": roth_conversion_end_age,
-                "social_security_claiming_age": social_security_claiming_age,
-                "social_security_optimal_claiming_age": social_security_optimal_claiming_age,
-                "average_effective_tax_rate": round(average_tax_rate, 6),
-                "assumption_set_id": (str(assumption_set_id).strip() or None),
-                "assumption_set_name": (str(assumption_set_name).strip() or None),
-            },
+            assumptions=assumption_payload,
             timeline_points=timeline_points,
             account_balance_points=account_points,
         )
@@ -1364,14 +1611,17 @@ class ScenarioEngine:
         annual_contribution: float,
         years: int,
         effective_tax_rate: float,
+        expected_return: float,
+        simulation_seed: int,
     ) -> dict[str, float | int]:
         outcomes: list[float] = []
         drag = min(max(float(effective_tax_rate), 0.0), 0.5)
+        rng = random.Random(simulation_seed)
 
         for _ in range(self.monte_carlo_runs):
             value = max(0.0, float(current_value))
             for _ in range(max(0, years)):
-                yearly_return = random.gauss(self.baseline_return, self.return_volatility)
+                yearly_return = rng.gauss(float(expected_return), float(self.return_volatility))
                 yearly_return = max(-0.95, yearly_return)
                 if yearly_return > 0:
                     yearly_return *= 1.0 - drag * 0.5
@@ -1416,6 +1666,10 @@ class ScenarioEngine:
         start_age: int = 35,
         withdrawal_strategy: str | None = None,
         retirement_age: int | None = None,
+        simulation_mode: str | None = None,
+        simulation_monte_carlo_variant: str | None = None,
+        simulation_historical_start_year: int | None = None,
+        simulation_seed: int | None = None,
         assumption_set_id: str | None = None,
         assumption_set_name: str | None = None,
     ) -> PlanningResponse:
@@ -1447,6 +1701,17 @@ class ScenarioEngine:
         resolved_drawdown_order = _normalize_drawdown_order(drawdown_order)
         resolved_withdrawal_strategy = _normalize_withdrawal_strategy(withdrawal_strategy)
         resolved_retirement_age = _normalize_retirement_age(retirement_age)
+        resolved_simulation_mode = _normalize_simulation_mode(simulation_mode)
+        resolved_simulation_monte_carlo_variant = _normalize_monte_carlo_variant(
+            simulation_monte_carlo_variant
+        )
+        resolved_simulation_seed = _normalize_simulation_seed(simulation_seed)
+        resolved_simulation_historical_start_year = _normalize_historical_start_year(
+            simulation_historical_start_year
+        )
+        timeline_simulation_mode: SimulationMode = (
+            "fixed" if resolved_simulation_mode == "monte_carlo" else resolved_simulation_mode
+        )
 
         base_accounts = self._build_projection_accounts(
             accounts=accounts,
@@ -1455,138 +1720,207 @@ class ScenarioEngine:
             contribution_allocation=contribution_allocation,
         )
 
-        baseline = self._scenario(
-            label="baseline",
-            current_value=current_portfolio_value_usd,
-            assumptions=ScenarioAssumptions(
-                years=resolved_years,
-                annual_contribution_usd=resolved_contribution,
-                expected_return=self.baseline_return,
-                inflation=self.inflation,
-            ),
-            projection_accounts=base_accounts,
-            income_projection=income_projection,
-            expense_projection=expense_projection,
-            debt_projection=debt_projection,
-            timeline_projection=timeline_projection,
-            social_security_projection=social_security_projection,
-            rmd_projection=rmd_projection,
-            filing_status=resolved_filing_status,
-            state_tax_rate=resolved_state_tax_rate,
-            include_irmaa=resolved_include_irmaa,
-            roth_conversion_annual_amount_usd=resolved_roth_conversion_annual_amount,
-            roth_conversion_start_age=resolved_roth_conversion_start_age,
-            roth_conversion_end_age=resolved_roth_conversion_end_age,
-            drawdown_order=resolved_drawdown_order,
-            start_year=resolved_start_year,
-            start_age=resolved_start_age,
-            withdrawal_strategy=resolved_withdrawal_strategy,
-            retirement_age=resolved_retirement_age,
-            assumption_set_id=assumption_set_id,
-            assumption_set_name=assumption_set_name,
-        )
-        optimistic = self._scenario(
-            label="optimistic",
-            current_value=current_portfolio_value_usd,
-            assumptions=ScenarioAssumptions(
-                years=resolved_years,
-                annual_contribution_usd=resolved_contribution,
-                expected_return=self.optimistic_return,
-                inflation=self.inflation,
-            ),
-            projection_accounts=base_accounts,
-            income_projection=income_projection,
-            expense_projection=expense_projection,
-            debt_projection=debt_projection,
-            timeline_projection=timeline_projection,
-            social_security_projection=social_security_projection,
-            rmd_projection=rmd_projection,
-            filing_status=resolved_filing_status,
-            state_tax_rate=resolved_state_tax_rate,
-            include_irmaa=resolved_include_irmaa,
-            roth_conversion_annual_amount_usd=resolved_roth_conversion_annual_amount,
-            roth_conversion_start_age=resolved_roth_conversion_start_age,
-            roth_conversion_end_age=resolved_roth_conversion_end_age,
-            drawdown_order=resolved_drawdown_order,
-            start_year=resolved_start_year,
-            start_age=resolved_start_age,
-            withdrawal_strategy=resolved_withdrawal_strategy,
-            retirement_age=resolved_retirement_age,
-            assumption_set_id=assumption_set_id,
-            assumption_set_name=assumption_set_name,
-        )
-        conservative = self._scenario(
-            label="conservative",
-            current_value=current_portfolio_value_usd,
-            assumptions=ScenarioAssumptions(
-                years=resolved_years,
-                annual_contribution_usd=resolved_contribution,
-                expected_return=self.conservative_return,
-                inflation=self.inflation,
-            ),
-            projection_accounts=base_accounts,
-            income_projection=income_projection,
-            expense_projection=expense_projection,
-            debt_projection=debt_projection,
-            timeline_projection=timeline_projection,
-            social_security_projection=social_security_projection,
-            rmd_projection=rmd_projection,
-            filing_status=resolved_filing_status,
-            state_tax_rate=resolved_state_tax_rate,
-            include_irmaa=resolved_include_irmaa,
-            roth_conversion_annual_amount_usd=resolved_roth_conversion_annual_amount,
-            roth_conversion_start_age=resolved_roth_conversion_start_age,
-            roth_conversion_end_age=resolved_roth_conversion_end_age,
-            drawdown_order=resolved_drawdown_order,
-            start_year=resolved_start_year,
-            start_age=resolved_start_age,
-            withdrawal_strategy=resolved_withdrawal_strategy,
-            retirement_age=resolved_retirement_age,
-            assumption_set_id=assumption_set_id,
-            assumption_set_name=assumption_set_name,
-        )
-        hsa_delta = self._scenario(
-            label="hsa_delta",
-            current_value=current_portfolio_value_usd,
-            assumptions=ScenarioAssumptions(
-                years=resolved_years,
-                annual_contribution_usd=resolved_contribution + resolved_hsa_delta,
-                expected_return=self.baseline_return,
-                inflation=self.inflation,
-            ),
-            projection_accounts=base_accounts,
-            income_projection=income_projection,
-            expense_projection=expense_projection,
-            debt_projection=debt_projection,
-            timeline_projection=timeline_projection,
-            social_security_projection=social_security_projection,
-            rmd_projection=rmd_projection,
-            filing_status=resolved_filing_status,
-            state_tax_rate=resolved_state_tax_rate,
-            include_irmaa=resolved_include_irmaa,
-            roth_conversion_annual_amount_usd=resolved_roth_conversion_annual_amount,
-            roth_conversion_start_age=resolved_roth_conversion_start_age,
-            roth_conversion_end_age=resolved_roth_conversion_end_age,
-            drawdown_order=resolved_drawdown_order,
-            start_year=resolved_start_year,
-            start_age=resolved_start_age,
-            withdrawal_strategy=resolved_withdrawal_strategy,
-            retirement_age=resolved_retirement_age,
-            assumption_set_id=assumption_set_id,
-            assumption_set_name=assumption_set_name,
-        )
+        scenario_specs = [
+            ("baseline", resolved_contribution, self.baseline_return),
+            ("optimistic", resolved_contribution, self.optimistic_return),
+            ("conservative", resolved_contribution, self.conservative_return),
+            ("hsa_delta", resolved_contribution + resolved_hsa_delta, self.baseline_return),
+        ]
+        computed_scenarios: list[ScenarioResult] = []
+        resolved_historical_start_year_by_label: dict[str, int] = {}
+        monte_carlo_by_label: dict[str, dict[str, float | int]] = {}
 
-        monte_carlo = self._monte_carlo(
-            current_value=current_portfolio_value_usd,
-            annual_contribution=resolved_contribution,
-            years=resolved_years,
-            effective_tax_rate=_safe_float(
-                baseline.assumptions.get("average_effective_tax_rate"),
-                self.marginal_tax_rate,
-            ),
-        )
+        for label, annual_contribution_for_label, expected_return_for_label in scenario_specs:
+            annual_return_series, return_metadata = self._build_annual_return_series(
+                mode=timeline_simulation_mode,
+                years=resolved_years,
+                expected_return=float(expected_return_for_label),
+                simulation_seed=resolved_simulation_seed,
+                historical_start_year=resolved_simulation_historical_start_year,
+            )
+            scenario_inflation = float(self.inflation)
+            historical_start_year_for_label = return_metadata.get("historical_start_year")
+            if isinstance(historical_start_year_for_label, int):
+                resolved_historical_start_year_by_label[label] = historical_start_year_for_label
+            historical_average_inflation = return_metadata.get("historical_average_inflation")
+            if (
+                timeline_simulation_mode == "historical"
+                and isinstance(historical_average_inflation, (int, float))
+            ):
+                scenario_inflation = float(historical_average_inflation)
+
+            simulation_metadata: dict[str, float | int | str | bool | None] = {
+                "simulation_mode": resolved_simulation_mode,
+                "simulation_timeline_mode": timeline_simulation_mode,
+                "simulation_monte_carlo_variant": resolved_simulation_monte_carlo_variant,
+                "simulation_seed": resolved_simulation_seed,
+            }
+            if resolved_simulation_historical_start_year is not None:
+                simulation_metadata["simulation_requested_historical_start_year"] = (
+                    resolved_simulation_historical_start_year
+                )
+            if isinstance(historical_start_year_for_label, int):
+                simulation_metadata["simulation_historical_start_year"] = (
+                    historical_start_year_for_label
+                )
+            if isinstance(historical_average_inflation, (int, float)):
+                simulation_metadata["simulation_historical_average_inflation"] = round(
+                    float(historical_average_inflation),
+                    6,
+                )
+
+            scenario = self._scenario(
+                label=label,
+                current_value=current_portfolio_value_usd,
+                assumptions=ScenarioAssumptions(
+                    years=resolved_years,
+                    annual_contribution_usd=annual_contribution_for_label,
+                    expected_return=float(expected_return_for_label),
+                    inflation=scenario_inflation,
+                ),
+                projection_accounts=base_accounts,
+                income_projection=income_projection,
+                expense_projection=expense_projection,
+                debt_projection=debt_projection,
+                timeline_projection=timeline_projection,
+                social_security_projection=social_security_projection,
+                rmd_projection=rmd_projection,
+                filing_status=resolved_filing_status,
+                state_tax_rate=resolved_state_tax_rate,
+                include_irmaa=resolved_include_irmaa,
+                roth_conversion_annual_amount_usd=resolved_roth_conversion_annual_amount,
+                roth_conversion_start_age=resolved_roth_conversion_start_age,
+                roth_conversion_end_age=resolved_roth_conversion_end_age,
+                drawdown_order=resolved_drawdown_order,
+                start_year=resolved_start_year,
+                start_age=resolved_start_age,
+                withdrawal_strategy=resolved_withdrawal_strategy,
+                retirement_age=resolved_retirement_age,
+                annual_return_series=annual_return_series,
+                simulation_metadata=simulation_metadata,
+                assumption_set_id=assumption_set_id,
+                assumption_set_name=assumption_set_name,
+            )
+
+            if resolved_simulation_mode == "monte_carlo":
+                monte_carlo_for_scenario = self._monte_carlo(
+                    current_value=current_portfolio_value_usd,
+                    annual_contribution=annual_contribution_for_label,
+                    years=resolved_years,
+                    effective_tax_rate=_safe_float(
+                        scenario.assumptions.get("average_effective_tax_rate"),
+                        self.marginal_tax_rate,
+                    ),
+                    expected_return=float(expected_return_for_label),
+                    simulation_seed=resolved_simulation_seed,
+                )
+                monte_carlo_by_label[label] = monte_carlo_for_scenario
+                selected_future_value = _safe_float(
+                    monte_carlo_for_scenario.get(
+                        f"{resolved_simulation_monte_carlo_variant}_future_value_usd"
+                    ),
+                    0.0,
+                )
+                selected_real_value = self._real_value(
+                    nominal_future_value=selected_future_value,
+                    years=resolved_years,
+                    inflation=float(scenario.assumptions.get("inflation") or self.inflation),
+                )
+                updated_assumptions = dict(scenario.assumptions)
+                updated_assumptions["simulation_mode"] = "monte_carlo"
+                updated_assumptions["simulation_monte_carlo_variant"] = (
+                    resolved_simulation_monte_carlo_variant
+                )
+                updated_assumptions["simulation_monte_carlo_runs"] = int(
+                    monte_carlo_for_scenario.get("runs") or self.monte_carlo_runs
+                )
+                updated_assumptions["simulation_monte_carlo_p10_future_value_usd"] = _safe_float(
+                    monte_carlo_for_scenario.get("p10_future_value_usd"),
+                    0.0,
+                )
+                updated_assumptions["simulation_monte_carlo_p50_future_value_usd"] = _safe_float(
+                    monte_carlo_for_scenario.get("p50_future_value_usd"),
+                    0.0,
+                )
+                updated_assumptions["simulation_monte_carlo_p90_future_value_usd"] = _safe_float(
+                    monte_carlo_for_scenario.get("p90_future_value_usd"),
+                    0.0,
+                )
+                updated_assumptions["simulation_selected_future_value_usd"] = round(
+                    selected_future_value,
+                    2,
+                )
+                scenario = scenario.model_copy(
+                    update={
+                        "future_value_usd": round(selected_future_value, 2),
+                        "real_value_usd": round(selected_real_value, 2),
+                        "assumptions": updated_assumptions,
+                    }
+                )
+
+            computed_scenarios.append(scenario)
+
+        scenarios_by_label = {item.label: item for item in computed_scenarios}
+        ordered_scenarios = [
+            scenarios_by_label[label]
+            for label in ("baseline", "optimistic", "conservative", "hsa_delta")
+            if label in scenarios_by_label
+        ]
+        baseline = scenarios_by_label.get("baseline")
+
+        if resolved_simulation_mode == "monte_carlo":
+            monte_carlo: dict[str, Any] = dict(monte_carlo_by_label.get("baseline", {}))
+            if not monte_carlo:
+                monte_carlo = self._monte_carlo(
+                    current_value=current_portfolio_value_usd,
+                    annual_contribution=resolved_contribution,
+                    years=resolved_years,
+                    effective_tax_rate=_safe_float(
+                        baseline.assumptions.get("average_effective_tax_rate")
+                        if baseline is not None
+                        else self.marginal_tax_rate,
+                        self.marginal_tax_rate,
+                    ),
+                    expected_return=float(self.baseline_return),
+                    simulation_seed=resolved_simulation_seed,
+                )
+        else:
+            monte_carlo = self._monte_carlo(
+                current_value=current_portfolio_value_usd,
+                annual_contribution=resolved_contribution,
+                years=resolved_years,
+                effective_tax_rate=_safe_float(
+                    baseline.assumptions.get("average_effective_tax_rate")
+                    if baseline is not None
+                    else self.marginal_tax_rate,
+                    self.marginal_tax_rate,
+                ),
+                expected_return=float(self.baseline_return),
+                simulation_seed=resolved_simulation_seed,
+            )
+
+        monte_carlo["mode"] = resolved_simulation_mode
+        monte_carlo["variant"] = resolved_simulation_monte_carlo_variant
+        monte_carlo["seed"] = resolved_simulation_seed
+        if resolved_simulation_historical_start_year is not None:
+            monte_carlo["requested_historical_start_year"] = (
+                resolved_simulation_historical_start_year
+            )
+
+        simulation_summary: dict[str, Any] = {
+            "mode": resolved_simulation_mode,
+            "timeline_mode": timeline_simulation_mode,
+            "monte_carlo_variant": resolved_simulation_monte_carlo_variant,
+            "seed": resolved_simulation_seed,
+            "requested_historical_start_year": resolved_simulation_historical_start_year,
+        }
+        if resolved_historical_start_year_by_label:
+            simulation_summary["resolved_historical_start_year_by_scenario"] = (
+                resolved_historical_start_year_by_label
+            )
 
         return PlanningResponse(
-            scenarios=[baseline, optimistic, conservative, hsa_delta],
+            scenarios=ordered_scenarios,
             monte_carlo=monte_carlo,
+            simulation=simulation_summary,
         )

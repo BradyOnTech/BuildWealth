@@ -152,6 +152,10 @@ class IgnidashScenarioService:
         start_age: int = 35,
         withdrawal_strategy: str | None = None,
         retirement_age: int | None = None,
+        simulation_mode: str | None = None,
+        simulation_monte_carlo_variant: str | None = None,
+        simulation_historical_start_year: int | None = None,
+        simulation_seed: int | None = None,
         sidecar_guard_reason: str | None = None,
     ) -> PlanningResponse:
         local_result = self.scenario_engine.run(
@@ -180,6 +184,10 @@ class IgnidashScenarioService:
             start_age=start_age,
             withdrawal_strategy=withdrawal_strategy,
             retirement_age=retirement_age,
+            simulation_mode=simulation_mode,
+            simulation_monte_carlo_variant=simulation_monte_carlo_variant,
+            simulation_historical_start_year=simulation_historical_start_year,
+            simulation_seed=simulation_seed,
         )
 
         if sidecar_guard_reason:
@@ -252,6 +260,10 @@ class IgnidashScenarioService:
             start_year=start_year,
             withdrawal_strategy=withdrawal_strategy,
             retirement_age=retirement_age,
+            simulation_mode=simulation_mode,
+            simulation_monte_carlo_variant=simulation_monte_carlo_variant,
+            simulation_historical_start_year=simulation_historical_start_year,
+            simulation_seed=simulation_seed,
         )
 
         try:
@@ -268,6 +280,7 @@ class IgnidashScenarioService:
             return PlanningResponse(
                 scenarios=scenarios,
                 monte_carlo=local_result.monte_carlo,
+                simulation=local_result.simulation,
                 engine="ignidash",
                 engine_status=response_payload.engine_status,
                 fallback_method=response_payload.fallback_method,
@@ -335,6 +348,10 @@ class IgnidashScenarioService:
         start_year: int | None,
         withdrawal_strategy: str | None,
         retirement_age: int | None,
+        simulation_mode: str | None,
+        simulation_monte_carlo_variant: str | None,
+        simulation_historical_start_year: int | None,
+        simulation_seed: int | None,
     ) -> IgnidashScenarioRequestV1:
         resolved_years = int(self.scenario_engine.years_to_retirement if years is None else years)
         resolved_contribution = float(
@@ -490,6 +507,14 @@ class IgnidashScenarioService:
             metadata["withdrawal_strategy"] = withdrawal_strategy
         if retirement_age is not None:
             metadata["retirement_age"] = int(retirement_age)
+        if simulation_mode:
+            metadata["simulation_mode"] = str(simulation_mode).strip().lower()
+        if simulation_monte_carlo_variant:
+            metadata["simulation_monte_carlo_variant"] = str(simulation_monte_carlo_variant).strip().lower()
+        if simulation_historical_start_year is not None:
+            metadata["simulation_historical_start_year"] = int(simulation_historical_start_year)
+        if simulation_seed is not None:
+            metadata["simulation_seed"] = int(simulation_seed)
 
         return IgnidashScenarioRequestV1(
             request_id=uuid4().hex,

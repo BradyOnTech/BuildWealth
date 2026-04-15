@@ -168,6 +168,10 @@ class ScenarioRequest(BaseModel):
     household_shared_goal_target_year: int | None = Field(default=None, ge=1900, le=2500)
     filing_status: str | None = None
     drawdown_order: str | None = None
+    simulation_mode: str | None = None
+    simulation_monte_carlo_variant: str | None = None
+    simulation_historical_start_year: int | None = Field(default=None, ge=1928, le=2024)
+    simulation_seed: int | None = Field(default=None, ge=0, le=2_147_483_647)
     roth_conversion_annual_amount_usd: float | None = Field(default=None, ge=0)
     roth_conversion_start_age: int | None = Field(default=None, ge=0, le=120)
     roth_conversion_end_age: int | None = Field(default=None, ge=0, le=120)
@@ -626,6 +630,7 @@ class HouseholdPlanningContext(BaseModel):
 class PlanningResponse(BaseModel):
     scenarios: list[ScenarioResult]
     monte_carlo: dict[str, Any]
+    simulation: dict[str, Any] = Field(default_factory=dict)
     engine: Literal["local", "ignidash"] = "local"
     engine_status: Literal["ok", "degraded"] = "ok"
     fallback_method: str | None = None
@@ -1413,6 +1418,10 @@ class PlanAssumptionSet(BaseModel):
     inflation_rate: float | None = Field(default=None, ge=-1, le=1)
     marginal_tax_rate: float | None = Field(default=None, ge=0, le=1)
     state_tax_rate: float | None = Field(default=None, ge=0, le=1)
+    simulation_mode: str | None = None
+    simulation_monte_carlo_variant: str | None = None
+    simulation_historical_start_year: int | None = Field(default=None, ge=1928, le=2024)
+    simulation_seed: int | None = Field(default=None, ge=0, le=2_147_483_647)
     roth_conversion_annual_amount_usd: float | None = Field(default=None, ge=0)
     roth_conversion_start_age: int | None = Field(default=None, ge=0, le=120)
     roth_conversion_end_age: int | None = Field(default=None, ge=0, le=120)
@@ -1516,6 +1525,10 @@ class PlanSettings(BaseModel):
     hsa_extra_contribution_usd: float | None = None
     marginal_tax_rate: float | None = None
     state_tax_rate: float | None = None
+    simulation_mode: str | None = None
+    simulation_monte_carlo_variant: str | None = None
+    simulation_historical_start_year: int | None = None
+    simulation_seed: int | None = None
     household_mode: str | None = None
     household_partner_income_usd: float | None = None
     household_partner_income_growth_rate: float | None = None
@@ -1543,6 +1556,10 @@ class PlanSettingsUpdateRequest(BaseModel):
     hsa_extra_contribution_usd: float | None = None
     marginal_tax_rate: float | None = None
     state_tax_rate: float | None = None
+    simulation_mode: str | None = None
+    simulation_monte_carlo_variant: str | None = None
+    simulation_historical_start_year: int | None = None
+    simulation_seed: int | None = None
     household_mode: str | None = None
     household_partner_income_usd: float | None = None
     household_partner_income_growth_rate: float | None = None
@@ -1591,6 +1608,7 @@ class PlanScenarioDiffResponse(BaseModel):
     candidate_result: PlanningResponse
     scenario_deltas: list[ScenarioComparisonRow] = Field(default_factory=list)
     monte_carlo_delta: dict[str, float | int | None] = Field(default_factory=dict)
+    simulation_delta: dict[str, Any] = Field(default_factory=dict)
 
 
 class PlanWithdrawalStrategyCompareRequest(BaseModel):
@@ -1616,6 +1634,8 @@ class PlanWithdrawalStrategyComparisonRow(BaseModel):
     monte_carlo_p10_future_value_usd: float = 0.0
     monte_carlo_p50_future_value_usd: float = 0.0
     monte_carlo_p90_future_value_usd: float = 0.0
+    simulation_mode: str | None = None
+    simulation_monte_carlo_variant: str | None = None
     average_effective_tax_rate: float | None = None
     engine: Literal["local", "ignidash"] = "local"
     engine_status: Literal["ok", "degraded"] = "ok"
@@ -1669,6 +1689,7 @@ class PlanScenarioBranchResponse(BaseModel):
     branch_result: PlanningResponse
     scenario_deltas: list[ScenarioComparisonRow] = Field(default_factory=list)
     monte_carlo_delta: dict[str, float | int | None] = Field(default_factory=dict)
+    simulation_delta: dict[str, Any] = Field(default_factory=dict)
 
 
 class PlanArtifactSummary(BaseModel):

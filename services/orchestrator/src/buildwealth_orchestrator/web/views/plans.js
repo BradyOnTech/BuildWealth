@@ -143,6 +143,25 @@ export function template() {
               <option value="head_of_household">Head of Household</option>
             </select>
           </label>
+          <label class="field">
+            <span>Simulation Mode</span>
+            <select id="setting-simulation-mode" disabled>
+              <option value="">Default (Fixed)</option>
+              <option value="fixed">Fixed</option>
+              <option value="stochastic">Stochastic</option>
+              <option value="historical">Historical Backtest</option>
+              <option value="monte_carlo">Monte Carlo</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Monte Carlo Variant</span>
+            <select id="setting-simulation-monte-carlo-variant" disabled>
+              <option value="">Default (P50)</option>
+              <option value="p10">P10</option>
+              <option value="p50">P50</option>
+              <option value="p90">P90</option>
+            </select>
+          </label>
         </div>
         <div class="settings-grid">${settingsGridHtml(PLAN_SETTING_FIELDS)}</div>
         <div class="view-header"><h3>Scenario Diff</h3>
@@ -170,6 +189,25 @@ export function template() {
               <option value="married_filing_jointly">Married Filing Jointly</option>
               <option value="married_filing_separately">Married Filing Separately</option>
               <option value="head_of_household">Head of Household</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Simulation Mode</span>
+            <select id="diff-simulation-mode" disabled>
+              <option value="">No override</option>
+              <option value="fixed">Fixed</option>
+              <option value="stochastic">Stochastic</option>
+              <option value="historical">Historical Backtest</option>
+              <option value="monte_carlo">Monte Carlo</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Monte Carlo Variant</span>
+            <select id="diff-simulation-monte-carlo-variant" disabled>
+              <option value="">No override</option>
+              <option value="p10">P10</option>
+              <option value="p50">P50</option>
+              <option value="p90">P90</option>
             </select>
           </label>
         </div>

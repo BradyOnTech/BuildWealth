@@ -7,6 +7,13 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from buildwealth_orchestrator.services.scenario_engine import (
+    DEFAULT_SIMULATION_SEED,
+    HISTORICAL_YEARS,
+    MONTE_CARLO_VARIANT_ALIASES,
+    SIMULATION_MODE_ALIASES,
+)
+
 PLAN_WORKSPACE_SCHEMA_VERSION = 2
 TIMELINE_DEFAULT_IMPACT_BY_EVENT: dict[str, str] = {
     "purchase": "expense",
@@ -175,6 +182,10 @@ class PlanWorkspace:
             "hsa_extra_contribution_usd": None,
             "marginal_tax_rate": None,
             "state_tax_rate": None,
+            "simulation_mode": None,
+            "simulation_monte_carlo_variant": None,
+            "simulation_historical_start_year": None,
+            "simulation_seed": None,
             "household_mode": None,
             "household_partner_income_usd": None,
             "household_partner_income_growth_rate": None,
@@ -241,6 +252,10 @@ class PlanWorkspace:
                     "inflation_rate": None,
                     "marginal_tax_rate": None,
                     "state_tax_rate": None,
+                    "simulation_mode": None,
+                    "simulation_monte_carlo_variant": None,
+                    "simulation_historical_start_year": None,
+                    "simulation_seed": None,
                     "roth_conversion_annual_amount_usd": None,
                     "roth_conversion_start_age": None,
                     "roth_conversion_end_age": None,
@@ -254,6 +269,10 @@ class PlanWorkspace:
                     "inflation_rate": 0.03,
                     "marginal_tax_rate": None,
                     "state_tax_rate": None,
+                    "simulation_mode": None,
+                    "simulation_monte_carlo_variant": None,
+                    "simulation_historical_start_year": None,
+                    "simulation_seed": None,
                     "roth_conversion_annual_amount_usd": None,
                     "roth_conversion_start_age": None,
                     "roth_conversion_end_age": None,
@@ -267,6 +286,10 @@ class PlanWorkspace:
                     "inflation_rate": 0.025,
                     "marginal_tax_rate": None,
                     "state_tax_rate": None,
+                    "simulation_mode": None,
+                    "simulation_monte_carlo_variant": None,
+                    "simulation_historical_start_year": None,
+                    "simulation_seed": None,
                     "roth_conversion_annual_amount_usd": None,
                     "roth_conversion_start_age": None,
                     "roth_conversion_end_age": None,
@@ -280,6 +303,10 @@ class PlanWorkspace:
                     "inflation_rate": 0.05,
                     "marginal_tax_rate": None,
                     "state_tax_rate": None,
+                    "simulation_mode": None,
+                    "simulation_monte_carlo_variant": None,
+                    "simulation_historical_start_year": None,
+                    "simulation_seed": None,
                     "roth_conversion_annual_amount_usd": None,
                     "roth_conversion_start_age": None,
                     "roth_conversion_end_age": None,
@@ -293,6 +320,10 @@ class PlanWorkspace:
                     "inflation_rate": 0.005,
                     "marginal_tax_rate": None,
                     "state_tax_rate": None,
+                    "simulation_mode": None,
+                    "simulation_monte_carlo_variant": None,
+                    "simulation_historical_start_year": None,
+                    "simulation_seed": None,
                     "roth_conversion_annual_amount_usd": None,
                     "roth_conversion_start_age": None,
                     "roth_conversion_end_age": None,
@@ -392,8 +423,16 @@ class PlanWorkspace:
 
         if key in {"annual_contribution_usd", "hsa_extra_contribution_usd", "roth_conversion_annual_amount_usd"}:
             return f"${float(value):,.2f}"
-        if key in {"years", "roth_conversion_start_age", "roth_conversion_end_age"}:
+        if key in {
+            "years",
+            "roth_conversion_start_age",
+            "roth_conversion_end_age",
+        }:
             return f"{int(value)} years"
+        if key == "simulation_historical_start_year":
+            return str(int(value))
+        if key == "simulation_seed":
+            return str(int(value))
         if key in {
             "marginal_tax_rate",
             "state_tax_rate",
@@ -737,6 +776,75 @@ class PlanWorkspace:
                 )
             return value
 
+        def _normalize_optional_int(
+            *,
+            raw_value: Any,
+            field: str,
+            minimum: int,
+            maximum: int,
+        ) -> int | None:
+            if raw_value is None:
+                return None
+            if isinstance(raw_value, str) and not raw_value.strip():
+                return None
+            try:
+                value = int(float(raw_value))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"assumption_sets.{field} must be an integer") from exc
+            if value < minimum or value > maximum:
+                raise ValueError(
+                    f"assumption_sets.{field} must be between {minimum} and {maximum}"
+                )
+            return value
+
+        def _normalize_optional_simulation_mode(
+            *,
+            raw_value: Any,
+            field: str,
+        ) -> str | None:
+            if raw_value is None:
+                return None
+            text = str(raw_value).strip().lower()
+            if not text:
+                return None
+            candidates = (
+                text,
+                text.replace("-", "_"),
+                text.replace(" ", "_"),
+                re.sub(r"[^a-z0-9_]+", "", text),
+            )
+            for candidate in candidates:
+                resolved = SIMULATION_MODE_ALIASES.get(candidate)
+                if resolved is not None:
+                    return resolved
+            raise ValueError(
+                f"assumption_sets.{field} must be one of: fixed, stochastic, historical, monte_carlo"
+            )
+
+        def _normalize_optional_simulation_variant(
+            *,
+            raw_value: Any,
+            field: str,
+        ) -> str | None:
+            if raw_value is None:
+                return None
+            text = str(raw_value).strip().lower()
+            if not text:
+                return None
+            candidates = (
+                text,
+                text.replace("-", "_"),
+                text.replace(" ", "_"),
+                re.sub(r"[^a-z0-9_]+", "", text),
+            )
+            for candidate in candidates:
+                resolved = MONTE_CARLO_VARIANT_ALIASES.get(candidate)
+                if resolved is not None:
+                    return resolved
+            raise ValueError(
+                f"assumption_sets.{field} must be one of: p10, p50, p90"
+            )
+
         sets: list[dict[str, Any]] = []
         seen_ids: set[str] = set()
         for index, raw in enumerate(raw_sets, start=1):
@@ -788,6 +896,34 @@ class PlanWorkspace:
                 minimum=0.0,
                 maximum=1.0,
             )
+            simulation_mode = _normalize_optional_simulation_mode(
+                raw_value=raw.get("simulation_mode"),
+                field=f"sets[{index}].simulation_mode",
+            )
+            simulation_monte_carlo_variant = _normalize_optional_simulation_variant(
+                raw_value=raw.get("simulation_monte_carlo_variant"),
+                field=f"sets[{index}].simulation_monte_carlo_variant",
+            )
+            simulation_historical_start_year = _normalize_optional_int(
+                raw_value=raw.get("simulation_historical_start_year"),
+                field=f"sets[{index}].simulation_historical_start_year",
+                minimum=min(HISTORICAL_YEARS),
+                maximum=max(HISTORICAL_YEARS),
+            )
+            simulation_seed_value = raw.get("simulation_seed")
+            if simulation_seed_value is None or (
+                isinstance(simulation_seed_value, str) and not simulation_seed_value.strip()
+            ):
+                simulation_seed = None
+            else:
+                simulation_seed = _normalize_optional_int(
+                    raw_value=simulation_seed_value,
+                    field=f"sets[{index}].simulation_seed",
+                    minimum=0,
+                    maximum=2_147_483_647,
+                )
+                if simulation_seed is None:
+                    simulation_seed = DEFAULT_SIMULATION_SEED
             roth_conversion_annual_amount_usd = _normalize_optional_rate(
                 raw_value=raw.get("roth_conversion_annual_amount_usd"),
                 field=f"sets[{index}].roth_conversion_annual_amount_usd",
@@ -839,6 +975,10 @@ class PlanWorkspace:
                     "inflation_rate": inflation,
                     "marginal_tax_rate": marginal_tax_rate,
                     "state_tax_rate": state_tax_rate,
+                    "simulation_mode": simulation_mode,
+                    "simulation_monte_carlo_variant": simulation_monte_carlo_variant,
+                    "simulation_historical_start_year": simulation_historical_start_year,
+                    "simulation_seed": simulation_seed,
                     "roth_conversion_annual_amount_usd": roth_conversion_annual_amount_usd,
                     "roth_conversion_start_age": (
                         int(roth_conversion_start_age)
@@ -1053,6 +1193,10 @@ class PlanWorkspace:
             "hsa_extra_contribution_usd",
             "marginal_tax_rate",
             "state_tax_rate",
+            "simulation_mode",
+            "simulation_monte_carlo_variant",
+            "simulation_historical_start_year",
+            "simulation_seed",
             "household_mode",
             "household_partner_income_usd",
             "household_partner_income_growth_rate",
@@ -1082,7 +1226,14 @@ class PlanWorkspace:
                 sanitized[key] = None
                 continue
 
-            if key in {"filing_status", "withdrawal_strategy", "drawdown_order", "household_mode"}:
+            if key in {
+                "filing_status",
+                "withdrawal_strategy",
+                "drawdown_order",
+                "household_mode",
+                "simulation_mode",
+                "simulation_monte_carlo_variant",
+            }:
                 value = str(raw_value).strip()
                 sanitized[key] = value or None
                 continue
@@ -1120,6 +1271,26 @@ class PlanWorkspace:
                 if target_year < 1900 or target_year > 2500:
                     raise ValueError("household_shared_goal_target_year must be between 1900 and 2500")
                 sanitized[key] = target_year
+                continue
+
+            if key == "simulation_historical_start_year":
+                try:
+                    simulation_historical_start_year = int(raw_value)
+                except Exception as exc:
+                    raise ValueError("simulation_historical_start_year must be an integer between 1928 and 2024") from exc
+                if simulation_historical_start_year < min(HISTORICAL_YEARS) or simulation_historical_start_year > max(HISTORICAL_YEARS):
+                    raise ValueError("simulation_historical_start_year must be between 1928 and 2024")
+                sanitized[key] = simulation_historical_start_year
+                continue
+
+            if key == "simulation_seed":
+                try:
+                    simulation_seed = int(raw_value)
+                except Exception as exc:
+                    raise ValueError("simulation_seed must be an integer between 0 and 2147483647") from exc
+                if simulation_seed < 0 or simulation_seed > 2_147_483_647:
+                    raise ValueError("simulation_seed must be between 0 and 2147483647")
+                sanitized[key] = simulation_seed
                 continue
 
             try:
@@ -1166,6 +1337,44 @@ class PlanWorkspace:
         household_mode = str(sanitized.get("household_mode") or "").strip().lower()
         if household_mode and household_mode not in {"individual", "couple"}:
             raise ValueError("household_mode must be one of: individual, couple")
+
+        simulation_mode = str(sanitized.get("simulation_mode") or "").strip().lower()
+        if simulation_mode:
+            candidates = (
+                simulation_mode,
+                simulation_mode.replace("-", "_"),
+                simulation_mode.replace(" ", "_"),
+                re.sub(r"[^a-z0-9_]+", "", simulation_mode),
+            )
+            resolved_simulation_mode: str | None = None
+            for candidate in candidates:
+                resolved_simulation_mode = SIMULATION_MODE_ALIASES.get(candidate)
+                if resolved_simulation_mode is not None:
+                    break
+            if resolved_simulation_mode is None:
+                raise ValueError("simulation_mode must be one of: fixed, stochastic, historical, monte_carlo")
+            sanitized["simulation_mode"] = resolved_simulation_mode
+        elif "simulation_mode" in sanitized:
+            sanitized["simulation_mode"] = None
+
+        simulation_monte_carlo_variant = str(sanitized.get("simulation_monte_carlo_variant") or "").strip().lower()
+        if simulation_monte_carlo_variant:
+            candidates = (
+                simulation_monte_carlo_variant,
+                simulation_monte_carlo_variant.replace("-", "_"),
+                simulation_monte_carlo_variant.replace(" ", "_"),
+                re.sub(r"[^a-z0-9_]+", "", simulation_monte_carlo_variant),
+            )
+            resolved_simulation_monte_carlo_variant: str | None = None
+            for candidate in candidates:
+                resolved_simulation_monte_carlo_variant = MONTE_CARLO_VARIANT_ALIASES.get(candidate)
+                if resolved_simulation_monte_carlo_variant is not None:
+                    break
+            if resolved_simulation_monte_carlo_variant is None:
+                raise ValueError("simulation_monte_carlo_variant must be one of: p10, p50, p90")
+            sanitized["simulation_monte_carlo_variant"] = resolved_simulation_monte_carlo_variant
+        elif "simulation_monte_carlo_variant" in sanitized:
+            sanitized["simulation_monte_carlo_variant"] = None
 
         filing_status = str(sanitized.get("filing_status") or "").strip().lower()
         if filing_status and filing_status not in {
@@ -1777,6 +1986,10 @@ class PlanWorkspace:
             f"- HSA extra contribution: {self._format_setting_value('hsa_extra_contribution_usd', settings_payload.get('hsa_extra_contribution_usd'))}",
             f"- Marginal tax rate: {self._format_setting_value('marginal_tax_rate', settings_payload.get('marginal_tax_rate'))}",
             f"- State tax rate: {self._format_setting_value('state_tax_rate', settings_payload.get('state_tax_rate'))}",
+            f"- Simulation mode: {self._format_setting_value('simulation_mode', settings_payload.get('simulation_mode'))}",
+            f"- Monte Carlo variant: {self._format_setting_value('simulation_monte_carlo_variant', settings_payload.get('simulation_monte_carlo_variant'))}",
+            f"- Historical start year: {self._format_setting_value('simulation_historical_start_year', settings_payload.get('simulation_historical_start_year'))}",
+            f"- Simulation seed: {self._format_setting_value('simulation_seed', settings_payload.get('simulation_seed'))}",
             f"- Roth conversion annual target: {self._format_setting_value('roth_conversion_annual_amount_usd', settings_payload.get('roth_conversion_annual_amount_usd'))}",
             f"- Roth conversion start age: {self._format_setting_value('roth_conversion_start_age', settings_payload.get('roth_conversion_start_age'))}",
             f"- Roth conversion end age: {self._format_setting_value('roth_conversion_end_age', settings_payload.get('roth_conversion_end_age'))}",

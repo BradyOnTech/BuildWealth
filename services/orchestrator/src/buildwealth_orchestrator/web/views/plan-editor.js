@@ -43,6 +43,8 @@ const TIMELINE_IMPACT_TYPES = new Set(['income', 'expense', 'portfolio', 'contri
 const TIMELINE_FREQUENCIES = new Set(['one_time', 'monthly', 'yearly']);
 const HOUSEHOLD_MODES = new Set(['individual', 'couple']);
 const FILING_STATUSES = new Set(['single', 'married_filing_jointly', 'married_filing_separately', 'head_of_household']);
+const SIMULATION_MODES = new Set(['fixed', 'stochastic', 'historical', 'monte_carlo']);
+const SIMULATION_MONTE_CARLO_VARIANTS = new Set(['p10', 'p50', 'p90']);
 const TIMELINE_DEFAULT_IMPACT_BY_EVENT = {
   purchase: 'expense',
   windfall: 'income',
@@ -179,23 +181,41 @@ function setPlanStringSettingInputs(prefix, rawSettings) {
   const settings = rawSettings && typeof rawSettings === 'object' ? rawSettings : {};
   const householdModeRaw = String(settings.household_mode || '').trim().toLowerCase();
   const filingStatusRaw = String(settings.filing_status || '').trim().toLowerCase();
+  const simulationModeRaw = String(settings.simulation_mode || '').trim().toLowerCase();
+  const simulationMonteCarloVariantRaw = String(settings.simulation_monte_carlo_variant || '').trim().toLowerCase();
 
   const householdModeInput = byId(`${prefix}-household-mode`);
   if (householdModeInput) householdModeInput.value = HOUSEHOLD_MODES.has(householdModeRaw) ? householdModeRaw : '';
   const filingStatusInput = byId(`${prefix}-filing-status`);
   if (filingStatusInput) filingStatusInput.value = FILING_STATUSES.has(filingStatusRaw) ? filingStatusRaw : '';
+  const simulationModeInput = byId(`${prefix}-simulation-mode`);
+  if (simulationModeInput) simulationModeInput.value = SIMULATION_MODES.has(simulationModeRaw) ? simulationModeRaw : '';
+  const simulationMonteCarloVariantInput = byId(`${prefix}-simulation-monte-carlo-variant`);
+  if (simulationMonteCarloVariantInput) {
+    simulationMonteCarloVariantInput.value = SIMULATION_MONTE_CARLO_VARIANTS.has(simulationMonteCarloVariantRaw)
+      ? simulationMonteCarloVariantRaw
+      : '';
+  }
 }
 
 function collectPlanStringSettings(prefix, { includeNulls = false } = {}) {
   const payload = {};
   const householdMode = String(byId(`${prefix}-household-mode`)?.value || '').trim().toLowerCase();
   const filingStatus = String(byId(`${prefix}-filing-status`)?.value || '').trim().toLowerCase();
+  const simulationMode = String(byId(`${prefix}-simulation-mode`)?.value || '').trim().toLowerCase();
+  const simulationMonteCarloVariant = String(byId(`${prefix}-simulation-monte-carlo-variant`)?.value || '').trim().toLowerCase();
 
   if (householdMode) payload.household_mode = householdMode;
   else if (includeNulls) payload.household_mode = null;
 
   if (filingStatus) payload.filing_status = filingStatus;
   else if (includeNulls) payload.filing_status = null;
+
+  if (simulationMode) payload.simulation_mode = simulationMode;
+  else if (includeNulls) payload.simulation_mode = null;
+
+  if (simulationMonteCarloVariant) payload.simulation_monte_carlo_variant = simulationMonteCarloVariant;
+  else if (includeNulls) payload.simulation_monte_carlo_variant = null;
 
   return payload;
 }
@@ -498,7 +518,8 @@ function setControlsEnabled(enabled) {
     'diff-candidate-assumption-set-id', 'withdrawal-assumption-set-id', 'withdrawal-current-portfolio-value',
     'withdrawal-strategies', 'withdrawal-include-raw-results', 'branch-template-id', 'scenario-branch-name',
     'research-bridge-symbols',
-    'setting-household-mode', 'setting-filing-status', 'diff-household-mode', 'diff-filing-status',
+    'setting-household-mode', 'setting-filing-status', 'setting-simulation-mode', 'setting-simulation-monte-carlo-variant',
+    'diff-household-mode', 'diff-filing-status', 'diff-simulation-mode', 'diff-simulation-monte-carlo-variant',
     'branch-assumption-set-id', 'scenario-branch-events', 'decision-summary', 'decision-rationale',
     'decision-status', 'timeline-event-date', 'timeline-event-label', 'timeline-event-type',
     'timeline-event-impact-type', 'timeline-event-amount', 'timeline-event-frequency', 'timeline-event-end-date',
@@ -689,6 +710,7 @@ function applyBranchTemplateToEditor(template) {
     ? template.compare_settings
     : {};
   setSettingsInputs(DIFF_SETTING_FIELDS, compareSettings);
+  setPlanStringSettingInputs('diff', compareSettings);
   return true;
 }
 
@@ -1402,7 +1424,7 @@ export function clearDetail() {
   byId('plan-closure-summary-status').textContent = 'Select a plan to generate recommendation closure analytics.';
   byId('plan-closure-trend-status').textContent = 'Select a plan to load recommendation quality trend.';
   byId('plan-settings-meta').textContent = 'Blank values use global defaults from planner configuration.';
-  ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-contribution-rules', 'plan-branch-templates', 'plan-context', 'scenario-diff-output', 'withdrawal-current-portfolio-value', 'withdrawal-strategies', 'withdrawal-strategy-compare-output', 'scenario-branch-name', 'scenario-branch-events', 'scenario-branch-output', 'research-bridge-symbols', 'artifact-content', 'setting-household-mode', 'setting-filing-status', 'diff-household-mode', 'diff-filing-status'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
+  ['plan-markdown', 'plan-tasks', 'plan-timeline', 'plan-assumption-sets', 'plan-contribution-rules', 'plan-branch-templates', 'plan-context', 'scenario-diff-output', 'withdrawal-current-portfolio-value', 'withdrawal-strategies', 'withdrawal-strategy-compare-output', 'scenario-branch-name', 'scenario-branch-events', 'scenario-branch-output', 'research-bridge-symbols', 'artifact-content', 'setting-household-mode', 'setting-filing-status', 'setting-simulation-mode', 'setting-simulation-monte-carlo-variant', 'diff-household-mode', 'diff-filing-status', 'diff-simulation-mode', 'diff-simulation-monte-carlo-variant'].forEach(id => { const el = byId(id); if (el) el.value = ''; });
   writeTimelinePayloadToEditor({ events: [], retirement: {} }, { preferFormValues: false });
   resetTimelineEventInputs();
   writeContributionRulesPayloadToEditor({}, { preferFormValues: false });
@@ -1661,6 +1683,85 @@ function summarizeHouseholdTransition(baseContext, candidateContext) {
   return `household ${baseMode} -> ${candidateMode}, filing ${baseFiling} -> ${candidateFiling}`;
 }
 
+function normalizeSimulationSummary(rawSummary) {
+  const summary = rawSummary && typeof rawSummary === 'object' ? rawSummary : {};
+  const modeRaw = String(summary.mode || '').trim().toLowerCase();
+  const timelineModeRaw = String(summary.timeline_mode || '').trim().toLowerCase();
+  const variantRaw = String(summary.monte_carlo_variant || '').trim().toLowerCase();
+  const seed = coerceOptionalInteger(summary.seed);
+  const requestedHistoricalStartYear = coerceOptionalInteger(summary.requested_historical_start_year);
+  const resolvedHistoricalRaw = summary.resolved_historical_start_year_by_scenario;
+  const resolvedHistorical = {};
+  if (resolvedHistoricalRaw && typeof resolvedHistoricalRaw === 'object' && !Array.isArray(resolvedHistoricalRaw)) {
+    for (const [label, rawYear] of Object.entries(resolvedHistoricalRaw)) {
+      const year = coerceOptionalInteger(rawYear);
+      if (year === null) continue;
+      const cleanedLabel = String(label || '').trim().toLowerCase();
+      if (!cleanedLabel) continue;
+      resolvedHistorical[cleanedLabel] = year;
+    }
+  }
+
+  return {
+    mode: SIMULATION_MODES.has(modeRaw) ? modeRaw : null,
+    timeline_mode: SIMULATION_MODES.has(timelineModeRaw) ? timelineModeRaw : null,
+    monte_carlo_variant: SIMULATION_MONTE_CARLO_VARIANTS.has(variantRaw) ? variantRaw : null,
+    seed,
+    requested_historical_start_year: requestedHistoricalStartYear,
+    resolved_historical_start_year_by_scenario: resolvedHistorical,
+  };
+}
+
+function extractSimulationSummaryFromResult(resultPayload) {
+  if (!resultPayload || typeof resultPayload !== 'object') return normalizeSimulationSummary({});
+  const summaryFromPayload = normalizeSimulationSummary(resultPayload.simulation);
+  if (summaryFromPayload.mode) return summaryFromPayload;
+
+  const scenarios = Array.isArray(resultPayload.scenarios) ? resultPayload.scenarios : [];
+  const baseline = scenarios.find((item) => String(item?.label || '').toLowerCase() === 'baseline') || scenarios[0];
+  const assumptions = baseline?.assumptions;
+  if (!assumptions || typeof assumptions !== 'object') return summaryFromPayload;
+
+  return normalizeSimulationSummary({
+    mode: assumptions.simulation_mode,
+    timeline_mode: assumptions.simulation_timeline_mode,
+    monte_carlo_variant: assumptions.simulation_monte_carlo_variant,
+    seed: assumptions.simulation_seed,
+    requested_historical_start_year: assumptions.simulation_requested_historical_start_year,
+    resolved_historical_start_year_by_scenario: assumptions.simulation_historical_start_year
+      ? { baseline: assumptions.simulation_historical_start_year }
+      : {},
+  });
+}
+
+function describeSimulationSummary(summary) {
+  const normalized = normalizeSimulationSummary(summary);
+  const mode = normalized.mode || 'fixed';
+  const timelineMode = normalized.timeline_mode || mode;
+  const variant = normalized.monte_carlo_variant || 'p50';
+  const seed = normalized.seed === null ? 'default' : String(normalized.seed);
+  const requestedStart = normalized.requested_historical_start_year === null
+    ? 'auto'
+    : String(normalized.requested_historical_start_year);
+  const resolvedHistorical = normalized.resolved_historical_start_year_by_scenario || {};
+  const resolvedEntries = Object.entries(resolvedHistorical);
+  const resolvedLabel = resolvedEntries.length
+    ? resolvedEntries
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([label, year]) => `${label}:${year}`)
+      .join(', ')
+    : 'n/a';
+  return `mode ${mode}, timeline ${timelineMode}, variant ${variant}, seed ${seed}, requested historical start ${requestedStart}, resolved historical starts ${resolvedLabel}`;
+}
+
+function describeSimulationDelta(simulationDelta, candidateLabel = 'candidate') {
+  const payload = simulationDelta && typeof simulationDelta === 'object' ? simulationDelta : {};
+  const base = describeSimulationSummary(payload.base || {});
+  const candidate = describeSimulationSummary(payload[candidateLabel] || {});
+  const changed = Boolean(payload.changed);
+  return `base: ${base} | ${candidateLabel}: ${candidate} | changed: ${changed ? 'yes' : 'no'}`;
+}
+
 function formatDiffOutput(diff) {
   const rows = Array.isArray(diff?.scenario_deltas) ? diff.scenario_deltas : [];
   const lines = [`Plan: ${diff?.plan_id || '-'}`, `Current Portfolio: ${fmtCurrency(diff?.current_portfolio_value_usd)}`, '', 'Scenario Delta (Candidate - Base):'];
@@ -1745,6 +1846,9 @@ function formatDiffOutput(diff) {
 
   const mc = diff?.monte_carlo_delta || {};
   lines.push('', 'Monte Carlo Delta:', `- P10: ${fmtCurrency(mc.delta_p10_future_value_usd)}`, `- P50: ${fmtCurrency(mc.delta_p50_future_value_usd)}`, `- P90: ${fmtCurrency(mc.delta_p90_future_value_usd)}`);
+  lines.push('', 'Simulation Context:', `- Base: ${describeSimulationSummary(extractSimulationSummaryFromResult(diff?.base_result))}`);
+  lines.push(`- Candidate: ${describeSimulationSummary(extractSimulationSummaryFromResult(diff?.candidate_result))}`);
+  lines.push('', 'Simulation Delta:', `- ${describeSimulationDelta(diff?.simulation_delta, 'candidate')}`);
   lines.push('', 'Raw Payload:', JSON.stringify(diff, null, 2));
   return lines.join('\n');
 }
@@ -1819,6 +1923,10 @@ function formatWithdrawalStrategyCompareOutput(result) {
         + `RMDs ${fmtCurrency(row?.total_rmds_usd)}, Roth conv ${fmtCurrency(row?.total_roth_conversions_usd)}, `
         + `MC P50 ${fmtCurrency(row?.monte_carlo_p50_future_value_usd)}`
       );
+      lines.push(
+        `  simulation mode ${String(row?.simulation_mode || 'fixed')}, `
+        + `variant ${String(row?.simulation_monte_carlo_variant || 'p50')}`
+      );
       if (
         Number.isFinite(Number(row?.total_federal_taxes_usd))
         || Number.isFinite(Number(row?.total_state_taxes_usd))
@@ -1891,6 +1999,10 @@ function formatBranchOutput(branch) {
 
   const mc = branch?.monte_carlo_delta || {};
   lines.push('', 'Monte Carlo Delta:', `- P10: ${fmtCurrency(mc.delta_p10_future_value_usd)}`, `- P50: ${fmtCurrency(mc.delta_p50_future_value_usd)}`, `- P90: ${fmtCurrency(mc.delta_p90_future_value_usd)}`);
+  lines.push('', 'Simulation Context:');
+  lines.push(`- Base: ${describeSimulationSummary(extractSimulationSummaryFromResult(branch?.base_result))}`);
+  lines.push(`- Branch: ${describeSimulationSummary(extractSimulationSummaryFromResult(branch?.branch_result))}`);
+  lines.push('', 'Simulation Delta:', `- ${describeSimulationDelta(branch?.simulation_delta, 'branch')}`);
   lines.push('', 'Raw Payload:', JSON.stringify(branch, null, 2));
   return lines.join('\n');
 }

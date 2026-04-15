@@ -219,6 +219,10 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
         assert payload["metadata"]["household_partner_income_added_total_usd"] == 920000.0
         assert payload["metadata"]["withdrawal_strategy"] == "4_percent_rule"
         assert payload["metadata"]["retirement_age"] == 60
+        assert payload["metadata"]["simulation_mode"] == "historical"
+        assert payload["metadata"]["simulation_monte_carlo_variant"] == "p10"
+        assert payload["metadata"]["simulation_historical_start_year"] == 1972
+        assert payload["metadata"]["simulation_seed"] == 314159
         return httpx.Response(
             status_code=200,
             json={
@@ -449,6 +453,10 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
             household_partner_income_added_total_usd=920000,
             withdrawal_strategy="4_percent_rule",
             retirement_age=60,
+            simulation_mode="historical",
+            simulation_monte_carlo_variant="p10",
+            simulation_historical_start_year=1972,
+            simulation_seed=314159,
         )
     )
 
@@ -467,6 +475,10 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
     assert result.social_security_projection.selected_annual_benefit_usd == 18000
     assert result.rmd_projection is not None
     assert result.rmd_projection.rmd_start_age == 75
+    assert result.simulation["mode"] == "historical"
+    assert result.simulation["monte_carlo_variant"] == "p10"
+    assert result.simulation["requested_historical_start_year"] == 1972
+    assert result.simulation["seed"] == 314159
 
 
 def test_ignidash_sidecar_service_forwards_assumption_set_metadata() -> None:

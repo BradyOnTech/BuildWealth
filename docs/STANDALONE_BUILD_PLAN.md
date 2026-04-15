@@ -63,6 +63,13 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 5.0 Slice 5, Simulation Mode Expansion)
+- Added simulation mode controls (`fixed`, `stochastic`, `historical`, `monte_carlo`) plus Monte Carlo variant/start-year/seed settings across plan settings, assumption sets, API requests, and Copilot tool contracts.
+- Completed end-to-end mode wiring through scenario execution, plan diff/branch/withdrawal comparison paths, and planning sidecar metadata.
+- Added simulation comparison visibility in responses (`simulation_delta`) and Plan Workspace UI (settings selectors + diff/branch output context).
+- Regression coverage extended for scenario engine simulation behavior, assumption-set parsing/application, workspace validation, sidecar metadata, and Copilot tool contracts.
+- Verification: `pytest -q` in `services/orchestrator` passes (`427 passed`).
+
 ### 2026-04-14 (Completed - Post-3.7 Slice 9, One-Click Bridge Artifact Control)
 - Plan Workspace bridge summary now includes a one-click action (`Open Latest Bridge Artifact`) to open the latest persisted `research_bridge` artifact directly in the artifact content panel.
 - Bridge action enablement is now artifact-aware:

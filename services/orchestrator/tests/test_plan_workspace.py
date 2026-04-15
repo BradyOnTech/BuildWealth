@@ -100,6 +100,10 @@ def test_plan_workspace_settings_update_and_validation(tmp_path: Path) -> None:
             "years": 22,
             "marginal_tax_rate": 0.24,
             "state_tax_rate": 0.05,
+            "simulation_mode": "historical_backtest",
+            "simulation_monte_carlo_variant": "p90",
+            "simulation_historical_start_year": 1988,
+            "simulation_seed": 2468,
             "household_mode": "couple",
             "household_partner_income_usd": 90000,
             "household_partner_income_growth_rate": 0.03,
@@ -124,6 +128,10 @@ def test_plan_workspace_settings_update_and_validation(tmp_path: Path) -> None:
     assert updated["settings"]["years"] == 22
     assert updated["settings"]["marginal_tax_rate"] == 0.24
     assert updated["settings"]["state_tax_rate"] == 0.05
+    assert updated["settings"]["simulation_mode"] == "historical"
+    assert updated["settings"]["simulation_monte_carlo_variant"] == "p90"
+    assert updated["settings"]["simulation_historical_start_year"] == 1988
+    assert updated["settings"]["simulation_seed"] == 2468
     assert updated["settings"]["household_mode"] == "couple"
     assert updated["settings"]["household_partner_income_usd"] == 90000
     assert updated["settings"]["household_partner_income_growth_rate"] == 0.03
@@ -165,6 +173,22 @@ def test_plan_workspace_settings_update_and_validation(tmp_path: Path) -> None:
             plan_id=detail["id"],
             updates={
                 "household_mode": "family",
+            },
+        )
+
+    with pytest.raises(ValueError):
+        workspace.update_plan_settings(
+            plan_id=detail["id"],
+            updates={
+                "simulation_mode": "broken_mode",
+            },
+        )
+
+    with pytest.raises(ValueError):
+        workspace.update_plan_settings(
+            plan_id=detail["id"],
+            updates={
+                "simulation_monte_carlo_variant": "broken_variant",
             },
         )
 
@@ -421,6 +445,10 @@ def test_plan_workspace_assumption_sets_round_trip(tmp_path: Path) -> None:
                     "inflation_rate": None,
                     "marginal_tax_rate": None,
                     "state_tax_rate": None,
+                    "simulation_mode": None,
+                    "simulation_monte_carlo_variant": None,
+                    "simulation_historical_start_year": None,
+                    "simulation_seed": None,
                     "roth_conversion_annual_amount_usd": None,
                     "roth_conversion_start_age": None,
                     "roth_conversion_end_age": None,
@@ -434,6 +462,10 @@ def test_plan_workspace_assumption_sets_round_trip(tmp_path: Path) -> None:
                     "inflation_rate": 0.05,
                     "marginal_tax_rate": 0.27,
                     "state_tax_rate": 0.06,
+                    "simulation_mode": "historical",
+                    "simulation_monte_carlo_variant": "p10",
+                    "simulation_historical_start_year": 1970,
+                    "simulation_seed": 13579,
                     "roth_conversion_annual_amount_usd": 10000,
                     "roth_conversion_start_age": 60,
                     "roth_conversion_end_age": 70,
@@ -447,6 +479,10 @@ def test_plan_workspace_assumption_sets_round_trip(tmp_path: Path) -> None:
                     "inflation_rate": 0.028,
                     "marginal_tax_rate": 0.24,
                     "state_tax_rate": 0.05,
+                    "simulation_mode": "monte_carlo",
+                    "simulation_monte_carlo_variant": "p90",
+                    "simulation_historical_start_year": 1985,
+                    "simulation_seed": 24680,
                     "roth_conversion_annual_amount_usd": 8000,
                     "roth_conversion_start_age": 62,
                     "roth_conversion_end_age": 72,
@@ -462,6 +498,10 @@ def test_plan_workspace_assumption_sets_round_trip(tmp_path: Path) -> None:
     assert custom["expected_return_baseline"] == pytest.approx(0.065)
     assert custom["inflation_rate"] == pytest.approx(0.028)
     assert custom["state_tax_rate"] == pytest.approx(0.05)
+    assert custom["simulation_mode"] == "monte_carlo"
+    assert custom["simulation_monte_carlo_variant"] == "p90"
+    assert custom["simulation_historical_start_year"] == 1985
+    assert custom["simulation_seed"] == 24680
     assert custom["roth_conversion_annual_amount_usd"] == pytest.approx(8000.0)
     assert custom["roth_conversion_start_age"] == 62
     assert custom["roth_conversion_end_age"] == 72
