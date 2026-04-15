@@ -100,6 +100,7 @@ def test_plan_workspace_settings_update_and_validation(tmp_path: Path) -> None:
             "years": 22,
             "marginal_tax_rate": 0.24,
             "state_tax_rate": 0.05,
+            "drawdown_order": "cash,taxable,tax_deferred,tax_free",
             "roth_conversion_annual_amount_usd": 12000,
             "roth_conversion_start_age": 60,
             "roth_conversion_end_age": 72,
@@ -115,6 +116,7 @@ def test_plan_workspace_settings_update_and_validation(tmp_path: Path) -> None:
     assert updated["settings"]["years"] == 22
     assert updated["settings"]["marginal_tax_rate"] == 0.24
     assert updated["settings"]["state_tax_rate"] == 0.05
+    assert updated["settings"]["drawdown_order"] == "cash,taxable,tax_deferred,tax_free"
     assert updated["settings"]["roth_conversion_annual_amount_usd"] == 12000
     assert updated["settings"]["roth_conversion_start_age"] == 60
     assert updated["settings"]["roth_conversion_end_age"] == 72
@@ -208,6 +210,7 @@ def test_plan_workspace_updates_timeline(tmp_path: Path) -> None:
             "retirement": {
                 "target_retirement_age": 60,
                 "withdrawal_strategy": "4_percent_rule",
+                "drawdown_order": "tax_deferred,taxable,tax_free,cash",
                 "social_security_claiming_age": 67,
                 "social_security_fra_monthly_benefit_usd": 2800,
                 "rmd_birth_year": 1960,
@@ -219,6 +222,7 @@ def test_plan_workspace_updates_timeline(tmp_path: Path) -> None:
     assert len(updated_timeline["events"]) == 1
     assert updated_timeline["events"][0]["label"] == "Buy House"
     assert updated_timeline["retirement"]["target_retirement_age"] == 60
+    assert updated_timeline["retirement"]["drawdown_order"] == "tax_deferred,taxable,tax_free,cash"
     assert updated_timeline["retirement"]["social_security_claiming_age"] == 67
     assert updated_timeline["retirement"]["social_security_fra_monthly_benefit_usd"] == 2800.0
     assert updated_timeline["retirement"]["rmd_birth_year"] == 1960
@@ -227,6 +231,7 @@ def test_plan_workspace_updates_timeline(tmp_path: Path) -> None:
     loaded = workspace.get_plan_timeline(detail["id"])
     assert len(loaded["events"]) == 1
     assert loaded["events"][0]["event_type"] == "purchase"
+    assert loaded["retirement"]["drawdown_order"] == "tax_deferred,taxable,tax_free,cash"
 
     refreshed = workspace.get_plan(detail["id"])
     timeline_json = json.loads(refreshed["files"]["timeline_json"])

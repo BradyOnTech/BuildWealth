@@ -78,6 +78,7 @@ export function template() {
         <div class="settings-grid">
           <label class="field"><span>Target Retirement Age</span><input type="number" id="timeline-retirement-age" min="18" max="100" step="1" placeholder="Optional" disabled /></label>
           <label class="field"><span>Withdrawal Strategy</span><input type="text" id="timeline-withdrawal-strategy" placeholder="e.g. four_percent_rule" disabled /></label>
+          <label class="field"><span>Drawdown Order</span><input type="text" id="timeline-drawdown-order" placeholder="e.g. cash,taxable,tax_deferred,tax_free" disabled /></label>
           <label class="field"><span>SS Birth Year</span><input type="number" id="timeline-ss-birth-year" min="1900" max="2500" step="1" placeholder="Optional" disabled /></label>
           <label class="field"><span>SS Claiming Age</span><input type="number" id="timeline-ss-claiming-age" min="62" max="70" step="1" placeholder="Optional" disabled /></label>
           <label class="field"><span>SS Life Expectancy Age</span><input type="number" id="timeline-ss-life-expectancy-age" min="67" max="120" step="1" placeholder="Optional" disabled /></label>

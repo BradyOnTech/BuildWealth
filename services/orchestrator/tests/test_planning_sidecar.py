@@ -205,6 +205,7 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
         assert payload["metadata"]["roth_conversion_annual_amount_usd"] == 12000.0
         assert payload["metadata"]["roth_conversion_start_age"] == 60
         assert payload["metadata"]["roth_conversion_end_age"] == 72
+        assert payload["metadata"]["drawdown_order"] == "tax_deferred, taxable, tax_free, cash"
         assert payload["metadata"]["withdrawal_strategy"] == "4_percent_rule"
         assert payload["metadata"]["retirement_age"] == 60
         return httpx.Response(
@@ -423,6 +424,7 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
             roth_conversion_annual_amount_usd=12000,
             roth_conversion_start_age=60,
             roth_conversion_end_age=72,
+            drawdown_order=["tax_deferred", "taxable", "tax_free", "cash"],
             withdrawal_strategy="4_percent_rule",
             retirement_age=60,
         )

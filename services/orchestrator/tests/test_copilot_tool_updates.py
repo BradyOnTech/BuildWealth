@@ -54,12 +54,13 @@ def test_compute_tax_tool_supports_state_tax_and_irmaa_inputs() -> None:
     assert "medicare_months_covered" in properties
 
 
-def test_run_planning_tool_supports_roth_conversion_inputs() -> None:
+def test_run_planning_tool_supports_roth_conversion_and_drawdown_inputs() -> None:
     tool = main.copilot.tools["run_planning_scenarios"]
     properties = tool.parameters.get("properties", {})
     assert "roth_conversion_annual_amount_usd" in properties
     assert "roth_conversion_start_age" in properties
     assert "roth_conversion_end_age" in properties
+    assert "drawdown_order" in properties
 
 
 def test_apply_recommendation_tool_supports_decision_packet_controls() -> None:

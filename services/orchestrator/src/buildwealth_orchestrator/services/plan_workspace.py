@@ -184,6 +184,7 @@ class PlanWorkspace:
             "expected_return_conservative": None,
             "filing_status": None,
             "withdrawal_strategy": None,
+            "drawdown_order": None,
             "updated_at": utc_now_iso(),
         }
 
@@ -195,6 +196,7 @@ class PlanWorkspace:
             "retirement": {
                 "target_retirement_age": None,
                 "withdrawal_strategy": None,
+                "drawdown_order": None,
                 "social_security_birth_year": None,
                 "social_security_claiming_age": None,
                 "social_security_life_expectancy_age": None,
@@ -531,6 +533,7 @@ class PlanWorkspace:
                 raise ValueError("timeline.retirement.target_retirement_age must be between 18 and 100")
 
         withdrawal_strategy = str(retirement_payload.get("withdrawal_strategy") or "").strip() or None
+        drawdown_order = str(retirement_payload.get("drawdown_order") or "").strip() or None
 
         social_security_birth_year = retirement_payload.get("social_security_birth_year")
         if social_security_birth_year is None:
@@ -630,6 +633,7 @@ class PlanWorkspace:
             "retirement": {
                 "target_retirement_age": resolved_retirement_age,
                 "withdrawal_strategy": withdrawal_strategy,
+                "drawdown_order": drawdown_order,
                 "social_security_birth_year": resolved_social_security_birth_year,
                 "social_security_claiming_age": resolved_social_security_claiming_age,
                 "social_security_life_expectancy_age": resolved_social_security_life_expectancy_age,
@@ -1050,6 +1054,7 @@ class PlanWorkspace:
             "expected_return_conservative",
             "filing_status",
             "withdrawal_strategy",
+            "drawdown_order",
         }
         sanitized: dict[str, Any] = {}
 
@@ -1061,7 +1066,7 @@ class PlanWorkspace:
                 sanitized[key] = None
                 continue
 
-            if key in {"filing_status", "withdrawal_strategy"}:
+            if key in {"filing_status", "withdrawal_strategy", "drawdown_order"}:
                 value = str(raw_value).strip()
                 sanitized[key] = value or None
                 continue
@@ -1722,6 +1727,7 @@ class PlanWorkspace:
             f"- Conservative return: {self._format_setting_value('expected_return_conservative', settings_payload.get('expected_return_conservative'))}",
             f"- Filing status: {settings_payload.get('filing_status') or 'default'}",
             f"- Withdrawal strategy: {settings_payload.get('withdrawal_strategy') or 'not set'}",
+            f"- Drawdown order: {settings_payload.get('drawdown_order') or 'age_aware'}",
         ]
 
         timeline_events = timeline_payload.get("events", [])

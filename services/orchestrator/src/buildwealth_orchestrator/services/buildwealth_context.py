@@ -347,6 +347,10 @@ def build_context_summary_with_metadata(
             f"- Withdrawal strategy: {str(withdrawal_strategy.get('active') or 'cashflow_only')} "
             f"(source: {str(withdrawal_strategy.get('source') or 'default')})."
         ),
+        (
+            f"- Drawdown order: {str(withdrawal_strategy.get('drawdown_order') or 'age_aware')} "
+            f"(source: {str(withdrawal_strategy.get('drawdown_order_source') or 'default')})."
+        ),
     ]
 
     if baseline_projection:

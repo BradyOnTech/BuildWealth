@@ -660,6 +660,7 @@ PLAN_SETTINGS_FIELDS = (
     "hsa_extra_contribution_usd",
     "marginal_tax_rate",
     "state_tax_rate",
+    "drawdown_order",
     "roth_conversion_annual_amount_usd",
     "roth_conversion_start_age",
     "roth_conversion_end_age",
@@ -1939,6 +1940,7 @@ def resolve_plan_timeline_payload(plan_detail: dict[str, Any]) -> dict[str, Any]
             "retirement": {
                 "target_retirement_age": None,
                 "withdrawal_strategy": None,
+                "drawdown_order": None,
                 "social_security_birth_year": None,
                 "social_security_claiming_age": None,
                 "social_security_life_expectancy_age": None,
@@ -1957,6 +1959,7 @@ def resolve_plan_timeline_payload(plan_detail: dict[str, Any]) -> dict[str, Any]
             "retirement": {
                 "target_retirement_age": None,
                 "withdrawal_strategy": None,
+                "drawdown_order": None,
                 "social_security_birth_year": None,
                 "social_security_claiming_age": None,
                 "social_security_life_expectancy_age": None,
@@ -1981,6 +1984,7 @@ def resolve_plan_timeline_payload(plan_detail: dict[str, Any]) -> dict[str, Any]
         {
             "target_retirement_age": None,
             "withdrawal_strategy": None,
+            "drawdown_order": None,
             "social_security_birth_year": None,
             "social_security_claiming_age": None,
             "social_security_life_expectancy_age": None,
@@ -2012,6 +2016,14 @@ def resolve_timeline_withdrawal_strategy(timeline_payload: dict[str, Any]) -> st
         return None
     strategy = str(retirement.get("withdrawal_strategy") or "").strip()
     return strategy or None
+
+
+def resolve_timeline_drawdown_order(timeline_payload: dict[str, Any]) -> str | None:
+    retirement = timeline_payload.get("retirement")
+    if not isinstance(retirement, dict):
+        return None
+    drawdown_order = str(retirement.get("drawdown_order") or "").strip()
+    return drawdown_order or None
 
 
 def _add_months(anchor: date, months: int) -> date:
@@ -2149,6 +2161,7 @@ async def run_scenarios_for_plan_settings(
     assumption_set: dict[str, Any] | None = None,
     retirement_age: int | None = None,
     timeline_withdrawal_strategy: str | None = None,
+    timeline_drawdown_order: str | None = None,
 ) -> PlanningResponse:
     validate_plan_return_relationships(plan_settings)
     service = build_ignidash_service_for_plan_settings(plan_settings)
@@ -2252,6 +2265,9 @@ async def run_scenarios_for_plan_settings(
     withdrawal_strategy = str(plan_settings.get("withdrawal_strategy") or "").strip() or None
     if not withdrawal_strategy:
         withdrawal_strategy = str(timeline_withdrawal_strategy or "").strip() or None
+    drawdown_order = str(plan_settings.get("drawdown_order") or "").strip() or None
+    if not drawdown_order:
+        drawdown_order = str(timeline_drawdown_order or "").strip() or None
     resolved_start_year = utc_now().year
     scenario_guard_reason = await sidecar_contract_guard_reason("ignidash_scenario")
 
@@ -2274,6 +2290,7 @@ async def run_scenarios_for_plan_settings(
         roth_conversion_annual_amount_usd=roth_conversion_annual_amount,
         roth_conversion_start_age=roth_conversion_start_age,
         roth_conversion_end_age=roth_conversion_end_age,
+        drawdown_order=drawdown_order,
         start_year=resolved_start_year,
         withdrawal_strategy=withdrawal_strategy,
         retirement_age=retirement_age,
@@ -2373,6 +2390,7 @@ async def compute_plan_scenario_branch(
     timeline_payload = resolve_plan_timeline_payload(detail)
     retirement_age = resolve_timeline_retirement_age(timeline_payload)
     timeline_withdrawal_strategy = resolve_timeline_withdrawal_strategy(timeline_payload)
+    timeline_drawdown_order = resolve_timeline_drawdown_order(timeline_payload)
     assumption_sets_payload = resolve_plan_assumption_sets(detail)
     branch_templates_payload = resolve_plan_branch_templates(detail)
     selected_branch_template = (
@@ -2515,6 +2533,7 @@ async def compute_plan_scenario_branch(
         assumption_set=active_assumption_set,
         retirement_age=retirement_age,
         timeline_withdrawal_strategy=timeline_withdrawal_strategy,
+        timeline_drawdown_order=timeline_drawdown_order,
     )
     branch_result = await run_scenarios_for_plan_settings(
         current_portfolio_value_usd=current_value,
@@ -2529,6 +2548,7 @@ async def compute_plan_scenario_branch(
         assumption_set=active_assumption_set,
         retirement_age=retirement_age,
         timeline_withdrawal_strategy=timeline_withdrawal_strategy,
+        timeline_drawdown_order=timeline_drawdown_order,
     )
     scenario_deltas, monte_carlo_delta = build_scenario_diff_payload(base_result, branch_result)
 
@@ -5833,6 +5853,7 @@ async def build_buildwealth_context_payload(
             if not isinstance(raw_settings, dict):
                 raw_settings = {}
             settings_strategy = normalize_withdrawal_strategy_value(raw_settings.get("withdrawal_strategy"))
+            settings_drawdown_order = str(raw_settings.get("drawdown_order") or "").strip() or None
             timeline_retirement_payload = (
                 plan_timeline_payload.get("retirement")
                 if isinstance(plan_timeline_payload.get("retirement"), dict)
@@ -5841,6 +5862,7 @@ async def build_buildwealth_context_payload(
             timeline_strategy = normalize_withdrawal_strategy_value(
                 timeline_retirement_payload.get("withdrawal_strategy")
             )
+            timeline_drawdown_order = str(timeline_retirement_payload.get("drawdown_order") or "").strip() or None
             active_strategy = (
                 settings_strategy
                 or timeline_strategy
@@ -5848,10 +5870,18 @@ async def build_buildwealth_context_payload(
                 or "cashflow_only"
             )
             source = "settings" if settings_strategy else ("timeline" if timeline_strategy else "default")
+            active_drawdown_order = settings_drawdown_order or timeline_drawdown_order or "age_aware"
+            drawdown_source = (
+                "settings"
+                if settings_drawdown_order
+                else ("timeline" if timeline_drawdown_order else "default")
+            )
             plan_withdrawal_strategy_payload = {
                 "active": active_strategy,
                 "source": source,
                 "options": DEFAULT_WITHDRAWAL_STRATEGIES,
+                "drawdown_order": active_drawdown_order,
+                "drawdown_order_source": drawdown_source,
             }
         except Exception as exc:
             warnings.append(f"Withdrawal strategy context unavailable: {exc}")
@@ -5948,6 +5978,7 @@ async def build_buildwealth_context_payload(
                     timeline_payload = resolve_plan_timeline_payload(resolved_plan_detail)
                     timeline_retirement_age = resolve_timeline_retirement_age(timeline_payload)
                     timeline_withdrawal_strategy = resolve_timeline_withdrawal_strategy(timeline_payload)
+                    timeline_drawdown_order = resolve_timeline_drawdown_order(timeline_payload)
                     income_projection = build_income_projection_for_plan_settings(projection_settings)
                     expense_projection = build_expense_projection_for_plan_settings(projection_settings)
                     debt_projection = build_debt_projection_for_plan_settings(projection_settings)
@@ -5982,6 +6013,7 @@ async def build_buildwealth_context_payload(
                         assumption_set=active_assumption_set,
                         retirement_age=timeline_retirement_age,
                         timeline_withdrawal_strategy=timeline_withdrawal_strategy,
+                        timeline_drawdown_order=timeline_drawdown_order,
                     )
                     baseline_projection_payload = baseline_projection.model_dump(mode="json")
                     if (
@@ -6679,6 +6711,7 @@ async def tool_run_planning(arguments: dict[str, object]) -> dict[str, object]:
     roth_conversion_annual_amount = arguments.get("roth_conversion_annual_amount_usd")
     roth_conversion_start_age = arguments.get("roth_conversion_start_age")
     roth_conversion_end_age = arguments.get("roth_conversion_end_age")
+    drawdown_order = str(arguments.get("drawdown_order") or "").strip() or None
 
     if current_value is None:
         current_value = snapshot_store.latest().total_value_usd
@@ -6723,6 +6756,7 @@ async def tool_run_planning(arguments: dict[str, object]) -> dict[str, object]:
         ),
         roth_conversion_start_age=resolved_roth_conversion_start_age,
         roth_conversion_end_age=resolved_roth_conversion_end_age,
+        drawdown_order=drawdown_order,
     )
     return result.model_dump(mode="json")
 
@@ -7695,6 +7729,7 @@ async def tool_compare_withdrawal_strategies(arguments: dict[str, object]) -> di
     timeline_payload = resolve_plan_timeline_payload(detail)
     timeline_retirement_age = resolve_timeline_retirement_age(timeline_payload)
     timeline_withdrawal_strategy = resolve_timeline_withdrawal_strategy(timeline_payload)
+    timeline_drawdown_order = resolve_timeline_drawdown_order(timeline_payload)
     contribution_rules_payload = resolve_plan_contribution_rules(detail)
 
     income_projection = build_income_projection_for_plan_settings(projection_settings)
@@ -7741,6 +7776,7 @@ async def tool_compare_withdrawal_strategies(arguments: dict[str, object]) -> di
             assumption_set=active_assumption_set,
             retirement_age=timeline_retirement_age,
             timeline_withdrawal_strategy=timeline_withdrawal_strategy,
+            timeline_drawdown_order=timeline_drawdown_order,
         )
 
         baseline_scenario = next((item for item in result.scenarios if item.label == "baseline"), None)
@@ -7943,6 +7979,7 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
     timeline_payload = resolve_plan_timeline_payload(detail)
     retirement_age = resolve_timeline_retirement_age(timeline_payload)
     timeline_withdrawal_strategy = resolve_timeline_withdrawal_strategy(timeline_payload)
+    timeline_drawdown_order = resolve_timeline_drawdown_order(timeline_payload)
     assumption_sets_payload = resolve_plan_assumption_sets(detail)
     requested_assumption_set_id = str(arguments.get("assumption_set_id") or "").strip() or None
     requested_candidate_assumption_set_id = (
@@ -8028,6 +8065,7 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         assumption_set=base_assumption_set,
         retirement_age=retirement_age,
         timeline_withdrawal_strategy=timeline_withdrawal_strategy,
+        timeline_drawdown_order=timeline_drawdown_order,
     )
     candidate_result = await run_scenarios_for_plan_settings(
         current_portfolio_value_usd=current_value,
@@ -8042,6 +8080,7 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         assumption_set=candidate_assumption_set,
         retirement_age=retirement_age,
         timeline_withdrawal_strategy=timeline_withdrawal_strategy,
+        timeline_drawdown_order=timeline_drawdown_order,
     )
     scenario_deltas, monte_carlo_delta = build_scenario_diff_payload(base_result, candidate_result)
 
@@ -8193,6 +8232,7 @@ def configure_copilot_tools() -> None:
         "hsa_extra_contribution_usd": {"type": "number"},
         "marginal_tax_rate": {"type": "number"},
         "state_tax_rate": {"type": "number"},
+        "drawdown_order": {"type": "string"},
         "roth_conversion_annual_amount_usd": {"type": "number"},
         "roth_conversion_start_age": {"type": "integer"},
         "roth_conversion_end_age": {"type": "integer"},
@@ -8552,7 +8592,7 @@ def configure_copilot_tools() -> None:
             "Run baseline/optimistic/conservative/HSA planning scenarios. "
             "Optional fields: current_portfolio_value_usd, annual_contribution_usd, years, "
             "hsa_extra_contribution_usd, state_tax_rate, include_irmaa, "
-            "roth_conversion_annual_amount_usd, roth_conversion_start_age, roth_conversion_end_age."
+            "roth_conversion_annual_amount_usd, roth_conversion_start_age, roth_conversion_end_age, drawdown_order."
         ),
         parameters={
             "type": "object",
@@ -8566,6 +8606,7 @@ def configure_copilot_tools() -> None:
                 "roth_conversion_annual_amount_usd": {"type": "number"},
                 "roth_conversion_start_age": {"type": "integer"},
                 "roth_conversion_end_age": {"type": "integer"},
+                "drawdown_order": {"type": "string"},
             },
             "additionalProperties": False,
         },
@@ -10371,6 +10412,7 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
     timeline_payload = resolve_plan_timeline_payload(detail)
     retirement_age = resolve_timeline_retirement_age(timeline_payload)
     timeline_withdrawal_strategy = resolve_timeline_withdrawal_strategy(timeline_payload)
+    timeline_drawdown_order = resolve_timeline_drawdown_order(timeline_payload)
     assumption_sets_payload = resolve_plan_assumption_sets(detail)
     requested_assumption_set_id = str(request.assumption_set_id or "").strip() or None
     requested_candidate_assumption_set_id = str(request.candidate_assumption_set_id or "").strip() or None
@@ -10450,6 +10492,7 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
             assumption_set=base_assumption_set,
             retirement_age=retirement_age,
             timeline_withdrawal_strategy=timeline_withdrawal_strategy,
+            timeline_drawdown_order=timeline_drawdown_order,
         )
         candidate_result = await run_scenarios_for_plan_settings(
             current_portfolio_value_usd=current_value,
@@ -10464,6 +10507,7 @@ async def run_plan_scenario_diff(plan_id: str, request: PlanScenarioDiffRequest)
             assumption_set=candidate_assumption_set,
             retirement_age=retirement_age,
             timeline_withdrawal_strategy=timeline_withdrawal_strategy,
+            timeline_drawdown_order=timeline_drawdown_order,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -10949,11 +10993,14 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         planning_settings_for_run["roth_conversion_start_age"] = request.roth_conversion_start_age
     if request.roth_conversion_end_age is not None:
         planning_settings_for_run["roth_conversion_end_age"] = request.roth_conversion_end_age
+    if request.drawdown_order is not None:
+        planning_settings_for_run["drawdown_order"] = request.drawdown_order
     active_assumption_set: dict[str, Any] | None = None
     service = ignidash_scenario_service
     timeline_projection: TimelineImpactProjectionResponse | None = None
     active_timeline_payload: dict[str, Any] | None = None
     active_withdrawal_strategy: str | None = None
+    active_drawdown_order: str | None = None
     active_retirement_age: int | None = None
     active_plan_detail: dict[str, Any] | None = None
     active_plan_id = plan_workspace.get_active_plan_id()
@@ -10964,9 +11011,11 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
             active_timeline_payload = active_timeline
             active_retirement_age = resolve_timeline_retirement_age(active_timeline)
             timeline_strategy = resolve_timeline_withdrawal_strategy(active_timeline)
+            timeline_drawdown_order = resolve_timeline_drawdown_order(active_timeline)
             active_settings = active_plan_detail.get("settings")
             if isinstance(active_settings, dict):
                 active_withdrawal_strategy = str(active_settings.get("withdrawal_strategy") or "").strip() or None
+                active_drawdown_order = str(active_settings.get("drawdown_order") or "").strip() or None
                 planning_settings_for_run.update(active_settings)
             planning_settings_for_run["years"] = resolved_years
             assumption_sets_payload = resolve_plan_assumption_sets(active_plan_detail)
@@ -10978,6 +11027,8 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
             service = build_ignidash_service_for_plan_settings(planning_settings_for_run)
             if not active_withdrawal_strategy:
                 active_withdrawal_strategy = timeline_strategy
+            if not active_drawdown_order:
+                active_drawdown_order = timeline_drawdown_order
             timeline_projection = build_timeline_projection_for_plan_settings(
                 plan_settings=planning_settings_for_run,
                 timeline_payload=active_timeline,
@@ -10987,6 +11038,7 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
             active_plan_detail = None
             active_timeline_payload = None
             active_withdrawal_strategy = None
+            active_drawdown_order = None
             active_retirement_age = None
 
     income_projection = build_income_projection_for_plan_settings(planning_settings_for_run)
@@ -11080,6 +11132,11 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
             roth_conversion_end_age,
             roth_conversion_start_age,
         )
+    if not active_drawdown_order:
+        active_drawdown_order = str(planning_settings_for_run.get("drawdown_order") or "").strip() or None
+    requested_drawdown_order = str(request.drawdown_order or "").strip() or None
+    if requested_drawdown_order is not None:
+        active_drawdown_order = requested_drawdown_order
 
     scenario_guard_reason = await sidecar_contract_guard_reason("ignidash_scenario")
     result = await service.run(
@@ -11113,6 +11170,7 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         roth_conversion_annual_amount_usd=roth_conversion_annual_amount,
         roth_conversion_start_age=roth_conversion_start_age,
         roth_conversion_end_age=roth_conversion_end_age,
+        drawdown_order=active_drawdown_order,
         start_year=utc_now().year,
         withdrawal_strategy=active_withdrawal_strategy,
         retirement_age=active_retirement_age,

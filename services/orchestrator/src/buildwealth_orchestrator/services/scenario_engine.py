@@ -74,6 +74,33 @@ STRATEGY_ALIASES: dict[str, WithdrawalStrategy] = {
     "bucket": "bucket_strategy",
 }
 
+DrawdownBucket = Literal["cash", "taxable", "tax_deferred", "tax_free"]
+DRAWDOWN_BUCKETS: tuple[DrawdownBucket, ...] = ("cash", "taxable", "tax_deferred", "tax_free")
+
+DRAWDOWN_ALIASES: dict[str, DrawdownBucket] = {
+    "cash": "cash",
+    "cash_first": "cash",
+    "cash_reserve": "cash",
+    "savings": "cash",
+    "taxable": "taxable",
+    "brokerage": "taxable",
+    "tax_deferred": "tax_deferred",
+    "taxdeferred": "tax_deferred",
+    "deferred": "tax_deferred",
+    "traditional": "tax_deferred",
+    "tax_free": "tax_free",
+    "taxfree": "tax_free",
+    "roth": "tax_free",
+}
+
+DRAWDOWN_PRESETS: dict[str, tuple[DrawdownBucket, ...] | None] = {
+    "age_aware": None,
+    "taxable_first": ("cash", "taxable", "tax_deferred", "tax_free"),
+    "tax_efficient": ("cash", "taxable", "tax_deferred", "tax_free"),
+    "tax_deferred_first": ("cash", "tax_deferred", "taxable", "tax_free"),
+    "tax_free_first": ("cash", "tax_free", "taxable", "tax_deferred"),
+}
+
 
 @dataclass
 class ScenarioAssumptions:
@@ -149,6 +176,39 @@ def _normalize_retirement_age(value: Any) -> int:
     return max(35, min(age, 100))
 
 
+def _normalize_drawdown_order(value: Any) -> tuple[DrawdownBucket, ...] | None:
+    if value is None:
+        return None
+
+    raw_items: list[str]
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if not text:
+            return None
+        if text in DRAWDOWN_PRESETS:
+            return DRAWDOWN_PRESETS[text]
+        raw_items = [item.strip().lower() for item in text.split(",") if item.strip()]
+    elif isinstance(value, list):
+        raw_items = [str(item).strip().lower() for item in value if str(item).strip()]
+    else:
+        return None
+
+    resolved: list[DrawdownBucket] = []
+    for item in raw_items:
+        canonical = DRAWDOWN_ALIASES.get(item)
+        if canonical is None or canonical in resolved:
+            continue
+        resolved.append(canonical)
+
+    if not resolved:
+        return None
+
+    for bucket in DRAWDOWN_BUCKETS:
+        if bucket not in resolved:
+            resolved.append(bucket)
+    return tuple(resolved)
+
+
 def _normalize_optional_age(value: Any) -> int | None:
     if value is None:
         return None
@@ -179,6 +239,16 @@ def _is_roth_account_type(account_type: str) -> bool:
 
 def _is_cash_account_type(account_type: str) -> bool:
     return account_type in {"savings"}
+
+
+def _drawdown_bucket_for_account(account: ProjectionAccount) -> DrawdownBucket:
+    if _is_cash_account_type(account.account_type):
+        return "cash"
+    if account.tax_treatment == "taxable":
+        return "taxable"
+    if account.tax_treatment == "tax_deferred":
+        return "tax_deferred"
+    return "tax_free"
 
 
 def _projection_point_for_year(
@@ -531,7 +601,13 @@ class ScenarioEngine:
         *,
         age: float,
         strategy: WithdrawalStrategy,
+        drawdown_order: tuple[DrawdownBucket, ...] | None,
     ) -> tuple[int, str]:
+        if drawdown_order:
+            order_index = {bucket: index for index, bucket in enumerate(drawdown_order, start=1)}
+            bucket = _drawdown_bucket_for_account(account)
+            return (order_index.get(bucket, len(drawdown_order) + 1), account.account_id)
+
         account_type = account.account_type
 
         # Bucket strategy approximation:
@@ -761,6 +837,7 @@ class ScenarioEngine:
         amount_usd: float,
         age: float,
         strategy: WithdrawalStrategy,
+        drawdown_order: tuple[DrawdownBucket, ...] | None,
     ) -> dict[str, Any]:
         requested = max(0.0, float(amount_usd))
         if requested <= 0:
@@ -781,6 +858,7 @@ class ScenarioEngine:
                 account,
                 age=age,
                 strategy=strategy,
+                drawdown_order=drawdown_order,
             ),
         )
 
@@ -889,6 +967,7 @@ class ScenarioEngine:
         roth_conversion_annual_amount_usd: float,
         roth_conversion_start_age: int | None,
         roth_conversion_end_age: int | None,
+        drawdown_order: tuple[DrawdownBucket, ...] | None,
         start_year: int,
         start_age: int,
         withdrawal_strategy: WithdrawalStrategy,
@@ -1058,6 +1137,7 @@ class ScenarioEngine:
                 amount_usd=max(0.0, required_withdrawals - mandatory_rmd_withdrawn),
                 age=float(age),
                 strategy=withdrawal_strategy,
+                drawdown_order=drawdown_order,
             )
             total_withdrawn = mandatory_rmd_withdrawn + _safe_float(withdrawals_result.get("total_withdrawn_usd"), 0.0)
             by_account_withdrawals: dict[str, float] = dict(rmd_withdrawals_result.get("by_account") or {})
@@ -1098,6 +1178,7 @@ class ScenarioEngine:
                         amount_usd=additional_tax_due,
                         age=float(age),
                         strategy=withdrawal_strategy,
+                        drawdown_order=drawdown_order,
                     )
                     total_withdrawn += _safe_float(extra_withdrawals.get("total_withdrawn_usd"), 0.0)
                     extra_by_account = extra_withdrawals.get("by_account") or {}
@@ -1249,6 +1330,7 @@ class ScenarioEngine:
                 "inflation": assumptions.inflation,
                 "account_count": len(accounts),
                 "withdrawal_strategy": withdrawal_strategy,
+                "drawdown_order": ",".join(drawdown_order) if drawdown_order else "age_aware",
                 "retirement_age": retirement_age,
                 "rmd_start_age": rmd_start_age,
                 "total_taxes_paid_usd": round(total_taxes_paid, 2),
@@ -1329,6 +1411,7 @@ class ScenarioEngine:
         roth_conversion_annual_amount_usd: float | None = None,
         roth_conversion_start_age: int | None = None,
         roth_conversion_end_age: int | None = None,
+        drawdown_order: str | list[str] | None = None,
         start_year: int | None = None,
         start_age: int = 35,
         withdrawal_strategy: str | None = None,
@@ -1361,6 +1444,7 @@ class ScenarioEngine:
             start_age=roth_conversion_start_age,
             end_age=roth_conversion_end_age,
         )
+        resolved_drawdown_order = _normalize_drawdown_order(drawdown_order)
         resolved_withdrawal_strategy = _normalize_withdrawal_strategy(withdrawal_strategy)
         resolved_retirement_age = _normalize_retirement_age(retirement_age)
 
@@ -1393,6 +1477,7 @@ class ScenarioEngine:
             roth_conversion_annual_amount_usd=resolved_roth_conversion_annual_amount,
             roth_conversion_start_age=resolved_roth_conversion_start_age,
             roth_conversion_end_age=resolved_roth_conversion_end_age,
+            drawdown_order=resolved_drawdown_order,
             start_year=resolved_start_year,
             start_age=resolved_start_age,
             withdrawal_strategy=resolved_withdrawal_strategy,
@@ -1422,6 +1507,7 @@ class ScenarioEngine:
             roth_conversion_annual_amount_usd=resolved_roth_conversion_annual_amount,
             roth_conversion_start_age=resolved_roth_conversion_start_age,
             roth_conversion_end_age=resolved_roth_conversion_end_age,
+            drawdown_order=resolved_drawdown_order,
             start_year=resolved_start_year,
             start_age=resolved_start_age,
             withdrawal_strategy=resolved_withdrawal_strategy,
@@ -1451,6 +1537,7 @@ class ScenarioEngine:
             roth_conversion_annual_amount_usd=resolved_roth_conversion_annual_amount,
             roth_conversion_start_age=resolved_roth_conversion_start_age,
             roth_conversion_end_age=resolved_roth_conversion_end_age,
+            drawdown_order=resolved_drawdown_order,
             start_year=resolved_start_year,
             start_age=resolved_start_age,
             withdrawal_strategy=resolved_withdrawal_strategy,
@@ -1480,6 +1567,7 @@ class ScenarioEngine:
             roth_conversion_annual_amount_usd=resolved_roth_conversion_annual_amount,
             roth_conversion_start_age=resolved_roth_conversion_start_age,
             roth_conversion_end_age=resolved_roth_conversion_end_age,
+            drawdown_order=resolved_drawdown_order,
             start_year=resolved_start_year,
             start_age=resolved_start_age,
             withdrawal_strategy=resolved_withdrawal_strategy,

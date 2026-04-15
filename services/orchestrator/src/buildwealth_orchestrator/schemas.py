@@ -158,6 +158,7 @@ class ScenarioRequest(BaseModel):
     hsa_extra_contribution_usd: float | None = None
     state_tax_rate: float | None = Field(default=None, ge=0, le=1)
     include_irmaa: bool = True
+    drawdown_order: str | None = None
     roth_conversion_annual_amount_usd: float | None = Field(default=None, ge=0)
     roth_conversion_start_age: int | None = Field(default=None, ge=0, le=120)
     roth_conversion_end_age: int | None = Field(default=None, ge=0, le=120)
@@ -1338,6 +1339,7 @@ class PlanTimelineEvent(BaseModel):
 class PlanTimelineRetirement(BaseModel):
     target_retirement_age: int | None = Field(default=None, ge=18, le=100)
     withdrawal_strategy: str | None = None
+    drawdown_order: str | None = None
     social_security_birth_year: int | None = Field(default=None, ge=1900, le=2500)
     social_security_claiming_age: int | None = Field(default=None, ge=62, le=70)
     social_security_life_expectancy_age: int | None = Field(default=None, ge=67, le=120)
@@ -1496,6 +1498,7 @@ class PlanSettings(BaseModel):
     expected_return_conservative: float | None = None
     filing_status: str | None = None
     withdrawal_strategy: str | None = None
+    drawdown_order: str | None = None
     updated_at: datetime | None = None
 
 
@@ -1514,6 +1517,7 @@ class PlanSettingsUpdateRequest(BaseModel):
     expected_return_conservative: float | None = None
     filing_status: str | None = None
     withdrawal_strategy: str | None = None
+    drawdown_order: str | None = None
 
 
 class PlanScenarioDiffRequest(BaseModel):

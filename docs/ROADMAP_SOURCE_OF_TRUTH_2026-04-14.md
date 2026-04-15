@@ -1,7 +1,7 @@
 # BuildWealth Product Roadmap (Source of Truth)
 
 ## Date
-2026-04-14
+2026-04-15
 
 ## Status
 Active canonical roadmap for post-Phase-3.7 execution.
@@ -9,6 +9,31 @@ Active canonical roadmap for post-Phase-3.7 execution.
 This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active planning sequence and supersedes roadmap sections in `docs/STANDALONE_BUILD_PLAN.md` that are now stale or already complete.
 
 ## Progress Log
+
+### 2026-04-15 (Completed - Phase 5.0 Slice 3, Configurable Drawdown Ordering)
+1. Added configurable drawdown-order controls in the planning simulation engine:
+- introduced drawdown buckets/presets (`cash`, `taxable`, `tax_deferred`, `tax_free`) and alias normalization.
+- added `drawdown_order` parsing for both preset and explicit list forms.
+- wired drawdown order into account-withdrawal priority selection while preserving legacy age-aware behavior when unset.
+2. Extended planning contracts and persistence:
+- added `drawdown_order` to scenario request and plan settings/timeline schemas.
+- persisted and sanitized drawdown order in Plan Workspace settings and retirement timeline payloads.
+- included drawdown-order context in plan markdown/context summaries.
+3. Wired drawdown-order execution through API, sidecar, and Copilot surfaces:
+- threaded drawdown order through plan scenario run paths (plan scenarios, diff, strategy compare, branch compute, and context baseline run).
+- added sidecar metadata forwarding for drawdown order.
+- expanded Copilot tool contract for `run_planning_scenarios` to accept `drawdown_order`.
+4. Extended Plan Workspace UI:
+- added retirement timeline drawdown-order input and editor wiring for load/save/disabled states.
+5. Source-provenance note:
+- decumulation-order override structure follows Ignidash simulation-engine style assumption layering (explicit assumption override on top of default strategy behavior).
+- BuildWealth-specific schema/API/UI contracts remain first-class and are not a runtime fork of upstream apps.
+6. Added regression coverage:
+- scenario-engine drawdown-order override behavior (`test_scenario_engine.py`)
+- plan workspace settings/timeline drawdown-order persistence (`test_plan_workspace.py`)
+- sidecar metadata forwarding (`test_planning_sidecar.py`)
+- Copilot planning tool contract field coverage (`test_copilot_tool_updates.py`).
+7. Verification: `pytest -q services/orchestrator/tests` passes (`420 passed`).
 
 ### 2026-04-14 (Completed - Phase 5.0 Slice 1-2, Tax Realism + Roth Conversion Controls)
 1. Expanded tax realism layer in planning simulation surfaces:
@@ -477,9 +502,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Start Phase 5.0 Slice 3: add configurable drawdown ordering in withdrawal strategies.
-2. Start Phase 5.0 Slice 4: add household/couple planning mode with shared goals and filing assumptions.
-3. Start Phase 5.0 Slice 5: add simulation mode selector (fixed/stochastic/historical/Monte Carlo variants) and comparison outputs.
+1. Start Phase 5.0 Slice 4: add household/couple planning mode with shared goals and filing assumptions.
+2. Start Phase 5.0 Slice 5: add simulation mode selector (fixed/stochastic/historical/Monte Carlo variants) and comparison outputs.
+3. Start Phase 5.1 Slice 1: add import reconciliation report (accepted/rejected/normalized rows and confidence flags).
 
 ## Guardrails
 1. Do not fork or embed full Ghostfolio/Ignidash apps into BuildWealth runtime path.

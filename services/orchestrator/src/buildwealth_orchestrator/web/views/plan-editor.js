@@ -148,6 +148,7 @@ function setTimelineRetirementInputs(retirementRaw) {
 
   setValue('timeline-retirement-age', coerceOptionalInteger(retirement.target_retirement_age));
   setValue('timeline-withdrawal-strategy', String(retirement.withdrawal_strategy || '').trim());
+  setValue('timeline-drawdown-order', String(retirement.drawdown_order || '').trim());
   setValue('timeline-ss-birth-year', coerceOptionalInteger(retirement.social_security_birth_year));
   setValue('timeline-ss-claiming-age', coerceOptionalInteger(retirement.social_security_claiming_age));
   setValue('timeline-ss-life-expectancy-age', coerceOptionalInteger(retirement.social_security_life_expectancy_age));
@@ -161,6 +162,7 @@ function collectTimelineRetirementInputs() {
   return {
     target_retirement_age: coerceOptionalInteger(byId('timeline-retirement-age')?.value),
     withdrawal_strategy: String(byId('timeline-withdrawal-strategy')?.value || '').trim() || null,
+    drawdown_order: String(byId('timeline-drawdown-order')?.value || '').trim() || null,
     social_security_birth_year: coerceOptionalInteger(byId('timeline-ss-birth-year')?.value),
     social_security_claiming_age: coerceOptionalInteger(byId('timeline-ss-claiming-age')?.value),
     social_security_life_expectancy_age: coerceOptionalInteger(byId('timeline-ss-life-expectancy-age')?.value),
@@ -473,7 +475,7 @@ function setControlsEnabled(enabled) {
     'decision-status', 'timeline-event-date', 'timeline-event-label', 'timeline-event-type',
     'timeline-event-impact-type', 'timeline-event-amount', 'timeline-event-frequency', 'timeline-event-end-date',
     'timeline-event-account-id', 'timeline-event-notes', 'add-timeline-event', 'timeline-retirement-age',
-    'timeline-withdrawal-strategy', 'timeline-ss-birth-year', 'timeline-ss-claiming-age',
+    'timeline-withdrawal-strategy', 'timeline-drawdown-order', 'timeline-ss-birth-year', 'timeline-ss-claiming-age',
     'timeline-ss-life-expectancy-age', 'timeline-ss-fra-benefit', 'timeline-ss-annual-earnings',
     'timeline-rmd-birth-year', 'timeline-rmd-start-age', 'contribution-base-rule', 'contribution-profile-id',
     'contribution-employer-match-target', 'contribution-age', 'contribution-rule-account-id',
@@ -1954,7 +1956,7 @@ export function initEditor(refreshPlans) {
     resetTimelineEventInputs();
   });
   [
-    'timeline-retirement-age', 'timeline-withdrawal-strategy', 'timeline-ss-birth-year', 'timeline-ss-claiming-age',
+    'timeline-retirement-age', 'timeline-withdrawal-strategy', 'timeline-drawdown-order', 'timeline-ss-birth-year', 'timeline-ss-claiming-age',
     'timeline-ss-life-expectancy-age', 'timeline-ss-fra-benefit', 'timeline-ss-annual-earnings',
     'timeline-rmd-birth-year', 'timeline-rmd-start-age',
   ].forEach((id) => {
