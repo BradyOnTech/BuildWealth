@@ -118,6 +118,7 @@ make ps
 make logs
 make sync
 make telemetry-runtime
+make reliability-smoke-storage
 make backup
 make backup-list
 make backup-restore BACKUP_ID=...

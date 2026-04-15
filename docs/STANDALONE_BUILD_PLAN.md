@@ -63,6 +63,19 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Cross-Cutting Follow-up, Backup/Restore + Protection-Policy Scripted Reliability Smoke Validation)
+- Added scripted storage reliability smoke runner:
+  - new script: `scripts/reliability-smoke-storage.sh`
+  - new make command: `make reliability-smoke-storage`
+- Added integrated smoke scenario test:
+  - new `test_storage_reliability_smoke.py` validates backup create/list/restore and protection-policy apply flow (including backup archive inclusion) end-to-end in temp storage.
+- Updated operator-facing docs:
+  - README make-target list now includes `reliability-smoke-storage`.
+  - standalone operations runbook now includes scripted reliability smoke checks section.
+- Verification:
+  - targeted: `pytest -q tests/test_storage_reliability_smoke.py tests/test_backup_restore.py tests/test_data_protection.py` (`5 passed`)
+  - full: `pytest -q` in `services/orchestrator` passes (`474 passed`).
+
 ### 2026-04-15 (Completed - Cross-Cutting Follow-up, Engine Policy/Envelope Unification + Sidecar Matrix Tests)
 - Added shared engine policy/envelope helper module (`engine_policy.py`) to centralize sidecar call disposition and degraded-response metadata assembly.
 - Unified sidecar eligibility/fallback handling in:

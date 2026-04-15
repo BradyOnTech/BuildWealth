@@ -10,6 +10,21 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Cross-Cutting Follow-up, Backup/Restore + Protection-Policy Scripted Reliability Smoke Validation)
+1. Added scripted storage reliability smoke runner:
+- new script: `scripts/reliability-smoke-storage.sh`
+- new operator command: `make reliability-smoke-storage`
+2. Added integrated storage smoke test coverage:
+- new `tests/test_storage_reliability_smoke.py` validates, in one temp-dir scenario:
+  - backup archive creation/listing
+  - restore correctness with pre-restore safety backup
+  - protection-policy update/apply in hardened mode with backup-archive inclusion
+3. Added runbook and command-surface updates:
+- updated README and standalone operations docs with `reliability-smoke-storage` command and smoke-check scope.
+4. Verification:
+- targeted: `pytest -q tests/test_storage_reliability_smoke.py tests/test_backup_restore.py tests/test_data_protection.py` (`5 passed`).
+- full: `pytest -q` (`474 passed`).
+
 ### 2026-04-15 (Completed - Cross-Cutting Follow-up, Engine Policy/Envelope Unification + Sidecar Matrix Tests)
 1. Added shared sidecar policy and degraded-envelope helper module (`engine_policy.py`) to centralize:
 - sidecar call disposition decisions (guarded/disabled/adapter-missing/use-sidecar).
@@ -741,9 +756,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Add backup/restore and protection-policy smoke validation into scripted reliability checks.
-2. Start Codebase Quality Follow-Up Slice A: split `service_utils.py` into cohesive coercion/projection helper modules.
-3. Start Codebase Quality Follow-Up Slice B: isolate frontend plan-setting field schema from runtime state module.
+1. Start Codebase Quality Follow-Up Slice A: split `service_utils.py` into cohesive coercion/projection helper modules.
+2. Start Codebase Quality Follow-Up Slice B: isolate frontend plan-setting field schema from runtime state module.
+3. Start Codebase Quality Follow-Up Slice C: engine policy/envelope unification follow-through in any remaining sidecar paths.
 
 ## Cross-Cutting Engineering Follow-Up
 1. Post-refactor helper indirection and intentional sidecar complexity are documented in [`docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`](./CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md).

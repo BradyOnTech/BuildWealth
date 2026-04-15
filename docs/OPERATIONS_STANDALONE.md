@@ -181,6 +181,18 @@ This telemetry surface includes:
 - Context freshness summary (latest context generation time, snapshot age/stale state, coverage/missing sections, warning count).
 - Cache quality summary for research and baseline-projection stores (hit rate, utilization, evictions, expired-pruned counters, quality status).
 
+## Scripted Reliability Smoke Checks (Cross-Cutting Follow-up)
+
+Run the storage reliability smoke suite (backup/restore + protection policy):
+```bash
+make reliability-smoke-storage
+```
+
+This scripted check validates:
+- backup archive creation and listing behavior.
+- restore correctness (including pre-restore safety backup behavior).
+- protection-policy update and apply behavior in hardened mode, including backup-archive inclusion.
+
 ## Useful Commands
 
 ```bash
@@ -190,6 +202,7 @@ make ps
 make logs
 make sync
 make telemetry-runtime
+make reliability-smoke-storage
 make backup
 make backup-list
 make backup-restore BACKUP_ID=...

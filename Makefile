@@ -2,7 +2,7 @@ SHELL := /bin/zsh
 
 COMPOSE := docker compose -f infra/docker-compose.yml
 
-.PHONY: init-env up up-legacy down restart ps logs sync sync-status engine-status telemetry-runtime backup backup-list backup-restore protection-status protection-apply import-csv test
+.PHONY: init-env up up-legacy down restart ps logs sync sync-status engine-status telemetry-runtime backup backup-list backup-restore protection-status protection-apply reliability-smoke-storage import-csv test
 
 init-env:
 	./scripts/init-env.sh
@@ -58,6 +58,9 @@ protection-apply:
 	curl -s -X POST http://localhost:8090/api/storage/protection/apply \
 	  -H 'content-type: application/json' \
 	  -d "{\"protection_level\":\"$${LEVEL:-hardened}\",\"include_backups\":$${INCLUDE_BACKUPS:-false}}" | jq
+
+reliability-smoke-storage:
+	./scripts/reliability-smoke-storage.sh
 
 import-csv:
 	@echo "Usage: make import-csv FILE=broker.csv DRY_RUN=true"
