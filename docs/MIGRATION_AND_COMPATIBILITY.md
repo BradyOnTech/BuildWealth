@@ -98,6 +98,15 @@ Behavior:
 - policy can include backup archives and can auto-apply on startup.
 - status reports non-compliant file/directory counts against active policy.
 
+### 8) Runtime Telemetry Dashboard (Phase 6.0 Slice 4)
+BuildWealth now includes a runtime telemetry surface for operational visibility:
+- `GET /api/telemetry/runtime`
+
+Behavior:
+- reports API latency distribution and error-rate metrics (avg/p50/p95/p99/max plus top routes).
+- reports context freshness status (latest context generation time, snapshot age/stale state, coverage/warning signals).
+- reports cache quality for unified-context stores (hit rates, utilization, evictions/expired-pruned counters, and quality status).
+
 ## Compatibility Window Policy
 
 1. Forward upgrades
@@ -123,3 +132,4 @@ Before upgrading BuildWealth:
    - `POST /api/storage/protection/apply`
 5. Trigger a read path (for example `/api/snapshot/latest`, `/api/financial-profile`, plan APIs) so schema migrations run.
 6. Validate engine compatibility via `/api/engines/status` when sidecars are enabled.
+7. Validate runtime telemetry via `/api/telemetry/runtime` and ensure latency/freshness/cache signals are present.

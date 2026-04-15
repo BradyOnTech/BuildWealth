@@ -102,6 +102,10 @@ This profile is not required for standalone BuildWealth operation.
 - Use `POST /api/copilot/context/cache/reset` to clear cache entries (and optionally metrics) during local troubleshooting.
 - For context payload size control, pass `detail_level=light` on `GET /api/copilot/context` (or `context_options.detail_level` in chat requests); use `full` only when deep payload detail is required.
 
+6. Runtime telemetry dashboard checks:
+- Use `GET /api/telemetry/runtime` for API latency distribution, context freshness summary, and cache quality rollups.
+- In UI, open the Today Dashboard `Runtime Telemetry` panel to inspect p95 latency, server error rate, context freshness state, and per-route/per-cache-store details.
+
 ## Durable Storage Upgrade Path (Phase 6.0 Slice 1)
 
 Status:
@@ -165,6 +169,18 @@ curl -s -X POST http://localhost:8090/api/storage/protection/apply \
   -d '{"protection_level":"hardened","include_backups":true}' | jq
 ```
 
+## Runtime Telemetry Dashboard (Phase 6.0 Slice 4)
+
+Inspect runtime telemetry API:
+```bash
+curl -s http://localhost:8090/api/telemetry/runtime | jq
+```
+
+This telemetry surface includes:
+- API latency summary (`avg`, `p50`, `p95`, `p99`, max, server-error rate) and top routes by p95 latency.
+- Context freshness summary (latest context generation time, snapshot age/stale state, coverage/missing sections, warning count).
+- Cache quality summary for research and baseline-projection stores (hit rate, utilization, evictions, expired-pruned counters, quality status).
+
 ## Useful Commands
 
 ```bash
@@ -173,6 +189,7 @@ make up-legacy
 make ps
 make logs
 make sync
+make telemetry-runtime
 make backup
 make backup-list
 make backup-restore BACKUP_ID=...

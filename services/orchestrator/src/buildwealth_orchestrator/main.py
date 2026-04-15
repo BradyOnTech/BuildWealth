@@ -3,12 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 import httpx
@@ -122,6 +123,7 @@ from buildwealth_orchestrator.schemas import (
     StorageProtectionPolicyResponse,
     StorageProtectionApplyRequest,
     StorageProtectionApplyResponse,
+    RuntimeTelemetryResponse,
     TodayDashboardResponse,
     TopNextAction,
     PortfolioReviewPacketListResponse,
@@ -232,6 +234,10 @@ from buildwealth_orchestrator.services.buildwealth_context import (
     utc_now_iso as context_utc_now_iso,
 )
 from buildwealth_orchestrator.services.context_cache import ExpiringCache
+from buildwealth_orchestrator.services.runtime_telemetry import (
+    RuntimeTelemetryTracker,
+    summarize_cache_quality,
+)
 from buildwealth_orchestrator.services.workflow_runner import WorkflowRunner
 from buildwealth_orchestrator.services.plan_workspace import (
     PlanNotFoundError,
@@ -475,6 +481,7 @@ copilot = FinancialCopilot(
 )
 copilot_context_research_cache = ExpiringCache(max_entries=settings.copilot_context_cache_max_entries)
 copilot_context_projection_cache = ExpiringCache(max_entries=settings.copilot_context_cache_max_entries)
+runtime_telemetry_tracker = RuntimeTelemetryTracker()
 
 sync_lock = asyncio.Lock()
 scheduler_task: asyncio.Task | None = None
@@ -490,6 +497,29 @@ sync_state: dict[str, object] = {
     "last_snapshot_path": None,
     "last_ignidash_payload_path": None,
 }
+
+
+@app.middleware("http")
+async def telemetry_latency_middleware(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith("/api/") or path.startswith("/api/telemetry/"):
+        return await call_next(request)
+
+    started_at = time.perf_counter()
+    response = None
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+        route = request.scope.get("route")
+        route_path = getattr(route, "path", None)
+        runtime_telemetry_tracker.record_api_latency(
+            method=request.method,
+            path=str(route_path or path),
+            status_code=int(getattr(response, "status_code", 500)),
+            latency_ms=elapsed_ms,
+        )
 
 
 def utc_now() -> datetime:
@@ -7041,7 +7071,9 @@ async def build_buildwealth_context_payload(
         context_payload=context_payload,
         detail_level=resolved_detail_level,
     )
-    return CopilotContextResponse(**shaped_payload).model_dump(mode="json")
+    validated_payload = CopilotContextResponse(**shaped_payload).model_dump(mode="json")
+    runtime_telemetry_tracker.record_context_payload(validated_payload)
+    return validated_payload
 
 
 async def build_contextual_brief(
@@ -10299,6 +10331,68 @@ async def get_engine_status(refresh: bool = False) -> EngineStatusResponse:
     if refresh:
         await engine_status_tracker.probe_all()
     return await engine_status_tracker.snapshot()
+
+
+def _fallback_context_freshness_payload() -> dict[str, Any]:
+    now = utc_now()
+    stale_after = float(settings.copilot_context_snapshot_stale_after_seconds)
+    payload: dict[str, Any] = {
+        "as_of": now,
+        "last_context_generated_at": None,
+        "snapshot_as_of": None,
+        "snapshot_age_seconds": None,
+        "snapshot_stale": None,
+        "snapshot_stale_threshold_seconds": stale_after,
+        "coverage_score_pct": None,
+        "missing_sections": [],
+        "warning_count": 0,
+    }
+    try:
+        latest_snapshot = snapshot_store.latest()
+    except FileNotFoundError:
+        return payload
+    except Exception:
+        return payload
+
+    snapshot_as_of = latest_snapshot.as_of
+    if isinstance(snapshot_as_of, datetime) and snapshot_as_of.tzinfo is None:
+        snapshot_as_of = snapshot_as_of.replace(tzinfo=timezone.utc)
+
+    snapshot_age_seconds = max(0.0, (now - snapshot_as_of).total_seconds())
+    payload["snapshot_as_of"] = snapshot_as_of
+    payload["snapshot_age_seconds"] = round(snapshot_age_seconds, 2)
+    payload["snapshot_stale"] = snapshot_age_seconds > stale_after
+    return payload
+
+
+def _build_runtime_telemetry_response() -> RuntimeTelemetryResponse:
+    research_stats = copilot_context_research_cache.stats()
+    projection_stats = copilot_context_projection_cache.stats()
+
+    context_payload = runtime_telemetry_tracker.context_snapshot()
+    fallback_context_payload = _fallback_context_freshness_payload()
+    for key, value in fallback_context_payload.items():
+        if context_payload.get(key) is None:
+            context_payload[key] = value
+
+    cache_quality_payload = summarize_cache_quality(
+        enabled=bool(settings.copilot_context_cache_enabled),
+        stores=[
+            {"name": "research", **research_stats},
+            {"name": "baseline_projection", **projection_stats},
+        ],
+    )
+    return RuntimeTelemetryResponse(
+        as_of=utc_now(),
+        api_latency=runtime_telemetry_tracker.latency_snapshot(top_routes=8),
+        context_freshness=context_payload,
+        cache_quality=cache_quality_payload,
+    )
+
+
+@app.get("/api/telemetry/runtime", response_model=RuntimeTelemetryResponse)
+def get_runtime_telemetry() -> RuntimeTelemetryResponse:
+    return _build_runtime_telemetry_response()
 
 
 @app.get("/api/dashboard/today", response_model=TodayDashboardResponse)

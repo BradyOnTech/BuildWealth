@@ -66,6 +66,21 @@ export function template() {
       </div>
       <p class="hint" id="today-engines-as-of">Loading engine status...</p>
       <div id="today-engines-list" class="item-list"></div>
+    </section>
+    <section class="panel">
+      <div class="panel-head-inline">
+        <h3 class="panel-title">Runtime Telemetry</h3>
+        <button class="ghost small" id="today-refresh-runtime-telemetry" type="button">Refresh Telemetry</button>
+      </div>
+      <div class="kpi-row">
+        <article class="kpi-card"><p class="kpi-label">API P95</p><p class="kpi-value" id="today-api-p95-latency">-</p></article>
+        <article class="kpi-card"><p class="kpi-label">API Error Rate</p><p class="kpi-value" id="today-api-error-rate">-</p></article>
+        <article class="kpi-card"><p class="kpi-label">Context Freshness</p><p class="kpi-value" id="today-context-freshness-runtime">-</p></article>
+        <article class="kpi-card"><p class="kpi-label">Cache Hit Rate</p><p class="kpi-value" id="today-cache-hit-rate">-</p></article>
+      </div>
+      <p class="hint" id="today-runtime-telemetry-as-of">Loading runtime telemetry...</p>
+      <div id="today-runtime-cache-list" class="item-list"></div>
+      <div id="today-runtime-latency-list" class="item-list"></div>
     </section>`;
 }
 
@@ -277,12 +292,123 @@ function renderEngineStatus(payload, errorMessage = null) {
   }
 }
 
+function fmtLatency(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '-';
+  if (num >= 100) return `${num.toFixed(0)} ms`;
+  return `${num.toFixed(1)} ms`;
+}
+
+function fmtPct(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '-';
+  return `${num.toFixed(1)}%`;
+}
+
+function renderRuntimeTelemetry(payload, errorMessage = null) {
+  const p95El = byId('today-api-p95-latency');
+  const errorRateEl = byId('today-api-error-rate');
+  const freshnessEl = byId('today-context-freshness-runtime');
+  const cacheHitRateEl = byId('today-cache-hit-rate');
+  const asOfEl = byId('today-runtime-telemetry-as-of');
+  const cacheListEl = byId('today-runtime-cache-list');
+  const latencyListEl = byId('today-runtime-latency-list');
+
+  if (!payload || typeof payload !== 'object') {
+    p95El.textContent = '-';
+    errorRateEl.textContent = '-';
+    freshnessEl.textContent = '-';
+    cacheHitRateEl.textContent = '-';
+    p95El.className = 'kpi-value';
+    errorRateEl.className = 'kpi-value';
+    freshnessEl.className = 'kpi-value';
+    cacheHitRateEl.className = 'kpi-value';
+    asOfEl.textContent = errorMessage ? `Runtime telemetry unavailable: ${errorMessage}` : 'Runtime telemetry unavailable.';
+    cacheListEl.innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No cache telemetry available.</p></article>';
+    latencyListEl.innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No API latency telemetry available.</p></article>';
+    return;
+  }
+
+  const apiLatency = payload.api_latency && typeof payload.api_latency === 'object' ? payload.api_latency : {};
+  const context = payload.context_freshness && typeof payload.context_freshness === 'object' ? payload.context_freshness : {};
+  const cache = payload.cache_quality && typeof payload.cache_quality === 'object' ? payload.cache_quality : {};
+
+  const p95 = Number(apiLatency.p95_latency_ms);
+  const serverErrorRate = Number(apiLatency.server_error_rate_pct);
+  const snapshotStale = context.snapshot_stale;
+  const snapshotAgeSeconds = Number(context.snapshot_age_seconds);
+  const combinedHitRate = Number(cache.combined_hit_rate_pct);
+
+  p95El.textContent = fmtLatency(p95);
+  p95El.className = `kpi-value ${Number.isFinite(p95) ? (p95 <= 250 ? 'drift-pos' : p95 >= 600 ? 'drift-neg' : '') : ''}`;
+
+  errorRateEl.textContent = fmtPct(serverErrorRate);
+  errorRateEl.className = `kpi-value ${Number.isFinite(serverErrorRate) ? (serverErrorRate < 2 ? 'drift-pos' : 'drift-neg') : ''}`;
+
+  if (snapshotStale === true && Number.isFinite(snapshotAgeSeconds)) {
+    freshnessEl.textContent = `STALE ${(snapshotAgeSeconds / 3600).toFixed(1)}h`;
+  } else if (snapshotStale === false && Number.isFinite(snapshotAgeSeconds)) {
+    freshnessEl.textContent = `FRESH ${(snapshotAgeSeconds / 3600).toFixed(1)}h`;
+  } else if (snapshotStale === true) {
+    freshnessEl.textContent = 'STALE';
+  } else if (snapshotStale === false) {
+    freshnessEl.textContent = 'FRESH';
+  } else {
+    freshnessEl.textContent = '-';
+  }
+  freshnessEl.className = `kpi-value ${snapshotStale === true ? 'drift-neg' : snapshotStale === false ? 'drift-pos' : ''}`;
+
+  cacheHitRateEl.textContent = fmtPct(combinedHitRate);
+  cacheHitRateEl.className = `kpi-value ${Number.isFinite(combinedHitRate) ? (combinedHitRate >= 60 ? 'drift-pos' : combinedHitRate < 30 ? 'drift-neg' : '') : ''}`;
+
+  asOfEl.textContent = `Runtime as of ${fmtDate(payload.as_of)} • Requests ${Number(apiLatency.request_count || 0)} • Window samples ${Number(apiLatency.window_sample_count || 0)}`;
+
+  const cacheStores = Array.isArray(cache.stores) ? cache.stores : [];
+  if (!cacheStores.length) {
+    cacheListEl.innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No cache stores available.</p></article>';
+  } else {
+    cacheListEl.innerHTML = '';
+    for (const store of cacheStores) {
+      const row = document.createElement('article');
+      const status = String(store.quality_status || 'warming').toLowerCase();
+      const statusClass = status === 'healthy' ? 'complete' : status === 'mixed' ? 'attention' : status === 'cold' ? 'incomplete' : '';
+      row.className = `list-item ${statusClass}`;
+      row.innerHTML = `
+        <p class="list-item-title">${String(store.name || '-')} <span class="status-badge ${statusClass}">${status.toUpperCase()}</span></p>
+        <p class="list-item-meta">Hit rate ${fmtPct(store.hit_rate_pct)} • Entries ${Number(store.entries || 0)}/${Number(store.max_entries || 0)} • Utilization ${fmtPct(store.utilization_pct)}</p>
+        <p class="list-item-meta">Lookups ${Number(store.lookup_count || 0)} • Writes ${Number(store.write_count || 0)} • Evictions ${Number(store.eviction_count || 0)} • Expired pruned ${Number(store.expired_pruned || 0)}</p>
+      `;
+      cacheListEl.appendChild(row);
+    }
+  }
+
+  const slowRoutes = Array.isArray(apiLatency.routes) ? apiLatency.routes : [];
+  if (!slowRoutes.length) {
+    latencyListEl.innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No route latency samples yet.</p></article>';
+  } else {
+    latencyListEl.innerHTML = '';
+    for (const route of slowRoutes) {
+      const row = document.createElement('article');
+      const routeErrors = Number(route.server_error_count || 0);
+      const routeClass = routeErrors > 0 ? 'incomplete' : '';
+      row.className = `list-item ${routeClass}`;
+      row.innerHTML = `
+        <p class="list-item-title">${String(route.method || 'GET')} ${String(route.path || '/')}</p>
+        <p class="list-item-meta">P95 ${fmtLatency(route.p95_latency_ms)} • Avg ${fmtLatency(route.avg_latency_ms)} • Max ${fmtLatency(route.max_latency_ms)} • Requests ${Number(route.request_count || 0)}</p>
+        <p class="list-item-meta">Server errors ${Number(route.server_error_count || 0)} (${fmtPct(route.server_error_rate_pct)})${route.last_status_code != null ? ` • Last status ${route.last_status_code}` : ''}</p>
+      `;
+      latencyListEl.appendChild(row);
+    }
+  }
+}
+
 export async function load(options = {}) {
   const refreshEngines = Boolean(options.refreshEngines);
   try {
-    const [dashboardResult, enginesResult] = await Promise.allSettled([
+    const [dashboardResult, enginesResult, telemetryResult] = await Promise.allSettled([
       fetchJson('/api/dashboard/today'),
       fetchJson(`/api/engines/status${refreshEngines ? '?refresh=true' : ''}`),
+      fetchJson('/api/telemetry/runtime'),
     ]);
 
     if (dashboardResult.status === 'fulfilled') {
@@ -297,6 +423,12 @@ export async function load(options = {}) {
     } else {
       renderEngineStatus(null, enginesResult.reason?.message || 'unknown error');
     }
+
+    if (telemetryResult.status === 'fulfilled') {
+      renderRuntimeTelemetry(telemetryResult.value);
+    } else {
+      renderRuntimeTelemetry(null, telemetryResult.reason?.message || 'unknown error');
+    }
   } catch (error) {
     byId('today-generated').textContent = `Dashboard unavailable: ${error.message}`;
     byId('today-context-banner').className = 'context-banner warning';
@@ -304,6 +436,7 @@ export async function load(options = {}) {
     ['today-total-value', 'today-snapshot-freshness', 'today-concentration', 'today-active-plan'].forEach(id => { const el = byId(id); if (el) el.textContent = '-'; });
     renderRecommendationTrend(null);
     renderEngineStatus(null, error.message);
+    renderRuntimeTelemetry(null, error.message);
   }
 }
 
@@ -320,6 +453,7 @@ export function init() {
   byId('reload-today').addEventListener('click', () => load().catch(e => writeLog(e.message, null, true)));
   byId('today-refresh-engines').addEventListener('click', () => load({ refreshEngines: true }).catch(e => writeLog(e.message, null, true)));
   byId('today-refresh-recommendation-trend').addEventListener('click', () => load().catch(e => writeLog(e.message, null, true)));
+  byId('today-refresh-runtime-telemetry').addEventListener('click', () => load().catch(e => writeLog(e.message, null, true)));
   byId('today-run-sync').addEventListener('click', runSync);
   byId('today-open-recommendations').addEventListener('click', () => {
     location.hash = 'recommendations';

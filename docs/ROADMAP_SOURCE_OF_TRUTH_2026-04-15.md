@@ -10,6 +10,24 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 6.0 Slice 4, Runtime Telemetry Dashboards)
+1. Added runtime telemetry service and request-latency instrumentation:
+- new `runtime_telemetry.py` tracker records API latency distributions (`avg/p50/p95/p99/max`), server-error rates, and per-route rollups.
+- orchestrator now uses HTTP middleware to capture latency for API routes at runtime.
+2. Added runtime telemetry API surface:
+- `GET /api/telemetry/runtime` returns:
+  - API latency summary + slowest-route rollups.
+  - context freshness summary (latest context snapshot age/stale state, coverage, warning count).
+  - cache quality rollups for research/projection caches (hit rates, utilization, evictions, quality status).
+3. Added Today Dashboard runtime telemetry panel:
+- new `Runtime Telemetry` section shows p95 latency, API error rate, context freshness status, cache hit rate, per-store cache diagnostics, and per-route latency rows.
+4. Added operator/documentation surfaces:
+- Make target: `make telemetry-runtime`.
+- updated standalone operations/migration runbooks and README endpoint list.
+5. Verification:
+- targeted: `pytest -q tests/test_runtime_telemetry.py tests/test_runtime_telemetry_endpoint.py tests/test_copilot_context_payload.py` (`19 passed`).
+- full: `pytest -q` (`465 passed`).
+
 ### 2026-04-15 (Completed - Phase 6.0 Slice 3, Local Data Protection Options)
 1. Added policy-driven local data-protection service (`data_protection.py`) for sensitive local stores:
 - supports protection levels: `standard` and `hardened`.
@@ -706,9 +724,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Start Phase 6.0 Slice 4: add runtime telemetry dashboards for API latency, context freshness, and cache quality.
-2. Start cross-cutting follow-up: engine policy/envelope unification + sidecar matrix tests.
-3. Add backup/restore and protection-policy smoke validation into scripted reliability checks.
+1. Start cross-cutting follow-up: engine policy/envelope unification + sidecar matrix tests.
+2. Add backup/restore and protection-policy smoke validation into scripted reliability checks.
+3. Start Codebase Quality Follow-Up Slice A: split `service_utils.py` into cohesive coercion/projection helper modules.
 
 ## Cross-Cutting Engineering Follow-Up
 1. Post-refactor helper indirection and intentional sidecar complexity are documented in [`docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`](./CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md).

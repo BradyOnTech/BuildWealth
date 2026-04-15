@@ -80,6 +80,7 @@ docker compose -f infra/docker-compose.yml --profile legacy-upstream up -d
 
 - `GET /health`
 - `GET /api/engines/status`
+- `GET /api/telemetry/runtime`
 - `GET /api/storage/durable/status`
 - `POST /api/storage/durable/migrate`
 - `POST /api/storage/durable/rollback`
@@ -116,6 +117,7 @@ make up-legacy
 make ps
 make logs
 make sync
+make telemetry-runtime
 make backup
 make backup-list
 make backup-restore BACKUP_ID=...

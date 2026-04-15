@@ -63,6 +63,25 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 6.0 Slice 4, Runtime Telemetry Dashboards)
+- Added runtime telemetry service (`runtime_telemetry.py`) to aggregate:
+  - API latency metrics (avg/p50/p95/p99/max), server-error counts/rates, and top slow-route summaries.
+  - latest context freshness metadata (snapshot age/stale state, coverage score, warning count).
+  - cache quality rollups (hit rate, utilization, evictions, expired-pruned counters, quality status).
+- Added API middleware instrumentation for `/api/*` request latency capture and a runtime telemetry endpoint:
+  - `GET /api/telemetry/runtime`
+- Added a Today Dashboard runtime telemetry panel with:
+  - p95 latency, API error rate, context freshness, and cache hit-rate KPIs.
+  - per-cache-store diagnostics and per-route latency rows.
+- Added operator command surface in `Makefile`:
+  - `make telemetry-runtime`
+- Added regression coverage:
+  - `test_runtime_telemetry.py`
+  - `test_runtime_telemetry_endpoint.py`
+- Verification:
+  - targeted: `pytest -q tests/test_runtime_telemetry.py tests/test_runtime_telemetry_endpoint.py tests/test_copilot_context_payload.py` (`19 passed`)
+  - full: `pytest -q` in `services/orchestrator` passes (`465 passed`).
+
 ### 2026-04-15 (Completed - Phase 6.0 Slice 3, Local Data Protection Options)
 - Added data-protection policy service (`data_protection.py`) for local sensitive stores with `standard` and `hardened` permission levels.
 - Added data-protection API endpoints:

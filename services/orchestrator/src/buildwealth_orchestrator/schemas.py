@@ -1328,6 +1328,80 @@ class CopilotContextCacheStatusResponse(BaseModel):
     stores: list[CopilotContextCacheStoreStats] = Field(default_factory=list)
 
 
+class RuntimeTelemetryApiLatencyRoute(BaseModel):
+    method: str
+    path: str
+    request_count: int = 0
+    server_error_count: int = 0
+    server_error_rate_pct: float = 0.0
+    avg_latency_ms: float = 0.0
+    p50_latency_ms: float | None = None
+    p95_latency_ms: float | None = None
+    p99_latency_ms: float | None = None
+    max_latency_ms: float = 0.0
+    last_latency_ms: float = 0.0
+    last_status_code: int | None = None
+    last_requested_at: datetime | None = None
+
+
+class RuntimeTelemetryApiLatencySummary(BaseModel):
+    as_of: datetime
+    request_count: int = 0
+    server_error_count: int = 0
+    server_error_rate_pct: float = 0.0
+    window_sample_count: int = 0
+    avg_latency_ms: float = 0.0
+    p50_latency_ms: float | None = None
+    p95_latency_ms: float | None = None
+    p99_latency_ms: float | None = None
+    max_latency_ms: float = 0.0
+    last_request_at: datetime | None = None
+    routes: list[RuntimeTelemetryApiLatencyRoute] = Field(default_factory=list)
+
+
+class RuntimeTelemetryContextFreshnessSummary(BaseModel):
+    as_of: datetime | None = None
+    last_context_generated_at: datetime | None = None
+    snapshot_as_of: datetime | None = None
+    snapshot_age_seconds: float | None = None
+    snapshot_stale: bool | None = None
+    snapshot_stale_threshold_seconds: float | None = None
+    coverage_score_pct: float | None = None
+    missing_sections: list[str] = Field(default_factory=list)
+    warning_count: int = 0
+
+
+class RuntimeTelemetryCacheStoreSummary(BaseModel):
+    name: str
+    max_entries: int
+    entries: int
+    utilization_pct: float = 0.0
+    lookup_count: int = 0
+    hit_count: int = 0
+    miss_count: int = 0
+    write_count: int = 0
+    eviction_count: int = 0
+    expired_pruned: int = 0
+    hit_rate_pct: float = 0.0
+    quality_status: Literal["healthy", "mixed", "cold", "warming"] = "warming"
+
+
+class RuntimeTelemetryCacheQualitySummary(BaseModel):
+    as_of: datetime
+    enabled: bool = False
+    total_lookup_count: int = 0
+    total_hit_count: int = 0
+    combined_hit_rate_pct: float = 0.0
+    stores: list[RuntimeTelemetryCacheStoreSummary] = Field(default_factory=list)
+
+
+class RuntimeTelemetryResponse(BaseModel):
+    as_of: datetime
+    api_latency: RuntimeTelemetryApiLatencySummary
+    context_freshness: RuntimeTelemetryContextFreshnessSummary
+    cache_quality: RuntimeTelemetryCacheQualitySummary
+
+
 class CopilotChatRequest(BaseModel):
     question: str
     conversation_id: str | None = None
