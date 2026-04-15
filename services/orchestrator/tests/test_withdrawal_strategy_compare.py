@@ -131,3 +131,105 @@ def test_tool_compare_withdrawal_strategies_ranks_and_summarizes(monkeypatch) ->
     assert comparisons[0]["total_withdrawals_usd"] == 85_000.0
     assert comparisons[0]["total_taxes_usd"] == 13_600.0
     assert comparisons[0]["total_rmds_usd"] == 1_200.0
+
+
+def test_tool_compare_withdrawal_strategies_includes_simulation_fields(monkeypatch) -> None:
+    class FakePlanWorkspace:
+        def get_plan(self, plan_id: str) -> dict[str, object]:
+            return {
+                "id": plan_id,
+                "title": "Primary Plan",
+                "settings": {
+                    "annual_contribution_usd": 20000,
+                    "expected_return_baseline": 0.07,
+                    "expected_return_optimistic": 0.09,
+                    "expected_return_conservative": 0.05,
+                    "inflation_rate": 0.03,
+                    "marginal_tax_rate": 0.24,
+                },
+                "files": {},
+            }
+
+    monkeypatch.setattr(main, "plan_workspace", FakePlanWorkspace())
+    monkeypatch.setattr(main, "resolve_plan_assumption_sets", lambda detail: {})
+    monkeypatch.setattr(
+        main,
+        "apply_assumption_set_to_settings",
+        lambda **kwargs: (dict(kwargs.get("plan_settings") or {}), {"id": "default", "name": "Default"}),
+    )
+    monkeypatch.setattr(main, "resolve_plan_timeline_payload", lambda detail: {})
+    monkeypatch.setattr(main, "resolve_timeline_retirement_age", lambda payload: None)
+    monkeypatch.setattr(main, "resolve_timeline_withdrawal_strategy", lambda payload: None)
+    monkeypatch.setattr(main, "resolve_plan_contribution_rules", lambda detail: {})
+    monkeypatch.setattr(main, "build_income_projection_for_plan_settings", lambda settings: {})
+    monkeypatch.setattr(main, "build_expense_projection_for_plan_settings", lambda settings: {})
+    monkeypatch.setattr(main, "build_debt_projection_for_plan_settings", lambda settings: {})
+    monkeypatch.setattr(main, "build_timeline_projection_for_plan_settings", lambda **kwargs: {})
+    monkeypatch.setattr(main, "build_contribution_allocation_for_plan_settings", lambda **kwargs: None)
+    monkeypatch.setattr(main, "build_social_security_projection_for_plan_settings", lambda **kwargs: None)
+    monkeypatch.setattr(main, "build_rmd_projection_for_plan_settings", lambda **kwargs: None)
+
+    class FakeResult:
+        def __init__(self) -> None:
+            timeline_points = [
+                SimpleNamespace(
+                    withdrawals_usd=40_000.0,
+                    taxes_usd=6_500.0,
+                    rmds_usd=0.0,
+                    age=66,
+                    ending_balance_usd=830_000.0,
+                ),
+                SimpleNamespace(
+                    withdrawals_usd=45_000.0,
+                    taxes_usd=7_100.0,
+                    rmds_usd=1_200.0,
+                    age=67,
+                    ending_balance_usd=640_000.0,
+                ),
+            ]
+            baseline = SimpleNamespace(
+                label="baseline",
+                future_value_usd=1_220_000.0,
+                real_value_usd=820_000.0,
+                assumptions={"average_effective_tax_rate": 0.19},
+                timeline_points=timeline_points,
+            )
+            self.scenarios = [baseline]
+            self.monte_carlo = {
+                "p10_future_value_usd": 900_000.0,
+                "p50_future_value_usd": 1_160_000.0,
+                "p90_future_value_usd": 1_320_000.0,
+            }
+            self.simulation = {
+                "mode": "monte_carlo",
+                "monte_carlo_variant": "p90",
+            }
+            self.engine = "local"
+            self.engine_status = "ok"
+            self.fallback_method = None
+            self.warnings = []
+
+        def model_dump(self, mode: str = "json") -> dict[str, object]:
+            del mode
+            return {"engine": self.engine}
+
+    async def fake_run_scenarios_for_plan_settings(**kwargs):
+        del kwargs
+        return FakeResult()
+
+    monkeypatch.setattr(main, "run_scenarios_for_plan_settings", fake_run_scenarios_for_plan_settings)
+
+    payload = asyncio.run(
+        main.tool_compare_withdrawal_strategies(
+            {
+                "plan_id": "plan-abc",
+                "current_portfolio_value_usd": 500_000,
+                "strategies": ["four_percent_rule"],
+            }
+        )
+    )
+
+    comparisons = payload["comparisons"]
+    assert len(comparisons) == 1
+    assert comparisons[0]["simulation_mode"] == "monte_carlo"
+    assert comparisons[0]["simulation_monte_carlo_variant"] == "p90"

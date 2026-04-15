@@ -2938,6 +2938,20 @@ def _normalize_simulation_summary(raw_payload: Any) -> dict[str, Any]:
         normalized["requested_historical_start_year"] = requested_historical_start_year
     if resolved_historical:
         normalized["resolved_historical_start_year_by_scenario"] = resolved_historical
+
+    resolved_mode = normalized.get("mode")
+    resolved_timeline_mode = normalized.get("timeline_mode")
+    if isinstance(resolved_mode, str) and not isinstance(resolved_timeline_mode, str):
+        normalized["timeline_mode"] = "fixed" if resolved_mode == "monte_carlo" else resolved_mode
+        resolved_timeline_mode = normalized.get("timeline_mode")
+
+    if resolved_mode != "monte_carlo":
+        normalized.pop("monte_carlo_variant", None)
+    if resolved_mode == "fixed":
+        normalized.pop("seed", None)
+    if resolved_timeline_mode != "historical":
+        normalized.pop("requested_historical_start_year", None)
+        normalized.pop("resolved_historical_start_year_by_scenario", None)
     return normalized
 
 

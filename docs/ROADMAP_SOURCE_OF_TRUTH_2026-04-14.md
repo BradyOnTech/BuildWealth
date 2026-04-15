@@ -10,6 +10,24 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 5.0 Closeout/Hardening)
+1. Hardened simulation-mode persistence behavior in Plan Workspace settings:
+- mode-specific cleanup now removes incompatible fields during updates (`variant`, `historical_start_year`, `seed`) so stale controls do not leak across simulation-mode switches.
+2. Hardened simulation compare semantics for decision workflows:
+- diff/branch `simulation_delta` now canonicalizes by active simulation mode, preventing false change flags from irrelevant controls (for example fixed-mode variant/seed edits).
+3. Hardened Plan Workspace UI simulation controls:
+- settings and diff editors now apply mode-aware guardrails for simulation fields.
+- incompatible controls are disabled and cleared on mode change to reduce stale overrides and operator error.
+4. Added focused regression coverage:
+- `test_simulation_delta.py` for canonical simulation-delta behavior.
+- `test_plan_workspace.py` mode-switch cleanup assertions.
+- `test_withdrawal_strategy_compare.py` simulation metadata assertions on compare rows.
+5. Source-provenance note:
+- hardening preserves the Ignidash-style simulation-mode semantics already adopted in Phase 5.0 Slice 5 while keeping BuildWealth contract/UI behavior first-class.
+6. Verification:
+- targeted suite: `pytest -q tests/test_plan_workspace.py tests/test_simulation_delta.py tests/test_withdrawal_strategy_compare.py` (`21 passed`).
+- full suite: `pytest -q` (`432 passed`).
+
 ### 2026-04-15 (Completed - Phase 5.0 Slice 5, Simulation Mode Expansion)
 1. Added full simulation mode controls across planning contracts and persistence:
 - new settings/request fields: `simulation_mode`, `simulation_monte_carlo_variant`, `simulation_historical_start_year`, `simulation_seed`.

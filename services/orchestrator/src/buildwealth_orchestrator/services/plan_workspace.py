@@ -1376,6 +1376,20 @@ class PlanWorkspace:
         elif "simulation_monte_carlo_variant" in sanitized:
             sanitized["simulation_monte_carlo_variant"] = None
 
+        resolved_mode_for_dependencies = sanitized.get("simulation_mode")
+        if isinstance(resolved_mode_for_dependencies, str):
+            if resolved_mode_for_dependencies == "fixed":
+                sanitized["simulation_monte_carlo_variant"] = None
+                sanitized["simulation_historical_start_year"] = None
+                sanitized["simulation_seed"] = None
+            elif resolved_mode_for_dependencies == "stochastic":
+                sanitized["simulation_monte_carlo_variant"] = None
+                sanitized["simulation_historical_start_year"] = None
+            elif resolved_mode_for_dependencies == "historical":
+                sanitized["simulation_monte_carlo_variant"] = None
+            elif resolved_mode_for_dependencies == "monte_carlo":
+                sanitized["simulation_historical_start_year"] = None
+
         filing_status = str(sanitized.get("filing_status") or "").strip().lower()
         if filing_status and filing_status not in {
             "single",

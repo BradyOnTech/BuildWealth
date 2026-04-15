@@ -196,6 +196,7 @@ function setPlanStringSettingInputs(prefix, rawSettings) {
       ? simulationMonteCarloVariantRaw
       : '';
   }
+  updateSimulationModeDependentControls(prefix, { clearIrrelevant: true });
 }
 
 function collectPlanStringSettings(prefix, { includeNulls = false } = {}) {
@@ -218,6 +219,50 @@ function collectPlanStringSettings(prefix, { includeNulls = false } = {}) {
   else if (includeNulls) payload.simulation_monte_carlo_variant = null;
 
   return payload;
+}
+
+function updateSimulationModeDependentControls(prefix, { clearIrrelevant = false } = {}) {
+  const modeInput = byId(`${prefix}-simulation-mode`);
+  if (!modeInput) return;
+
+  const modeRaw = String(modeInput.value || '').trim().toLowerCase();
+  const mode = SIMULATION_MODES.has(modeRaw) ? modeRaw : '';
+  const variantInput = byId(`${prefix}-simulation-monte-carlo-variant`);
+  const historicalStartYearInput = byId(`${prefix}-simulation-historical-start-year`);
+  const seedInput = byId(`${prefix}-simulation-seed`);
+  const controlsLocked = modeInput.disabled;
+
+  let variantEnabled = true;
+  let historicalStartYearEnabled = true;
+  let seedEnabled = true;
+
+  if (mode === 'fixed') {
+    variantEnabled = false;
+    historicalStartYearEnabled = false;
+    seedEnabled = false;
+  } else if (mode === 'stochastic') {
+    variantEnabled = false;
+    historicalStartYearEnabled = false;
+    seedEnabled = true;
+  } else if (mode === 'historical') {
+    variantEnabled = false;
+    historicalStartYearEnabled = true;
+    seedEnabled = true;
+  } else if (mode === 'monte_carlo') {
+    variantEnabled = true;
+    historicalStartYearEnabled = false;
+    seedEnabled = true;
+  }
+
+  const syncControl = (input, enabled) => {
+    if (!input) return;
+    if (!controlsLocked) input.disabled = !enabled;
+    if (!enabled && clearIrrelevant) input.value = '';
+  };
+
+  syncControl(variantInput, variantEnabled);
+  syncControl(historicalStartYearInput, historicalStartYearEnabled);
+  syncControl(seedInput, seedEnabled);
 }
 
 function renderTimelineEventsTable(payload) {
@@ -536,6 +581,10 @@ function setControlsEnabled(enabled) {
     if (el) el.disabled = !enabled;
   });
   for (const f of [...PLAN_SETTING_FIELDS, ...DIFF_SETTING_FIELDS]) { const el = byId(f.inputId); if (el) el.disabled = !enabled; }
+  if (enabled) {
+    updateSimulationModeDependentControls('setting', { clearIrrelevant: false });
+    updateSimulationModeDependentControls('diff', { clearIrrelevant: false });
+  }
 }
 
 function parseAssumptionSets(rawPayload) {
@@ -2078,6 +2127,12 @@ export function initEditor(refreshPlans) {
   byId('projection-source').addEventListener('change', () => renderProjectionVisuals());
   byId('projection-scenario-label').addEventListener('change', () => renderProjectionVisuals());
   byId('projection-account-metric').addEventListener('change', () => renderProjectionVisuals());
+  byId('setting-simulation-mode').addEventListener('change', () => {
+    updateSimulationModeDependentControls('setting', { clearIrrelevant: true });
+  });
+  byId('diff-simulation-mode').addEventListener('change', () => {
+    updateSimulationModeDependentControls('diff', { clearIrrelevant: true });
+  });
   byId('open-plan-recommendations').addEventListener('click', () => {
     location.hash = 'recommendations';
   });
@@ -2690,4 +2745,6 @@ export function initEditor(refreshPlans) {
       renderDetail(); await refreshPlans(); writeLog('Decision added.');
     } catch (e) { writeLog(`Add decision failed: ${e.message}`, null, true); }
   });
+  updateSimulationModeDependentControls('setting', { clearIrrelevant: false });
+  updateSimulationModeDependentControls('diff', { clearIrrelevant: false });
 }

@@ -129,7 +129,7 @@ def test_plan_workspace_settings_update_and_validation(tmp_path: Path) -> None:
     assert updated["settings"]["marginal_tax_rate"] == 0.24
     assert updated["settings"]["state_tax_rate"] == 0.05
     assert updated["settings"]["simulation_mode"] == "historical"
-    assert updated["settings"]["simulation_monte_carlo_variant"] == "p90"
+    assert updated["settings"]["simulation_monte_carlo_variant"] is None
     assert updated["settings"]["simulation_historical_start_year"] == 1988
     assert updated["settings"]["simulation_seed"] == 2468
     assert updated["settings"]["household_mode"] == "couple"
@@ -199,6 +199,64 @@ def test_plan_workspace_settings_update_and_validation(tmp_path: Path) -> None:
                 "filing_status": "married_jointly_invalid",
             },
         )
+
+
+def test_plan_workspace_simulation_mode_switch_clears_incompatible_fields(tmp_path: Path) -> None:
+    workspace = PlanWorkspace(tmp_path)
+    detail = workspace.create_plan(title="Simulation Mode Cleanup Plan")
+
+    historical = workspace.update_plan_settings(
+        plan_id=detail["id"],
+        updates={
+            "simulation_mode": "historical",
+            "simulation_monte_carlo_variant": "p90",
+            "simulation_historical_start_year": 1988,
+            "simulation_seed": 2468,
+        },
+    )
+    assert historical["settings"]["simulation_mode"] == "historical"
+    assert historical["settings"]["simulation_monte_carlo_variant"] is None
+    assert historical["settings"]["simulation_historical_start_year"] == 1988
+    assert historical["settings"]["simulation_seed"] == 2468
+
+    fixed = workspace.update_plan_settings(
+        plan_id=detail["id"],
+        updates={
+            "simulation_mode": "fixed",
+        },
+    )
+    assert fixed["settings"]["simulation_mode"] == "fixed"
+    assert fixed["settings"]["simulation_monte_carlo_variant"] is None
+    assert fixed["settings"]["simulation_historical_start_year"] is None
+    assert fixed["settings"]["simulation_seed"] is None
+
+    stochastic = workspace.update_plan_settings(
+        plan_id=detail["id"],
+        updates={
+            "simulation_mode": "stochastic",
+            "simulation_seed": 13579,
+            "simulation_monte_carlo_variant": "p10",
+            "simulation_historical_start_year": 1975,
+        },
+    )
+    assert stochastic["settings"]["simulation_mode"] == "stochastic"
+    assert stochastic["settings"]["simulation_monte_carlo_variant"] is None
+    assert stochastic["settings"]["simulation_historical_start_year"] is None
+    assert stochastic["settings"]["simulation_seed"] == 13579
+
+    monte_carlo = workspace.update_plan_settings(
+        plan_id=detail["id"],
+        updates={
+            "simulation_mode": "monte_carlo",
+            "simulation_monte_carlo_variant": "p10",
+            "simulation_historical_start_year": 1990,
+            "simulation_seed": 9521,
+        },
+    )
+    assert monte_carlo["settings"]["simulation_mode"] == "monte_carlo"
+    assert monte_carlo["settings"]["simulation_monte_carlo_variant"] == "p10"
+    assert monte_carlo["settings"]["simulation_historical_start_year"] is None
+    assert monte_carlo["settings"]["simulation_seed"] == 9521
 
 
 def test_plan_workspace_migrates_legacy_index_and_settings(tmp_path: Path) -> None:

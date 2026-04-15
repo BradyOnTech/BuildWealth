@@ -63,6 +63,22 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 5.0 Closeout/Hardening)
+- Hardened simulation settings persistence with mode-dependent cleanup in Plan Workspace:
+  - `fixed` clears Monte Carlo variant, historical start year, and seed.
+  - `stochastic` clears Monte Carlo variant and historical start year.
+  - `historical` clears Monte Carlo variant.
+  - `monte_carlo` clears historical start year.
+- Hardened scenario diff/branch simulation-delta behavior so irrelevant controls no longer trigger false `changed` flags (for example fixed-mode seed/variant edits).
+- Added Plan Workspace UI mode guardrails for simulation controls:
+  - simulation-dependent inputs now auto-disable/clear when incompatible with the selected mode.
+  - settings and diff editors both enforce mode-aware control behavior.
+- Added focused regression coverage:
+  - `test_simulation_delta.py` for canonical simulation-delta semantics.
+  - `test_plan_workspace.py` simulation mode-switch cleanup behavior.
+  - `test_withdrawal_strategy_compare.py` simulation metadata coverage in strategy comparison rows.
+- Verification: `pytest -q` in `services/orchestrator` passes (`432 passed`).
+
 ### 2026-04-15 (Completed - Phase 5.0 Slice 5, Simulation Mode Expansion)
 - Added simulation mode controls (`fixed`, `stochastic`, `historical`, `monte_carlo`) plus Monte Carlo variant/start-year/seed settings across plan settings, assumption sets, API requests, and Copilot tool contracts.
 - Completed end-to-end mode wiring through scenario execution, plan diff/branch/withdrawal comparison paths, and planning sidecar metadata.
