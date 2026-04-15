@@ -53,6 +53,13 @@ export function template() {
         </div>
         <button class="primary" type="submit">Upload & Import</button>
       </form>
+    </section>
+    <section class="card">
+      <h3 class="section-title">Latest Import Reconciliation</h3>
+      <p class="hint" id="import-reconciliation-summary">Run an import to see accepted/rejected/normalized rows with confidence details.</p>
+      <label class="field"><span>Accepted Rows</span><textarea id="import-reconciliation-accepted" rows="6" readonly></textarea></label>
+      <label class="field"><span>Normalized Rows</span><textarea id="import-reconciliation-normalized" rows="6" readonly></textarea></label>
+      <label class="field"><span>Rejected Rows</span><textarea id="import-reconciliation-rejected" rows="6" readonly></textarea></label>
     </section>`;
 }
 
@@ -93,6 +100,61 @@ function renderTemplateOptions(templates) {
   }
 }
 
+function formatReconciliationRows(rows, { includeNormalization = false, includeRejection = false } = {}) {
+  const items = Array.isArray(rows) ? rows : [];
+  if (!items.length) return 'None.';
+  const lines = [];
+  for (const row of items.slice(0, 50)) {
+    const rowNumber = Number(row?.row_number || 0);
+    const confidence = String(row?.confidence_flag || 'low');
+    const fingerprint = String(row?.transaction_fingerprint || '').trim();
+    const parts = [`row ${rowNumber}`, `confidence ${confidence}`];
+    if (includeNormalization && Array.isArray(row?.normalization_flags) && row.normalization_flags.length) {
+      parts.push(`flags: ${row.normalization_flags.join(', ')}`);
+    }
+    if (includeRejection && Array.isArray(row?.rejection_reasons) && row.rejection_reasons.length) {
+      parts.push(`reasons: ${row.rejection_reasons.join(', ')}`);
+    }
+    if (fingerprint) parts.push(`fp ${fingerprint}`);
+    lines.push(`- ${parts.join(' | ')}`);
+  }
+  if (items.length > 50) lines.push(`... ${items.length - 50} more row(s)`);
+  return lines.join('\n');
+}
+
+function renderImportReconciliation(result) {
+  const summaryEl = byId('import-reconciliation-summary');
+  const acceptedEl = byId('import-reconciliation-accepted');
+  const normalizedEl = byId('import-reconciliation-normalized');
+  const rejectedEl = byId('import-reconciliation-rejected');
+  if (!summaryEl || !acceptedEl || !normalizedEl || !rejectedEl) return;
+
+  const report = result?.reconciliation_report && typeof result.reconciliation_report === 'object'
+    ? result.reconciliation_report
+    : null;
+  if (!report) {
+    summaryEl.textContent = 'Run an import to see accepted/rejected/normalized rows with confidence details.';
+    acceptedEl.value = '';
+    normalizedEl.value = '';
+    rejectedEl.value = '';
+    return;
+  }
+
+  const totalRows = Number(report.total_rows || 0);
+  const acceptedCount = Number(report.accepted_count || 0);
+  const normalizedCount = Number(report.normalized_count || 0);
+  const rejectedCount = Number(report.rejected_count || 0);
+  const parserConfidenceFlag = String(report.parser_confidence_flag || 'low');
+  const parserConfidenceScore = Number(report.parser_confidence_score || 0);
+  const parserFlags = Array.isArray(report.parser_confidence_flags) ? report.parser_confidence_flags : [];
+  const flagSummary = parserFlags.length ? ` • flags: ${parserFlags.join(', ')}` : '';
+  summaryEl.textContent = `Rows ${totalRows} • accepted ${acceptedCount} • normalized ${normalizedCount} • rejected ${rejectedCount} • parser confidence ${parserConfidenceFlag} (${parserConfidenceScore.toFixed(4)})${flagSummary}`;
+
+  acceptedEl.value = formatReconciliationRows(report.accepted_rows);
+  normalizedEl.value = formatReconciliationRows(report.normalized_rows, { includeNormalization: true });
+  rejectedEl.value = formatReconciliationRows(report.rejected_rows, { includeNormalization: true, includeRejection: true });
+}
+
 async function loadAll() {
   try { renderSyncStatus(await fetchJson('/api/sync/status')); } catch (e) { writeLog(e.message, null, true); }
   try { const p = await fetchJson('/api/import/files'); renderInboxFiles(p.files || []); } catch (e) { writeLog(e.message, null, true); }
@@ -120,6 +182,7 @@ async function importInboxFile() {
   writeLog(`Importing ${file}...`, body);
   try {
     const result = await fetchJson('/api/import/csv', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    renderImportReconciliation(result);
     writeLog('Import completed.', result);
     await loadAll();
   } catch (e) { writeLog(`Import failed: ${e.message}`, null, true); }
@@ -141,6 +204,7 @@ async function uploadAndImport(event) {
   writeLog(`Uploading ${file.name}...`);
   try {
     const result = await fetchJson('/api/import/upload-csv', { method: 'POST', body: fd });
+    renderImportReconciliation(result);
     writeLog('Upload import completed.', result);
     fileInput.value = '';
     await loadAll();
@@ -152,5 +216,6 @@ export function init() {
   byId('run-sync').addEventListener('click', runSync);
   byId('import-inbox').addEventListener('click', importInboxFile);
   byId('upload-form').addEventListener('submit', uploadAndImport);
+  renderImportReconciliation(null);
   loadAll();
 }

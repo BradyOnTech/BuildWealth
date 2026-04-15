@@ -63,6 +63,25 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 5.1 Slice 1, Import Reconciliation Report)
+- Added deterministic import reconciliation reporting to CSV import flows:
+  - per-row accepted/rejected tracking
+  - explicit normalized-row subset
+  - row-level confidence flag/score/reasons and stable transaction fingerprints
+  - parser-level confidence summary with flags and row-count rollups.
+- Added duplicate-aware reconciliation against local ledger history before write:
+  - existing transaction fingerprints now reject duplicate import rows deterministically
+  - only non-duplicate accepted rows are eligible for insert.
+- Extended API contract and Sync UX:
+  - `CsvImportResponse` now includes `reconciliation_report`
+  - Sync view now surfaces latest reconciliation summary and accepted/normalized/rejected row details.
+- Added focused regression coverage in `test_csv_importer.py` for:
+  - reconciliation confidence output shape
+  - duplicate-rejection reconciliation behavior.
+- Source-provenance note:
+  - follows Ghostfolio import-service duplicate/error modeling patterns (`apps/api/src/app/import/import.service.ts`) while preserving BuildWealth standalone contracts and local-store authority.
+- Verification: `pytest -q` in `services/orchestrator` passes (`434 passed`).
+
 ### 2026-04-15 (Completed - Phase 5.0 Closeout/Hardening)
 - Hardened simulation settings persistence with mode-dependent cleanup in Plan Workspace:
   - `fixed` clears Monte Carlo variant, historical start year, and seed.

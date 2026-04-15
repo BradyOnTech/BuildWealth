@@ -10,6 +10,26 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-15 (Completed - Phase 5.1 Slice 1, Import Reconciliation Report)
+1. Added deterministic reconciliation output to CSV import responses:
+- row-level status (`accepted`, `rejected`)
+- normalized-row subset and normalized-field flags
+- row confidence (`high`/`medium`/`low`) with score and reasons
+- stable transaction fingerprints for auditability.
+2. Added duplicate-aware reconciliation before import write:
+- parsed activities now reconcile against existing ledger transaction fingerprints
+- duplicates are rejected into reconciliation output and excluded from insert.
+3. Expanded import contract and UX:
+- `CsvImportResponse` now returns `reconciliation_report` with parser confidence rollups and accepted/normalized/rejected row collections.
+- Sync & Import view now renders latest reconciliation summary and row-detail panels directly after inbox/upload runs.
+4. Source-provenance note:
+- implementation follows Ghostfolio import-service duplicate/error handling patterns (`apps/api/src/app/import/import.service.ts`) while keeping BuildWealth standalone local-store authority and contract-first API shape.
+5. Added regression coverage:
+- reconciliation confidence/report semantics and duplicate rejection behavior in `test_csv_importer.py`.
+6. Verification:
+- targeted: `pytest -q tests/test_csv_importer.py` (`19 passed`).
+- full: `pytest -q` (`434 passed`).
+
 ### 2026-04-15 (Completed - Phase 5.0 Closeout/Hardening)
 1. Hardened simulation-mode persistence behavior in Plan Workspace settings:
 - mode-specific cleanup now removes incompatible fields during updates (`variant`, `historical_start_year`, `seed`) so stale controls do not leak across simulation-mode switches.

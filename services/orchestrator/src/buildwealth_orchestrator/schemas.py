@@ -875,6 +875,33 @@ class CsvImportRequest(BaseModel):
     archive_after_success: bool = False
 
 
+class CsvImportReconciliationRow(BaseModel):
+    row_number: int
+    status: Literal["accepted", "rejected"]
+    confidence_flag: Literal["high", "medium", "low"] = "low"
+    confidence_score: float = 0.0
+    confidence_reasons: list[str] = Field(default_factory=list)
+    normalization_flags: list[str] = Field(default_factory=list)
+    rejection_reasons: list[str] = Field(default_factory=list)
+    transaction_fingerprint: str | None = None
+    raw_row: dict[str, str] = Field(default_factory=dict)
+    normalized_row: dict[str, Any] = Field(default_factory=dict)
+
+
+class CsvImportReconciliationReport(BaseModel):
+    schema_version: int = 1
+    parser_confidence_flag: Literal["high", "medium", "low"] = "low"
+    parser_confidence_score: float = 0.0
+    parser_confidence_flags: list[str] = Field(default_factory=list)
+    total_rows: int = 0
+    accepted_count: int = 0
+    normalized_count: int = 0
+    rejected_count: int = 0
+    accepted_rows: list[CsvImportReconciliationRow] = Field(default_factory=list)
+    normalized_rows: list[CsvImportReconciliationRow] = Field(default_factory=list)
+    rejected_rows: list[CsvImportReconciliationRow] = Field(default_factory=list)
+
+
 class CsvImportResponse(BaseModel):
     file_path: str
     dry_run: bool
@@ -885,6 +912,9 @@ class CsvImportResponse(BaseModel):
     imported_activities: int
     warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    reconciliation_report: CsvImportReconciliationReport = Field(
+        default_factory=CsvImportReconciliationReport
+    )
     ghostfolio_response: dict[str, Any] | None = None
 
 

@@ -1,6 +1,10 @@
 from pathlib import Path
 
-from buildwealth_orchestrator.services.csv_importer import list_csv_templates, parse_transaction_csv
+from buildwealth_orchestrator.services.csv_importer import (
+    apply_existing_transaction_reconciliation,
+    list_csv_templates,
+    parse_transaction_csv,
+)
 
 
 def test_parse_transaction_csv_with_aliases_and_account_mapping(tmp_path: Path) -> None:
@@ -386,3 +390,86 @@ def test_list_csv_templates_includes_required_brokers() -> None:
     assert "ally" in template_ids
     assert "m1" in template_ids
     assert "wealthfront" in template_ids
+
+
+def test_parse_transaction_csv_emits_reconciliation_report_with_confidence_flags(tmp_path: Path) -> None:
+    csv_file = tmp_path / "reconciliation.csv"
+    csv_file.write_text(
+        "date,action,symbol,quantity,unit_price,amount,account\n"
+        "2026-01-10,buy,VTI,10,250.50,2505,Taxable Brokerage\n"
+        "01/11/2026,dividend,SCHD,,,42.15,Taxable Brokerage\n"
+        "2026-01-12,spin_off,VTI,1,1,1,Taxable Brokerage\n",
+        encoding="utf-8",
+    )
+
+    result = parse_transaction_csv(
+        file_path=csv_file,
+        default_data_source="YAHOO",
+        default_currency="USD",
+        account_ids_by_name={"taxable brokerage": "acc-1"},
+    )
+
+    report = result.reconciliation_report
+    assert report["total_rows"] == 3
+    assert report["accepted_count"] == 2
+    assert report["normalized_count"] == 2
+    assert report["rejected_count"] == 1
+
+    accepted = report["accepted_rows"]
+    normalized = report["normalized_rows"]
+    rejected = report["rejected_rows"]
+    assert len(accepted) == 2
+    assert len(normalized) == 2
+    assert len(rejected) == 1
+    normalized_by_row = {item["row_number"]: item for item in normalized}
+    assert 3 in normalized_by_row
+    assert normalized_by_row[3]["confidence_flag"] in {"medium", "low"}
+    assert "quantity_defaulted_one" in normalized_by_row[3]["normalization_flags"]
+    assert "unit_price_defaulted_from_amount" in normalized_by_row[3]["normalization_flags"]
+    assert rejected[0]["row_number"] == 4
+    assert rejected[0]["status"] == "rejected"
+    assert rejected[0]["confidence_flag"] == "low"
+    assert rejected[0]["rejection_reasons"]
+    assert accepted[0]["transaction_fingerprint"]
+
+
+def test_apply_existing_transaction_reconciliation_marks_duplicates_as_rejected(tmp_path: Path) -> None:
+    csv_file = tmp_path / "duplicates.csv"
+    csv_file.write_text(
+        "date,action,symbol,quantity,unit_price,account\n"
+        "2026-01-10,buy,VTI,10,250.5,Taxable Brokerage\n",
+        encoding="utf-8",
+    )
+
+    parsed = parse_transaction_csv(
+        file_path=csv_file,
+        default_data_source="YAHOO",
+        default_currency="USD",
+        account_ids_by_name={"taxable brokerage": "acc-1"},
+    )
+    assert len(parsed.activities) == 1
+    fingerprint = parsed.reconciliation_report["accepted_rows"][0]["transaction_fingerprint"]
+
+    reconciled = apply_existing_transaction_reconciliation(
+        parsed,
+        existing_transactions=[
+            {
+                "date": "2026-01-10T00:00:00Z",
+                "action": "BUY",
+                "symbol": "VTI",
+                "quantity": 10.0,
+                "unit_price": 250.5,
+                "fee": 0.0,
+                "currency": "USD",
+                "account": "acc-1",
+            }
+        ],
+    )
+
+    report = reconciled.reconciliation_report
+    assert len(reconciled.activities) == 0
+    assert report["accepted_count"] == 0
+    assert report["rejected_count"] == 1
+    assert report["rejected_rows"][0]["transaction_fingerprint"] == fingerprint
+    assert "duplicate_existing_transaction" in report["rejected_rows"][0]["rejection_reasons"]
+    assert any("already exist in the local ledger" in warning for warning in reconciled.warnings)

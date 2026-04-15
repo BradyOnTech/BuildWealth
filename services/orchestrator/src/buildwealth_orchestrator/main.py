@@ -120,6 +120,7 @@ from buildwealth_orchestrator.services.copilot_runtime import (
     OpenAIChatToolClient,
 )
 from buildwealth_orchestrator.services.csv_importer import (
+    apply_existing_transaction_reconciliation,
     archive_import_file,
     list_csv_templates,
     parse_transaction_csv,
@@ -564,6 +565,10 @@ async def execute_csv_import(file_path: Path, request: CsvImportRequest) -> CsvI
         account_ids_by_name=portfolio_store.account_ids_by_name(),
         broker_template=request.broker_template,
     )
+    parsed = apply_existing_transaction_reconciliation(
+        parsed,
+        existing_transactions=portfolio_store.list_transactions(limit=1_000_000),
+    )
 
     imported_activities = 0
 
@@ -610,6 +615,7 @@ async def execute_csv_import(file_path: Path, request: CsvImportRequest) -> CsvI
         imported_activities=imported_activities,
         warnings=parsed.warnings,
         errors=parsed.errors,
+        reconciliation_report=parsed.reconciliation_report,
         ghostfolio_response=None,
     )
 

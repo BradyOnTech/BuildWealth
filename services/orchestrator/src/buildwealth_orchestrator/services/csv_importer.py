@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+# Import reconciliation and duplicate-signal behavior is informed by Ghostfolio
+# import-service workflows:
+# apps/api/src/app/import/import.service.ts
+
 import csv
+import hashlib
+import json
 import re
 import shutil
 from dataclasses import dataclass, field
@@ -190,6 +196,28 @@ CASH_SYMBOL_OPTIONAL_ACTIONS = {
     "TRANSFER_OUT",
     "CASH_DEPOSIT",
     "CASH_WITHDRAW",
+}
+
+RECONCILIATION_MAJOR_INFERENCE_FLAGS = {
+    "quantity_inferred_from_amount",
+    "unit_price_inferred_from_amount",
+    "quantity_defaulted_one",
+    "unit_price_defaulted_from_amount",
+    "symbol_defaulted_cash",
+}
+
+RECONCILIATION_REASON_BY_FLAG = {
+    "action_normalized": "Action normalized from alias to canonical transaction type.",
+    "date_normalized": "Date normalized into UTC ISO format.",
+    "quantity_inferred_from_amount": "Quantity inferred from amount and unit price.",
+    "unit_price_inferred_from_amount": "Unit price inferred from amount and quantity.",
+    "quantity_defaulted_one": "Quantity defaulted to 1.0 for cashflow-style activity.",
+    "unit_price_defaulted_from_amount": "Unit price defaulted from amount for cashflow-style activity.",
+    "symbol_defaulted_cash": "Symbol defaulted to CASH for symbol-optional cash action.",
+    "currency_defaulted": "Currency defaulted from import request defaults.",
+    "data_source_defaulted": "Data source defaulted from import request defaults.",
+    "account_missing_mapping": "Account was not mapped to a local account ID.",
+    "duplicate_existing_transaction": "Transaction fingerprint already exists in local ledger.",
 }
 
 SUPPORTED_CSV_TEMPLATES: dict[str, dict[str, str]] = {
@@ -399,6 +427,9 @@ TEMPLATE_HEADER_SIGNATURES: dict[str, set[str]] = {
 class CsvParseOutput:
     parsed_rows: int = 0
     activities: list[dict] = field(default_factory=list)
+    activity_fingerprints: list[str] = field(default_factory=list)
+    reconciliation_rows: list[dict[str, Any]] = field(default_factory=list)
+    reconciliation_report: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     selected_template: str = "generic"
@@ -498,6 +529,13 @@ def _parse_number(value: str | None) -> float | None:
     return -number if negative else number
 
 
+def _safe_float(value: Any, fallback: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
 def _parse_date(value: str | None) -> str | None:
     if not value:
         return None
@@ -576,6 +614,233 @@ def _canonical_row_for_template(
     return result
 
 
+def _clean_raw_row(raw_row: dict[str, Any]) -> dict[str, str]:
+    payload: dict[str, str] = {}
+    for raw_key, raw_value in raw_row.items():
+        if raw_key is None:
+            continue
+        key = str(raw_key)
+        payload[key] = "" if raw_value is None else str(raw_value)
+    return payload
+
+
+def _transaction_fingerprint_payload(item: dict[str, Any]) -> dict[str, Any]:
+    date_text = str(item.get("date") or "").strip()
+    date_value = date_text[:10] if len(date_text) >= 10 else date_text
+    action_value = str(item.get("action") or item.get("type") or "").strip().upper()
+    symbol_value = str(item.get("symbol") or "").strip().upper()
+    quantity_raw = item.get("quantity")
+    unit_price_raw = item.get("unit_price", item.get("unitPrice"))
+    fee_raw = item.get("fee")
+    quantity_value = round(abs(_parse_number(str(quantity_raw)) or _safe_float(quantity_raw, 0.0)), 8)
+    unit_price_value = round(abs(_parse_number(str(unit_price_raw)) or _safe_float(unit_price_raw, 0.0)), 8)
+    fee_value = round(abs(_parse_number(str(fee_raw)) or _safe_float(fee_raw, 0.0)), 8)
+    currency_value = str(item.get("currency") or "USD").strip().upper() or "USD"
+    account_value = (
+        str(
+            item.get("account")
+            or item.get("accountId")
+            or item.get("account_id")
+            or item.get("accountName")
+            or item.get("account_name")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
+    return {
+        "date": date_value,
+        "action": action_value,
+        "symbol": symbol_value,
+        "quantity": quantity_value,
+        "unit_price": unit_price_value,
+        "fee": fee_value,
+        "currency": currency_value,
+        "account": account_value,
+    }
+
+
+def _transaction_fingerprint(item: dict[str, Any]) -> str:
+    payload = _transaction_fingerprint_payload(item)
+    if not payload["date"] or not payload["action"] or not payload["symbol"]:
+        return ""
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha1(encoded.encode("utf-8")).hexdigest()[:16]
+
+
+def _confidence_from_row_status(
+    *,
+    status: str,
+    normalization_flags: list[str],
+    rejection_reasons: list[str],
+) -> tuple[float, str, list[str]]:
+    if status != "accepted":
+        reasons = rejection_reasons or ["Row rejected by parser validation."]
+        return 0.0, "low", reasons
+
+    unique_flags: list[str] = []
+    seen_flags: set[str] = set()
+    for raw_flag in normalization_flags:
+        flag = str(raw_flag).strip()
+        if not flag or flag in seen_flags:
+            continue
+        seen_flags.add(flag)
+        unique_flags.append(flag)
+
+    if not unique_flags:
+        return 1.0, "high", ["Canonical mapping with no inferred fields."]
+
+    score = 1.0 - (0.1 * len(unique_flags))
+    if any(flag in RECONCILIATION_MAJOR_INFERENCE_FLAGS for flag in unique_flags):
+        score = min(score, 0.65)
+    if len([flag for flag in unique_flags if flag in RECONCILIATION_MAJOR_INFERENCE_FLAGS]) > 1:
+        score = min(score, 0.45)
+    score = max(0.2, min(1.0, score))
+
+    if score >= 0.85:
+        flag = "high"
+    elif score >= 0.55:
+        flag = "medium"
+    else:
+        flag = "low"
+
+    reasons = [RECONCILIATION_REASON_BY_FLAG.get(raw_flag, raw_flag.replace("_", " ")) for raw_flag in unique_flags]
+    return round(score, 4), flag, reasons
+
+
+def _rebuild_reconciliation_report(output: CsvParseOutput) -> None:
+    accepted_rows: list[dict[str, Any]] = []
+    normalized_rows: list[dict[str, Any]] = []
+    rejected_rows: list[dict[str, Any]] = []
+
+    for row in output.reconciliation_rows:
+        normalization_flags = [
+            str(flag).strip()
+            for flag in row.get("normalization_flags", [])
+            if str(flag).strip()
+        ]
+        rejection_reasons = [
+            str(reason).strip()
+            for reason in row.get("rejection_reasons", [])
+            if str(reason).strip()
+        ]
+        score, confidence_flag, confidence_reasons = _confidence_from_row_status(
+            status=str(row.get("status") or "rejected"),
+            normalization_flags=normalization_flags,
+            rejection_reasons=rejection_reasons,
+        )
+        row["normalization_flags"] = normalization_flags
+        row["rejection_reasons"] = rejection_reasons
+        row["confidence_score"] = score
+        row["confidence_flag"] = confidence_flag
+        row["confidence_reasons"] = confidence_reasons
+
+        public_row = {key: value for key, value in row.items() if key != "_activity_index"}
+        if str(row.get("status") or "") == "accepted":
+            accepted_rows.append(public_row)
+            if normalization_flags:
+                normalized_rows.append(public_row)
+        else:
+            rejected_rows.append(public_row)
+
+    total_rows = len(output.reconciliation_rows)
+    accepted_count = len(accepted_rows)
+    normalized_count = len(normalized_rows)
+    rejected_count = len(rejected_rows)
+
+    if total_rows == 0:
+        parser_score = 0.0
+    else:
+        acceptance_ratio = accepted_count / total_rows
+        normalization_ratio = (normalized_count / accepted_count) if accepted_count else 1.0
+        parser_score = acceptance_ratio - (0.2 * normalization_ratio)
+        parser_score = max(0.0, min(1.0, parser_score))
+
+    parser_flags: list[str] = []
+    if output.selected_template != output.detected_template and output.detected_template != "generic":
+        parser_flags.append("template_override_mismatch")
+    if rejected_count:
+        parser_flags.append("contains_rejected_rows")
+    if normalized_count:
+        parser_flags.append("contains_normalized_rows")
+
+    if parser_score >= 0.85:
+        parser_confidence_flag = "high"
+    elif parser_score >= 0.55:
+        parser_confidence_flag = "medium"
+    else:
+        parser_confidence_flag = "low"
+
+    output.reconciliation_report = {
+        "schema_version": 1,
+        "parser_confidence_flag": parser_confidence_flag,
+        "parser_confidence_score": round(parser_score, 4),
+        "parser_confidence_flags": parser_flags,
+        "total_rows": total_rows,
+        "accepted_count": accepted_count,
+        "normalized_count": normalized_count,
+        "rejected_count": rejected_count,
+        "accepted_rows": accepted_rows,
+        "normalized_rows": normalized_rows,
+        "rejected_rows": rejected_rows,
+    }
+
+
+def apply_existing_transaction_reconciliation(
+    output: CsvParseOutput,
+    *,
+    existing_transactions: list[dict[str, Any]],
+) -> CsvParseOutput:
+    existing_fingerprints = {
+        _transaction_fingerprint(item)
+        for item in existing_transactions
+        if isinstance(item, dict)
+    }
+    existing_fingerprints.discard("")
+    if not existing_fingerprints:
+        _rebuild_reconciliation_report(output)
+        return output
+
+    duplicate_count = 0
+    for row in output.reconciliation_rows:
+        if str(row.get("status") or "") != "accepted":
+            continue
+        fingerprint = str(row.get("transaction_fingerprint") or "").strip()
+        if not fingerprint or fingerprint not in existing_fingerprints:
+            continue
+        duplicate_count += 1
+        row["status"] = "rejected"
+        rejection_reasons = row.setdefault("rejection_reasons", [])
+        if "duplicate_existing_transaction" not in rejection_reasons:
+            rejection_reasons.append("duplicate_existing_transaction")
+
+    if duplicate_count:
+        output.warnings.append(
+            f"Rejected {duplicate_count} row(s) because matching transactions already exist in the local ledger."
+        )
+
+    original_activities = list(output.activities)
+    original_fingerprints = list(output.activity_fingerprints)
+    filtered_activities: list[dict[str, Any]] = []
+    filtered_fingerprints: list[str] = []
+    for row in output.reconciliation_rows:
+        if str(row.get("status") or "") != "accepted":
+            continue
+        activity_index = row.get("_activity_index")
+        if not isinstance(activity_index, int):
+            continue
+        if activity_index < 0 or activity_index >= len(original_activities):
+            continue
+        filtered_activities.append(original_activities[activity_index])
+        if activity_index < len(original_fingerprints):
+            filtered_fingerprints.append(original_fingerprints[activity_index])
+
+    output.activities = filtered_activities
+    output.activity_fingerprints = filtered_fingerprints
+    _rebuild_reconciliation_report(output)
+    return output
+
+
 def parse_transaction_csv(
     file_path: Path,
     default_data_source: str,
@@ -594,6 +859,7 @@ def parse_transaction_csv(
         )
         output.selected_template = "generic"
         output.detected_template = "generic"
+        _rebuild_reconciliation_report(output)
         return output
 
     with file_path.open("r", encoding="utf-8-sig", newline="") as handle:
@@ -616,28 +882,73 @@ def parse_transaction_csv(
 
         if not reader.fieldnames:
             output.errors.append("CSV header row is missing.")
+            _rebuild_reconciliation_report(output)
             return output
 
         for row_num, raw_row in enumerate(reader, start=2):
             output.parsed_rows += 1
-            row = _canonical_row_for_template(raw_row, selected_template)
+            raw_row_payload = _clean_raw_row(raw_row)
+            row = _canonical_row_for_template(raw_row_payload, selected_template)
+            normalization_flags: list[str] = []
 
-            action = _parse_action(row.get("action"))
+            normalized_row_payload: dict[str, Any] = {
+                "date": row.get("date"),
+                "action": row.get("action"),
+                "symbol": row.get("symbol"),
+                "quantity": row.get("quantity"),
+                "unit_price": row.get("unit_price"),
+                "amount": row.get("amount"),
+                "fee": row.get("fee"),
+                "currency": row.get("currency"),
+                "data_source": row.get("data_source"),
+                "account_name": row.get("account_name"),
+            }
+
+            def append_rejected(reason: str) -> None:
+                output.reconciliation_rows.append(
+                    {
+                        "row_number": row_num,
+                        "status": "rejected",
+                        "normalization_flags": list(normalization_flags),
+                        "rejection_reasons": [reason],
+                        "transaction_fingerprint": None,
+                        "raw_row": raw_row_payload,
+                        "normalized_row": normalized_row_payload,
+                    }
+                )
+
+            raw_action = row.get("action")
+            action = _parse_action(raw_action)
+            if action and raw_action and _normalize_header(raw_action) != _normalize_header(action):
+                normalization_flags.append("action_normalized")
             if not action:
+                reason = f"unsupported_or_missing_action:{row.get('action')}"
                 output.errors.append(f"Row {row_num}: Unsupported or missing action '{row.get('action')}'.")
+                append_rejected(reason)
                 continue
+            normalized_row_payload["action"] = action
 
-            date = _parse_date(row.get("date"))
+            raw_date = row.get("date")
+            date = _parse_date(raw_date)
+            if date and raw_date and str(raw_date).strip()[:10] != date[:10]:
+                normalization_flags.append("date_normalized")
             if not date:
+                reason = f"invalid_or_missing_date:{row.get('date')}"
                 output.errors.append(f"Row {row_num}: Invalid or missing date '{row.get('date')}'.")
+                append_rejected(reason)
                 continue
+            normalized_row_payload["date"] = date
 
             symbol = (row.get("symbol") or "").strip().upper()
             if not symbol and action in CASH_SYMBOL_OPTIONAL_ACTIONS:
                 symbol = "CASH"
+                normalization_flags.append("symbol_defaulted_cash")
             if not symbol:
+                reason = "missing_symbol"
                 output.errors.append(f"Row {row_num}: Missing symbol/ticker.")
+                append_rejected(reason)
                 continue
+            normalized_row_payload["symbol"] = symbol
 
             quantity = _parse_number(row.get("quantity"))
             unit_price = _parse_number(row.get("unit_price"))
@@ -646,27 +957,41 @@ def parse_transaction_csv(
 
             if quantity is None and amount is not None and unit_price not in (None, 0):
                 quantity = abs(amount) / abs(unit_price)
+                normalization_flags.append("quantity_inferred_from_amount")
 
             if unit_price is None and amount is not None and quantity not in (None, 0):
                 unit_price = abs(amount) / abs(quantity)
+                normalization_flags.append("unit_price_inferred_from_amount")
 
             if action in {"DIVIDEND", "INTEREST", "FEE", "TRANSFER_IN", "TRANSFER_OUT", "CASH_DEPOSIT", "CASH_WITHDRAW"}:
-                quantity = quantity if quantity is not None else 1.0
+                if quantity is None:
+                    quantity = 1.0
+                    normalization_flags.append("quantity_defaulted_one")
                 if unit_price is None and amount is not None:
                     unit_price = abs(amount)
+                    normalization_flags.append("unit_price_defaulted_from_amount")
             elif action == "STOCK_SPLIT":
                 if quantity is None and amount is not None:
                     quantity = abs(amount)
+                    normalization_flags.append("quantity_inferred_from_amount")
                 unit_price = unit_price if unit_price is not None else 0.0
 
             if quantity is None or unit_price is None:
+                reason = "unable_to_infer_quantity_or_unit_price"
                 output.errors.append(
                     f"Row {row_num}: Could not infer quantity/unit price for {action}. quantity={row.get('quantity')} unit_price={row.get('unit_price')} amount={row.get('amount')}"
                 )
+                append_rejected(reason)
                 continue
 
-            currency = (row.get("currency") or default_currency).strip().upper()
-            data_source = (row.get("data_source") or default_data_source).strip().upper()
+            raw_currency = str(row.get("currency") or "").strip()
+            raw_data_source = str(row.get("data_source") or "").strip()
+            currency = (raw_currency or default_currency).strip().upper()
+            data_source = (raw_data_source or default_data_source).strip().upper()
+            if not raw_currency:
+                normalization_flags.append("currency_defaulted")
+            if not raw_data_source:
+                normalization_flags.append("data_source_defaulted")
 
             activity = {
                 "currency": currency,
@@ -690,6 +1015,7 @@ def parse_transaction_csv(
                 if account_id:
                     activity["accountId"] = account_id
                 else:
+                    normalization_flags.append("account_missing_mapping")
                     output.warnings.append(
                         f"Row {row_num}: Account '{account_name}' was not found in local accounts. Importing without accountId."
                     )
@@ -718,8 +1044,39 @@ def parse_transaction_csv(
             if lot_method:
                 activity["lotMethod"] = lot_method
 
-            output.activities.append(activity)
+            normalized_row_payload.update(
+                {
+                    "date": date,
+                    "action": action,
+                    "symbol": symbol,
+                    "quantity": round(abs(quantity), 8),
+                    "unit_price": round(abs(unit_price), 8),
+                    "amount": amount,
+                    "fee": round(abs(fee), 6),
+                    "currency": currency,
+                    "data_source": data_source,
+                    "account_name": account_name or None,
+                }
+            )
 
+            activity_index = len(output.activities)
+            output.activities.append(activity)
+            transaction_fingerprint = _transaction_fingerprint(activity)
+            output.activity_fingerprints.append(transaction_fingerprint)
+            output.reconciliation_rows.append(
+                {
+                    "row_number": row_num,
+                    "status": "accepted",
+                    "normalization_flags": normalization_flags,
+                    "rejection_reasons": [],
+                    "transaction_fingerprint": transaction_fingerprint or None,
+                    "raw_row": raw_row_payload,
+                    "normalized_row": normalized_row_payload,
+                    "_activity_index": activity_index,
+                }
+            )
+
+    _rebuild_reconciliation_report(output)
     return output
 
 
