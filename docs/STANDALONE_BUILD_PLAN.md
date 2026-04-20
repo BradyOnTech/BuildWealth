@@ -63,6 +63,19 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-20 (Completed - Cross-Cutting Follow-up, Slice D Planning Sidecar Decomposition)
+- Decomposed `planning_sidecar.py` orchestration flow into focused internal helpers while keeping external contracts stable:
+  - local scenario execution helper
+  - local projection update helper
+  - sidecar request execution helper
+  - sidecar merge response helper
+  - degraded local fallback helper
+- Added `_ScenarioRunInputs` dataclass to centralize run-time sidecar input state and reduce inline argument fan-out.
+- Added local-path regression coverage in `test_planning_sidecar.py` to confirm projection payload preservation under local-only execution.
+- Verification:
+  - targeted: `pytest -q tests/test_planning_sidecar.py` (`8 passed`)
+  - full: `pytest -q` in `services/orchestrator` passes (`476 passed`).
+
 ### 2026-04-15 (Completed - Cross-Cutting Follow-up, Slice B Frontend Field Schema Isolation)
 - Isolated plan-setting field schema metadata into dedicated frontend module:
   - added `web/lib/plan_setting_fields.js` as canonical field/option registry for plan settings and diff overrides.

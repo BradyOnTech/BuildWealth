@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal, cast
 from uuid import uuid4
@@ -25,6 +26,52 @@ from buildwealth_orchestrator.services.engine_policy import (
 from buildwealth_orchestrator.services.scenario_engine import ScenarioEngine
 
 IGNIDASH_SCENARIO_CONTRACT_VERSION = 1
+IGNIDASH_SCENARIO_ENGINE_LABEL = "Ignidash scenario"
+
+
+@dataclass(frozen=True)
+class _ScenarioRunInputs:
+    current_portfolio_value_usd: float
+    annual_contribution_usd: float | None = None
+    years: int | None = None
+    hsa_extra_contribution_usd: float | None = None
+    accounts: list[dict[str, Any]] | None = None
+    income_projection: dict[str, Any] | None = None
+    expense_projection: dict[str, Any] | None = None
+    debt_projection: dict[str, Any] | None = None
+    timeline_projection: dict[str, Any] | None = None
+    contribution_allocation: dict[str, Any] | None = None
+    social_security_projection: dict[str, Any] | None = None
+    rmd_projection: dict[str, Any] | None = None
+    assumption_set_id: str | None = None
+    assumption_set_name: str | None = None
+    filing_status: str | None = None
+    state_tax_rate: float | None = None
+    include_irmaa: bool = True
+    roth_conversion_annual_amount_usd: float | None = None
+    roth_conversion_start_age: int | None = None
+    roth_conversion_end_age: int | None = None
+    drawdown_order: str | list[str] | None = None
+    household_mode: str | None = None
+    household_partner_income_usd: float | None = None
+    household_partner_income_growth_rate: float | None = None
+    household_partner_retirement_age: int | None = None
+    household_partner_social_security_annual_usd: float | None = None
+    household_partner_social_security_claiming_age: int | None = None
+    household_shared_goal_target_usd: float | None = None
+    household_shared_goal_target_year: int | None = None
+    household_shared_goal_annual_funding_usd: float | None = None
+    household_partner_income_added_first_year_usd: float | None = None
+    household_partner_income_added_total_usd: float | None = None
+    start_year: int | None = None
+    start_age: int = 35
+    withdrawal_strategy: str | None = None
+    retirement_age: int | None = None
+    simulation_mode: str | None = None
+    simulation_monte_carlo_variant: str | None = None
+    simulation_historical_start_year: int | None = None
+    simulation_seed: int | None = None
+    sidecar_guard_reason: str | None = None
 
 
 class IgnidashScenarioAccountV1(BaseModel):
@@ -164,72 +211,7 @@ class IgnidashScenarioService:
         simulation_seed: int | None = None,
         sidecar_guard_reason: str | None = None,
     ) -> PlanningResponse:
-        local_result = self.scenario_engine.run(
-            current_portfolio_value_usd=current_portfolio_value_usd,
-            annual_contribution_usd=annual_contribution_usd,
-            years=years,
-            hsa_extra_contribution_usd=hsa_extra_contribution_usd,
-            accounts=accounts,
-            income_projection=income_projection,
-            expense_projection=expense_projection,
-            debt_projection=debt_projection,
-            timeline_projection=timeline_projection,
-            contribution_allocation=contribution_allocation,
-            social_security_projection=social_security_projection,
-            rmd_projection=rmd_projection,
-            assumption_set_id=assumption_set_id,
-            assumption_set_name=assumption_set_name,
-            filing_status=filing_status,
-            state_tax_rate=state_tax_rate,
-            include_irmaa=include_irmaa,
-            roth_conversion_annual_amount_usd=roth_conversion_annual_amount_usd,
-            roth_conversion_start_age=roth_conversion_start_age,
-            roth_conversion_end_age=roth_conversion_end_age,
-            drawdown_order=drawdown_order,
-            start_year=start_year,
-            start_age=start_age,
-            withdrawal_strategy=withdrawal_strategy,
-            retirement_age=retirement_age,
-            simulation_mode=simulation_mode,
-            simulation_monte_carlo_variant=simulation_monte_carlo_variant,
-            simulation_historical_start_year=simulation_historical_start_year,
-            simulation_seed=simulation_seed,
-        )
-        local_projection_updates = {
-            "income_projection": income_projection,
-            "expense_projection": expense_projection,
-            "debt_projection": debt_projection,
-            "timeline_projection": timeline_projection,
-            "contribution_allocation": contribution_allocation,
-            "social_security_projection": social_security_projection,
-            "rmd_projection": rmd_projection,
-        }
-
-        disposition = resolve_engine_call_disposition(
-            engine_label="Ignidash scenario",
-            sidecar_enabled=self.sidecar_enabled,
-            sidecar_adapter=self.sidecar_adapter,
-            sidecar_guard_reason=sidecar_guard_reason,
-            disabled_behavior="local_ok",
-            adapter_missing_behavior="local_ok",
-        )
-        if not disposition.use_sidecar:
-            if disposition.engine_status == ENGINE_STATUS_DEGRADED:
-                return local_result.model_copy(
-                    update={
-                        **degraded_response_update(
-                            fallback_method=disposition.fallback_method,
-                            warning=disposition.warning,
-                        ),
-                        **local_projection_updates,
-                    }
-                )
-            return local_result.model_copy(update=local_projection_updates)
-
-        if self.sidecar_adapter is None:
-            return local_result.model_copy(update=local_projection_updates)
-
-        request_payload = self._build_request_payload(
+        inputs = _ScenarioRunInputs(
             current_portfolio_value_usd=current_portfolio_value_usd,
             annual_contribution_usd=annual_contribution_usd,
             years=years,
@@ -263,40 +245,137 @@ class IgnidashScenarioService:
             household_partner_income_added_first_year_usd=household_partner_income_added_first_year_usd,
             household_partner_income_added_total_usd=household_partner_income_added_total_usd,
             start_year=start_year,
+            start_age=start_age,
             withdrawal_strategy=withdrawal_strategy,
             retirement_age=retirement_age,
             simulation_mode=simulation_mode,
             simulation_monte_carlo_variant=simulation_monte_carlo_variant,
             simulation_historical_start_year=simulation_historical_start_year,
             simulation_seed=simulation_seed,
+            sidecar_guard_reason=sidecar_guard_reason,
         )
 
+        local_result = self._build_local_result(inputs)
+        local_projection_updates = self._build_local_projection_updates(inputs)
+
+        disposition = resolve_engine_call_disposition(
+            engine_label=IGNIDASH_SCENARIO_ENGINE_LABEL,
+            sidecar_enabled=self.sidecar_enabled,
+            sidecar_adapter=self.sidecar_adapter,
+            sidecar_guard_reason=inputs.sidecar_guard_reason,
+            disabled_behavior="local_ok",
+            adapter_missing_behavior="local_ok",
+        )
+        if not disposition.use_sidecar:
+            if disposition.engine_status == ENGINE_STATUS_DEGRADED:
+                return self._build_degraded_local_response(
+                    local_result=local_result,
+                    local_projection_updates=local_projection_updates,
+                    fallback_method=disposition.fallback_method,
+                    warning=disposition.warning,
+                )
+            return self._build_local_only_response(
+                local_result=local_result,
+                local_projection_updates=local_projection_updates,
+            )
+
+        if self.sidecar_adapter is None:
+            return self._build_local_only_response(
+                local_result=local_result,
+                local_projection_updates=local_projection_updates,
+            )
+
+        request_payload = self._build_request_payload(inputs=inputs)
+        return await self._run_sidecar_path(
+            local_result=local_result,
+            local_projection_updates=local_projection_updates,
+            request_payload=request_payload,
+        )
+
+    def _build_local_result(self, inputs: _ScenarioRunInputs) -> PlanningResponse:
+        return self.scenario_engine.run(
+            current_portfolio_value_usd=inputs.current_portfolio_value_usd,
+            annual_contribution_usd=inputs.annual_contribution_usd,
+            years=inputs.years,
+            hsa_extra_contribution_usd=inputs.hsa_extra_contribution_usd,
+            accounts=inputs.accounts,
+            income_projection=inputs.income_projection,
+            expense_projection=inputs.expense_projection,
+            debt_projection=inputs.debt_projection,
+            timeline_projection=inputs.timeline_projection,
+            contribution_allocation=inputs.contribution_allocation,
+            social_security_projection=inputs.social_security_projection,
+            rmd_projection=inputs.rmd_projection,
+            assumption_set_id=inputs.assumption_set_id,
+            assumption_set_name=inputs.assumption_set_name,
+            filing_status=inputs.filing_status,
+            state_tax_rate=inputs.state_tax_rate,
+            include_irmaa=inputs.include_irmaa,
+            roth_conversion_annual_amount_usd=inputs.roth_conversion_annual_amount_usd,
+            roth_conversion_start_age=inputs.roth_conversion_start_age,
+            roth_conversion_end_age=inputs.roth_conversion_end_age,
+            drawdown_order=inputs.drawdown_order,
+            start_year=inputs.start_year,
+            start_age=inputs.start_age,
+            withdrawal_strategy=inputs.withdrawal_strategy,
+            retirement_age=inputs.retirement_age,
+            simulation_mode=inputs.simulation_mode,
+            simulation_monte_carlo_variant=inputs.simulation_monte_carlo_variant,
+            simulation_historical_start_year=inputs.simulation_historical_start_year,
+            simulation_seed=inputs.simulation_seed,
+        )
+
+    @staticmethod
+    def _build_local_projection_updates(inputs: _ScenarioRunInputs) -> dict[str, Any]:
+        return {
+            "income_projection": inputs.income_projection,
+            "expense_projection": inputs.expense_projection,
+            "debt_projection": inputs.debt_projection,
+            "timeline_projection": inputs.timeline_projection,
+            "contribution_allocation": inputs.contribution_allocation,
+            "social_security_projection": inputs.social_security_projection,
+            "rmd_projection": inputs.rmd_projection,
+        }
+
+    @staticmethod
+    def _build_local_only_response(
+        *,
+        local_result: PlanningResponse,
+        local_projection_updates: dict[str, Any],
+    ) -> PlanningResponse:
+        return local_result.model_copy(update=local_projection_updates)
+
+    @staticmethod
+    def _build_degraded_local_response(
+        *,
+        local_result: PlanningResponse,
+        local_projection_updates: dict[str, Any],
+        fallback_method: str | None,
+        warning: str | None,
+    ) -> PlanningResponse:
+        return local_result.model_copy(
+            update={
+                **degraded_response_update(
+                    fallback_method=fallback_method,
+                    warning=warning,
+                ),
+                **local_projection_updates,
+            }
+        )
+
+    async def _run_sidecar_path(
+        self,
+        *,
+        local_result: PlanningResponse,
+        local_projection_updates: dict[str, Any],
+        request_payload: IgnidashScenarioRequestV1,
+    ) -> PlanningResponse:
         try:
-            response_payload = await self.sidecar_adapter.post_json(
-                path=self.sidecar_path,
-                request_payload=request_payload.model_dump(mode="json"),
-                request_model=IgnidashScenarioRequestV1,
-                response_model=IgnidashScenarioResponseV1,
-            )
-            scenarios = self._merge_sidecar_scenarios(
-                local_scenarios=local_result.scenarios,
-                sidecar_scenarios=response_payload.scenarios,
-            )
-            return PlanningResponse(
-                scenarios=scenarios,
-                monte_carlo=local_result.monte_carlo,
-                simulation=local_result.simulation,
-                engine="ignidash",
-                engine_status=response_payload.engine_status,
-                fallback_method=response_payload.fallback_method,
-                warnings=list(response_payload.warnings),
-                income_projection=income_projection,
-                expense_projection=expense_projection,
-                debt_projection=debt_projection,
-                timeline_projection=timeline_projection,
-                contribution_allocation=contribution_allocation,
-                social_security_projection=social_security_projection,
-                rmd_projection=rmd_projection,
+            response_payload = await self._request_sidecar_response(request_payload=request_payload)
+            return self._build_merged_sidecar_response(
+                local_result=local_result,
+                local_projection_updates=local_projection_updates,
+                response_payload=response_payload,
             )
         except SidecarAdapterError as exc:
             return local_result.model_copy(
@@ -305,7 +384,7 @@ class IgnidashScenarioService:
                         engine="local",
                         fallback_method="local_scenario_engine_fallback",
                         warning=sidecar_unavailable_warning(
-                            engine_label="Ignidash scenario",
+                            engine_label=IGNIDASH_SCENARIO_ENGINE_LABEL,
                             error=exc,
                         ),
                     ),
@@ -313,82 +392,80 @@ class IgnidashScenarioService:
                 }
             )
 
+    async def _request_sidecar_response(
+        self,
+        *,
+        request_payload: IgnidashScenarioRequestV1,
+    ) -> IgnidashScenarioResponseV1:
+        if self.sidecar_adapter is None:
+            raise SidecarAdapterError("Sidecar adapter is not configured")
+        return await self.sidecar_adapter.post_json(
+            path=self.sidecar_path,
+            request_payload=request_payload.model_dump(mode="json"),
+            request_model=IgnidashScenarioRequestV1,
+            response_model=IgnidashScenarioResponseV1,
+        )
+
+    def _build_merged_sidecar_response(
+        self,
+        *,
+        local_result: PlanningResponse,
+        local_projection_updates: dict[str, Any],
+        response_payload: IgnidashScenarioResponseV1,
+    ) -> PlanningResponse:
+        scenarios = self._merge_sidecar_scenarios(
+            local_scenarios=local_result.scenarios,
+            sidecar_scenarios=response_payload.scenarios,
+        )
+        return PlanningResponse(
+            scenarios=scenarios,
+            monte_carlo=local_result.monte_carlo,
+            simulation=local_result.simulation,
+            engine="ignidash",
+            engine_status=response_payload.engine_status,
+            fallback_method=response_payload.fallback_method,
+            warnings=list(response_payload.warnings),
+            **local_projection_updates,
+        )
+
     def _build_request_payload(
         self,
         *,
-        current_portfolio_value_usd: float,
-        annual_contribution_usd: float | None,
-        years: int | None,
-        hsa_extra_contribution_usd: float | None,
-        accounts: list[dict[str, Any]] | None,
-        income_projection: dict[str, Any] | None,
-        expense_projection: dict[str, Any] | None,
-        debt_projection: dict[str, Any] | None,
-        timeline_projection: dict[str, Any] | None,
-        contribution_allocation: dict[str, Any] | None,
-        social_security_projection: dict[str, Any] | None,
-        rmd_projection: dict[str, Any] | None,
-        assumption_set_id: str | None,
-        assumption_set_name: str | None,
-        filing_status: str | None,
-        state_tax_rate: float | None,
-        include_irmaa: bool,
-        roth_conversion_annual_amount_usd: float | None,
-        roth_conversion_start_age: int | None,
-        roth_conversion_end_age: int | None,
-        drawdown_order: str | list[str] | None,
-        household_mode: str | None,
-        household_partner_income_usd: float | None,
-        household_partner_income_growth_rate: float | None,
-        household_partner_retirement_age: int | None,
-        household_partner_social_security_annual_usd: float | None,
-        household_partner_social_security_claiming_age: int | None,
-        household_shared_goal_target_usd: float | None,
-        household_shared_goal_target_year: int | None,
-        household_shared_goal_annual_funding_usd: float | None,
-        household_partner_income_added_first_year_usd: float | None,
-        household_partner_income_added_total_usd: float | None,
-        start_year: int | None,
-        withdrawal_strategy: str | None,
-        retirement_age: int | None,
-        simulation_mode: str | None,
-        simulation_monte_carlo_variant: str | None,
-        simulation_historical_start_year: int | None,
-        simulation_seed: int | None,
+        inputs: _ScenarioRunInputs,
     ) -> IgnidashScenarioRequestV1:
-        resolved_years = int(self.scenario_engine.years_to_retirement if years is None else years)
+        resolved_years = int(self.scenario_engine.years_to_retirement if inputs.years is None else inputs.years)
         resolved_contribution = float(
             self.scenario_engine.annual_contribution_usd
-            if annual_contribution_usd is None
-            else annual_contribution_usd
+            if inputs.annual_contribution_usd is None
+            else inputs.annual_contribution_usd
         )
         resolved_hsa = float(
             self.scenario_engine.hsa_delta_default
-            if hsa_extra_contribution_usd is None
-            else hsa_extra_contribution_usd
+            if inputs.hsa_extra_contribution_usd is None
+            else inputs.hsa_extra_contribution_usd
         )
 
         first_year_income = 0.0
-        if income_projection:
-            first_year_income = float(income_projection.get("first_year_gross_income_usd") or 0.0)
+        if inputs.income_projection:
+            first_year_income = float(inputs.income_projection.get("first_year_gross_income_usd") or 0.0)
 
         first_year_expenses = 0.0
-        if expense_projection:
-            first_year_expenses = float(expense_projection.get("first_year_expenses_usd") or 0.0)
+        if inputs.expense_projection:
+            first_year_expenses = float(inputs.expense_projection.get("first_year_expenses_usd") or 0.0)
 
         first_year_debt_payments = 0.0
-        if debt_projection:
-            selected = debt_projection.get("selected_scenario")
+        if inputs.debt_projection:
+            selected = inputs.debt_projection.get("selected_scenario")
             if isinstance(selected, dict):
                 first_year_debt_payments = float(selected.get("first_year_payments_usd") or 0.0)
 
         timeline_income_impact = 0.0
         timeline_expense_impact = 0.0
         timeline_debt_impact = 0.0
-        if timeline_projection:
-            timeline_income_impact = float(timeline_projection.get("first_year_income_impact_usd") or 0.0)
-            timeline_expense_impact = float(timeline_projection.get("first_year_expense_impact_usd") or 0.0)
-            timeline_debt_impact = float(timeline_projection.get("first_year_debt_payment_impact_usd") or 0.0)
+        if inputs.timeline_projection:
+            timeline_income_impact = float(inputs.timeline_projection.get("first_year_income_impact_usd") or 0.0)
+            timeline_expense_impact = float(inputs.timeline_projection.get("first_year_expense_impact_usd") or 0.0)
+            timeline_debt_impact = float(inputs.timeline_projection.get("first_year_debt_payment_impact_usd") or 0.0)
 
         baseline_assumptions = {
             "annual_return_rate": float(self.scenario_engine.baseline_return),
@@ -439,90 +516,90 @@ class IgnidashScenarioService:
         ]
 
         mapped_accounts = self._map_accounts(
-            current_portfolio_value_usd=current_portfolio_value_usd,
+            current_portfolio_value_usd=inputs.current_portfolio_value_usd,
             annual_contribution_usd=resolved_contribution,
-            accounts=accounts,
+            accounts=inputs.accounts,
         )
 
         metadata: dict[str, Any] = {
             "source": "buildwealth_orchestrator",
             "annual_contribution_usd": resolved_contribution,
         }
-        if income_projection:
-            metadata["income_projection"] = income_projection
-        if expense_projection:
-            metadata["expense_projection"] = expense_projection
-        if debt_projection:
-            metadata["debt_projection"] = debt_projection
-        if timeline_projection:
-            metadata["timeline_projection"] = timeline_projection
-        if contribution_allocation:
-            metadata["contribution_allocation"] = contribution_allocation
-        if social_security_projection:
-            metadata["social_security_projection"] = social_security_projection
-        if rmd_projection:
-            metadata["rmd_projection"] = rmd_projection
-        if assumption_set_id:
-            metadata["assumption_set_id"] = str(assumption_set_id)
-        if assumption_set_name:
-            metadata["assumption_set_name"] = str(assumption_set_name)
-        if filing_status:
-            metadata["filing_status"] = filing_status
-        if state_tax_rate is not None:
-            metadata["state_tax_rate"] = float(state_tax_rate)
-        metadata["include_irmaa"] = bool(include_irmaa)
-        if roth_conversion_annual_amount_usd is not None:
-            metadata["roth_conversion_annual_amount_usd"] = float(roth_conversion_annual_amount_usd)
-        if roth_conversion_start_age is not None:
-            metadata["roth_conversion_start_age"] = int(roth_conversion_start_age)
-        if roth_conversion_end_age is not None:
-            metadata["roth_conversion_end_age"] = int(roth_conversion_end_age)
+        if inputs.income_projection:
+            metadata["income_projection"] = inputs.income_projection
+        if inputs.expense_projection:
+            metadata["expense_projection"] = inputs.expense_projection
+        if inputs.debt_projection:
+            metadata["debt_projection"] = inputs.debt_projection
+        if inputs.timeline_projection:
+            metadata["timeline_projection"] = inputs.timeline_projection
+        if inputs.contribution_allocation:
+            metadata["contribution_allocation"] = inputs.contribution_allocation
+        if inputs.social_security_projection:
+            metadata["social_security_projection"] = inputs.social_security_projection
+        if inputs.rmd_projection:
+            metadata["rmd_projection"] = inputs.rmd_projection
+        if inputs.assumption_set_id:
+            metadata["assumption_set_id"] = str(inputs.assumption_set_id)
+        if inputs.assumption_set_name:
+            metadata["assumption_set_name"] = str(inputs.assumption_set_name)
+        if inputs.filing_status:
+            metadata["filing_status"] = inputs.filing_status
+        if inputs.state_tax_rate is not None:
+            metadata["state_tax_rate"] = float(inputs.state_tax_rate)
+        metadata["include_irmaa"] = bool(inputs.include_irmaa)
+        if inputs.roth_conversion_annual_amount_usd is not None:
+            metadata["roth_conversion_annual_amount_usd"] = float(inputs.roth_conversion_annual_amount_usd)
+        if inputs.roth_conversion_start_age is not None:
+            metadata["roth_conversion_start_age"] = int(inputs.roth_conversion_start_age)
+        if inputs.roth_conversion_end_age is not None:
+            metadata["roth_conversion_end_age"] = int(inputs.roth_conversion_end_age)
         drawdown_order_text = (
-            ", ".join(str(item).strip() for item in drawdown_order if str(item).strip())
-            if isinstance(drawdown_order, list)
-            else str(drawdown_order or "").strip()
+            ", ".join(str(item).strip() for item in inputs.drawdown_order if str(item).strip())
+            if isinstance(inputs.drawdown_order, list)
+            else str(inputs.drawdown_order or "").strip()
         )
         if drawdown_order_text:
             metadata["drawdown_order"] = drawdown_order_text
-        if household_mode:
-            metadata["household_mode"] = str(household_mode).strip().lower()
-        if household_partner_income_usd is not None:
-            metadata["household_partner_income_usd"] = float(household_partner_income_usd)
-        if household_partner_income_growth_rate is not None:
-            metadata["household_partner_income_growth_rate"] = float(household_partner_income_growth_rate)
-        if household_partner_retirement_age is not None:
-            metadata["household_partner_retirement_age"] = int(household_partner_retirement_age)
-        if household_partner_social_security_annual_usd is not None:
-            metadata["household_partner_social_security_annual_usd"] = float(household_partner_social_security_annual_usd)
-        if household_partner_social_security_claiming_age is not None:
-            metadata["household_partner_social_security_claiming_age"] = int(household_partner_social_security_claiming_age)
-        if household_shared_goal_target_usd is not None:
-            metadata["household_shared_goal_target_usd"] = float(household_shared_goal_target_usd)
-        if household_shared_goal_target_year is not None:
-            metadata["household_shared_goal_target_year"] = int(household_shared_goal_target_year)
-        if household_shared_goal_annual_funding_usd is not None:
-            metadata["household_shared_goal_annual_funding_usd"] = float(household_shared_goal_annual_funding_usd)
-        if household_partner_income_added_first_year_usd is not None:
-            metadata["household_partner_income_added_first_year_usd"] = float(household_partner_income_added_first_year_usd)
-        if household_partner_income_added_total_usd is not None:
-            metadata["household_partner_income_added_total_usd"] = float(household_partner_income_added_total_usd)
-        if withdrawal_strategy:
-            metadata["withdrawal_strategy"] = withdrawal_strategy
-        if retirement_age is not None:
-            metadata["retirement_age"] = int(retirement_age)
-        if simulation_mode:
-            metadata["simulation_mode"] = str(simulation_mode).strip().lower()
-        if simulation_monte_carlo_variant:
-            metadata["simulation_monte_carlo_variant"] = str(simulation_monte_carlo_variant).strip().lower()
-        if simulation_historical_start_year is not None:
-            metadata["simulation_historical_start_year"] = int(simulation_historical_start_year)
-        if simulation_seed is not None:
-            metadata["simulation_seed"] = int(simulation_seed)
+        if inputs.household_mode:
+            metadata["household_mode"] = str(inputs.household_mode).strip().lower()
+        if inputs.household_partner_income_usd is not None:
+            metadata["household_partner_income_usd"] = float(inputs.household_partner_income_usd)
+        if inputs.household_partner_income_growth_rate is not None:
+            metadata["household_partner_income_growth_rate"] = float(inputs.household_partner_income_growth_rate)
+        if inputs.household_partner_retirement_age is not None:
+            metadata["household_partner_retirement_age"] = int(inputs.household_partner_retirement_age)
+        if inputs.household_partner_social_security_annual_usd is not None:
+            metadata["household_partner_social_security_annual_usd"] = float(inputs.household_partner_social_security_annual_usd)
+        if inputs.household_partner_social_security_claiming_age is not None:
+            metadata["household_partner_social_security_claiming_age"] = int(inputs.household_partner_social_security_claiming_age)
+        if inputs.household_shared_goal_target_usd is not None:
+            metadata["household_shared_goal_target_usd"] = float(inputs.household_shared_goal_target_usd)
+        if inputs.household_shared_goal_target_year is not None:
+            metadata["household_shared_goal_target_year"] = int(inputs.household_shared_goal_target_year)
+        if inputs.household_shared_goal_annual_funding_usd is not None:
+            metadata["household_shared_goal_annual_funding_usd"] = float(inputs.household_shared_goal_annual_funding_usd)
+        if inputs.household_partner_income_added_first_year_usd is not None:
+            metadata["household_partner_income_added_first_year_usd"] = float(inputs.household_partner_income_added_first_year_usd)
+        if inputs.household_partner_income_added_total_usd is not None:
+            metadata["household_partner_income_added_total_usd"] = float(inputs.household_partner_income_added_total_usd)
+        if inputs.withdrawal_strategy:
+            metadata["withdrawal_strategy"] = inputs.withdrawal_strategy
+        if inputs.retirement_age is not None:
+            metadata["retirement_age"] = int(inputs.retirement_age)
+        if inputs.simulation_mode:
+            metadata["simulation_mode"] = str(inputs.simulation_mode).strip().lower()
+        if inputs.simulation_monte_carlo_variant:
+            metadata["simulation_monte_carlo_variant"] = str(inputs.simulation_monte_carlo_variant).strip().lower()
+        if inputs.simulation_historical_start_year is not None:
+            metadata["simulation_historical_start_year"] = int(inputs.simulation_historical_start_year)
+        if inputs.simulation_seed is not None:
+            metadata["simulation_seed"] = int(inputs.simulation_seed)
 
         return IgnidashScenarioRequestV1(
             request_id=uuid4().hex,
             currency=self.currency,
-            start_year=start_year or datetime.now(timezone.utc).year,
+            start_year=inputs.start_year or datetime.now(timezone.utc).year,
             horizon_years=resolved_years,
             household={"current_age": 35, "retirement_age": 35 + resolved_years},
             accounts=mapped_accounts,

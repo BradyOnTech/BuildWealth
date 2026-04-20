@@ -10,6 +10,19 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-20 (Completed - Cross-Cutting Follow-up, Slice D Planning Sidecar Decomposition)
+1. Decomposed planning sidecar orchestration into focused internal helper boundaries in `planning_sidecar.py`:
+- added `_ScenarioRunInputs` dataclass to centralize run-time input state.
+- split local execution, local-envelope updates, sidecar request execution, sidecar merge envelope assembly, and degraded fallback assembly into dedicated helper methods.
+2. Kept public API/contracts unchanged:
+- `IgnidashScenarioService.run(...)` signature and response contract remain stable.
+- sidecar request/response schema models and metadata semantics remain unchanged.
+3. Added focused regression coverage for local-path projection payload preservation:
+- expanded `tests/test_planning_sidecar.py` with local-path projection payload assertions.
+4. Verification:
+- targeted: `pytest -q tests/test_planning_sidecar.py` (`8 passed`).
+- full: `pytest -q` (`476 passed`).
+
 ### 2026-04-15 (Completed - Cross-Cutting Follow-up, Slice B Frontend Field Schema Isolation)
 1. Isolated plan-setting schema metadata from runtime state:
 - added `web/lib/plan_setting_fields.js` as canonical plan-setting field/option registry.
@@ -792,9 +805,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Start Codebase Quality Follow-Up Slice D: decompose planning sidecar responsibilities into smaller internal helpers.
-2. Migrate FastAPI startup/shutdown hooks to lifespan handlers to clear deprecation warnings and preserve forward compatibility.
-3. Add schema-base clarity follow-up in `schemas.py` (document inheritance ownership and keep base depth flat).
+1. Start schema-base clarity follow-up in `schemas.py` (document inheritance ownership and keep base depth flat).
+2. Start neutral-extraction follow-up: replace untyped `dict[str, Any]` returns in `portfolio_metrics.py` with a typed contract.
+3. Audit timeline default value mirrors across schema/frontend/runtime so `timeline_defaults.py` remains the single source.
 
 ## Cross-Cutting Engineering Follow-Up
 1. Post-refactor helper indirection and intentional sidecar complexity are documented in [`docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`](./CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md).

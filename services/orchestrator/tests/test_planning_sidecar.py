@@ -59,6 +59,53 @@ def test_ignidash_sidecar_service_returns_local_when_adapter_missing() -> None:
     assert result.warnings == []
 
 
+def test_ignidash_sidecar_service_local_path_preserves_projection_payloads() -> None:
+    service = IgnidashScenarioService(
+        scenario_engine=_build_scenario_engine(),
+        sidecar_adapter=None,
+        sidecar_enabled=False,
+        sidecar_path="/v1/scenario/simulate",
+        currency="USD",
+    )
+
+    result = asyncio.run(
+        service.run(
+            current_portfolio_value_usd=100000,
+            income_projection={
+                "start_year": 2026,
+                "years": 30,
+                "default_annual_growth_rate": 0.03,
+                "income_items_count": 1,
+                "first_year_gross_income_usd": 125000,
+                "final_year_gross_income_usd": 280000,
+                "cumulative_gross_income_usd": 5800000,
+                "annualized_income_growth_rate": 0.028,
+                "yearly_points": [],
+                "warnings": [],
+            },
+            expense_projection={
+                "start_year": 2026,
+                "years": 30,
+                "default_inflation_rate": 0.03,
+                "expense_items_count": 2,
+                "first_year_expenses_usd": 64000,
+                "final_year_expenses_usd": 130000,
+                "cumulative_expenses_usd": 2400000,
+                "annualized_expense_growth_rate": 0.024,
+                "yearly_points": [],
+                "warnings": [],
+            },
+        )
+    )
+
+    assert result.engine == "local"
+    assert result.engine_status == "ok"
+    assert result.income_projection is not None
+    assert result.income_projection["first_year_gross_income_usd"] == 125000
+    assert result.expense_projection is not None
+    assert result.expense_projection["first_year_expenses_usd"] == 64000
+
+
 def test_ignidash_sidecar_service_merges_sidecar_response() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content.decode("utf-8"))

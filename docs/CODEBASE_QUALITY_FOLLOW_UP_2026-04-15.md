@@ -23,12 +23,12 @@ The tradeoff is that some shared helpers now sit one layer farther away from the
 - degraded responses
 - operator-facing engine health
 
-## Execution Status (2026-04-15)
+## Execution Status (2026-04-20)
 - Completed: Slice A (Shared Helper Cohesion)
 - Completed: Slice B (Frontend Field Schema Isolation)
 - Completed: Slice C (Engine Policy and Envelope Unification)
+- Completed: Slice D (Planning Sidecar Decomposition)
 - Completed: Slice E (Sidecar Matrix Test Hardening)
-- Pending: Slice D (Planning Sidecar Decomposition)
 
 ## Areas With New Indirection
 
@@ -210,6 +210,9 @@ Fix:
 3. Leave domain payload assembly in the feature services.
 
 ### 3. Separate Planning Sidecar Responsibilities
+Status:
+- Completed (2026-04-20, Slice D)
+
 Problem:
 - `planning_sidecar.py` still handles too many jobs in one class:
   - local execution
@@ -218,14 +221,14 @@ Problem:
   - degraded fallback
   - response merge
 
-Fix:
-1. Split into internal helpers:
+Result:
+1. Split into focused internal helpers:
    - local result builder
-   - sidecar request builder
-   - sidecar response merger
-   - degraded result builder
-2. Keep the external service API unchanged.
-3. Add matrix tests for the main execution states.
+   - local-only/degraded envelope builders
+   - sidecar request execution helper
+   - sidecar merge response helper
+2. Kept the external service API unchanged.
+3. Added local-path projection payload regression coverage.
 
 ### 4. Normalize Engine Metadata Vocabulary
 Problem:
@@ -279,7 +282,7 @@ Definition of done:
 - planning, benchmark, and attribution all use the same engine call policy helper
 - degraded metadata assembly is shared and typed
 
-### Slice D: Planning Sidecar Decomposition
+### Slice D: Planning Sidecar Decomposition (Completed 2026-04-20)
 Goal:
 - reduce the internal cognitive load of `planning_sidecar.py`
 
