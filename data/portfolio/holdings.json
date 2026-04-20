@@ -1,5 +1,5 @@
 {
-  "schema_version": 6,
+  "schema_version": 8,
   "holdings": {},
   "holdings_by_symbol": {},
   "account_cash": {},
@@ -44,6 +44,73 @@
     "total_return_pct": null,
     "return_denominator_usd": 0.0,
     "calculation_basis": "transaction_price_estimate"
+  },
+  "lot_audit": {
+    "schema_version": 1,
+    "events": [],
+    "events_truncated": false,
+    "max_events": 1500,
+    "generated_at": null
+  },
+  "corporate_actions": {
+    "schema_version": 1,
+    "events": [],
+    "events_truncated": false,
+    "max_events": 600,
+    "summary_by_symbol": {},
+    "generated_at": null
+  },
+  "risk_policy": {
+    "schema_version": 1,
+    "thresholds": {
+      "single_holding_max_pct": 25.0,
+      "top3_holdings_max_pct": 60.0,
+      "account_max_pct": 50.0,
+      "asset_class_max_pct": 82.0,
+      "sector_max_pct": 35.0,
+      "region_max_pct": 69.0,
+      "hhi_max": 0.2,
+      "effective_positions_min": 5.0
+    },
+    "updated_at": "2026-04-20T22:07:25.402270+00:00"
+  },
+  "risk_alerts": {
+    "schema_version": 1,
+    "generated_at": "2026-04-09T21:45:01.220905+00:00",
+    "status": "ok",
+    "breach_count": 0,
+    "watch_count": 0,
+    "high_count": 0,
+    "medium_count": 0,
+    "low_count": 0,
+    "thresholds": {
+      "single_holding_max_pct": 25.0,
+      "top3_holdings_max_pct": 60.0,
+      "account_max_pct": 50.0,
+      "asset_class_max_pct": 82.0,
+      "sector_max_pct": 35.0,
+      "region_max_pct": 69.0,
+      "hhi_max": 0.2,
+      "effective_positions_min": 5.0
+    },
+    "metrics": {
+      "total_market_value": 0,
+      "positions_count": 0,
+      "top_holding_symbol": null,
+      "top_holding_pct": null,
+      "top3_holdings_pct": null,
+      "herfindahl_index": null,
+      "effective_positions": null,
+      "largest_account_id": null,
+      "largest_account_pct": null,
+      "largest_asset_class": null,
+      "largest_asset_class_pct": null,
+      "largest_sector": null,
+      "largest_sector_pct": null,
+      "largest_region": null,
+      "largest_region_pct": null
+    },
+    "alerts": []
   },
   "total_cash": 0,
   "total_portfolio_value": 0.0,

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "thresholds": {
+    "single_holding_max_pct": 25.0,
+    "top3_holdings_max_pct": 60.0,
+    "account_max_pct": 50.0,
+    "asset_class_max_pct": 82.0,
+    "sector_max_pct": 35.0,
+    "region_max_pct": 69.0,
+    "hhi_max": 0.2,
+    "effective_positions_min": 5.0
+  },
+  "updated_at": "2026-04-20T22:07:25.402270+00:00"
+}
