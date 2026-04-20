@@ -2,7 +2,7 @@
 
 ## Date: 2026-04-10
 
-## Status (2026-04-15)
+## Status (2026-04-20)
 Historical implementation plan and progress log.
 
 For active roadmap sequencing and current priorities, use:
@@ -62,6 +62,17 @@ These decisions refine the build plan based on the current repository and upstre
 ---
 
 ## Progress Log
+
+### 2026-04-20 (Completed - Cross-Cutting Follow-up, Schema Base Clarity)
+- Added explicit internal shared-base section comments in `schemas.py` so ownership is visible at the model definition site.
+- Documented public inheritors above each internal base model:
+  - `_EngineContractResponseBase` -> benchmark/attribution response contracts
+  - `_PlanSettingsBase` -> persisted settings and update request contracts
+  - `_PlanScenarioComparisonRequestBase` -> scenario diff/strategy compare/branch request contracts
+- Added explicit one-layer inheritance guardrail comments on each internal base to keep schema inheritance depth flat.
+- Verification:
+  - style: `ruff check src/buildwealth_orchestrator/schemas.py` (`All checks passed`)
+  - full: `pytest -q` in `services/orchestrator` passes (`476 passed`).
 
 ### 2026-04-20 (Completed - Cross-Cutting Follow-up, Slice D Planning Sidecar Decomposition)
 - Decomposed `planning_sidecar.py` orchestration flow into focused internal helpers while keeping external contracts stable:

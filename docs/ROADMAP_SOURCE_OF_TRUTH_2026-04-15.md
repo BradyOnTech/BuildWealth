@@ -10,6 +10,20 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-20 (Completed - Cross-Cutting Follow-up, Schema Base Clarity)
+1. Added clearly marked internal shared-base sections in `schemas.py`:
+- `_EngineContractResponseBase` (engine response envelope)
+- `_PlanSettingsBase` (plan settings payload)
+- `_PlanScenarioComparisonRequestBase` (scenario comparison request payload)
+2. Documented inheritance ownership directly on each internal base model:
+- `_EngineContractResponseBase` -> `PortfolioBenchmarkResponse`, `PortfolioAttributionResponse`
+- `_PlanSettingsBase` -> `PlanSettings`, `PlanSettingsUpdateRequest`
+- `_PlanScenarioComparisonRequestBase` -> `PlanScenarioDiffRequest`, `PlanWithdrawalStrategyCompareRequest`, `PlanScenarioBranchRequest`
+3. Added explicit one-layer inheritance guardrail comments to keep base depth flat.
+4. Verification:
+- style: `ruff check src/buildwealth_orchestrator/schemas.py`
+- full: `pytest -q` (`476 passed`)
+
 ### 2026-04-20 (Completed - Cross-Cutting Follow-up, Slice D Planning Sidecar Decomposition)
 1. Decomposed planning sidecar orchestration into focused internal helper boundaries in `planning_sidecar.py`:
 - added `_ScenarioRunInputs` dataclass to centralize run-time input state.
@@ -805,9 +819,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Start schema-base clarity follow-up in `schemas.py` (document inheritance ownership and keep base depth flat).
-2. Start neutral-extraction follow-up: replace untyped `dict[str, Any]` returns in `portfolio_metrics.py` with a typed contract.
-3. Audit timeline default value mirrors across schema/frontend/runtime so `timeline_defaults.py` remains the single source.
+1. Start neutral-extraction follow-up: replace untyped `dict[str, Any]` returns in `portfolio_metrics.py` with a typed contract.
+2. Audit timeline default value mirrors across schema/frontend/runtime so `timeline_defaults.py` remains the single source.
+3. Evaluate moving neutral shared helpers into a clearly named shared domain area if helper count continues to grow.
 
 ## Cross-Cutting Engineering Follow-Up
 1. Post-refactor helper indirection and intentional sidecar complexity are documented in [`docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`](./CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md).

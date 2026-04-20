@@ -81,6 +81,9 @@ class EngineStatusResponse(BaseModel):
     engines: list[EngineStatusItem] = Field(default_factory=list)
 
 
+# Internal shared response envelopes.
+# Guardrail: keep inheritance depth to one internal base layer.
+# Public inheritors: PortfolioBenchmarkResponse, PortfolioAttributionResponse.
 class _EngineContractResponseBase(BaseModel):
     contract_version: Literal[1] = 1
     request_id: str
@@ -1619,6 +1622,9 @@ class PlanFiles(BaseModel):
     branch_templates_json: str = ""
 
 
+# Internal shared plan-settings payload.
+# Guardrail: keep inheritance depth to one internal base layer.
+# Public inheritors: PlanSettings, PlanSettingsUpdateRequest.
 class _PlanSettingsBase(BaseModel):
     annual_contribution_usd: float | None = None
     years: int | None = None
@@ -1658,6 +1664,10 @@ class PlanSettingsUpdateRequest(_PlanSettingsBase):
     pass
 
 
+# Internal shared scenario-comparison request fields.
+# Guardrail: keep inheritance depth to one internal base layer.
+# Public inheritors: PlanScenarioDiffRequest, PlanWithdrawalStrategyCompareRequest,
+# PlanScenarioBranchRequest.
 class _PlanScenarioComparisonRequestBase(BaseModel):
     current_portfolio_value_usd: float | None = None
     assumption_set_id: str | None = None

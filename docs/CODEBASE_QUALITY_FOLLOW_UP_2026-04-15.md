@@ -29,6 +29,7 @@ The tradeoff is that some shared helpers now sit one layer farther away from the
 - Completed: Slice C (Engine Policy and Envelope Unification)
 - Completed: Slice D (Planning Sidecar Decomposition)
 - Completed: Slice E (Sidecar Matrix Test Hardening)
+- Completed: Schema Base Clarity Follow-up
 
 ## Areas With New Indirection
 
@@ -130,6 +131,9 @@ Guardrails after split:
 3. Keep plan-setting wrappers explicit if generic component helpers evolve.
 
 ### 4. Shared Schema Base Classes
+Status:
+- Completed (2026-04-20, Schema Base Clarity Follow-up)
+
 Files:
 - `services/orchestrator/src/buildwealth_orchestrator/schemas.py`
 - `contracts/engine/v1/ghostfolio.*.json`
@@ -145,10 +149,15 @@ Why this is more indirect:
 - inheritance makes it harder to understand a final request/response shape by reading one class in isolation
 - `schemas.py` is continuing to accumulate multiple domains in one file
 
-How to fix it:
-1. Keep the shared bases, but move them into clearly marked sections or a dedicated `schemas_shared.py` only if the main file keeps growing.
-2. Add short comments above internal base models stating which public models inherit from them.
-3. Avoid further inheritance depth. One shared base layer is enough.
+What changed in follow-up:
+1. Added clearly marked section comments above internal shared schema bases in `schemas.py`.
+2. Added short comments above each internal base model listing the public inheritors.
+3. Added explicit one-layer inheritance guardrail comments to keep base depth flat.
+
+Ongoing guardrails:
+1. Keep shared bases in clearly marked sections, and move to `schemas_shared.py` only if `schemas.py` keeps growing materially.
+2. Keep inheritor comments in sync when public models are added or removed.
+3. Avoid additional inheritance depth. One shared base layer is enough.
 
 ## Intentional Complexity That Should Not Be Deleted
 
@@ -296,6 +305,14 @@ Goal:
 
 Definition of done:
 - each engine path has explicit degraded-mode and success-path matrix coverage
+
+### Slice F: Schema Base Clarity (Completed 2026-04-20)
+Goal:
+- make shared schema inheritance ownership explicit at the definition site
+
+Definition of done:
+- each internal schema base lists its public inheritors
+- inheritance-depth guardrail is documented directly in `schemas.py`
 
 ## Guardrail
 The right fix is to isolate complexity, not pretend it does not exist.
