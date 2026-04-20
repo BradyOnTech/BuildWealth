@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TypedDict, cast
+from typing import TypedDict
 
 from buildwealth_orchestrator.schemas import ChatResponse, PortfolioSnapshot
 from buildwealth_orchestrator.services.portfolio_metrics import concentration_metrics
@@ -8,19 +8,6 @@ from buildwealth_orchestrator.services.portfolio_metrics import concentration_me
 
 def _format_currency(value: float) -> str:
     return f"${value:,.0f}"
-
-
-class ConcentrationPosition(TypedDict):
-    symbol: str | None
-    name: str | None
-    weight: float
-    value_usd: float
-
-
-class ConcentrationMetrics(TypedDict):
-    top_positions: list[ConcentrationPosition]
-    herfindahl_index: float
-    effective_number_of_positions: float
 
 
 class PlanningScenario(TypedDict, total=False):
@@ -48,7 +35,7 @@ class Coordinator:
     ) -> ChatResponse:
         q = question.lower()
         holdings_dicts = [holding.model_dump(mode="python") for holding in snapshot.holdings]
-        concentration = cast(ConcentrationMetrics, concentration_metrics(holdings_dicts))
+        concentration = concentration_metrics(holdings_dicts)
 
         if any(token in q for token in ["allocation", "concentration", "portfolio", "holdings"]):
             top = concentration["top_positions"][:5]

@@ -158,6 +158,14 @@ from buildwealth_orchestrator.services.scenario_engine import (
     STRATEGY_ALIASES,
     ScenarioEngine,
 )
+from buildwealth_orchestrator.services.timeline_defaults import (
+    TIMELINE_DEFAULT_IMPACT_BY_EVENT,
+    TIMELINE_EVENT_TYPES,
+    TIMELINE_EVENT_TYPE_VALUES,
+    TIMELINE_FREQUENCIES,
+    TIMELINE_IMPACT_TYPES,
+    TIMELINE_IMPACT_TYPE_VALUES,
+)
 from buildwealth_orchestrator.services.snapshot_store import (
     SnapshotStore,
 )
@@ -2645,16 +2653,20 @@ def normalize_branch_events_payload(
             continue
 
         event_type = str(raw.get("event_type") or "milestone").strip().lower()
-        if event_type not in {"purchase", "windfall", "job_change", "retirement", "milestone"}:
+        if event_type not in TIMELINE_EVENT_TYPES:
             event_type = "milestone"
 
-        impact_type = str(raw.get("impact_type") or "expense").strip().lower()
-        if impact_type not in {"income", "expense", "portfolio", "contribution", "debt_payment"}:
-            impact_type = "expense"
+        impact_type = str(raw.get("impact_type") or "").strip().lower()
+        if not impact_type:
+            impact_type = TIMELINE_DEFAULT_IMPACT_BY_EVENT.get(event_type, "portfolio")
+        if impact_type not in TIMELINE_IMPACT_TYPES:
+            impact_type = TIMELINE_DEFAULT_IMPACT_BY_EVENT.get(event_type, "portfolio")
+        if impact_type not in TIMELINE_IMPACT_TYPES:
+            impact_type = "portfolio"
 
-        recurring_frequency = str(raw.get("recurring_frequency") or "yearly").strip().lower()
-        if recurring_frequency not in {"one_time", "monthly", "yearly"}:
-            recurring_frequency = "yearly"
+        recurring_frequency = str(raw.get("recurring_frequency") or "one_time").strip().lower()
+        if recurring_frequency not in TIMELINE_FREQUENCIES:
+            recurring_frequency = "one_time"
 
         amount_usd = _coerce_float(raw.get("amount_usd"), 0.0)
         if amount_usd == 0:
@@ -8350,23 +8362,20 @@ async def tool_add_timeline_event(arguments: dict[str, object]) -> dict[str, obj
         raise ValueError("label is required.")
 
     event_type = str(arguments.get("event_type") or "milestone").strip().lower() or "milestone"
-    if event_type not in {"purchase", "windfall", "job_change", "retirement", "milestone"}:
-        raise ValueError("event_type must be one of: purchase, windfall, job_change, retirement, milestone")
+    if event_type not in TIMELINE_EVENT_TYPES:
+        allowed_event_types = ", ".join(TIMELINE_EVENT_TYPE_VALUES)
+        raise ValueError(f"event_type must be one of: {allowed_event_types}")
 
     impact_type_raw = str(arguments.get("impact_type") or "").strip().lower()
-    impact_type = impact_type_raw or {
-        "purchase": "expense",
-        "windfall": "income",
-        "job_change": "income",
-        "retirement": "contribution",
-        "milestone": "portfolio",
-    }.get(event_type, "portfolio")
-    if impact_type not in {"income", "expense", "portfolio", "contribution", "debt_payment"}:
-        raise ValueError("impact_type must be one of: income, expense, portfolio, contribution, debt_payment")
+    impact_type = impact_type_raw or TIMELINE_DEFAULT_IMPACT_BY_EVENT.get(event_type, "portfolio")
+    if impact_type not in TIMELINE_IMPACT_TYPES:
+        allowed_impact_types = ", ".join(TIMELINE_IMPACT_TYPE_VALUES)
+        raise ValueError(f"impact_type must be one of: {allowed_impact_types}")
 
     recurring_frequency = str(arguments.get("recurring_frequency") or "one_time").strip().lower() or "one_time"
-    if recurring_frequency not in {"one_time", "monthly", "yearly"}:
-        raise ValueError("recurring_frequency must be one of: one_time, monthly, yearly")
+    if recurring_frequency not in TIMELINE_FREQUENCIES:
+        allowed_frequencies = ", ".join(sorted(TIMELINE_FREQUENCIES))
+        raise ValueError(f"recurring_frequency must be one of: {allowed_frequencies}")
 
     timeline_payload = plan_workspace.get_plan_timeline(plan_id)
     existing_events_raw = timeline_payload.get("events")
@@ -10099,7 +10108,7 @@ def configure_copilot_tools() -> None:
                             "account_id": {"type": "string"},
                             "notes": {"type": "string"},
                         },
-                        "required": ["label", "impact_type", "amount_usd"],
+                        "required": ["label", "amount_usd"],
                         "additionalProperties": False,
                     },
                 },

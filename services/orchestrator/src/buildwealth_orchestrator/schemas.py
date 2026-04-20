@@ -5,6 +5,13 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from buildwealth_orchestrator.services.timeline_defaults import (
+    TIMELINE_DEFAULT_IMPACT_BY_EVENT,
+    TIMELINE_EVENT_TYPE_VALUES,
+    TIMELINE_FREQUENCY_VALUES,
+    TIMELINE_IMPACT_TYPE_VALUES,
+)
+
 
 class Holding(BaseModel):
     symbol: str
@@ -1444,23 +1451,19 @@ class CopilotConversationResponse(BaseModel):
     messages: list[dict[str, Any]] = Field(default_factory=list)
 
 
-TIMELINE_DEFAULT_IMPACT_BY_EVENT: dict[str, str] = {
-    "purchase": "expense",
-    "windfall": "income",
-    "job_change": "income",
-    "retirement": "contribution",
-    "milestone": "portfolio",
-}
+TimelineEventType = Literal[*TIMELINE_EVENT_TYPE_VALUES]
+TimelineImpactType = Literal[*TIMELINE_IMPACT_TYPE_VALUES]
+TimelineFrequency = Literal[*TIMELINE_FREQUENCY_VALUES]
 
 
 class PlanTimelineEvent(BaseModel):
     id: str = ""
     date: date
     label: str
-    event_type: Literal["purchase", "windfall", "job_change", "retirement", "milestone"] = "milestone"
-    impact_type: Literal["income", "expense", "portfolio", "contribution", "debt_payment"] | None = None
+    event_type: TimelineEventType = "milestone"
+    impact_type: TimelineImpactType | None = None
     amount_usd: float = 0.0
-    recurring_frequency: Literal["one_time", "monthly", "yearly"] = "one_time"
+    recurring_frequency: TimelineFrequency = "one_time"
     end_date: date | None = None
     account_id: str | None = None
     notes: str = ""
@@ -1745,14 +1748,20 @@ class PlanWithdrawalStrategyCompareResponse(BaseModel):
 
 class PlanScenarioBranchEvent(BaseModel):
     label: str
-    event_type: Literal["purchase", "windfall", "job_change", "retirement", "milestone"] = "milestone"
-    impact_type: Literal["income", "expense", "portfolio", "contribution", "debt_payment"] = "expense"
+    event_type: TimelineEventType = "milestone"
+    impact_type: TimelineImpactType | None = None
     amount_usd: float
-    recurring_frequency: Literal["one_time", "monthly", "yearly"] = "yearly"
+    recurring_frequency: TimelineFrequency = "one_time"
     start_year_offset: int = Field(default=0, ge=0, le=80)
     duration_months: int | None = Field(default=None, ge=1, le=960)
     account_id: str | None = None
     notes: str = ""
+
+    @model_validator(mode="after")
+    def _apply_default_impact_type(self) -> "PlanScenarioBranchEvent":
+        if self.impact_type is None:
+            self.impact_type = TIMELINE_DEFAULT_IMPACT_BY_EVENT.get(self.event_type, "portfolio")
+        return self
 
 
 class PlanScenarioBranchRequest(_PlanScenarioComparisonRequestBase):

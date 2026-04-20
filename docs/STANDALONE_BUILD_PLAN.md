@@ -63,6 +63,40 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-20 (Completed - Cross-Cutting Follow-up, Timeline Defaults Mirror Audit + Drift Harness)
+- Consolidated timeline default vocab into canonical backend source:
+  - `services/timeline_defaults.py` now carries ordered value tuples + set views for event types, impact types, and frequencies.
+- Removed backend timeline default drift across schema/runtime validation call sites:
+  - updated `schemas.py`
+  - updated `plan_workspace.py`
+  - updated `main.py`
+- Added dedicated frontend mirror module and rewired plan editor usage:
+  - added `web/lib/timeline_defaults.js`
+  - updated `web/views/plan-editor.js`
+- Added drift-test harness:
+  - `tests/test_timeline_defaults_mirror.py` compares runtime defaults against schema literals and frontend mirror constants.
+  - expanded `tests/test_plan_scenario_branching.py` to assert default-field application in branch-event normalization.
+- Verification:
+  - style: `ruff check` on touched python modules/tests (`All checks passed`)
+  - targeted: `pytest -q tests/test_portfolio_metrics.py tests/test_coordinator.py tests/test_workflow_runner.py tests/test_today_dashboard.py tests/test_timeline_defaults_mirror.py tests/test_plan_scenario_branching.py tests/test_plan_workspace.py tests/test_copilot_tool_updates.py tests/test_timeline_projection.py` (`69 passed`)
+  - full: `pytest -q` in `services/orchestrator` passes (`482 passed`).
+
+### 2026-04-20 (Completed - Cross-Cutting Follow-up, Typed Portfolio Metrics Contract)
+- Added shared typed concentration contracts in `services/portfolio_metrics.py`:
+  - `ConcentrationPosition`
+  - `ConcentrationMetrics`
+- Updated `concentration_metrics(...)` to return the typed contract directly instead of `dict[str, Any]`.
+- Removed duplicated concentration `TypedDict` definitions and casts in:
+  - `services/coordinator.py`
+  - `services/workflow_runner.py`
+- Updated `services/today_dashboard.py` to consume typed concentration fields directly.
+- Added focused test coverage:
+  - `tests/test_portfolio_metrics.py`
+- Verification:
+  - style: `ruff check` across touched service modules + new test (`All checks passed`)
+  - targeted: `pytest -q tests/test_portfolio_metrics.py tests/test_coordinator.py tests/test_workflow_runner.py tests/test_today_dashboard.py` (`13 passed`)
+  - full: `pytest -q` in `services/orchestrator` passes (`479 passed`).
+
 ### 2026-04-20 (Completed - Cross-Cutting Follow-up, Schema Base Clarity)
 - Added explicit internal shared-base section comments in `schemas.py` so ownership is visible at the model definition site.
 - Documented public inheritors above each internal base model:

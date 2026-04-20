@@ -76,6 +76,25 @@ def test_build_branch_timeline_payload_appends_base_and_branch_events() -> None:
     assert branch_timeline["retirement"]["target_retirement_age"] == 60
 
 
+def test_normalize_branch_events_payload_applies_timeline_default_fields() -> None:
+    events = normalize_branch_events_payload(
+        raw_branch_events=[
+            {
+                "label": "Retire",
+                "event_type": "retirement",
+                "amount_usd": 12000,
+                "start_year_offset": 0,
+            }
+        ],
+        start_year=2026,
+    )
+
+    assert len(events) == 1
+    event = events[0]
+    assert event["impact_type"] == "contribution"
+    assert event["recurring_frequency"] == "one_time"
+
+
 def test_parse_branch_templates_payload_normalizes_and_filters_empty_templates() -> None:
     payload = parse_branch_templates_payload(
         {

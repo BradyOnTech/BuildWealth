@@ -8,6 +8,12 @@ import {
   SIMULATION_MODE_OPTIONS,
   SIMULATION_MONTE_CARLO_VARIANT_OPTIONS,
 } from '../lib/plan_setting_fields.js';
+import {
+  TIMELINE_EVENT_TYPES as TIMELINE_EVENT_TYPE_VALUES,
+  TIMELINE_IMPACT_TYPES as TIMELINE_IMPACT_TYPE_VALUES,
+  TIMELINE_FREQUENCIES as TIMELINE_FREQUENCY_VALUES,
+  TIMELINE_DEFAULT_IMPACT_BY_EVENT,
+} from '../lib/timeline_defaults.js';
 import { byId, fmtCurrency, fmtDate, writeLog } from '../lib/utils.js';
 import { collectPlanSettingsPayload, setPlanSettingsInputs } from '../lib/components.js';
 
@@ -46,20 +52,13 @@ const projectionState = {
   profileLoading: false,
 };
 
-const TIMELINE_EVENT_TYPES = new Set(['purchase', 'windfall', 'job_change', 'retirement', 'milestone']);
-const TIMELINE_IMPACT_TYPES = new Set(['income', 'expense', 'portfolio', 'contribution', 'debt_payment']);
-const TIMELINE_FREQUENCIES = new Set(['one_time', 'monthly', 'yearly']);
+const TIMELINE_EVENT_TYPES = new Set(TIMELINE_EVENT_TYPE_VALUES);
+const TIMELINE_IMPACT_TYPES = new Set(TIMELINE_IMPACT_TYPE_VALUES);
+const TIMELINE_FREQUENCIES = new Set(TIMELINE_FREQUENCY_VALUES);
 const HOUSEHOLD_MODES = new Set(HOUSEHOLD_MODE_OPTIONS.map(option => option.value));
 const FILING_STATUSES = new Set(FILING_STATUS_OPTIONS.map(option => option.value));
 const SIMULATION_MODES = new Set(SIMULATION_MODE_OPTIONS.map(option => option.value));
 const SIMULATION_MONTE_CARLO_VARIANTS = new Set(SIMULATION_MONTE_CARLO_VARIANT_OPTIONS.map(option => option.value));
-const TIMELINE_DEFAULT_IMPACT_BY_EVENT = {
-  purchase: 'expense',
-  windfall: 'income',
-  job_change: 'income',
-  retirement: 'contribution',
-  milestone: 'portfolio',
-};
 const CONTRIBUTION_AMOUNT_TYPES = new Set(['dollarAmount', 'percentRemaining', 'unlimited']);
 
 function makeEditorId(prefix) {

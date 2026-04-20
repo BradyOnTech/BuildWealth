@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import datetime, timezone
-from typing import TypedDict, cast
+from typing import TypedDict
 
 from buildwealth_orchestrator.schemas import PlanningResponse, PortfolioSnapshot
 from buildwealth_orchestrator.services.portfolio_metrics import concentration_metrics
@@ -26,19 +26,6 @@ class WorkflowResult(TypedDict):
     generated_at: str
     data: dict[str, object]
     report_markdown: str
-
-
-class ConcentrationPosition(TypedDict):
-    symbol: str | None
-    name: str | None
-    weight: float
-    value_usd: float
-
-
-class ConcentrationMetrics(TypedDict):
-    top_positions: list[ConcentrationPosition]
-    herfindahl_index: float
-    effective_number_of_positions: float
 
 
 class ContributionRun(TypedDict):
@@ -156,7 +143,7 @@ class WorkflowRunner:
         max_top3 = float(params.get("max_top3_percent", 60.0))
 
         holding_payloads = [holding.model_dump(mode="python") for holding in snapshot.holdings]
-        metrics = cast(ConcentrationMetrics, concentration_metrics(holding_payloads))
+        metrics = concentration_metrics(holding_payloads)
         top_positions = metrics["top_positions"]
 
         top1_pct = self._round(float(top_positions[0]["weight"]) * 100) if top_positions else 0.0
@@ -216,10 +203,11 @@ class WorkflowRunner:
 
         if top_positions:
             for position in top_positions[:8]:
-                weight_pct = float(position.get("weight", 0.0)) * 100
+                weight_pct = float(position["weight"]) * 100
+                position_symbol = position["symbol"] or "UNKNOWN"
                 report_lines.append(
-                    f"- {position.get('symbol', 'UNKNOWN')}: {weight_pct:.2f}% "
-                    f"(${float(position.get('value_usd', 0.0)):,.2f})"
+                    f"- {position_symbol}: {weight_pct:.2f}% "
+                    f"(${float(position['value_usd']):,.2f})"
                 )
         else:
             report_lines.append("- No holdings available.")

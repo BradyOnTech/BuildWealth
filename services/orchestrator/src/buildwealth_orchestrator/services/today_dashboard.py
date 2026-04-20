@@ -300,15 +300,12 @@ def build_today_dashboard_payload(
                 for item in latest_snapshot.holdings
             ]
         )
-        top_positions = metrics.get("top_positions", [])
-        if top_positions and isinstance(top_positions, list):
+        top_positions = metrics["top_positions"]
+        if top_positions:
             first = top_positions[0]
-            try:
-                top_weight = float(first.get("weight", 0.0)) * 100
-                top_holding_percent = round(top_weight, 2)
-                top_holding_symbol = str(first.get("symbol") or top_holding_symbol or "")
-            except Exception:
-                pass
+            top_weight = float(first["weight"]) * 100
+            top_holding_percent = round(top_weight, 2)
+            top_holding_symbol = first["symbol"] or top_holding_symbol
 
     concentration_risk = _concentration_risk(top_holding_percent)
 

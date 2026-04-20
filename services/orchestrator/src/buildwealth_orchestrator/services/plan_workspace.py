@@ -15,6 +15,9 @@ from buildwealth_orchestrator.services.scenario_engine import (
 )
 from buildwealth_orchestrator.services.timeline_defaults import (
     TIMELINE_DEFAULT_IMPACT_BY_EVENT,
+    TIMELINE_EVENT_TYPES,
+    TIMELINE_FREQUENCIES,
+    TIMELINE_IMPACT_TYPES,
 )
 
 PLAN_WORKSPACE_SCHEMA_VERSION = 2
@@ -517,18 +520,18 @@ class PlanWorkspace:
                 raise ValueError(f"timeline.events[{index}].date must be YYYY-MM-DD")
 
             event_type = str(raw.get("event_type") or "milestone").strip().lower()
-            if event_type not in {"purchase", "windfall", "job_change", "retirement", "milestone"}:
+            if event_type not in TIMELINE_EVENT_TYPES:
                 raise ValueError(f"timeline.events[{index}].event_type is invalid")
 
             impact_raw = raw.get("impact_type")
             impact_type = str(impact_raw).strip().lower() if impact_raw is not None else ""
             if not impact_type:
                 impact_type = TIMELINE_DEFAULT_IMPACT_BY_EVENT.get(event_type, "portfolio")
-            if impact_type not in {"income", "expense", "portfolio", "contribution", "debt_payment"}:
+            if impact_type not in TIMELINE_IMPACT_TYPES:
                 raise ValueError(f"timeline.events[{index}].impact_type is invalid")
 
             recurring_frequency = str(raw.get("recurring_frequency") or "one_time").strip().lower()
-            if recurring_frequency not in {"one_time", "monthly", "yearly"}:
+            if recurring_frequency not in TIMELINE_FREQUENCIES:
                 raise ValueError(f"timeline.events[{index}].recurring_frequency is invalid")
 
             try:
@@ -1021,7 +1024,7 @@ class PlanWorkspace:
             )
 
         event_type = str(raw.get("event_type") or "milestone").strip().lower()
-        if event_type not in {"purchase", "windfall", "job_change", "retirement", "milestone"}:
+        if event_type not in TIMELINE_EVENT_TYPES:
             raise ValueError(
                 f"branch_templates.templates[{template_index}].branch_events[{event_index}].event_type is invalid"
             )
@@ -1030,13 +1033,13 @@ class PlanWorkspace:
         impact_type = str(impact_raw).strip().lower() if impact_raw is not None else ""
         if not impact_type:
             impact_type = TIMELINE_DEFAULT_IMPACT_BY_EVENT.get(event_type, "portfolio")
-        if impact_type not in {"income", "expense", "portfolio", "contribution", "debt_payment"}:
+        if impact_type not in TIMELINE_IMPACT_TYPES:
             raise ValueError(
                 f"branch_templates.templates[{template_index}].branch_events[{event_index}].impact_type is invalid"
             )
 
         recurring_frequency = str(raw.get("recurring_frequency") or "one_time").strip().lower()
-        if recurring_frequency not in {"one_time", "monthly", "yearly"}:
+        if recurring_frequency not in TIMELINE_FREQUENCIES:
             raise ValueError(
                 f"branch_templates.templates[{template_index}].branch_events[{event_index}].recurring_frequency is invalid"
             )

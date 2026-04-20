@@ -30,6 +30,8 @@ The tradeoff is that some shared helpers now sit one layer farther away from the
 - Completed: Slice D (Planning Sidecar Decomposition)
 - Completed: Slice E (Sidecar Matrix Test Hardening)
 - Completed: Schema Base Clarity Follow-up
+- Completed: Typed Portfolio Metrics Contract Follow-up
+- Completed: Timeline Defaults Mirror Audit + Drift Harness
 
 ## Areas With New Indirection
 
@@ -70,6 +72,10 @@ Guardrails after split:
 3. If a helper is only used by one service later, move it back to that service.
 
 ### 2. Neutral Extraction From Feature Modules
+Status:
+- Partially completed (2026-04-20): typed `portfolio_metrics.py` contract follow-up and timeline-default mirror audit completed.
+- Remaining: neutral-shared-module placement decision.
+
 Files:
 - `services/orchestrator/src/buildwealth_orchestrator/services/portfolio_metrics.py`
 - `services/orchestrator/src/buildwealth_orchestrator/services/research.py`
@@ -92,12 +98,18 @@ Why this is more indirect:
 - the new modules are neutral but still small, so a reader has to jump files to understand simple logic
 - `timeline_defaults.py` is canonical for the runtime services, but related value sets can still drift in other files if they are duplicated later
 
-How to fix it:
+What changed in follow-up:
+1. Replaced untyped `dict[str, Any]` concentration returns in `portfolio_metrics.py` with shared typed contracts (`ConcentrationPosition`, `ConcentrationMetrics`).
+2. Updated coordinator/workflow/dashboard call sites to consume the typed contract directly.
+3. Added focused concentration metric coverage in `tests/test_portfolio_metrics.py`.
+4. Consolidated timeline default enums/default-map usage in schema/runtime call sites to use `timeline_defaults.py`.
+5. Added frontend mirror module `web/lib/timeline_defaults.js`.
+6. Added drift checks in `tests/test_timeline_defaults_mirror.py` plus branch default coverage in `tests/test_plan_scenario_branching.py`.
+
+Remaining follow-up:
 1. Group these modules under a clearly named shared domain area if more helpers accumulate.
    - recommended direction: `services/shared/portfolio_metrics.py` and `services/shared/timeline_defaults.py`
-2. Replace untyped `dict[str, Any]` returns in `portfolio_metrics.py` with a typed response object or `TypedDict`.
-3. Audit `schemas.py` and any frontend enum/value mirrors so timeline defaults stay single-source.
-4. Do not create a generic dumping ground. If the shared area grows beyond a handful of focused helpers, split by domain.
+2. Do not create a generic dumping ground. If the shared area grows beyond a handful of focused helpers, split by domain.
 
 ### 3. Frontend Plan-Setting Registry Centralization
 Status:
@@ -313,6 +325,22 @@ Goal:
 Definition of done:
 - each internal schema base lists its public inheritors
 - inheritance-depth guardrail is documented directly in `schemas.py`
+
+### Slice G: Typed Portfolio Metrics Contract (Completed 2026-04-20)
+Goal:
+- replace untyped concentration metrics payloads with a shared typed contract
+
+Definition of done:
+- `portfolio_metrics.py` returns `ConcentrationMetrics` typed payload
+- coordinator/workflow/dashboard concentration call sites no longer need local concentration type clones or casts
+
+### Slice H: Timeline Defaults Mirror Audit + Drift Harness (Completed 2026-04-20)
+Goal:
+- keep timeline default values single-source across runtime/schema/frontend
+
+Definition of done:
+- timeline default vocab is centralized in `timeline_defaults.py` for backend call sites
+- frontend mirror module and test harness catch drift against backend defaults
 
 ## Guardrail
 The right fix is to isolate complexity, not pretend it does not exist.

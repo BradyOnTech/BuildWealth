@@ -10,6 +10,41 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-20 (Completed - Cross-Cutting Follow-up, Timeline Defaults Mirror Audit + Drift Harness)
+1. Consolidated backend timeline default vocab into canonical `timeline_defaults.py`:
+- added ordered value tuples plus set views for event types, impact types, and frequencies.
+- migrated schema/runtime validators to shared defaults in `schemas.py`, `plan_workspace.py`, and `main.py`.
+2. Standardized branch/timeline default behavior on shared defaults:
+- branch event normalization now defaults missing `impact_type` via event-map defaults.
+- branch event normalization now defaults missing `recurring_frequency` to `one_time`.
+3. Isolated frontend timeline defaults into dedicated mirror module:
+- added `web/lib/timeline_defaults.js`.
+- updated `web/views/plan-editor.js` to consume timeline defaults from the shared frontend module.
+4. Added drift-test harness for runtime/schema/frontend mirror alignment:
+- new `tests/test_timeline_defaults_mirror.py` compares:
+  - runtime defaults vs schema literal contracts.
+  - runtime defaults vs frontend mirror constants (via Node ESM import).
+- expanded branch normalization coverage in `tests/test_plan_scenario_branching.py` for default-field application.
+5. Verification:
+- style: `ruff check` on touched python modules/tests (`All checks passed`).
+- targeted: `pytest -q tests/test_portfolio_metrics.py tests/test_coordinator.py tests/test_workflow_runner.py tests/test_today_dashboard.py tests/test_timeline_defaults_mirror.py tests/test_plan_scenario_branching.py tests/test_plan_workspace.py tests/test_copilot_tool_updates.py tests/test_timeline_projection.py` (`69 passed`).
+- full: `pytest -q` (`482 passed`).
+
+### 2026-04-20 (Completed - Cross-Cutting Follow-up, Typed Portfolio Metrics Contract)
+1. Replaced untyped concentration return payloads with explicit shared typed contracts in `portfolio_metrics.py`:
+- added `ConcentrationPosition` and `ConcentrationMetrics` `TypedDict` contracts.
+- updated `concentration_metrics(...)` to return `ConcentrationMetrics` directly.
+2. Removed duplicated concentration type definitions/casts from downstream services:
+- `coordinator.py` now consumes typed concentration results directly.
+- `workflow_runner.py` now consumes typed concentration results directly.
+- `today_dashboard.py` now reads typed concentration fields directly.
+3. Added focused concentration-metrics regression tests:
+- new `tests/test_portfolio_metrics.py` covering empty payloads, numeric coercion/order, and top-10 truncation behavior.
+4. Verification:
+- style: `ruff check .../portfolio_metrics.py .../coordinator.py .../workflow_runner.py .../today_dashboard.py tests/test_portfolio_metrics.py`
+- targeted: `pytest -q tests/test_portfolio_metrics.py tests/test_coordinator.py tests/test_workflow_runner.py tests/test_today_dashboard.py` (`13 passed`)
+- full: `pytest -q` (`479 passed`)
+
 ### 2026-04-20 (Completed - Cross-Cutting Follow-up, Schema Base Clarity)
 1. Added clearly marked internal shared-base sections in `schemas.py`:
 - `_EngineContractResponseBase` (engine response envelope)
@@ -819,9 +854,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Start neutral-extraction follow-up: replace untyped `dict[str, Any]` returns in `portfolio_metrics.py` with a typed contract.
-2. Audit timeline default value mirrors across schema/frontend/runtime so `timeline_defaults.py` remains the single source.
-3. Evaluate moving neutral shared helpers into a clearly named shared domain area if helper count continues to grow.
+1. Evaluate moving neutral shared helpers into a clearly named shared domain area if helper count continues to grow.
+2. Define and apply lightweight move criteria for `portfolio_metrics.py` and `timeline_defaults.py` (when to keep local vs move under `services/shared/`).
+3. Keep timeline-default drift checks in the default test workflow and extend the harness if new timeline enums/default maps are added.
 
 ## Cross-Cutting Engineering Follow-Up
 1. Post-refactor helper indirection and intentional sidecar complexity are documented in [`docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`](./CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md).
