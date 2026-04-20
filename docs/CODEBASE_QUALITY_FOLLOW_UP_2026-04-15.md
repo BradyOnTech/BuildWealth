@@ -32,6 +32,9 @@ The tradeoff is that some shared helpers now sit one layer farther away from the
 - Completed: Schema Base Clarity Follow-up
 - Completed: Typed Portfolio Metrics Contract Follow-up
 - Completed: Timeline Defaults Mirror Audit + Drift Harness
+- Completed: Shared Helper Placement Criteria + Applied Decision
+- Completed: Default-Workflow Timeline Drift Harness Enforcement
+- Completed: Neutral Helper Placement Threshold Guardrail
 
 ## Areas With New Indirection
 
@@ -73,8 +76,7 @@ Guardrails after split:
 
 ### 2. Neutral Extraction From Feature Modules
 Status:
-- Partially completed (2026-04-20): typed `portfolio_metrics.py` contract follow-up and timeline-default mirror audit completed.
-- Remaining: neutral-shared-module placement decision.
+- Completed (2026-04-20): typed contract follow-up, timeline-default mirror audit, and shared-helper placement criteria decision completed.
 
 Files:
 - `services/orchestrator/src/buildwealth_orchestrator/services/portfolio_metrics.py`
@@ -105,11 +107,34 @@ What changed in follow-up:
 4. Consolidated timeline default enums/default-map usage in schema/runtime call sites to use `timeline_defaults.py`.
 5. Added frontend mirror module `web/lib/timeline_defaults.js`.
 6. Added drift checks in `tests/test_timeline_defaults_mirror.py` plus branch default coverage in `tests/test_plan_scenario_branching.py`.
+7. Defined and applied shared-helper move criteria for `portfolio_metrics.py` and `timeline_defaults.py`.
+8. Removed Node-dependent skip path from timeline drift checks so frontend mirror parity runs in default pytest workflow.
+9. Added explicit constant/export coverage checks so newly added timeline enums/default maps require intentional mirror-classification updates.
+10. Added helper-placement threshold guardrail test (`tests/test_helper_placement_thresholds.py`) so importer-count/line-count move triggers are checked in default pytest runs.
+
+Move criteria (applied 2026-04-20):
+1. Reuse breadth threshold:
+   - move candidate if used by at least 5 importing modules across at least 3 domain areas.
+2. Surface-size threshold:
+   - move candidate if module exceeds about 120 LOC or exposes more than 3 stable public helpers/contracts.
+3. Coupling threshold:
+   - move candidate only if it remains dependency-light and does not import feature services.
+4. Volatility threshold:
+   - keep local if behavior/ownership is still actively evolving within a narrow domain.
+
+Applied decision:
+1. `portfolio_metrics.py` (79 LOC; 3 service importers in one narrow concentration domain):
+   - does not meet reuse/size thresholds.
+   - decision: keep in `services/` for now.
+2. `timeline_defaults.py` (17 LOC; 4 backend importers, schema linkage, frontend mirror + drift tests):
+   - cross-layer critical but intentionally tiny and stable.
+   - decision: keep in `services/` for now and continue drift-test enforcement.
 
 Remaining follow-up:
-1. Group these modules under a clearly named shared domain area if more helpers accumulate.
-   - recommended direction: `services/shared/portfolio_metrics.py` and `services/shared/timeline_defaults.py`
-2. Do not create a generic dumping ground. If the shared area grows beyond a handful of focused helpers, split by domain.
+1. When helper-placement threshold guardrail flags a crossing, perform explicit re-score and record keep/move decision in the same slice.
+2. If multiple neutral helpers cross thresholds together, introduce `services/shared/` in one bounded move.
+3. If timeline mirror scope expands beyond `web/lib/timeline_defaults.js`, extend drift checks to the new mirror surfaces in the same slice.
+4. Do not create a generic dumping ground. If a shared area grows, split by domain.
 
 ### 3. Frontend Plan-Setting Registry Centralization
 Status:
@@ -341,6 +366,30 @@ Goal:
 Definition of done:
 - timeline default vocab is centralized in `timeline_defaults.py` for backend call sites
 - frontend mirror module and test harness catch drift against backend defaults
+
+### Slice I: Shared Helper Placement Criteria + Applied Decision (Completed 2026-04-20)
+Goal:
+- define objective rules for when neutral helpers should move under `services/shared/`
+
+Definition of done:
+- explicit move thresholds are documented
+- `portfolio_metrics.py` and `timeline_defaults.py` are scored and placement decision is recorded
+
+### Slice J: Default-Workflow Timeline Drift Harness Enforcement (Completed 2026-04-20)
+Goal:
+- ensure timeline drift checks cannot silently skip in default test runs
+
+Definition of done:
+- timeline mirror parity checks run without Node as a hard dependency
+- newly added timeline constants/exports must be explicitly covered by harness classification checks
+
+### Slice K: Neutral Helper Placement Threshold Guardrail (Completed 2026-04-20)
+Goal:
+- ensure neutral-helper placement re-score triggers are continuously checked in default test runs
+
+Definition of done:
+- importer-count and line-count threshold checks for `portfolio_metrics.py` and `timeline_defaults.py` run in pytest
+- threshold crossings fail with explicit keep/move review guidance, including bounded `services/shared/` guidance when multiple helpers cross
 
 ## Guardrail
 The right fix is to isolate complexity, not pretend it does not exist.

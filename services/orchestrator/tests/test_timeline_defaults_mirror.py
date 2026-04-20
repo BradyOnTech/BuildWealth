@@ -1,54 +1,41 @@
 from __future__ import annotations
 
 from pathlib import Path
-import json
-import shutil
-import subprocess
+import re
 from typing import Any, get_args
 
-import pytest
-
 from buildwealth_orchestrator.schemas import PlanScenarioBranchEvent, PlanTimelineEvent
+from buildwealth_orchestrator.services import timeline_defaults
 from buildwealth_orchestrator.services.timeline_defaults import (
     TIMELINE_DEFAULT_IMPACT_BY_EVENT,
     TIMELINE_EVENT_TYPE_VALUES,
+    TIMELINE_EVENT_TYPES,
     TIMELINE_FREQUENCY_VALUES,
+    TIMELINE_FREQUENCIES,
     TIMELINE_IMPACT_TYPE_VALUES,
+    TIMELINE_IMPACT_TYPES,
 )
 
 
-def _node_supports_default_type_flag(node_bin: str) -> bool:
-    result = subprocess.run(
-        [node_bin, "--help"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    help_text = f"{result.stdout}\n{result.stderr}"
-    return "--experimental-default-type" in help_text
+_MIRRORED_TIMELINE_CONSTANTS = {
+    "TIMELINE_EVENT_TYPE_VALUES",
+    "TIMELINE_IMPACT_TYPE_VALUES",
+    "TIMELINE_FREQUENCY_VALUES",
+    "TIMELINE_DEFAULT_IMPACT_BY_EVENT",
+}
 
+_BACKEND_ONLY_TIMELINE_CONSTANTS = {
+    "TIMELINE_EVENT_TYPES",
+    "TIMELINE_IMPACT_TYPES",
+    "TIMELINE_FREQUENCIES",
+}
 
-def _resolve_node_binary() -> str | None:
-    candidates: list[str] = []
-    preferred = shutil.which("node")
-    if preferred:
-        candidates.append(preferred)
-
-    nvm_nodes = sorted(
-        Path.home().glob(".nvm/versions/node/*/bin/node"),
-        reverse=True,
-    )
-    for candidate in nvm_nodes:
-        candidates.append(str(candidate))
-
-    seen: set[str] = set()
-    for candidate in candidates:
-        if candidate in seen:
-            continue
-        seen.add(candidate)
-        if _node_supports_default_type_flag(candidate):
-            return candidate
-    return None
+_FRONTEND_TIMELINE_EXPORT_NAMES = {
+    "TIMELINE_EVENT_TYPES",
+    "TIMELINE_IMPACT_TYPES",
+    "TIMELINE_FREQUENCIES",
+    "TIMELINE_DEFAULT_IMPACT_BY_EVENT",
+}
 
 
 def _literal_values(annotation: Any) -> tuple[str, ...]:
@@ -91,11 +78,40 @@ def test_timeline_defaults_runtime_and_schema_literals_stay_in_sync() -> None:
     assert set(TIMELINE_DEFAULT_IMPACT_BY_EVENT.values()).issubset(set(TIMELINE_IMPACT_TYPE_VALUES))
 
 
-def test_timeline_defaults_frontend_mirror_stays_in_sync() -> None:
-    node_bin = _resolve_node_binary()
-    if node_bin is None:
-        pytest.skip("no node binary with --experimental-default-type support for frontend mirror checks")
+def test_timeline_defaults_constant_coverage_is_explicit() -> None:
+    discovered_constants = {
+        name
+        for name, value in vars(timeline_defaults).items()
+        if name.startswith("TIMELINE_") and name.isupper() and not callable(value)
+    }
+    expected_constants = _MIRRORED_TIMELINE_CONSTANTS | _BACKEND_ONLY_TIMELINE_CONSTANTS
+    assert discovered_constants == expected_constants
 
+    # Runtime set constants should remain derived from ordered tuple values.
+    assert TIMELINE_EVENT_TYPES == frozenset(TIMELINE_EVENT_TYPE_VALUES)
+    assert TIMELINE_IMPACT_TYPES == frozenset(TIMELINE_IMPACT_TYPE_VALUES)
+    assert TIMELINE_FREQUENCIES == frozenset(TIMELINE_FREQUENCY_VALUES)
+
+
+def _extract_js_array_values(module_text: str, const_name: str) -> tuple[str, ...]:
+    pattern = rf"export const {const_name}\s*=\s*Object\.freeze\(\[(.*?)\]\);"
+    match = re.search(pattern, module_text, re.DOTALL)
+    if match is None:
+        raise AssertionError(f"Unable to locate {const_name} array export in timeline_defaults.js")
+    values = re.findall(r"'([^']+)'", match.group(1))
+    return tuple(values)
+
+
+def _extract_js_object_values(module_text: str, const_name: str) -> dict[str, str]:
+    pattern = rf"export const {const_name}\s*=\s*Object\.freeze\(\{{(.*?)\}}\);"
+    match = re.search(pattern, module_text, re.DOTALL)
+    if match is None:
+        raise AssertionError(f"Unable to locate {const_name} object export in timeline_defaults.js")
+    pairs = re.findall(r"([A-Za-z0-9_]+)\s*:\s*'([^']+)'", match.group(1))
+    return {key: value for key, value in pairs}
+
+
+def test_timeline_defaults_frontend_mirror_stays_in_sync() -> None:
     project_root = Path(__file__).resolve().parents[1]
     module_path = (
         project_root
@@ -105,36 +121,17 @@ def test_timeline_defaults_frontend_mirror_stays_in_sync() -> None:
         / "lib"
         / "timeline_defaults.js"
     )
+    module_text = module_path.read_text(encoding="utf-8")
 
-    script = "\n".join(
-        [
-            (
-                f"import {{ TIMELINE_EVENT_TYPES, TIMELINE_IMPACT_TYPES, TIMELINE_FREQUENCIES, "
-                f"TIMELINE_DEFAULT_IMPACT_BY_EVENT }} from '{module_path.resolve().as_uri()}';"
-            ),
-            "const payload = {",
-            "  eventTypes: TIMELINE_EVENT_TYPES,",
-            "  impactTypes: TIMELINE_IMPACT_TYPES,",
-            "  frequencies: TIMELINE_FREQUENCIES,",
-            "  defaultImpactByEvent: TIMELINE_DEFAULT_IMPACT_BY_EVENT,",
-            "};",
-            "console.log(JSON.stringify(payload));",
-        ]
-    )
+    exported_names = set(re.findall(r"export const (TIMELINE_[A-Z0-9_]+)\s*=", module_text))
+    assert exported_names == _FRONTEND_TIMELINE_EXPORT_NAMES
 
-    result = subprocess.run(
-        [node_bin, "--experimental-default-type=module", "--eval", script],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, (
-        "Timeline defaults frontend mirror check failed.\n"
-        f"stdout:\n{result.stdout}\n"
-        f"stderr:\n{result.stderr}"
-    )
-
-    payload = json.loads(result.stdout.strip())
+    payload = {
+        "eventTypes": list(_extract_js_array_values(module_text, "TIMELINE_EVENT_TYPES")),
+        "impactTypes": list(_extract_js_array_values(module_text, "TIMELINE_IMPACT_TYPES")),
+        "frequencies": list(_extract_js_array_values(module_text, "TIMELINE_FREQUENCIES")),
+        "defaultImpactByEvent": _extract_js_object_values(module_text, "TIMELINE_DEFAULT_IMPACT_BY_EVENT"),
+    }
     assert payload["eventTypes"] == list(TIMELINE_EVENT_TYPE_VALUES)
     assert payload["impactTypes"] == list(TIMELINE_IMPACT_TYPE_VALUES)
     assert payload["frequencies"] == list(TIMELINE_FREQUENCY_VALUES)

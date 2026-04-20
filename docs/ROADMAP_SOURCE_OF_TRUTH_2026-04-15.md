@@ -10,6 +10,48 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-20 (Completed - Cross-Cutting Follow-up, Neutral Helper Placement Threshold Guardrail)
+1. Added a default-workflow helper-placement guardrail test:
+- new `tests/test_helper_placement_thresholds.py`.
+2. Automated threshold scoring for neutral helper candidates:
+- tracks importer-count and line-count thresholds for:
+  - `services/portfolio_metrics.py`
+  - `services/timeline_defaults.py`
+- fails with explicit re-score guidance when thresholds are crossed, including bounded `services/shared/` guidance when multiple helpers cross together.
+3. Kept placement criteria ownership explicit:
+- measurable criteria (reuse breadth + surface size) are now continuously enforced by tests.
+- coupling/volatility/domain-split decisions remain explicit slice-level review when guardrail threshold crossings occur.
+4. Verification:
+- targeted: `pytest -q tests/test_helper_placement_thresholds.py tests/test_timeline_defaults_mirror.py tests/test_plan_scenario_branching.py` (`10 passed`)
+- full: `pytest -q` (`485 passed`)
+
+### 2026-04-20 (Completed - Cross-Cutting Follow-up, Default-Workflow Timeline Drift Harness Enforcement)
+1. Made timeline mirror drift checks non-optional in default pytest workflow:
+- removed Node-dependent skip path from `tests/test_timeline_defaults_mirror.py`.
+- replaced Node runtime import check with deterministic parsing of `web/lib/timeline_defaults.js`.
+2. Extended drift harness to force explicit coverage when timeline constants evolve:
+- added backend constant coverage assertion over `timeline_defaults.py` so new `TIMELINE_*` constants must be explicitly classified as mirrored or backend-only.
+- added frontend export coverage assertion so timeline mirror export changes require explicit test updates.
+3. Kept existing schema/runtime and frontend-vs-backend value parity assertions intact.
+4. Verification:
+- targeted: `pytest -q tests/test_timeline_defaults_mirror.py tests/test_plan_scenario_branching.py` (`8 passed`)
+- full: `pytest -q` (`483 passed`)
+
+### 2026-04-20 (Completed - Cross-Cutting Follow-up, Shared Helper Placement Criteria + Applied Decision)
+1. Defined objective move criteria for neutral helper modules (`services/` vs `services/shared/`):
+- reuse breadth threshold (5+ importers across 3+ domains)
+- surface-size threshold (roughly >120 LOC or >3 stable public helpers/contracts)
+- coupling threshold (dependency-light, no feature-service imports)
+- volatility threshold (keep local while ownership is still actively evolving)
+2. Applied criteria to current neutral helper candidates:
+- `portfolio_metrics.py`: 79 LOC, 3 service importers in a narrow concentration domain.
+  - decision: keep in `services/` for now.
+- `timeline_defaults.py`: 17 LOC, cross-layer constants with 4 backend importers plus mirror/drift tests.
+  - decision: keep in `services/` for now.
+3. Recorded decision + criteria in codebase-quality follow-up doc as the canonical placement rubric.
+4. Verification:
+- full: `pytest -q` (`482 passed`)
+
 ### 2026-04-20 (Completed - Cross-Cutting Follow-up, Timeline Defaults Mirror Audit + Drift Harness)
 1. Consolidated backend timeline default vocab into canonical `timeline_defaults.py`:
 - added ordered value tuples plus set views for event types, impact types, and frequencies.
@@ -854,9 +896,9 @@ Use this scoring when selecting the next slice:
 5. Implementation complexity.
 
 ## Immediate Next 3 Slices
-1. Evaluate moving neutral shared helpers into a clearly named shared domain area if helper count continues to grow.
-2. Define and apply lightweight move criteria for `portfolio_metrics.py` and `timeline_defaults.py` (when to keep local vs move under `services/shared/`).
-3. Keep timeline-default drift checks in the default test workflow and extend the harness if new timeline enums/default maps are added.
+1. If helper-placement threshold guardrail signals a crossing, complete the explicit re-score decision in the same slice and update placement docs.
+2. If multiple neutral helpers cross thresholds together, do one bounded `services/shared/` introduction with domain splits.
+3. Extend timeline-default drift harness to cover any future additional mirror files (beyond `web/lib/timeline_defaults.js`) if timeline vocab is reused in new frontend modules.
 
 ## Cross-Cutting Engineering Follow-Up
 1. Post-refactor helper indirection and intentional sidecar complexity are documented in [`docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`](./CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md).

@@ -63,6 +63,42 @@ These decisions refine the build plan based on the current repository and upstre
 
 ## Progress Log
 
+### 2026-04-20 (Completed - Cross-Cutting Follow-up, Neutral Helper Placement Threshold Guardrail)
+- Added default-workflow helper-placement threshold guardrail:
+  - new `tests/test_helper_placement_thresholds.py`.
+- Automated measurable neutral-helper move criteria checks:
+  - importer-count threshold (`>= 5`) and line-count threshold (`> 120`) now scored for:
+    - `services/portfolio_metrics.py`
+    - `services/timeline_defaults.py`
+- Guardrail now fails with explicit re-score guidance when thresholds are crossed, including bounded `services/shared/` guidance if multiple helpers cross together.
+- Verification:
+  - targeted: `pytest -q tests/test_helper_placement_thresholds.py tests/test_timeline_defaults_mirror.py tests/test_plan_scenario_branching.py` (`10 passed`)
+  - full: `pytest -q` in `services/orchestrator` passes (`485 passed`).
+
+### 2026-04-20 (Completed - Cross-Cutting Follow-up, Default-Workflow Timeline Drift Harness Enforcement)
+- Removed Node-dependent skip path from timeline mirror drift checks:
+  - `tests/test_timeline_defaults_mirror.py` now validates frontend mirror constants by deterministic parsing of `web/lib/timeline_defaults.js`.
+- Added explicit timeline constant/export coverage checks:
+  - backend `timeline_defaults.py` constants must be explicitly classified (mirrored vs backend-only).
+  - frontend timeline mirror exports must match expected timeline mirror surface.
+- Kept runtime/schema literal and frontend value parity assertions intact.
+- Verification:
+  - targeted: `pytest -q tests/test_timeline_defaults_mirror.py tests/test_plan_scenario_branching.py` (`8 passed`)
+  - full: `pytest -q` in `services/orchestrator` passes (`483 passed`).
+
+### 2026-04-20 (Completed - Cross-Cutting Follow-up, Shared Helper Placement Criteria + Applied Decision)
+- Defined objective move criteria for neutral helper modules (`services/` vs `services/shared/`):
+  - reuse breadth: at least 5 importers across at least 3 domains
+  - surface size: roughly more than 120 LOC or more than 3 stable public helpers/contracts
+  - coupling: dependency-light modules only
+  - volatility: keep local while ownership is still evolving
+- Applied criteria to current candidates:
+  - `services/portfolio_metrics.py` (79 LOC, 3 importers): keep in `services/` for now.
+  - `services/timeline_defaults.py` (17 LOC, cross-layer constants): keep in `services/` for now.
+- Decision recorded in `docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md` as the canonical placement rubric for future refactors.
+- Verification:
+  - full: `pytest -q` in `services/orchestrator` passes (`482 passed`).
+
 ### 2026-04-20 (Completed - Cross-Cutting Follow-up, Timeline Defaults Mirror Audit + Drift Harness)
 - Consolidated timeline default vocab into canonical backend source:
   - `services/timeline_defaults.py` now carries ordered value tuples + set views for event types, impact types, and frequencies.
