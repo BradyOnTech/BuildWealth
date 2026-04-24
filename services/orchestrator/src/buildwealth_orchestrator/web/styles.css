@@ -31,6 +31,8 @@ html, body {
   font-family: var(--sans);
   font-size: 15px;
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* ---- Sidebar ---- */
@@ -147,6 +149,7 @@ html, body {
   font-family: var(--serif);
   font-size: 1.25rem;
   font-weight: 700;
+  text-wrap: balance;
 }
 
 .content {
@@ -225,6 +228,7 @@ html, body {
 .view-header h2, .view-header h3 {
   margin: 0;
   font-family: var(--serif);
+  text-wrap: balance;
 }
 
 .view-header h2 { font-size: 1.1rem; }
@@ -240,12 +244,14 @@ html, body {
   margin: 1.2rem 0 0.5rem;
   font-family: var(--serif);
   font-size: 0.96rem;
+  text-wrap: balance;
 }
 
 .hint {
   margin: 0 0 0.75rem;
   color: var(--ink-soft);
   font-size: 0.9rem;
+  text-wrap: pretty;
 }
 
 .hint.tight { margin-bottom: 0.4rem; }
@@ -277,10 +283,10 @@ html, body {
 .stat-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
 .kpi-card {
-  border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 0.7rem 0.8rem;
   background: #f9fbf5;
+  box-shadow: 0 1px 3px rgba(18, 41, 34, 0.06), 0 4px 12px rgba(18, 41, 34, 0.03);
 }
 
 .kpi-label {
@@ -297,6 +303,7 @@ html, body {
   font-family: var(--serif);
   font-size: 1.3rem;
   line-height: 1.15;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- Columns ---- */
@@ -306,10 +313,10 @@ html, body {
 
 /* ---- Panels ---- */
 .panel {
-  border: 1px solid var(--line);
   border-radius: var(--radius);
   background: #fcfef8;
   padding: 0.7rem;
+  box-shadow: 0 1px 3px rgba(18, 41, 34, 0.06), 0 4px 12px rgba(18, 41, 34, 0.03);
 }
 
 .panel-title {
@@ -436,7 +443,7 @@ html, body {
 .list-item.attention { border-left-color: #c57f1e; }
 .list-item.incomplete { border-left-color: #9f2d2d; }
 .list-item-title { margin: 0; font-weight: 600; font-size: 0.86rem; }
-.list-item-meta { margin: 0.15rem 0 0; font-size: 0.76rem; color: var(--ink-soft); }
+.list-item-meta { margin: 0.15rem 0 0; font-size: 0.76rem; color: var(--ink-soft); text-wrap: pretty; }
 
 /* ---- Workflow Steps ---- */
 .workflow-steps {
@@ -462,10 +469,11 @@ button {
   font-size: 0.88rem;
   padding: 0.55rem 0.85rem;
   cursor: pointer;
-  transition: transform 80ms ease, background 100ms ease, border-color 100ms ease;
+  transition: transform 100ms ease, background 100ms ease, border-color 100ms ease;
 }
 
 button:hover { transform: translateY(-1px); }
+button:active:not(:disabled) { transform: scale(0.96); }
 button:disabled { opacity: 0.45; cursor: default; transform: none; }
 .primary { background: var(--accent); color: #f7fffc; }
 .primary:hover:not(:disabled) { background: var(--accent-strong); }
@@ -593,7 +601,7 @@ textarea[readonly] { background: #f6f9f1; }
 
 .copilot-form {
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: 20px;
   background: #fcfef8;
   padding: 0.7rem;
 }
@@ -689,7 +697,7 @@ textarea[readonly] { background: #f6f9f1; }
 }
 
 table { border-collapse: collapse; width: 100%; min-width: 580px; }
-th, td { text-align: left; padding: 0.55rem 0.65rem; border-bottom: 1px solid #e4eadf; }
+th, td { text-align: left; padding: 0.55rem 0.65rem; border-bottom: 1px solid #e4eadf; font-variant-numeric: tabular-nums; }
 th { background: #f0f5ea; font-family: var(--mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft); }
 
 .table-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; }
@@ -707,6 +715,7 @@ th { background: #f0f5ea; font-family: var(--mono); font-size: 0.7rem; text-tran
   font-family: var(--mono);
   letter-spacing: 0.04em;
   background: #fff;
+  font-variant-numeric: tabular-nums;
 }
 
 .status-badge.complete { border-color: #83c79b; color: #2f6e47; background: #f0faf3; }
@@ -722,7 +731,7 @@ th { background: #f0f5ea; font-family: var(--mono); font-size: 0.7rem; text-tran
   max-height: 440px;
   overflow-y: auto;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: 20px;
   background: linear-gradient(170deg, #fffcf0, #f4f8ef);
   padding: 0.75rem;
   display: grid;
@@ -740,7 +749,7 @@ th { background: #f0f5ea; font-family: var(--mono); font-size: 0.7rem; text-tran
 .message.user { background: var(--user-chip); margin-left: auto; }
 .message.assistant { background: var(--assistant-chip); }
 .message-meta { margin: 0; font-family: var(--mono); color: var(--ink-soft); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; }
-.message-content { margin: 0.25rem 0 0; white-space: pre-wrap; line-height: 1.45; font-size: 0.9rem; }
+.message-content { margin: 0.25rem 0 0; white-space: pre-wrap; line-height: 1.45; font-size: 0.9rem; text-wrap: pretty; }
 
 .tool-trace-list { margin-top: 0.4rem; display: grid; gap: 0.35rem; }
 .tool-trace { border: 1px solid #d6daca; border-radius: var(--radius-sm); background: rgba(255,255,255,0.7); padding: 0.35rem 0.5rem; }
@@ -748,7 +757,7 @@ th { background: #f0f5ea; font-family: var(--mono); font-size: 0.7rem; text-tran
 .tool-trace pre { margin: 0.35rem 0 0; border: 1px solid #dde4d4; border-radius: var(--radius-sm); background: #f6f9f2; padding: 0.5rem; white-space: pre-wrap; overflow: auto; max-height: 160px; font-size: 0.72rem; font-family: var(--mono); }
 
 /* ---- Snapshot ---- */
-.snapshot-total { margin: 0.1rem 0 0.7rem; font-size: 1rem; font-weight: 600; }
+.snapshot-total { margin: 0.1rem 0 0.7rem; font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .history-chart-card {
   border: 1px solid var(--line);
@@ -846,6 +855,7 @@ th { background: #f0f5ea; font-family: var(--mono); font-size: 0.7rem; text-tran
   font-family: var(--mono);
   font-size: 0.72rem;
   color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
 }
 
 .projection-chart-card {
@@ -959,8 +969,8 @@ th { background: #f0f5ea; font-family: var(--mono); font-size: 0.7rem; text-tran
   font-weight: 500;
 }
 
-.drift-pos { color: #2f6e47; font-weight: 600; }
-.drift-neg { color: #9f2d2d; font-weight: 600; }
+.drift-pos { color: #2f6e47; font-weight: 600; font-variant-numeric: tabular-nums; }
+.drift-neg { color: #9f2d2d; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .context-banner.on-track { border-color: #8ac5a7; color: #25633f; background: #edf9f1; }
 

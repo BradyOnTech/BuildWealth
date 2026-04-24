@@ -123,6 +123,15 @@ from buildwealth_orchestrator.schemas import (
     StorageProtectionPolicyResponse,
     StorageProtectionApplyRequest,
     StorageProtectionApplyResponse,
+    GitCheckpointRequest,
+    GitCheckpointResponse,
+    GitDiffResponse,
+    GitAutoGitStateResponse,
+    GitHistoryResponse,
+    GitInitResponse,
+    GitPolicyResponse,
+    GitPolicyUpdateRequest,
+    GitStatusResponse,
     RuntimeTelemetryResponse,
     TodayDashboardResponse,
     TopNextAction,
@@ -226,6 +235,14 @@ from buildwealth_orchestrator.services.data_protection import (
     DataProtectionError,
     DataProtectionService,
 )
+from buildwealth_orchestrator.services.git_checkpoint import GitCheckpointService
+from buildwealth_orchestrator.services.git_autogit import GitAutoGitService
+from buildwealth_orchestrator.services.git_integration_settings import GitIntegrationSettingsStore
+from buildwealth_orchestrator.services.git_repository import GitRepositoryError, GitRepositoryService
+from buildwealth_orchestrator.services.versioned_workspace import (
+    VersionedWorkspacePolicy,
+    VersionedWorkspaceService,
+)
 from buildwealth_orchestrator.services.tax_engine import estimate_federal_tax
 from buildwealth_orchestrator.services.today_dashboard import build_today_dashboard_payload
 from buildwealth_orchestrator.services.buildwealth_context import (
@@ -282,6 +299,10 @@ if web_dir.exists():
 
 
 user_settings_store = UserSettingsStore(settings.snapshot_dir.parent / "settings" / "user_settings.json")
+git_integration_settings_store = GitIntegrationSettingsStore(
+    settings.git_integration_settings_path,
+    default_workspace_dir=settings.versioned_workspace_dir,
+)
 
 # Apply user settings over env defaults
 _user_cfg = user_settings_store.load_raw()
@@ -309,6 +330,63 @@ backup_restore_service = BackupRestoreService.from_settings(settings)
 data_protection_service = DataProtectionService.from_settings(settings)
 ignidash_export_store = IgnidashExportStore(settings.ignidash_export_dir)
 portfolio_review_packet_store = PortfolioReviewPacketStore(settings.portfolio_review_packet_dir)
+
+
+def _git_policy() -> dict[str, Any]:
+    return git_integration_settings_store.load()
+
+
+def _versioned_workspace_service(policy: dict[str, Any]) -> VersionedWorkspaceService:
+    return VersionedWorkspaceService(
+        workspace_dir=Path(str(policy.get("workspace_dir") or settings.versioned_workspace_dir)),
+        plans_dir=settings.plans_dir,
+        recommendations_path=settings.recommendations_path,
+        review_packet_dir=settings.portfolio_review_packet_dir,
+        protection_policy_path=settings.protection_policy_path,
+        financial_profile_path=settings.financial_profile_path,
+    )
+
+
+def _git_repository_service(policy: dict[str, Any]) -> GitRepositoryService:
+    return GitRepositoryService(Path(str(policy.get("workspace_dir") or settings.versioned_workspace_dir)))
+
+
+def _git_checkpoint_service(policy: dict[str, Any]) -> GitCheckpointService:
+    workspace_service = _versioned_workspace_service(policy)
+    return GitCheckpointService(
+        workspace_service=workspace_service,
+        git_repository=_git_repository_service(policy),
+    )
+
+
+def _git_autogit_service(policy: dict[str, Any]) -> GitAutoGitService:
+    return GitAutoGitService(
+        state_path=settings.git_integration_settings_path.with_name("git_autogit_state.json"),
+        checkpoint_service=_git_checkpoint_service(policy),
+    )
+
+
+def _git_workspace_policy(policy: dict[str, Any]) -> VersionedWorkspacePolicy:
+    return VersionedWorkspacePolicy.from_settings(policy)
+
+
+def _queue_autogit_event(event_type: str) -> None:
+    try:
+        policy = _git_policy()
+        _git_autogit_service(policy).record_event(policy=policy, event_type=event_type)
+    except Exception:
+        # AutoGit should never block the canonical write path.
+        pass
+
+
+def _run_due_autogit() -> dict[str, Any]:
+    policy = _git_policy()
+    return _git_autogit_service(policy).run_due(
+        policy=policy,
+        workspace_policy=_git_workspace_policy(policy),
+    )
+
+
 scenario_engine = ScenarioEngine(
     years_to_retirement=settings.planner_years_to_retirement,
     annual_contribution_usd=settings.planner_annual_contribution_usd,
@@ -494,6 +572,7 @@ runtime_telemetry_tracker = RuntimeTelemetryTracker()
 sync_lock = asyncio.Lock()
 scheduler_task: asyncio.Task | None = None
 engine_health_task: asyncio.Task | None = None
+autogit_task: asyncio.Task | None = None
 sync_state: dict[str, object] = {
     "running": False,
     "runs_total": 0,
@@ -605,6 +684,17 @@ async def engine_probe_loop() -> None:
             pass
 
         await asyncio.sleep(interval_seconds)
+
+
+async def autogit_checkpoint_loop() -> None:
+    while True:
+        try:
+            _run_due_autogit()
+        except Exception:
+            # AutoGit failures are captured in the AutoGit state when possible.
+            pass
+
+        await asyncio.sleep(5)
 
 
 
@@ -10239,6 +10329,7 @@ def update_storage_protection_policy(
         policy = data_protection_service.update_policy(request.model_dump(exclude_none=True))
     except DataProtectionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _queue_autogit_event("protection_policy_updated")
     return StorageProtectionPolicyResponse.model_validate(policy)
 
 
@@ -10251,6 +10342,88 @@ def apply_storage_protection(
     except DataProtectionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return StorageProtectionApplyResponse.model_validate(report)
+
+
+@app.get("/api/git/policy", response_model=GitPolicyResponse)
+def get_git_policy() -> GitPolicyResponse:
+    return GitPolicyResponse.model_validate(_git_policy())
+
+
+@app.put("/api/git/policy", response_model=GitPolicyResponse)
+def update_git_policy(request: GitPolicyUpdateRequest) -> GitPolicyResponse:
+    policy = git_integration_settings_store.save(request.model_dump(exclude_none=True))
+    return GitPolicyResponse.model_validate(policy)
+
+
+@app.post("/api/git/init", response_model=GitInitResponse)
+def initialize_git_repository() -> GitInitResponse:
+    policy = _git_policy()
+    try:
+        result = _git_checkpoint_service(policy).initialize(_git_workspace_policy(policy))
+    except GitRepositoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return GitInitResponse.model_validate(result)
+
+
+@app.get("/api/git/status", response_model=GitStatusResponse)
+def get_git_status() -> GitStatusResponse:
+    policy = _git_policy()
+    try:
+        status = _git_repository_service(policy).status()
+    except GitRepositoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return GitStatusResponse.model_validate(status)
+
+
+@app.get("/api/git/history", response_model=GitHistoryResponse)
+def get_git_history(limit: int = 20) -> GitHistoryResponse:
+    policy = _git_policy()
+    try:
+        commits = _git_repository_service(policy).history(limit=limit)
+    except GitRepositoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return GitHistoryResponse.model_validate({"commits": commits})
+
+
+@app.get("/api/git/diff", response_model=GitDiffResponse)
+def get_git_diff(
+    ref: str | None = None,
+    path: str | None = None,
+    max_chars: int = 200_000,
+) -> GitDiffResponse:
+    policy = _git_policy()
+    try:
+        diff = _git_repository_service(policy).diff(ref=ref, path=path, max_chars=max_chars)
+    except GitRepositoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return GitDiffResponse.model_validate(diff)
+
+
+@app.post("/api/git/checkpoint", response_model=GitCheckpointResponse)
+def create_git_checkpoint(request: GitCheckpointRequest) -> GitCheckpointResponse:
+    policy = _git_policy()
+    try:
+        result = _git_checkpoint_service(policy).checkpoint(
+            policy=_git_workspace_policy(policy),
+            event_type=request.event_type,
+            message=request.message,
+        )
+    except GitRepositoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return GitCheckpointResponse.model_validate(result)
+
+
+@app.get("/api/git/autogit", response_model=GitAutoGitStateResponse)
+def get_git_autogit_state() -> GitAutoGitStateResponse:
+    policy = _git_policy()
+    state = _git_autogit_service(policy).state(policy=policy)
+    return GitAutoGitStateResponse.model_validate(state)
+
+
+@app.post("/api/git/autogit/run-due", response_model=GitAutoGitStateResponse)
+def run_due_git_autogit() -> GitAutoGitStateResponse:
+    state = _run_due_autogit()
+    return GitAutoGitStateResponse.model_validate(state)
 
 
 @app.get("/api/settings")
@@ -10294,17 +10467,18 @@ async def on_startup() -> None:
     except DataProtectionError as exc:
         print(f"Data protection auto-apply skipped: {exc}")
 
-    global scheduler_task, engine_health_task
+    global scheduler_task, engine_health_task, autogit_task
     await engine_status_tracker.probe_all()
 
     if settings.sync_interval_minutes > 0:
         scheduler_task = asyncio.create_task(scheduled_sync_loop())
     if settings.engine_health_probe_interval_seconds > 0:
         engine_health_task = asyncio.create_task(engine_probe_loop())
+    autogit_task = asyncio.create_task(autogit_checkpoint_loop())
 
 
 async def on_shutdown() -> None:
-    global scheduler_task, engine_health_task
+    global scheduler_task, engine_health_task, autogit_task
     if scheduler_task is not None:
         scheduler_task.cancel()
         with suppress(asyncio.CancelledError):
@@ -10316,6 +10490,12 @@ async def on_shutdown() -> None:
         with suppress(asyncio.CancelledError):
             await engine_health_task
         engine_health_task = None
+
+    if autogit_task is not None:
+        autogit_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await autogit_task
+        autogit_task = None
 
 
 @app.get("/", include_in_schema=False)
@@ -10417,6 +10597,7 @@ def get_financial_profile() -> FinancialProfileResponse:
 @app.put("/api/financial-profile", response_model=FinancialProfileResponse)
 def update_financial_profile(request: FinancialProfileRequest) -> FinancialProfileResponse:
     saved = save_financial_profile_payload(request)
+    _queue_autogit_event("financial_profile_updated")
     return FinancialProfileResponse(**saved)
 
 
@@ -10829,6 +11010,7 @@ def create_portfolio_review_packet(request: PortfolioReviewPacketRequest) -> Por
             "markdown": markdown,
         }
 
+    _queue_autogit_event("portfolio_review_packet_created")
     return PortfolioReviewPacketResponse(
         summary=stored["summary"],
         packet=stored["packet"],
@@ -11091,6 +11273,7 @@ def create_recommendation(request: RecommendationCreateRequest) -> Recommendatio
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _queue_autogit_event("recommendation_created")
     return _recommendation_item_from_row(recommendation)
 
 
@@ -11119,6 +11302,7 @@ def update_recommendation(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    _queue_autogit_event("recommendation_updated")
     return _recommendation_item_from_row(recommendation)
 
 
@@ -11141,13 +11325,15 @@ async def apply_recommendation_route(
     request: RecommendationApplyRequest,
 ) -> RecommendationActionResponse:
     try:
-        return await apply_recommendation_with_decision_packet(recommendation_id, request)
+        response = await apply_recommendation_with_decision_packet(recommendation_id, request)
     except RecommendationNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PlanNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _queue_autogit_event("recommendation_applied")
+    return response
 
 
 @app.post("/api/recommendations/{recommendation_id}/reject", response_model=RecommendationActionResponse)
@@ -11156,7 +11342,7 @@ async def reject_recommendation_route(
     request: RecommendationRejectRequest,
 ) -> RecommendationActionResponse:
     try:
-        return await reject_recommendation(
+        response = await reject_recommendation(
             recommendation_id,
             plan_id=request.plan_id,
             reason=request.reason,
@@ -11168,6 +11354,8 @@ async def reject_recommendation_route(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _queue_autogit_event("recommendation_rejected")
+    return response
 
 
 @app.post("/api/recommendations/{recommendation_id}/outcome", response_model=RecommendationActionResponse)
@@ -11176,13 +11364,15 @@ def update_recommendation_outcome_route(
     request: RecommendationOutcomeUpdateRequest,
 ) -> RecommendationActionResponse:
     try:
-        return update_recommendation_outcome(recommendation_id, request)
+        response = update_recommendation_outcome(recommendation_id, request)
     except RecommendationNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PlanNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _queue_autogit_event("recommendation_outcome_updated")
+    return response
 
 
 @app.post("/api/recommendations/{recommendation_id}/archive", response_model=RecommendationActionResponse)
@@ -11191,11 +11381,13 @@ def archive_recommendation_route(
     request: RecommendationRejectRequest,
 ) -> RecommendationActionResponse:
     try:
-        return archive_recommendation(recommendation_id, note=request.reason)
+        response = archive_recommendation(recommendation_id, note=request.reason)
     except RecommendationNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _queue_autogit_event("recommendation_archived")
+    return response
 
 
 @app.get("/api/sync/status", response_model=SyncStatusResponse)
@@ -11227,6 +11419,7 @@ def create_plan(request: PlanCreateRequest) -> PlanDetailResponse:
         detail = plan_workspace.create_plan(title=request.title, description=request.description)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _queue_autogit_event("plan_created")
     return _build_plan_detail_response(detail)
 
 
@@ -11251,6 +11444,7 @@ def update_plan(plan_id: str, request: PlanUpdateRequest) -> PlanDetailResponse:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _queue_autogit_event("plan_updated")
     return _build_plan_detail_response(detail)
 
 
@@ -11272,6 +11466,7 @@ def update_plan_settings(plan_id: str, request: PlanSettingsUpdateRequest) -> Pl
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _queue_autogit_event("plan_settings_updated")
     return _build_plan_detail_response(detail)
 
 
@@ -11298,6 +11493,7 @@ def update_plan_timeline(plan_id: str, request: PlanTimelineUpdateRequest) -> Pl
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _queue_autogit_event("plan_timeline_updated")
     return PlanTimelineResponse(**timeline)
 
 
@@ -11309,6 +11505,7 @@ def get_plan_contribution_rules(plan_id: str) -> PlanContributionRulesResponse:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _queue_autogit_event("plan_contribution_rules_updated")
     return PlanContributionRulesResponse(**payload)
 
 
@@ -11340,6 +11537,7 @@ def get_plan_assumption_sets(plan_id: str) -> PlanAssumptionSetsResponse:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _queue_autogit_event("plan_assumption_sets_updated")
     return PlanAssumptionSetsResponse(**payload)
 
 
@@ -11371,6 +11569,7 @@ def get_plan_branch_templates(plan_id: str) -> PlanScenarioBranchTemplatesRespon
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _queue_autogit_event("plan_branch_templates_updated")
     return PlanScenarioBranchTemplatesResponse(**payload)
 
 
@@ -11797,6 +11996,7 @@ def activate_plan(plan_id: str) -> PlanSummary:
         summary = plan_workspace.set_active_plan(plan_id)
     except PlanNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    _queue_autogit_event("plan_activated")
     return PlanSummary(**summary)
 
 
@@ -11809,7 +12009,7 @@ def create_plan_recommendation_closure_summary_route(
     request: PlanRecommendationClosureSummaryRequest,
 ) -> PlanRecommendationClosureSummaryResponse:
     try:
-        return create_plan_recommendation_closure_summary(
+        response = create_plan_recommendation_closure_summary(
             plan_id=plan_id,
             request=request,
         )
@@ -11817,6 +12017,8 @@ def create_plan_recommendation_closure_summary_route(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _queue_autogit_event("plan_recommendation_closure_summary_created")
+    return response
 
 
 @app.post("/api/plans/{plan_id}/decisions", response_model=PlanDetailResponse)
@@ -11833,6 +12035,7 @@ def append_plan_decision(plan_id: str, request: PlanDecisionCreateRequest) -> Pl
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _queue_autogit_event("plan_decision_added")
     return _build_plan_detail_response(detail)
 
 
@@ -11843,6 +12046,7 @@ def refresh_plan_context(plan_id: str) -> PlanDetailResponse:
         detail = plan_workspace.get_plan(plan_id)
     except PlanNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    _queue_autogit_event("plan_context_refreshed")
     return _build_plan_detail_response(detail)
 
 

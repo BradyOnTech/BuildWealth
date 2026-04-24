@@ -27,3 +27,52 @@ export async function fetchJson(url, options = {}) {
   }
   return data;
 }
+
+export function getGitPolicy() {
+  return fetchJson('/api/git/policy');
+}
+
+export function updateGitPolicy(payload) {
+  return fetchJson('/api/git/policy', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function initializeGitRepository() {
+  return fetchJson('/api/git/init', { method: 'POST' });
+}
+
+export function getGitStatus() {
+  return fetchJson('/api/git/status');
+}
+
+export function getGitHistory(limit = 10) {
+  return fetchJson(`/api/git/history?limit=${encodeURIComponent(limit)}`);
+}
+
+export function getGitDiff({ ref = '', path = '', maxChars = 200000 } = {}) {
+  const params = new URLSearchParams();
+  if (ref) params.set('ref', ref);
+  if (path) params.set('path', path);
+  if (maxChars) params.set('max_chars', String(maxChars));
+  const query = params.toString();
+  return fetchJson(`/api/git/diff${query ? `?${query}` : ''}`);
+}
+
+export function getGitAutoGitState() {
+  return fetchJson('/api/git/autogit');
+}
+
+export function runDueGitAutoGit() {
+  return fetchJson('/api/git/autogit/run-due', { method: 'POST' });
+}
+
+export function createGitCheckpoint(payload = {}) {
+  return fetchJson('/api/git/checkpoint', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}

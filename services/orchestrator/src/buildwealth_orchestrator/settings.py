@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     import_archive_dir: Path = Field(default=Path("data/imports/archive"), alias="IMPORT_ARCHIVE_DIR")
     conversation_dir: Path = Field(default=Path("data/conversations"), alias="CONVERSATION_DIR")
     plans_dir: Path = Field(default=Path("data/plans"), alias="PLANS_DIR")
+    versioned_workspace_dir: Path = Field(default=Path("data/versioned"), alias="VERSIONED_WORKSPACE_DIR")
+    git_integration_settings_path: Path = Field(
+        default=Path("data/settings/git_integration.json"),
+        alias="GIT_INTEGRATION_SETTINGS_PATH",
+    )
     financial_profile_path: Path = Field(
         default=Path("data/profile/financial_profile.json"),
         alias="FINANCIAL_PROFILE_PATH",

@@ -1,4 +1,15 @@
-import { fetchJson } from '../lib/api.js';
+import {
+  createGitCheckpoint,
+  fetchJson,
+  getGitAutoGitState,
+  getGitDiff,
+  getGitHistory,
+  getGitPolicy,
+  getGitStatus,
+  initializeGitRepository,
+  runDueGitAutoGit,
+  updateGitPolicy,
+} from '../lib/api.js';
 import { byId, writeLog } from '../lib/utils.js';
 
 export const id = 'settings';
@@ -82,6 +93,115 @@ export function template() {
         <button class="primary small" id="apply-protection-now">Apply Protection Now</button>
       </div>
       <p class="hint" id="protection-status"></p>
+      <h3 class="section-title">Version History</h3>
+      <p class="hint tight">Create local Git checkpoints for plans, recommendations, review packets, and selected audit artifacts.</p>
+      <div class="settings-grid">
+        <label class="field">
+          <span>Version History</span>
+          <select id="git-enabled">
+            <option value="false">Disabled</option>
+            <option value="true">Enabled</option>
+          </select>
+          <span class="field-hint">Controls whether BuildWealth should treat the versioned workspace as active.</span>
+        </label>
+        <label class="field">
+          <span>Workspace Path</span>
+          <input type="text" id="git-workspace-dir" autocomplete="off" />
+          <span class="field-hint">Local generated workspace used for Git checkpoints.</span>
+        </label>
+        <label class="field">
+          <span>Financial Profile Export</span>
+          <select id="git-include-financial-profile">
+            <option value="false">Excluded</option>
+            <option value="true">Included</option>
+          </select>
+          <span class="field-hint">Sensitive by default. Only include when you want it in Git history.</span>
+        </label>
+      </div>
+      <div class="settings-grid">
+        <label class="field">
+          <span>AutoGit</span>
+          <select id="git-autogit-enabled">
+            <option value="false">Disabled</option>
+            <option value="true">Enabled</option>
+          </select>
+          <span class="field-hint">Queues automatic local checkpoints after meaningful app changes.</span>
+        </label>
+        <label class="field">
+          <span>Auto Push</span>
+          <select id="git-auto-push-enabled">
+            <option value="false">Disabled</option>
+            <option value="true">Enabled</option>
+          </select>
+          <span class="field-hint">Stored now; remote push remains opt-in.</span>
+        </label>
+        <label class="field">
+          <span>Idle Seconds</span>
+          <input type="number" id="git-auto-checkpoint-idle-seconds" min="30" max="86400" step="30" />
+          <span class="field-hint">AutoGit waits this long after the latest eligible event.</span>
+        </label>
+      </div>
+      <div class="settings-grid">
+        <label class="field">
+          <span>Repository Status</span>
+          <input type="text" id="git-repo-status" readonly value="Unknown" />
+          <span class="field-hint">Initialized, clean, dirty, or not initialized.</span>
+        </label>
+        <label class="field">
+          <span>Branch</span>
+          <input type="text" id="git-branch" readonly value="-" />
+          <span class="field-hint">Current branch for the versioned workspace.</span>
+        </label>
+        <label class="field">
+          <span>Last Checkpoint</span>
+          <input type="text" id="git-last-commit" readonly value="-" />
+          <span class="field-hint">Most recent local commit in the versioned workspace.</span>
+        </label>
+      </div>
+      <div class="settings-grid">
+        <label class="field">
+          <span>Changed Files</span>
+          <input type="text" id="git-changed-files" readonly value="0" />
+          <span class="field-hint">Files currently changed in the generated workspace.</span>
+        </label>
+        <label class="field">
+          <span>Remote</span>
+          <input type="text" id="git-remote-status" readonly value="Local only" />
+          <span class="field-hint">Remote connection support comes after local checkpoints.</span>
+        </label>
+        <label class="field">
+          <span>Recent History</span>
+          <select id="git-history-select"></select>
+          <span class="field-hint">Latest local checkpoints.</span>
+        </label>
+      </div>
+      <div class="settings-grid">
+        <label class="field">
+          <span>Pending AutoGit</span>
+          <input type="text" id="git-autogit-pending" readonly value="None" />
+          <span class="field-hint">Queued event waiting for the idle window.</span>
+        </label>
+        <label class="field">
+          <span>Last AutoGit Result</span>
+          <input type="text" id="git-autogit-last-result" readonly value="None" />
+          <span class="field-hint">Most recent automatic checkpoint outcome.</span>
+        </label>
+      </div>
+      <div class="header-actions">
+        <button class="ghost small" id="save-git-policy">Save Version Policy</button>
+        <button class="ghost small" id="init-git-repo">Initialize Repository</button>
+        <button class="ghost small" id="refresh-git-status">Refresh Status</button>
+        <button class="ghost small" id="view-current-git-diff">View Current Diff</button>
+        <button class="ghost small" id="view-selected-git-diff">View Selected Diff</button>
+        <button class="ghost small" id="run-due-git-autogit">Run Due AutoGit</button>
+        <button class="primary small" id="create-git-checkpoint">Create Checkpoint</button>
+      </div>
+      <label class="field form-span">
+        <span>Diff Preview</span>
+        <textarea id="git-diff-preview" rows="14" readonly placeholder="View current changes or select a checkpoint to inspect its patch."></textarea>
+        <span class="field-hint">Shows generated workspace changes without leaving BuildWealth.</span>
+      </label>
+      <p class="hint" id="git-status"></p>
     </div>
     <p class="hint">Engine sidecar endpoints and health probes are configured via environment variables (<code>infra/env/orchestrator.env</code>).</p>
     <p class="hint" id="settings-status"></p>`;
@@ -117,6 +237,13 @@ function setBackupStatus(message, isError = false) {
 
 function setProtectionStatus(message, isError = false) {
   const el = byId('protection-status');
+  if (!el) return;
+  el.textContent = message || '';
+  el.style.color = isError ? 'var(--danger)' : '';
+}
+
+function setGitStatus(message, isError = false) {
+  const el = byId('git-status');
   if (!el) return;
   el.textContent = message || '';
   el.style.color = isError ? 'var(--danger)' : '';
@@ -292,6 +419,237 @@ async function applyProtectionNow() {
   }
 }
 
+function setGitPolicyInputs(policy = {}) {
+  const enabled = byId('git-enabled');
+  if (enabled) enabled.value = policy.enabled ? 'true' : 'false';
+  const workspace = byId('git-workspace-dir');
+  if (workspace) workspace.value = policy.workspace_dir || '';
+  const includeProfile = byId('git-include-financial-profile');
+  if (includeProfile) includeProfile.value = policy.include_financial_profile ? 'true' : 'false';
+  const autogit = byId('git-autogit-enabled');
+  if (autogit) autogit.value = policy.autogit_enabled ? 'true' : 'false';
+  const autoPush = byId('git-auto-push-enabled');
+  if (autoPush) autoPush.value = policy.auto_push_enabled ? 'true' : 'false';
+  const idleSeconds = byId('git-auto-checkpoint-idle-seconds');
+  if (idleSeconds) idleSeconds.value = String(policy.auto_checkpoint_idle_seconds || 180);
+}
+
+function collectGitPolicyPayload() {
+  return {
+    enabled: byId('git-enabled')?.value === 'true',
+    workspace_dir: byId('git-workspace-dir')?.value || '',
+    autogit_enabled: byId('git-autogit-enabled')?.value === 'true',
+    auto_push_enabled: byId('git-auto-push-enabled')?.value === 'true',
+    auto_checkpoint_idle_seconds: Number(byId('git-auto-checkpoint-idle-seconds')?.value || 180),
+    include_financial_profile: byId('git-include-financial-profile')?.value === 'true',
+  };
+}
+
+function formatCommit(commit) {
+  if (!commit) return '-';
+  const shortHash = commit.short_hash || String(commit.hash || '').slice(0, 7);
+  const date = commit.date ? new Date(commit.date).toLocaleString() : '';
+  return `${shortHash || '-'} ${commit.message || ''}${date ? ` (${date})` : ''}`.trim();
+}
+
+function setGitStatusInputs(status = {}) {
+  const repoStatus = byId('git-repo-status');
+  if (repoStatus) {
+    const dirtyLabel = status.dirty ? 'dirty' : 'clean';
+    repoStatus.value = status.status === 'ok' ? `Initialized, ${dirtyLabel}` : (status.message || status.status || 'Unknown');
+  }
+  const branch = byId('git-branch');
+  if (branch) branch.value = status.branch || '-';
+  const lastCommit = byId('git-last-commit');
+  if (lastCommit) lastCommit.value = formatCommit(status.last_commit);
+  const changedFiles = byId('git-changed-files');
+  if (changedFiles) changedFiles.value = String(Array.isArray(status.changed_files) ? status.changed_files.length : 0);
+  const remoteStatus = byId('git-remote-status');
+  if (remoteStatus) {
+    const remote = status.remote || {};
+    remoteStatus.value = remote.has_remote ? `${remote.name || 'remote'} ahead ${remote.ahead || 0}, behind ${remote.behind || 0}` : 'Local only';
+  }
+}
+
+function setGitHistory(commits = []) {
+  const select = byId('git-history-select');
+  if (!select) return;
+  select.innerHTML = '';
+  if (!Array.isArray(commits) || !commits.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No checkpoints yet';
+    select.appendChild(option);
+    return;
+  }
+  for (const commit of commits) {
+    const option = document.createElement('option');
+    option.value = commit.hash || '';
+    option.textContent = formatCommit(commit);
+    select.appendChild(option);
+  }
+}
+
+function setGitDiff(payload = {}) {
+  const preview = byId('git-diff-preview');
+  if (!preview) return;
+  const diffText = String(payload.diff || '').trimEnd();
+  const truncatedText = payload.truncated ? '\n\n[Diff truncated in preview.]' : '';
+  preview.value = diffText ? `${diffText}${truncatedText}` : 'No diff available.';
+}
+
+function setGitAutoGitState(state = {}) {
+  const pending = byId('git-autogit-pending');
+  if (pending) {
+    const event = state.pending_event || null;
+    if (event) {
+      const due = event.due_at ? new Date(event.due_at).toLocaleString() : 'soon';
+      pending.value = `${event.event_type || 'event'} x${event.event_count || 1}, due ${due}`;
+    } else {
+      pending.value = 'None';
+    }
+  }
+
+  const lastResult = byId('git-autogit-last-result');
+  if (lastResult) {
+    const result = state.last_result || null;
+    if (result) {
+      const ran = result.ran_at ? new Date(result.ran_at).toLocaleString() : '';
+      lastResult.value = `${result.status || 'unknown'}: ${result.event_type || 'event'}${ran ? ` (${ran})` : ''}`;
+    } else {
+      lastResult.value = 'None';
+    }
+  }
+}
+
+async function loadGitPolicy() {
+  try {
+    const policy = await getGitPolicy();
+    setGitPolicyInputs(policy);
+  } catch (e) {
+    setGitStatus(`Version policy load failed: ${e.message}`, true);
+    writeLog(`Version policy load failed: ${e.message}`, null, true);
+  }
+}
+
+async function saveGitPolicy() {
+  const button = byId('save-git-policy');
+  if (button) button.disabled = true;
+  try {
+    const policy = await updateGitPolicy(collectGitPolicyPayload());
+    setGitPolicyInputs(policy);
+    setGitStatus('Version policy saved.');
+    writeLog('Version policy saved.');
+    await loadGitStatus();
+  } catch (e) {
+    setGitStatus(`Version policy save failed: ${e.message}`, true);
+    writeLog(`Version policy save failed: ${e.message}`, null, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function loadGitStatus() {
+  try {
+    const [status, history, autogit] = await Promise.all([
+      getGitStatus(),
+      getGitHistory(10),
+      getGitAutoGitState(),
+    ]);
+    setGitStatusInputs(status);
+    setGitHistory(history.commits || []);
+    setGitAutoGitState(autogit);
+    setGitStatus(status.message || 'Version history status loaded.');
+  } catch (e) {
+    setGitStatus(`Version history status failed: ${e.message}`, true);
+    writeLog(`Version history status failed: ${e.message}`, null, true);
+  }
+}
+
+async function initGitRepository() {
+  const button = byId('init-git-repo');
+  if (button) button.disabled = true;
+  try {
+    const result = await initializeGitRepository();
+    setGitStatus(result.message || 'Git repository initialized.');
+    writeLog(result.message || 'Git repository initialized.');
+    await loadGitStatus();
+  } catch (e) {
+    setGitStatus(`Git initialization failed: ${e.message}`, true);
+    writeLog(`Git initialization failed: ${e.message}`, null, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function checkpointGitWorkspace() {
+  const button = byId('create-git-checkpoint');
+  if (button) button.disabled = true;
+  try {
+    const result = await createGitCheckpoint({ event_type: 'manual_checkpoint' });
+    const commitText = result.commit ? ` ${formatCommit(result.commit)}` : '';
+    setGitStatus(`${result.message || 'Checkpoint complete.'}${commitText}`);
+    writeLog(result.message || 'Version checkpoint complete.');
+    await loadGitStatus();
+  } catch (e) {
+    setGitStatus(`Checkpoint failed: ${e.message}`, true);
+    writeLog(`Checkpoint failed: ${e.message}`, null, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function loadCurrentGitDiff() {
+  const button = byId('view-current-git-diff');
+  if (button) button.disabled = true;
+  try {
+    const payload = await getGitDiff({ maxChars: 200000 });
+    setGitDiff(payload);
+    setGitStatus(payload.message || 'Current diff loaded.');
+  } catch (e) {
+    setGitStatus(`Current diff failed: ${e.message}`, true);
+    writeLog(`Current diff failed: ${e.message}`, null, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function loadSelectedGitDiff() {
+  const button = byId('view-selected-git-diff');
+  const ref = byId('git-history-select')?.value || '';
+  if (!ref) {
+    setGitStatus('Select a checkpoint to view its diff.', true);
+    return;
+  }
+  if (button) button.disabled = true;
+  try {
+    const payload = await getGitDiff({ ref, maxChars: 200000 });
+    setGitDiff(payload);
+    setGitStatus(payload.message || 'Checkpoint diff loaded.');
+  } catch (e) {
+    setGitStatus(`Checkpoint diff failed: ${e.message}`, true);
+    writeLog(`Checkpoint diff failed: ${e.message}`, null, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function runDueAutoGit() {
+  const button = byId('run-due-git-autogit');
+  if (button) button.disabled = true;
+  try {
+    const state = await runDueGitAutoGit();
+    setGitAutoGitState(state);
+    setGitStatus(`AutoGit status: ${state.status || 'idle'}`);
+    await loadGitStatus();
+  } catch (e) {
+    setGitStatus(`AutoGit run failed: ${e.message}`, true);
+    writeLog(`AutoGit run failed: ${e.message}`, null, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 async function load() {
   try {
     const data = await fetchJson('/api/settings');
@@ -332,7 +690,16 @@ export function init() {
   byId('refresh-protection-status').addEventListener('click', loadProtectionStatus);
   byId('save-protection-policy').addEventListener('click', saveProtectionPolicy);
   byId('apply-protection-now').addEventListener('click', applyProtectionNow);
+  byId('save-git-policy').addEventListener('click', saveGitPolicy);
+  byId('init-git-repo').addEventListener('click', initGitRepository);
+  byId('refresh-git-status').addEventListener('click', loadGitStatus);
+  byId('view-current-git-diff').addEventListener('click', loadCurrentGitDiff);
+  byId('view-selected-git-diff').addEventListener('click', loadSelectedGitDiff);
+  byId('run-due-git-autogit').addEventListener('click', runDueAutoGit);
+  byId('create-git-checkpoint').addEventListener('click', checkpointGitWorkspace);
   load();
   loadBackups();
   loadProtectionStatus();
+  loadGitPolicy();
+  loadGitStatus();
 }

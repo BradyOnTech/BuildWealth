@@ -2241,3 +2241,124 @@ class StorageProtectionApplyResponse(BaseModel):
     non_compliant_files_after: int
     non_compliant_directories_after: int
     warnings: list[str] = Field(default_factory=list)
+
+
+class GitPolicyResponse(BaseModel):
+    enabled: bool
+    workspace_dir: str
+    autogit_enabled: bool
+    auto_push_enabled: bool
+    auto_checkpoint_idle_seconds: int
+    remote_name: str
+    include_plans: bool
+    include_recommendations: bool
+    include_review_packets: bool
+    include_snapshot_checkpoints: bool
+    include_financial_profile: bool
+    updated_at: datetime | None = None
+
+
+class GitPolicyUpdateRequest(BaseModel):
+    enabled: bool | None = None
+    workspace_dir: str | None = None
+    autogit_enabled: bool | None = None
+    auto_push_enabled: bool | None = None
+    auto_checkpoint_idle_seconds: int | None = None
+    remote_name: str | None = None
+    include_plans: bool | None = None
+    include_recommendations: bool | None = None
+    include_review_packets: bool | None = None
+    include_snapshot_checkpoints: bool | None = None
+    include_financial_profile: bool | None = None
+
+
+class GitChangedFile(BaseModel):
+    path: str
+    status: str
+
+
+class GitCommitSummary(BaseModel):
+    hash: str
+    short_hash: str
+    date: datetime
+    message: str
+
+
+class GitRemoteStatusResponse(BaseModel):
+    has_remote: bool
+    name: str | None = None
+    ahead: int = 0
+    behind: int = 0
+
+
+class GitStatusResponse(BaseModel):
+    status: str
+    message: str
+    workspace_dir: str
+    branch: str | None = None
+    dirty: bool = False
+    changed_files: list[GitChangedFile] = Field(default_factory=list)
+    last_commit: GitCommitSummary | None = None
+    has_remote: bool = False
+    remote: GitRemoteStatusResponse | None = None
+
+
+class GitInitResponse(BaseModel):
+    status: str
+    message: str
+    workspace_dir: str
+
+
+class GitHistoryResponse(BaseModel):
+    commits: list[GitCommitSummary] = Field(default_factory=list)
+
+
+class GitDiffResponse(BaseModel):
+    status: str
+    message: str
+    workspace_dir: str
+    ref: str | None = None
+    path: str | None = None
+    diff: str
+    truncated: bool = False
+
+
+class GitAutoGitPendingEvent(BaseModel):
+    event_type: str
+    event_count: int
+    first_seen_at: datetime
+    last_seen_at: datetime
+    due_at: datetime
+
+
+class GitAutoGitLastResult(BaseModel):
+    status: str
+    message: str
+    event_type: str
+    event_count: int
+    ran_at: datetime
+    commit: GitCommitSummary | None = None
+
+
+class GitAutoGitStateResponse(BaseModel):
+    enabled: bool
+    autogit_enabled: bool
+    auto_checkpoint_idle_seconds: int
+    pending_event: GitAutoGitPendingEvent | None = None
+    last_result: GitAutoGitLastResult | None = None
+    status: str = "idle"
+
+
+class GitCheckpointRequest(BaseModel):
+    message: str | None = None
+    event_type: str = "manual_checkpoint"
+
+
+class GitCheckpointResponse(BaseModel):
+    status: str
+    message: str
+    workspace_dir: str
+    files_written: int
+    files_removed: int
+    sections: dict[str, int] = Field(default_factory=dict)
+    commit: GitCommitSummary | None = None

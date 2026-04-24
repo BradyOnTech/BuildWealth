@@ -130,6 +130,8 @@ make down
 ## Docs
 
 - [Architecture](./docs/ARCHITECTURE.md)
+- [Git Integration Design](./docs/GIT_INTEGRATION_DESIGN.md)
+- [Git Integration Implementation Plan](./docs/GIT_INTEGRATION_IMPLEMENTATION_PLAN.md)
 - [Sidecar Adapter Architecture](./docs/SIDECAR_ADAPTER_ARCHITECTURE.md)
 - [Standalone Operations](./docs/OPERATIONS_STANDALONE.md)
 - [Migration and Compatibility](./docs/MIGRATION_AND_COMPATIBILITY.md)
