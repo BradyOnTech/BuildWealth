@@ -1,4 +1,5 @@
 import {
+  cleanupGitActivity,
   applyGitRestore,
   connectGitRemote,
   createGitCheckpoint,
@@ -37,6 +38,7 @@ const gitUiState = {
   restorePreviewSignatures: new Map(),
   auditEvents: [],
   serverActivity: [],
+  activitySummary: null,
 };
 
 const SUPPORTED_PLAN_RESTORE_FILES = new Map([
@@ -377,6 +379,43 @@ export function template() {
             <input type="text" id="git-activity-ref" autocomplete="off" placeholder="optional hash" />
             <span class="field-hint">Filter by exact commit hash when needed.</span>
           </label>
+        </div>
+        <div class="settings-grid">
+          <label class="field form-span">
+            <span>Search Activity</span>
+            <input type="text" id="git-activity-search" autocomplete="off" placeholder="search title, message, path, hash, or metadata" />
+            <span class="field-hint">Searches durable activity title, message, paths, refs, and metadata.</span>
+          </label>
+        </div>
+        <div class="restore-action-summary" id="git-activity-summary">No activity metrics loaded.</div>
+        <div class="header-actions">
+          <button class="ghost small" id="export-git-activity-json">Export JSON</button>
+          <button class="ghost small" id="export-git-activity-csv">Export CSV</button>
+        </div>
+        <div class="settings-grid">
+          <label class="field">
+            <span>Retention Max Events</span>
+            <input type="number" id="git-activity-retention-max-events" min="0" max="100000" step="10" placeholder="leave blank" />
+            <span class="field-hint">Keep this many newest events. Blank means no count limit.</span>
+          </label>
+          <label class="field">
+            <span>Retention Max Age Days</span>
+            <input type="number" id="git-activity-retention-max-age-days" min="0" max="3650" step="1" placeholder="leave blank" />
+            <span class="field-hint">Remove older non-protected events. Blank means no age limit.</span>
+          </label>
+          <label class="field">
+            <span>Protected Audit Events</span>
+            <select id="git-activity-include-protected">
+              <option value="false">Keep checkpoint/restore events</option>
+              <option value="true">Allow cleanup of all event types</option>
+            </select>
+            <span class="field-hint">Checkpoint and restore events are protected by default.</span>
+          </label>
+        </div>
+        <div class="restore-action-summary" id="git-activity-cleanup-summary">Run dry-run cleanup before deleting activity events.</div>
+        <div class="header-actions">
+          <button class="ghost small" id="preview-git-activity-cleanup">Preview Cleanup</button>
+          <button class="primary small" id="apply-git-activity-cleanup">Apply Cleanup</button>
         </div>
         <div class="git-audit-feed" id="git-audit-feed">Load Git status to see recent activity.</div>
       </section>
@@ -772,9 +811,34 @@ function addGitAuditEvent(kind, title, detail = '', tone = 'info') {
   renderGitAuditFeed();
 }
 
-function setGitActivity(events = []) {
+function setGitActivity(events = [], summary = null) {
   gitUiState.serverActivity = Array.isArray(events) ? events : [];
+  gitUiState.activitySummary = summary || null;
+  renderGitActivitySummary();
   renderGitAuditFeed();
+}
+
+function renderGitActivitySummary() {
+  const target = byId('git-activity-summary');
+  if (!target) return;
+  const summary = gitUiState.activitySummary || {};
+  const eventCounts = summary.event_type_counts || {};
+  const statusCounts = summary.status_counts || {};
+  const topEvents = Object.entries(eventCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([key, count]) => `${key.replaceAll('_', ' ')} ${count}`)
+    .join(' · ');
+  const topStatuses = Object.entries(statusCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([key, count]) => `${key} ${count}`)
+    .join(' · ');
+  target.textContent = [
+    `${summary.total_matched || 0} matched event(s)`,
+    topEvents ? `Events: ${topEvents}` : '',
+    topStatuses ? `Statuses: ${topStatuses}` : '',
+  ].filter(Boolean).join(' · ');
 }
 
 function activityTone(status = '') {
@@ -872,6 +936,122 @@ function renderGitAuditFeed() {
   }
 }
 
+function escapeCsvCell(value) {
+  const text = typeof value === 'string' ? value : JSON.stringify(value ?? '');
+  return `"${String(text).replaceAll('"', '""')}"`;
+}
+
+function activityExportRows() {
+  return (gitUiState.serverActivity || []).map((event) => ({
+    created_at: event.created_at || '',
+    event_type: event.event_type || '',
+    status: event.status || '',
+    title: event.title || '',
+    message: event.message || '',
+    ref: event.ref || '',
+    paths: (event.paths || []).join('; '),
+    metadata: event.metadata || {},
+  }));
+}
+
+function downloadGitActivity(format) {
+  const rows = activityExportRows();
+  if (!rows.length) {
+    setGitStatus('No Git activity rows to export.', true);
+    return;
+  }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `buildwealth-git-activity-${stamp}.${format}`;
+  let content = '';
+  let type = 'application/json';
+  if (format === 'csv') {
+    const columns = ['created_at', 'event_type', 'status', 'title', 'message', 'ref', 'paths', 'metadata'];
+    content = [
+      columns.join(','),
+      ...rows.map((row) => columns.map((column) => escapeCsvCell(row[column])).join(',')),
+    ].join('\n');
+    type = 'text/csv';
+  } else {
+    content = JSON.stringify({
+      exported_at: new Date().toISOString(),
+      summary: gitUiState.activitySummary || {},
+      events: rows,
+    }, null, 2);
+  }
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+  setGitStatus(`Exported ${rows.length} Git activity row(s) to ${format.toUpperCase()}.`);
+}
+
+function activityCleanupPayload(dryRun = true) {
+  const maxEventsRaw = byId('git-activity-retention-max-events')?.value || '';
+  const maxAgeRaw = byId('git-activity-retention-max-age-days')?.value || '';
+  return {
+    dry_run: dryRun,
+    max_events: maxEventsRaw === '' ? null : Number(maxEventsRaw),
+    max_age_days: maxAgeRaw === '' ? null : Number(maxAgeRaw),
+    include_protected: byId('git-activity-include-protected')?.value === 'true',
+    export_confirmed: !dryRun,
+  };
+}
+
+function setActivityCleanupSummary(result = {}) {
+  const target = byId('git-activity-cleanup-summary');
+  if (!target) return;
+  const warning = (result.warnings || []).join(' ');
+  target.textContent = [
+    result.message || 'Cleanup preview unavailable.',
+    `${result.protected_events_skipped || 0} protected event(s) skipped.`,
+    warning,
+  ].filter(Boolean).join(' ');
+}
+
+async function previewGitActivityCleanup() {
+  const button = byId('preview-git-activity-cleanup');
+  if (button) button.disabled = true;
+  try {
+    const result = await cleanupGitActivity(activityCleanupPayload(true));
+    setActivityCleanupSummary(result);
+    setGitStatus(result.message || 'Git activity cleanup preview complete.');
+  } catch (e) {
+    setGitStatus(`Git activity cleanup preview failed: ${e.message}`, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function applyGitActivityCleanup() {
+  const button = byId('apply-git-activity-cleanup');
+  const payload = activityCleanupPayload(false);
+  if (payload.max_events === null && payload.max_age_days === null) {
+    setGitStatus('Set a max event count or max age before applying activity cleanup.', true);
+    return;
+  }
+  const confirmed = window.confirm(
+    'Export Git activity before cleanup. Press OK only if you have exported or do not need an export.',
+  );
+  if (!confirmed) {
+    setGitStatus('Git activity cleanup cancelled. Export first, then apply cleanup.');
+    return;
+  }
+  if (button) button.disabled = true;
+  try {
+    const result = await cleanupGitActivity(payload);
+    setActivityCleanupSummary(result);
+    setGitStatus(result.message || 'Git activity cleanup applied.');
+    await loadGitActivity();
+  } catch (e) {
+    setGitStatus(`Git activity cleanup failed: ${e.message}`, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 async function loadGitActivity() {
   try {
     const activity = await getGitActivity({
@@ -879,8 +1059,9 @@ async function loadGitActivity() {
       eventType: byId('git-activity-event-type')?.value || '',
       status: byId('git-activity-status')?.value || '',
       ref: byId('git-activity-ref')?.value || '',
+      search: byId('git-activity-search')?.value || '',
     });
-    setGitActivity(activity.events || []);
+    setGitActivity(activity.events || [], activity.summary || null);
   } catch (e) {
     setGitStatus(`Git activity load failed: ${e.message}`, true);
     writeLog(`Git activity load failed: ${e.message}`, null, true);
@@ -1120,12 +1301,13 @@ async function loadGitStatus() {
         eventType: byId('git-activity-event-type')?.value || '',
         status: byId('git-activity-status')?.value || '',
         ref: byId('git-activity-ref')?.value || '',
+        search: byId('git-activity-search')?.value || '',
       }),
     ]);
     setGitStatusInputs(status);
     setGitHistory(history.commits || []);
     setGitAutoGitState(autogit);
-    setGitActivity(activity.events || []);
+    setGitActivity(activity.events || [], activity.summary || null);
     updateGitWorkflowSummary();
     setGitStatus(status.message || 'Version history status loaded.');
   } catch (e) {
@@ -1489,6 +1671,11 @@ export function init() {
   byId('git-activity-event-type').addEventListener('change', loadGitActivity);
   byId('git-activity-status').addEventListener('change', loadGitActivity);
   byId('git-activity-ref').addEventListener('change', loadGitActivity);
+  byId('git-activity-search').addEventListener('change', loadGitActivity);
+  byId('export-git-activity-json').addEventListener('click', () => downloadGitActivity('json'));
+  byId('export-git-activity-csv').addEventListener('click', () => downloadGitActivity('csv'));
+  byId('preview-git-activity-cleanup').addEventListener('click', previewGitActivityCleanup);
+  byId('apply-git-activity-cleanup').addEventListener('click', applyGitActivityCleanup);
   load();
   loadBackups();
   loadProtectionStatus();

@@ -96,6 +96,7 @@ docker compose -f infra/docker-compose.yml --profile legacy-upstream up -d
 - `GET /api/git/status`
 - `GET /api/git/history`
 - `GET /api/git/activity`
+- `POST /api/git/activity/cleanup`
 - `GET /api/git/diff`
 - `POST /api/git/checkpoint`
 - `POST /api/git/remote`

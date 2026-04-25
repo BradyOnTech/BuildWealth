@@ -2447,5 +2447,34 @@ class GitActivityEvent(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class GitActivitySummary(BaseModel):
+    total_matched: int = 0
+    event_type_counts: dict[str, int] = Field(default_factory=dict)
+    status_counts: dict[str, int] = Field(default_factory=dict)
+
+
 class GitActivityResponse(BaseModel):
     events: list[GitActivityEvent] = Field(default_factory=list)
+    summary: GitActivitySummary = Field(default_factory=GitActivitySummary)
+
+
+class GitActivityCleanupRequest(BaseModel):
+    dry_run: bool = True
+    max_events: int | None = Field(default=None, ge=0, le=100_000)
+    max_age_days: int | None = Field(default=None, ge=0, le=3650)
+    include_protected: bool = False
+    export_confirmed: bool = False
+
+
+class GitActivityCleanupResponse(BaseModel):
+    dry_run: bool
+    message: str
+    total_events: int
+    events_removed: int
+    events_retained: int
+    protected_events_skipped: int
+    max_events: int | None = None
+    max_age_days: int | None = None
+    include_protected: bool = False
+    removable_event_ids: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)

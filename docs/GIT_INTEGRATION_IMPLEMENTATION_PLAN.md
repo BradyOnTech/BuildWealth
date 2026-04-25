@@ -4,7 +4,7 @@
 2026-04-23
 
 ## Status
-Implementation in progress. Foundation, manual checkpoints, history/diff, safe remote operations, domain-aware AutoGit, read-only restore preview, guarded restore apply, preview-token hardening, conflict-aware restore UX, durable Git activity feed, and guided Settings UX are implemented.
+Implementation in progress. Foundation, manual checkpoints, history/diff, safe remote operations, domain-aware AutoGit, read-only restore preview, guarded restore apply, preview-token hardening, conflict-aware restore UX, searchable/exportable/retained durable Git activity feed, and guided Settings UX are implemented.
 
 ## Purpose
 This document turns the Git integration design into an execution sequence for the current BuildWealth codebase.
@@ -32,7 +32,7 @@ The first shippable milestone was Phase 1:
 - create a manual checkpoint
 - inspect Git status and recent commits
 
-That gave immediate product value while keeping the risk bounded. The current release now layers on read-only inspection, optional manual remote sync, domain-aware AutoGit, restore planning, guarded selected-file restore apply, short-lived preview tokens, conflict-aware restore selection, durable filtered Git activity, and a guided one-click path in Settings.
+That gave immediate product value while keeping the risk bounded. The current release now layers on read-only inspection, optional manual remote sync, domain-aware AutoGit, restore planning, guarded selected-file restore apply, short-lived preview tokens, conflict-aware restore selection, searchable/exportable Git activity with guarded retention cleanup, and a guided one-click path in Settings.
 
 ## Guiding Constraints
 
@@ -576,7 +576,7 @@ Implemented scope:
 Later work:
 
 - additional validated flows for policy/profile artifacts
-- richer text search/export over the durable activity feed if the event stream grows noisy
+- category-specific retention policy presets if one-size-fits-all cleanup becomes too blunt
 
 ### Financial Profile Inclusion
 Defer until after the default policy proves useful.
@@ -613,6 +613,8 @@ This work should be landed in small slices in this order:
 12. guarded selective restore apply through service-layer validation
 13. conflict-aware restore table and durable Git activity feed
 14. activity filters and preview-token hardening
+15. activity search, metrics, and JSON/CSV export
+16. activity retention controls with dry-run cleanup
 
 ## Risk Register
 
@@ -665,17 +667,17 @@ The first release of BuildWealth Git integration is complete when:
 - restore preview is read-only and does not mutate canonical data
 - guarded restore apply requires explicit paths, confirmation, preview-token validation when supplied, and service-layer validation
 - restore UX shows selectable support markers and stale-preview warnings
-- Git activity feed persists, filters, and summarizes checkpoints, AutoGit, remote sync, preview, and apply events
+- Git activity feed persists, searches, filters, summarizes, exports, and safely cleans up checkpoint, AutoGit, remote sync, preview, and apply events
 - Settings provides a guided safe path for first-time setup
 - backup and durable-storage systems remain unchanged
 
 ## Immediate Next Build Slice
-The next implementation slice should be activity feed search/export:
+The next implementation slice should be category-specific retention presets:
 
-1. add text search over title/message/path metadata
-2. add CSV/JSON export for the filtered activity feed
-3. add compact activity metrics by event type and status
-4. add cleanup/retention controls for very large local activity logs
-5. keep the feed append-only by default
+1. add named retention presets for remote-only noise, AutoGit noise, and full audit cleanup
+2. show which event categories each preset can remove
+3. keep checkpoint/restore audit events protected by default
+4. require export confirmation before applying any preset
+5. add tests for preset expansion into cleanup payloads
 
 That keeps restore aligned with BuildWealth's source-of-truth model while preserving the audit value of Git history.

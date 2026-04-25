@@ -123,6 +123,8 @@ from buildwealth_orchestrator.schemas import (
     StorageProtectionPolicyResponse,
     StorageProtectionApplyRequest,
     StorageProtectionApplyResponse,
+    GitActivityCleanupRequest,
+    GitActivityCleanupResponse,
     GitActivityResponse,
     GitCheckpointRequest,
     GitCheckpointResponse,
@@ -10580,9 +10582,31 @@ def get_git_activity(
     event_type: str | None = None,
     status: str | None = None,
     ref: str | None = None,
+    search: str | None = None,
 ) -> GitActivityResponse:
-    events = _git_activity_store().list(limit=limit, event_type=event_type, status=status, ref=ref)
-    return GitActivityResponse.model_validate({"events": events})
+    result = _git_activity_store().query(
+        limit=limit,
+        event_type=event_type,
+        status=status,
+        ref=ref,
+        search=search,
+    )
+    return GitActivityResponse.model_validate(result)
+
+
+@app.post("/api/git/activity/cleanup", response_model=GitActivityCleanupResponse)
+def cleanup_git_activity(request: GitActivityCleanupRequest) -> GitActivityCleanupResponse:
+    try:
+        result = _git_activity_store().cleanup(
+            dry_run=request.dry_run,
+            max_events=request.max_events,
+            max_age_days=request.max_age_days,
+            include_protected=request.include_protected,
+            export_confirmed=request.export_confirmed,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return GitActivityCleanupResponse.model_validate(result)
 
 
 @app.post("/api/git/remote/connect", response_model=GitRemoteOperationResponse)

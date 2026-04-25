@@ -6,6 +6,7 @@ import subprocess
 
 import buildwealth_orchestrator.main as main
 from buildwealth_orchestrator.schemas import (
+    GitActivityCleanupRequest,
     GitCheckpointRequest,
     GitPolicyUpdateRequest,
     GitRemoteConnectRequest,
@@ -270,6 +271,7 @@ def test_git_remote_api_connects_and_pushes_empty_remote(monkeypatch, tmp_path: 
     push = main.push_git_remote(GitRemoteOperationRequest(remote_name="origin"))
     activity = main.get_git_activity(limit=10)
     pushed_activity = main.get_git_activity(limit=10, event_type="remote_push", status="pushed")
+    searched_activity = main.get_git_activity(limit=10, search="push completed")
     activity_types = [event.event_type for event in activity.events]
 
     assert connect.status == "connected"
@@ -281,3 +283,39 @@ def test_git_remote_api_connects_and_pushes_empty_remote(monkeypatch, tmp_path: 
     assert "remote_push" in activity_types
     assert len(pushed_activity.events) == 1
     assert pushed_activity.events[0].event_type == "remote_push"
+    assert searched_activity.summary.total_matched >= 1
+    assert "remote_push" in searched_activity.summary.event_type_counts
+
+
+def test_git_activity_cleanup_dry_run_and_apply_preserves_protected_events(monkeypatch, tmp_path: Path) -> None:
+    _configure_git_api_fixture(monkeypatch, tmp_path)
+    store = main._git_activity_store()  # noqa: SLF001
+    store.record(event_type="checkpoint", title="Protected checkpoint", status="committed")
+    store.record(event_type="remote_push", title="Old push", status="pushed")
+    store.record(event_type="remote_pull", title="Old pull", status="pulled")
+
+    preview = main.cleanup_git_activity(GitActivityCleanupRequest(dry_run=True, max_events=1))
+    applied = main.cleanup_git_activity(
+        GitActivityCleanupRequest(dry_run=False, max_events=1, export_confirmed=True)
+    )
+    remaining = main.get_git_activity(limit=10)
+    remaining_types = {event.event_type for event in remaining.events}
+
+    assert preview.events_removed == 1
+    assert preview.protected_events_skipped == 1
+    assert applied.events_removed == 1
+    assert "checkpoint" in remaining_types
+    assert len(remaining.events) == 2
+
+
+def test_git_activity_cleanup_requires_export_confirmation(monkeypatch, tmp_path: Path) -> None:
+    _configure_git_api_fixture(monkeypatch, tmp_path)
+    main._git_activity_store().record(event_type="remote_push", title="Old push", status="pushed")  # noqa: SLF001
+
+    try:
+        main.cleanup_git_activity(GitActivityCleanupRequest(dry_run=False, max_events=0))
+    except main.HTTPException as exc:
+        assert exc.status_code == 400
+        assert "export_confirmed" in str(exc.detail)
+    else:
+        raise AssertionError("activity cleanup should require export confirmation")

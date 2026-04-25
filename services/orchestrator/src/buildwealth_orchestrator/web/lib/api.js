@@ -52,14 +52,23 @@ export function getGitHistory(limit = 10) {
   return fetchJson(`/api/git/history?limit=${encodeURIComponent(limit)}`);
 }
 
-export function getGitActivity({ limit = 20, eventType = '', status = '', ref = '' } = {}) {
+export function getGitActivity({ limit = 20, eventType = '', status = '', ref = '', search = '' } = {}) {
   const params = new URLSearchParams();
   if (limit) params.set('limit', String(limit));
   if (eventType) params.set('event_type', eventType);
   if (status) params.set('status', status);
   if (ref) params.set('ref', ref);
+  if (search) params.set('search', search);
   const query = params.toString();
   return fetchJson(`/api/git/activity${query ? `?${query}` : ''}`);
+}
+
+export function cleanupGitActivity(payload = {}) {
+  return fetchJson('/api/git/activity/cleanup', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 }
 
 export function getGitDiff({ ref = '', path = '', maxChars = 200000 } = {}) {

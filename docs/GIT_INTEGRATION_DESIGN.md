@@ -386,7 +386,8 @@ Proposed endpoints:
 
 - `GET /api/git/status`
 - `GET /api/git/history?limit=20`
-- `GET /api/git/activity?limit=50`
+- `GET /api/git/activity?limit=50&event_type=<type>&status=<status>&ref=<hash>&search=<text>`
+- `POST /api/git/activity/cleanup`
 - `GET /api/git/diff?path=<workspace_path>&ref=<commit_or_head>`
 - `POST /api/git/init`
 - `POST /api/git/checkpoint`
@@ -440,13 +441,13 @@ Git restore should be staged carefully: preview first, then guarded selected-fil
 - read-only restore preview
 - guarded restore apply for explicit supported files
 - conflict-aware restore selection UX
-- durable Git activity feed with event/status/hash filters
+- durable Git activity feed with event/status/hash/search filters, metrics, JSON/CSV export, and retention controls
 - preview-token binding for guarded restore apply
 
 ### V2
 
 - broader selective restore for additional plan artifacts and sensitive policy/profile records
-- richer search/export over the durable activity feed
+- activity-retention policies for different audit categories if one-size-fits-all cleanup is not enough
 
 This matters because the versioned workspace is a projection, not the primary write model.
 
@@ -557,7 +558,7 @@ Deliver:
 - checkpoint-scoped preview of plan artifacts, recommendation records, review packets, and selected policy artifacts
 - guarded selective restore apply for supported plan files, recommendation records, and review packet files
 - structured restore table with restorable/preview-only markers
-- durable activity feed for checkpoint, AutoGit, remote, restore preview, and restore apply events with filters
+- durable activity feed for checkpoint, AutoGit, remote, restore preview, and restore apply events with filters, counts, search, export, and dry-run cleanup
 - short-lived restore preview tokens that are validated before apply when provided
 - service-layer re-apply flows that reject unsupported exported paths
 

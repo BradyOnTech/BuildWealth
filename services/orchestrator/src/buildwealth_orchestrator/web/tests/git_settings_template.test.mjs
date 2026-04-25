@@ -26,6 +26,14 @@ test('settings git section is grouped into clear workflow panels', () => {
   assert.match(html, /id="git-activity-event-type"/);
   assert.match(html, /id="git-activity-status"/);
   assert.match(html, /id="git-activity-ref"/);
+  assert.match(html, /id="git-activity-search"/);
+  assert.match(html, /id="git-activity-summary"/);
+  assert.match(html, /id="export-git-activity-json"/);
+  assert.match(html, /id="export-git-activity-csv"/);
+  assert.match(html, /id="git-activity-retention-max-events"/);
+  assert.match(html, /id="preview-git-activity-cleanup"/);
+  assert.match(html, /id="apply-git-activity-cleanup"/);
+  assert.match(html, /Run dry-run cleanup before deleting activity events/);
   assert.match(html, /survives page reloads|Recent checkpoints|Git Activity Feed/);
   assert.match(html, /never runs raw git checkout/);
 });
