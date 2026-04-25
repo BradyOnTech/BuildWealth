@@ -232,6 +232,21 @@ class GitRepositoryService:
             ],
         }
 
+    def file_at_ref(self, *, ref: str, path: str) -> str | None:
+        cleaned_ref = _clean_ref(ref)
+        cleaned_path = _clean_pathspec(path)
+        if not cleaned_path:
+            raise GitRepositoryError("Restore apply path is required.")
+        if not _is_restore_preview_path_allowed(cleaned_path):
+            raise GitRepositoryError(
+                "Restore apply path must be an exported plan, recommendation, review packet, policy, or profile path."
+            )
+        if not self.is_repo():
+            raise GitRepositoryError("Versioned workspace is not initialized as a Git repository.")
+        if not self._commit_exists(cleaned_ref):
+            raise GitRepositoryError(f"Unknown restore apply commit: {cleaned_ref}")
+        return self._file_at_ref(cleaned_ref, cleaned_path)
+
     def commit(self, *, message: str, body: str | None = None) -> dict[str, Any]:
         cleaned_message = message.strip()
         if not cleaned_message:

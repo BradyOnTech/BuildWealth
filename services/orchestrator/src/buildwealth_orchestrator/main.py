@@ -134,6 +134,8 @@ from buildwealth_orchestrator.schemas import (
     GitRemoteConnectRequest,
     GitRemoteOperationRequest,
     GitRemoteOperationResponse,
+    GitRestoreApplyRequest,
+    GitRestoreApplyResponse,
     GitRestorePreviewResponse,
     GitStatusResponse,
     RuntimeTelemetryResponse,
@@ -243,6 +245,7 @@ from buildwealth_orchestrator.services.git_checkpoint import GitCheckpointServic
 from buildwealth_orchestrator.services.git_autogit import GitAutoGitService
 from buildwealth_orchestrator.services.git_integration_settings import GitIntegrationSettingsStore
 from buildwealth_orchestrator.services.git_repository import GitRepositoryError, GitRepositoryService
+from buildwealth_orchestrator.services.git_restore_apply import GitRestoreApplyError, GitRestoreApplyService
 from buildwealth_orchestrator.services.versioned_workspace import (
     VersionedWorkspacePolicy,
     VersionedWorkspaceService,
@@ -360,6 +363,17 @@ def _git_checkpoint_service(policy: dict[str, Any]) -> GitCheckpointService:
     return GitCheckpointService(
         workspace_service=workspace_service,
         git_repository=_git_repository_service(policy),
+    )
+
+
+def _git_restore_apply_service(policy: dict[str, Any]) -> GitRestoreApplyService:
+    return GitRestoreApplyService(
+        git_repository=_git_repository_service(policy),
+        checkpoint_service=_git_checkpoint_service(policy),
+        workspace_policy=_git_workspace_policy(policy),
+        plan_workspace=plan_workspace,
+        recommendation_inbox=recommendation_inbox,
+        review_packet_store=portfolio_review_packet_store,
     )
 
 
@@ -10419,6 +10433,23 @@ def get_git_restore_preview(
     except GitRepositoryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return GitRestorePreviewResponse.model_validate(preview)
+
+
+@app.post("/api/git/restore-apply", response_model=GitRestoreApplyResponse)
+def apply_git_restore(request: GitRestoreApplyRequest) -> GitRestoreApplyResponse:
+    policy = _git_policy()
+    try:
+        result = _git_restore_apply_service(policy).apply(
+            ref=request.ref,
+            paths=request.paths,
+            confirmation=request.confirmation,
+            rationale=request.rationale,
+            create_checkpoint_before_apply=request.create_checkpoint_before_apply,
+            create_checkpoint_after_apply=request.create_checkpoint_after_apply,
+        )
+    except (GitRepositoryError, GitRestoreApplyError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return GitRestoreApplyResponse.model_validate(result)
 
 
 @app.post("/api/git/checkpoint", response_model=GitCheckpointResponse)

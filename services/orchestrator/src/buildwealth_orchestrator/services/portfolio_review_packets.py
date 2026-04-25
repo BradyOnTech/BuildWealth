@@ -514,6 +514,27 @@ class PortfolioReviewPacketStore:
             "markdown": markdown,
         }
 
+    def restore_file(self, *, file_name: str, content: str) -> dict[str, Any]:
+        safe_name = Path(str(file_name or "")).name
+        if not safe_name or safe_name != str(file_name or ""):
+            raise ValueError("Invalid review packet file name.")
+        path = self.packet_dir / safe_name
+        if path.suffix.lower() == ".json":
+            packet = json.loads(content)
+            if not isinstance(packet, dict):
+                raise ValueError("Review packet JSON restore payload must be an object.")
+            packet_id = str(packet.get("meta", {}).get("packet_id") or path.stem)
+            if self._sanitize_packet_id(packet_id) != path.stem:
+                raise ValueError("Review packet id must match the restored file name.")
+            path.write_text(json.dumps(packet, indent=2, default=str), encoding="utf-8")
+            return {"file_name": safe_name, "packet_id": path.stem, "status": "restored"}
+        if path.suffix.lower() == ".md":
+            if not path.stem.startswith("portfolio-review-"):
+                raise ValueError("Review packet markdown restore file name is invalid.")
+            path.write_text(content, encoding="utf-8")
+            return {"file_name": safe_name, "packet_id": path.stem, "status": "restored"}
+        raise ValueError("Review packet restore supports only .json and .md files.")
+
     def list(self, limit: int = 30) -> list[dict[str, Any]]:
         bounded_limit = max(1, min(int(limit), 500))
         rows: list[dict[str, Any]] = []

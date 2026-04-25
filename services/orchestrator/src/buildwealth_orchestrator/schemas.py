@@ -2402,3 +2402,31 @@ class GitCheckpointResponse(BaseModel):
     files_removed: int
     sections: dict[str, int] = Field(default_factory=dict)
     commit: GitCommitSummary | None = None
+
+
+class GitRestoreApplyRequest(BaseModel):
+    ref: str
+    paths: list[str] = Field(min_length=1, max_length=50)
+    confirmation: str
+    rationale: str | None = None
+    create_checkpoint_before_apply: bool = True
+    create_checkpoint_after_apply: bool = True
+
+
+class GitRestoreApplyFileResult(BaseModel):
+    path: str
+    status: str
+    artifact_type: str
+    artifact_id: str
+    action: str
+
+
+class GitRestoreApplyResponse(BaseModel):
+    status: str
+    message: str
+    ref: str
+    applied_files: int
+    files: list[GitRestoreApplyFileResult] = Field(default_factory=list)
+    before_checkpoint: GitCheckpointResponse | None = None
+    after_checkpoint: GitCheckpointResponse | None = None
+    warnings: list[str] = Field(default_factory=list)

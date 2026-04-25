@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  applyGitRestore,
   createGitCheckpoint,
   connectGitRemote,
   getGitAutoGitState,
@@ -40,6 +41,7 @@ test('git API helpers target the expected endpoints', async () => {
   await getGitHistory(7);
   await getGitDiff({ ref: 'abc123', maxChars: 1234 });
   await getGitRestorePreview({ ref: 'abc123', path: 'plans/plan-a/plan.md', maxChars: 4321 });
+  await applyGitRestore({ ref: 'abc123', paths: ['plans/plan-a/plan.md'], confirmation: 'APPLY_GIT_RESTORE' });
   await getGitAutoGitState();
   await runDueGitAutoGit();
   await connectGitRemote({ remote_url: 'git@example.com:repo.git', remote_name: 'origin' });
@@ -55,6 +57,7 @@ test('git API helpers target the expected endpoints', async () => {
     { url: '/api/git/history?limit=7', method: 'GET' },
     { url: '/api/git/diff?ref=abc123&max_chars=1234', method: 'GET' },
     { url: '/api/git/restore-preview?ref=abc123&path=plans%2Fplan-a%2Fplan.md&max_chars=4321', method: 'GET' },
+    { url: '/api/git/restore-apply', method: 'POST' },
     { url: '/api/git/autogit', method: 'GET' },
     { url: '/api/git/autogit/run-due', method: 'POST' },
     { url: '/api/git/remote/connect', method: 'POST' },
@@ -64,7 +67,7 @@ test('git API helpers target the expected endpoints', async () => {
   ]);
 });
 
-test('git policy update and checkpoint helpers send JSON bodies', async () => {
+test('git policy, checkpoint, and restore-apply helpers send JSON bodies', async () => {
   installFetchMock((url, options) => {
     if (url === '/api/git/policy') {
       assert.equal(options.headers['content-type'], 'application/json');
@@ -74,8 +77,21 @@ test('git policy update and checkpoint helpers send JSON bodies', async () => {
       assert.equal(options.headers['content-type'], 'application/json');
       assert.deepEqual(JSON.parse(options.body), { event_type: 'manual_checkpoint' });
     }
+    if (url === '/api/git/restore-apply') {
+      assert.equal(options.headers['content-type'], 'application/json');
+      assert.deepEqual(JSON.parse(options.body), {
+        ref: 'abc123',
+        paths: ['plans/plan-a/plan.md'],
+        confirmation: 'APPLY_GIT_RESTORE',
+      });
+    }
   });
 
   await updateGitPolicy({ enabled: true });
   await createGitCheckpoint({ event_type: 'manual_checkpoint' });
+  await applyGitRestore({
+    ref: 'abc123',
+    paths: ['plans/plan-a/plan.md'],
+    confirmation: 'APPLY_GIT_RESTORE',
+  });
 });

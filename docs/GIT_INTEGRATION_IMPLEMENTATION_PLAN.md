@@ -4,7 +4,7 @@
 2026-04-23
 
 ## Status
-Active implementation plan derived from `docs/GIT_INTEGRATION_DESIGN.md`.
+Implementation in progress. Foundation, manual checkpoints, history/diff, safe remote operations, domain-aware AutoGit, read-only restore preview, guarded restore apply, and guided Settings UX are implemented.
 
 ## Purpose
 This document turns the Git integration design into an execution sequence for the current BuildWealth codebase.
@@ -18,21 +18,21 @@ It is intentionally implementation-oriented:
 - what each slice must prove before moving on
 
 ## Execution Summary
-BuildWealth should implement Git integration in four phases:
+BuildWealth implements Git integration in four phases:
 
 1. Foundation and local manual checkpoints
 2. Read-only history and diff UX
 3. Safe remote connect and manual push/pull
 4. Domain-aware AutoGit and selective follow-up polish
 
-The recommended first shippable milestone is Phase 1 only:
+The first shippable milestone was Phase 1:
 
 - initialize a local versioned workspace repo
 - materialize curated artifacts into it
 - create a manual checkpoint
 - inspect Git status and recent commits
 
-That gives immediate product value while keeping the risk bounded.
+That gave immediate product value while keeping the risk bounded. The current release now layers on read-only inspection, optional manual remote sync, domain-aware AutoGit, restore planning, guarded selected-file restore apply, and a guided one-click path in Settings.
 
 ## Guiding Constraints
 
@@ -555,14 +555,25 @@ Acceptance criteria:
 
 ## Deferred Follow-Up Work
 
-### Selective Restore
-Not part of the first implementation plan.
+### Selective Restore Apply
+Guarded selected-file restore apply is implemented.
+
+Implemented scope:
+
+- `POST /api/git/restore-apply`
+- explicit selected file paths only
+- `APPLY_GIT_RESTORE` confirmation phrase
+- pre-apply checkpoint and post-apply checkpoint by default
+- plan markdown/tasks/settings/timeline/contribution-rules/assumption-sets/branch-templates through `PlanWorkspace`
+- recommendation JSON restore through `RecommendationInbox`
+- portfolio review packet JSON/Markdown restore through `PortfolioReviewPacketStore`
+- never raw-checkout files directly into canonical stores without validation
 
 Later work:
 
-- preview restore diff
-- restore plan files or recommendation records back through service-layer import/apply flows
-- never raw-checkout files directly into canonical stores without validation
+- richer conflict UX for multi-file plan restores
+- optional preview token binding if restore confirmation needs stronger replay protection
+- additional validated flows for policy/profile artifacts
 
 ### Financial Profile Inclusion
 Defer until after the default policy proves useful.
@@ -583,7 +594,7 @@ Reason:
 - high privacy sensitivity
 
 ## Delivery Order Recommendation
-If this work is implemented in small PRs, use this order:
+This work should be landed in small slices in this order:
 
 1. settings + git integration policy store
 2. versioned workspace export service
@@ -594,6 +605,9 @@ If this work is implemented in small PRs, use this order:
 7. history and diff
 8. remote connect and push/pull
 9. AutoGit event model and debounce
+10. read-only restore preview
+11. guided Git setup and Settings UX polish
+12. guarded selective restore apply through service-layer validation
 
 ## Risk Register
 
@@ -629,8 +643,10 @@ Mitigation:
 ### Risk 5: Restore semantics become unsafe
 Mitigation:
 
-- defer restore
-- route any future restore through validated service-layer apply flows
+- ship read-only restore preview before restore apply
+- keep preview side-effect free
+- route restore through validated service-layer apply flows with explicit confirmation
+- create current-state checkpoints before mutating canonical data
 
 ## Definition of Done for First Release
 The first release of BuildWealth Git integration is complete when:
@@ -638,16 +654,21 @@ The first release of BuildWealth Git integration is complete when:
 - a user can enable the feature and initialize a local repository
 - the app exports a curated versioned workspace deterministically
 - the user can create a manual checkpoint from the settings UI
-- the user can see current status and recent history
+- the user can see current status, recent history, and diffs
 - remote support remains optional and local-only works fully
+- AutoGit creates local checkpoints only from meaningful domain events
+- restore preview is read-only and does not mutate canonical data
+- guarded restore apply requires explicit paths, confirmation, and service-layer validation
+- Settings provides a guided safe path for first-time setup
 - backup and durable-storage systems remain unchanged
 
 ## Immediate Next Build Slice
-The next implementation slice should be:
+The next implementation slice should be conflict-aware restore UX:
 
-1. add `versioned_workspace_dir` and `git_integration_settings_path` to `settings.py`
-2. implement `GitIntegrationSettingsStore`
-3. implement `VersionedWorkspaceService` with plans, recommendations, and review packets export
-4. add tests for deterministic export and settings persistence
+1. let users select multiple previewed files from a structured list
+2. highlight unsupported paths before apply
+3. show pre/post checkpoint hashes after apply
+4. add optional conflict notes when current content changed after preview
+5. consider preview-token binding for stronger confirmation
 
-That slice establishes the correct architecture before any Git command orchestration is added.
+That keeps restore aligned with BuildWealth's source-of-truth model while preserving the audit value of Git history.

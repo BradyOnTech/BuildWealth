@@ -1,4 +1,5 @@
 import {
+  applyGitRestore,
   connectGitRemote,
   createGitCheckpoint,
   fetchJson,
@@ -25,6 +26,13 @@ const FIELDS = [
   { key: 'openai_model', label: 'OpenAI Model', type: 'text', placeholder: 'gpt-5-mini', hint: 'Model used for Copilot responses.' },
   { key: 'openai_base_url', label: 'OpenAI Base URL', type: 'text', placeholder: 'https://api.openai.com/v1', hint: 'Custom endpoint for OpenAI-compatible APIs.' },
 ];
+
+const gitUiState = {
+  policy: null,
+  status: null,
+  history: [],
+  autogit: null,
+};
 
 export function template() {
   return `
@@ -99,142 +107,200 @@ export function template() {
       <p class="hint" id="protection-status"></p>
       <h3 class="section-title">Version History</h3>
       <p class="hint tight">Create local Git checkpoints for plans, recommendations, review packets, and selected audit artifacts.</p>
-      <div class="settings-grid">
-        <label class="field">
-          <span>Version History</span>
-          <select id="git-enabled">
-            <option value="false">Disabled</option>
-            <option value="true">Enabled</option>
-          </select>
-          <span class="field-hint">Controls whether BuildWealth should treat the versioned workspace as active.</span>
+      <section class="git-panel">
+        <div class="git-panel-header">
+          <div>
+            <h4>Git Setup Guide</h4>
+            <p class="hint tight">Follow the safe path: enable history, initialize the local repo, create a checkpoint, then inspect the diff.</p>
+          </div>
+          <button class="primary small" id="git-guided-next-action">Run Next Recommended Step</button>
+        </div>
+        <div class="settings-grid">
+          <label class="field">
+            <span>Recommended Next Step</span>
+            <input type="text" id="git-guided-next-step" readonly value="Load Git status to see the next step." />
+            <span class="field-hint">One-click path: Enable → Initialize → Checkpoint → Preview diff.</span>
+          </label>
+          <label class="field">
+            <span>Workflow Status</span>
+            <input type="text" id="git-workflow-status" readonly value="Unknown" />
+            <span class="field-hint">Plain-language summary of local, AutoGit, remote, and restore-preview readiness.</span>
+          </label>
+        </div>
+      </section>
+      <section class="git-panel">
+        <div class="git-panel-header">
+          <div>
+            <h4>Local History</h4>
+            <p class="hint tight">Local checkpoints are the safe default and work without any remote service.</p>
+          </div>
+          <div class="header-actions">
+            <button class="ghost small" id="save-git-policy">Save Policy</button>
+            <button class="ghost small" id="init-git-repo">Initialize</button>
+            <button class="ghost small" id="refresh-git-status">Refresh</button>
+            <button class="primary small" id="create-git-checkpoint">Create Checkpoint</button>
+          </div>
+        </div>
+        <div class="settings-grid">
+          <label class="field">
+            <span>Version History</span>
+            <select id="git-enabled">
+              <option value="false">Disabled</option>
+              <option value="true">Enabled</option>
+            </select>
+            <span class="field-hint">Controls whether BuildWealth should treat the versioned workspace as active.</span>
+          </label>
+          <label class="field">
+            <span>Workspace Path</span>
+            <input type="text" id="git-workspace-dir" autocomplete="off" />
+            <span class="field-hint">Local generated workspace used for Git checkpoints.</span>
+          </label>
+          <label class="field">
+            <span>Financial Profile Export</span>
+            <select id="git-include-financial-profile">
+              <option value="false">Excluded</option>
+              <option value="true">Included</option>
+            </select>
+            <span class="field-hint">Sensitive by default. Only include when you want it in Git history.</span>
+          </label>
+        </div>
+        <div class="settings-grid">
+          <label class="field">
+            <span>Repository Status</span>
+            <input type="text" id="git-repo-status" readonly value="Unknown" />
+            <span class="field-hint">Initialized, clean, dirty, or not initialized.</span>
+          </label>
+          <label class="field">
+            <span>Branch</span>
+            <input type="text" id="git-branch" readonly value="-" />
+            <span class="field-hint">Current branch for the versioned workspace.</span>
+          </label>
+          <label class="field">
+            <span>Last Checkpoint</span>
+            <input type="text" id="git-last-commit" readonly value="-" />
+            <span class="field-hint">Most recent local commit in the versioned workspace.</span>
+          </label>
+        </div>
+        <div class="settings-grid">
+          <label class="field">
+            <span>Changed Files</span>
+            <input type="text" id="git-changed-files" readonly value="0" />
+            <span class="field-hint">Files currently changed in the generated workspace.</span>
+          </label>
+          <label class="field">
+            <span>Recent History</span>
+            <select id="git-history-select"></select>
+            <span class="field-hint">Latest local checkpoints.</span>
+          </label>
+        </div>
+        <div class="header-actions">
+          <button class="ghost small" id="view-current-git-diff">View Current Diff</button>
+          <button class="ghost small" id="view-selected-git-diff">View Selected Diff</button>
+        </div>
+        <label class="field form-span">
+          <span>Diff Preview</span>
+          <textarea id="git-diff-preview" rows="14" readonly placeholder="View current changes or select a checkpoint to inspect its patch."></textarea>
+          <span class="field-hint">Shows generated workspace changes without leaving BuildWealth.</span>
         </label>
-        <label class="field">
-          <span>Workspace Path</span>
-          <input type="text" id="git-workspace-dir" autocomplete="off" />
-          <span class="field-hint">Local generated workspace used for Git checkpoints.</span>
+      </section>
+      <section class="git-panel">
+        <div class="git-panel-header">
+          <div>
+            <h4>AutoGit</h4>
+            <p class="hint tight">Automatic checkpoints are local-only and wait for meaningful app changes to settle.</p>
+          </div>
+          <button class="ghost small" id="run-due-git-autogit">Run Due AutoGit</button>
+        </div>
+        <div class="settings-grid">
+          <label class="field">
+            <span>AutoGit</span>
+            <select id="git-autogit-enabled">
+              <option value="false">Disabled</option>
+              <option value="true">Enabled</option>
+            </select>
+            <span class="field-hint">Queues automatic local checkpoints after meaningful app changes.</span>
+          </label>
+          <label class="field">
+            <span>Auto Push</span>
+            <select id="git-auto-push-enabled">
+              <option value="false">Disabled</option>
+              <option value="true">Enabled</option>
+            </select>
+            <span class="field-hint">Stored now; remote push remains opt-in.</span>
+          </label>
+          <label class="field">
+            <span>Idle Seconds</span>
+            <input type="number" id="git-auto-checkpoint-idle-seconds" min="30" max="86400" step="30" />
+            <span class="field-hint">AutoGit waits this long after the latest eligible event.</span>
+          </label>
+        </div>
+        <div class="settings-grid">
+          <label class="field">
+            <span>Pending AutoGit</span>
+            <input type="text" id="git-autogit-pending" readonly value="None" />
+            <span class="field-hint">Queued event waiting for the idle window.</span>
+          </label>
+          <label class="field">
+            <span>Last AutoGit Result</span>
+            <input type="text" id="git-autogit-last-result" readonly value="None" />
+            <span class="field-hint">Most recent automatic checkpoint outcome.</span>
+          </label>
+        </div>
+      </section>
+      <section class="git-panel">
+        <div class="git-panel-header">
+          <div>
+            <h4>Remote Sync</h4>
+            <p class="hint tight">Optional private remote sync. Push and pull are manual; BuildWealth never force-pushes.</p>
+          </div>
+          <div class="header-actions">
+            <button class="ghost small" id="connect-git-remote">Connect Remote</button>
+            <button class="ghost small" id="push-git-remote">Push</button>
+            <button class="ghost small" id="pull-git-remote">Pull</button>
+          </div>
+        </div>
+        <div class="settings-grid">
+          <label class="field">
+            <span>Remote</span>
+            <input type="text" id="git-remote-status" readonly value="Local only" />
+            <span class="field-hint">Shows local-only, remote-connected, and ahead/behind state.</span>
+          </label>
+          <label class="field">
+            <span>Remote Name</span>
+            <input type="text" id="git-remote-name" autocomplete="off" placeholder="origin" />
+            <span class="field-hint">Defaults to <code>origin</code>.</span>
+          </label>
+          <label class="field">
+            <span>Remote URL</span>
+            <input type="text" id="git-remote-url" autocomplete="off" placeholder="git@github.com:you/buildwealth-history.git" />
+            <span class="field-hint">Use a private repo. BuildWealth refuses incompatible histories.</span>
+          </label>
+        </div>
+      </section>
+      <section class="git-panel">
+        <div class="git-panel-header">
+          <div>
+            <h4>Restore Preview</h4>
+            <p class="hint tight">Guarded restore planning. Preview impact first, then apply selected files through BuildWealth validation.</p>
+          </div>
+          <div class="header-actions">
+            <button class="ghost small" id="preview-git-restore">Preview Selected Restore</button>
+            <button class="primary small" id="apply-git-restore">Apply Selected Restore</button>
+          </div>
+        </div>
+        <div class="settings-grid">
+          <label class="field">
+            <span>Restore Preview Path</span>
+            <input type="text" id="git-restore-preview-path" autocomplete="off" placeholder="plans/, recommendations/, or a specific exported file" />
+            <span class="field-hint">Preview can inspect folders. Apply requires one explicit supported file path.</span>
+          </label>
+        </div>
+        <label class="field form-span">
+          <span>Restore Preview</span>
+          <textarea id="git-restore-preview" rows="12" readonly placeholder="Select a checkpoint and preview what restoring it would change."></textarea>
+          <span class="field-hint">Apply creates pre/post checkpoints, uses service-layer validation, and never runs raw git checkout.</span>
         </label>
-        <label class="field">
-          <span>Financial Profile Export</span>
-          <select id="git-include-financial-profile">
-            <option value="false">Excluded</option>
-            <option value="true">Included</option>
-          </select>
-          <span class="field-hint">Sensitive by default. Only include when you want it in Git history.</span>
-        </label>
-      </div>
-      <div class="settings-grid">
-        <label class="field">
-          <span>AutoGit</span>
-          <select id="git-autogit-enabled">
-            <option value="false">Disabled</option>
-            <option value="true">Enabled</option>
-          </select>
-          <span class="field-hint">Queues automatic local checkpoints after meaningful app changes.</span>
-        </label>
-        <label class="field">
-          <span>Auto Push</span>
-          <select id="git-auto-push-enabled">
-            <option value="false">Disabled</option>
-            <option value="true">Enabled</option>
-          </select>
-          <span class="field-hint">Stored now; remote push remains opt-in.</span>
-        </label>
-        <label class="field">
-          <span>Idle Seconds</span>
-          <input type="number" id="git-auto-checkpoint-idle-seconds" min="30" max="86400" step="30" />
-          <span class="field-hint">AutoGit waits this long after the latest eligible event.</span>
-        </label>
-      </div>
-      <div class="settings-grid">
-        <label class="field">
-          <span>Repository Status</span>
-          <input type="text" id="git-repo-status" readonly value="Unknown" />
-          <span class="field-hint">Initialized, clean, dirty, or not initialized.</span>
-        </label>
-        <label class="field">
-          <span>Branch</span>
-          <input type="text" id="git-branch" readonly value="-" />
-          <span class="field-hint">Current branch for the versioned workspace.</span>
-        </label>
-        <label class="field">
-          <span>Last Checkpoint</span>
-          <input type="text" id="git-last-commit" readonly value="-" />
-          <span class="field-hint">Most recent local commit in the versioned workspace.</span>
-        </label>
-      </div>
-      <div class="settings-grid">
-        <label class="field">
-          <span>Changed Files</span>
-          <input type="text" id="git-changed-files" readonly value="0" />
-          <span class="field-hint">Files currently changed in the generated workspace.</span>
-        </label>
-        <label class="field">
-          <span>Remote</span>
-          <input type="text" id="git-remote-status" readonly value="Local only" />
-          <span class="field-hint">Remote connection support comes after local checkpoints.</span>
-        </label>
-        <label class="field">
-          <span>Recent History</span>
-          <select id="git-history-select"></select>
-          <span class="field-hint">Latest local checkpoints.</span>
-        </label>
-      </div>
-      <div class="settings-grid">
-        <label class="field">
-          <span>Pending AutoGit</span>
-          <input type="text" id="git-autogit-pending" readonly value="None" />
-          <span class="field-hint">Queued event waiting for the idle window.</span>
-        </label>
-        <label class="field">
-          <span>Last AutoGit Result</span>
-          <input type="text" id="git-autogit-last-result" readonly value="None" />
-          <span class="field-hint">Most recent automatic checkpoint outcome.</span>
-        </label>
-      </div>
-      <div class="settings-grid">
-        <label class="field">
-          <span>Remote Name</span>
-          <input type="text" id="git-remote-name" autocomplete="off" placeholder="origin" />
-          <span class="field-hint">Defaults to <code>origin</code>.</span>
-        </label>
-        <label class="field">
-          <span>Remote URL</span>
-          <input type="text" id="git-remote-url" autocomplete="off" placeholder="git@github.com:you/buildwealth-history.git" />
-          <span class="field-hint">Use a private repo. BuildWealth never force-pushes.</span>
-        </label>
-      </div>
-      <div class="header-actions">
-        <button class="ghost small" id="save-git-policy">Save Version Policy</button>
-        <button class="ghost small" id="init-git-repo">Initialize Repository</button>
-        <button class="ghost small" id="refresh-git-status">Refresh Status</button>
-        <button class="ghost small" id="view-current-git-diff">View Current Diff</button>
-        <button class="ghost small" id="view-selected-git-diff">View Selected Diff</button>
-        <button class="ghost small" id="run-due-git-autogit">Run Due AutoGit</button>
-        <button class="ghost small" id="connect-git-remote">Connect Remote</button>
-        <button class="ghost small" id="push-git-remote">Push</button>
-        <button class="ghost small" id="pull-git-remote">Pull</button>
-        <button class="primary small" id="create-git-checkpoint">Create Checkpoint</button>
-      </div>
-      <label class="field form-span">
-        <span>Diff Preview</span>
-        <textarea id="git-diff-preview" rows="14" readonly placeholder="View current changes or select a checkpoint to inspect its patch."></textarea>
-        <span class="field-hint">Shows generated workspace changes without leaving BuildWealth.</span>
-      </label>
-      <div class="settings-grid">
-        <label class="field">
-          <span>Restore Preview Path</span>
-          <input type="text" id="git-restore-preview-path" autocomplete="off" placeholder="plans/, recommendations/, or a specific exported file" />
-          <span class="field-hint">Optional. Leave blank to preview all supported exported artifacts.</span>
-        </label>
-      </div>
-      <div class="header-actions">
-        <button class="ghost small" id="preview-git-restore">Preview Selected Restore</button>
-      </div>
-      <label class="field form-span">
-        <span>Restore Preview</span>
-        <textarea id="git-restore-preview" rows="12" readonly placeholder="Select a checkpoint and preview what restoring it would change."></textarea>
-        <span class="field-hint">Read-only planning only. This does not restore or modify canonical BuildWealth data.</span>
-      </label>
+      </section>
       <p class="hint" id="git-status"></p>
     </div>
     <p class="hint">Engine sidecar endpoints and health probes are configured via environment variables (<code>infra/env/orchestrator.env</code>).</p>
@@ -454,6 +520,7 @@ async function applyProtectionNow() {
 }
 
 function setGitPolicyInputs(policy = {}) {
+  gitUiState.policy = policy;
   const enabled = byId('git-enabled');
   if (enabled) enabled.value = policy.enabled ? 'true' : 'false';
   const workspace = byId('git-workspace-dir');
@@ -490,6 +557,7 @@ function formatCommit(commit) {
 }
 
 function setGitStatusInputs(status = {}) {
+  gitUiState.status = status;
   const repoStatus = byId('git-repo-status');
   if (repoStatus) {
     const dirtyLabel = status.dirty ? 'dirty' : 'clean';
@@ -522,6 +590,7 @@ function collectGitRemotePayload() {
 }
 
 function setGitHistory(commits = []) {
+  gitUiState.history = Array.isArray(commits) ? commits : [];
   const select = byId('git-history-select');
   if (!select) return;
   select.innerHTML = '';
@@ -571,7 +640,29 @@ function setGitRestorePreview(payload = {}) {
   preview.value = lines.join('\n').trim() || 'No restore preview available.';
 }
 
+function setGitRestoreApplyResult(payload = {}) {
+  const preview = byId('git-restore-preview');
+  if (!preview) return;
+  const lines = [
+    payload.message || 'Restore apply completed.',
+    '',
+    `Applied files: ${payload.applied_files || 0}`,
+    ...(payload.files || []).map((file) => `- ${file.status}: ${file.path} (${file.action})`),
+  ];
+  if (payload.before_checkpoint?.commit?.short_hash) {
+    lines.push('', `Pre-apply checkpoint: ${payload.before_checkpoint.commit.short_hash}`);
+  }
+  if (payload.after_checkpoint?.commit?.short_hash) {
+    lines.push(`Post-apply checkpoint: ${payload.after_checkpoint.commit.short_hash}`);
+  }
+  if ((payload.warnings || []).length) {
+    lines.push('', 'Warnings:', ...payload.warnings.map((warning) => `- ${warning}`));
+  }
+  preview.value = lines.join('\n');
+}
+
 function setGitAutoGitState(state = {}) {
+  gitUiState.autogit = state;
   const pending = byId('git-autogit-pending');
   if (pending) {
     const event = state.pending_event || null;
@@ -593,12 +684,76 @@ function setGitAutoGitState(state = {}) {
       lastResult.value = 'None';
     }
   }
+  updateGitWorkflowSummary();
+}
+
+function gitNextStep() {
+  const policy = gitUiState.policy || {};
+  const status = gitUiState.status || {};
+  const history = gitUiState.history || [];
+  if (!policy.enabled) {
+    return {
+      label: 'Enable Version History',
+      description: 'Version History is off. Enable it first so BuildWealth can maintain local checkpoints.',
+      action: 'enable',
+    };
+  }
+  if (status.status !== 'ok') {
+    return {
+      label: 'Initialize Local Repository',
+      description: 'Version History is enabled, but the local Git workspace has not been initialized yet.',
+      action: 'init',
+    };
+  }
+  if (status.dirty || !status.last_commit) {
+    return {
+      label: 'Create Local Checkpoint',
+      description: 'The versioned workspace has changes ready for a local checkpoint.',
+      action: 'checkpoint',
+    };
+  }
+  if (history.length) {
+    return {
+      label: 'Preview Latest Checkpoint Diff',
+      description: 'Local history is ready. Inspect the selected checkpoint diff before using remote or restore preview tools.',
+      action: 'diff',
+    };
+  }
+  return {
+    label: 'Refresh Version Status',
+    description: 'Refresh Git status to find the next recommended action.',
+    action: 'refresh',
+  };
+}
+
+function updateGitWorkflowSummary() {
+  const policy = gitUiState.policy || {};
+  const status = gitUiState.status || {};
+  const autogit = gitUiState.autogit || {};
+  const remote = status.remote || {};
+  const next = gitNextStep();
+  const nextStep = byId('git-guided-next-step');
+  if (nextStep) nextStep.value = `${next.label}: ${next.description}`;
+
+  const workflowStatus = byId('git-workflow-status');
+  if (!workflowStatus) return;
+  const localLabel = status.status === 'ok'
+    ? `Local repo ${status.dirty ? 'has uncheckpointed changes' : 'is checkpointed'}`
+    : 'Local repo is not initialized';
+  const remoteLabel = remote.has_remote
+    ? `remote connected (${remote.ahead || 0} ahead, ${remote.behind || 0} behind)`
+    : 'local-only';
+  const autogitLabel = autogit.pending_event
+    ? `AutoGit pending ${autogit.pending_event.event_type}`
+    : `AutoGit ${policy.autogit_enabled ? 'enabled' : 'disabled'}`;
+  workflowStatus.value = `${localLabel}; ${remoteLabel}; ${autogitLabel}; restore preview is read-only.`;
 }
 
 async function loadGitPolicy() {
   try {
     const policy = await getGitPolicy();
     setGitPolicyInputs(policy);
+    updateGitWorkflowSummary();
   } catch (e) {
     setGitStatus(`Version policy load failed: ${e.message}`, true);
     writeLog(`Version policy load failed: ${e.message}`, null, true);
@@ -632,10 +787,35 @@ async function loadGitStatus() {
     setGitStatusInputs(status);
     setGitHistory(history.commits || []);
     setGitAutoGitState(autogit);
+    updateGitWorkflowSummary();
     setGitStatus(status.message || 'Version history status loaded.');
   } catch (e) {
     setGitStatus(`Version history status failed: ${e.message}`, true);
     writeLog(`Version history status failed: ${e.message}`, null, true);
+  }
+}
+
+async function runGuidedGitStep() {
+  const button = byId('git-guided-next-action');
+  const next = gitNextStep();
+  if (button) button.disabled = true;
+  try {
+    if (next.action === 'enable') {
+      const enabled = byId('git-enabled');
+      if (enabled) enabled.value = 'true';
+      await saveGitPolicy();
+      setGitStatus('Version History enabled. Next step: initialize the local repository.');
+    } else if (next.action === 'init') {
+      await initGitRepository();
+    } else if (next.action === 'checkpoint') {
+      await checkpointGitWorkspace();
+    } else if (next.action === 'diff') {
+      await loadSelectedGitDiff();
+    } else {
+      await loadGitStatus();
+    }
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 
@@ -726,6 +906,43 @@ async function previewSelectedRestore() {
   } catch (e) {
     setGitStatus(`Restore preview failed: ${e.message}`, true);
     writeLog(`Restore preview failed: ${e.message}`, null, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function applySelectedRestore() {
+  const button = byId('apply-git-restore');
+  const ref = byId('git-history-select')?.value || '';
+  const path = (byId('git-restore-preview-path')?.value || '').trim();
+  if (!ref) {
+    setGitStatus('Select a checkpoint before applying restore.', true);
+    return;
+  }
+  if (!path || path.endsWith('/')) {
+    setGitStatus('Restore apply requires one explicit supported file path, not a folder.', true);
+    return;
+  }
+  const confirmation = window.prompt(`Type APPLY_GIT_RESTORE to restore ${path}.`, '');
+  if (confirmation !== 'APPLY_GIT_RESTORE') {
+    setGitStatus('Restore apply cancelled. Confirmation phrase did not match.');
+    return;
+  }
+  if (button) button.disabled = true;
+  try {
+    const payload = await applyGitRestore({
+      ref,
+      paths: [path],
+      confirmation,
+      rationale: 'Applied from the Settings restore preview flow.',
+    });
+    setGitRestoreApplyResult(payload);
+    await loadGitStatus();
+    setGitStatus(payload.message || 'Restore apply completed.');
+    writeLog('Restore apply completed', payload);
+  } catch (e) {
+    setGitStatus(`Restore apply failed: ${e.message}`, true);
+    writeLog(`Restore apply failed: ${e.message}`, null, true);
   } finally {
     if (button) button.disabled = false;
   }
@@ -836,11 +1053,13 @@ export function init() {
   byId('save-protection-policy').addEventListener('click', saveProtectionPolicy);
   byId('apply-protection-now').addEventListener('click', applyProtectionNow);
   byId('save-git-policy').addEventListener('click', saveGitPolicy);
+  byId('git-guided-next-action').addEventListener('click', runGuidedGitStep);
   byId('init-git-repo').addEventListener('click', initGitRepository);
   byId('refresh-git-status').addEventListener('click', loadGitStatus);
   byId('view-current-git-diff').addEventListener('click', loadCurrentGitDiff);
   byId('view-selected-git-diff').addEventListener('click', loadSelectedGitDiff);
   byId('preview-git-restore').addEventListener('click', previewSelectedRestore);
+  byId('apply-git-restore').addEventListener('click', applySelectedRestore);
   byId('run-due-git-autogit').addEventListener('click', runDueAutoGit);
   byId('connect-git-remote').addEventListener('click', connectRemote);
   byId('push-git-remote').addEventListener('click', pushRemote);

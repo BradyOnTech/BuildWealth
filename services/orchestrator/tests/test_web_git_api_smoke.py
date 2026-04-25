@@ -60,3 +60,24 @@ def test_git_api_frontend_helpers_smoke() -> None:
         f"stdout:\n{result.stdout}\n"
         f"stderr:\n{result.stderr}"
     )
+
+
+def test_git_settings_template_smoke() -> None:
+    node_bin = _resolve_node_binary()
+    if node_bin is None:
+        pytest.skip("no node binary with --experimental-default-type support for frontend smoke checks")
+
+    project_root = Path(__file__).resolve().parents[1]
+    test_path = project_root / "src" / "buildwealth_orchestrator" / "web" / "tests" / "git_settings_template.test.mjs"
+    result = subprocess.run(
+        [node_bin, "--experimental-default-type=module", "--test", str(test_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, (
+        "Frontend Git settings template smoke test failed.\n"
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )

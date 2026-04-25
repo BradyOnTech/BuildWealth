@@ -189,6 +189,48 @@ class RecommendationInbox:
 
         raise RecommendationNotFoundError(f"Recommendation not found: {recommendation_id}")
 
+    def restore(self, recommendation: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(recommendation, dict):
+            raise ValueError("recommendation restore payload must be an object")
+        recommendation_id = str(recommendation.get("id") or "").strip()
+        if not recommendation_id:
+            raise ValueError("recommendation restore payload requires id")
+        title = str(recommendation.get("title") or "").strip()
+        if not title:
+            raise ValueError("recommendation restore payload requires title")
+        detail = str(recommendation.get("detail") or "").strip()
+        if not detail:
+            raise ValueError("recommendation restore payload requires detail")
+
+        restored = dict(recommendation)
+        restored["id"] = recommendation_id
+        restored["title"] = title
+        restored["detail"] = detail
+        restored["priority"] = str(restored.get("priority") or "medium").strip().lower()
+        restored["status"] = str(restored.get("status") or "proposed").strip().lower()
+        restored["recommendation_type"] = str(
+            restored.get("recommendation_type") or "general"
+        ).strip().lower()
+        restored["source"] = str(restored.get("source") or "git_restore").strip().lower() or "git_restore"
+        restored["plan_id"] = str(restored.get("plan_id") or "").strip() or None
+        if not isinstance(restored.get("action_payload"), dict):
+            restored["action_payload"] = {}
+        restored["updated_at"] = utc_now_iso()
+
+        payload = self._load()
+        rows = payload.get("recommendations", [])
+        for index, row in enumerate(rows):
+            if str(row.get("id")) == recommendation_id:
+                rows[index] = restored
+                payload["recommendations"] = rows
+                self._save(payload)
+                return restored
+
+        rows.append(restored)
+        payload["recommendations"] = rows
+        self._save(payload)
+        return restored
+
     def set_status(
         self,
         recommendation_id: str,

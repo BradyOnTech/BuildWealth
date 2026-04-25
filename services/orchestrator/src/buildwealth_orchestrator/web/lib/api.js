@@ -70,6 +70,14 @@ export function getGitRestorePreview({ ref = '', path = '', maxChars = 120000 } 
   return fetchJson(`/api/git/restore-preview${query ? `?${query}` : ''}`);
 }
 
+export function applyGitRestore(payload = {}) {
+  return fetchJson('/api/git/restore-apply', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getGitAutoGitState() {
   return fetchJson('/api/git/autogit');
 }

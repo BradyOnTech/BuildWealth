@@ -546,6 +546,28 @@ textarea[readonly] { background: #f6f9f1; }
 
 .field-hint { font-size: 0.72rem; color: var(--ink-soft); font-style: italic; text-transform: none; letter-spacing: 0; }
 .settings-form { max-width: 720px; }
+.git-panel {
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: calc(var(--radius) + 4px);
+  box-shadow: 0 1px 2px rgba(34, 44, 34, 0.05), 0 8px 24px rgba(34, 44, 34, 0.06);
+  padding: 0.75rem;
+  margin: 0.75rem 0;
+}
+.git-panel-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: flex-start;
+  margin-bottom: 0.6rem;
+}
+.git-panel-header h4 {
+  margin: 0 0 0.15rem;
+  text-wrap: balance;
+}
+.git-panel-header .header-actions {
+  margin: 0;
+  justify-content: flex-end;
+}
 .txn-form {
   display: grid;
   grid-template-columns: repeat(6, 1fr) auto;
@@ -981,4 +1003,6 @@ th { background: #f0f5ea; font-family: var(--mono); font-size: 0.7rem; text-tran
   .kpi-row, .stat-row, .three-col, .two-col, .four-col { grid-template-columns: 1fr; }
   .split-layout { grid-template-columns: 1fr; }
   .create-plan-row, .decision-form, .workflow-grid, .filter-bar, .settings-grid, .inline-builder, .history-toolbar { grid-template-columns: 1fr; }
+  .git-panel-header { flex-direction: column; }
+  .git-panel-header .header-actions { justify-content: flex-start; }
 }

@@ -10,10 +10,14 @@ from buildwealth_orchestrator.schemas import (
     GitPolicyUpdateRequest,
     GitRemoteConnectRequest,
     GitRemoteOperationRequest,
+    GitRestoreApplyRequest,
     PlanCreateRequest,
     RecommendationCreateRequest,
 )
 from buildwealth_orchestrator.services.git_integration_settings import GitIntegrationSettingsStore
+from buildwealth_orchestrator.services.plan_workspace import PlanWorkspace
+from buildwealth_orchestrator.services.portfolio_review_packets import PortfolioReviewPacketStore
+from buildwealth_orchestrator.services.recommendation_inbox import RecommendationInbox
 
 
 def _write_json(path: Path, payload: object) -> None:
@@ -57,6 +61,9 @@ def _configure_git_api_fixture(monkeypatch, tmp_path: Path) -> Path:
             default_workspace_dir=workspace_dir,
         ),
     )
+    monkeypatch.setattr(main, "plan_workspace", PlanWorkspace(plans_dir))
+    monkeypatch.setattr(main, "recommendation_inbox", RecommendationInbox(recommendations_path))
+    monkeypatch.setattr(main, "portfolio_review_packet_store", PortfolioReviewPacketStore(review_packet_dir))
     return workspace_dir
 
 
@@ -108,6 +115,57 @@ def test_git_api_init_status_history_and_checkpoint_flow(monkeypatch, tmp_path: 
     assert restore_preview.files[0].path == "recommendations/index.json"
     assert restore_preview.files[0].status == "modified"
     assert (workspace_dir / "recommendations" / "index.json").exists()
+
+
+def test_git_restore_apply_restores_selected_plan_file_through_service(monkeypatch, tmp_path: Path) -> None:
+    _configure_git_api_fixture(monkeypatch, tmp_path)
+    main.update_git_policy(GitPolicyUpdateRequest(enabled=True))
+    plan = main.create_plan(PlanCreateRequest(title="Restore Plan", description="Original"))
+    plan_id = plan.id
+    main.plan_workspace.update_plan_files(plan_id, plan_markdown="# Historical plan\n")
+
+    main.initialize_git_repository()
+    old_checkpoint = main.create_git_checkpoint(GitCheckpointRequest(message="Historical checkpoint"))
+    old_hash = old_checkpoint.commit.hash
+
+    main.plan_workspace.update_plan_files(plan_id, plan_markdown="# Current plan\n")
+    main.create_git_checkpoint(GitCheckpointRequest(message="Current checkpoint"))
+    preview = main.get_git_restore_preview(ref=old_hash, path=f"plans/{plan_id}/plan.md")
+    result = main.apply_git_restore(
+        GitRestoreApplyRequest(
+            ref=old_hash,
+            paths=[f"plans/{plan_id}/plan.md"],
+            confirmation="APPLY_GIT_RESTORE",
+        )
+    )
+    restored = main.plan_workspace.get_plan(plan_id)
+
+    assert preview.files[0].status == "modified"
+    assert result.status == "applied"
+    assert result.applied_files == 1
+    assert result.before_checkpoint is not None
+    assert result.after_checkpoint is not None
+    assert restored["files"]["plan_markdown"] == "# Historical plan\n"
+
+
+def test_git_restore_apply_requires_confirmation(monkeypatch, tmp_path: Path) -> None:
+    _configure_git_api_fixture(monkeypatch, tmp_path)
+    main.initialize_git_repository()
+    checkpoint = main.create_git_checkpoint(GitCheckpointRequest())
+
+    try:
+        main.apply_git_restore(
+            GitRestoreApplyRequest(
+                ref=checkpoint.commit.hash,
+                paths=["recommendations/index.json"],
+                confirmation="nope",
+            )
+        )
+    except main.HTTPException as exc:
+        assert exc.status_code == 400
+        assert "confirmation phrase" in str(exc.detail)
+    else:
+        raise AssertionError("restore apply should require confirmation phrase")
 
 
 def test_plan_create_queues_autogit_event_when_enabled(monkeypatch, tmp_path: Path) -> None:

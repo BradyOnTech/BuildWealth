@@ -429,21 +429,31 @@ V1 surfaces:
 The Settings view is the correct initial home because BuildWealth currently does not have a Tolaria-style bottom bar Git affordance and does not need one to validate the feature.
 
 ## Restore and Rollback Model
-Git restore should be intentionally delayed until after manual checkpointing and history viewing are solid.
+Git restore should be staged carefully: preview first, then guarded selected-file apply, and never raw checkout into canonical stores.
 
 ### V1
 
 - read-only history and diff
 - manual checkpoint
 - manual push and pull
-- no in-app restore
+- read-only restore preview
+- guarded restore apply for explicit supported files
 
 ### V2
 
-- selective restore for plans, recommendations, and review packets
-- restore is implemented through service-layer import/apply flows, not raw file checkout into canonical stores
+- broader selective restore for additional plan artifacts and sensitive policy/profile records
+- conflict-aware restore UX for multi-file artifacts
 
 This matters because the versioned workspace is a projection, not the primary write model.
+
+Guarded restore apply requires:
+
+- an explicit commit ref
+- one or more explicit supported file paths
+- the `APPLY_GIT_RESTORE` confirmation phrase
+- a pre-apply checkpoint of the current canonical state
+- service-layer validation/import writes
+- a post-apply checkpoint of restored canonical state
 
 ## Development Notes
 
@@ -537,12 +547,14 @@ Exit criteria:
 
 Deliver:
 
-- restore preview
-- selective restore of plan artifacts, recommendation records, and review packets
-- service-layer re-apply flows
+- read-only restore preview
+- checkpoint-scoped preview of plan artifacts, recommendation records, review packets, and selected policy artifacts
+- guarded selective restore apply for supported plan files, recommendation records, and review packet files
+- service-layer re-apply flows that reject unsupported exported paths
 
 Exit criteria:
 
+- users can preview restore impact without modifying canonical BuildWealth data
 - restore does not bypass validation
 - users can recover high-value artifacts from history safely
 
@@ -552,7 +564,8 @@ Exit criteria:
 - unit tests for snapshot checkpoint generation
 - unit tests for commit message generation
 - integration tests using temporary Git repos for init, status, commit, remote connect, push rejection, and no-remote local commit
-- API tests for checkpoint endpoints and policy settings
+- API tests for checkpoint endpoints, policy settings, AutoGit, remote operations, diff/history, restore preview, and guarded restore apply
+- frontend smoke tests for the Settings Git guide, local history, AutoGit, remote sync, restore preview, and guarded restore apply sections
 
 ## Final Design Decision
 BuildWealth should implement first-class Git support, but only as a curated audit and provenance layer around high-value user artifacts.
@@ -564,6 +577,7 @@ The correct first implementation is:
 - remote push opt-in
 - no background pull loop
 - no Tolaria-style focus-driven Git behavior in v1
-- AutoGit only after the domain event model exists
+- AutoGit only from domain events and idle/debounce heuristics
+- restore preview before guarded restore apply
 
 That design benefits BuildWealth. A Tolaria-style "Git for everything" model does not.
