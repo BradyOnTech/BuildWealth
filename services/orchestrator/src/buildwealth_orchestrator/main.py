@@ -11569,6 +11569,8 @@ def generate_plan_tracking_recommendation_candidates(
         snapshots=snapshots,
         transactions=transactions,
     ).model_dump(mode="json")
+    tracking_payload["plan_settings"] = plan_settings.model_dump(mode="json", exclude_none=True)
+    tracking_payload["planner_defaults"] = planner_defaults
     existing_recommendations = recommendation_inbox.list(
         limit=None,
         status=None,

@@ -370,12 +370,14 @@ def _plan_tracking_evidence(
     *,
     summary: str,
 ) -> dict[str, Any]:
+    plan_settings = plan_tracking_payload.get("plan_settings")
     return {
         "summary": summary,
         "data_keys": ["plan.tracking", "plan.settings", "portfolio.snapshots"],
         "snapshot_as_of": plan_tracking_payload.get("window_end"),
         "plan_title": plan_tracking_payload.get("plan_title"),
         "plan_tracking": plan_tracking_payload,
+        "plan_settings": plan_settings if isinstance(plan_settings, dict) else {},
     }
 
 
@@ -385,6 +387,38 @@ def _plan_title(plan_tracking_payload: dict[str, Any]) -> str:
 
 def _plan_id(plan_tracking_payload: dict[str, Any]) -> str:
     return str(plan_tracking_payload.get("plan_id") or "active_plan").strip() or "active_plan"
+
+
+def _nested_float(
+    payload: dict[str, Any],
+    section_key: str,
+    value_key: str,
+) -> float | None:
+    section = payload.get(section_key)
+    if not isinstance(section, dict) or value_key not in section or section.get(value_key) is None:
+        return None
+    return safe_float(section.get(value_key), 0.0)
+
+
+def _current_annual_contribution_usd(plan_tracking_payload: dict[str, Any]) -> float:
+    direct_plan_setting = _nested_float(plan_tracking_payload, "plan_settings", "annual_contribution_usd")
+    if direct_plan_setting is not None:
+        return max(0.0, direct_plan_setting)
+
+    planner_default = _nested_float(plan_tracking_payload, "planner_defaults", "annual_contribution_usd")
+    if planner_default is not None:
+        return max(0.0, planner_default)
+
+    tracking_window_days = safe_float(plan_tracking_payload.get("tracking_window_days"), 0.0)
+    expected_contributions = safe_float(plan_tracking_payload.get("expected_contributions_usd"), 0.0)
+    if tracking_window_days <= 0 or expected_contributions <= 0:
+        return 0.0
+
+    plan_hsa_extra = _nested_float(plan_tracking_payload, "plan_settings", "hsa_extra_contribution_usd")
+    default_hsa_extra = _nested_float(plan_tracking_payload, "planner_defaults", "hsa_extra_contribution_usd")
+    hsa_extra = plan_hsa_extra if plan_hsa_extra is not None else (default_hsa_extra or 0.0)
+    inferred_total_annual_contribution = expected_contributions * 365.0 / tracking_window_days
+    return max(0.0, inferred_total_annual_contribution - max(0.0, hsa_extra))
 
 
 def _candidate_from_plan_tracking(
@@ -399,6 +433,7 @@ def _candidate_from_plan_tracking(
     severity: str,
     suggested_action: dict[str, Any],
     expected_outcome: dict[str, Any],
+    plan_settings_updates: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     plan_id = _plan_id(plan_tracking_payload)
     dedupe_key = _plan_tracking_dedupe_key(plan_id, signal_key)
@@ -413,6 +448,8 @@ def _candidate_from_plan_tracking(
         "suggested_action": suggested_action,
         "expected_outcome": expected_outcome,
     }
+    if plan_settings_updates:
+        action_payload["plan_settings_updates"] = plan_settings_updates
     return {
         "title": title,
         "detail": detail,
@@ -475,11 +512,15 @@ def _plan_tracking_candidates(plan_tracking_payload: dict[str, Any], *, generate
     if expected_contributions > 0 and contribution_pace_pct < 90:
         shortfall = max(expected_contributions - actual_contributions, 0.0)
         estimated_monthly_increase = round(shortfall / max(tracking_window_days, 1) * 30.4375, 2)
+        current_annual_contribution = round(_current_annual_contribution_usd(plan_tracking_payload), 2)
+        proposed_annual_contribution = round(current_annual_contribution + (estimated_monthly_increase * 12.0), 2)
         priority = "high" if contribution_pace_pct < 60 else "medium"
         detail = (
             f"{plan_title} contribution pace is {_format_pct(contribution_pace_pct)} of target "
             f"({_format_money(actual_contributions)} actual vs {_format_money(expected_contributions)} expected). "
-            f"Consider increasing contributions by about {_format_money(estimated_monthly_increase)}/month until the gap closes."
+            f"Consider increasing annual plan contributions from {_format_money(current_annual_contribution)} "
+            f"to {_format_money(proposed_annual_contribution)} — about {_format_money(estimated_monthly_increase)}/month — "
+            "until the gap closes."
         )
         candidates.append(
             _candidate_from_plan_tracking(
@@ -499,10 +540,19 @@ def _plan_tracking_candidates(plan_tracking_payload: dict[str, Any], *, generate
                     "unit": "pct",
                     "estimated_monthly_contribution_increase_usd": estimated_monthly_increase,
                     "contribution_shortfall_usd": round(shortfall, 2),
+                    "current_annual_contribution_usd": current_annual_contribution,
+                    "proposed_annual_contribution_usd": proposed_annual_contribution,
                 },
                 expected_outcome={
                     "expected_delta_plan_status": "improved_contribution_pace",
                     "expected_contribution_pace_pct": 90,
+                    "expected_delta_annual_contribution_usd": round(
+                        proposed_annual_contribution - current_annual_contribution,
+                        2,
+                    ),
+                },
+                plan_settings_updates={
+                    "annual_contribution_usd": proposed_annual_contribution,
                 },
             )
         )

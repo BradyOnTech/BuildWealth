@@ -186,6 +186,14 @@ def _plan_tracking_payload() -> dict[str, object]:
         "contribution_pace_pct": 22.2,
         "market_growth_usd": -6_000.0,
         "snapshot_count": 3,
+        "plan_settings": {
+            "annual_contribution_usd": 18_000.0,
+            "hsa_extra_contribution_usd": 0.0,
+        },
+        "planner_defaults": {
+            "annual_contribution_usd": 18_000.0,
+            "hsa_extra_contribution_usd": 1_000.0,
+        },
     }
 
 
@@ -211,6 +219,12 @@ def test_plan_tracking_factory_dry_run_generates_plan_specific_candidates() -> N
     assert first_payload["generator"]["signal_type"] == "plan_tracking"
     assert first_payload["evidence"]["data_keys"] == ["plan.tracking", "plan.settings", "portfolio.snapshots"]
     assert first_payload["suggested_action"]["estimated_monthly_contribution_increase_usd"] > 0
+    assert first_payload["suggested_action"]["current_annual_contribution_usd"] == 18_000.0
+    assert first_payload["suggested_action"]["proposed_annual_contribution_usd"] > 18_000.0
+    assert first_payload["plan_settings_updates"] == {
+        "annual_contribution_usd": first_payload["suggested_action"]["proposed_annual_contribution_usd"]
+    }
+    assert "to $" in result.candidates[0]["detail"]
 
 
 def test_plan_tracking_factory_apply_creates_rows_and_skips_duplicates(tmp_path: Path) -> None:
@@ -298,6 +312,10 @@ def test_generate_plan_tracking_route_supports_active_plan_dry_run_and_apply(
     assert dry_run.generated_count == 2
     assert dry_run.created == []
     assert all(item["source"] == "generator:plan_tracking" for item in dry_run.candidates)
+    contribution_candidate = next(
+        item for item in dry_run.candidates if item["action_payload"]["generator"]["signal_key"] == "contribution_pace"
+    )
+    assert contribution_candidate["action_payload"]["plan_settings_updates"]["annual_contribution_usd"] > 18_000
     assert inbox.list(limit=None, status="proposed") == []
 
     applied = main.generate_plan_tracking_recommendation_candidates(

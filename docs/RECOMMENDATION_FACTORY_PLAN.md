@@ -22,6 +22,7 @@ This plugs into the existing recommendation system:
 - Slice 3 Recommendation Inbox preview/create panel: implemented
 - Slice 4 polish and broader docs: implemented
 - Slice 5 plan tracking recommendation generator: implemented
+- Slice 6 generated recommendation actionability: implemented
 
 ## First Slice Scope
 
@@ -47,6 +48,20 @@ This source covers:
 - return drift below plan assumptions
 - projected-value gaps
 - ahead-of-plan surplus strategy reviews
+
+## Actionability Upgrade
+
+Generated contribution-pace recommendations now include executable `plan_settings_updates`.
+
+When plan tracking identifies a contribution shortfall, the factory:
+
+- reads the active plan's current `annual_contribution_usd` when available
+- falls back to planner defaults or inferred annual contribution targets when needed
+- calculates a monthly catch-up amount from the tracking-window shortfall
+- proposes a concrete new `annual_contribution_usd`
+- packages that update inside the recommendation `action_payload`
+
+This lets existing pre-apply preview and apply flows treat generated contribution recommendations like first-class plan-setting actions.
 
 Example generated recommendation:
 

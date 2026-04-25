@@ -10,6 +10,18 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-25 (Completed - Generated Recommendation Actionability)
+1. Made plan-tracking contribution recommendations executable:
+- contribution-pace factory candidates now include concrete `plan_settings_updates`.
+- generated payloads preserve current/proposed annual contribution values and monthly catch-up estimates.
+- route generation enriches tracking payloads with plan settings/defaults so proposed updates are based on the active plan.
+2. Connected generated recommendations to existing preview/apply loops:
+- pre-apply preview now receives generated plan-setting updates through the existing action payload contract.
+- apply flow can update `annual_contribution_usd` directly from a generated contribution recommendation.
+3. Tests:
+- factory coverage verifies generated plan settings updates.
+- action-flow coverage verifies generated recommendations can preview and apply plan updates.
+
 ### 2026-04-25 (Completed - Recommendation Factory, Plan Tracking Signals)
 1. Extended the Recommendation Factory beyond portfolio risk:
 - plan tracking drift now generates evidence-backed recommendation candidates.

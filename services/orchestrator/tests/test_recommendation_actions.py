@@ -5,6 +5,7 @@ import pytest
 
 import buildwealth_orchestrator.main as main
 from buildwealth_orchestrator.services.plan_workspace import PlanWorkspace
+from buildwealth_orchestrator.services.recommendation_factory import generate_plan_tracking_recommendations
 from buildwealth_orchestrator.services.recommendation_inbox import RecommendationInbox
 
 
@@ -439,3 +440,98 @@ def test_preview_recommendation_general_returns_advisory(
     assert response.preview["status"] == "advisory"
     assert response.preview["action_preview"]["kind"] == "general"
     assert response.preview["scenario_diff_preview"]["status"] == "skipped"
+
+
+def test_generated_plan_tracking_contribution_recommendation_previews_and_applies_update(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = PlanWorkspace(tmp_path / "plans")
+    plan = workspace.create_plan(title="Factory Action Plan")
+    workspace.update_plan_settings(
+        plan["id"],
+        {"annual_contribution_usd": 18_000.0, "hsa_extra_contribution_usd": 0.0},
+        log_decision=False,
+    )
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    factory_result = generate_plan_tracking_recommendations(
+        plan_tracking_payload={
+            "plan_id": plan["id"],
+            "plan_title": "Factory Action Plan",
+            "status": "behind",
+            "status_detail": "Contribution pace is behind target.",
+            "tracking_window_days": 90,
+            "window_start": "2026-01-25T12:00:00+00:00",
+            "window_end": "2026-04-25T12:00:00+00:00",
+            "starting_value_usd": 100_000.0,
+            "current_value_usd": 102_000.0,
+            "projected_value_usd": 104_000.0,
+            "value_drift_usd": -2_000.0,
+            "value_drift_pct": -1.92,
+            "actual_annualized_return_pct": 4.5,
+            "expected_annualized_return_pct": 6.5,
+            "return_drift_pct": -2.0,
+            "actual_return_method": "snapshot_delta",
+            "expected_return_method": "plan_setting",
+            "actual_contributions_usd": 1_000.0,
+            "expected_contributions_usd": 4_500.0,
+            "contribution_pace_pct": 22.2,
+            "market_growth_usd": 1_000.0,
+            "snapshot_count": 3,
+            "plan_settings": {
+                "annual_contribution_usd": 18_000.0,
+                "hsa_extra_contribution_usd": 0.0,
+            },
+        },
+        existing_recommendations=[],
+        dry_run=True,
+        limit=1,
+    )
+    candidate = factory_result.candidates[0]
+    proposed_annual_contribution = candidate["action_payload"]["plan_settings_updates"]["annual_contribution_usd"]
+    recommendation = inbox.create(
+        title=candidate["title"],
+        detail=candidate["detail"],
+        priority=candidate["priority"],
+        recommendation_type=candidate["recommendation_type"],
+        source=candidate["source"],
+        plan_id=candidate["plan_id"],
+        action_payload=candidate["action_payload"],
+    )
+
+    async def fake_preview(recommendation_payload: dict[str, object], **kwargs: object) -> dict[str, object]:
+        assert recommendation_payload["action_payload"]["plan_settings_updates"] == {
+            "annual_contribution_usd": proposed_annual_contribution
+        }
+        assert kwargs.get("request_updates") == {}
+        return {
+            "status": "captured",
+            "compare_settings": {"annual_contribution_usd": proposed_annual_contribution},
+            "scenario_deltas": [{"label": "baseline", "delta_future_value_usd": 1500.0}],
+        }
+
+    monkeypatch.setattr(main, "plan_workspace", workspace)
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    monkeypatch.setattr(main, "build_recommendation_scenario_diff_preview", fake_preview)
+
+    preview = asyncio.run(
+        main.preview_recommendation(
+            recommendation["id"],
+            main.RecommendationPreviewRequest(),
+        )
+    )
+
+    assert preview.preview["status"] == "captured"
+    assert preview.preview["action_preview"]["kind"] == "plan_settings_update"
+    assert preview.preview["action_preview"]["proposed_plan_settings_updates"] == {
+        "annual_contribution_usd": proposed_annual_contribution
+    }
+
+    applied = main.apply_recommendation(
+        recommendation["id"],
+        main.RecommendationApplyRequest(create_decision_packet=False, capture_scenario_diff=False),
+    )
+
+    assert applied.recommendation.status == "applied"
+    updated_plan = workspace.get_plan(plan["id"])
+    assert updated_plan["settings"]["annual_contribution_usd"] == proposed_annual_contribution
