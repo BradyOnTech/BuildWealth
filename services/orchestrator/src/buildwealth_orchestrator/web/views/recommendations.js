@@ -1,6 +1,6 @@
 import { fetchJson } from '../lib/api.js';
 import { state } from '../lib/state.js';
-import { byId, fmtCurrency, fmtDate, writeLog } from '../lib/utils.js';
+import { byId, fmtCurrency, fmtDate, formatNumericInput, parseOptionalNumericField, writeLog } from '../lib/utils.js';
 import { recommendationStatusClass, planSelectOptions } from '../lib/components.js';
 
 export const id = 'recommendations';
@@ -25,6 +25,23 @@ export function template() {
       <div class="view-header"><h3>Closure Analytics</h3><button class="ghost small" id="reload-recommendation-analytics">Refresh Analytics</button></div>
       <p class="hint" id="recommendation-analytics-summary">No closure analytics loaded yet.</p>
       <div id="recommendation-analytics-details" class="item-list"></div>
+    </div>
+    <div class="form-section">
+      <div class="view-header"><h3>Outcome Tracker</h3>
+        <div class="header-actions"><button class="ghost small" id="recommendation-outcome-next">Log Next Outcome</button></div>
+      </div>
+      <p class="hint" id="recommendation-outcome-tracker-summary">Outcome follow-ups load with recommendations.</p>
+      <div id="recommendation-outcome-tracker-list" class="item-list"></div>
+      <div class="settings-grid" id="recommendation-outcome-form" hidden>
+        <label class="field form-span"><span>Tracking Recommendation</span><input type="text" id="recommendation-outcome-current" readonly /></label>
+        <label class="field"><span>Realized Future-Value Delta</span><input type="number" step="0.01" id="recommendation-outcome-future" placeholder="2500" /></label>
+        <label class="field"><span>Realized Real-Value Delta</span><input type="number" step="0.01" id="recommendation-outcome-real" placeholder="1800" /></label>
+        <label class="field"><span>Observed At</span><input type="datetime-local" id="recommendation-outcome-observed-at" /></label>
+        <label class="field"><span>Window Days</span><input type="number" min="0" step="1" id="recommendation-outcome-window-days" placeholder="30" /></label>
+        <label class="field"><span>Measurement Source</span><input type="text" id="recommendation-outcome-source" placeholder="manual-review" /></label>
+        <label class="field form-span"><span>Outcome Note</span><textarea id="recommendation-outcome-note" rows="3" placeholder="What actually happened, and what should the system learn?"></textarea></label>
+        <div class="header-actions form-span"><button class="ghost small" id="recommendation-outcome-cancel">Cancel</button><button class="primary small" id="recommendation-outcome-save">Save Outcome</button></div>
+      </div>
     </div>
     <div class="table-wrap"><table><thead><tr><th>When</th><th>Status</th><th>Score</th><th>Priority</th><th>Type</th><th>Recommendation</th><th>Plan</th><th>Source</th><th>Actions</th></tr></thead><tbody id="recommendation-body"></tbody></table></div>
     <div class="form-section">
@@ -72,6 +89,135 @@ function resetClosureAnalytics() {
   state.recommendationClosureAnalytics = null;
   byId('recommendation-analytics-summary').textContent = 'No closure analytics loaded yet.';
   byId('recommendation-analytics-details').innerHTML = '';
+}
+
+function resetOutcomeForm() {
+  state.recommendationOutcomeEditingId = null;
+  byId('recommendation-outcome-form').hidden = true;
+  byId('recommendation-outcome-current').value = '';
+  byId('recommendation-outcome-future').value = '';
+  byId('recommendation-outcome-real').value = '';
+  byId('recommendation-outcome-observed-at').value = '';
+  byId('recommendation-outcome-window-days').value = '';
+  byId('recommendation-outcome-source').value = 'manual-review';
+  byId('recommendation-outcome-note').value = '';
+}
+
+function getDecisionClosure(recommendation) {
+  const directClosure = recommendation?.decision_closure;
+  if (directClosure && typeof directClosure === 'object') return directClosure;
+  const payloadClosure = recommendation?.action_payload?.decision_closure;
+  return payloadClosure && typeof payloadClosure === 'object' ? payloadClosure : null;
+}
+
+function getOutcomeTrackingStatus(recommendation) {
+  const closure = getDecisionClosure(recommendation);
+  const metrics = closure?.expected_vs_realized && typeof closure.expected_vs_realized === 'object'
+    ? closure.expected_vs_realized
+    : null;
+  const explicitStatus = String(metrics?.status || '').trim().toLowerCase();
+  if (explicitStatus) return explicitStatus;
+  const realized = closure?.realized_outcome && typeof closure.realized_outcome === 'object'
+    ? closure.realized_outcome
+    : null;
+  if (realized && (
+    Number.isFinite(Number(realized.realized_delta_future_value_usd))
+    || Number.isFinite(Number(realized.realized_delta_real_value_usd))
+  )) return 'measured';
+  if (recommendation?.status === 'applied' || recommendation?.status === 'rejected') {
+    const expected = closure?.expected_outcome && typeof closure.expected_outcome === 'object'
+      ? closure.expected_outcome
+      : null;
+    return expected ? 'pending_realized' : 'untracked';
+  }
+  return 'not_closed';
+}
+
+function outcomeCandidateSort(a, b) {
+  const aPending = getOutcomeTrackingStatus(a) === 'pending_realized';
+  const bPending = getOutcomeTrackingStatus(b) === 'pending_realized';
+  if (aPending !== bPending) return aPending ? -1 : 1;
+  return String(b.created_at || '').localeCompare(String(a.created_at || ''));
+}
+
+function outcomeMeta(recommendation) {
+  const closure = getDecisionClosure(recommendation) || {};
+  const expected = closure.expected_outcome && typeof closure.expected_outcome === 'object' ? closure.expected_outcome : null;
+  const realized = closure.realized_outcome && typeof closure.realized_outcome === 'object' ? closure.realized_outcome : null;
+  const metrics = closure.expected_vs_realized && typeof closure.expected_vs_realized === 'object' ? closure.expected_vs_realized : null;
+  const parts = [`${String(recommendation.status || 'closed').toUpperCase()}`];
+  if (expected) {
+    const expectedFuture = Number(expected.expected_delta_future_value_usd);
+    const expectedReal = Number(expected.expected_delta_real_value_usd);
+    const expectedParts = [];
+    if (Number.isFinite(expectedFuture)) expectedParts.push(`future ${fmtCurrency(expectedFuture)}`);
+    if (Number.isFinite(expectedReal)) expectedParts.push(`real ${fmtCurrency(expectedReal)}`);
+    if (expectedParts.length) parts.push(`expected ${expectedParts.join(', ')}`);
+  }
+  if (realized) {
+    const realizedFuture = Number(realized.realized_delta_future_value_usd);
+    const realizedReal = Number(realized.realized_delta_real_value_usd);
+    const realizedParts = [];
+    if (Number.isFinite(realizedFuture)) realizedParts.push(`future ${fmtCurrency(realizedFuture)}`);
+    if (Number.isFinite(realizedReal)) realizedParts.push(`real ${fmtCurrency(realizedReal)}`);
+    if (realized.observed_at) realizedParts.push(`observed ${fmtDate(realized.observed_at)}`);
+    if (realizedParts.length) parts.push(`realized ${realizedParts.join(', ')}`);
+  }
+  if (metrics) {
+    const gapFuture = Number(metrics.future_value_gap_usd);
+    const gapReal = Number(metrics.real_value_gap_usd);
+    if (Number.isFinite(gapFuture)) parts.push(`future gap ${fmtCurrency(gapFuture)}`);
+    if (Number.isFinite(gapReal)) parts.push(`real gap ${fmtCurrency(gapReal)}`);
+    if (typeof metrics.future_value_direction_match === 'boolean') {
+      parts.push(`direction ${metrics.future_value_direction_match ? 'match' : 'mismatch'}`);
+    }
+  }
+  return parts.join(' • ');
+}
+
+function renderOutcomeTracker() {
+  const candidates = [...(state.recommendationOutcomeCandidates || [])].sort(outcomeCandidateSort);
+  const pending = candidates.filter((recommendation) => getOutcomeTrackingStatus(recommendation) === 'pending_realized');
+  const measured = candidates.filter((recommendation) => getOutcomeTrackingStatus(recommendation) === 'measured');
+  const untracked = candidates.filter((recommendation) => getOutcomeTrackingStatus(recommendation) === 'untracked');
+  const summaryParts = [
+    `Pending outcomes: ${pending.length}`,
+    `Measured: ${measured.length}`,
+    `Untracked closed: ${untracked.length}`,
+  ];
+  const analyticsSummary = state.recommendationClosureAnalytics?.summary;
+  const directionRate = Number(analyticsSummary?.future_value_direction_match_rate_pct);
+  if (Number.isFinite(directionRate)) summaryParts.push(`Direction match: ${directionRate.toFixed(1)}%`);
+  byId('recommendation-outcome-tracker-summary').textContent = summaryParts.join(' • ');
+
+  const list = byId('recommendation-outcome-tracker-list');
+  list.innerHTML = '';
+  const visible = pending.length ? pending.slice(0, 6) : measured.slice(0, 4);
+  if (!visible.length) {
+    list.innerHTML = '<article class="list-item"><p class="list-item-title">No closed recommendation outcomes to track yet.</p><p class="list-item-meta">Apply or reject a recommendation, then record the realized outcome once enough time has passed.</p></article>';
+    return;
+  }
+  for (const recommendation of visible) {
+    const article = document.createElement('article');
+    article.className = `list-item ${getOutcomeTrackingStatus(recommendation) === 'pending_realized' ? 'attention' : ''}`.trim();
+    const title = document.createElement('p');
+    title.className = 'list-item-title';
+    title.textContent = recommendation.title || recommendation.id || 'Recommendation';
+    const meta = document.createElement('p');
+    meta.className = 'list-item-meta';
+    meta.textContent = outcomeMeta(recommendation);
+    const actions = document.createElement('div');
+    actions.className = 'table-actions';
+    const button = document.createElement('button');
+    button.className = getOutcomeTrackingStatus(recommendation) === 'pending_realized' ? 'primary small' : 'ghost small';
+    button.textContent = getOutcomeTrackingStatus(recommendation) === 'pending_realized' ? 'Log Outcome' : 'Update Outcome';
+    button.addEventListener('click', () => openOutcomeForm(recommendation));
+    actions.appendChild(button);
+    article.appendChild(title);
+    article.appendChild(meta);
+    article.appendChild(actions);
+    list.appendChild(article);
+  }
 }
 
 function renderClosureAnalytics(payload) {
@@ -346,6 +492,17 @@ function renderTable() {
   }
 }
 
+function mergeRecommendationsById(recommendationGroups) {
+  const merged = new Map();
+  for (const group of recommendationGroups) {
+    if (!Array.isArray(group)) continue;
+    for (const recommendation of group) {
+      if (recommendation?.id) merged.set(recommendation.id, recommendation);
+    }
+  }
+  return [...merged.values()];
+}
+
 async function loadClosureAnalytics() {
   const plan = byId('recommendation-plan-filter').value || '';
   const params = new URLSearchParams();
@@ -355,6 +512,7 @@ async function loadClosureAnalytics() {
   if (plan) params.set('plan_id', plan);
   const payload = await fetchJson(`/api/recommendations/closure-analytics?${params.toString()}`);
   renderClosureAnalytics(payload && typeof payload === 'object' ? payload : {});
+  renderOutcomeTracker();
 }
 
 async function load() {
@@ -375,12 +533,23 @@ async function load() {
   analyticsParams.set('statuses', 'applied,rejected');
   analyticsParams.set('include_pending_realized', 'true');
   if (plan) analyticsParams.set('plan_id', plan);
-  const [recommendationsPayload, analyticsPayload] = await Promise.all([
+  const appliedParams = new URLSearchParams();
+  appliedParams.set('limit', '100');
+  appliedParams.set('sort', 'created_at');
+  appliedParams.set('status', 'applied');
+  if (plan) appliedParams.set('plan_id', plan);
+  const rejectedParams = new URLSearchParams(appliedParams);
+  rejectedParams.set('status', 'rejected');
+  const [recommendationsPayload, analyticsPayload, appliedPayload, rejectedPayload] = await Promise.all([
     fetchJson(`/api/recommendations?${params}`),
     fetchJson(`/api/recommendations/closure-analytics?${analyticsParams.toString()}`),
+    fetchJson(`/api/recommendations?${appliedParams.toString()}`),
+    fetchJson(`/api/recommendations?${rejectedParams.toString()}`),
   ]);
   state.recommendations = Array.isArray(recommendationsPayload) ? recommendationsPayload : [];
+  state.recommendationOutcomeCandidates = mergeRecommendationsById([appliedPayload, rejectedPayload]);
   renderClosureAnalytics(analyticsPayload && typeof analyticsPayload === 'object' ? analyticsPayload : {});
+  renderOutcomeTracker();
   renderTable();
 }
 
@@ -439,37 +608,99 @@ async function rejectItem(r) {
   writeLog('Rejected.', { id: r.id, decision_closure: result.decision_closure || null }); await load();
 }
 
-async function logOutcomeItem(r) {
-  const futureRaw = window.prompt('Realized future-value delta USD (optional):', '');
-  if (futureRaw === null) return;
-  const realRaw = window.prompt('Realized real-value delta USD (optional):', '');
-  if (realRaw === null) return;
-  const sourceRaw = window.prompt('Measurement source (optional):', 'manual-review');
-  if (sourceRaw === null) return;
-  const noteRaw = window.prompt('Outcome note (optional):', '');
-  if (noteRaw === null) return;
+function toLocalDateTimeInput(value) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return '';
+  const localDate = new Date(date.getTime() - (date.getTimezoneOffset() * 60000));
+  return localDate.toISOString().slice(0, 16);
+}
 
+function openOutcomeForm(recommendation) {
+  const closure = getDecisionClosure(recommendation) || {};
+  const realized = closure.realized_outcome && typeof closure.realized_outcome === 'object'
+    ? closure.realized_outcome
+    : {};
+  state.recommendationOutcomeEditingId = recommendation.id;
+  byId('recommendation-outcome-current').value = `${recommendation.title || recommendation.id || 'Recommendation'} (${String(recommendation.status || 'closed').toUpperCase()})`;
+  byId('recommendation-outcome-future').value = formatNumericInput(Number(realized.realized_delta_future_value_usd));
+  byId('recommendation-outcome-real').value = formatNumericInput(Number(realized.realized_delta_real_value_usd));
+  byId('recommendation-outcome-observed-at').value = toLocalDateTimeInput(realized.observed_at || new Date().toISOString());
+  byId('recommendation-outcome-window-days').value = Number.isFinite(Number(realized.observation_window_days)) ? String(Math.trunc(Number(realized.observation_window_days))) : '';
+  byId('recommendation-outcome-source').value = String(realized.measurement_source || 'manual-review');
+  byId('recommendation-outcome-note').value = String(realized.note || '');
+  byId('recommendation-outcome-form').hidden = false;
+  byId('recommendation-outcome-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function outcomeFormPayload(recommendation) {
   const payload = {
-    plan_id: r.plan_id || byId('recommendation-plan').value || state.currentPlanId || null,
-    measurement_source: sourceRaw.trim(),
-    note: noteRaw.trim(),
+    plan_id: recommendation.plan_id || byId('recommendation-plan').value || state.currentPlanId || null,
+    measurement_source: byId('recommendation-outcome-source').value.trim() || 'manual-review',
+    note: byId('recommendation-outcome-note').value.trim(),
   };
-  const futureVal = Number(futureRaw);
-  const realVal = Number(realRaw);
-  if (futureRaw.trim() && Number.isFinite(futureVal)) payload.realized_delta_future_value_usd = futureVal;
-  if (realRaw.trim() && Number.isFinite(realVal)) payload.realized_delta_real_value_usd = realVal;
+  const futureValue = parseOptionalNumericField(byId('recommendation-outcome-future').value, 'Realized future-value delta');
+  const realValue = parseOptionalNumericField(byId('recommendation-outcome-real').value, 'Realized real-value delta');
+  if (futureValue.present) payload.realized_delta_future_value_usd = futureValue.value;
+  if (realValue.present) payload.realized_delta_real_value_usd = realValue.value;
+  if (!futureValue.present && !realValue.present) throw new Error('Enter at least one realized outcome delta.');
 
-  const result = await fetchJson(`/api/recommendations/${encodeURIComponent(r.id)}/outcome`, {
+  const windowDays = parseOptionalNumericField(byId('recommendation-outcome-window-days').value, 'Observation window days', true);
+  if (windowDays.present) {
+    if (windowDays.value < 0) throw new Error('Observation window days must be zero or greater.');
+    payload.observation_window_days = windowDays.value;
+  }
+  const observedAt = byId('recommendation-outcome-observed-at').value.trim();
+  if (observedAt) {
+    const observedDate = new Date(observedAt);
+    if (Number.isNaN(observedDate.getTime())) throw new Error('Observed at must be a valid date and time.');
+    payload.observed_at = observedDate.toISOString();
+  }
+  return payload;
+}
+
+async function logOutcomeItem(recommendation) {
+  openOutcomeForm(recommendation);
+}
+
+async function saveOutcomeForm() {
+  const recommendationId = state.recommendationOutcomeEditingId;
+  const recommendation = [...(state.recommendationOutcomeCandidates || []), ...(state.recommendations || [])]
+    .find((item) => item?.id === recommendationId);
+  if (!recommendation) {
+    writeLog('Choose a recommendation before saving an outcome.', null, true);
+    return;
+  }
+  let payload;
+  try {
+    payload = outcomeFormPayload(recommendation);
+  } catch (error) {
+    writeLog(error.message, null, true);
+    return;
+  }
+
+  const result = await fetchJson(`/api/recommendations/${encodeURIComponent(recommendation.id)}/outcome`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
   });
   if (result.plan?.id === state.currentPlanId) state.currentPlanDetail = result.plan;
+  resetOutcomeForm();
   writeLog('Outcome recorded.', {
-    id: r.id,
+    id: recommendation.id,
     expected_vs_realized: result?.decision_closure?.expected_vs_realized || null,
   });
   await load();
+}
+
+function openNextOutcome() {
+  const pending = [...(state.recommendationOutcomeCandidates || [])]
+    .filter((recommendation) => getOutcomeTrackingStatus(recommendation) === 'pending_realized')
+    .sort(outcomeCandidateSort);
+  if (!pending.length) {
+    writeLog('No pending recommendation outcomes to log.');
+    return;
+  }
+  openOutcomeForm(pending[0]);
 }
 
 async function archiveItem(r) {
@@ -498,6 +729,7 @@ export function init() {
   resetForm();
   resetPreview();
   resetClosureAnalytics();
+  resetOutcomeForm();
   if ([...byId('recommendation-status-filter').options].some((option) => option.value === state.recommendationFilterStatus)) {
     byId('recommendation-status-filter').value = state.recommendationFilterStatus;
   }
@@ -511,5 +743,8 @@ export function init() {
   byId('recommendation-sort-filter').addEventListener('change', () => load().catch(e => writeLog(e.message, null, true)));
   byId('recommendation-save').addEventListener('click', save);
   byId('recommendation-cancel-edit').addEventListener('click', resetForm);
+  byId('recommendation-outcome-next').addEventListener('click', openNextOutcome);
+  byId('recommendation-outcome-save').addEventListener('click', () => saveOutcomeForm().catch(error => writeLog(error.message, null, true)));
+  byId('recommendation-outcome-cancel').addEventListener('click', resetOutcomeForm);
   load();
 }
