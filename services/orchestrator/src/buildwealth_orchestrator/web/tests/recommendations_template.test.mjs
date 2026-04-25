@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 
 import { template } from '../views/recommendations.js';
 
@@ -38,4 +41,14 @@ test('recommendations view exposes outcome tracking workflow', () => {
   assert.match(html, /id="recommendation-factory-results"/);
   assert.match(html, /Turn active portfolio risk alerts into specific/);
   assert.match(html, /What actually happened, and what should the system learn/);
+});
+
+test('recommendations row rendering includes factory explainability copy', () => {
+  const currentDir = dirname(fileURLToPath(import.meta.url));
+  const source = readFileSync(resolve(currentDir, '../views/recommendations.js'), 'utf8');
+
+  assert.match(source, /Generated from portfolio risk alert/);
+  assert.match(source, /Suggested action:/);
+  assert.match(source, /estimated rebalance/);
+  assert.match(source, /generator\.dedupe_key/);
 });

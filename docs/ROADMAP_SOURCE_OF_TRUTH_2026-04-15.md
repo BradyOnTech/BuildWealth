@@ -10,6 +10,21 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-25 (Completed - Recommendation Factory, Portfolio Risk Signals)
+1. Added a first Recommendation Factory slice that turns active portfolio risk alerts into concrete recommendation candidates:
+- new `recommendation_factory.py` service builds specific, evidence-backed recommendation payloads from portfolio risk alerts.
+- generated payloads include `generator`, `evidence`, `suggested_action`, and `expected_outcome` metadata.
+- stable `generator.dedupe_key` values prevent repeated active recommendations for the same risk signal.
+2. Added API + UI surfaces:
+- `POST /api/recommendations/generate/portfolio-risk` supports dry-run preview and apply mode.
+- Recommendation Inbox now includes a Recommendation Factory panel with preview/create controls, generation limit, optional plan attachment, candidate rendering, created-row rendering, and skipped-duplicate visibility.
+- generated recommendation rows explain their source signal and suggested action details inline.
+3. Tests:
+- backend factory dry-run/apply/dedupe coverage in `test_recommendation_factory.py`.
+- frontend template coverage for the Recommendation Factory panel.
+4. Verification:
+- full orchestrator suite passes (`523 passed`).
+
 ### 2026-04-20 (Completed - Cross-Cutting Follow-up, Neutral Helper Placement Threshold Guardrail)
 1. Added a default-workflow helper-placement guardrail test:
 - new `tests/test_helper_placement_thresholds.py`.

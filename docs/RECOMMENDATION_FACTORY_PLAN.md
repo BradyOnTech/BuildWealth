@@ -20,7 +20,7 @@ This plugs into the existing recommendation system:
 - Slice 1 backend dry-run: implemented
 - Slice 2 apply mode and dedupe: implemented
 - Slice 3 Recommendation Inbox preview/create panel: implemented
-- Slice 4 polish and broader docs: pending
+- Slice 4 polish and broader docs: implemented
 
 ## First Slice Scope
 
@@ -117,6 +117,34 @@ Behavior:
 - dry-run returns candidates but does not create rows
 - apply mode creates recommendation rows
 - dedupe prevents repeated active recommendations for the same risk signal
+
+Example dry-run request:
+
+```json
+{
+  "dry_run": true,
+  "limit": 10,
+  "plan_id": null
+}
+```
+
+Example apply request:
+
+```json
+{
+  "dry_run": false,
+  "limit": 10,
+  "plan_id": "plan-2026"
+}
+```
+
+Response fields:
+
+- `generated_count`: candidate count for dry-run or created-row count for apply mode
+- `skipped_count`: number of skipped risk signals
+- `candidates`: unsaved recommendation payloads returned during dry-run
+- `created`: persisted recommendation rows returned during apply mode
+- `skipped`: duplicate or limit-skipped risk signals with reasons
 
 ## Dedupe Rules
 

@@ -110,6 +110,10 @@ docker compose -f infra/docker-compose.yml --profile legacy-upstream up -d
 - `GET /api/snapshot/latest`
 - `GET /api/portfolio/benchmark`
 - `GET /api/portfolio/attribution`
+- `GET /api/recommendations`
+- `POST /api/recommendations/generate/portfolio-risk`
+- `GET /api/recommendations/closure-analytics`
+- `POST /api/recommendations/{recommendation_id}/outcome`
 - `POST /api/planning/scenarios`
 - `GET /api/copilot/context`
 - `GET /api/copilot/context/cache`
