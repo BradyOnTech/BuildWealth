@@ -28,7 +28,7 @@ export function template() {
     </div>
     <div class="form-section">
       <div class="view-header"><h3>Recommendation Factory</h3>
-        <div class="header-actions"><button class="ghost small" id="preview-all-recommendation-factories">Preview All Factories</button><button class="primary small" id="create-all-recommendation-factories">Create All Reviewed</button><button class="ghost small" id="preview-portfolio-risk-recommendations">Preview Portfolio Risk</button><button class="ghost small" id="preview-plan-tracking-recommendations">Preview Plan Tracking</button><button class="ghost small" id="create-portfolio-risk-recommendations">Create Portfolio Risk</button><button class="ghost small" id="create-plan-tracking-recommendations">Create Plan Tracking</button></div>
+        <div class="header-actions"><button class="ghost small" id="preview-all-recommendation-factories">Preview All Factories</button><button class="primary small" id="create-all-recommendation-factories" disabled>Create Reviewed Batch</button><button class="ghost small" id="preview-portfolio-risk-recommendations">Preview Portfolio Risk</button><button class="ghost small" id="preview-plan-tracking-recommendations">Preview Plan Tracking</button><button class="ghost small" id="create-portfolio-risk-recommendations">Create Portfolio Risk</button><button class="ghost small" id="create-plan-tracking-recommendations">Create Plan Tracking</button></div>
       </div>
       <p class="hint">Review all active factory signals together, then create evidence-backed recommendation rows only when the batch looks useful.</p>
       <div class="settings-grid">
@@ -36,6 +36,7 @@ export function template() {
         <label class="field"><span>Attach to Plan</span><select id="recommendation-factory-plan"></select></label>
       </div>
       <p class="hint" id="recommendation-factory-summary">No generated recommendation preview yet.</p>
+      <p class="hint" id="recommendation-factory-review-status">Preview all factories to unlock reviewed batch creation.</p>
       <div id="recommendation-factory-results" class="item-list"></div>
     </div>
     <div class="form-section">
@@ -105,8 +106,11 @@ function resetClosureAnalytics() {
 
 function resetRecommendationFactory() {
   state.recommendationFactoryResult = null;
+  state.recommendationFactoryReviewedBatch = null;
   byId('recommendation-factory-summary').textContent = 'No generated recommendation preview yet.';
+  byId('recommendation-factory-review-status').textContent = 'Preview all factories to unlock reviewed batch creation.';
   byId('recommendation-factory-results').innerHTML = '';
+  updateReviewedBatchControls();
 }
 
 function resetOutcomeForm() {
@@ -246,6 +250,59 @@ function factoryLimit() {
   const raw = Number(byId('recommendation-factory-limit')?.value || 10);
   if (!Number.isFinite(raw)) return 10;
   return Math.max(1, Math.min(Math.trunc(raw), 50));
+}
+
+function factoryRequestPayload() {
+  const payload = {
+    dry_run: true,
+    plan_id: factoryPlanId(),
+    limit: factoryLimit(),
+  };
+  if (!payload.plan_id) payload.plan_id = null;
+  return payload;
+}
+
+function factoryRequestSignature(payload, scope = 'all') {
+  return JSON.stringify({
+    scope,
+    plan_id: payload?.plan_id || null,
+    limit: factoryLimitFromPayload(payload),
+  });
+}
+
+function factoryLimitFromPayload(payload) {
+  const raw = Number(payload?.limit || 10);
+  if (!Number.isFinite(raw)) return 10;
+  return Math.max(1, Math.min(Math.trunc(raw), 50));
+}
+
+function currentAllFactorySignature() {
+  return factoryRequestSignature(factoryRequestPayload(), 'all');
+}
+
+function setFactoryReviewStatus(message, attention = false) {
+  const status = byId('recommendation-factory-review-status');
+  if (!status) return;
+  status.textContent = message;
+  status.classList.toggle('attention', attention);
+}
+
+function updateReviewedBatchControls() {
+  const button = byId('create-all-recommendation-factories');
+  if (!button) return;
+  const reviewed = state.recommendationFactoryReviewedBatch;
+  const currentSignature = currentAllFactorySignature();
+  const ready = Boolean(reviewed && reviewed.signature === currentSignature && Number(reviewed.generated_count || 0) > 0);
+  button.disabled = !ready;
+  button.textContent = ready ? 'Create Reviewed Batch' : 'Preview Required';
+  if (!reviewed) return;
+  if (reviewed.signature !== currentSignature) {
+    setFactoryReviewStatus('Factory settings changed after preview. Preview all factories again before creating.', true);
+  } else if (Number(reviewed.generated_count || 0) > 0) {
+    setFactoryReviewStatus(`Reviewed batch ready: ${reviewed.generated_count} recommendation${reviewed.generated_count === 1 ? '' : 's'} previewed.`);
+  } else {
+    setFactoryReviewStatus('Preview complete, but this batch has no recommendations to create.');
+  }
 }
 
 function candidateMeta(candidate) {
@@ -674,13 +731,10 @@ async function loadClosureAnalytics() {
   renderOutcomeTracker();
 }
 
-async function runRecommendationFactory(path, label, dryRun = true) {
-  const payload = {
-    dry_run: dryRun,
-    plan_id: factoryPlanId(),
-    limit: factoryLimit(),
-  };
-  if (!payload.plan_id) payload.plan_id = null;
+async function runRecommendationFactory(path, label, dryRun = true, options = {}) {
+  const payload = options.payload && typeof options.payload === 'object'
+    ? { ...options.payload, dry_run: dryRun }
+    : { ...factoryRequestPayload(), dry_run: dryRun };
   writeLog(dryRun ? `Previewing ${label} recommendations...` : `Creating ${label} recommendations...`, payload);
   const result = await fetchJson(path, {
     method: 'POST',
@@ -688,11 +742,28 @@ async function runRecommendationFactory(path, label, dryRun = true) {
     body: JSON.stringify(payload),
   });
   renderRecommendationFactoryResult(result);
+  if (dryRun && options.reviewedBatch === true) {
+    state.recommendationFactoryReviewedBatch = {
+      signature: factoryRequestSignature(payload, 'all'),
+      payload: { ...payload, dry_run: true },
+      result,
+      generated_count: Number(result?.generated_count || 0),
+      previewed_at: new Date().toISOString(),
+    };
+    updateReviewedBatchControls();
+  } else if (dryRun) {
+    updateReviewedBatchControls();
+  }
   if (!dryRun) {
     writeLog(`${label} recommendation generation complete.`, {
       generated_count: result?.generated_count || 0,
       skipped_count: result?.skipped_count || 0,
     });
+    if (options.reviewedBatch === true) {
+      state.recommendationFactoryReviewedBatch = null;
+      setFactoryReviewStatus('Reviewed batch created. Preview all factories again before creating another batch.');
+      updateReviewedBatchControls();
+    }
     await load();
   }
 }
@@ -706,7 +777,29 @@ async function runPlanTrackingRecommendationFactory(dryRun = true) {
 }
 
 async function runAllRecommendationFactories(dryRun = true) {
-  await runRecommendationFactory('/api/recommendations/generate/run-all', 'all factory', dryRun);
+  if (dryRun) {
+    await runRecommendationFactory('/api/recommendations/generate/run-all', 'all factory', true, {
+      reviewedBatch: true,
+      payload: factoryRequestPayload(),
+    });
+    return;
+  }
+
+  const reviewed = state.recommendationFactoryReviewedBatch;
+  if (!reviewed) {
+    setFactoryReviewStatus('Preview all factories before creating a reviewed batch.', true);
+    updateReviewedBatchControls();
+    return;
+  }
+  if (reviewed.signature !== currentAllFactorySignature()) {
+    setFactoryReviewStatus('Factory settings changed after preview. Preview all factories again before creating.', true);
+    updateReviewedBatchControls();
+    return;
+  }
+  await runRecommendationFactory('/api/recommendations/generate/run-all', 'reviewed batch', false, {
+    reviewedBatch: true,
+    payload: reviewed.payload,
+  });
 }
 
 async function load() {
@@ -940,6 +1033,8 @@ export function init() {
   byId('recommendation-status-filter').addEventListener('change', () => load().catch(e => writeLog(e.message, null, true)));
   byId('recommendation-plan-filter').addEventListener('change', () => load().catch(e => writeLog(e.message, null, true)));
   byId('recommendation-sort-filter').addEventListener('change', () => load().catch(e => writeLog(e.message, null, true)));
+  byId('recommendation-factory-limit').addEventListener('input', updateReviewedBatchControls);
+  byId('recommendation-factory-plan').addEventListener('change', updateReviewedBatchControls);
   byId('preview-all-recommendation-factories').addEventListener('click', () => runAllRecommendationFactories(true).catch(e => writeLog(e.message, null, true)));
   byId('create-all-recommendation-factories').addEventListener('click', () => runAllRecommendationFactories(false).catch(e => writeLog(e.message, null, true)));
   byId('preview-portfolio-risk-recommendations').addEventListener('click', () => runPortfolioRiskRecommendationFactory(true).catch(e => writeLog(e.message, null, true)));

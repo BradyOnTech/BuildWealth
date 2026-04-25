@@ -29,6 +29,7 @@ export const state = {
   recommendationClosureAnalytics: null,
   recommendationOutcomeCandidates: [],
   recommendationFactoryResult: null,
+  recommendationFactoryReviewedBatch: null,
   planClosureSummary: null,
   planClosureTrend: null,
   dashboardClosureTrend: null,

@@ -19,7 +19,7 @@ test('recommendations view exposes outcome tracking workflow', () => {
     'Learning loop',
     'Recommendation Factory',
     'Preview All Factories',
-    'Create All Reviewed',
+    'Create Reviewed Batch',
     'Preview Portfolio Risk',
     'Preview Plan Tracking',
     'Create Portfolio Risk',
@@ -38,7 +38,7 @@ test('recommendations view exposes outcome tracking workflow', () => {
   assert.match(html, /id="recommendation-outcome-window-days"/);
   assert.match(html, /id="recommendation-outcome-save"/);
   assert.match(html, /id="preview-all-recommendation-factories"/);
-  assert.match(html, /id="create-all-recommendation-factories"/);
+  assert.match(html, /id="create-all-recommendation-factories" disabled/);
   assert.match(html, /id="preview-portfolio-risk-recommendations"/);
   assert.match(html, /id="create-portfolio-risk-recommendations"/);
   assert.match(html, /id="preview-plan-tracking-recommendations"/);
@@ -46,8 +46,10 @@ test('recommendations view exposes outcome tracking workflow', () => {
   assert.match(html, /id="recommendation-factory-limit"/);
   assert.match(html, /id="recommendation-factory-plan"/);
   assert.match(html, /id="recommendation-factory-summary"/);
+  assert.match(html, /id="recommendation-factory-review-status"/);
   assert.match(html, /id="recommendation-factory-results"/);
   assert.match(html, /Review all active factory signals together/);
+  assert.match(html, /Preview all factories to unlock reviewed batch creation/);
   assert.match(html, /What actually happened, and what should the system learn/);
 });
 
@@ -63,5 +65,8 @@ test('recommendations row rendering includes factory explainability copy', () =>
   assert.match(source, /generator\.dedupe_key/);
   assert.match(source, /runAllRecommendationFactories/);
   assert.match(source, /collectFactoryResults/);
+  assert.match(source, /recommendationFactoryReviewedBatch/);
+  assert.match(source, /factoryRequestSignature/);
+  assert.match(source, /Factory settings changed after preview/);
   assert.ok(source.includes('/api/recommendations/generate/run-all'));
 });

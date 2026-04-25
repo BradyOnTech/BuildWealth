@@ -24,6 +24,7 @@ This plugs into the existing recommendation system:
 - Slice 5 plan tracking recommendation generator: implemented
 - Slice 6 generated recommendation actionability: implemented
 - Slice 7 run-all factory review center: implemented
+- Slice 8 reviewed batch apply guard: implemented
 
 ## First Slice Scope
 
@@ -75,7 +76,17 @@ The Recommendation Inbox now supports a run-all factory workflow.
 - created rows for apply mode
 - partial errors when one factory cannot run
 
-The UI surfaces this as `Preview All Factories` and `Create All Reviewed`, while keeping individual factory buttons available for narrow reviews.
+The UI surfaces this as `Preview All Factories` and `Create Reviewed Batch`, while keeping individual factory buttons available for narrow reviews.
+
+## Reviewed Batch Apply Guard
+
+The run-all UI now treats factory creation as a reviewed-batch workflow:
+
+- `Create Reviewed Batch` starts disabled
+- `Preview All Factories` stores the reviewed request signature and preview result in UI state
+- creation is only enabled when the current plan/limit settings match the previewed batch
+- changing factory settings after preview shows a warning and requires a fresh preview
+- after creation, the reviewed batch is cleared so another create requires another preview
 
 Example generated recommendation:
 

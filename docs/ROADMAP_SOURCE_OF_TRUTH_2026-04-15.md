@@ -10,6 +10,17 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-25 (Completed - Reviewed Factory Batch Apply Guard)
+1. Hardened the Factory Review Center creation flow:
+- `Create Reviewed Batch` is disabled until `Preview All Factories` has produced a reviewed batch.
+- reviewed batch state records the previewed plan/limit signature and generated count.
+- changing factory settings after preview shows a warning and requires a fresh preview before creation.
+2. Kept the flow safe by default:
+- create uses the stored reviewed request payload rather than whatever controls happen to contain later.
+- reviewed batch state clears after creation, preventing accidental repeat creates without another preview.
+3. Tests:
+- frontend template/source coverage verifies disabled initial state, reviewed-batch state, signature checks, and warning copy.
+
 ### 2026-04-25 (Completed - Factory Review Center)
 1. Added a run-all recommendation factory endpoint:
 - `POST /api/recommendations/generate/run-all` runs portfolio-risk and plan-tracking factories together.
@@ -17,7 +28,7 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 - partial errors allow available factories to return results even when another source cannot run.
 2. Added Recommendation Inbox review-center controls:
 - `Preview All Factories` gives one grouped review batch before creation.
-- `Create All Reviewed` creates rows from all runnable factories.
+- `Create Reviewed Batch` creates rows from all runnable factories after preview.
 - individual factory buttons remain available for targeted reviews.
 3. Tests:
 - backend coverage verifies grouped dry-run/apply behavior and partial plan-missing errors.
