@@ -9,6 +9,9 @@ from buildwealth_orchestrator.services.value_coercion import safe_float, utc_now
 PORTFOLIO_RISK_FACTORY_ID = "portfolio_risk_recommendation_factory"
 PORTFOLIO_RISK_FACTORY_VERSION = "v1"
 PORTFOLIO_RISK_SOURCE = "generator:portfolio_risk"
+PLAN_TRACKING_FACTORY_ID = "plan_tracking_recommendation_factory"
+PLAN_TRACKING_FACTORY_VERSION = "v1"
+PLAN_TRACKING_SOURCE = "generator:plan_tracking"
 
 
 class RecommendationCreator(Protocol):
@@ -125,6 +128,13 @@ def _format_money(value: float | None) -> str:
     if value is None:
         return ""
     return f"${value:,.0f}"
+
+
+def _format_signed_money(value: float | None) -> str:
+    if value is None:
+        return ""
+    sign = "-" if value < 0 else ""
+    return f"{sign}${abs(value):,.0f}"
 
 
 def _excess_amount_usd(alert: dict[str, Any], total_market_value: float) -> float | None:
@@ -306,6 +316,334 @@ def generate_portfolio_risk_recommendations(
             continue
 
         candidate = _candidate_from_alert(alert, holdings_payload=holdings_payload, generated_at=generated_at, plan_id=plan_id)
+        candidates.append(candidate)
+        active_keys.add(dedupe_key)
+
+        if not dry_run and creator is not None:
+            created.append(
+                creator.create(
+                    title=candidate["title"],
+                    detail=candidate["detail"],
+                    priority=candidate["priority"],
+                    recommendation_type=candidate["recommendation_type"],
+                    source=candidate["source"],
+                    plan_id=candidate["plan_id"],
+                    action_payload=candidate["action_payload"],
+                    status="proposed",
+                )
+            )
+
+    return RecommendationFactoryResult(
+        generated_count=len(created) if not dry_run else len(candidates),
+        skipped_count=len(skipped),
+        candidates=candidates,
+        created=created,
+        skipped=skipped,
+        dry_run=dry_run,
+    )
+
+
+def _plan_tracking_dedupe_key(plan_id: str, signal_key: str) -> str:
+    return f"plan_tracking:{_clean_key(plan_id, 'active_plan')}:{signal_key}"
+
+
+def _plan_tracking_generator_payload(
+    *,
+    generated_at: str,
+    signal_key: str,
+    severity: str,
+    dedupe_key: str,
+) -> dict[str, Any]:
+    return {
+        "id": PLAN_TRACKING_FACTORY_ID,
+        "version": PLAN_TRACKING_FACTORY_VERSION,
+        "generated_at": generated_at,
+        "signal_key": signal_key,
+        "signal_type": "plan_tracking",
+        "dedupe_key": dedupe_key,
+        "severity": severity,
+    }
+
+
+def _plan_tracking_evidence(
+    plan_tracking_payload: dict[str, Any],
+    *,
+    summary: str,
+) -> dict[str, Any]:
+    return {
+        "summary": summary,
+        "data_keys": ["plan.tracking", "plan.settings", "portfolio.snapshots"],
+        "snapshot_as_of": plan_tracking_payload.get("window_end"),
+        "plan_title": plan_tracking_payload.get("plan_title"),
+        "plan_tracking": plan_tracking_payload,
+    }
+
+
+def _plan_title(plan_tracking_payload: dict[str, Any]) -> str:
+    return str(plan_tracking_payload.get("plan_title") or "Active Plan").strip() or "Active Plan"
+
+
+def _plan_id(plan_tracking_payload: dict[str, Any]) -> str:
+    return str(plan_tracking_payload.get("plan_id") or "active_plan").strip() or "active_plan"
+
+
+def _candidate_from_plan_tracking(
+    plan_tracking_payload: dict[str, Any],
+    *,
+    signal_key: str,
+    title: str,
+    detail: str,
+    priority: str,
+    recommendation_type: str,
+    generated_at: str,
+    severity: str,
+    suggested_action: dict[str, Any],
+    expected_outcome: dict[str, Any],
+) -> dict[str, Any]:
+    plan_id = _plan_id(plan_tracking_payload)
+    dedupe_key = _plan_tracking_dedupe_key(plan_id, signal_key)
+    action_payload = {
+        "generator": _plan_tracking_generator_payload(
+            generated_at=generated_at,
+            signal_key=signal_key,
+            severity=severity,
+            dedupe_key=dedupe_key,
+        ),
+        "evidence": _plan_tracking_evidence(plan_tracking_payload, summary=detail),
+        "suggested_action": suggested_action,
+        "expected_outcome": expected_outcome,
+    }
+    return {
+        "title": title,
+        "detail": detail,
+        "priority": priority,
+        "recommendation_type": recommendation_type,
+        "source": PLAN_TRACKING_SOURCE,
+        "plan_id": plan_id,
+        "action_payload": action_payload,
+    }
+
+
+def _plan_tracking_candidates(plan_tracking_payload: dict[str, Any], *, generated_at: str) -> list[dict[str, Any]]:
+    plan_title = _plan_title(plan_tracking_payload)
+    status = str(plan_tracking_payload.get("status") or "").strip().lower()
+    tracking_window_days = int(safe_float(plan_tracking_payload.get("tracking_window_days"), 0.0))
+    snapshot_count = int(safe_float(plan_tracking_payload.get("snapshot_count"), 0.0))
+    contribution_pace_pct = safe_float(plan_tracking_payload.get("contribution_pace_pct"), 0.0)
+    expected_contributions = safe_float(plan_tracking_payload.get("expected_contributions_usd"), 0.0)
+    actual_contributions = safe_float(plan_tracking_payload.get("actual_contributions_usd"), 0.0)
+    return_drift_pct = safe_float(plan_tracking_payload.get("return_drift_pct"), 0.0)
+    actual_return_pct = safe_float(plan_tracking_payload.get("actual_annualized_return_pct"), 0.0)
+    expected_return_pct = safe_float(plan_tracking_payload.get("expected_annualized_return_pct"), 0.0)
+    value_drift_usd = safe_float(plan_tracking_payload.get("value_drift_usd"), 0.0)
+    value_drift_pct = safe_float(plan_tracking_payload.get("value_drift_pct"), 0.0)
+    current_value = safe_float(plan_tracking_payload.get("current_value_usd"), 0.0)
+    projected_value = safe_float(plan_tracking_payload.get("projected_value_usd"), 0.0)
+
+    candidates: list[dict[str, Any]] = []
+
+    if status == "insufficient_data":
+        detail = (
+            f"{plan_title} needs more tracking history before BuildWealth can judge plan progress. "
+            f"Current tracking has {snapshot_count} snapshot{'s' if snapshot_count != 1 else ''} over {tracking_window_days} days."
+        )
+        candidates.append(
+            _candidate_from_plan_tracking(
+                plan_tracking_payload,
+                signal_key="insufficient_data",
+                title=f"Build tracking history for {plan_title}",
+                detail=detail,
+                priority="low",
+                recommendation_type="workflow_action",
+                generated_at=generated_at,
+                severity="watch",
+                suggested_action={
+                    "kind": "build_plan_tracking_history",
+                    "subject": plan_title,
+                    "current_value": snapshot_count,
+                    "threshold": 2,
+                    "unit": "snapshots",
+                },
+                expected_outcome={
+                    "expected_delta_plan_status": "trackable",
+                    "expected_snapshot_count_min": 2,
+                },
+            )
+        )
+        return candidates
+
+    if expected_contributions > 0 and contribution_pace_pct < 90:
+        shortfall = max(expected_contributions - actual_contributions, 0.0)
+        estimated_monthly_increase = round(shortfall / max(tracking_window_days, 1) * 30.4375, 2)
+        priority = "high" if contribution_pace_pct < 60 else "medium"
+        detail = (
+            f"{plan_title} contribution pace is {_format_pct(contribution_pace_pct)} of target "
+            f"({_format_money(actual_contributions)} actual vs {_format_money(expected_contributions)} expected). "
+            f"Consider increasing contributions by about {_format_money(estimated_monthly_increase)}/month until the gap closes."
+        )
+        candidates.append(
+            _candidate_from_plan_tracking(
+                plan_tracking_payload,
+                signal_key="contribution_pace",
+                title=f"Increase contributions for {plan_title}",
+                detail=detail,
+                priority=priority,
+                recommendation_type="plan_settings_update",
+                generated_at=generated_at,
+                severity="breach" if priority == "high" else "watch",
+                suggested_action={
+                    "kind": "increase_plan_contributions",
+                    "subject": plan_title,
+                    "current_value": contribution_pace_pct,
+                    "threshold": 90,
+                    "unit": "pct",
+                    "estimated_monthly_contribution_increase_usd": estimated_monthly_increase,
+                    "contribution_shortfall_usd": round(shortfall, 2),
+                },
+                expected_outcome={
+                    "expected_delta_plan_status": "improved_contribution_pace",
+                    "expected_contribution_pace_pct": 90,
+                },
+            )
+        )
+
+    if status == "behind" and return_drift_pct <= -2:
+        priority = "high" if return_drift_pct <= -5 else "medium"
+        detail = (
+            f"{plan_title} is behind its return assumption: actual annualized return is {_format_pct(actual_return_pct)} "
+            f"vs {_format_pct(expected_return_pct)} expected, a {_format_pct(return_drift_pct)} drift."
+        )
+        candidates.append(
+            _candidate_from_plan_tracking(
+                plan_tracking_payload,
+                signal_key="return_drift",
+                title=f"Review plan assumptions for {plan_title}",
+                detail=detail,
+                priority=priority,
+                recommendation_type="workflow_action",
+                generated_at=generated_at,
+                severity="breach" if priority == "high" else "watch",
+                suggested_action={
+                    "kind": "review_return_drift",
+                    "subject": plan_title,
+                    "current_value": actual_return_pct,
+                    "threshold": expected_return_pct,
+                    "unit": "pct",
+                    "return_drift_pct": return_drift_pct,
+                },
+                expected_outcome={
+                    "expected_delta_plan_status": "validated_assumptions",
+                    "expected_return_drift_pct": -2,
+                },
+            )
+        )
+
+    if value_drift_pct <= -5:
+        priority = "high" if value_drift_pct <= -10 else "medium"
+        detail = (
+            f"{plan_title} is {_format_signed_money(value_drift_usd)} below projected value "
+            f"({_format_pct(value_drift_pct)} drift; {_format_money(current_value)} current vs {_format_money(projected_value)} projected)."
+        )
+        candidates.append(
+            _candidate_from_plan_tracking(
+                plan_tracking_payload,
+                signal_key="value_drift",
+                title=f"Close plan value gap for {plan_title}",
+                detail=detail,
+                priority=priority,
+                recommendation_type="workflow_action",
+                generated_at=generated_at,
+                severity="breach" if priority == "high" else "watch",
+                suggested_action={
+                    "kind": "close_plan_value_gap",
+                    "subject": plan_title,
+                    "current_value": current_value,
+                    "threshold": projected_value,
+                    "unit": "usd",
+                    "value_drift_usd": round(value_drift_usd, 2),
+                    "value_drift_pct": value_drift_pct,
+                },
+                expected_outcome={
+                    "expected_delta_plan_status": "gap_reviewed",
+                    "expected_value_drift_pct_min": -5,
+                },
+            )
+        )
+
+    if status == "ahead" and value_drift_usd > 0:
+        detail = (
+            f"{plan_title} is {_format_money(value_drift_usd)} ahead of projected value. "
+            "Review whether to preserve the surplus, reduce risk, or accelerate goals."
+        )
+        candidates.append(
+            _candidate_from_plan_tracking(
+                plan_tracking_payload,
+                signal_key="ahead",
+                title=f"Review surplus strategy for {plan_title}",
+                detail=detail,
+                priority="low",
+                recommendation_type="workflow_action",
+                generated_at=generated_at,
+                severity="opportunity",
+                suggested_action={
+                    "kind": "review_plan_surplus_strategy",
+                    "subject": plan_title,
+                    "current_value": current_value,
+                    "threshold": projected_value,
+                    "unit": "usd",
+                    "value_drift_usd": round(value_drift_usd, 2),
+                },
+                expected_outcome={
+                    "expected_delta_plan_status": "surplus_strategy_reviewed",
+                },
+            )
+        )
+
+    return candidates
+
+
+def generate_plan_tracking_recommendations(
+    *,
+    plan_tracking_payload: dict[str, Any],
+    existing_recommendations: list[dict[str, Any]],
+    creator: RecommendationCreator | None = None,
+    dry_run: bool = True,
+    limit: int = 10,
+    now: datetime | None = None,
+) -> RecommendationFactoryResult:
+    generated_at = _now_iso(now)
+    active_keys = _active_dedupe_keys(existing_recommendations)
+    bounded_limit = max(1, min(int(limit), 50))
+
+    candidates: list[dict[str, Any]] = []
+    created: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+
+    for candidate in _plan_tracking_candidates(plan_tracking_payload, generated_at=generated_at):
+        generator = candidate.get("action_payload", {}).get("generator", {})
+        dedupe_key = str(generator.get("dedupe_key") or "").strip()
+        signal_key = str(generator.get("signal_key") or "").strip()
+        if dedupe_key in active_keys:
+            skipped.append(
+                {
+                    "dedupe_key": dedupe_key,
+                    "reason": "active_duplicate",
+                    "title": candidate["title"],
+                    "signal_key": signal_key,
+                }
+            )
+            continue
+        if len(candidates) >= bounded_limit:
+            skipped.append(
+                {
+                    "dedupe_key": dedupe_key,
+                    "reason": "limit_exceeded",
+                    "title": candidate["title"],
+                    "signal_key": signal_key,
+                }
+            )
+            continue
+
         candidates.append(candidate)
         active_keys.add(dedupe_key)
 

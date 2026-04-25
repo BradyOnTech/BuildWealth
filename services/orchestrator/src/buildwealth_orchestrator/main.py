@@ -96,6 +96,7 @@ from buildwealth_orchestrator.schemas import (
     RecommendationCreateRequest,
     RecommendationItem,
     RecommendationOutcomeUpdateRequest,
+    PlanTrackingRecommendationGenerateRequest,
     PortfolioRiskRecommendationGenerateRequest,
     RecommendationFactoryResponse,
     RecommendationPreviewRequest,
@@ -294,6 +295,7 @@ from buildwealth_orchestrator.services.recommendation_scoring import (
     score_and_sort_recommendations,
 )
 from buildwealth_orchestrator.services.recommendation_factory import (
+    generate_plan_tracking_recommendations,
     generate_portfolio_risk_recommendations,
 )
 from buildwealth_orchestrator.services.user_settings import UserSettingsStore
@@ -11536,6 +11538,53 @@ def generate_portfolio_risk_recommendation_candidates(
     )
     if not request.dry_run and result.created:
         _queue_autogit_event("portfolio_risk_recommendations_generated")
+    return RecommendationFactoryResponse(**result.to_dict())
+
+
+@app.post("/api/recommendations/generate/plan-tracking", response_model=RecommendationFactoryResponse)
+def generate_plan_tracking_recommendation_candidates(
+    request: PlanTrackingRecommendationGenerateRequest,
+) -> RecommendationFactoryResponse:
+    try:
+        plan_id = resolve_plan_id_or_active(request.plan_id)
+        detail = plan_workspace.get_plan(plan_id)
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    plan_settings = PlanSettings(**detail.get("settings", {}))
+    snapshots = snapshot_store.recent(limit=90)
+    transactions = portfolio_store.list_transactions(limit=10_000)
+    planner_defaults = {
+        "annual_contribution_usd": settings.planner_annual_contribution_usd,
+        "expected_return_baseline": settings.planner_expected_return_baseline,
+        "hsa_extra_contribution_usd": settings.planner_hsa_delta_default,
+    }
+    tracking_payload = compute_plan_tracking(
+        plan_id=plan_id,
+        plan_title=detail.get("title", ""),
+        plan_settings=plan_settings,
+        planner_defaults=planner_defaults,
+        snapshots=snapshots,
+        transactions=transactions,
+    ).model_dump(mode="json")
+    existing_recommendations = recommendation_inbox.list(
+        limit=None,
+        status=None,
+        plan_id=None,
+        include_archived=True,
+        sort="none",
+    )
+    result = generate_plan_tracking_recommendations(
+        plan_tracking_payload=tracking_payload,
+        existing_recommendations=existing_recommendations,
+        creator=recommendation_inbox if not request.dry_run else None,
+        dry_run=request.dry_run,
+        limit=request.limit,
+    )
+    if not request.dry_run and result.created:
+        _queue_autogit_event("plan_tracking_recommendations_generated")
     return RecommendationFactoryResponse(**result.to_dict())
 
 

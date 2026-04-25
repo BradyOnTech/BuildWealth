@@ -1,11 +1,15 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 import buildwealth_orchestrator.main as main
+from buildwealth_orchestrator.schemas import PortfolioSnapshot
 from buildwealth_orchestrator.services.portfolio_risk_alerts import calculate_portfolio_risk_alerts
-from buildwealth_orchestrator.services.recommendation_factory import generate_portfolio_risk_recommendations
+from buildwealth_orchestrator.services.recommendation_factory import (
+    generate_plan_tracking_recommendations,
+    generate_portfolio_risk_recommendations,
+)
 from buildwealth_orchestrator.services.recommendation_inbox import RecommendationInbox
 
 
@@ -119,6 +123,9 @@ class _FakePortfolioStore:
     def get_holdings(self) -> dict[str, object]:
         return self.payload
 
+    def list_transactions(self, limit: int | None = None) -> list[dict[str, object]]:
+        return []
+
 
 def test_generate_portfolio_risk_route_supports_dry_run_and_apply(
     monkeypatch: pytest.MonkeyPatch,
@@ -152,4 +159,152 @@ def test_generate_portfolio_risk_route_supports_dry_run_and_apply(
 
     assert duplicate.generated_count == 0
     assert duplicate.skipped_count >= applied.generated_count
+    assert len(inbox.list(limit=None, status="proposed")) == applied.generated_count
+
+
+def _plan_tracking_payload() -> dict[str, object]:
+    return {
+        "plan_id": "plan-1",
+        "plan_title": "Primary Plan",
+        "status": "behind",
+        "status_detail": "Portfolio value and contributions are behind target.",
+        "tracking_window_days": 90,
+        "window_start": "2026-01-25T12:00:00+00:00",
+        "window_end": "2026-04-25T12:00:00+00:00",
+        "starting_value_usd": 100_000.0,
+        "current_value_usd": 95_000.0,
+        "projected_value_usd": 106_000.0,
+        "value_drift_usd": -11_000.0,
+        "value_drift_pct": -10.38,
+        "actual_annualized_return_pct": -18.0,
+        "expected_annualized_return_pct": 6.5,
+        "return_drift_pct": -24.5,
+        "actual_return_method": "snapshot_delta",
+        "expected_return_method": "plan_setting",
+        "actual_contributions_usd": 1_000.0,
+        "expected_contributions_usd": 4_500.0,
+        "contribution_pace_pct": 22.2,
+        "market_growth_usd": -6_000.0,
+        "snapshot_count": 3,
+    }
+
+
+def test_plan_tracking_factory_dry_run_generates_plan_specific_candidates() -> None:
+    result = generate_plan_tracking_recommendations(
+        plan_tracking_payload=_plan_tracking_payload(),
+        existing_recommendations=[],
+        dry_run=True,
+        limit=10,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 3
+    assert result.created == []
+    titles = [candidate["title"] for candidate in result.candidates]
+    assert "Increase contributions for Primary Plan" in titles
+    assert "Review plan assumptions for Primary Plan" in titles
+    assert "Close plan value gap for Primary Plan" in titles
+    first_payload = result.candidates[0]["action_payload"]
+    assert result.candidates[0]["source"] == "generator:plan_tracking"
+    assert result.candidates[0]["plan_id"] == "plan-1"
+    assert first_payload["generator"]["dedupe_key"].startswith("plan_tracking:plan-1:")
+    assert first_payload["generator"]["signal_type"] == "plan_tracking"
+    assert first_payload["evidence"]["data_keys"] == ["plan.tracking", "plan.settings", "portfolio.snapshots"]
+    assert first_payload["suggested_action"]["estimated_monthly_contribution_increase_usd"] > 0
+
+
+def test_plan_tracking_factory_apply_creates_rows_and_skips_duplicates(tmp_path: Path) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    first = generate_plan_tracking_recommendations(
+        plan_tracking_payload=_plan_tracking_payload(),
+        existing_recommendations=inbox.list(limit=None, include_archived=True, sort="none"),
+        creator=inbox,
+        dry_run=False,
+        limit=10,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert first.generated_count == 3
+    assert len(first.created) == 3
+
+    second = generate_plan_tracking_recommendations(
+        plan_tracking_payload=_plan_tracking_payload(),
+        existing_recommendations=inbox.list(limit=None, include_archived=True, sort="none"),
+        creator=inbox,
+        dry_run=False,
+        limit=10,
+        now=datetime(2026, 4, 25, 12, 35, tzinfo=timezone.utc),
+    )
+
+    assert second.generated_count == 0
+    assert second.created == []
+    assert second.skipped_count == 3
+    assert {item["reason"] for item in second.skipped} == {"active_duplicate"}
+    assert len(inbox.list(limit=None, status="proposed")) == 3
+
+
+class _FakePlanWorkspace:
+    def get_active_plan_id(self) -> str:
+        return "plan-1"
+
+    def get_plan(self, plan_id: str) -> dict[str, object]:
+        return {
+            "id": plan_id,
+            "title": "Primary Plan",
+            "settings": {
+                "expected_return_baseline": 0.065,
+                "annual_contribution_usd": 18_000,
+                "hsa_extra_contribution_usd": 0,
+            },
+        }
+
+
+class _FakeSnapshotStore:
+    def recent(self, limit: int | None = None) -> list[PortfolioSnapshot]:
+        now = datetime(2026, 4, 25, 12, 0, tzinfo=timezone.utc)
+        return [
+            PortfolioSnapshot(
+                as_of=now,
+                total_value_usd=95_000,
+                total_investment_usd=81_000,
+                net_performance_usd=14_000,
+                net_performance_percent=17.28,
+            ),
+            PortfolioSnapshot(
+                as_of=now - timedelta(days=90),
+                total_value_usd=100_000,
+                total_investment_usd=80_000,
+                net_performance_usd=20_000,
+                net_performance_percent=25,
+            ),
+        ]
+
+
+def test_generate_plan_tracking_route_supports_active_plan_dry_run_and_apply(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    monkeypatch.setattr(main, "plan_workspace", _FakePlanWorkspace())
+    monkeypatch.setattr(main, "snapshot_store", _FakeSnapshotStore())
+    monkeypatch.setattr(main, "portfolio_store", _FakePortfolioStore(_holdings_payload()))
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    dry_run = main.generate_plan_tracking_recommendation_candidates(
+        main.PlanTrackingRecommendationGenerateRequest(dry_run=True, limit=2),
+    )
+
+    assert dry_run.dry_run is True
+    assert dry_run.generated_count == 2
+    assert dry_run.created == []
+    assert all(item["source"] == "generator:plan_tracking" for item in dry_run.candidates)
+    assert inbox.list(limit=None, status="proposed") == []
+
+    applied = main.generate_plan_tracking_recommendation_candidates(
+        main.PlanTrackingRecommendationGenerateRequest(dry_run=False, limit=10),
+    )
+
+    assert applied.dry_run is False
+    assert applied.generated_count >= 2
+    assert len(applied.created) == applied.generated_count
     assert len(inbox.list(limit=None, status="proposed")) == applied.generated_count

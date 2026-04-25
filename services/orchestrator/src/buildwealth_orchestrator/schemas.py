@@ -1205,6 +1205,12 @@ class PortfolioRiskRecommendationGenerateRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=50)
 
 
+class PlanTrackingRecommendationGenerateRequest(BaseModel):
+    dry_run: bool = True
+    plan_id: str | None = None
+    limit: int = Field(default=10, ge=1, le=50)
+
+
 class RecommendationFactoryResponse(BaseModel):
     generated_count: int = 0
     skipped_count: int = 0

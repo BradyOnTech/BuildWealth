@@ -10,6 +10,20 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-25 (Completed - Recommendation Factory, Plan Tracking Signals)
+1. Extended the Recommendation Factory beyond portfolio risk:
+- plan tracking drift now generates evidence-backed recommendation candidates.
+- generated signals cover contribution pace, return drift, projected-value gaps, insufficient data, and ahead-of-plan surplus review.
+- stable `plan_tracking:{plan_id}:{signal}` dedupe keys prevent repeated active recommendations.
+2. Added API + UI surfaces:
+- `POST /api/recommendations/generate/plan-tracking` supports dry-run preview and apply mode, defaulting to the active plan when no plan is selected.
+- Recommendation Inbox factory controls can now preview/create either portfolio-risk or plan-tracking recommendations.
+- generated rows explain plan-tracking source signals, suggested catch-up contribution amounts, and value drift inline.
+3. Tests:
+- backend dry-run/apply/dedupe coverage for plan-tracking generation.
+- route coverage for active-plan generation.
+- frontend template coverage for plan-tracking controls and explainability copy.
+
 ### 2026-04-25 (Completed - Recommendation Factory, Portfolio Risk Signals)
 1. Added a first Recommendation Factory slice that turns active portfolio risk alerts into concrete recommendation candidates:
 - new `recommendation_factory.py` service builds specific, evidence-backed recommendation payloads from portfolio risk alerts.

@@ -21,6 +21,7 @@ This plugs into the existing recommendation system:
 - Slice 2 apply mode and dedupe: implemented
 - Slice 3 Recommendation Inbox preview/create panel: implemented
 - Slice 4 polish and broader docs: implemented
+- Slice 5 plan tracking recommendation generator: implemented
 
 ## First Slice Scope
 
@@ -34,6 +35,18 @@ This is the cleanest first source because BuildWealth already computes portfolio
 - sector overexposure
 - region overexposure
 - low effective positions or high HHI
+
+## Second Slice Scope
+
+Plan tracking signals now generate recommendations when an active plan is behind, ahead, under-funded, or has insufficient tracking history.
+
+This source covers:
+
+- insufficient snapshot history
+- contribution pace below target
+- return drift below plan assumptions
+- projected-value gaps
+- ahead-of-plan surplus strategy reviews
 
 Example generated recommendation:
 
@@ -106,6 +119,8 @@ Add:
 
 `POST /api/recommendations/generate/portfolio-risk`
 
+`POST /api/recommendations/generate/plan-tracking`
+
 Request options:
 
 - `dry_run: bool = true`
@@ -117,6 +132,7 @@ Behavior:
 - dry-run returns candidates but does not create rows
 - apply mode creates recommendation rows
 - dedupe prevents repeated active recommendations for the same risk signal
+- plan-tracking generation defaults to the active plan when no `plan_id` is supplied
 
 Example dry-run request:
 
