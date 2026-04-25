@@ -15,6 +15,13 @@ This plugs into the existing recommendation system:
 - closure analytics
 - learning-loop calibration
 
+## Implementation Status
+
+- Slice 1 backend dry-run: implemented
+- Slice 2 apply mode and dedupe: implemented
+- Slice 3 Recommendation Inbox preview/create panel: implemented
+- Slice 4 polish and broader docs: pending
+
 ## First Slice Scope
 
 Start with portfolio risk alerts to recommendations.

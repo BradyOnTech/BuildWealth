@@ -14,6 +14,11 @@ test('recommendations view exposes outcome tracking workflow', () => {
     'Measurement Source',
     'Save Outcome',
     'Learning loop',
+    'Recommendation Factory',
+    'Preview Portfolio Risk Recommendations',
+    'Create Recommendations',
+    'Generation Limit',
+    'Attach to Plan',
   ]) {
     assert.match(html, new RegExp(label));
   }
@@ -25,5 +30,12 @@ test('recommendations view exposes outcome tracking workflow', () => {
   assert.match(html, /id="recommendation-outcome-observed-at"/);
   assert.match(html, /id="recommendation-outcome-window-days"/);
   assert.match(html, /id="recommendation-outcome-save"/);
+  assert.match(html, /id="preview-portfolio-risk-recommendations"/);
+  assert.match(html, /id="create-portfolio-risk-recommendations"/);
+  assert.match(html, /id="recommendation-factory-limit"/);
+  assert.match(html, /id="recommendation-factory-plan"/);
+  assert.match(html, /id="recommendation-factory-summary"/);
+  assert.match(html, /id="recommendation-factory-results"/);
+  assert.match(html, /Turn active portfolio risk alerts into specific/);
   assert.match(html, /What actually happened, and what should the system learn/);
 });

@@ -27,6 +27,18 @@ export function template() {
       <div id="recommendation-analytics-details" class="item-list"></div>
     </div>
     <div class="form-section">
+      <div class="view-header"><h3>Recommendation Factory</h3>
+        <div class="header-actions"><button class="ghost small" id="preview-portfolio-risk-recommendations">Preview Portfolio Risk Recommendations</button><button class="primary small" id="create-portfolio-risk-recommendations">Create Recommendations</button></div>
+      </div>
+      <p class="hint">Turn active portfolio risk alerts into specific, evidence-backed recommendation rows. Preview first; create only when the candidates look useful.</p>
+      <div class="settings-grid">
+        <label class="field"><span>Generation Limit</span><input type="number" min="1" max="50" step="1" id="recommendation-factory-limit" value="10" /></label>
+        <label class="field"><span>Attach to Plan</span><select id="recommendation-factory-plan"></select></label>
+      </div>
+      <p class="hint" id="recommendation-factory-summary">No generated recommendation preview yet.</p>
+      <div id="recommendation-factory-results" class="item-list"></div>
+    </div>
+    <div class="form-section">
       <div class="view-header"><h3>Outcome Tracker</h3>
         <div class="header-actions"><button class="ghost small" id="recommendation-outcome-next">Log Next Outcome</button></div>
       </div>
@@ -89,6 +101,12 @@ function resetClosureAnalytics() {
   state.recommendationClosureAnalytics = null;
   byId('recommendation-analytics-summary').textContent = 'No closure analytics loaded yet.';
   byId('recommendation-analytics-details').innerHTML = '';
+}
+
+function resetRecommendationFactory() {
+  state.recommendationFactoryResult = null;
+  byId('recommendation-factory-summary').textContent = 'No generated recommendation preview yet.';
+  byId('recommendation-factory-results').innerHTML = '';
 }
 
 function resetOutcomeForm() {
@@ -218,6 +236,59 @@ function renderOutcomeTracker() {
     article.appendChild(actions);
     list.appendChild(article);
   }
+}
+
+function factoryPlanId() {
+  return byId('recommendation-factory-plan')?.value || byId('recommendation-plan-filter')?.value || null;
+}
+
+function factoryLimit() {
+  const raw = Number(byId('recommendation-factory-limit')?.value || 10);
+  if (!Number.isFinite(raw)) return 10;
+  return Math.max(1, Math.min(Math.trunc(raw), 50));
+}
+
+function candidateMeta(candidate) {
+  const payload = candidate?.action_payload && typeof candidate.action_payload === 'object' ? candidate.action_payload : {};
+  const generator = payload.generator && typeof payload.generator === 'object' ? payload.generator : {};
+  const action = payload.suggested_action && typeof payload.suggested_action === 'object' ? payload.suggested_action : {};
+  const parts = [
+    `Priority ${String(candidate?.priority || 'medium').toUpperCase()}`,
+    `Source ${candidate?.source || 'generator:portfolio_risk'}`,
+  ];
+  const severity = String(generator.severity || '').trim();
+  if (severity) parts.push(`Signal ${severity}`);
+  const amount = Number(action.estimated_rebalance_usd);
+  if (Number.isFinite(amount) && amount > 0) parts.push(`estimated rebalance ${fmtCurrency(amount)}`);
+  if (generator.dedupe_key) parts.push(`dedupe ${generator.dedupe_key}`);
+  return parts.join(' • ');
+}
+
+function renderRecommendationFactoryResult(payload) {
+  const result = payload && typeof payload === 'object' ? payload : {};
+  state.recommendationFactoryResult = result;
+  const candidates = Array.isArray(result.candidates) ? result.candidates : [];
+  const created = Array.isArray(result.created) ? result.created : [];
+  const skipped = Array.isArray(result.skipped) ? result.skipped : [];
+  const dryRun = result.dry_run !== false;
+  const generatedCount = Number(result.generated_count || 0);
+  const skippedCount = Number(result.skipped_count || skipped.length || 0);
+  const modeLabel = dryRun ? 'Preview' : 'Created';
+  byId('recommendation-factory-summary').textContent = `${modeLabel}: ${generatedCount} recommendation${generatedCount === 1 ? '' : 's'} • skipped ${skippedCount}.`;
+
+  const cards = [];
+  for (const candidate of candidates.slice(0, 8)) {
+    cards.push(`<article class="list-item"><p class="list-item-title">${candidate.title || 'Generated recommendation'}</p><p class="list-item-meta">${candidateMeta(candidate)}</p><p class="list-item-meta">${candidate.detail || ''}</p></article>`);
+  }
+  for (const item of created.slice(0, 8)) {
+    cards.push(`<article class="list-item"><p class="list-item-title">Created: ${item.title || item.id || 'Recommendation'}</p><p class="list-item-meta">${item.id || ''} • ${String(item.priority || 'medium').toUpperCase()} • ${item.source || 'generator:portfolio_risk'}</p></article>`);
+  }
+  for (const item of skipped.slice(0, 6)) {
+    cards.push(`<article class="list-item attention"><p class="list-item-title">Skipped: ${item.title || item.signal_key || 'Portfolio risk signal'}</p><p class="list-item-meta">${item.reason || 'skipped'}${item.dedupe_key ? ` • ${item.dedupe_key}` : ''}</p></article>`);
+  }
+  byId('recommendation-factory-results').innerHTML = cards.length
+    ? cards.join('')
+    : '<article class="list-item"><p class="list-item-title">No portfolio risk signals need recommendations.</p><p class="list-item-meta">Risk alerts are either clear or already have active generated recommendations.</p></article>';
 }
 
 function renderClosureAnalytics(payload) {
@@ -530,6 +601,29 @@ async function loadClosureAnalytics() {
   renderOutcomeTracker();
 }
 
+async function runPortfolioRiskRecommendationFactory(dryRun = true) {
+  const payload = {
+    dry_run: dryRun,
+    plan_id: factoryPlanId(),
+    limit: factoryLimit(),
+  };
+  if (!payload.plan_id) payload.plan_id = null;
+  writeLog(dryRun ? 'Previewing portfolio risk recommendations...' : 'Creating portfolio risk recommendations...', payload);
+  const result = await fetchJson('/api/recommendations/generate/portfolio-risk', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  renderRecommendationFactoryResult(result);
+  if (!dryRun) {
+    writeLog('Portfolio risk recommendation generation complete.', {
+      generated_count: result?.generated_count || 0,
+      skipped_count: result?.skipped_count || 0,
+    });
+    await load();
+  }
+}
+
 async function load() {
   const status = byId('recommendation-status-filter').value || 'proposed';
   const plan = byId('recommendation-plan-filter').value || '';
@@ -728,15 +822,19 @@ async function archiveItem(r) {
 function populatePlanFilters() {
   const filter = byId('recommendation-plan-filter');
   const editor = byId('recommendation-plan');
+  const factory = byId('recommendation-factory-plan');
   const prev = state.recommendationFilterPlanId || '';
   filter.innerHTML = '<option value="">All plans</option>';
   editor.innerHTML = '<option value="">Active plan (default)</option>';
+  factory.innerHTML = '<option value="">No plan attachment</option>';
   for (const p of state.plans) {
     const label = p.is_active ? `${p.title} (Active)` : p.title;
     filter.innerHTML += `<option value="${p.id}">${label}</option>`;
     editor.innerHTML += `<option value="${p.id}">${label}</option>`;
+    factory.innerHTML += `<option value="${p.id}">${label}</option>`;
   }
   if ([...filter.options].some(o => o.value === prev)) filter.value = prev;
+  if ([...factory.options].some(o => o.value === prev)) factory.value = prev;
 }
 
 export function init() {
@@ -744,6 +842,7 @@ export function init() {
   resetForm();
   resetPreview();
   resetClosureAnalytics();
+  resetRecommendationFactory();
   resetOutcomeForm();
   if ([...byId('recommendation-status-filter').options].some((option) => option.value === state.recommendationFilterStatus)) {
     byId('recommendation-status-filter').value = state.recommendationFilterStatus;
@@ -756,6 +855,8 @@ export function init() {
   byId('recommendation-status-filter').addEventListener('change', () => load().catch(e => writeLog(e.message, null, true)));
   byId('recommendation-plan-filter').addEventListener('change', () => load().catch(e => writeLog(e.message, null, true)));
   byId('recommendation-sort-filter').addEventListener('change', () => load().catch(e => writeLog(e.message, null, true)));
+  byId('preview-portfolio-risk-recommendations').addEventListener('click', () => runPortfolioRiskRecommendationFactory(true).catch(e => writeLog(e.message, null, true)));
+  byId('create-portfolio-risk-recommendations').addEventListener('click', () => runPortfolioRiskRecommendationFactory(false).catch(e => writeLog(e.message, null, true)));
   byId('recommendation-save').addEventListener('click', save);
   byId('recommendation-cancel-edit').addEventListener('click', resetForm);
   byId('recommendation-outcome-next').addEventListener('click', openNextOutcome);
