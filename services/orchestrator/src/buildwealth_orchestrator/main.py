@@ -96,6 +96,8 @@ from buildwealth_orchestrator.schemas import (
     RecommendationCreateRequest,
     RecommendationItem,
     RecommendationOutcomeUpdateRequest,
+    PortfolioRiskRecommendationGenerateRequest,
+    RecommendationFactoryResponse,
     RecommendationPreviewRequest,
     RecommendationPreviewResponse,
     RecommendationRejectRequest,
@@ -290,6 +292,9 @@ from buildwealth_orchestrator.services.recommendation_inbox import (
 from buildwealth_orchestrator.services.recommendation_scoring import (
     normalize_recommendation_sort,
     score_and_sort_recommendations,
+)
+from buildwealth_orchestrator.services.recommendation_factory import (
+    generate_portfolio_risk_recommendations,
 )
 from buildwealth_orchestrator.services.user_settings import UserSettingsStore
 from buildwealth_orchestrator.settings import get_settings
@@ -3616,17 +3621,26 @@ def _recommendation_list(
     if cleaned_status in {"proposed", "applied", "rejected", "archived"}:
         status_filter = cleaned_status
 
+    resolved_plan_id = plan_id.strip() if isinstance(plan_id, str) and plan_id.strip() else None
     raw_rows = recommendation_inbox.list(
         limit=None,
         status=status_filter,  # type: ignore[arg-type]
-        plan_id=(plan_id.strip() if isinstance(plan_id, str) and plan_id.strip() else None),
+        plan_id=resolved_plan_id,
         include_archived=include_archived,
+        sort="none",
+    )
+    calibration_rows = recommendation_inbox.list(
+        limit=None,
+        status=None,
+        plan_id=None,
+        include_archived=True,
         sort="none",
     )
     return score_and_sort_recommendations(
         raw_rows,
         sort=normalize_recommendation_sort(sort),
         limit=max(1, min(int(limit), 500)),
+        calibration_rows=calibration_rows,
     )
 
 
@@ -11498,6 +11512,31 @@ def get_recommendation_closure_analytics(
         plan_id=plan_id,
     )
     return RecommendationClosureAnalyticsResponse(**payload)
+
+
+@app.post("/api/recommendations/generate/portfolio-risk", response_model=RecommendationFactoryResponse)
+def generate_portfolio_risk_recommendation_candidates(
+    request: PortfolioRiskRecommendationGenerateRequest,
+) -> RecommendationFactoryResponse:
+    holdings_payload = portfolio_store.get_holdings()
+    existing_recommendations = recommendation_inbox.list(
+        limit=None,
+        status=None,
+        plan_id=None,
+        include_archived=True,
+        sort="none",
+    )
+    result = generate_portfolio_risk_recommendations(
+        holdings_payload=holdings_payload,
+        existing_recommendations=existing_recommendations,
+        creator=recommendation_inbox if not request.dry_run else None,
+        dry_run=request.dry_run,
+        plan_id=request.plan_id,
+        limit=request.limit,
+    )
+    if not request.dry_run and result.created:
+        _queue_autogit_event("portfolio_risk_recommendations_generated")
+    return RecommendationFactoryResponse(**result.to_dict())
 
 
 @app.post("/api/recommendations", response_model=RecommendationItem)

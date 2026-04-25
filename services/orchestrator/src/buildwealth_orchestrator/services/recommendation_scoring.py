@@ -7,6 +7,7 @@ from typing import Any
 # Ignidash analyzer conventions (`src/lib/calc/data-analyzers/*`), while
 # score factors are BuildWealth-specific for recommendation ranking.
 RECOMMENDATION_SCORE_MODEL_VERSION = "v1"
+RECOMMENDATION_CALIBRATION_MODEL_VERSION = "calibration_v1"
 DEFAULT_RECOMMENDATION_SORT = "ranked"
 VALID_RECOMMENDATION_SORTS = {"ranked", "created_at"}
 
@@ -83,6 +84,170 @@ def _coerce_action_payload(row: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _decision_closure(row: dict[str, Any]) -> dict[str, Any]:
+    direct = row.get("decision_closure")
+    if isinstance(direct, dict):
+        return direct
+    payload = _coerce_action_payload(row)
+    closure = payload.get("decision_closure")
+    if isinstance(closure, dict):
+        return closure
+    return {}
+
+
+def _same_direction(left: float, right: float) -> bool:
+    if left == 0 or right == 0:
+        return left == right
+    return (left > 0 and right > 0) or (left < 0 and right < 0)
+
+
+def _expected_vs_realized_metrics(row: dict[str, Any]) -> dict[str, Any]:
+    closure = _decision_closure(row)
+    metrics = closure.get("expected_vs_realized")
+    if isinstance(metrics, dict):
+        return metrics
+
+    expected = closure.get("expected_outcome")
+    realized = closure.get("realized_outcome")
+    if not isinstance(expected, dict) or not isinstance(realized, dict):
+        return {}
+
+    expected_future = _safe_float(expected.get("expected_delta_future_value_usd"), 0.0)
+    realized_future = _safe_float(realized.get("realized_delta_future_value_usd"), 0.0)
+    if expected_future == 0.0 and realized_future == 0.0:
+        return {}
+    return {
+        "status": "measured",
+        "future_value_gap_usd": realized_future - expected_future,
+        "future_value_direction_match": _same_direction(expected_future, realized_future),
+    }
+
+
+def _normalized_source(row: dict[str, Any]) -> str:
+    return str(row.get("source") or "manual").strip().lower() or "manual"
+
+
+def _empty_calibration_bucket(key: str) -> dict[str, Any]:
+    return {
+        "key": key,
+        "measured_count": 0,
+        "direction_match_count": 0,
+        "future_value_abs_error_total_usd": 0.0,
+    }
+
+
+def _add_calibration_observation(bucket: dict[str, Any], metrics: dict[str, Any]) -> None:
+    bucket["measured_count"] = int(bucket.get("measured_count") or 0) + 1
+    if bool(metrics.get("future_value_direction_match")):
+        bucket["direction_match_count"] = int(bucket.get("direction_match_count") or 0) + 1
+    gap = _safe_float(metrics.get("future_value_gap_usd"), 0.0)
+    bucket["future_value_abs_error_total_usd"] = _safe_float(bucket.get("future_value_abs_error_total_usd"), 0.0) + abs(gap)
+
+
+def _finalize_calibration_bucket(bucket: dict[str, Any]) -> dict[str, Any]:
+    measured_count = int(bucket.get("measured_count") or 0)
+    direction_match_count = int(bucket.get("direction_match_count") or 0)
+    match_rate = round((direction_match_count / measured_count) * 100.0, 2) if measured_count else None
+    mean_abs_error = (
+        round(_safe_float(bucket.get("future_value_abs_error_total_usd"), 0.0) / measured_count, 2)
+        if measured_count
+        else None
+    )
+    adjustment = 0.0
+    if measured_count >= 2 and match_rate is not None:
+        if match_rate >= 75.0:
+            adjustment = 8.0
+        elif match_rate >= 60.0:
+            adjustment = 4.0
+        elif match_rate <= 25.0:
+            adjustment = -10.0
+        elif match_rate <= 40.0:
+            adjustment = -6.0
+        if mean_abs_error is not None and mean_abs_error >= 100_000.0:
+            adjustment -= 3.0
+    return {
+        "key": str(bucket.get("key") or ""),
+        "measured_count": measured_count,
+        "direction_match_count": direction_match_count,
+        "future_value_direction_match_rate_pct": match_rate,
+        "mean_future_value_abs_error_usd": mean_abs_error,
+        "confidence_adjustment": round(_clamp(adjustment, min_value=-12.0, max_value=10.0), 2),
+    }
+
+
+def build_recommendation_calibration_profile(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    by_source: dict[str, dict[str, Any]] = {}
+    by_type: dict[str, dict[str, Any]] = {}
+
+    for row in rows:
+        metrics = _expected_vs_realized_metrics(row)
+        if str(metrics.get("status") or "").strip().lower() != "measured":
+            continue
+
+        source = _normalized_source(row)
+        recommendation_type = _normalized_recommendation_type(row)
+        source_bucket = by_source.setdefault(source, _empty_calibration_bucket(source))
+        type_bucket = by_type.setdefault(recommendation_type, _empty_calibration_bucket(recommendation_type))
+        _add_calibration_observation(source_bucket, metrics)
+        _add_calibration_observation(type_bucket, metrics)
+
+    return {
+        "model_version": RECOMMENDATION_CALIBRATION_MODEL_VERSION,
+        "by_source": {key: _finalize_calibration_bucket(bucket) for key, bucket in by_source.items()},
+        "by_type": {key: _finalize_calibration_bucket(bucket) for key, bucket in by_type.items()},
+    }
+
+
+def _calibration_summary_for_row(
+    row: dict[str, Any],
+    calibration_profile: dict[str, Any] | None,
+) -> dict[str, Any]:
+    profile = calibration_profile if isinstance(calibration_profile, dict) else {}
+    by_source = profile.get("by_source") if isinstance(profile.get("by_source"), dict) else {}
+    by_type = profile.get("by_type") if isinstance(profile.get("by_type"), dict) else {}
+    source_key = _normalized_source(row)
+    type_key = _normalized_recommendation_type(row)
+    source_bucket = by_source.get(source_key) if isinstance(by_source.get(source_key), dict) else None
+    type_bucket = by_type.get(type_key) if isinstance(by_type.get(type_key), dict) else None
+
+    source_delta = _safe_float(source_bucket.get("confidence_adjustment") if source_bucket else 0.0, 0.0)
+    type_delta = _safe_float(type_bucket.get("confidence_adjustment") if type_bucket else 0.0, 0.0)
+    confidence_delta = round(_clamp(source_delta + (type_delta * 0.5), min_value=-12.0, max_value=10.0), 2)
+    return {
+        "model_version": RECOMMENDATION_CALIBRATION_MODEL_VERSION,
+        "source_key": source_key,
+        "type_key": type_key,
+        "source": source_bucket,
+        "type": type_bucket,
+        "confidence_delta": confidence_delta,
+        "applied": confidence_delta != 0.0,
+    }
+
+
+def _append_calibration_reason(reasons: list[str], calibration: dict[str, Any]) -> None:
+    confidence_delta = _safe_float(calibration.get("confidence_delta"), 0.0)
+    if confidence_delta == 0.0:
+        return
+
+    source_bucket = calibration.get("source") if isinstance(calibration.get("source"), dict) else None
+    type_bucket = calibration.get("type") if isinstance(calibration.get("type"), dict) else None
+    source_count = int(source_bucket.get("measured_count") or 0) if source_bucket else 0
+    source_rate = source_bucket.get("future_value_direction_match_rate_pct") if source_bucket else None
+    type_count = int(type_bucket.get("measured_count") or 0) if type_bucket else 0
+    type_rate = type_bucket.get("future_value_direction_match_rate_pct") if type_bucket else None
+
+    if source_count >= 2 and source_rate is not None:
+        _append_reason(
+            reasons,
+            f"Calibration adjusted confidence {confidence_delta:+.1f}: {calibration.get('source_key')} has {float(source_rate):.1f}% direction-match rate across {source_count} measured outcomes.",
+        )
+    elif type_count >= 2 and type_rate is not None:
+        _append_reason(
+            reasons,
+            f"Calibration adjusted confidence {confidence_delta:+.1f}: {calibration.get('type_key')} recommendations have {float(type_rate):.1f}% direction-match rate across {type_count} measured outcomes.",
+        )
+
+
 def _scenario_preview(action_payload: dict[str, Any]) -> dict[str, Any] | None:
     preview = action_payload.get("scenario_diff_preview")
     if isinstance(preview, dict):
@@ -135,6 +300,7 @@ def score_recommendation_row(
     row: dict[str, Any],
     *,
     now: datetime | None = None,
+    calibration_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     resolved_now = now or utc_now()
     priority = _normalized_priority(row)
@@ -239,6 +405,10 @@ def score_recommendation_row(
         confidence += 8.0
         _append_reason(reasons, "Workflow-generated recommendation includes reproducible provenance.")
 
+    calibration = _calibration_summary_for_row(row, calibration_profile)
+    confidence += _safe_float(calibration.get("confidence_delta"), 0.0)
+    _append_calibration_reason(reasons, calibration)
+
     urgency = {"high": 88.0, "medium": 58.0, "low": 32.0}[priority]
     if status == "proposed":
         urgency += min(14.0, float(age_days) * 1.5)
@@ -291,6 +461,7 @@ def score_recommendation_row(
         "rank": None,
         "model_version": RECOMMENDATION_SCORE_MODEL_VERSION,
         "reasons": reasons[:8],
+        "calibration": calibration,
     }
 
 
@@ -311,12 +482,14 @@ def score_and_sort_recommendations(
     sort: str = DEFAULT_RECOMMENDATION_SORT,
     now: datetime | None = None,
     limit: int | None = None,
+    calibration_rows: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     resolved_now = now or utc_now()
+    calibration_profile = build_recommendation_calibration_profile(calibration_rows or rows)
     scored_rows: list[dict[str, Any]] = []
     for raw_row in rows:
         row = dict(raw_row)
-        row["score"] = score_recommendation_row(row, now=resolved_now)
+        row["score"] = score_recommendation_row(row, now=resolved_now, calibration_profile=calibration_profile)
         scored_rows.append(row)
 
     sort_mode = normalize_recommendation_sort(sort)

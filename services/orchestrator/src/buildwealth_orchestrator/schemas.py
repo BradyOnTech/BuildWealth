@@ -1120,6 +1120,7 @@ class RecommendationScore(BaseModel):
     rank: int | None = None
     model_version: str = "v1"
     reasons: list[str] = Field(default_factory=list)
+    calibration: dict[str, Any] = Field(default_factory=dict)
 
 
 class RecommendationItem(BaseModel):
@@ -1196,6 +1197,21 @@ class RecommendationOutcomeUpdateRequest(BaseModel):
     observation_window_days: int | None = Field(default=None, ge=0, le=3650)
     measurement_source: str = ""
     note: str = ""
+
+
+class PortfolioRiskRecommendationGenerateRequest(BaseModel):
+    dry_run: bool = True
+    plan_id: str | None = None
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+class RecommendationFactoryResponse(BaseModel):
+    generated_count: int = 0
+    skipped_count: int = 0
+    candidates: list[dict[str, Any]] = Field(default_factory=list)
+    created: list[RecommendationItem] = Field(default_factory=list)
+    skipped: list[dict[str, Any]] = Field(default_factory=list)
+    dry_run: bool = True
 
 
 class RecommendationActionResponse(BaseModel):

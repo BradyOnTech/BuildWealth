@@ -38,6 +38,70 @@ def test_recommendation_list_defaults_to_ranked_sort(
     assert rows[1]["score"]["rank"] == 2
 
 
+def test_recommendation_list_uses_outcome_history_for_calibration(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    strong = inbox.create(
+        title="Reliable next action",
+        detail="Same source has historically matched expected direction.",
+        priority="medium",
+        recommendation_type="plan_settings_update",
+        source="workflow:reliable_review",
+    )
+    weak = inbox.create(
+        title="Noisy next action",
+        detail="Same source has historically missed expected direction.",
+        priority="medium",
+        recommendation_type="plan_settings_update",
+        source="workflow:noisy_review",
+    )
+    for index in range(2):
+        created = inbox.create(
+            title=f"Reliable measured {index}",
+            detail="Measured historical recommendation.",
+            priority="medium",
+            recommendation_type="plan_settings_update",
+            source="workflow:reliable_review",
+            action_payload={
+                "decision_closure": {
+                    "expected_vs_realized": {
+                        "status": "measured",
+                        "future_value_gap_usd": 500.0,
+                        "future_value_direction_match": True,
+                    }
+                }
+            },
+        )
+        inbox.set_status(created["id"], status="applied")
+        created = inbox.create(
+            title=f"Noisy measured {index}",
+            detail="Measured historical recommendation.",
+            priority="medium",
+            recommendation_type="plan_settings_update",
+            source="workflow:noisy_review",
+            action_payload={
+                "decision_closure": {
+                    "expected_vs_realized": {
+                        "status": "measured",
+                        "future_value_gap_usd": -500.0,
+                        "future_value_direction_match": False,
+                    }
+                }
+            },
+        )
+        inbox.set_status(created["id"], status="applied")
+
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    rows = main._recommendation_list(limit=10, status="proposed")
+    by_id = {row["id"]: row for row in rows}
+
+    assert rows[0]["id"] == strong["id"]
+    assert by_id[strong["id"]]["score"]["calibration"]["confidence_delta"] > 0
+    assert by_id[weak["id"]]["score"]["calibration"]["confidence_delta"] < 0
+
+
 def test_recommendation_list_supports_created_at_sort(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

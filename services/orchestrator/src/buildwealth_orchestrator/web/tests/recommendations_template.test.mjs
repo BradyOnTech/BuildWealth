@@ -13,6 +13,7 @@ test('recommendations view exposes outcome tracking workflow', () => {
     'Realized Real-Value Delta',
     'Measurement Source',
     'Save Outcome',
+    'Learning loop',
   ]) {
     assert.match(html, new RegExp(label));
   }

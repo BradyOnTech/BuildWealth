@@ -30,7 +30,7 @@ export function template() {
       <div class="view-header"><h3>Outcome Tracker</h3>
         <div class="header-actions"><button class="ghost small" id="recommendation-outcome-next">Log Next Outcome</button></div>
       </div>
-      <p class="hint" id="recommendation-outcome-tracker-summary">Outcome follow-ups load with recommendations.</p>
+      <p class="hint" id="recommendation-outcome-tracker-summary">Learning loop follow-ups load with recommendations.</p>
       <div id="recommendation-outcome-tracker-list" class="item-list"></div>
       <div class="settings-grid" id="recommendation-outcome-form" hidden>
         <label class="field form-span"><span>Tracking Recommendation</span><input type="text" id="recommendation-outcome-current" readonly /></label>
@@ -354,6 +354,21 @@ function renderTable() {
     let recHtml = `<p class="rec-title">${r.title || '-'}</p><p class="rec-detail">${r.detail || ''}</p>`;
     if (score && Number.isFinite(Number(score.impact)) && Number.isFinite(Number(score.confidence)) && Number.isFinite(Number(score.urgency)) && Number.isFinite(Number(score.reversibility))) {
       recHtml += `<p class="rec-detail">Score breakdown: impact ${Number(score.impact).toFixed(1)} • confidence ${Number(score.confidence).toFixed(1)} • urgency ${Number(score.urgency).toFixed(1)} • reversibility ${Number(score.reversibility).toFixed(1)}</p>`;
+      const calibration = score.calibration && typeof score.calibration === 'object' ? score.calibration : null;
+      if (calibration && calibration.applied) {
+        const confidenceDelta = Number(calibration.confidence_delta);
+        const sourceBucket = calibration.source && typeof calibration.source === 'object' ? calibration.source : null;
+        const typeBucket = calibration.type && typeof calibration.type === 'object' ? calibration.type : null;
+        const sourceCount = Number(sourceBucket?.measured_count || 0);
+        const sourceRate = Number(sourceBucket?.future_value_direction_match_rate_pct);
+        const typeCount = Number(typeBucket?.measured_count || 0);
+        const typeRate = Number(typeBucket?.future_value_direction_match_rate_pct);
+        const calibrationParts = [];
+        if (Number.isFinite(confidenceDelta)) calibrationParts.push(`confidence ${confidenceDelta >= 0 ? '+' : ''}${confidenceDelta.toFixed(1)}`);
+        if (sourceCount >= 2 && Number.isFinite(sourceRate)) calibrationParts.push(`${calibration.source_key} ${sourceRate.toFixed(1)}% match over ${sourceCount} outcomes`);
+        else if (typeCount >= 2 && Number.isFinite(typeRate)) calibrationParts.push(`${calibration.type_key} ${typeRate.toFixed(1)}% match over ${typeCount} outcomes`);
+        if (calibrationParts.length) recHtml += `<p class="rec-detail">Learning loop: ${calibrationParts.join(' • ')}</p>`;
+      }
       if (Array.isArray(score.reasons) && score.reasons.length) {
         recHtml += `<p class="rec-detail">Drivers: ${score.reasons.slice(0, 3).join(' • ')}</p>`;
       }
