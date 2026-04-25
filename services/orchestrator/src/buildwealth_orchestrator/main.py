@@ -131,6 +131,10 @@ from buildwealth_orchestrator.schemas import (
     GitInitResponse,
     GitPolicyResponse,
     GitPolicyUpdateRequest,
+    GitRemoteConnectRequest,
+    GitRemoteOperationRequest,
+    GitRemoteOperationResponse,
+    GitRestorePreviewResponse,
     GitStatusResponse,
     RuntimeTelemetryResponse,
     TodayDashboardResponse,
@@ -10399,6 +10403,24 @@ def get_git_diff(
     return GitDiffResponse.model_validate(diff)
 
 
+@app.get("/api/git/restore-preview", response_model=GitRestorePreviewResponse)
+def get_git_restore_preview(
+    ref: str,
+    path: str | None = None,
+    max_chars: int = 120_000,
+) -> GitRestorePreviewResponse:
+    policy = _git_policy()
+    try:
+        preview = _git_repository_service(policy).restore_preview(
+            ref=ref,
+            path=path,
+            max_chars=max_chars,
+        )
+    except GitRepositoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return GitRestorePreviewResponse.model_validate(preview)
+
+
 @app.post("/api/git/checkpoint", response_model=GitCheckpointResponse)
 def create_git_checkpoint(request: GitCheckpointRequest) -> GitCheckpointResponse:
     policy = _git_policy()
@@ -10424,6 +10446,39 @@ def get_git_autogit_state() -> GitAutoGitStateResponse:
 def run_due_git_autogit() -> GitAutoGitStateResponse:
     state = _run_due_autogit()
     return GitAutoGitStateResponse.model_validate(state)
+
+
+@app.post("/api/git/remote/connect", response_model=GitRemoteOperationResponse)
+def connect_git_remote(request: GitRemoteConnectRequest) -> GitRemoteOperationResponse:
+    policy = _git_policy()
+    try:
+        result = _git_repository_service(policy).connect_remote(
+            remote_url=request.remote_url,
+            name=request.remote_name,
+        )
+    except GitRepositoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return GitRemoteOperationResponse.model_validate(result)
+
+
+@app.post("/api/git/push", response_model=GitRemoteOperationResponse)
+def push_git_remote(request: GitRemoteOperationRequest) -> GitRemoteOperationResponse:
+    policy = _git_policy()
+    try:
+        result = _git_repository_service(policy).push(remote_name=request.remote_name)
+    except GitRepositoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return GitRemoteOperationResponse.model_validate(result)
+
+
+@app.post("/api/git/pull", response_model=GitRemoteOperationResponse)
+def pull_git_remote(request: GitRemoteOperationRequest) -> GitRemoteOperationResponse:
+    policy = _git_policy()
+    try:
+        result = _git_repository_service(policy).pull(remote_name=request.remote_name)
+    except GitRepositoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return GitRemoteOperationResponse.model_validate(result)
 
 
 @app.get("/api/settings")

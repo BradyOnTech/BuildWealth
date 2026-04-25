@@ -2287,6 +2287,7 @@ class GitCommitSummary(BaseModel):
 class GitRemoteStatusResponse(BaseModel):
     has_remote: bool
     name: str | None = None
+    url: str | None = None
     ahead: int = 0
     behind: int = 0
 
@@ -2323,6 +2324,27 @@ class GitDiffResponse(BaseModel):
     truncated: bool = False
 
 
+class GitRestorePreviewFile(BaseModel):
+    path: str
+    status: str
+    historical_excerpt: str | None = None
+    current_excerpt: str | None = None
+    diff: str
+    truncated: bool = False
+
+
+class GitRestorePreviewResponse(BaseModel):
+    status: str
+    message: str
+    workspace_dir: str
+    ref: str
+    path: str | None = None
+    read_only: bool = True
+    files: list[GitRestorePreviewFile] = Field(default_factory=list)
+    total_files: int = 0
+    warnings: list[str] = Field(default_factory=list)
+
+
 class GitAutoGitPendingEvent(BaseModel):
     event_type: str
     event_count: int
@@ -2347,6 +2369,24 @@ class GitAutoGitStateResponse(BaseModel):
     pending_event: GitAutoGitPendingEvent | None = None
     last_result: GitAutoGitLastResult | None = None
     status: str = "idle"
+
+
+class GitRemoteConnectRequest(BaseModel):
+    remote_url: str
+    remote_name: str = "origin"
+
+
+class GitRemoteOperationRequest(BaseModel):
+    remote_name: str = "origin"
+
+
+class GitRemoteOperationResponse(BaseModel):
+    status: str
+    message: str
+    workspace_dir: str
+    branch: str | None = None
+    remote_name: str
+    remote: GitRemoteStatusResponse | None = None
 
 
 class GitCheckpointRequest(BaseModel):

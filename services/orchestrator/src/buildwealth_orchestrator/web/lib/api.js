@@ -61,12 +61,45 @@ export function getGitDiff({ ref = '', path = '', maxChars = 200000 } = {}) {
   return fetchJson(`/api/git/diff${query ? `?${query}` : ''}`);
 }
 
+export function getGitRestorePreview({ ref = '', path = '', maxChars = 120000 } = {}) {
+  const params = new URLSearchParams();
+  if (ref) params.set('ref', ref);
+  if (path) params.set('path', path);
+  if (maxChars) params.set('max_chars', String(maxChars));
+  const query = params.toString();
+  return fetchJson(`/api/git/restore-preview${query ? `?${query}` : ''}`);
+}
+
 export function getGitAutoGitState() {
   return fetchJson('/api/git/autogit');
 }
 
 export function runDueGitAutoGit() {
   return fetchJson('/api/git/autogit/run-due', { method: 'POST' });
+}
+
+export function connectGitRemote(payload = {}) {
+  return fetchJson('/api/git/remote/connect', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function pushGitRemote(payload = {}) {
+  return fetchJson('/api/git/push', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function pullGitRemote(payload = {}) {
+  return fetchJson('/api/git/pull', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 }
 
 export function createGitCheckpoint(payload = {}) {

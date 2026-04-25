@@ -1,12 +1,16 @@
 import {
+  connectGitRemote,
   createGitCheckpoint,
   fetchJson,
   getGitAutoGitState,
   getGitDiff,
   getGitHistory,
   getGitPolicy,
+  getGitRestorePreview,
   getGitStatus,
   initializeGitRepository,
+  pullGitRemote,
+  pushGitRemote,
   runDueGitAutoGit,
   updateGitPolicy,
 } from '../lib/api.js';
@@ -187,6 +191,18 @@ export function template() {
           <span class="field-hint">Most recent automatic checkpoint outcome.</span>
         </label>
       </div>
+      <div class="settings-grid">
+        <label class="field">
+          <span>Remote Name</span>
+          <input type="text" id="git-remote-name" autocomplete="off" placeholder="origin" />
+          <span class="field-hint">Defaults to <code>origin</code>.</span>
+        </label>
+        <label class="field">
+          <span>Remote URL</span>
+          <input type="text" id="git-remote-url" autocomplete="off" placeholder="git@github.com:you/buildwealth-history.git" />
+          <span class="field-hint">Use a private repo. BuildWealth never force-pushes.</span>
+        </label>
+      </div>
       <div class="header-actions">
         <button class="ghost small" id="save-git-policy">Save Version Policy</button>
         <button class="ghost small" id="init-git-repo">Initialize Repository</button>
@@ -194,12 +210,30 @@ export function template() {
         <button class="ghost small" id="view-current-git-diff">View Current Diff</button>
         <button class="ghost small" id="view-selected-git-diff">View Selected Diff</button>
         <button class="ghost small" id="run-due-git-autogit">Run Due AutoGit</button>
+        <button class="ghost small" id="connect-git-remote">Connect Remote</button>
+        <button class="ghost small" id="push-git-remote">Push</button>
+        <button class="ghost small" id="pull-git-remote">Pull</button>
         <button class="primary small" id="create-git-checkpoint">Create Checkpoint</button>
       </div>
       <label class="field form-span">
         <span>Diff Preview</span>
         <textarea id="git-diff-preview" rows="14" readonly placeholder="View current changes or select a checkpoint to inspect its patch."></textarea>
         <span class="field-hint">Shows generated workspace changes without leaving BuildWealth.</span>
+      </label>
+      <div class="settings-grid">
+        <label class="field">
+          <span>Restore Preview Path</span>
+          <input type="text" id="git-restore-preview-path" autocomplete="off" placeholder="plans/, recommendations/, or a specific exported file" />
+          <span class="field-hint">Optional. Leave blank to preview all supported exported artifacts.</span>
+        </label>
+      </div>
+      <div class="header-actions">
+        <button class="ghost small" id="preview-git-restore">Preview Selected Restore</button>
+      </div>
+      <label class="field form-span">
+        <span>Restore Preview</span>
+        <textarea id="git-restore-preview" rows="12" readonly placeholder="Select a checkpoint and preview what restoring it would change."></textarea>
+        <span class="field-hint">Read-only planning only. This does not restore or modify canonical BuildWealth data.</span>
       </label>
       <p class="hint" id="git-status"></p>
     </div>
@@ -432,6 +466,8 @@ function setGitPolicyInputs(policy = {}) {
   if (autoPush) autoPush.value = policy.auto_push_enabled ? 'true' : 'false';
   const idleSeconds = byId('git-auto-checkpoint-idle-seconds');
   if (idleSeconds) idleSeconds.value = String(policy.auto_checkpoint_idle_seconds || 180);
+  const remoteName = byId('git-remote-name');
+  if (remoteName) remoteName.value = policy.remote_name || 'origin';
 }
 
 function collectGitPolicyPayload() {
@@ -441,6 +477,7 @@ function collectGitPolicyPayload() {
     autogit_enabled: byId('git-autogit-enabled')?.value === 'true',
     auto_push_enabled: byId('git-auto-push-enabled')?.value === 'true',
     auto_checkpoint_idle_seconds: Number(byId('git-auto-checkpoint-idle-seconds')?.value || 180),
+    remote_name: byId('git-remote-name')?.value || 'origin',
     include_financial_profile: byId('git-include-financial-profile')?.value === 'true',
   };
 }
@@ -467,8 +504,21 @@ function setGitStatusInputs(status = {}) {
   const remoteStatus = byId('git-remote-status');
   if (remoteStatus) {
     const remote = status.remote || {};
-    remoteStatus.value = remote.has_remote ? `${remote.name || 'remote'} ahead ${remote.ahead || 0}, behind ${remote.behind || 0}` : 'Local only';
+    remoteStatus.value = remote.has_remote
+      ? `${remote.name || 'remote'} ahead ${remote.ahead || 0}, behind ${remote.behind || 0}`
+      : 'Local only';
+    const remoteName = byId('git-remote-name');
+    if (remoteName && remote.name) remoteName.value = remote.name;
+    const remoteUrl = byId('git-remote-url');
+    if (remoteUrl && remote.url) remoteUrl.value = remote.url;
   }
+}
+
+function collectGitRemotePayload() {
+  return {
+    remote_name: byId('git-remote-name')?.value || 'origin',
+    remote_url: byId('git-remote-url')?.value || '',
+  };
 }
 
 function setGitHistory(commits = []) {
@@ -496,6 +546,29 @@ function setGitDiff(payload = {}) {
   const diffText = String(payload.diff || '').trimEnd();
   const truncatedText = payload.truncated ? '\n\n[Diff truncated in preview.]' : '';
   preview.value = diffText ? `${diffText}${truncatedText}` : 'No diff available.';
+}
+
+function setGitRestorePreview(payload = {}) {
+  const preview = byId('git-restore-preview');
+  if (!preview) return;
+  const files = Array.isArray(payload.files) ? payload.files : [];
+  const warnings = Array.isArray(payload.warnings) ? payload.warnings : [];
+  const lines = [
+    payload.message || 'Read-only restore preview generated.',
+    `Ref: ${payload.ref || '-'}`,
+    `Path: ${payload.path || 'all supported exported artifacts'}`,
+    `Files: ${payload.total_files || files.length}`,
+    '',
+    ...warnings.map((warning) => `Warning: ${warning}`),
+    warnings.length ? '' : '',
+  ];
+  for (const file of files) {
+    lines.push(`--- ${file.path} (${file.status}) ---`);
+    lines.push(file.diff || 'No diff.');
+    if (file.truncated) lines.push('[Diff truncated in preview.]');
+    lines.push('');
+  }
+  preview.value = lines.join('\n').trim() || 'No restore preview available.';
 }
 
 function setGitAutoGitState(state = {}) {
@@ -634,6 +707,30 @@ async function loadSelectedGitDiff() {
   }
 }
 
+async function previewSelectedRestore() {
+  const button = byId('preview-git-restore');
+  const ref = byId('git-history-select')?.value || '';
+  if (!ref) {
+    setGitStatus('Select a checkpoint to preview restore impact.', true);
+    return;
+  }
+  if (button) button.disabled = true;
+  try {
+    const payload = await getGitRestorePreview({
+      ref,
+      path: byId('git-restore-preview-path')?.value || '',
+      maxChars: 120000,
+    });
+    setGitRestorePreview(payload);
+    setGitStatus(payload.message || 'Restore preview loaded.');
+  } catch (e) {
+    setGitStatus(`Restore preview failed: ${e.message}`, true);
+    writeLog(`Restore preview failed: ${e.message}`, null, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 async function runDueAutoGit() {
   const button = byId('run-due-git-autogit');
   if (button) button.disabled = true;
@@ -645,6 +742,54 @@ async function runDueAutoGit() {
   } catch (e) {
     setGitStatus(`AutoGit run failed: ${e.message}`, true);
     writeLog(`AutoGit run failed: ${e.message}`, null, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function connectRemote() {
+  const button = byId('connect-git-remote');
+  if (button) button.disabled = true;
+  try {
+    const result = await connectGitRemote(collectGitRemotePayload());
+    setGitStatus(result.message || 'Remote connected.');
+    writeLog(result.message || 'Git remote connected.');
+    await loadGitStatus();
+  } catch (e) {
+    setGitStatus(`Remote connect failed: ${e.message}`, true);
+    writeLog(`Remote connect failed: ${e.message}`, null, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function pushRemote() {
+  const button = byId('push-git-remote');
+  if (button) button.disabled = true;
+  try {
+    const result = await pushGitRemote({ remote_name: byId('git-remote-name')?.value || 'origin' });
+    setGitStatus(result.message || 'Git push complete.');
+    writeLog(result.message || 'Git push complete.');
+    await loadGitStatus();
+  } catch (e) {
+    setGitStatus(`Git push failed: ${e.message}`, true);
+    writeLog(`Git push failed: ${e.message}`, null, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function pullRemote() {
+  const button = byId('pull-git-remote');
+  if (button) button.disabled = true;
+  try {
+    const result = await pullGitRemote({ remote_name: byId('git-remote-name')?.value || 'origin' });
+    setGitStatus(result.message || 'Git pull complete.');
+    writeLog(result.message || 'Git pull complete.');
+    await loadGitStatus();
+  } catch (e) {
+    setGitStatus(`Git pull failed: ${e.message}`, true);
+    writeLog(`Git pull failed: ${e.message}`, null, true);
   } finally {
     if (button) button.disabled = false;
   }
@@ -695,7 +840,11 @@ export function init() {
   byId('refresh-git-status').addEventListener('click', loadGitStatus);
   byId('view-current-git-diff').addEventListener('click', loadCurrentGitDiff);
   byId('view-selected-git-diff').addEventListener('click', loadSelectedGitDiff);
+  byId('preview-git-restore').addEventListener('click', previewSelectedRestore);
   byId('run-due-git-autogit').addEventListener('click', runDueAutoGit);
+  byId('connect-git-remote').addEventListener('click', connectRemote);
+  byId('push-git-remote').addEventListener('click', pushRemote);
+  byId('pull-git-remote').addEventListener('click', pullRemote);
   byId('create-git-checkpoint').addEventListener('click', checkpointGitWorkspace);
   load();
   loadBackups();

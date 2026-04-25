@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 
 import buildwealth_orchestrator.main as main
 from buildwealth_orchestrator.schemas import (
     GitCheckpointRequest,
     GitPolicyUpdateRequest,
+    GitRemoteConnectRequest,
+    GitRemoteOperationRequest,
     PlanCreateRequest,
     RecommendationCreateRequest,
 )
@@ -16,6 +19,12 @@ from buildwealth_orchestrator.services.git_integration_settings import GitIntegr
 def _write_json(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _create_bare_remote(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "--bare", str(path)], check=True, capture_output=True, text=True)
+    return path
 
 
 def _configure_git_api_fixture(monkeypatch, tmp_path: Path) -> Path:
@@ -75,6 +84,14 @@ def test_git_api_init_status_history_and_checkpoint_flow(monkeypatch, tmp_path: 
     status = main.get_git_status()
     history = main.get_git_history()
     checkpoint_diff = main.get_git_diff(ref=history.commits[0].hash)
+    (workspace_dir / "recommendations" / "index.json").write_text(
+        json.dumps({"recommendations": [{"id": "changed"}]}, indent=2),
+        encoding="utf-8",
+    )
+    restore_preview = main.get_git_restore_preview(
+        ref=history.commits[0].hash,
+        path="recommendations/index.json",
+    )
 
     assert before_init.status == "no_repo"
     assert init_result.status == "initialized"
@@ -87,6 +104,9 @@ def test_git_api_init_status_history_and_checkpoint_flow(monkeypatch, tmp_path: 
     assert history.commits[0].message == "Update BuildWealth versioned workspace"
     assert checkpoint_diff.status == "ok"
     assert "recommendations/index.json" in checkpoint_diff.diff
+    assert restore_preview.read_only is True
+    assert restore_preview.files[0].path == "recommendations/index.json"
+    assert restore_preview.files[0].status == "modified"
     assert (workspace_dir / "recommendations" / "index.json").exists()
 
 
@@ -117,3 +137,22 @@ def test_recommendation_create_queues_autogit_event_when_enabled(monkeypatch, tm
     assert state.pending_event is not None
     assert state.pending_event.event_type == "recommendation_created"
     assert state.pending_event.event_count == 1
+
+
+def test_git_remote_api_connects_and_pushes_empty_remote(monkeypatch, tmp_path: Path) -> None:
+    _configure_git_api_fixture(monkeypatch, tmp_path)
+    remote = _create_bare_remote(tmp_path / "remote.git")
+
+    main.initialize_git_repository()
+    main.create_git_checkpoint(GitCheckpointRequest())
+    connect = main.connect_git_remote(
+        GitRemoteConnectRequest(remote_url=str(remote), remote_name="origin")
+    )
+    status = main.get_git_status()
+    push = main.push_git_remote(GitRemoteOperationRequest(remote_name="origin"))
+
+    assert connect.status == "connected"
+    assert status.remote is not None
+    assert status.remote.has_remote is True
+    assert status.remote.url == str(remote)
+    assert push.status == "pushed"

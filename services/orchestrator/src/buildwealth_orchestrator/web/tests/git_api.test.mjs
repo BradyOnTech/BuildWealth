@@ -3,13 +3,17 @@ import assert from 'node:assert/strict';
 
 import {
   createGitCheckpoint,
+  connectGitRemote,
   getGitAutoGitState,
   getGitDiff,
   getGitHistory,
   getGitPolicy,
+  getGitRestorePreview,
   getGitStatus,
   initializeGitRepository,
   runDueGitAutoGit,
+  pushGitRemote,
+  pullGitRemote,
   updateGitPolicy,
 } from '../lib/api.js';
 
@@ -35,8 +39,12 @@ test('git API helpers target the expected endpoints', async () => {
   await getGitStatus();
   await getGitHistory(7);
   await getGitDiff({ ref: 'abc123', maxChars: 1234 });
+  await getGitRestorePreview({ ref: 'abc123', path: 'plans/plan-a/plan.md', maxChars: 4321 });
   await getGitAutoGitState();
   await runDueGitAutoGit();
+  await connectGitRemote({ remote_url: 'git@example.com:repo.git', remote_name: 'origin' });
+  await pushGitRemote({ remote_name: 'origin' });
+  await pullGitRemote({ remote_name: 'origin' });
   await createGitCheckpoint({ event_type: 'manual_checkpoint' });
 
   assert.deepEqual(calls, [
@@ -46,8 +54,12 @@ test('git API helpers target the expected endpoints', async () => {
     { url: '/api/git/status', method: 'GET' },
     { url: '/api/git/history?limit=7', method: 'GET' },
     { url: '/api/git/diff?ref=abc123&max_chars=1234', method: 'GET' },
+    { url: '/api/git/restore-preview?ref=abc123&path=plans%2Fplan-a%2Fplan.md&max_chars=4321', method: 'GET' },
     { url: '/api/git/autogit', method: 'GET' },
     { url: '/api/git/autogit/run-due', method: 'POST' },
+    { url: '/api/git/remote/connect', method: 'POST' },
+    { url: '/api/git/push', method: 'POST' },
+    { url: '/api/git/pull', method: 'POST' },
     { url: '/api/git/checkpoint', method: 'POST' },
   ]);
 });
