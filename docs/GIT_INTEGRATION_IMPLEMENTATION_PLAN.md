@@ -4,7 +4,7 @@
 2026-04-23
 
 ## Status
-Implementation in progress. Foundation, manual checkpoints, history/diff, safe remote operations, domain-aware AutoGit, read-only restore preview, guarded restore apply, and guided Settings UX are implemented.
+Implementation in progress. Foundation, manual checkpoints, history/diff, safe remote operations, domain-aware AutoGit, read-only restore preview, guarded restore apply, preview-token hardening, conflict-aware restore UX, durable Git activity feed, and guided Settings UX are implemented.
 
 ## Purpose
 This document turns the Git integration design into an execution sequence for the current BuildWealth codebase.
@@ -32,7 +32,7 @@ The first shippable milestone was Phase 1:
 - create a manual checkpoint
 - inspect Git status and recent commits
 
-That gave immediate product value while keeping the risk bounded. The current release now layers on read-only inspection, optional manual remote sync, domain-aware AutoGit, restore planning, guarded selected-file restore apply, and a guided one-click path in Settings.
+That gave immediate product value while keeping the risk bounded. The current release now layers on read-only inspection, optional manual remote sync, domain-aware AutoGit, restore planning, guarded selected-file restore apply, short-lived preview tokens, conflict-aware restore selection, durable filtered Git activity, and a guided one-click path in Settings.
 
 ## Guiding Constraints
 
@@ -563,6 +563,10 @@ Implemented scope:
 - `POST /api/git/restore-apply`
 - explicit selected file paths only
 - `APPLY_GIT_RESTORE` confirmation phrase
+- optional short-lived `preview_token` validation
+- structured Settings table for previewed files
+- restorable/preview-only support markers
+- stale-preview check before apply
 - pre-apply checkpoint and post-apply checkpoint by default
 - plan markdown/tasks/settings/timeline/contribution-rules/assumption-sets/branch-templates through `PlanWorkspace`
 - recommendation JSON restore through `RecommendationInbox`
@@ -571,9 +575,8 @@ Implemented scope:
 
 Later work:
 
-- richer conflict UX for multi-file plan restores
-- optional preview token binding if restore confirmation needs stronger replay protection
 - additional validated flows for policy/profile artifacts
+- richer text search/export over the durable activity feed if the event stream grows noisy
 
 ### Financial Profile Inclusion
 Defer until after the default policy proves useful.
@@ -608,6 +611,8 @@ This work should be landed in small slices in this order:
 10. read-only restore preview
 11. guided Git setup and Settings UX polish
 12. guarded selective restore apply through service-layer validation
+13. conflict-aware restore table and durable Git activity feed
+14. activity filters and preview-token hardening
 
 ## Risk Register
 
@@ -658,17 +663,19 @@ The first release of BuildWealth Git integration is complete when:
 - remote support remains optional and local-only works fully
 - AutoGit creates local checkpoints only from meaningful domain events
 - restore preview is read-only and does not mutate canonical data
-- guarded restore apply requires explicit paths, confirmation, and service-layer validation
+- guarded restore apply requires explicit paths, confirmation, preview-token validation when supplied, and service-layer validation
+- restore UX shows selectable support markers and stale-preview warnings
+- Git activity feed persists, filters, and summarizes checkpoints, AutoGit, remote sync, preview, and apply events
 - Settings provides a guided safe path for first-time setup
 - backup and durable-storage systems remain unchanged
 
 ## Immediate Next Build Slice
-The next implementation slice should be conflict-aware restore UX:
+The next implementation slice should be activity feed search/export:
 
-1. let users select multiple previewed files from a structured list
-2. highlight unsupported paths before apply
-3. show pre/post checkpoint hashes after apply
-4. add optional conflict notes when current content changed after preview
-5. consider preview-token binding for stronger confirmation
+1. add text search over title/message/path metadata
+2. add CSV/JSON export for the filtered activity feed
+3. add compact activity metrics by event type and status
+4. add cleanup/retention controls for very large local activity logs
+5. keep the feed append-only by default
 
 That keeps restore aligned with BuildWealth's source-of-truth model while preserving the audit value of Git history.

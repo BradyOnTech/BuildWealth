@@ -123,6 +123,7 @@ from buildwealth_orchestrator.schemas import (
     StorageProtectionPolicyResponse,
     StorageProtectionApplyRequest,
     StorageProtectionApplyResponse,
+    GitActivityResponse,
     GitCheckpointRequest,
     GitCheckpointResponse,
     GitDiffResponse,
@@ -241,11 +242,16 @@ from buildwealth_orchestrator.services.data_protection import (
     DataProtectionError,
     DataProtectionService,
 )
+from buildwealth_orchestrator.services.git_activity import GitActivityStore
 from buildwealth_orchestrator.services.git_checkpoint import GitCheckpointService
 from buildwealth_orchestrator.services.git_autogit import GitAutoGitService
 from buildwealth_orchestrator.services.git_integration_settings import GitIntegrationSettingsStore
 from buildwealth_orchestrator.services.git_repository import GitRepositoryError, GitRepositoryService
 from buildwealth_orchestrator.services.git_restore_apply import GitRestoreApplyError, GitRestoreApplyService
+from buildwealth_orchestrator.services.git_restore_tokens import (
+    GitRestorePreviewTokenError,
+    GitRestorePreviewTokenStore,
+)
 from buildwealth_orchestrator.services.versioned_workspace import (
     VersionedWorkspacePolicy,
     VersionedWorkspaceService,
@@ -377,6 +383,16 @@ def _git_restore_apply_service(policy: dict[str, Any]) -> GitRestoreApplyService
     )
 
 
+def _git_activity_store() -> GitActivityStore:
+    return GitActivityStore(settings.git_integration_settings_path.with_name("git_activity.jsonl"))
+
+
+def _git_restore_preview_token_store() -> GitRestorePreviewTokenStore:
+    return GitRestorePreviewTokenStore(
+        settings.git_integration_settings_path.with_name("git_restore_preview_tokens.jsonl")
+    )
+
+
 def _git_autogit_service(policy: dict[str, Any]) -> GitAutoGitService:
     return GitAutoGitService(
         state_path=settings.git_integration_settings_path.with_name("git_autogit_state.json"),
@@ -399,10 +415,24 @@ def _queue_autogit_event(event_type: str) -> None:
 
 def _run_due_autogit() -> dict[str, Any]:
     policy = _git_policy()
-    return _git_autogit_service(policy).run_due(
+    state = _git_autogit_service(policy).run_due(
         policy=policy,
         workspace_policy=_git_workspace_policy(policy),
     )
+    if state.get("status") not in {"idle", "pending", "disabled"} and state.get("last_result"):
+        result = state["last_result"]
+        _git_activity_store().record(
+            event_type="autogit",
+            title=f"AutoGit {result.get('status') or state.get('status') or 'ran'}",
+            message=str(result.get("message") or ""),
+            status=str(result.get("status") or state.get("status") or "ok"),
+            ref=(result.get("commit") or {}).get("hash") if isinstance(result.get("commit"), dict) else None,
+            metadata={
+                "event_type": result.get("event_type"),
+                "event_count": result.get("event_count"),
+            },
+        )
+    return state
 
 
 scenario_engine = ScenarioEngine(
@@ -10380,6 +10410,13 @@ def initialize_git_repository() -> GitInitResponse:
         result = _git_checkpoint_service(policy).initialize(_git_workspace_policy(policy))
     except GitRepositoryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _git_activity_store().record(
+        event_type="repository_initialized",
+        title="Git repository initialized",
+        message=str(result.get("message") or ""),
+        status=str(result.get("status") or "initialized"),
+        metadata={"workspace_dir": result.get("workspace_dir")},
+    )
     return GitInitResponse.model_validate(result)
 
 
@@ -10425,6 +10462,7 @@ def get_git_restore_preview(
 ) -> GitRestorePreviewResponse:
     policy = _git_policy()
     try:
+        _versioned_workspace_service(policy).materialize(_git_workspace_policy(policy))
         preview = _git_repository_service(policy).restore_preview(
             ref=ref,
             path=path,
@@ -10432,6 +10470,22 @@ def get_git_restore_preview(
         )
     except GitRepositoryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    token = _git_restore_preview_token_store().create(preview=preview)
+    preview["preview_token"] = token["token"]
+    preview["preview_expires_at"] = token["expires_at"]
+    _git_activity_store().record(
+        event_type="restore_preview",
+        title="Restore preview generated",
+        message=str(preview.get("message") or ""),
+        status=str(preview.get("status") or "ok"),
+        ref=preview.get("ref"),
+        paths=[item.get("path") for item in preview.get("files", []) if isinstance(item, dict)],
+        metadata={
+            "path": preview.get("path"),
+            "total_files": preview.get("total_files"),
+            "read_only": preview.get("read_only"),
+        },
+    )
     return GitRestorePreviewResponse.model_validate(preview)
 
 
@@ -10439,6 +10493,22 @@ def get_git_restore_preview(
 def apply_git_restore(request: GitRestoreApplyRequest) -> GitRestoreApplyResponse:
     policy = _git_policy()
     try:
+        if request.preview_token:
+            token_store = _git_restore_preview_token_store()
+            token_payload = token_store.get(request.preview_token)
+            preview_path = token_payload.get("path") if isinstance(token_payload, dict) else None
+            _versioned_workspace_service(policy).materialize(_git_workspace_policy(policy))
+            current_preview = _git_repository_service(policy).restore_preview(
+                ref=request.ref,
+                path=preview_path,
+                max_chars=120_000,
+            )
+            token_store.validate(
+                token=request.preview_token,
+                ref=request.ref,
+                paths=request.paths,
+                current_preview=current_preview,
+            )
         result = _git_restore_apply_service(policy).apply(
             ref=request.ref,
             paths=request.paths,
@@ -10447,8 +10517,21 @@ def apply_git_restore(request: GitRestoreApplyRequest) -> GitRestoreApplyRespons
             create_checkpoint_before_apply=request.create_checkpoint_before_apply,
             create_checkpoint_after_apply=request.create_checkpoint_after_apply,
         )
-    except (GitRepositoryError, GitRestoreApplyError, ValueError) as exc:
+    except (GitRepositoryError, GitRestoreApplyError, GitRestorePreviewTokenError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _git_activity_store().record(
+        event_type="restore_apply",
+        title="Restore apply completed",
+        message=str(result.get("message") or ""),
+        status=str(result.get("status") or "applied"),
+        ref=result.get("ref"),
+        paths=[item.get("path") for item in result.get("files", []) if isinstance(item, dict)],
+        metadata={
+            "applied_files": result.get("applied_files"),
+            "before_checkpoint": (result.get("before_checkpoint") or {}).get("commit"),
+            "after_checkpoint": (result.get("after_checkpoint") or {}).get("commit"),
+        },
+    )
     return GitRestoreApplyResponse.model_validate(result)
 
 
@@ -10463,6 +10546,18 @@ def create_git_checkpoint(request: GitCheckpointRequest) -> GitCheckpointRespons
         )
     except GitRepositoryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _git_activity_store().record(
+        event_type="checkpoint",
+        title=result.get("commit", {}).get("message") if isinstance(result.get("commit"), dict) else "Git checkpoint",
+        message=str(result.get("message") or ""),
+        status=str(result.get("status") or "ok"),
+        ref=(result.get("commit") or {}).get("hash") if isinstance(result.get("commit"), dict) else None,
+        metadata={
+            "files_written": result.get("files_written"),
+            "files_removed": result.get("files_removed"),
+            "sections": result.get("sections"),
+        },
+    )
     return GitCheckpointResponse.model_validate(result)
 
 
@@ -10479,6 +10574,17 @@ def run_due_git_autogit() -> GitAutoGitStateResponse:
     return GitAutoGitStateResponse.model_validate(state)
 
 
+@app.get("/api/git/activity", response_model=GitActivityResponse)
+def get_git_activity(
+    limit: int = 50,
+    event_type: str | None = None,
+    status: str | None = None,
+    ref: str | None = None,
+) -> GitActivityResponse:
+    events = _git_activity_store().list(limit=limit, event_type=event_type, status=status, ref=ref)
+    return GitActivityResponse.model_validate({"events": events})
+
+
 @app.post("/api/git/remote/connect", response_model=GitRemoteOperationResponse)
 def connect_git_remote(request: GitRemoteConnectRequest) -> GitRemoteOperationResponse:
     policy = _git_policy()
@@ -10489,6 +10595,16 @@ def connect_git_remote(request: GitRemoteConnectRequest) -> GitRemoteOperationRe
         )
     except GitRepositoryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _git_activity_store().record(
+        event_type="remote_connect",
+        title="Git remote connected",
+        message=str(result.get("message") or ""),
+        status=str(result.get("status") or "connected"),
+        metadata={
+            "remote_name": result.get("remote_name"),
+            "remote": result.get("remote"),
+        },
+    )
     return GitRemoteOperationResponse.model_validate(result)
 
 
@@ -10499,6 +10615,16 @@ def push_git_remote(request: GitRemoteOperationRequest) -> GitRemoteOperationRes
         result = _git_repository_service(policy).push(remote_name=request.remote_name)
     except GitRepositoryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _git_activity_store().record(
+        event_type="remote_push",
+        title="Git push completed",
+        message=str(result.get("message") or ""),
+        status=str(result.get("status") or "pushed"),
+        metadata={
+            "remote_name": result.get("remote_name"),
+            "remote": result.get("remote"),
+        },
+    )
     return GitRemoteOperationResponse.model_validate(result)
 
 
@@ -10509,6 +10635,16 @@ def pull_git_remote(request: GitRemoteOperationRequest) -> GitRemoteOperationRes
         result = _git_repository_service(policy).pull(remote_name=request.remote_name)
     except GitRepositoryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _git_activity_store().record(
+        event_type="remote_pull",
+        title="Git pull completed",
+        message=str(result.get("message") or ""),
+        status=str(result.get("status") or "pulled"),
+        metadata={
+            "remote_name": result.get("remote_name"),
+            "remote": result.get("remote"),
+        },
+    )
     return GitRemoteOperationResponse.model_validate(result)
 
 

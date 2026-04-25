@@ -386,6 +386,7 @@ Proposed endpoints:
 
 - `GET /api/git/status`
 - `GET /api/git/history?limit=20`
+- `GET /api/git/activity?limit=50`
 - `GET /api/git/diff?path=<workspace_path>&ref=<commit_or_head>`
 - `POST /api/git/init`
 - `POST /api/git/checkpoint`
@@ -438,11 +439,14 @@ Git restore should be staged carefully: preview first, then guarded selected-fil
 - manual push and pull
 - read-only restore preview
 - guarded restore apply for explicit supported files
+- conflict-aware restore selection UX
+- durable Git activity feed with event/status/hash filters
+- preview-token binding for guarded restore apply
 
 ### V2
 
 - broader selective restore for additional plan artifacts and sensitive policy/profile records
-- conflict-aware restore UX for multi-file artifacts
+- richer search/export over the durable activity feed
 
 This matters because the versioned workspace is a projection, not the primary write model.
 
@@ -451,6 +455,8 @@ Guarded restore apply requires:
 - an explicit commit ref
 - one or more explicit supported file paths
 - the `APPLY_GIT_RESTORE` confirmation phrase
+- an optional short-lived preview token that binds apply to a recent preview
+- a stale-preview check before apply; token validation rejects paths that changed after preview
 - a pre-apply checkpoint of the current canonical state
 - service-layer validation/import writes
 - a post-apply checkpoint of restored canonical state
@@ -550,11 +556,16 @@ Deliver:
 - read-only restore preview
 - checkpoint-scoped preview of plan artifacts, recommendation records, review packets, and selected policy artifacts
 - guarded selective restore apply for supported plan files, recommendation records, and review packet files
+- structured restore table with restorable/preview-only markers
+- durable activity feed for checkpoint, AutoGit, remote, restore preview, and restore apply events with filters
+- short-lived restore preview tokens that are validated before apply when provided
 - service-layer re-apply flows that reject unsupported exported paths
 
 Exit criteria:
 
 - users can preview restore impact without modifying canonical BuildWealth data
+- users can select supported preview rows without hand-typing paths
+- users are warned when current content changes after preview
 - restore does not bypass validation
 - users can recover high-value artifacts from history safely
 

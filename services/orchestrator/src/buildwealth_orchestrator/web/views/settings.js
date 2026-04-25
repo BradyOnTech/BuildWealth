@@ -3,6 +3,7 @@ import {
   connectGitRemote,
   createGitCheckpoint,
   fetchJson,
+  getGitActivity,
   getGitAutoGitState,
   getGitDiff,
   getGitHistory,
@@ -32,7 +33,21 @@ const gitUiState = {
   status: null,
   history: [],
   autogit: null,
+  restorePreview: null,
+  restorePreviewSignatures: new Map(),
+  auditEvents: [],
+  serverActivity: [],
 };
+
+const SUPPORTED_PLAN_RESTORE_FILES = new Map([
+  ['plan.md', 'Plan markdown'],
+  ['tasks.md', 'Plan tasks'],
+  ['settings.json', 'Plan settings'],
+  ['timeline.json', 'Plan timeline'],
+  ['contribution_rules.json', 'Contribution rules'],
+  ['assumption_sets.json', 'Assumption sets'],
+  ['branch_templates.json', 'Branch templates'],
+]);
 
 export function template() {
   return `
@@ -295,11 +310,75 @@ export function template() {
             <span class="field-hint">Preview can inspect folders. Apply requires one explicit supported file path.</span>
           </label>
         </div>
+        <div class="restore-action-summary" id="git-restore-preview-summary">Preview a checkpoint to select restorable files.</div>
+        <div class="header-actions">
+          <button class="ghost small" id="select-supported-git-restore">Select Restorable Changes</button>
+          <button class="ghost small" id="clear-git-restore-selection">Clear Selection</button>
+        </div>
+        <div class="git-restore-table-wrap">
+          <table class="git-restore-table">
+            <thead>
+              <tr>
+                <th>Apply</th>
+                <th>Status</th>
+                <th>Path</th>
+                <th>Support</th>
+              </tr>
+            </thead>
+            <tbody id="git-restore-preview-rows">
+              <tr><td colspan="4">No restore preview loaded.</td></tr>
+            </tbody>
+          </table>
+        </div>
         <label class="field form-span">
-          <span>Restore Preview</span>
+          <span>Selected Restore Diff</span>
           <textarea id="git-restore-preview" rows="12" readonly placeholder="Select a checkpoint and preview what restoring it would change."></textarea>
           <span class="field-hint">Apply creates pre/post checkpoints, uses service-layer validation, and never runs raw git checkout.</span>
         </label>
+      </section>
+      <section class="git-panel">
+        <div class="git-panel-header">
+          <div>
+            <h4>Git Activity Feed</h4>
+            <p class="hint tight">Recent checkpoints, AutoGit, remote sync, restore previews, and restore applies in one place.</p>
+          </div>
+          <button class="ghost small" id="refresh-git-activity">Refresh Activity</button>
+        </div>
+        <div class="settings-grid">
+          <label class="field">
+            <span>Event Type</span>
+            <select id="git-activity-event-type">
+              <option value="">All events</option>
+              <option value="checkpoint">Checkpoint</option>
+              <option value="autogit">AutoGit</option>
+              <option value="remote_connect">Remote connect</option>
+              <option value="remote_push">Remote push</option>
+              <option value="remote_pull">Remote pull</option>
+              <option value="restore_preview">Restore preview</option>
+              <option value="restore_apply">Restore apply</option>
+            </select>
+            <span class="field-hint">Filter the durable Git event log.</span>
+          </label>
+          <label class="field">
+            <span>Status</span>
+            <select id="git-activity-status">
+              <option value="">All statuses</option>
+              <option value="ok">OK</option>
+              <option value="committed">Committed</option>
+              <option value="applied">Applied</option>
+              <option value="pushed">Pushed</option>
+              <option value="pulled">Pulled</option>
+              <option value="failed">Failed</option>
+            </select>
+            <span class="field-hint">Narrow activity by outcome.</span>
+          </label>
+          <label class="field">
+            <span>Checkpoint Hash</span>
+            <input type="text" id="git-activity-ref" autocomplete="off" placeholder="optional hash" />
+            <span class="field-hint">Filter by exact commit hash when needed.</span>
+          </label>
+        </div>
+        <div class="git-audit-feed" id="git-audit-feed">Load Git status to see recent activity.</div>
       </section>
       <p class="hint" id="git-status"></p>
     </div>
@@ -556,6 +635,258 @@ function formatCommit(commit) {
   return `${shortHash || '-'} ${commit.message || ''}${date ? ` (${date})` : ''}`.trim();
 }
 
+function restoreFileSupport(file = {}) {
+  const path = String(file.path || '');
+  const parts = path.split('/');
+  if (file.status === 'added' || file.historical_excerpt == null) {
+    return { supported: false, label: 'Not in checkpoint' };
+  }
+  if (file.status === 'unchanged') {
+    return { supported: false, label: 'No change' };
+  }
+  if (parts.length === 3 && parts[0] === 'plans' && SUPPORTED_PLAN_RESTORE_FILES.has(parts[2])) {
+    return { supported: true, label: SUPPORTED_PLAN_RESTORE_FILES.get(parts[2]) };
+  }
+  if (parts.length === 2 && parts[0] === 'recommendations' && parts[1] !== 'index.json' && parts[1].endsWith('.json')) {
+    return { supported: true, label: 'Recommendation record' };
+  }
+  if (parts.length === 3 && parts[0] === 'reports' && parts[1] === 'portfolio_review_packets' && /\.(json|md)$/.test(parts[2])) {
+    return { supported: true, label: 'Review packet file' };
+  }
+  return { supported: false, label: 'Preview only' };
+}
+
+function restoreFileSignature(file = {}) {
+  return JSON.stringify({
+    path: file.path || '',
+    status: file.status || '',
+    current_excerpt: file.current_excerpt ?? null,
+  });
+}
+
+function checkedRestorePaths() {
+  return [...document.querySelectorAll('#git-restore-preview-rows input[type="checkbox"]:checked')]
+    .map((input) => input.value)
+    .filter(Boolean);
+}
+
+function selectedRestoreFile() {
+  const checked = document.querySelector('#git-restore-preview-rows input[type="checkbox"]:checked');
+  const selectedPath = checked?.value || '';
+  const files = Array.isArray(gitUiState.restorePreview?.files) ? gitUiState.restorePreview.files : [];
+  return files.find((file) => file.path === selectedPath) || files.find((file) => restoreFileSupport(file).supported) || files[0] || null;
+}
+
+function setRestorePreviewText(file = null) {
+  const preview = byId('git-restore-preview');
+  if (!preview) return;
+  if (!file) {
+    preview.value = 'No restore preview available.';
+    return;
+  }
+  const support = restoreFileSupport(file);
+  const lines = [
+    `${file.path || '-'} (${file.status || 'unknown'})`,
+    `Support: ${support.label}`,
+    '',
+    file.diff || 'No diff.',
+  ];
+  if (file.truncated) lines.push('', '[Diff truncated in preview.]');
+  preview.value = lines.join('\n');
+}
+
+function renderRestorePreviewRows(files = []) {
+  const body = byId('git-restore-preview-rows');
+  if (!body) return;
+  body.innerHTML = '';
+  if (!files.length) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 4;
+    cell.textContent = 'No restorable files found for this preview.';
+    row.appendChild(cell);
+    body.appendChild(row);
+    setRestorePreviewText(null);
+    return;
+  }
+
+  for (const file of files) {
+    const support = restoreFileSupport(file);
+    const row = document.createElement('tr');
+    row.className = support.supported ? 'restore-row supported' : 'restore-row unsupported';
+    row.dataset.path = file.path || '';
+
+    const selectCell = document.createElement('td');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = file.path || '';
+    checkbox.disabled = !support.supported;
+    checkbox.addEventListener('change', () => setRestorePreviewText(selectedRestoreFile()));
+    selectCell.appendChild(checkbox);
+    row.appendChild(selectCell);
+
+    const statusCell = document.createElement('td');
+    const status = document.createElement('span');
+    status.className = `restore-status restore-status-${file.status || 'unknown'}`;
+    status.textContent = file.status || 'unknown';
+    statusCell.appendChild(status);
+    row.appendChild(statusCell);
+
+    const pathCell = document.createElement('td');
+    pathCell.className = 'restore-path';
+    pathCell.textContent = file.path || '-';
+    row.appendChild(pathCell);
+
+    const supportCell = document.createElement('td');
+    supportCell.textContent = support.label;
+    row.appendChild(supportCell);
+
+    row.addEventListener('click', (event) => {
+      if (event.target !== checkbox && !checkbox.disabled) checkbox.checked = !checkbox.checked;
+      setRestorePreviewText(file);
+    });
+    body.appendChild(row);
+  }
+  setRestorePreviewText(files.find((file) => restoreFileSupport(file).supported) || files[0]);
+}
+
+function setRestoreSummary(payload = {}) {
+  const summary = byId('git-restore-preview-summary');
+  if (!summary) return;
+  const files = Array.isArray(payload.files) ? payload.files : [];
+  const restorable = files.filter((file) => restoreFileSupport(file).supported).length;
+  const unsupported = files.length - restorable;
+  const expires = payload.preview_expires_at ? ` · token expires ${new Date(payload.preview_expires_at).toLocaleTimeString()}` : '';
+  summary.textContent = `${files.length} file(s) previewed · ${restorable} restorable · ${unsupported} preview-only${expires}. Select files, then apply with confirmation.`;
+}
+
+function addGitAuditEvent(kind, title, detail = '', tone = 'info') {
+  gitUiState.auditEvents.unshift({
+    kind,
+    title,
+    detail,
+    tone,
+    at: new Date().toISOString(),
+  });
+  gitUiState.auditEvents = gitUiState.auditEvents.slice(0, 8);
+  renderGitAuditFeed();
+}
+
+function setGitActivity(events = []) {
+  gitUiState.serverActivity = Array.isArray(events) ? events : [];
+  renderGitAuditFeed();
+}
+
+function activityTone(status = '') {
+  const normalized = String(status || '').toLowerCase();
+  if (['failed', 'error', 'rejected', 'auth_error', 'network_error'].includes(normalized)) return 'warn';
+  if (['applied', 'committed', 'initialized', 'connected', 'pushed', 'pulled', 'ok'].includes(normalized)) return 'success';
+  return 'info';
+}
+
+function renderGitAuditFeed() {
+  const feed = byId('git-audit-feed');
+  if (!feed) return;
+  const events = [];
+  for (const event of gitUiState.serverActivity) {
+    events.push({
+      kind: String(event.event_type || 'Git').replaceAll('_', ' '),
+      title: event.title || 'Git activity',
+      detail: [
+        event.message,
+        event.ref ? String(event.ref).slice(0, 7) : '',
+        Array.isArray(event.paths) && event.paths.length ? `${event.paths.length} path(s)` : '',
+      ].filter(Boolean).join(' · '),
+      paths: event.paths || [],
+      metadata: event.metadata || {},
+      tone: activityTone(event.status),
+      at: event.created_at,
+    });
+  }
+  for (const event of gitUiState.auditEvents) {
+    events.push(event);
+  }
+  const autogit = gitUiState.autogit || {};
+  if (autogit.last_result) {
+    events.push({
+      kind: 'AutoGit',
+      title: `AutoGit ${autogit.last_result.status || 'result'}`,
+      detail: `${autogit.last_result.event_type || 'event'} · ${autogit.last_result.event_count || 1} event(s)`,
+      tone: autogit.last_result.status === 'committed' ? 'success' : 'info',
+      at: autogit.last_result.ran_at,
+    });
+  }
+  const status = gitUiState.status || {};
+  const remote = status.remote || {};
+  if (remote.has_remote) {
+    events.push({
+      kind: 'Remote',
+      title: `Remote ${remote.name || 'origin'} connected`,
+      detail: `${remote.ahead || 0} ahead · ${remote.behind || 0} behind`,
+      tone: remote.behind ? 'warn' : 'info',
+      at: new Date().toISOString(),
+    });
+  }
+  for (const commit of gitUiState.history.slice(0, 6)) {
+    events.push({
+      kind: 'Checkpoint',
+      title: commit.message || 'Git checkpoint',
+      detail: commit.short_hash || String(commit.hash || '').slice(0, 7),
+      tone: 'success',
+      at: commit.date,
+    });
+  }
+
+  feed.innerHTML = '';
+  if (!events.length) {
+    feed.textContent = 'No Git activity yet.';
+    return;
+  }
+  for (const event of events.slice(0, 10)) {
+    const item = document.createElement('div');
+    item.className = `git-audit-item ${event.tone || 'info'}`;
+    const marker = document.createElement('span');
+    marker.className = 'git-audit-marker';
+    marker.textContent = event.kind || 'Git';
+    const body = document.createElement('details');
+    const title = document.createElement('strong');
+    title.textContent = event.title || 'Git activity';
+    const detail = document.createElement('span');
+    const when = event.at ? new Date(event.at).toLocaleString() : '';
+    detail.textContent = [event.detail, when].filter(Boolean).join(' · ');
+    const summary = document.createElement('summary');
+    summary.appendChild(title);
+    summary.appendChild(detail);
+    body.appendChild(summary);
+    if ((event.paths || []).length || event.metadata) {
+      const meta = document.createElement('pre');
+      meta.textContent = JSON.stringify({
+        paths: event.paths || [],
+        metadata: event.metadata || {},
+      }, null, 2);
+      body.appendChild(meta);
+    }
+    item.appendChild(marker);
+    item.appendChild(body);
+    feed.appendChild(item);
+  }
+}
+
+async function loadGitActivity() {
+  try {
+    const activity = await getGitActivity({
+      limit: 30,
+      eventType: byId('git-activity-event-type')?.value || '',
+      status: byId('git-activity-status')?.value || '',
+      ref: byId('git-activity-ref')?.value || '',
+    });
+    setGitActivity(activity.events || []);
+  } catch (e) {
+    setGitStatus(`Git activity load failed: ${e.message}`, true);
+    writeLog(`Git activity load failed: ${e.message}`, null, true);
+  }
+}
+
 function setGitStatusInputs(status = {}) {
   gitUiState.status = status;
   const repoStatus = byId('git-repo-status');
@@ -577,9 +908,10 @@ function setGitStatusInputs(status = {}) {
       : 'Local only';
     const remoteName = byId('git-remote-name');
     if (remoteName && remote.name) remoteName.value = remote.name;
-    const remoteUrl = byId('git-remote-url');
-    if (remoteUrl && remote.url) remoteUrl.value = remote.url;
-  }
+  const remoteUrl = byId('git-remote-url');
+  if (remoteUrl && remote.url) remoteUrl.value = remote.url;
+  renderGitAuditFeed();
+}
 }
 
 function collectGitRemotePayload() {
@@ -607,6 +939,7 @@ function setGitHistory(commits = []) {
     option.textContent = formatCommit(commit);
     select.appendChild(option);
   }
+  renderGitAuditFeed();
 }
 
 function setGitDiff(payload = {}) {
@@ -618,26 +951,18 @@ function setGitDiff(payload = {}) {
 }
 
 function setGitRestorePreview(payload = {}) {
-  const preview = byId('git-restore-preview');
-  if (!preview) return;
   const files = Array.isArray(payload.files) ? payload.files : [];
   const warnings = Array.isArray(payload.warnings) ? payload.warnings : [];
-  const lines = [
-    payload.message || 'Read-only restore preview generated.',
-    `Ref: ${payload.ref || '-'}`,
-    `Path: ${payload.path || 'all supported exported artifacts'}`,
-    `Files: ${payload.total_files || files.length}`,
-    '',
-    ...warnings.map((warning) => `Warning: ${warning}`),
-    warnings.length ? '' : '',
-  ];
-  for (const file of files) {
-    lines.push(`--- ${file.path} (${file.status}) ---`);
-    lines.push(file.diff || 'No diff.');
-    if (file.truncated) lines.push('[Diff truncated in preview.]');
-    lines.push('');
+  gitUiState.restorePreview = payload;
+  gitUiState.restorePreviewSignatures = new Map(
+    files.map((file) => [file.path, restoreFileSignature(file)]),
+  );
+  renderRestorePreviewRows(files);
+  setRestoreSummary(payload);
+  if (warnings.length) {
+    const preview = byId('git-restore-preview');
+    if (preview && !files.length) preview.value = warnings.map((warning) => `Warning: ${warning}`).join('\n');
   }
-  preview.value = lines.join('\n').trim() || 'No restore preview available.';
 }
 
 function setGitRestoreApplyResult(payload = {}) {
@@ -659,6 +984,12 @@ function setGitRestoreApplyResult(payload = {}) {
     lines.push('', 'Warnings:', ...payload.warnings.map((warning) => `- ${warning}`));
   }
   preview.value = lines.join('\n');
+  const summary = byId('git-restore-preview-summary');
+  if (summary) {
+    const before = payload.before_checkpoint?.commit?.short_hash || 'no-op';
+    const after = payload.after_checkpoint?.commit?.short_hash || 'no-op';
+    summary.textContent = `Restore applied · pre-checkpoint ${before} · post-checkpoint ${after}.`;
+  }
 }
 
 function setGitAutoGitState(state = {}) {
@@ -685,6 +1016,7 @@ function setGitAutoGitState(state = {}) {
     }
   }
   updateGitWorkflowSummary();
+  renderGitAuditFeed();
 }
 
 function gitNextStep() {
@@ -746,7 +1078,7 @@ function updateGitWorkflowSummary() {
   const autogitLabel = autogit.pending_event
     ? `AutoGit pending ${autogit.pending_event.event_type}`
     : `AutoGit ${policy.autogit_enabled ? 'enabled' : 'disabled'}`;
-  workflowStatus.value = `${localLabel}; ${remoteLabel}; ${autogitLabel}; restore preview is read-only.`;
+  workflowStatus.value = `${localLabel}; ${remoteLabel}; ${autogitLabel}; restore apply is guarded.`;
 }
 
 async function loadGitPolicy() {
@@ -779,14 +1111,21 @@ async function saveGitPolicy() {
 
 async function loadGitStatus() {
   try {
-    const [status, history, autogit] = await Promise.all([
+    const [status, history, autogit, activity] = await Promise.all([
       getGitStatus(),
       getGitHistory(10),
       getGitAutoGitState(),
+      getGitActivity({
+        limit: 30,
+        eventType: byId('git-activity-event-type')?.value || '',
+        status: byId('git-activity-status')?.value || '',
+        ref: byId('git-activity-ref')?.value || '',
+      }),
     ]);
     setGitStatusInputs(status);
     setGitHistory(history.commits || []);
     setGitAutoGitState(autogit);
+    setGitActivity(activity.events || []);
     updateGitWorkflowSummary();
     setGitStatus(status.message || 'Version history status loaded.');
   } catch (e) {
@@ -826,6 +1165,7 @@ async function initGitRepository() {
     const result = await initializeGitRepository();
     setGitStatus(result.message || 'Git repository initialized.');
     writeLog(result.message || 'Git repository initialized.');
+    addGitAuditEvent('Repository', 'Git repository initialized', result.workspace_dir || '', 'success');
     await loadGitStatus();
   } catch (e) {
     setGitStatus(`Git initialization failed: ${e.message}`, true);
@@ -843,6 +1183,7 @@ async function checkpointGitWorkspace() {
     const commitText = result.commit ? ` ${formatCommit(result.commit)}` : '';
     setGitStatus(`${result.message || 'Checkpoint complete.'}${commitText}`);
     writeLog(result.message || 'Version checkpoint complete.');
+    addGitAuditEvent('Checkpoint', result.message || 'Checkpoint complete', result.commit?.short_hash || '', 'success');
     await loadGitStatus();
   } catch (e) {
     setGitStatus(`Checkpoint failed: ${e.message}`, true);
@@ -903,6 +1244,12 @@ async function previewSelectedRestore() {
     });
     setGitRestorePreview(payload);
     setGitStatus(payload.message || 'Restore preview loaded.');
+    addGitAuditEvent(
+      'Restore Preview',
+      'Restore preview loaded',
+      `${payload.total_files || 0} file(s) · ${payload.path || 'all supported artifacts'}`,
+      'info',
+    );
   } catch (e) {
     setGitStatus(`Restore preview failed: ${e.message}`, true);
     writeLog(`Restore preview failed: ${e.message}`, null, true);
@@ -911,35 +1258,102 @@ async function previewSelectedRestore() {
   }
 }
 
+function selectSupportedRestoreFiles() {
+  const boxes = [...document.querySelectorAll('#git-restore-preview-rows input[type="checkbox"]')];
+  for (const box of boxes) {
+    box.checked = !box.disabled;
+  }
+  setRestorePreviewText(selectedRestoreFile());
+  setGitStatus(`${checkedRestorePaths().length} restorable file(s) selected.`);
+}
+
+function clearRestoreSelection() {
+  const boxes = [...document.querySelectorAll('#git-restore-preview-rows input[type="checkbox"]')];
+  for (const box of boxes) {
+    box.checked = false;
+  }
+  setRestorePreviewText(selectedRestoreFile());
+  setGitStatus('Restore selection cleared.');
+}
+
+async function selectedRestorePathsChangedSincePreview(ref, paths) {
+  const previewPath = gitUiState.restorePreview?.path || byId('git-restore-preview-path')?.value || '';
+  const latest = await getGitRestorePreview({
+    ref,
+    path: previewPath,
+    maxChars: 120000,
+  });
+  const latestFiles = Array.isArray(latest.files) ? latest.files : [];
+  const changed = [];
+  for (const path of paths) {
+    const latestFile = latestFiles.find((file) => file.path === path);
+    const latestSignature = latestFile ? restoreFileSignature(latestFile) : null;
+    if (latestSignature !== gitUiState.restorePreviewSignatures.get(path)) {
+      changed.push(path);
+    }
+  }
+  if (changed.length) setGitRestorePreview(latest);
+  return changed;
+}
+
 async function applySelectedRestore() {
   const button = byId('apply-git-restore');
-  const ref = byId('git-history-select')?.value || '';
-  const path = (byId('git-restore-preview-path')?.value || '').trim();
+  const ref = gitUiState.restorePreview?.ref || byId('git-history-select')?.value || '';
+  const paths = checkedRestorePaths();
   if (!ref) {
     setGitStatus('Select a checkpoint before applying restore.', true);
     return;
   }
-  if (!path || path.endsWith('/')) {
-    setGitStatus('Restore apply requires one explicit supported file path, not a folder.', true);
+  if (!gitUiState.restorePreview) {
+    setGitStatus('Preview restore impact before applying selected files.', true);
     return;
   }
-  const confirmation = window.prompt(`Type APPLY_GIT_RESTORE to restore ${path}.`, '');
-  if (confirmation !== 'APPLY_GIT_RESTORE') {
-    setGitStatus('Restore apply cancelled. Confirmation phrase did not match.');
+  if (!paths.length) {
+    setGitStatus('Select at least one restorable previewed file before applying restore.', true);
     return;
   }
   if (button) button.disabled = true;
   try {
+    const stalePaths = await selectedRestorePathsChangedSincePreview(ref, paths);
+    if (stalePaths.length) {
+      const proceed = window.confirm(
+        `${stalePaths.length} selected file(s) changed since the preview was loaded. Review the refreshed preview, then press OK to continue or Cancel to stop.`,
+      );
+      if (!proceed) {
+        setGitStatus('Restore apply cancelled after refreshed stale-preview check.');
+        if (button) button.disabled = false;
+        return;
+      }
+    }
+  } catch (e) {
+    setGitStatus(`Restore stale-preview check failed: ${e.message}`, true);
+    if (button) button.disabled = false;
+    return;
+  }
+  const confirmation = window.prompt(`Type APPLY_GIT_RESTORE to restore ${paths.length} selected file(s).`, '');
+  if (confirmation !== 'APPLY_GIT_RESTORE') {
+    setGitStatus('Restore apply cancelled. Confirmation phrase did not match.');
+    if (button) button.disabled = false;
+    return;
+  }
+  try {
     const payload = await applyGitRestore({
       ref,
-      paths: [path],
+      paths,
       confirmation,
+      preview_token: gitUiState.restorePreview?.preview_token || '',
       rationale: 'Applied from the Settings restore preview flow.',
     });
     setGitRestoreApplyResult(payload);
     await loadGitStatus();
     setGitStatus(payload.message || 'Restore apply completed.');
     writeLog('Restore apply completed', payload);
+    addGitAuditEvent(
+      'Restore Apply',
+      'Restore apply completed',
+      `${payload.applied_files || 0} file(s) · ${payload.after_checkpoint?.commit?.short_hash || 'no new checkpoint'}`,
+      'success',
+    );
   } catch (e) {
     setGitStatus(`Restore apply failed: ${e.message}`, true);
     writeLog(`Restore apply failed: ${e.message}`, null, true);
@@ -955,6 +1369,7 @@ async function runDueAutoGit() {
     const state = await runDueGitAutoGit();
     setGitAutoGitState(state);
     setGitStatus(`AutoGit status: ${state.status || 'idle'}`);
+    addGitAuditEvent('AutoGit', `AutoGit ${state.status || 'idle'}`, state.last_result?.event_type || '', 'info');
     await loadGitStatus();
   } catch (e) {
     setGitStatus(`AutoGit run failed: ${e.message}`, true);
@@ -971,6 +1386,7 @@ async function connectRemote() {
     const result = await connectGitRemote(collectGitRemotePayload());
     setGitStatus(result.message || 'Remote connected.');
     writeLog(result.message || 'Git remote connected.');
+    addGitAuditEvent('Remote', result.message || 'Remote connected', result.remote_name || '', 'success');
     await loadGitStatus();
   } catch (e) {
     setGitStatus(`Remote connect failed: ${e.message}`, true);
@@ -987,6 +1403,7 @@ async function pushRemote() {
     const result = await pushGitRemote({ remote_name: byId('git-remote-name')?.value || 'origin' });
     setGitStatus(result.message || 'Git push complete.');
     writeLog(result.message || 'Git push complete.');
+    addGitAuditEvent('Remote', result.message || 'Git push complete', result.remote_name || '', 'success');
     await loadGitStatus();
   } catch (e) {
     setGitStatus(`Git push failed: ${e.message}`, true);
@@ -1003,6 +1420,7 @@ async function pullRemote() {
     const result = await pullGitRemote({ remote_name: byId('git-remote-name')?.value || 'origin' });
     setGitStatus(result.message || 'Git pull complete.');
     writeLog(result.message || 'Git pull complete.');
+    addGitAuditEvent('Remote', result.message || 'Git pull complete', result.remote_name || '', 'success');
     await loadGitStatus();
   } catch (e) {
     setGitStatus(`Git pull failed: ${e.message}`, true);
@@ -1059,12 +1477,18 @@ export function init() {
   byId('view-current-git-diff').addEventListener('click', loadCurrentGitDiff);
   byId('view-selected-git-diff').addEventListener('click', loadSelectedGitDiff);
   byId('preview-git-restore').addEventListener('click', previewSelectedRestore);
+  byId('select-supported-git-restore').addEventListener('click', selectSupportedRestoreFiles);
+  byId('clear-git-restore-selection').addEventListener('click', clearRestoreSelection);
   byId('apply-git-restore').addEventListener('click', applySelectedRestore);
   byId('run-due-git-autogit').addEventListener('click', runDueAutoGit);
   byId('connect-git-remote').addEventListener('click', connectRemote);
   byId('push-git-remote').addEventListener('click', pushRemote);
   byId('pull-git-remote').addEventListener('click', pullRemote);
   byId('create-git-checkpoint').addEventListener('click', checkpointGitWorkspace);
+  byId('refresh-git-activity').addEventListener('click', loadGitActivity);
+  byId('git-activity-event-type').addEventListener('change', loadGitActivity);
+  byId('git-activity-status').addEventListener('change', loadGitActivity);
+  byId('git-activity-ref').addEventListener('change', loadGitActivity);
   load();
   loadBackups();
   loadProtectionStatus();

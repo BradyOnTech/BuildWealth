@@ -5,6 +5,7 @@ import {
   applyGitRestore,
   createGitCheckpoint,
   connectGitRemote,
+  getGitActivity,
   getGitAutoGitState,
   getGitDiff,
   getGitHistory,
@@ -39,9 +40,10 @@ test('git API helpers target the expected endpoints', async () => {
   await initializeGitRepository();
   await getGitStatus();
   await getGitHistory(7);
+  await getGitActivity({ limit: 9, eventType: 'checkpoint', status: 'committed', ref: 'abc123' });
   await getGitDiff({ ref: 'abc123', maxChars: 1234 });
   await getGitRestorePreview({ ref: 'abc123', path: 'plans/plan-a/plan.md', maxChars: 4321 });
-  await applyGitRestore({ ref: 'abc123', paths: ['plans/plan-a/plan.md'], confirmation: 'APPLY_GIT_RESTORE' });
+  await applyGitRestore({ ref: 'abc123', paths: ['plans/plan-a/plan.md'], confirmation: 'APPLY_GIT_RESTORE', preview_token: 'git-preview-token' });
   await getGitAutoGitState();
   await runDueGitAutoGit();
   await connectGitRemote({ remote_url: 'git@example.com:repo.git', remote_name: 'origin' });
@@ -55,6 +57,7 @@ test('git API helpers target the expected endpoints', async () => {
     { url: '/api/git/init', method: 'POST' },
     { url: '/api/git/status', method: 'GET' },
     { url: '/api/git/history?limit=7', method: 'GET' },
+    { url: '/api/git/activity?limit=9&event_type=checkpoint&status=committed&ref=abc123', method: 'GET' },
     { url: '/api/git/diff?ref=abc123&max_chars=1234', method: 'GET' },
     { url: '/api/git/restore-preview?ref=abc123&path=plans%2Fplan-a%2Fplan.md&max_chars=4321', method: 'GET' },
     { url: '/api/git/restore-apply', method: 'POST' },
@@ -83,6 +86,7 @@ test('git policy, checkpoint, and restore-apply helpers send JSON bodies', async
         ref: 'abc123',
         paths: ['plans/plan-a/plan.md'],
         confirmation: 'APPLY_GIT_RESTORE',
+        preview_token: 'git-preview-token',
       });
     }
   });
@@ -93,5 +97,6 @@ test('git policy, checkpoint, and restore-apply helpers send JSON bodies', async
     ref: 'abc123',
     paths: ['plans/plan-a/plan.md'],
     confirmation: 'APPLY_GIT_RESTORE',
+    preview_token: 'git-preview-token',
   });
 });

@@ -91,14 +91,18 @@ def test_git_api_init_status_history_and_checkpoint_flow(monkeypatch, tmp_path: 
     status = main.get_git_status()
     history = main.get_git_history()
     checkpoint_diff = main.get_git_diff(ref=history.commits[0].hash)
-    (workspace_dir / "recommendations" / "index.json").write_text(
-        json.dumps({"recommendations": [{"id": "changed"}]}, indent=2),
-        encoding="utf-8",
+    main.create_recommendation(
+        RecommendationCreateRequest(
+            title="Changed recommendation",
+            detail="Canonical recommendation change.",
+        )
     )
     restore_preview = main.get_git_restore_preview(
         ref=history.commits[0].hash,
         path="recommendations/index.json",
     )
+    activity = main.get_git_activity(limit=10)
+    activity_types = {event.event_type for event in activity.events}
 
     assert before_init.status == "no_repo"
     assert init_result.status == "initialized"
@@ -112,9 +116,12 @@ def test_git_api_init_status_history_and_checkpoint_flow(monkeypatch, tmp_path: 
     assert checkpoint_diff.status == "ok"
     assert "recommendations/index.json" in checkpoint_diff.diff
     assert restore_preview.read_only is True
+    assert restore_preview.preview_token is not None
+    assert restore_preview.preview_expires_at is not None
     assert restore_preview.files[0].path == "recommendations/index.json"
     assert restore_preview.files[0].status == "modified"
     assert (workspace_dir / "recommendations" / "index.json").exists()
+    assert {"repository_initialized", "checkpoint", "restore_preview"} <= activity_types
 
 
 def test_git_restore_apply_restores_selected_plan_file_through_service(monkeypatch, tmp_path: Path) -> None:
@@ -136,9 +143,11 @@ def test_git_restore_apply_restores_selected_plan_file_through_service(monkeypat
             ref=old_hash,
             paths=[f"plans/{plan_id}/plan.md"],
             confirmation="APPLY_GIT_RESTORE",
+            preview_token=preview.preview_token,
         )
     )
     restored = main.plan_workspace.get_plan(plan_id)
+    activity = main.get_git_activity(limit=10)
 
     assert preview.files[0].status == "modified"
     assert result.status == "applied"
@@ -146,6 +155,57 @@ def test_git_restore_apply_restores_selected_plan_file_through_service(monkeypat
     assert result.before_checkpoint is not None
     assert result.after_checkpoint is not None
     assert restored["files"]["plan_markdown"] == "# Historical plan\n"
+    assert activity.events[0].event_type == "restore_apply"
+    assert activity.events[0].paths == [f"plans/{plan_id}/plan.md"]
+
+
+def test_git_restore_apply_rejects_unknown_preview_token(monkeypatch, tmp_path: Path) -> None:
+    _configure_git_api_fixture(monkeypatch, tmp_path)
+    plan = main.create_plan(PlanCreateRequest(title="Token Plan", description="Original"))
+    main.initialize_git_repository()
+    checkpoint = main.create_git_checkpoint(GitCheckpointRequest(message="Token checkpoint"))
+
+    try:
+        main.apply_git_restore(
+            GitRestoreApplyRequest(
+                ref=checkpoint.commit.hash,
+                paths=[f"plans/{plan.id}/plan.md"],
+                confirmation="APPLY_GIT_RESTORE",
+                preview_token="git-preview-missing",
+            )
+        )
+    except main.HTTPException as exc:
+        assert exc.status_code == 400
+        assert "preview token" in str(exc.detail)
+    else:
+        raise AssertionError("restore apply should reject unknown preview tokens")
+
+
+def test_git_restore_apply_rejects_stale_preview_token(monkeypatch, tmp_path: Path) -> None:
+    _configure_git_api_fixture(monkeypatch, tmp_path)
+    plan = main.create_plan(PlanCreateRequest(title="Stale Token Plan", description="Original"))
+    main.plan_workspace.update_plan_files(plan.id, plan_markdown="# Historical plan\n")
+    main.initialize_git_repository()
+    checkpoint = main.create_git_checkpoint(GitCheckpointRequest(message="Historical checkpoint"))
+
+    main.plan_workspace.update_plan_files(plan.id, plan_markdown="# Current plan\n")
+    preview = main.get_git_restore_preview(ref=checkpoint.commit.hash, path=f"plans/{plan.id}/plan.md")
+    main.plan_workspace.update_plan_files(plan.id, plan_markdown="# Current plan changed after preview\n")
+
+    try:
+        main.apply_git_restore(
+            GitRestoreApplyRequest(
+                ref=checkpoint.commit.hash,
+                paths=[f"plans/{plan.id}/plan.md"],
+                confirmation="APPLY_GIT_RESTORE",
+                preview_token=preview.preview_token,
+            )
+        )
+    except main.HTTPException as exc:
+        assert exc.status_code == 400
+        assert "changed since preview" in str(exc.detail)
+    else:
+        raise AssertionError("restore apply should reject stale preview tokens")
 
 
 def test_git_restore_apply_requires_confirmation(monkeypatch, tmp_path: Path) -> None:
@@ -208,9 +268,16 @@ def test_git_remote_api_connects_and_pushes_empty_remote(monkeypatch, tmp_path: 
     )
     status = main.get_git_status()
     push = main.push_git_remote(GitRemoteOperationRequest(remote_name="origin"))
+    activity = main.get_git_activity(limit=10)
+    pushed_activity = main.get_git_activity(limit=10, event_type="remote_push", status="pushed")
+    activity_types = [event.event_type for event in activity.events]
 
     assert connect.status == "connected"
     assert status.remote is not None
     assert status.remote.has_remote is True
     assert status.remote.url == str(remote)
     assert push.status == "pushed"
+    assert "remote_connect" in activity_types
+    assert "remote_push" in activity_types
+    assert len(pushed_activity.events) == 1
+    assert pushed_activity.events[0].event_type == "remote_push"

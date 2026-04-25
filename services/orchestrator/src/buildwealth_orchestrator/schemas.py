@@ -2339,6 +2339,8 @@ class GitRestorePreviewResponse(BaseModel):
     workspace_dir: str
     ref: str
     path: str | None = None
+    preview_token: str | None = None
+    preview_expires_at: datetime | None = None
     read_only: bool = True
     files: list[GitRestorePreviewFile] = Field(default_factory=list)
     total_files: int = 0
@@ -2408,6 +2410,7 @@ class GitRestoreApplyRequest(BaseModel):
     ref: str
     paths: list[str] = Field(min_length=1, max_length=50)
     confirmation: str
+    preview_token: str | None = None
     rationale: str | None = None
     create_checkpoint_before_apply: bool = True
     create_checkpoint_after_apply: bool = True
@@ -2430,3 +2433,19 @@ class GitRestoreApplyResponse(BaseModel):
     before_checkpoint: GitCheckpointResponse | None = None
     after_checkpoint: GitCheckpointResponse | None = None
     warnings: list[str] = Field(default_factory=list)
+
+
+class GitActivityEvent(BaseModel):
+    id: str
+    created_at: datetime
+    event_type: str
+    title: str
+    message: str = ""
+    status: str = "ok"
+    ref: str | None = None
+    paths: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class GitActivityResponse(BaseModel):
+    events: list[GitActivityEvent] = Field(default_factory=list)
