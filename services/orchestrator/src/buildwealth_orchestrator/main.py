@@ -99,6 +99,8 @@ from buildwealth_orchestrator.schemas import (
     PlanTrackingRecommendationGenerateRequest,
     PortfolioRiskRecommendationGenerateRequest,
     RecommendationFactoryResponse,
+    RecommendationFactoryRunAllRequest,
+    RecommendationFactoryRunAllResponse,
     RecommendationPreviewRequest,
     RecommendationPreviewResponse,
     RecommendationRejectRequest,
@@ -11588,6 +11590,54 @@ def generate_plan_tracking_recommendation_candidates(
     if not request.dry_run and result.created:
         _queue_autogit_event("plan_tracking_recommendations_generated")
     return RecommendationFactoryResponse(**result.to_dict())
+
+
+@app.post("/api/recommendations/generate/run-all", response_model=RecommendationFactoryRunAllResponse)
+def run_all_recommendation_factories(
+    request: RecommendationFactoryRunAllRequest,
+) -> RecommendationFactoryRunAllResponse:
+    factories: dict[str, RecommendationFactoryResponse] = {}
+    errors: list[dict[str, Any]] = []
+
+    try:
+        factories["portfolio_risk"] = generate_portfolio_risk_recommendation_candidates(
+            PortfolioRiskRecommendationGenerateRequest(
+                dry_run=request.dry_run,
+                plan_id=request.plan_id,
+                limit=request.limit,
+            )
+        )
+    except HTTPException as exc:
+        errors.append({"factory": "portfolio_risk", "reason": str(exc.detail)})
+    except Exception as exc:
+        errors.append({"factory": "portfolio_risk", "reason": str(exc)})
+
+    try:
+        factories["plan_tracking"] = generate_plan_tracking_recommendation_candidates(
+            PlanTrackingRecommendationGenerateRequest(
+                dry_run=request.dry_run,
+                plan_id=request.plan_id,
+                limit=request.limit,
+            )
+        )
+    except HTTPException as exc:
+        errors.append({"factory": "plan_tracking", "reason": str(exc.detail)})
+    except Exception as exc:
+        errors.append({"factory": "plan_tracking", "reason": str(exc)})
+
+    generated_count = sum(factory.generated_count for factory in factories.values())
+    skipped_count = sum(factory.skipped_count for factory in factories.values())
+    if not request.dry_run and generated_count:
+        _queue_autogit_event("recommendation_factories_generated")
+
+    return RecommendationFactoryRunAllResponse(
+        generated_count=generated_count,
+        skipped_count=skipped_count,
+        factory_count=len(factories),
+        factories=factories,
+        errors=errors,
+        dry_run=request.dry_run,
+    )
 
 
 @app.post("/api/recommendations", response_model=RecommendationItem)

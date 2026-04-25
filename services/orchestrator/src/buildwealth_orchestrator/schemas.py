@@ -1211,12 +1211,27 @@ class PlanTrackingRecommendationGenerateRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=50)
 
 
+class RecommendationFactoryRunAllRequest(BaseModel):
+    dry_run: bool = True
+    plan_id: str | None = None
+    limit: int = Field(default=10, ge=1, le=50)
+
+
 class RecommendationFactoryResponse(BaseModel):
     generated_count: int = 0
     skipped_count: int = 0
     candidates: list[dict[str, Any]] = Field(default_factory=list)
     created: list[RecommendationItem] = Field(default_factory=list)
     skipped: list[dict[str, Any]] = Field(default_factory=list)
+    dry_run: bool = True
+
+
+class RecommendationFactoryRunAllResponse(BaseModel):
+    generated_count: int = 0
+    skipped_count: int = 0
+    factory_count: int = 0
+    factories: dict[str, RecommendationFactoryResponse] = Field(default_factory=dict)
+    errors: list[dict[str, Any]] = Field(default_factory=list)
     dry_run: bool = True
 
 

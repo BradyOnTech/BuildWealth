@@ -326,3 +326,66 @@ def test_generate_plan_tracking_route_supports_active_plan_dry_run_and_apply(
     assert applied.generated_count >= 2
     assert len(applied.created) == applied.generated_count
     assert len(inbox.list(limit=None, status="proposed")) == applied.generated_count
+
+
+def test_run_all_recommendation_factories_groups_results_and_applies(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    monkeypatch.setattr(main, "plan_workspace", _FakePlanWorkspace())
+    monkeypatch.setattr(main, "snapshot_store", _FakeSnapshotStore())
+    monkeypatch.setattr(main, "portfolio_store", _FakePortfolioStore(_holdings_payload()))
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    dry_run = main.run_all_recommendation_factories(
+        main.RecommendationFactoryRunAllRequest(dry_run=True, limit=2),
+    )
+
+    assert dry_run.dry_run is True
+    assert dry_run.factory_count == 2
+    assert dry_run.errors == []
+    assert set(dry_run.factories) == {"portfolio_risk", "plan_tracking"}
+    assert dry_run.factories["portfolio_risk"].generated_count == 2
+    assert dry_run.factories["plan_tracking"].generated_count == 2
+    assert dry_run.generated_count == 4
+    assert inbox.list(limit=None, status="proposed") == []
+
+    applied = main.run_all_recommendation_factories(
+        main.RecommendationFactoryRunAllRequest(dry_run=False, limit=2),
+    )
+
+    assert applied.dry_run is False
+    assert applied.factory_count == 2
+    assert applied.errors == []
+    assert applied.generated_count == 4
+    assert len(inbox.list(limit=None, status="proposed")) == 4
+
+
+class _NoActivePlanWorkspace:
+    def get_active_plan_id(self) -> str | None:
+        return None
+
+
+def test_run_all_recommendation_factories_keeps_portfolio_results_when_plan_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    monkeypatch.setattr(main, "plan_workspace", _NoActivePlanWorkspace())
+    monkeypatch.setattr(main, "portfolio_store", _FakePortfolioStore(_holdings_payload()))
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    response = main.run_all_recommendation_factories(
+        main.RecommendationFactoryRunAllRequest(dry_run=True, limit=2),
+    )
+
+    assert response.factory_count == 1
+    assert set(response.factories) == {"portfolio_risk"}
+    assert response.generated_count == 2
+    assert response.errors == [
+        {
+            "factory": "plan_tracking",
+            "reason": "No active plan is configured and no plan_id was provided.",
+        }
+    ]

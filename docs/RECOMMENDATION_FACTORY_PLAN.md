@@ -23,6 +23,7 @@ This plugs into the existing recommendation system:
 - Slice 4 polish and broader docs: implemented
 - Slice 5 plan tracking recommendation generator: implemented
 - Slice 6 generated recommendation actionability: implemented
+- Slice 7 run-all factory review center: implemented
 
 ## First Slice Scope
 
@@ -62,6 +63,19 @@ When plan tracking identifies a contribution shortfall, the factory:
 - packages that update inside the recommendation `action_payload`
 
 This lets existing pre-apply preview and apply flows treat generated contribution recommendations like first-class plan-setting actions.
+
+## Factory Review Center
+
+The Recommendation Inbox now supports a run-all factory workflow.
+
+`POST /api/recommendations/generate/run-all` runs all active factory sources with one request and returns:
+
+- aggregate generated/skipped counts
+- grouped results per factory
+- created rows for apply mode
+- partial errors when one factory cannot run
+
+The UI surfaces this as `Preview All Factories` and `Create All Reviewed`, while keeping individual factory buttons available for narrow reviews.
 
 Example generated recommendation:
 
@@ -135,6 +149,8 @@ Add:
 `POST /api/recommendations/generate/portfolio-risk`
 
 `POST /api/recommendations/generate/plan-tracking`
+
+`POST /api/recommendations/generate/run-all`
 
 Request options:
 

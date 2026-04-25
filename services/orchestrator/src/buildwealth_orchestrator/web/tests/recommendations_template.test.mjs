@@ -18,8 +18,10 @@ test('recommendations view exposes outcome tracking workflow', () => {
     'Save Outcome',
     'Learning loop',
     'Recommendation Factory',
-    'Preview Portfolio Risk Recommendations',
-    'Preview Plan Tracking Recommendations',
+    'Preview All Factories',
+    'Create All Reviewed',
+    'Preview Portfolio Risk',
+    'Preview Plan Tracking',
     'Create Portfolio Risk',
     'Create Plan Tracking',
     'Generation Limit',
@@ -35,6 +37,8 @@ test('recommendations view exposes outcome tracking workflow', () => {
   assert.match(html, /id="recommendation-outcome-observed-at"/);
   assert.match(html, /id="recommendation-outcome-window-days"/);
   assert.match(html, /id="recommendation-outcome-save"/);
+  assert.match(html, /id="preview-all-recommendation-factories"/);
+  assert.match(html, /id="create-all-recommendation-factories"/);
   assert.match(html, /id="preview-portfolio-risk-recommendations"/);
   assert.match(html, /id="create-portfolio-risk-recommendations"/);
   assert.match(html, /id="preview-plan-tracking-recommendations"/);
@@ -43,7 +47,7 @@ test('recommendations view exposes outcome tracking workflow', () => {
   assert.match(html, /id="recommendation-factory-plan"/);
   assert.match(html, /id="recommendation-factory-summary"/);
   assert.match(html, /id="recommendation-factory-results"/);
-  assert.match(html, /Turn active portfolio risk alerts and plan tracking drift into specific/);
+  assert.match(html, /Review all active factory signals together/);
   assert.match(html, /What actually happened, and what should the system learn/);
 });
 
@@ -57,4 +61,7 @@ test('recommendations row rendering includes factory explainability copy', () =>
   assert.match(source, /estimated rebalance/);
   assert.match(source, /monthly catch-up/);
   assert.match(source, /generator\.dedupe_key/);
+  assert.match(source, /runAllRecommendationFactories/);
+  assert.match(source, /collectFactoryResults/);
+  assert.ok(source.includes('/api/recommendations/generate/run-all'));
 });

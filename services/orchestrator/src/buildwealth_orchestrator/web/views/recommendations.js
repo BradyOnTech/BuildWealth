@@ -28,9 +28,9 @@ export function template() {
     </div>
     <div class="form-section">
       <div class="view-header"><h3>Recommendation Factory</h3>
-        <div class="header-actions"><button class="ghost small" id="preview-portfolio-risk-recommendations">Preview Portfolio Risk Recommendations</button><button class="ghost small" id="preview-plan-tracking-recommendations">Preview Plan Tracking Recommendations</button><button class="primary small" id="create-portfolio-risk-recommendations">Create Portfolio Risk</button><button class="primary small" id="create-plan-tracking-recommendations">Create Plan Tracking</button></div>
+        <div class="header-actions"><button class="ghost small" id="preview-all-recommendation-factories">Preview All Factories</button><button class="primary small" id="create-all-recommendation-factories">Create All Reviewed</button><button class="ghost small" id="preview-portfolio-risk-recommendations">Preview Portfolio Risk</button><button class="ghost small" id="preview-plan-tracking-recommendations">Preview Plan Tracking</button><button class="ghost small" id="create-portfolio-risk-recommendations">Create Portfolio Risk</button><button class="ghost small" id="create-plan-tracking-recommendations">Create Plan Tracking</button></div>
       </div>
-      <p class="hint">Turn active portfolio risk alerts and plan tracking drift into specific, evidence-backed recommendation rows. Preview first; create only when the candidates look useful.</p>
+      <p class="hint">Review all active factory signals together, then create evidence-backed recommendation rows only when the batch looks useful.</p>
       <div class="settings-grid">
         <label class="field"><span>Generation Limit</span><input type="number" min="1" max="50" step="1" id="recommendation-factory-limit" value="10" /></label>
         <label class="field"><span>Attach to Plan</span><select id="recommendation-factory-plan"></select></label>
@@ -268,27 +268,59 @@ function candidateMeta(candidate) {
   return parts.join(' • ');
 }
 
+function factoryLabel(key) {
+  const normalized = String(key || '').trim();
+  if (normalized === 'portfolio_risk') return 'Portfolio Risk';
+  if (normalized === 'plan_tracking') return 'Plan Tracking';
+  return normalized ? normalized.replaceAll('_', ' ') : 'Factory';
+}
+
+function collectFactoryResults(result) {
+  const factories = result?.factories && typeof result.factories === 'object' ? result.factories : null;
+  if (!factories) return [{ key: 'factory', label: 'Factory', result }];
+  return Object.entries(factories).map(([key, value]) => ({
+    key,
+    label: factoryLabel(key),
+    result: value && typeof value === 'object' ? value : {},
+  }));
+}
+
 function renderRecommendationFactoryResult(payload) {
   const result = payload && typeof payload === 'object' ? payload : {};
   state.recommendationFactoryResult = result;
-  const candidates = Array.isArray(result.candidates) ? result.candidates : [];
-  const created = Array.isArray(result.created) ? result.created : [];
-  const skipped = Array.isArray(result.skipped) ? result.skipped : [];
+  const factoryResults = collectFactoryResults(result);
   const dryRun = result.dry_run !== false;
   const generatedCount = Number(result.generated_count || 0);
-  const skippedCount = Number(result.skipped_count || skipped.length || 0);
+  const skippedCount = Number(result.skipped_count || 0);
+  const errors = Array.isArray(result.errors) ? result.errors : [];
   const modeLabel = dryRun ? 'Preview' : 'Created';
-  byId('recommendation-factory-summary').textContent = `${modeLabel}: ${generatedCount} recommendation${generatedCount === 1 ? '' : 's'} • skipped ${skippedCount}.`;
+  const factoryLabelText = result.factories ? ` across ${Number(result.factory_count || factoryResults.length)} factories` : '';
+  const errorLabel = errors.length ? ` • errors ${errors.length}` : '';
+  byId('recommendation-factory-summary').textContent = `${modeLabel}: ${generatedCount} recommendation${generatedCount === 1 ? '' : 's'}${factoryLabelText} • skipped ${skippedCount}${errorLabel}.`;
 
   const cards = [];
-  for (const candidate of candidates.slice(0, 8)) {
-    cards.push(`<article class="list-item"><p class="list-item-title">${candidate.title || 'Generated recommendation'}</p><p class="list-item-meta">${candidateMeta(candidate)}</p><p class="list-item-meta">${candidate.detail || ''}</p></article>`);
+  for (const entry of factoryResults) {
+    const factoryResult = entry.result || {};
+    const candidates = Array.isArray(factoryResult.candidates) ? factoryResult.candidates : [];
+    const created = Array.isArray(factoryResult.created) ? factoryResult.created : [];
+    const skipped = Array.isArray(factoryResult.skipped) ? factoryResult.skipped : [];
+    const factoryGenerated = Number(factoryResult.generated_count || candidates.length || created.length || 0);
+    const factorySkipped = Number(factoryResult.skipped_count || skipped.length || 0);
+    if (result.factories) {
+      cards.push(`<article class="list-item"><p class="list-item-title">${entry.label}</p><p class="list-item-meta">${factoryGenerated} generated • ${factorySkipped} skipped</p></article>`);
+    }
+    for (const candidate of candidates.slice(0, 8)) {
+      cards.push(`<article class="list-item"><p class="list-item-title">${candidate.title || 'Generated recommendation'}</p><p class="list-item-meta">${candidateMeta(candidate)}</p><p class="list-item-meta">${candidate.detail || ''}</p></article>`);
+    }
+    for (const item of created.slice(0, 8)) {
+      cards.push(`<article class="list-item"><p class="list-item-title">Created: ${item.title || item.id || 'Recommendation'}</p><p class="list-item-meta">${item.id || ''} • ${String(item.priority || 'medium').toUpperCase()} • ${item.source || 'generator:portfolio_risk'}</p></article>`);
+    }
+    for (const item of skipped.slice(0, 6)) {
+      cards.push(`<article class="list-item attention"><p class="list-item-title">Skipped: ${item.title || item.signal_key || 'Factory signal'}</p><p class="list-item-meta">${item.reason || 'skipped'}${item.dedupe_key ? ` • ${item.dedupe_key}` : ''}</p></article>`);
+    }
   }
-  for (const item of created.slice(0, 8)) {
-    cards.push(`<article class="list-item"><p class="list-item-title">Created: ${item.title || item.id || 'Recommendation'}</p><p class="list-item-meta">${item.id || ''} • ${String(item.priority || 'medium').toUpperCase()} • ${item.source || 'generator:portfolio_risk'}</p></article>`);
-  }
-  for (const item of skipped.slice(0, 6)) {
-    cards.push(`<article class="list-item attention"><p class="list-item-title">Skipped: ${item.title || item.signal_key || 'Factory signal'}</p><p class="list-item-meta">${item.reason || 'skipped'}${item.dedupe_key ? ` • ${item.dedupe_key}` : ''}</p></article>`);
+  for (const error of errors) {
+    cards.push(`<article class="list-item attention"><p class="list-item-title">${factoryLabel(error.factory)} could not run</p><p class="list-item-meta">${error.reason || 'Unknown factory error'}</p></article>`);
   }
   byId('recommendation-factory-results').innerHTML = cards.length
     ? cards.join('')
@@ -673,6 +705,10 @@ async function runPlanTrackingRecommendationFactory(dryRun = true) {
   await runRecommendationFactory('/api/recommendations/generate/plan-tracking', 'plan tracking', dryRun);
 }
 
+async function runAllRecommendationFactories(dryRun = true) {
+  await runRecommendationFactory('/api/recommendations/generate/run-all', 'all factory', dryRun);
+}
+
 async function load() {
   const status = byId('recommendation-status-filter').value || 'proposed';
   const plan = byId('recommendation-plan-filter').value || '';
@@ -904,6 +940,8 @@ export function init() {
   byId('recommendation-status-filter').addEventListener('change', () => load().catch(e => writeLog(e.message, null, true)));
   byId('recommendation-plan-filter').addEventListener('change', () => load().catch(e => writeLog(e.message, null, true)));
   byId('recommendation-sort-filter').addEventListener('change', () => load().catch(e => writeLog(e.message, null, true)));
+  byId('preview-all-recommendation-factories').addEventListener('click', () => runAllRecommendationFactories(true).catch(e => writeLog(e.message, null, true)));
+  byId('create-all-recommendation-factories').addEventListener('click', () => runAllRecommendationFactories(false).catch(e => writeLog(e.message, null, true)));
   byId('preview-portfolio-risk-recommendations').addEventListener('click', () => runPortfolioRiskRecommendationFactory(true).catch(e => writeLog(e.message, null, true)));
   byId('create-portfolio-risk-recommendations').addEventListener('click', () => runPortfolioRiskRecommendationFactory(false).catch(e => writeLog(e.message, null, true)));
   byId('preview-plan-tracking-recommendations').addEventListener('click', () => runPlanTrackingRecommendationFactory(true).catch(e => writeLog(e.message, null, true)));

@@ -10,6 +10,19 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-25 (Completed - Factory Review Center)
+1. Added a run-all recommendation factory endpoint:
+- `POST /api/recommendations/generate/run-all` runs portfolio-risk and plan-tracking factories together.
+- response includes aggregate generated/skipped counts plus grouped per-factory results.
+- partial errors allow available factories to return results even when another source cannot run.
+2. Added Recommendation Inbox review-center controls:
+- `Preview All Factories` gives one grouped review batch before creation.
+- `Create All Reviewed` creates rows from all runnable factories.
+- individual factory buttons remain available for targeted reviews.
+3. Tests:
+- backend coverage verifies grouped dry-run/apply behavior and partial plan-missing errors.
+- frontend template coverage verifies the run-all controls and grouped renderer hooks.
+
 ### 2026-04-25 (Completed - Generated Recommendation Actionability)
 1. Made plan-tracking contribution recommendations executable:
 - contribution-pace factory candidates now include concrete `plan_settings_updates`.
