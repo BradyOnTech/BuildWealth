@@ -327,8 +327,21 @@ def test_research_service_evidence_packet_full_data_is_fresh_and_inspectable(mon
     assert packet.name == "Apple Inc."
     assert packet.asset_type == "equity"
     assert packet.freshness["status"] == "fresh"
+    assert packet.coverage["provider_status"] == "available"
     assert packet.coverage["quote_available"] is True
     assert packet.coverage["history_available"] is True
+    assert packet.coverage["available_endpoint_count"] == 2
+    assert packet.coverage["attempted_endpoint_count"] == 2
+    assert packet.coverage["endpoint_statuses"] == [
+        {"endpoint": "quote", "status": "available", "available": True, "message": "quote ok", "limitation_type": None},
+        {
+            "endpoint": "price_history",
+            "status": "available",
+            "available": True,
+            "message": "history ok",
+            "limitation_type": None,
+        },
+    ]
     assert packet.metrics["last_price"] == 120.0
     assert packet.metrics["period_change_pct"] == 20.0
     assert packet.metrics["dividend_yield_pct"] == 0.5
@@ -371,8 +384,11 @@ def test_research_service_evidence_packet_marks_missing_history_as_partial(monke
 
     assert packet.symbol == "MSFT"
     assert packet.freshness["status"] == "partial"
+    assert packet.coverage["provider_status"] == "partial"
     assert packet.coverage["endpoints_attempted"] == ["quote", "price_history"]
     assert packet.coverage["history_available"] is False
+    assert packet.coverage["endpoint_statuses"][1]["status"] == "unavailable"
+    assert packet.coverage["endpoint_statuses"][1]["limitation_type"] == "provider_unavailable"
     assert "history" in packet.quality["blocking_gaps"]
     assert packet.quality["confidence"] == "medium"
     assert packet.metrics["last_price"] == 80.0

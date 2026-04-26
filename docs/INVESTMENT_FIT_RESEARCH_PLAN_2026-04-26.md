@@ -216,9 +216,10 @@ High-level implementation:
 Current implementation:
 
 - `PortfolioFitAssessmentRequest` and `PortfolioFitAssessmentResponse` define the first reusable fit contract.
-- `assess_portfolio_fit(...)` combines evidence packet quality, current holdings, risk thresholds, cash runway, profile readiness, and optional trade simulation.
-- `/api/portfolio/fit-assessment` assembles current BuildWealth context and returns a fit assessment for review surfaces.
+- `assess_portfolio_fit(...)` combines evidence packet quality, current holdings, risk thresholds, cash runway, profile readiness, active plan/time-horizon context, and optional trade simulation.
+- `/api/portfolio/fit-assessment` assembles current BuildWealth context and returns a fit assessment for API, Copilot, and v2 Portfolio review surfaces.
 - First statuses cover `mixed`, `does_not_fit`, and `needs_more_context`; direct trade recommendations remain out of scope.
+- Tax-lot/account-location impacts remain future enrichments.
 
 ## Layer 4: Investment Recommendation Factory
 
@@ -268,6 +269,13 @@ High-level implementation:
 - include source provider, data freshness, and fit reasons in `action_payload.evidence`
 - route all actions through the existing Inbox lifecycle
 - make "Discuss in Copilot" a first-class next step
+
+Current implementation:
+
+- `generator:watchlist_research` creates the first safe review rows from watchlist evidence and portfolio-fit context.
+- Generated actions are limited to refresh research evidence, gather missing context, review fit conflicts, simulate/compare, or discuss in Copilot.
+- Rows include evidence packet id, provider, freshness, confidence, coverage score, provider coverage metadata, fit status, fit score, fit reasons, and fit risks.
+- The generator is available through `/api/recommendations/generate/watchlist-research` and participates in the run-all factory endpoint.
 
 ## Layer 5: Copilot Investment Guidance
 
@@ -593,11 +601,9 @@ Do not start by adding direct buy/sell recommendation logic.
 Recommended sequence:
 
 1. Finish profile readiness and recommendation-quality work from the main future-state plan.
-2. Define the research evidence packet contract.
-3. Add provider/freshness/coverage metadata around current OpenBB-backed research outputs.
-4. Define the first portfolio-fit assessment contract.
-5. Generate the first watchlist/research recommendations using only safe next-step language.
-6. Bring the investment-fit workflow into v2 Inbox, Portfolio, and Copilot.
+2. Keep provider/freshness/coverage metadata explicit around OpenBB-backed research outputs.
+3. Bring generated investment-fit rows into v2 Inbox routing for compare, dossier, simulation, and Copilot.
+4. Continue enriching portfolio-fit with tax-lot/account-location context after the safer review loop is established.
 
 ## Relationship to Existing Plans
 

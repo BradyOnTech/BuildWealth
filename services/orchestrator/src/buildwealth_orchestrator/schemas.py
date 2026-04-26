@@ -892,6 +892,7 @@ class WatchlistRankItem(BaseModel):
     research_confidence: str | None = None
     research_coverage_score: float | None = None
     research_blocking_gaps: list[str] = Field(default_factory=list)
+    provider_coverage: dict[str, Any] = Field(default_factory=dict)
     watchlist_rank: int | None = None
     watchlist_score_total: float | None = None
     watchlist_score: dict[str, Any] = Field(default_factory=dict)
@@ -1346,6 +1347,14 @@ class StaleAssumptionRecommendationGenerateRequest(BaseModel):
     dry_run: bool = True
     plan_id: str | None = None
     limit: int = Field(default=10, ge=1, le=50)
+
+
+class WatchlistResearchRecommendationGenerateRequest(BaseModel):
+    dry_run: bool = True
+    plan_id: str | None = None
+    limit: int = Field(default=10, ge=1, le=50)
+    period: str = "6mo"
+    interval: str = "1d"
 
 
 class RecommendationFactoryRunAllRequest(BaseModel):

@@ -21,6 +21,9 @@ PROFILE_COMPLETENESS_SOURCE = "generator:profile_completeness"
 STALE_ASSUMPTIONS_FACTORY_ID = "stale_assumption_recommendation_factory"
 STALE_ASSUMPTIONS_FACTORY_VERSION = "v1"
 STALE_ASSUMPTIONS_SOURCE = "generator:stale_assumptions"
+WATCHLIST_RESEARCH_FACTORY_ID = "watchlist_research_recommendation_factory"
+WATCHLIST_RESEARCH_FACTORY_VERSION = "v1"
+WATCHLIST_RESEARCH_SOURCE = "generator:watchlist_research"
 CASH_RESERVE_MIN_MONTHS = 3.0
 CASH_RESERVE_MAX_MONTHS = 6.0
 STALE_PLAN_REVIEW_DAYS = 90
@@ -1756,6 +1759,223 @@ def generate_stale_assumption_recommendations(
                     "signal_key": signal_key,
                 }
             )
+            continue
+
+        candidates.append(candidate)
+        active_keys.add(dedupe_key)
+        if not dry_run and creator is not None:
+            created.append(
+                creator.create(
+                    title=candidate["title"],
+                    detail=candidate["detail"],
+                    priority=candidate["priority"],
+                    recommendation_type=candidate["recommendation_type"],
+                    source=candidate["source"],
+                    plan_id=candidate["plan_id"],
+                    action_payload=candidate["action_payload"],
+                    status="proposed",
+                )
+            )
+
+    return RecommendationFactoryResult(
+        generated_count=len(created) if not dry_run else len(candidates),
+        skipped_count=len(skipped),
+        candidates=candidates,
+        created=created,
+        skipped=skipped,
+        dry_run=dry_run,
+    )
+
+
+def _watchlist_research_dedupe_key(symbol: str, signal_key: str) -> str:
+    return f"watchlist_research:{_clean_key(symbol)}:{_clean_key(signal_key)}"
+
+
+def _watchlist_research_candidate(
+    *,
+    item: dict[str, Any],
+    fit_payload: dict[str, Any] | None,
+    generated_at: str,
+    plan_id: str | None,
+) -> dict[str, Any] | None:
+    symbol = str(item.get("symbol") or "").strip().upper()
+    if not symbol:
+        return None
+
+    freshness_status = str(item.get("research_freshness_status") or "").strip().lower()
+    blocking_gaps = item.get("research_blocking_gaps") if isinstance(item.get("research_blocking_gaps"), list) else []
+    coverage_score = safe_float(item.get("research_coverage_score"), 0.0)
+    fit_payload = fit_payload if isinstance(fit_payload, dict) else {}
+    fit_status = str(fit_payload.get("fit_status") or "").strip().lower()
+    recommended_next_step = str(fit_payload.get("recommended_next_step") or "").strip().lower()
+
+    signal_key = ""
+    title = ""
+    detail = ""
+    priority = "medium"
+    actionability = "review_only"
+    suggested_action: dict[str, Any] = {}
+    blocking_context: list[str] = []
+
+    if freshness_status in {"", "partial", "stale", "degraded", "unavailable"} or blocking_gaps:
+        signal_key = f"research_{freshness_status or 'unknown'}"
+        title = f"Refresh research evidence for {symbol}"
+        detail = (
+            f"{symbol} has {freshness_status or 'unknown'} research evidence before BuildWealth can rely on "
+            "it for investment-fit guidance."
+        )
+        priority = "medium" if freshness_status in {"partial", "stale"} else "high"
+        actionability = "context_gathering"
+        suggested_action = {
+            "kind": "refresh_research_evidence",
+            "symbol": symbol,
+            "freshness_status": freshness_status or "unknown",
+            "blocking_gaps": blocking_gaps,
+        }
+        blocking_context = [f"research.{gap}" for gap in blocking_gaps] or ["research.evidence_packet"]
+    elif fit_status == "does_not_fit":
+        signal_key = "fit_conflict"
+        title = f"Review why {symbol} does not currently fit"
+        detail = f"{symbol} currently conflicts with portfolio-fit checks. Review the fit risks before taking action."
+        priority = "high"
+        suggested_action = {
+            "kind": "review_portfolio_fit",
+            "symbol": symbol,
+            "fit_status": fit_status,
+            "next_step": recommended_next_step or "review_concentration",
+        }
+    elif fit_status == "needs_more_context":
+        signal_key = f"fit_needs_context:{recommended_next_step or 'unknown'}"
+        title = f"Gather context before judging {symbol}"
+        detail = f"BuildWealth needs more context before it can assess whether {symbol} fits this portfolio."
+        priority = "medium"
+        actionability = "context_gathering"
+        suggested_action = {
+            "kind": recommended_next_step or "update_profile",
+            "symbol": symbol,
+            "fit_status": fit_status,
+            "blocking_gaps": fit_payload.get("blocking_gaps") if isinstance(fit_payload.get("blocking_gaps"), list) else [],
+        }
+        blocking_context = [
+            str(gap).replace(":", ".")
+            for gap in suggested_action["blocking_gaps"]
+            if str(gap).strip()
+        ]
+    elif fit_status == "mixed":
+        signal_key = "fit_mixed_review"
+        title = f"Review fit tradeoffs for {symbol}"
+        detail = f"{symbol} has mixed fit signals. Compare, simulate, or discuss it before making a portfolio decision."
+        priority = "low"
+        suggested_action = {
+            "kind": recommended_next_step or "discuss_in_copilot",
+            "symbol": symbol,
+            "fit_status": fit_status,
+        }
+    else:
+        return None
+
+    dedupe_key = _watchlist_research_dedupe_key(symbol, signal_key)
+    evidence = {
+        "summary": detail,
+        "data_keys": ["portfolio.watchlist", "research.evidence_packet", "portfolio.fit_assessment"],
+        "symbol": symbol,
+        "research_evidence_packet_id": item.get("research_evidence_packet_id"),
+        "provider": item.get("research_provider"),
+        "freshness_status": freshness_status or "unknown",
+        "confidence": item.get("research_confidence"),
+        "coverage_score": coverage_score,
+        "blocking_gaps": blocking_gaps,
+        "watchlist_score_total": item.get("watchlist_score_total"),
+        "fit_status": fit_status or None,
+        "fit_score": fit_payload.get("fit_score"),
+        "fit_reasons": fit_payload.get("fit_reasons") if isinstance(fit_payload.get("fit_reasons"), list) else [],
+        "fit_risks": fit_payload.get("fit_risks") if isinstance(fit_payload.get("fit_risks"), list) else [],
+        "provider_coverage": item.get("provider_coverage") if isinstance(item.get("provider_coverage"), dict) else {},
+    }
+    expected_outcome = {
+        "expected_delta_context_quality": "research_or_fit_reviewed",
+        "expected_next_safe_action": suggested_action.get("kind"),
+    }
+    action_payload = {
+        "generator": {
+            "id": WATCHLIST_RESEARCH_FACTORY_ID,
+            "version": WATCHLIST_RESEARCH_FACTORY_VERSION,
+            "generated_at": generated_at,
+            "signal_key": signal_key,
+            "signal_type": "watchlist_research",
+            "dedupe_key": dedupe_key,
+            "severity": priority,
+        },
+        "evidence": evidence,
+        "suggested_action": suggested_action,
+        "expected_outcome": expected_outcome,
+    }
+    action_payload["quality"] = _quality_metadata(
+        source=WATCHLIST_RESEARCH_SOURCE,
+        priority=priority,
+        evidence=evidence,
+        suggested_action=suggested_action,
+        expected_outcome=expected_outcome,
+        actionability=actionability,
+        confidence_level="medium" if fit_status else "low",
+        confidence_reasons=[
+            "Generated from watchlist research evidence and portfolio-fit context.",
+            "Action is framed as refresh, review, simulate, compare, or context gathering.",
+        ],
+        reversibility="high",
+        blocking_context=blocking_context,
+    )
+    return {
+        "title": title,
+        "detail": detail,
+        "priority": priority,
+        "recommendation_type": "workflow_action",
+        "source": WATCHLIST_RESEARCH_SOURCE,
+        "plan_id": plan_id,
+        "action_payload": action_payload,
+    }
+
+
+def generate_watchlist_research_recommendations(
+    *,
+    watchlist_rank_payload: dict[str, Any],
+    fit_assessments_by_symbol: dict[str, dict[str, Any]],
+    existing_recommendations: list[dict[str, Any]],
+    creator: RecommendationCreator | None = None,
+    dry_run: bool = True,
+    plan_id: str | None = None,
+    limit: int = 10,
+    now: datetime | None = None,
+) -> RecommendationFactoryResult:
+    generated_at = _now_iso(now)
+    active_keys = _active_dedupe_keys(existing_recommendations)
+    bounded_limit = max(1, min(int(limit), 50))
+    items = watchlist_rank_payload.get("items") if isinstance(watchlist_rank_payload.get("items"), list) else []
+
+    candidates: list[dict[str, Any]] = []
+    created: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        symbol = str(item.get("symbol") or "").strip().upper()
+        candidate = _watchlist_research_candidate(
+            item=item,
+            fit_payload=fit_assessments_by_symbol.get(symbol),
+            generated_at=generated_at,
+            plan_id=plan_id,
+        )
+        if candidate is None:
+            continue
+        generator = candidate.get("action_payload", {}).get("generator", {})
+        dedupe_key = str(generator.get("dedupe_key") or "").strip()
+        signal_key = str(generator.get("signal_key") or "").strip()
+        if dedupe_key in active_keys:
+            skipped.append({"dedupe_key": dedupe_key, "reason": "active_duplicate", "title": candidate["title"], "signal_key": signal_key})
+            continue
+        if len(candidates) >= bounded_limit:
+            skipped.append({"dedupe_key": dedupe_key, "reason": "limit_exceeded", "title": candidate["title"], "signal_key": signal_key})
             continue
 
         candidates.append(candidate)

@@ -326,6 +326,31 @@ class OpenBBResearchService:
         return "degraded"
 
     @staticmethod
+    def _endpoint_status(*, endpoint: str, available: bool, message: str) -> dict[str, Any]:
+        normalized_message = str(message or "").strip()
+        status = "available" if available else "unavailable"
+        limitation_type = None
+        lowered = normalized_message.lower()
+        if not available:
+            if any(token in lowered for token in ("credential", "auth", "unauthorized", "permission")):
+                limitation_type = "credentials"
+            elif any(token in lowered for token in ("subscription", "premium", "plan")):
+                limitation_type = "subscription"
+            elif any(token in lowered for token in ("rate limit", "too many requests", "quota")):
+                limitation_type = "rate_limit"
+            elif any(token in lowered for token in ("unavailable", "not found", "unsupported")):
+                limitation_type = "provider_unavailable"
+            else:
+                limitation_type = "unknown"
+        return {
+            "endpoint": endpoint,
+            "status": status,
+            "available": available,
+            "message": normalized_message,
+            "limitation_type": limitation_type,
+        }
+
+    @staticmethod
     def _evidence_confidence(*, quote_available: bool, history_available: bool) -> str:
         if quote_available and history_available:
             return "high"
@@ -915,6 +940,19 @@ class OpenBBResearchService:
         history_available = bool(history_response.available)
         available_endpoints = sum(1 for item in (quote_available, history_available) if item)
         generated_at = datetime.now(timezone.utc)
+        endpoint_statuses = [
+            self._endpoint_status(endpoint="quote", available=quote_available, message=quote_response.message),
+            self._endpoint_status(
+                endpoint="price_history",
+                available=history_available,
+                message=history_response.message,
+            ),
+        ]
+        provider_status = "available"
+        if available_endpoints == 0:
+            provider_status = "unavailable"
+        elif available_endpoints < 2:
+            provider_status = "partial"
 
         close_values = self._history_close_values(history_response.records)
         all_time_high = max(close_values) if close_values else None
@@ -930,7 +968,11 @@ class OpenBBResearchService:
             generated_at=generated_at,
             coverage={
                 "provider": self.provider,
+                "provider_status": provider_status,
                 "endpoints_attempted": ["quote", "price_history"],
+                "endpoint_statuses": endpoint_statuses,
+                "available_endpoint_count": available_endpoints,
+                "attempted_endpoint_count": 2,
                 "quote_available": quote_available,
                 "history_available": history_available,
                 "quote_message": quote_response.message,
@@ -984,6 +1026,8 @@ class OpenBBResearchService:
             provenance={
                 "source": "openbb",
                 "provider": self.provider,
+                "provider_status": provider_status,
+                "endpoint_statuses": endpoint_statuses,
                 "quote_records": len(quote_response.records),
                 "history_records": len(history_response.records),
                 "quote_message": quote_response.message,

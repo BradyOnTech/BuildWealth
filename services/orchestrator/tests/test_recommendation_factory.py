@@ -12,6 +12,7 @@ from buildwealth_orchestrator.services.recommendation_factory import (
     generate_portfolio_risk_recommendations,
     generate_profile_completeness_recommendations,
     generate_stale_assumption_recommendations,
+    generate_watchlist_research_recommendations,
 )
 from buildwealth_orchestrator.services.recommendation_inbox import RecommendationInbox
 
@@ -207,6 +208,92 @@ def test_portfolio_risk_factory_dry_run_generates_specific_candidates() -> None:
     assert payload["evidence"]["data_keys"] == ["portfolio.holdings", "portfolio.risk_alerts"]
     assert payload["suggested_action"]["estimated_rebalance_usd"] is not None
     _assert_quality_metadata(result.candidates[0], expected_source="generator:portfolio_risk")
+
+
+def test_watchlist_research_factory_generates_refresh_candidate_for_partial_evidence() -> None:
+    result = generate_watchlist_research_recommendations(
+        watchlist_rank_payload={
+            "items": [
+                {
+                    "symbol": "MSFT",
+                    "research_evidence_packet_id": "research-evidence:yfinance:MSFT:6mo:1d",
+                    "research_provider": "yfinance",
+                    "research_freshness_status": "partial",
+                    "research_confidence": "medium",
+                    "research_coverage_score": 50.0,
+                    "research_blocking_gaps": ["history"],
+                    "watchlist_score_total": 62.0,
+                    "provider_coverage": {"provider_status": "partial"},
+                }
+            ]
+        },
+        fit_assessments_by_symbol={
+            "MSFT": {
+                "fit_status": "needs_more_context",
+                "fit_score": 45.0,
+                "fit_reasons": [],
+                "fit_risks": ["Research evidence is partial."],
+                "blocking_gaps": ["research:partial"],
+                "recommended_next_step": "research_more",
+            }
+        },
+        existing_recommendations=[],
+        dry_run=True,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 1
+    candidate = result.candidates[0]
+    assert candidate["source"] == "generator:watchlist_research"
+    assert candidate["title"] == "Refresh research evidence for MSFT"
+    payload = candidate["action_payload"]
+    assert payload["generator"]["dedupe_key"] == "watchlist_research:msft:research_partial"
+    assert payload["suggested_action"]["kind"] == "refresh_research_evidence"
+    assert payload["evidence"]["research_evidence_packet_id"] == "research-evidence:yfinance:MSFT:6mo:1d"
+    assert payload["evidence"]["freshness_status"] == "partial"
+    assert payload["quality"]["actionability"] == "context_gathering"
+    _assert_quality_metadata(candidate, expected_source="generator:watchlist_research")
+
+
+def test_watchlist_research_factory_generates_fit_conflict_review_without_trade_language() -> None:
+    result = generate_watchlist_research_recommendations(
+        watchlist_rank_payload={
+            "items": [
+                {
+                    "symbol": "NVDA",
+                    "research_evidence_packet_id": "research-evidence:yfinance:NVDA:6mo:1d",
+                    "research_provider": "yfinance",
+                    "research_freshness_status": "fresh",
+                    "research_confidence": "high",
+                    "research_coverage_score": 100.0,
+                    "research_blocking_gaps": [],
+                }
+            ]
+        },
+        fit_assessments_by_symbol={
+            "NVDA": {
+                "fit_status": "does_not_fit",
+                "fit_score": 25.0,
+                "fit_reasons": [],
+                "fit_risks": ["Simulated trade worsens concentration risk."],
+                "blocking_gaps": ["concentration"],
+                "recommended_next_step": "review_concentration",
+            }
+        },
+        existing_recommendations=[],
+        dry_run=True,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 1
+    candidate = result.candidates[0]
+    assert candidate["title"] == "Review why NVDA does not currently fit"
+    assert candidate["priority"] == "high"
+    payload = candidate["action_payload"]
+    assert payload["suggested_action"]["kind"] == "review_portfolio_fit"
+    joined = " ".join([candidate["title"], candidate["detail"], payload["suggested_action"]["kind"]])
+    assert "buy" not in joined.lower()
+    assert "sell" not in joined.lower()
 
 
 def test_portfolio_risk_factory_apply_creates_rows_and_skips_duplicates(tmp_path: Path) -> None:
@@ -770,19 +857,21 @@ def test_run_all_recommendation_factories_groups_results_and_applies(
 
     assert dry_run.dry_run is True
     assert dry_run.errors == []
-    assert dry_run.factory_count == 5
+    assert dry_run.factory_count == 6
     assert set(dry_run.factories) == {
         "portfolio_risk",
         "plan_tracking",
         "cash_liquidity",
         "profile_completeness",
         "stale_assumptions",
+        "watchlist_research",
     }
     assert dry_run.factories["portfolio_risk"].generated_count == 2
     assert dry_run.factories["plan_tracking"].generated_count == 2
     assert dry_run.factories["cash_liquidity"].generated_count == 1
     assert dry_run.factories["profile_completeness"].generated_count == 1
     assert dry_run.factories["stale_assumptions"].generated_count >= 1
+    assert dry_run.factories["watchlist_research"].generated_count == 0
     assert dry_run.generated_count >= 7
     assert inbox.list(limit=None, status="proposed") == []
 
@@ -791,7 +880,7 @@ def test_run_all_recommendation_factories_groups_results_and_applies(
     )
 
     assert applied.dry_run is False
-    assert applied.factory_count == 5
+    assert applied.factory_count == 6
     assert applied.errors == []
     assert applied.generated_count == dry_run.generated_count
     assert len(inbox.list(limit=None, status="proposed")) == applied.generated_count
@@ -816,8 +905,13 @@ def test_run_all_recommendation_factories_keeps_portfolio_results_when_plan_miss
         main.RecommendationFactoryRunAllRequest(dry_run=True, limit=2),
     )
 
-    assert response.factory_count == 3
-    assert set(response.factories) == {"portfolio_risk", "cash_liquidity", "profile_completeness"}
+    assert response.factory_count == 4
+    assert set(response.factories) == {
+        "portfolio_risk",
+        "cash_liquidity",
+        "profile_completeness",
+        "watchlist_research",
+    }
     assert response.generated_count == 4
     assert response.errors == [
         {

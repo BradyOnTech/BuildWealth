@@ -111,6 +111,7 @@ from buildwealth_orchestrator.schemas import (
     RecommendationFactoryRunAllRequest,
     RecommendationFactoryRunAllResponse,
     StaleAssumptionRecommendationGenerateRequest,
+    WatchlistResearchRecommendationGenerateRequest,
     RecommendationPreviewRequest,
     RecommendationPreviewResponse,
     RecommendationRejectRequest,
@@ -314,6 +315,7 @@ from buildwealth_orchestrator.services.recommendation_factory import (
     generate_portfolio_risk_recommendations,
     generate_profile_completeness_recommendations,
     generate_stale_assumption_recommendations,
+    generate_watchlist_research_recommendations,
 )
 from buildwealth_orchestrator.services.user_settings import UserSettingsStore
 from buildwealth_orchestrator.settings import get_settings
@@ -6903,6 +6905,16 @@ def _watchlist_market_payload_from_evidence_packet(
         "research_confidence": str(quality.get("confidence") or ""),
         "research_coverage_score": _extract_numeric_field(quality, ("coverage_score",)),
         "research_blocking_gaps": [str(item) for item in _list_from_payload(quality, "blocking_gaps")],
+        "provider_coverage": {
+            "provider": coverage.get("provider") or packet.provider,
+            "provider_status": coverage.get("provider_status"),
+            "endpoint_statuses": coverage.get("endpoint_statuses")
+            if isinstance(coverage.get("endpoint_statuses"), list)
+            else [],
+            "available_endpoint_count": coverage.get("available_endpoint_count"),
+            "attempted_endpoint_count": coverage.get("attempted_endpoint_count"),
+            "warnings": warnings,
+        },
         "warnings": warnings,
     }
 
@@ -6980,6 +6992,12 @@ def _watchlist_market_payload_from_legacy_research(
         "research_confidence": None,
         "research_coverage_score": None,
         "research_blocking_gaps": [],
+        "provider_coverage": {
+            "provider": getattr(research_service, "provider", None),
+            "provider_status": "available" if quote_response.available or history_response.available else "unavailable",
+            "endpoint_statuses": [],
+            "warnings": warnings,
+        },
         "warnings": warnings,
     }
 
@@ -7207,6 +7225,9 @@ def build_portfolio_watchlist_payload(
                 "research_blocking_gaps": market_payload.get("research_blocking_gaps")
                 if isinstance(market_payload.get("research_blocking_gaps"), list)
                 else [],
+                "provider_coverage": market_payload.get("provider_coverage")
+                if isinstance(market_payload.get("provider_coverage"), dict)
+                else {},
                 "watchlist_rank": None,
                 "watchlist_score_total": score_payload.get("total"),
                 "watchlist_score": score_payload,
@@ -12581,6 +12602,70 @@ def generate_stale_assumption_recommendation_candidates(
     return RecommendationFactoryResponse(**result.to_dict())
 
 
+@app.post("/api/recommendations/generate/watchlist-research", response_model=RecommendationFactoryResponse)
+def generate_watchlist_research_recommendation_candidates(
+    request: WatchlistResearchRecommendationGenerateRequest,
+) -> RecommendationFactoryResponse:
+    try:
+        watchlist_payload = build_portfolio_watchlist_payload(
+            period=request.period,
+            interval=request.interval,
+            limit=request.limit,
+            sort="ranked",
+        )
+    except AttributeError:
+        watchlist_payload = {
+            "period": request.period,
+            "interval": request.interval,
+            "count": 0,
+            "items": [],
+            "warnings": ["Portfolio store does not expose watchlist items."],
+        }
+
+    fit_assessments_by_symbol: dict[str, dict[str, Any]] = {}
+    items = watchlist_payload.get("items") if isinstance(watchlist_payload.get("items"), list) else []
+    for item in items[: request.limit]:
+        if not isinstance(item, dict):
+            continue
+        symbol = str(item.get("symbol") or "").strip()
+        if not symbol:
+            continue
+        try:
+            fit_assessments_by_symbol[symbol.upper()] = build_portfolio_fit_assessment_payload(
+                PortfolioFitAssessmentRequest(symbol=symbol, period=request.period, interval=request.interval)
+            ).model_dump(mode="json")
+        except Exception as exc:
+            fit_assessments_by_symbol[symbol.upper()] = {
+                "symbol": symbol.upper(),
+                "fit_status": "needs_more_context",
+                "fit_score": 0.0,
+                "fit_reasons": [],
+                "fit_risks": [f"Portfolio-fit assessment unavailable: {exc}"],
+                "blocking_gaps": ["portfolio_fit"],
+                "recommended_next_step": "research_more",
+            }
+
+    existing_recommendations = recommendation_inbox.list(
+        limit=None,
+        status=None,
+        plan_id=None,
+        include_archived=True,
+        sort="none",
+    )
+    result = generate_watchlist_research_recommendations(
+        watchlist_rank_payload=watchlist_payload,
+        fit_assessments_by_symbol=fit_assessments_by_symbol,
+        existing_recommendations=existing_recommendations,
+        creator=recommendation_inbox if not request.dry_run else None,
+        dry_run=request.dry_run,
+        plan_id=request.plan_id,
+        limit=request.limit,
+    )
+    if not request.dry_run and result.created:
+        _queue_autogit_event("watchlist_research_recommendations_generated")
+    return RecommendationFactoryResponse(**result.to_dict())
+
+
 @app.post("/api/recommendations/generate/run-all", response_model=RecommendationFactoryRunAllResponse)
 def run_all_recommendation_factories(
     request: RecommendationFactoryRunAllRequest,
@@ -12652,6 +12737,19 @@ def run_all_recommendation_factories(
         errors.append({"factory": "stale_assumptions", "reason": str(exc.detail)})
     except Exception as exc:
         errors.append({"factory": "stale_assumptions", "reason": str(exc)})
+
+    try:
+        factories["watchlist_research"] = generate_watchlist_research_recommendation_candidates(
+            WatchlistResearchRecommendationGenerateRequest(
+                dry_run=request.dry_run,
+                plan_id=request.plan_id,
+                limit=request.limit,
+            )
+        )
+    except HTTPException as exc:
+        errors.append({"factory": "watchlist_research", "reason": str(exc.detail)})
+    except Exception as exc:
+        errors.append({"factory": "watchlist_research", "reason": str(exc)})
 
     generated_count = sum(factory.generated_count for factory in factories.values())
     skipped_count = sum(factory.skipped_count for factory in factories.values())
