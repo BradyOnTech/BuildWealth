@@ -6838,6 +6838,169 @@ def _market_condition_from_all_time_high(performance_percent: float | None) -> s
     return "NEUTRAL_MARKET"
 
 
+def _bool_from_payload(payload: dict[str, Any], key: str) -> bool:
+    return bool(payload.get(key))
+
+
+def _list_from_payload(payload: dict[str, Any], key: str) -> list[Any]:
+    value = payload.get(key)
+    return value if isinstance(value, list) else []
+
+
+def _watchlist_market_payload_from_evidence_packet(
+    *,
+    symbol: str,
+    period: str,
+    interval: str,
+) -> dict[str, Any]:
+    packet = research_service.evidence_packet(symbol=symbol, period=period, interval=interval)
+    coverage = packet.coverage if isinstance(packet.coverage, dict) else {}
+    freshness = packet.freshness if isinstance(packet.freshness, dict) else {}
+    metrics = packet.metrics if isinstance(packet.metrics, dict) else {}
+    risk = packet.risk if isinstance(packet.risk, dict) else {}
+    quality = packet.quality if isinstance(packet.quality, dict) else {}
+    provenance = packet.provenance if isinstance(packet.provenance, dict) else {}
+
+    history_records = int(_coerce_float(provenance.get("history_records"), 0.0))
+    quote_price = _extract_numeric_field(metrics, ("last_price", "quote_price", "price"))
+    all_time_high = _extract_numeric_field(risk, ("all_time_high",))
+    drawdown_from_high_pct = _extract_numeric_field(risk, ("drawdown_from_high_pct",))
+    if quote_price is not None and drawdown_from_high_pct is not None and drawdown_from_high_pct > -100:
+        denominator = 1.0 + (drawdown_from_high_pct / 100.0)
+        if all_time_high is None and denominator > 0:
+            all_time_high = quote_price / denominator
+
+    warnings = [
+        str(item).strip()
+        for item in [
+            *_list_from_payload(coverage, "warnings"),
+            *_list_from_payload(provenance, "warnings"),
+        ]
+        if str(item).strip()
+    ]
+
+    return {
+        "quote_available": _bool_from_payload(coverage, "quote_available"),
+        "quote_message": str(coverage.get("quote_message") or ""),
+        "quote_price": quote_price,
+        "quote_change_pct": _extract_numeric_field(metrics, ("day_change_pct", "quote_change_pct")),
+        "history_available": _bool_from_payload(coverage, "history_available"),
+        "history_message": str(coverage.get("history_message") or ""),
+        "period_first_close": _extract_numeric_field(metrics, ("period_first_close",)),
+        "period_last_close": _extract_numeric_field(metrics, ("period_last_close",)),
+        "period_change_pct": _extract_numeric_field(metrics, ("period_change_pct",)),
+        "all_time_high": all_time_high,
+        "performance_from_high_pct": drawdown_from_high_pct,
+        "trend50d": str(risk.get("trend50d") or "UNKNOWN"),
+        "trend200d": str(risk.get("trend200d") or "UNKNOWN"),
+        "history_records": history_records,
+        "research_evidence_packet_id": packet.packet_id,
+        "research_provider": packet.provider,
+        "research_freshness_status": str(freshness.get("status") or ""),
+        "research_confidence": str(quality.get("confidence") or ""),
+        "research_coverage_score": _extract_numeric_field(quality, ("coverage_score",)),
+        "research_blocking_gaps": [str(item) for item in _list_from_payload(quality, "blocking_gaps")],
+        "warnings": warnings,
+    }
+
+
+def _watchlist_market_payload_from_legacy_research(
+    *,
+    symbol: str,
+    period: str,
+    interval: str,
+) -> dict[str, Any]:
+    quote_response = research_service.quote(symbol=symbol)
+    quote_row = quote_response.records[0] if quote_response.records else {}
+    if not isinstance(quote_row, dict):
+        quote_row = {}
+    quote_price = _extract_numeric_field(
+        quote_row,
+        (
+            "last",
+            "price",
+            "close",
+            "adj_close",
+            "regular_market_price",
+            "post_market_price",
+        ),
+    )
+    quote_change_pct = _extract_numeric_field(
+        quote_row,
+        (
+            "change_percent",
+            "change_pct",
+            "percent_change",
+            "regular_market_change_percent",
+        ),
+    )
+
+    history_response = research_service.price_history(
+        symbol=symbol,
+        period=period,
+        interval=interval,
+    )
+    history_records = [row for row in history_response.records if isinstance(row, dict)]
+    first_close, last_close, period_change_pct = _compute_price_history_change(history_records)
+    close_series_desc = _history_close_series_desc(history_records)
+    trend_50d = _calculate_benchmark_trend(closes_desc=close_series_desc, days=50)
+    trend_200d = _calculate_benchmark_trend(closes_desc=close_series_desc, days=200)
+    all_time_high = max(close_series_desc) if close_series_desc else None
+    performance_from_high_pct = None
+    if all_time_high and quote_price is not None and all_time_high > 0:
+        performance_from_high_pct = ((quote_price - all_time_high) / all_time_high) * 100.0
+
+    warnings: list[str] = []
+    if not quote_response.available:
+        warnings.append(f"{symbol}: quote unavailable ({quote_response.message})")
+    if not history_response.available:
+        warnings.append(f"{symbol}: history unavailable ({history_response.message})")
+
+    return {
+        "quote_available": quote_response.available,
+        "quote_message": quote_response.message,
+        "quote_price": quote_price,
+        "quote_change_pct": quote_change_pct,
+        "history_available": history_response.available,
+        "history_message": history_response.message,
+        "period_first_close": first_close,
+        "period_last_close": last_close,
+        "period_change_pct": period_change_pct,
+        "all_time_high": all_time_high,
+        "performance_from_high_pct": performance_from_high_pct,
+        "trend50d": trend_50d,
+        "trend200d": trend_200d,
+        "history_records": len(history_records),
+        "research_evidence_packet_id": None,
+        "research_provider": None,
+        "research_freshness_status": None,
+        "research_confidence": None,
+        "research_coverage_score": None,
+        "research_blocking_gaps": [],
+        "warnings": warnings,
+    }
+
+
+def _build_watchlist_market_payload(
+    *,
+    symbol: str,
+    period: str,
+    interval: str,
+) -> dict[str, Any]:
+    try:
+        return _watchlist_market_payload_from_evidence_packet(
+            symbol=symbol,
+            period=period,
+            interval=interval,
+        )
+    except AttributeError:
+        return _watchlist_market_payload_from_legacy_research(
+            symbol=symbol,
+            period=period,
+            interval=interval,
+        )
+
+
 WATCHLIST_SCORE_MODEL_VERSION = "watchlist_v1"
 
 
@@ -6977,50 +7140,12 @@ def build_portfolio_watchlist_payload(
         if not symbol:
             continue
 
-        quote_response = research_service.quote(symbol=symbol)
-        quote_row = quote_response.records[0] if quote_response.records else {}
-        if not isinstance(quote_row, dict):
-            quote_row = {}
-        quote_price = _extract_numeric_field(
-            quote_row,
-            (
-                "last",
-                "price",
-                "close",
-                "adj_close",
-                "regular_market_price",
-                "post_market_price",
-            ),
-        )
-        quote_change_pct = _extract_numeric_field(
-            quote_row,
-            (
-                "change_percent",
-                "change_pct",
-                "percent_change",
-                "regular_market_change_percent",
-            ),
-        )
-
-        history_response = research_service.price_history(
+        market_payload = _build_watchlist_market_payload(
             symbol=symbol,
             period=period_value,
             interval=interval_value,
         )
-        history_records = [row for row in history_response.records if isinstance(row, dict)]
-        first_close, last_close, period_change_pct = _compute_price_history_change(history_records)
-        close_series_desc = _history_close_series_desc(history_records)
-        trend_50d = _calculate_benchmark_trend(closes_desc=close_series_desc, days=50)
-        trend_200d = _calculate_benchmark_trend(closes_desc=close_series_desc, days=200)
-        all_time_high = max(close_series_desc) if close_series_desc else None
-        performance_from_high_pct = None
-        if all_time_high and quote_price is not None and all_time_high > 0:
-            performance_from_high_pct = ((quote_price - all_time_high) / all_time_high) * 100.0
-
-        if not quote_response.available:
-            warnings.append(f"{symbol}: quote unavailable ({quote_response.message})")
-        if not history_response.available:
-            warnings.append(f"{symbol}: history unavailable ({history_response.message})")
+        warnings.extend(str(item) for item in market_payload.get("warnings", []) if str(item).strip())
 
         target_price = _extract_numeric_field(
             item,
@@ -7031,16 +7156,16 @@ def build_portfolio_watchlist_payload(
             ),
         )
         score_payload = _build_watchlist_rank_score(
-            quote_available=quote_response.available,
-            history_available=history_response.available,
-            quote_price=quote_price,
-            quote_change_pct=quote_change_pct,
-            period_change_pct=period_change_pct,
-            trend_50d=trend_50d,
-            trend_200d=trend_200d,
+            quote_available=bool(market_payload.get("quote_available")),
+            history_available=bool(market_payload.get("history_available")),
+            quote_price=market_payload.get("quote_price"),
+            quote_change_pct=market_payload.get("quote_change_pct"),
+            period_change_pct=market_payload.get("period_change_pct"),
+            trend_50d=str(market_payload.get("trend50d") or "UNKNOWN"),
+            trend_200d=str(market_payload.get("trend200d") or "UNKNOWN"),
             target_price_usd=target_price,
-            performance_from_high_pct=performance_from_high_pct,
-            history_records=len(history_records),
+            performance_from_high_pct=market_payload.get("performance_from_high_pct"),
+            history_records=int(market_payload.get("history_records") or 0),
         )
 
         rows.append(
@@ -7053,22 +7178,32 @@ def build_portfolio_watchlist_payload(
                 "tags": item.get("tags") if isinstance(item.get("tags"), list) else [],
                 "created_at": item.get("created_at"),
                 "updated_at": item.get("updated_at"),
-                "quote_available": quote_response.available,
-                "quote_message": quote_response.message,
-                "quote_price": quote_price,
-                "quote_change_pct": quote_change_pct,
-                "history_available": history_response.available,
-                "history_message": history_response.message,
+                "quote_available": bool(market_payload.get("quote_available")),
+                "quote_message": str(market_payload.get("quote_message") or ""),
+                "quote_price": market_payload.get("quote_price"),
+                "quote_change_pct": market_payload.get("quote_change_pct"),
+                "history_available": bool(market_payload.get("history_available")),
+                "history_message": str(market_payload.get("history_message") or ""),
                 "period_label": period_value,
-                "period_first_close": first_close,
-                "period_last_close": last_close,
-                "period_change_pct": period_change_pct,
-                "all_time_high": all_time_high,
-                "performance_from_high_pct": performance_from_high_pct,
-                "market_condition": _market_condition_from_all_time_high(performance_from_high_pct),
-                "trend50d": trend_50d,
-                "trend200d": trend_200d,
-                "history_records": len(history_records),
+                "period_first_close": market_payload.get("period_first_close"),
+                "period_last_close": market_payload.get("period_last_close"),
+                "period_change_pct": market_payload.get("period_change_pct"),
+                "all_time_high": market_payload.get("all_time_high"),
+                "performance_from_high_pct": market_payload.get("performance_from_high_pct"),
+                "market_condition": _market_condition_from_all_time_high(
+                    market_payload.get("performance_from_high_pct")
+                ),
+                "trend50d": str(market_payload.get("trend50d") or "UNKNOWN"),
+                "trend200d": str(market_payload.get("trend200d") or "UNKNOWN"),
+                "history_records": int(market_payload.get("history_records") or 0),
+                "research_evidence_packet_id": market_payload.get("research_evidence_packet_id"),
+                "research_provider": market_payload.get("research_provider"),
+                "research_freshness_status": market_payload.get("research_freshness_status"),
+                "research_confidence": market_payload.get("research_confidence"),
+                "research_coverage_score": market_payload.get("research_coverage_score"),
+                "research_blocking_gaps": market_payload.get("research_blocking_gaps")
+                if isinstance(market_payload.get("research_blocking_gaps"), list)
+                else [],
                 "watchlist_rank": None,
                 "watchlist_score_total": score_payload.get("total"),
                 "watchlist_score": score_payload,

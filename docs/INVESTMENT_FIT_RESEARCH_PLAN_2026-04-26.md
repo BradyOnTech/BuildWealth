@@ -442,6 +442,7 @@ Current progress:
 - Today research readiness samples the top holding and watchlist symbols through evidence packets.
 - Partial/degraded evidence now appears as a Today command-center warning or critical card before investment-fit advice is built on it.
 - Today research readiness uses a bounded in-memory packet cache, reports cached research age, and exposes a refresh action that clears/rebuilds the sampled evidence.
+- Watchlist ranking now consumes evidence packets first, preserves packet references/freshness/provider coverage on each row, and keeps legacy market metrics available for existing scoring/display paths.
 
 Done when:
 

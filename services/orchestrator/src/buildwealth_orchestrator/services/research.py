@@ -293,6 +293,30 @@ class OpenBBResearchService:
             return None
         return round(((close_values[-1] - high) / high) * 100.0, 4)
 
+    @classmethod
+    def _history_close_values(cls, records: list[dict[str, Any]]) -> list[float]:
+        close_values: list[float] = []
+        for row in records:
+            if not isinstance(row, dict):
+                continue
+            close = cls._extract_number(row, ("close", "adj_close", "last", "price"))
+            if close is not None:
+                close_values.append(close)
+        return close_values
+
+    @classmethod
+    def _history_trend(cls, records: list[dict[str, Any]], *, days: int) -> str:
+        closes_desc = list(reversed(cls._history_close_values(records)))
+        if len(closes_desc) < 2 * days:
+            return "UNKNOWN"
+        recent_avg = sum(closes_desc[:days]) / float(days)
+        past_avg = sum(closes_desc[days : 2 * days]) / float(days)
+        if recent_avg > past_avg:
+            return "UP"
+        if recent_avg < past_avg:
+            return "DOWN"
+        return "NEUTRAL"
+
     @staticmethod
     def _evidence_freshness_status(*, quote_available: bool, history_available: bool) -> str:
         if quote_available and history_available:
@@ -801,6 +825,9 @@ class OpenBBResearchService:
         available_endpoints = sum(1 for item in (quote_available, history_available) if item)
         generated_at = datetime.now(timezone.utc)
 
+        close_values = self._history_close_values(history_response.records)
+        all_time_high = max(close_values) if close_values else None
+
         return ResearchEvidencePacket(
             packet_id=f"research-evidence:{self.provider}:{normalized_symbol}:{resolved_period}:{resolved_interval}",
             symbol=normalized_symbol,
@@ -848,6 +875,9 @@ class OpenBBResearchService:
             },
             risk={
                 "drawdown_from_high_pct": self._drawdown_from_high_pct(history_response.records),
+                "all_time_high": all_time_high,
+                "trend50d": self._history_trend(history_response.records, days=50),
+                "trend200d": self._history_trend(history_response.records, days=200),
                 "volatility_pct": round(volatility_pct, 4) if volatility_pct is not None else None,
                 "data_gaps": blocking_gaps,
             },

@@ -217,6 +217,9 @@ def test_research_service_evidence_packet_full_data_is_fresh_and_inspectable(mon
     assert packet.metrics["period_change_pct"] == 20.0
     assert packet.metrics["dividend_yield_pct"] == 0.5
     assert packet.risk["drawdown_from_high_pct"] == 0.0
+    assert packet.risk["all_time_high"] == 120.0
+    assert packet.risk["trend50d"] == "UNKNOWN"
+    assert packet.risk["trend200d"] == "UNKNOWN"
     assert packet.quality["confidence"] == "high"
     assert packet.quality["blocking_gaps"] == []
     assert packet.provenance["quote_records"] == 1

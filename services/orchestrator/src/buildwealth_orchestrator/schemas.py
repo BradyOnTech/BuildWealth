@@ -879,6 +879,12 @@ class WatchlistRankItem(BaseModel):
     trend50d: str = "UNKNOWN"
     trend200d: str = "UNKNOWN"
     history_records: int = 0
+    research_evidence_packet_id: str | None = None
+    research_provider: str | None = None
+    research_freshness_status: str | None = None
+    research_confidence: str | None = None
+    research_coverage_score: float | None = None
+    research_blocking_gaps: list[str] = Field(default_factory=list)
     watchlist_rank: int | None = None
     watchlist_score_total: float | None = None
     watchlist_score: dict[str, Any] = Field(default_factory=dict)
