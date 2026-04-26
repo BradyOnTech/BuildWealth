@@ -36,9 +36,19 @@ async function staticResponse(pathname) {
 }
 
 test('Copilot guides profile setup, renders a draft, and applies the reviewed patch', async ({ page }) => {
-  let chatPayload = null;
+  const chatPayloads = [];
   let onboardingStatusCalls = 0;
   let savedProfile = null;
+  const baseProfile = {
+    income_items: [],
+    expense_items: [],
+    debt_items: [{ id: 'debt_keep', label: 'Student loan', balance_usd: 5000 }],
+    goal_items: [],
+    physical_assets: [],
+    tax_profile: { filing_status: 'single' },
+    flags: { no_debt: false },
+    notes: 'Keep this note.',
+  };
 
   await page.route('**/*', async route => {
     const request = route.request();
@@ -89,9 +99,59 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
     }
 
     if (url.pathname === '/api/copilot/chat' && request.method() === 'POST') {
-      chatPayload = request.postDataJSON();
+      const chatPayload = request.postDataJSON();
+      chatPayloads.push(chatPayload);
+      const isGoalPrompt = /add financial goals/i.test(chatPayload.question || '');
+      const toolResult = isGoalPrompt
+        ? {
+            draft_kind: 'financial_profile_update',
+            summary: 'Drafted a financial goal for review.',
+            section_counts: { goal_items: 1 },
+            patch_payload: {
+              goal_items: [{
+                id: 'goal_home_down_payment',
+                label: 'Home down payment',
+                target_amount_usd: 80000,
+                target_date: '2028-06-01T00:00:00.000Z',
+                priority: 'high',
+                notes: 'Keep this goal separate from emergency reserves.',
+              }],
+            },
+            proposed_profile: {
+              ...(savedProfile || baseProfile),
+              goal_items: [{
+                id: 'goal_home_down_payment',
+                label: 'Home down payment',
+                target_amount_usd: 80000,
+                target_date: '2028-06-01T00:00:00.000Z',
+                priority: 'high',
+                notes: 'Keep this goal separate from emergency reserves.',
+              }],
+            },
+            requires_confirmation: true,
+          }
+        : {
+            draft_kind: 'financial_profile_update',
+            summary: 'Drafted profile updates for income and expenses.',
+            section_counts: { income_items: 1, expense_items: 1 },
+            patch_payload: {
+              income_items: [{ id: 'income_salary', label: 'Salary', monthly_amount_usd: 11000 }],
+              expense_items: [{ id: 'expense_rent', label: 'Rent', monthly_amount_usd: 2600 }],
+            },
+            proposed_profile: {
+              income_items: [{ id: 'income_salary', label: 'Salary', monthly_amount_usd: 11000 }],
+              expense_items: [{ id: 'expense_rent', label: 'Rent', monthly_amount_usd: 2600 }],
+              debt_items: [],
+              goal_items: [],
+              physical_assets: [],
+              tax_profile: {},
+              flags: {},
+              notes: '',
+            },
+            requires_confirmation: true,
+          };
       await route.fulfill(jsonResponse({
-        conversation_id: 'conversation-profile-setup',
+        conversation_id: isGoalPrompt ? 'conversation-goal-setup' : 'conversation-profile-setup',
         answer: 'I drafted a profile update for your review.',
         created_at: '2026-04-26T12:00:00.000Z',
         model: 'browser-test',
@@ -99,26 +159,7 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
           {
             name: 'draft_financial_profile_update',
             arguments: {},
-            result: {
-              draft_kind: 'financial_profile_update',
-              summary: 'Drafted profile updates for income and expenses.',
-              section_counts: { income_items: 1, expense_items: 1 },
-              patch_payload: {
-                income_items: [{ id: 'income_salary', label: 'Salary', monthly_amount_usd: 11000 }],
-                expense_items: [{ id: 'expense_rent', label: 'Rent', monthly_amount_usd: 2600 }],
-              },
-              proposed_profile: {
-                income_items: [{ id: 'income_salary', label: 'Salary', monthly_amount_usd: 11000 }],
-                expense_items: [{ id: 'expense_rent', label: 'Rent', monthly_amount_usd: 2600 }],
-                debt_items: [],
-                goal_items: [],
-                physical_assets: [],
-                tax_profile: {},
-                flags: {},
-                notes: '',
-              },
-              requires_confirmation: true,
-            },
+            result: toolResult,
           },
         ],
       }));
@@ -126,16 +167,7 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
     }
 
     if (url.pathname === '/api/financial-profile' && request.method() === 'GET') {
-      await route.fulfill(jsonResponse({
-        income_items: [],
-        expense_items: [],
-        debt_items: [{ id: 'debt_keep', label: 'Student loan', balance_usd: 5000 }],
-        goal_items: [],
-        physical_assets: [],
-        tax_profile: { filing_status: 'single' },
-        flags: { no_debt: false },
-        notes: 'Keep this note.',
-      }));
+      await route.fulfill(jsonResponse(savedProfile || baseProfile));
       return;
     }
 
@@ -166,9 +198,9 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
   await page.getByText('$11,000').waitFor({ state: 'visible' });
   await page.getByText('$2,600').waitFor({ state: 'visible' });
 
-  assert.ok(chatPayload, 'expected Copilot chat request to be sent');
-  assert.match(chatPayload.question, /Help me fill out my financial profile/);
-  assert.equal(chatPayload.use_live_snapshot, false);
+  assert.equal(chatPayloads.length, 1);
+  assert.match(chatPayloads[0].question, /Help me fill out my financial profile/);
+  assert.equal(chatPayloads[0].use_live_snapshot, false);
 
   await page.getByRole('button', { name: /apply profile update/i }).click();
   await page.getByText('Profile update applied').waitFor({ state: 'visible' });
@@ -200,4 +232,28 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
   assert.match(goalsDraft, /target_date/);
   assert.match(goalsDraft, /priority/);
   assert.match(goalsDraft, /do not save anything/i);
+
+  await page.locator('#composer-submit').click();
+  await page.getByText('Home down payment').waitFor({ state: 'visible' });
+  await page.getByText('$80,000').waitFor({ state: 'visible' });
+  await page.getByText('Target Jun 1, 2028 · High priority').waitFor({ state: 'visible' });
+  await page.getByText('Keep this goal separate from emergency reserves.').waitFor({ state: 'visible' });
+
+  assert.equal(chatPayloads.length, 2);
+  assert.match(chatPayloads[1].question, /Help me add financial goals/);
+
+  await page.locator('[data-profile-draft]').last().click();
+  await page.getByText('Profile update applied').last().waitFor({ state: 'visible' });
+
+  assert.deepEqual(savedProfile.goal_items, [{
+    id: 'goal_home_down_payment',
+    label: 'Home down payment',
+    target_amount_usd: 80000,
+    target_date: '2028-06-01T00:00:00.000Z',
+    priority: 'high',
+    notes: 'Keep this goal separate from emergency reserves.',
+  }]);
+  assert.deepEqual(savedProfile.income_items, [
+    { id: 'income_salary', label: 'Salary', monthly_amount_usd: 11000 },
+  ]);
 });

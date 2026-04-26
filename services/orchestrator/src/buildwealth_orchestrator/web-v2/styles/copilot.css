@@ -524,6 +524,27 @@
   font-weight: 500;
 }
 
+.profile-draft-section li.profile-draft-goal {
+  display: grid;
+  gap: var(--s-1);
+}
+
+.profile-draft-goal-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-4);
+}
+
+.profile-draft-meta {
+  font-family: var(--mono);
+  font-size: var(--t-caption);
+  color: var(--ink-faint);
+}
+
+.profile-draft-note {
+  color: var(--ink-soft);
+}
+
 .profile-draft-flag {
   color: var(--forest);
   font-family: var(--serif);

@@ -30,7 +30,13 @@ test('copilot thread renders financial profile draft review card', () => {
                 income_items: [{ label: 'Salary', monthly_amount_usd: 11000 }],
                 expense_items: [{ label: 'Rent', monthly_amount_usd: 2600 }],
                 debt_items: [],
-                goal_items: [],
+                goal_items: [{
+                  label: 'Home down payment',
+                  target_amount_usd: 80000,
+                  target_date: '2028-06-01T00:00:00.000Z',
+                  priority: 'high',
+                  notes: 'Keep the goal separate from emergency reserves.',
+                }],
                 physical_assets: [],
                 tax_profile: {},
                 flags: { no_debt: true },
@@ -49,6 +55,11 @@ test('copilot thread renders financial profile draft review card', () => {
   assert.match(html, /\$11,000/);
   assert.match(html, /Expense items/);
   assert.match(html, /\$2,600/);
+  assert.match(html, /Home down payment/);
+  assert.match(html, /\$80,000/);
+  assert.match(html, /Jun 1, 2028/);
+  assert.match(html, /High priority/);
+  assert.match(html, /Keep the goal separate from emergency reserves\./);
   assert.match(html, /No debt/);
   assert.match(html, /data-profile-draft=/);
   assert.match(html, /Apply profile update/);

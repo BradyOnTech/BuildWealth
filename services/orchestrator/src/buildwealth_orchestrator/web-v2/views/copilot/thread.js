@@ -7,6 +7,7 @@ import { renderMarkdown } from './markdown.js';
 const TIME_FMT = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 const DAY_FMT = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 const MONEY_FMT = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const GOAL_DATE_FMT = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
 export function renderThread(messages, { thinking } = {}) {
   if (!messages.length && !thinking) return '';
@@ -76,7 +77,7 @@ function renderProfileDraftCard(result) {
     renderItemSection('Income items', profile.income_items, 'monthly_amount_usd'),
     renderItemSection('Expense items', profile.expense_items, 'monthly_amount_usd'),
     renderItemSection('Debt items', profile.debt_items, 'balance_usd'),
-    renderItemSection('Goal items', profile.goal_items, 'target_amount_usd'),
+    renderGoalSection(profile.goal_items),
   ].filter(Boolean);
   const flagLine = profile.flags?.no_debt
     ? html`<p class="profile-draft-flag">No debt</p>`
@@ -114,6 +115,48 @@ function renderItemSection(title, items, amountKey) {
       </ul>
     </div>
   `;
+}
+
+function renderGoalSection(items) {
+  if (!Array.isArray(items) || !items.length) return '';
+  return html`
+    <div class="profile-draft-section">
+      <p class="profile-draft-section-title">Goal items</p>
+      <ul>
+        ${items.slice(0, 4).map(item => {
+          const amount = item?.target_amount_usd != null
+            ? MONEY_FMT.format(Number(item.target_amount_usd) || 0)
+            : '';
+          const details = [
+            item?.target_date ? `Target ${formatGoalDate(item.target_date)}` : '',
+            item?.priority ? `${titleCase(item.priority)} priority` : '',
+          ].filter(Boolean);
+          return html`
+            <li class="profile-draft-goal">
+              <div class="profile-draft-goal-row">
+                <span>${item?.label || 'Untitled goal'}</span>
+                ${amount ? html`<b>${amount}</b>` : ''}
+              </div>
+              ${details.length ? html`<p class="profile-draft-meta">${details.join(' · ')}</p>` : ''}
+              ${item?.notes ? html`<p class="profile-draft-note">${item.notes}</p>` : ''}
+            </li>
+          `;
+        })}
+      </ul>
+    </div>
+  `;
+}
+
+function formatGoalDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return GOAL_DATE_FMT.format(date);
+}
+
+function titleCase(value) {
+  const text = String(value || '').replace(/[_-]+/g, ' ').trim();
+  if (!text) return '';
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function formatTrace(trace) {
