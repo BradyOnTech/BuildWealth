@@ -27,19 +27,20 @@ export function template() {
   `;
 }
 
-export async function init() {
-  await load();
+export async function init(params = {}) {
+  await load(params);
 }
 
-async function load() {
+async function load(params = {}) {
   const root = $('#today-page');
   if (!root) return;
 
   let payload = null;
   let engines = null;
   try {
+    const shouldRefreshResearch = String(params.refresh || '').toLowerCase() === 'research';
     [payload, engines] = await Promise.all([
-      api.today(),
+      shouldRefreshResearch ? api.refreshTodayResearch() : api.today(),
       api.engines().catch(() => null),
     ]);
     state.today = payload;
@@ -63,6 +64,9 @@ async function load() {
     ${raw(renderMove(payload))}
     ${raw(renderRoom(payload, engines))}
   `);
+  if (String(params.refresh || '').toLowerCase() === 'research') {
+    history.replaceState(null, '', '#today');
+  }
 }
 
 /* ─────────────  THE STANDING (hero)  ───────────── */

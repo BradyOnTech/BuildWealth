@@ -57,6 +57,7 @@ function recommendationsUrl({ status = '', planId = '', sort = 'ranked', limit =
 
 export const api = {
   today:        () => fetchJson('/api/dashboard/today'),
+  refreshTodayResearch: () => postJson('/api/dashboard/today/research-readiness/refresh', {}),
   engines:      () => fetchJson('/api/engines/status'),
   telemetry:    () => fetchJson('/api/telemetry/runtime'),
   syncStatus:   () => fetchJson('/api/sync/status'),

@@ -55,6 +55,16 @@ test('today command cards render decision state with actions', () => {
         action_label: 'Review assumptions',
         href: '#inbox?focus=rec-stale',
       },
+      {
+        id: 'research-readiness',
+        title: 'Research readiness',
+        status: 'ready',
+        detail: 'Research evidence is fresh. Cached research age: <1m.',
+        metric_label: 'Ready',
+        metric_value: '2/2',
+        action_label: 'Refresh research',
+        href: '#today?refresh=research',
+      },
     ],
   }, {
     enabled_count: 2,
@@ -70,6 +80,8 @@ test('today command cards render decision state with actions', () => {
   assert.match(markup, /40%/);
   assert.match(markup, /Stale assumptions/);
   assert.match(markup, /href="#inbox\?focus=rec-stale"/);
+  assert.match(markup, /Research readiness/);
+  assert.match(markup, /href="#today\?refresh=research"/);
   assert.match(markup, /Engine health/);
   assert.match(markup, /1\/2/);
   assert.match(markup, /3 degraded event/);

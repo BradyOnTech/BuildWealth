@@ -335,6 +335,7 @@ def test_today_command_cards_include_research_readiness_from_evidence_packets(
     monkeypatch.setattr(main, "recommendation_inbox", inbox)
     monkeypatch.setattr(main, "portfolio_store", FakePortfolioStore())
     monkeypatch.setattr(main, "research_service", FakeResearchService())
+    main.today_research_evidence_cache.clear()
 
     dashboard = main.TodayDashboardResponse(
         generated_at=main.utc_now(),
@@ -354,8 +355,8 @@ def test_today_command_cards_include_research_readiness_from_evidence_packets(
     assert cards["research-readiness"].metric_label == "Ready"
     assert cards["research-readiness"].metric_value == "2/3"
     assert cards["research-readiness"].detail == "1 research symbol has partial or degraded evidence: NVDA."
-    assert cards["research-readiness"].action_label == "Review research"
-    assert cards["research-readiness"].href == "#portfolio?section=watchlist"
+    assert cards["research-readiness"].action_label == "Refresh research"
+    assert cards["research-readiness"].href == "#today?refresh=research"
 
 
 def test_today_command_cards_mark_research_provider_degraded(
@@ -391,6 +392,7 @@ def test_today_command_cards_mark_research_provider_degraded(
     monkeypatch.setattr(main, "recommendation_inbox", inbox)
     monkeypatch.setattr(main, "portfolio_store", FakePortfolioStore())
     monkeypatch.setattr(main, "research_service", FakeResearchService())
+    main.today_research_evidence_cache.clear()
 
     dashboard = main.TodayDashboardResponse(
         generated_at=main.utc_now(),
@@ -409,3 +411,118 @@ def test_today_command_cards_mark_research_provider_degraded(
     assert cards["research-readiness"].status == "critical"
     assert cards["research-readiness"].metric_value == "0/2"
     assert "degraded provider/data coverage" in cards["research-readiness"].detail
+
+
+def test_today_research_readiness_uses_cached_packets_with_age_and_refresh_action(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    calls: list[str] = []
+
+    class FakePortfolioStore:
+        def list_watchlist(self) -> list[dict[str, object]]:
+            return [{"symbol": "MSFT"}]
+
+    class FakeResearchService:
+        def evidence_packet(self, *, symbol: str, period: str = "6mo", interval: str = "1d"):
+            del period, interval
+            calls.append(symbol)
+            return main.ResearchEvidencePacket(
+                packet_id=f"research-evidence:yfinance:{symbol}:6mo:1d",
+                symbol=symbol,
+                provider="yfinance",
+                period="6mo",
+                interval="1d",
+                generated_at=main.utc_now(),
+                coverage={"quote_available": True, "history_available": True, "warnings": []},
+                freshness={"status": "fresh"},
+                quality={"confidence": "high", "blocking_gaps": []},
+                provenance={"warnings": []},
+            )
+
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    monkeypatch.setattr(main, "portfolio_store", FakePortfolioStore())
+    monkeypatch.setattr(main, "research_service", FakeResearchService())
+    main.today_research_evidence_cache.clear()
+
+    dashboard = main.TodayDashboardResponse(
+        generated_at=main.utc_now(),
+        currency="USD",
+        state="MN",
+        sync_status=main.SyncStatusResponse(running=False, runs_total=0, runs_failed=0),
+        top_holding_symbol="AAPL",
+        context_state="ready",
+        context_notes=[],
+        command_cards=[],
+        emergency_fund_months=8.0,
+    )
+
+    first_cards = {card.id: card for card in main._build_today_command_cards(dashboard)}
+    second_cards = {card.id: card for card in main._build_today_command_cards(dashboard)}
+
+    assert calls == ["AAPL", "MSFT"]
+    assert second_cards["research-readiness"].status == "ready"
+    assert second_cards["research-readiness"].metric_value == "2/2"
+    assert "cached research age" in second_cards["research-readiness"].detail.lower()
+    assert second_cards["research-readiness"].action_label == "Refresh research"
+    assert second_cards["research-readiness"].href == "#today?refresh=research"
+    assert first_cards["research-readiness"].metric_value == "2/2"
+
+
+def test_refresh_today_research_readiness_clears_packet_cache(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    calls: list[str] = []
+
+    class FakePortfolioStore:
+        def list_watchlist(self) -> list[dict[str, object]]:
+            return []
+
+    class FakeResearchService:
+        def evidence_packet(self, *, symbol: str, period: str = "6mo", interval: str = "1d"):
+            del period, interval
+            calls.append(symbol)
+            return main.ResearchEvidencePacket(
+                packet_id=f"research-evidence:yfinance:{symbol}:6mo:1d",
+                symbol=symbol,
+                provider="yfinance",
+                period="6mo",
+                interval="1d",
+                generated_at=main.utc_now(),
+                coverage={"quote_available": True, "history_available": True, "warnings": []},
+                freshness={"status": "fresh"},
+                quality={"confidence": "high", "blocking_gaps": []},
+                provenance={"warnings": []},
+            )
+
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    monkeypatch.setattr(main, "portfolio_store", FakePortfolioStore())
+    monkeypatch.setattr(main, "research_service", FakeResearchService())
+    main.today_research_evidence_cache.clear()
+
+    dashboard = main.TodayDashboardResponse(
+        generated_at=main.utc_now(),
+        currency="USD",
+        state="MN",
+        sync_status=main.SyncStatusResponse(running=False, runs_total=0, runs_failed=0),
+        top_holding_symbol="AAPL",
+        context_state="ready",
+        context_notes=[],
+        command_cards=[],
+        emergency_fund_months=8.0,
+    )
+    monkeypatch.setattr(main, "build_today_dashboard_response", lambda: dashboard)
+
+    main._build_today_command_cards(dashboard)
+    main._build_today_command_cards(dashboard)
+    assert calls == ["AAPL"]
+
+    refreshed = main.refresh_today_research_readiness()
+    refreshed.command_cards = main._build_today_command_cards(refreshed)
+
+    assert calls == ["AAPL", "AAPL"]
+    refreshed_cards = {card.id: card for card in refreshed.command_cards}
+    assert refreshed_cards["research-readiness"].metric_value == "1/1"

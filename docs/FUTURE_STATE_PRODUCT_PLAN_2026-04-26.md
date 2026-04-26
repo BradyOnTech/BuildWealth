@@ -301,7 +301,7 @@ High-level implementation:
 - add portfolio-impact hooks to research outputs
 - route selected research results into plan artifacts
 - allow research findings to generate recommendations through the factory contract
-- expose provenance and freshness in Today and Copilot context (started: Today research readiness now samples evidence packets for top/watchlist symbols)
+- expose provenance and freshness in Today and Copilot context (started: Today research readiness now uses cached evidence packets for top/watchlist symbols with an explicit refresh action)
 - test research-to-plan and research-to-recommendation flows
 
 Detailed domain plan:
@@ -551,11 +551,10 @@ Long-term:
 ## Current Immediate Next Work
 
 1. Add pending Copilot draft/review indicators to Today command cards.
-2. Extend Today research readiness with cached packet age and explicit refresh actions.
-3. Migrate compare/dossier/watchlist research surfaces to cite or consume evidence packets.
-4. Add richer provider freshness/coverage metadata around current OpenBB-backed research outputs.
-5. Define the first portfolio-fit assessment contract before generating investment-fit recommendations.
-6. Continue expanding browser coverage around Plan v2 migration as those surfaces move over.
+2. Migrate compare/dossier/watchlist research surfaces to cite or consume evidence packets.
+3. Add richer provider freshness/coverage metadata around current OpenBB-backed research outputs.
+4. Define the first portfolio-fit assessment contract before generating investment-fit recommendations.
+5. Continue expanding browser coverage around Plan v2 migration as those surfaces move over.
 
 ## Documentation Governance
 

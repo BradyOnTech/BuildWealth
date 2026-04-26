@@ -645,6 +645,7 @@ copilot = FinancialCopilot(
 )
 copilot_context_research_cache = ExpiringCache(max_entries=settings.copilot_context_cache_max_entries)
 copilot_context_projection_cache = ExpiringCache(max_entries=settings.copilot_context_cache_max_entries)
+today_research_evidence_cache = ExpiringCache(max_entries=64)
 runtime_telemetry_tracker = RuntimeTelemetryTracker()
 
 sync_lock = asyncio.Lock()
@@ -3862,6 +3863,56 @@ def _build_today_command_cards(dashboard: TodayDashboardResponse) -> list[TodayC
     return cards
 
 
+TODAY_RESEARCH_EVIDENCE_CACHE_TTL_SECONDS = 15 * 60
+
+
+def _research_evidence_cache_key(symbol: str, period: str = "6mo", interval: str = "1d") -> str:
+    normalized_symbol = re.sub(r"[^A-Z0-9._-]+", "", str(symbol or "").strip().upper())
+    return f"today-research-evidence:{normalized_symbol}:{period}:{interval}"
+
+
+def _cached_research_evidence_packet(
+    *,
+    symbol: str,
+    period: str = "6mo",
+    interval: str = "1d",
+    force_refresh: bool = False,
+) -> tuple[ResearchEvidencePacket, datetime, bool]:
+    cache_key = _research_evidence_cache_key(symbol, period=period, interval=interval)
+    if not force_refresh:
+        hit, cached_payload = today_research_evidence_cache.lookup(cache_key)
+        if hit and isinstance(cached_payload, dict):
+            packet_payload = cached_payload.get("packet")
+            cached_at = _parse_utc_datetime(cached_payload.get("cached_at"))
+            if isinstance(packet_payload, dict) and cached_at is not None:
+                return ResearchEvidencePacket(**packet_payload), cached_at, True
+
+    packet = research_service.evidence_packet(symbol=symbol, period=period, interval=interval)
+    cached_at = utc_now()
+    today_research_evidence_cache.set(
+        cache_key,
+        {
+            "cached_at": cached_at.isoformat(),
+            "packet": packet.model_dump(mode="json"),
+        },
+        ttl_seconds=TODAY_RESEARCH_EVIDENCE_CACHE_TTL_SECONDS,
+    )
+    return packet, cached_at, False
+
+
+def _format_research_cache_age(cached_at_values: list[datetime]) -> str:
+    if not cached_at_values:
+        return "unknown"
+    oldest_cached_at = min(cached_at_values)
+    age_minutes = max(0, int((utc_now() - oldest_cached_at).total_seconds() // 60))
+    if age_minutes < 1:
+        return "<1m"
+    if age_minutes < 60:
+        return f"{age_minutes}m"
+    age_hours = age_minutes // 60
+    return f"{age_hours}h"
+
+
 def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) -> TodayCommandCard:
     symbols: list[str] = []
     seen: set[str] = set()
@@ -3900,9 +3951,15 @@ def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) ->
     weak_symbols: list[str] = []
     degraded_symbols: list[str] = []
     provider_failures: list[str] = []
+    cached_at_values: list[datetime] = []
     for symbol in symbols:
         try:
-            packet = research_service.evidence_packet(symbol=symbol, period="6mo", interval="1d")
+            packet, cached_at, _cache_hit = _cached_research_evidence_packet(
+                symbol=symbol,
+                period="6mo",
+                interval="1d",
+            )
+            cached_at_values.append(cached_at)
         except Exception:
             provider_failures.append(symbol)
             continue
@@ -3925,6 +3982,7 @@ def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) ->
 
     ready_count = len(ready_symbols)
     total_count = len(symbols)
+    cache_age = _format_research_cache_age(cached_at_values)
     if degraded_symbols:
         degraded_label = ", ".join(degraded_symbols[:3])
         extra = "" if len(degraded_symbols) <= 3 else f" +{len(degraded_symbols) - 3} more"
@@ -3938,8 +3996,8 @@ def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) ->
             ),
             metric_label="Ready",
             metric_value=f"{ready_count}/{total_count}",
-            action_label="Review research",
-            href="#portfolio?section=watchlist",
+            action_label="Refresh research",
+            href="#today?refresh=research",
         )
 
     if provider_failures:
@@ -3955,8 +4013,8 @@ def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) ->
             ),
             metric_label="Ready",
             metric_value=f"{ready_count}/{total_count}",
-            action_label="Review research",
-            href="#portfolio?section=watchlist",
+            action_label="Refresh research",
+            href="#today?refresh=research",
         )
 
     if weak_symbols:
@@ -3973,19 +4031,22 @@ def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) ->
             ),
             metric_label="Ready",
             metric_value=f"{ready_count}/{total_count}",
-            action_label="Review research",
-            href="#portfolio?section=watchlist",
+            action_label="Refresh research",
+            href="#today?refresh=research",
         )
 
     return TodayCommandCard(
         id="research-readiness",
         title="Research readiness",
         status="ready",
-        detail=f"Research evidence is fresh for {ready_count} tracked symbol(s).",
+        detail=(
+            f"Research evidence is fresh for {ready_count} tracked symbol(s). "
+            f"Cached research age: {cache_age}."
+        ),
         metric_label="Ready",
         metric_value=f"{ready_count}/{total_count}",
-        action_label="Open research",
-        href="#portfolio?section=watchlist",
+        action_label="Refresh research",
+        href="#today?refresh=research",
     )
 
 
@@ -11418,6 +11479,12 @@ def get_runtime_telemetry() -> RuntimeTelemetryResponse:
 
 @app.get("/api/dashboard/today", response_model=TodayDashboardResponse)
 def today_dashboard() -> TodayDashboardResponse:
+    return build_today_dashboard_response()
+
+
+@app.post("/api/dashboard/today/research-readiness/refresh", response_model=TodayDashboardResponse)
+def refresh_today_research_readiness() -> TodayDashboardResponse:
+    today_research_evidence_cache.clear()
     return build_today_dashboard_response()
 
 
