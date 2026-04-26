@@ -11,6 +11,7 @@ from buildwealth_orchestrator.services.recommendation_factory import (
     generate_plan_tracking_recommendations,
     generate_portfolio_risk_recommendations,
     generate_profile_completeness_recommendations,
+    generate_stale_assumption_recommendations,
 )
 from buildwealth_orchestrator.services.recommendation_inbox import RecommendationInbox
 
@@ -392,6 +393,115 @@ def _plan_tracking_payload() -> dict[str, object]:
     }
 
 
+def _stale_plan_detail() -> dict[str, object]:
+    return {
+        "id": "plan-1",
+        "title": "Primary Plan",
+        "updated_at": "2025-12-15T12:00:00+00:00",
+        "settings": {
+            "annual_contribution_usd": 18_000.0,
+            "expected_return_baseline": 0.065,
+            "expected_return_optimistic": 0.095,
+            "expected_return_conservative": 0.035,
+            "marginal_tax_rate": None,
+        },
+        "decisions": [
+            {
+                "id": "decision-1",
+                "title": "Initial assumptions",
+                "created_at": "2025-12-20T12:00:00+00:00",
+            }
+        ],
+        "artifacts": [],
+    }
+
+
+def _blocking_readiness_payload() -> dict[str, object]:
+    return {
+        "completion_percent": 58.0,
+        "status": "incomplete",
+        "next_gap_key": "tax_profile",
+        "next_gap_title": "Tax basics",
+        "next_gap_detail": "Tax basics are missing, which lowers confidence in plan and investment-fit guidance.",
+        "blocking_recommendation_sources": ["tax_planning", "investment_fit"],
+        "sections": [],
+    }
+
+
+def test_stale_assumption_factory_generates_review_and_context_candidates() -> None:
+    result = generate_stale_assumption_recommendations(
+        plan_detail_payload=_stale_plan_detail(),
+        plan_tracking_payload={
+            **_plan_tracking_payload(),
+            "status": "insufficient_data",
+            "snapshot_count": 1,
+            "tracking_window_days": 14,
+        },
+        profile_readiness_payload=_blocking_readiness_payload(),
+        existing_recommendations=[],
+        dry_run=True,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 5
+    titles = {candidate["title"] for candidate in result.candidates}
+    assert "Review stale assumptions for Primary Plan" in titles
+    assert "Review expected return assumptions for Primary Plan" in titles
+    assert "Complete tax basics before assumption review" in titles
+    assert "Refresh plan decision log for Primary Plan" in titles
+    assert "Build tracking history before trusting plan confidence" in titles
+
+    by_signal = {
+        candidate["action_payload"]["generator"]["signal_key"]: candidate
+        for candidate in result.candidates
+    }
+    stale_plan = by_signal["active_plan_stale"]
+    assert stale_plan["source"] == "generator:stale_assumptions"
+    assert stale_plan["action_payload"]["generator"]["dedupe_key"] == "stale_assumptions:plan-1:active_plan_stale"
+    assert stale_plan["action_payload"]["quality"]["actionability"] == "review_only"
+    assert stale_plan["action_payload"]["quality"]["decision_grade"] is True
+    assert stale_plan["action_payload"]["evidence"]["data_keys"] == [
+        "plan.detail",
+        "plan.settings",
+        "plan.tracking",
+        "financial_profile.readiness",
+    ]
+
+    tax_context = by_signal["profile_readiness_blocking:tax_profile"]
+    assert tax_context["action_payload"]["quality"]["actionability"] == "context_gathering"
+    assert tax_context["action_payload"]["quality"]["decision_grade"] is False
+    assert "financial_profile.tax_profile" in tax_context["action_payload"]["quality"]["blocking_context"]
+
+
+def test_stale_assumption_factory_apply_skips_duplicates(tmp_path: Path) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    first = generate_stale_assumption_recommendations(
+        plan_detail_payload=_stale_plan_detail(),
+        plan_tracking_payload=_plan_tracking_payload(),
+        profile_readiness_payload=_blocking_readiness_payload(),
+        existing_recommendations=inbox.list(limit=None, include_archived=True, sort="none"),
+        creator=inbox,
+        dry_run=False,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+    second = generate_stale_assumption_recommendations(
+        plan_detail_payload=_stale_plan_detail(),
+        plan_tracking_payload=_plan_tracking_payload(),
+        profile_readiness_payload=_blocking_readiness_payload(),
+        existing_recommendations=inbox.list(limit=None, include_archived=True, sort="none"),
+        creator=inbox,
+        dry_run=False,
+        now=datetime(2026, 4, 25, 12, 35, tzinfo=timezone.utc),
+    )
+
+    assert first.generated_count >= 3
+    assert len(first.created) == first.generated_count
+    assert second.generated_count == 0
+    assert second.created == []
+    assert second.skipped_count == first.generated_count
+    assert {item["reason"] for item in second.skipped} == {"active_duplicate"}
+
+
 def test_plan_tracking_factory_dry_run_generates_plan_specific_candidates() -> None:
     result = generate_plan_tracking_recommendations(
         plan_tracking_payload=_plan_tracking_payload(),
@@ -612,6 +722,38 @@ def test_generate_plan_tracking_route_supports_active_plan_dry_run_and_apply(
     assert len(inbox.list(limit=None, status="proposed")) == applied.generated_count
 
 
+def test_generate_stale_assumptions_route_supports_dry_run_and_apply(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    monkeypatch.setattr(main, "plan_workspace", _FakePlanWorkspace())
+    monkeypatch.setattr(main, "snapshot_store", _FakeSnapshotStore())
+    monkeypatch.setattr(main, "portfolio_store", _FakePortfolioStore(_holdings_payload()))
+    profile = _financial_profile_payload()
+    profile["tax_profile"] = {"filing_status": None, "marginal_tax_rate": None}
+    monkeypatch.setattr(main, "financial_profile_store", _FakeFinancialProfileStore(profile))
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    dry_run = main.generate_stale_assumption_recommendation_candidates(
+        main.StaleAssumptionRecommendationGenerateRequest(dry_run=True, limit=10),
+    )
+
+    assert dry_run.dry_run is True
+    assert dry_run.generated_count >= 1
+    assert all(item["source"] == "generator:stale_assumptions" for item in dry_run.candidates)
+    assert inbox.list(limit=None, status="proposed") == []
+
+    applied = main.generate_stale_assumption_recommendation_candidates(
+        main.StaleAssumptionRecommendationGenerateRequest(dry_run=False, limit=10),
+    )
+
+    assert applied.dry_run is False
+    assert applied.generated_count == dry_run.generated_count
+    assert len(applied.created) == applied.generated_count
+    assert len(inbox.list(limit=None, status="proposed")) == applied.generated_count
+
+
 def test_run_all_recommendation_factories_groups_results_and_applies(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -627,14 +769,21 @@ def test_run_all_recommendation_factories_groups_results_and_applies(
     )
 
     assert dry_run.dry_run is True
-    assert dry_run.factory_count == 4
     assert dry_run.errors == []
-    assert set(dry_run.factories) == {"portfolio_risk", "plan_tracking", "cash_liquidity", "profile_completeness"}
+    assert dry_run.factory_count == 5
+    assert set(dry_run.factories) == {
+        "portfolio_risk",
+        "plan_tracking",
+        "cash_liquidity",
+        "profile_completeness",
+        "stale_assumptions",
+    }
     assert dry_run.factories["portfolio_risk"].generated_count == 2
     assert dry_run.factories["plan_tracking"].generated_count == 2
     assert dry_run.factories["cash_liquidity"].generated_count == 1
     assert dry_run.factories["profile_completeness"].generated_count == 1
-    assert dry_run.generated_count == 6
+    assert dry_run.factories["stale_assumptions"].generated_count >= 1
+    assert dry_run.generated_count >= 7
     assert inbox.list(limit=None, status="proposed") == []
 
     applied = main.run_all_recommendation_factories(
@@ -642,10 +791,10 @@ def test_run_all_recommendation_factories_groups_results_and_applies(
     )
 
     assert applied.dry_run is False
-    assert applied.factory_count == 4
+    assert applied.factory_count == 5
     assert applied.errors == []
-    assert applied.generated_count == 6
-    assert len(inbox.list(limit=None, status="proposed")) == 6
+    assert applied.generated_count == dry_run.generated_count
+    assert len(inbox.list(limit=None, status="proposed")) == applied.generated_count
 
 
 class _NoActivePlanWorkspace:
@@ -674,5 +823,9 @@ def test_run_all_recommendation_factories_keeps_portfolio_results_when_plan_miss
         {
             "factory": "plan_tracking",
             "reason": "No active plan is configured and no plan_id was provided.",
-        }
+        },
+        {
+            "factory": "stale_assumptions",
+            "reason": "No active plan is configured and no plan_id was provided.",
+        },
     ]

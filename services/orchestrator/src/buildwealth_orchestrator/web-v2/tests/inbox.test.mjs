@@ -13,6 +13,14 @@ test('inbox newest sort control uses backend created_at sort value', () => {
   assert.doesNotMatch(source, /data-sort="newest"/);
 });
 
+test('inbox wires outcome preset buttons into outcome notes', () => {
+  const currentDir = dirname(fileURLToPath(import.meta.url));
+  const source = readFileSync(resolve(currentDir, '../views/inbox.js'), 'utf8');
+
+  assert.match(source, /data-outcome-preset/);
+  assert.match(source, /appendOutcomePreset/);
+});
+
 test('inbox entries render recommendation quality metadata', () => {
   const markup = String(renderEntries([
     {
@@ -97,4 +105,74 @@ test('inbox actions use quality actionability semantics', () => {
   assert.match(markup, /financial profile expenses/);
   assert.match(markup, /href="#copilot\?focus=context-gap&amp;intent=complete-context"/);
   assert.doesNotMatch(markup, /data-action="apply" data-id="context-gap"/);
+});
+
+test('inbox outcome form is guided by recommendation source and actionability', () => {
+  const markup = String(renderEntries([
+    {
+      id: 'stale-assumptions',
+      status: 'applied',
+      priority: 'medium',
+      recommendation_type: 'workflow_action',
+      source: 'generator:stale_assumptions',
+      title: 'Review stale assumptions',
+      detail: 'Plan assumptions are stale.',
+      action_payload: {
+        quality: {
+          actionability: 'review_only',
+          blocking_context: [],
+        },
+      },
+    },
+    {
+      id: 'profile-gap',
+      status: 'applied',
+      priority: 'medium',
+      recommendation_type: 'workflow_action',
+      source: 'generator:profile_completeness',
+      title: 'Complete expense profile',
+      detail: 'Expenses were missing.',
+      action_payload: {
+        quality: {
+          actionability: 'context_gathering',
+          blocking_context: ['financial_profile.expenses'],
+        },
+      },
+    },
+  ], {
+    planLookup: new Map(),
+    expanded: { id: 'stale-assumptions', mode: 'outcome', busy: false, error: null },
+    emptyMessage: '',
+  }));
+
+  assert.match(markup, /What changed after the assumption review\?/);
+  assert.match(markup, /Assumptions reviewed/);
+  assert.match(markup, /manual assumption review/);
+  assert.match(markup, /reviewed assumptions, changes made, follow-up needed/);
+
+  const profileMarkup = String(renderEntries([
+    {
+      id: 'profile-gap',
+      status: 'applied',
+      priority: 'medium',
+      recommendation_type: 'workflow_action',
+      source: 'generator:profile_completeness',
+      title: 'Complete expense profile',
+      detail: 'Expenses were missing.',
+      action_payload: {
+        quality: {
+          actionability: 'context_gathering',
+          blocking_context: ['financial_profile.expenses'],
+        },
+      },
+    },
+  ], {
+    planLookup: new Map(),
+    expanded: { id: 'profile-gap', mode: 'outcome', busy: false, error: null },
+    emptyMessage: '',
+  }));
+
+  assert.match(profileMarkup, /Was the missing context completed\?/);
+  assert.match(profileMarkup, /Context completed/);
+  assert.match(profileMarkup, /profile readiness review/);
 });

@@ -18,8 +18,13 @@ CASH_LIQUIDITY_SOURCE = "generator:cash_liquidity"
 PROFILE_COMPLETENESS_FACTORY_ID = "profile_completeness_recommendation_factory"
 PROFILE_COMPLETENESS_FACTORY_VERSION = "v1"
 PROFILE_COMPLETENESS_SOURCE = "generator:profile_completeness"
+STALE_ASSUMPTIONS_FACTORY_ID = "stale_assumption_recommendation_factory"
+STALE_ASSUMPTIONS_FACTORY_VERSION = "v1"
+STALE_ASSUMPTIONS_SOURCE = "generator:stale_assumptions"
 CASH_RESERVE_MIN_MONTHS = 3.0
 CASH_RESERVE_MAX_MONTHS = 6.0
+STALE_PLAN_REVIEW_DAYS = 90
+STALE_DECISION_REVIEW_DAYS = 60
 
 
 class RecommendationCreator(Protocol):
@@ -65,6 +70,29 @@ def _now_iso(now: datetime | None) -> str:
     if resolved.tzinfo is None:
         resolved = resolved.replace(tzinfo=timezone.utc)
     return resolved.astimezone(timezone.utc).isoformat()
+
+
+def _as_utc_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        resolved = value
+    else:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        try:
+            resolved = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if resolved.tzinfo is None:
+        resolved = resolved.replace(tzinfo=timezone.utc)
+    return resolved.astimezone(timezone.utc)
+
+
+def _age_days(value: Any, *, now: datetime) -> int | None:
+    parsed = _as_utc_datetime(value)
+    if parsed is None:
+        return None
+    return max(0, int((now.astimezone(timezone.utc) - parsed).total_seconds() // 86_400))
 
 
 def _clean_key(value: Any, fallback: str = "unknown") -> str:
@@ -1336,6 +1364,415 @@ def generate_profile_completeness_recommendations(
                         status="proposed",
                     )
                 )
+
+    return RecommendationFactoryResult(
+        generated_count=len(created) if not dry_run else len(candidates),
+        skipped_count=len(skipped),
+        candidates=candidates,
+        created=created,
+        skipped=skipped,
+        dry_run=dry_run,
+    )
+
+
+def _stale_assumption_plan_id(plan_detail_payload: dict[str, Any], plan_tracking_payload: dict[str, Any]) -> str:
+    return str(plan_detail_payload.get("id") or plan_tracking_payload.get("plan_id") or "active_plan").strip() or "active_plan"
+
+
+def _stale_assumption_plan_title(plan_detail_payload: dict[str, Any], plan_tracking_payload: dict[str, Any]) -> str:
+    return str(plan_detail_payload.get("title") or plan_tracking_payload.get("plan_title") or "Active Plan").strip() or "Active Plan"
+
+
+def _stale_assumption_dedupe_key(plan_id: str, signal_key: str) -> str:
+    return f"stale_assumptions:{_clean_key(plan_id, 'active_plan')}:{_clean_key(signal_key)}"
+
+
+def _stale_assumption_candidate(
+    *,
+    plan_id: str,
+    signal_key: str,
+    title: str,
+    detail: str,
+    priority: str,
+    severity: str,
+    actionability: str,
+    suggested_action: dict[str, Any],
+    expected_outcome: dict[str, Any],
+    evidence_extra: dict[str, Any],
+    generated_at: str,
+    blocking_context: list[str] | None = None,
+) -> dict[str, Any]:
+    dedupe_key = _stale_assumption_dedupe_key(plan_id, signal_key)
+    evidence = {
+        "summary": detail,
+        "data_keys": ["plan.detail", "plan.settings", "plan.tracking", "financial_profile.readiness"],
+        "snapshot_as_of": evidence_extra.get("snapshot_as_of"),
+        "plan_id": plan_id,
+        **evidence_extra,
+    }
+    action_payload = {
+        "generator": {
+            "id": STALE_ASSUMPTIONS_FACTORY_ID,
+            "version": STALE_ASSUMPTIONS_FACTORY_VERSION,
+            "generated_at": generated_at,
+            "signal_key": signal_key,
+            "signal_type": "stale_assumption",
+            "dedupe_key": dedupe_key,
+            "severity": severity,
+        },
+        "evidence": evidence,
+        "suggested_action": suggested_action,
+        "expected_outcome": expected_outcome,
+    }
+    action_payload["quality"] = _quality_metadata(
+        source=STALE_ASSUMPTIONS_SOURCE,
+        priority=priority,
+        evidence=evidence,
+        suggested_action=suggested_action,
+        expected_outcome=expected_outcome,
+        actionability=actionability,
+        confidence_level="medium" if actionability == "context_gathering" else "high",
+        confidence_reasons=[
+            "Generated from active plan freshness, plan tracking, and profile readiness signals.",
+            "Action is framed as review or context gathering rather than an automatic assumption change.",
+        ],
+        reversibility="high",
+        blocking_context=blocking_context,
+    )
+    return {
+        "title": title,
+        "detail": detail,
+        "priority": priority,
+        "recommendation_type": "workflow_action",
+        "source": STALE_ASSUMPTIONS_SOURCE,
+        "plan_id": plan_id,
+        "action_payload": action_payload,
+    }
+
+
+def _latest_decision_age_days(plan_detail_payload: dict[str, Any], *, now: datetime) -> int | None:
+    decisions = plan_detail_payload.get("decisions")
+    if not isinstance(decisions, list) or not decisions:
+        return None
+    ages = [
+        age
+        for item in decisions
+        if isinstance(item, dict)
+        for age in [_age_days(item.get("created_at") or item.get("updated_at"), now=now)]
+        if age is not None
+    ]
+    return min(ages) if ages else None
+
+
+def _stale_assumption_candidates(
+    *,
+    plan_detail_payload: dict[str, Any],
+    plan_tracking_payload: dict[str, Any],
+    profile_readiness_payload: dict[str, Any],
+    generated_at: str,
+    now: datetime,
+) -> list[dict[str, Any]]:
+    plan_id = _stale_assumption_plan_id(plan_detail_payload, plan_tracking_payload)
+    plan_title = _stale_assumption_plan_title(plan_detail_payload, plan_tracking_payload)
+    settings = plan_detail_payload.get("settings") if isinstance(plan_detail_payload.get("settings"), dict) else {}
+    updated_age_days = _age_days(plan_detail_payload.get("updated_at"), now=now)
+    candidates: list[dict[str, Any]] = []
+
+    if updated_age_days is None or updated_age_days >= STALE_PLAN_REVIEW_DAYS:
+        age_text = f"{updated_age_days} days" if updated_age_days is not None else "an unknown number of days"
+        detail = (
+            f"{plan_title} assumptions have not been reviewed recently; the active plan was last updated "
+            f"{age_text} ago."
+        )
+        candidates.append(
+            _stale_assumption_candidate(
+                plan_id=plan_id,
+                signal_key="active_plan_stale",
+                title=f"Review stale assumptions for {plan_title}",
+                detail=detail,
+                priority="medium",
+                severity="watch",
+                actionability="review_only",
+                suggested_action={
+                    "kind": "review_plan_assumptions",
+                    "subject": plan_title,
+                    "stale_days": updated_age_days,
+                    "threshold_days": STALE_PLAN_REVIEW_DAYS,
+                },
+                expected_outcome={"expected_delta_assumption_quality": "plan_reviewed"},
+                evidence_extra={
+                    "snapshot_as_of": plan_detail_payload.get("updated_at"),
+                    "plan_updated_age_days": updated_age_days,
+                },
+                generated_at=generated_at,
+            )
+        )
+
+    expected_return_keys = [
+        "expected_return_baseline",
+        "expected_return_optimistic",
+        "expected_return_conservative",
+    ]
+    missing_return_keys = [key for key in expected_return_keys if settings.get(key) is None]
+    if missing_return_keys or (updated_age_days is not None and updated_age_days >= STALE_PLAN_REVIEW_DAYS):
+        detail = (
+            f"Expected return assumptions for {plan_title} should be reviewed before relying on long-range projections."
+        )
+        if missing_return_keys:
+            detail += f" Missing: {', '.join(key.replace('_', ' ') for key in missing_return_keys)}."
+        candidates.append(
+            _stale_assumption_candidate(
+                plan_id=plan_id,
+                signal_key="expected_returns_review",
+                title=f"Review expected return assumptions for {plan_title}",
+                detail=detail,
+                priority="medium",
+                severity="watch",
+                actionability="review_only",
+                suggested_action={
+                    "kind": "review_expected_returns",
+                    "subject": plan_title,
+                    "missing_settings": missing_return_keys,
+                    "stale_days": updated_age_days,
+                },
+                expected_outcome={"expected_delta_projection_quality": "returns_reviewed"},
+                evidence_extra={
+                    "snapshot_as_of": plan_detail_payload.get("updated_at"),
+                    "settings": {key: settings.get(key) for key in expected_return_keys},
+                },
+                generated_at=generated_at,
+            )
+        )
+
+    annual_contribution = safe_float(settings.get("annual_contribution_usd"), -1.0)
+    tracking_expected = safe_float(plan_tracking_payload.get("expected_contributions_usd"), 0.0)
+    if annual_contribution < 0 or (annual_contribution == 0 and tracking_expected > 0):
+        detail = (
+            f"{plan_title} contribution assumptions are missing or inconsistent with tracking data. "
+            "Review contribution settings before treating plan drift as reliable."
+        )
+        candidates.append(
+            _stale_assumption_candidate(
+                plan_id=plan_id,
+                signal_key="contribution_assumption_weak",
+                title=f"Review contribution assumptions for {plan_title}",
+                detail=detail,
+                priority="medium",
+                severity="watch",
+                actionability="review_only",
+                suggested_action={
+                    "kind": "review_contribution_assumptions",
+                    "subject": plan_title,
+                    "annual_contribution_usd": None if annual_contribution < 0 else annual_contribution,
+                    "expected_contributions_usd": tracking_expected,
+                },
+                expected_outcome={"expected_delta_tracking_quality": "contributions_reviewed"},
+                evidence_extra={
+                    "snapshot_as_of": plan_tracking_payload.get("window_end") or plan_detail_payload.get("updated_at"),
+                    "plan_tracking": plan_tracking_payload,
+                },
+                generated_at=generated_at,
+            )
+        )
+
+    gap_key = str(profile_readiness_payload.get("next_gap_key") or "").strip()
+    blocking_sources = profile_readiness_payload.get("blocking_recommendation_sources")
+    blocking_sources = blocking_sources if isinstance(blocking_sources, list) else []
+
+    if settings.get("marginal_tax_rate") is None and gap_key != "tax_profile":
+        detail = (
+            "Tax rate is missing from plan assumptions. Complete tax basics before relying on tax-sensitive "
+            "plan or investment-fit guidance."
+        )
+        candidates.append(
+            _stale_assumption_candidate(
+                plan_id=plan_id,
+                signal_key="tax_rate_missing",
+                title="Complete tax basics before assumption review",
+                detail=detail,
+                priority="medium",
+                severity="blocking",
+                actionability="context_gathering",
+                suggested_action={
+                    "kind": "complete_tax_assumptions",
+                    "subject": "tax_profile",
+                    "missing_settings": ["marginal_tax_rate"],
+                },
+                expected_outcome={"expected_delta_context_quality": "tax_assumptions_available"},
+                evidence_extra={
+                    "snapshot_as_of": profile_readiness_payload.get("updated_at") or plan_detail_payload.get("updated_at"),
+                    "profile_readiness": profile_readiness_payload,
+                },
+                generated_at=generated_at,
+                blocking_context=["financial_profile.tax_profile"],
+            )
+        )
+
+    if gap_key and blocking_sources:
+        signal_key = f"profile_readiness_blocking:{gap_key}"
+        gap_title = str(profile_readiness_payload.get("next_gap_title") or gap_key.replace("_", " ")).strip()
+        detail = str(profile_readiness_payload.get("next_gap_detail") or "").strip() or (
+            f"{gap_title} is missing and blocks higher-confidence assumption reviews."
+        )
+        candidates.append(
+            _stale_assumption_candidate(
+                plan_id=plan_id,
+                signal_key=signal_key,
+                title=f"Complete {gap_title.lower()} before assumption review",
+                detail=detail,
+                priority="medium",
+                severity="blocking",
+                actionability="context_gathering",
+                suggested_action={
+                    "kind": "complete_profile_context",
+                    "subject": gap_key,
+                    "blocking_recommendation_sources": blocking_sources,
+                },
+                expected_outcome={"expected_delta_context_quality": "profile_blocker_removed"},
+                evidence_extra={
+                    "snapshot_as_of": profile_readiness_payload.get("updated_at") or plan_detail_payload.get("updated_at"),
+                    "profile_readiness": profile_readiness_payload,
+                },
+                generated_at=generated_at,
+                blocking_context=[f"financial_profile.{gap_key}"],
+            )
+        )
+
+    decision_age_days = _latest_decision_age_days(plan_detail_payload, now=now)
+    if decision_age_days is None or decision_age_days >= STALE_DECISION_REVIEW_DAYS:
+        age_text = f"{decision_age_days} days ago" if decision_age_days is not None else "not yet"
+        detail = (
+            f"The latest decision for {plan_title} was logged {age_text}. Refresh the decision log so future "
+            "recommendations can learn from current intent."
+        )
+        candidates.append(
+            _stale_assumption_candidate(
+                plan_id=plan_id,
+                signal_key="decision_log_stale",
+                title=f"Refresh plan decision log for {plan_title}",
+                detail=detail,
+                priority="low",
+                severity="watch",
+                actionability="review_only",
+                suggested_action={
+                    "kind": "refresh_plan_decision_log",
+                    "subject": plan_title,
+                    "decision_age_days": decision_age_days,
+                    "threshold_days": STALE_DECISION_REVIEW_DAYS,
+                },
+                expected_outcome={"expected_delta_decision_trace_quality": "decision_log_refreshed"},
+                evidence_extra={
+                    "snapshot_as_of": plan_detail_payload.get("updated_at"),
+                    "latest_decision_age_days": decision_age_days,
+                },
+                generated_at=generated_at,
+            )
+        )
+
+    tracking_status = str(plan_tracking_payload.get("status") or "").strip().lower()
+    snapshot_count = int(safe_float(plan_tracking_payload.get("snapshot_count"), 0.0))
+    tracking_window_days = int(safe_float(plan_tracking_payload.get("tracking_window_days"), 0.0))
+    if tracking_status == "insufficient_data" or snapshot_count < 2 or tracking_window_days < 30:
+        detail = (
+            f"{plan_title} has limited tracking history ({snapshot_count} snapshot"
+            f"{'' if snapshot_count == 1 else 's'} over {tracking_window_days} days). "
+            "Build more history before treating plan confidence as decision-grade."
+        )
+        candidates.append(
+            _stale_assumption_candidate(
+                plan_id=plan_id,
+                signal_key="tracking_history_insufficient",
+                title="Build tracking history before trusting plan confidence",
+                detail=detail,
+                priority="low",
+                severity="watch",
+                actionability="review_only",
+                suggested_action={
+                    "kind": "build_plan_tracking_history",
+                    "subject": plan_title,
+                    "snapshot_count": snapshot_count,
+                    "tracking_window_days": tracking_window_days,
+                },
+                expected_outcome={"expected_delta_tracking_quality": "tracking_history_improved"},
+                evidence_extra={
+                    "snapshot_as_of": plan_tracking_payload.get("window_end"),
+                    "plan_tracking": plan_tracking_payload,
+                },
+                generated_at=generated_at,
+            )
+        )
+
+    return candidates
+
+
+def generate_stale_assumption_recommendations(
+    *,
+    plan_detail_payload: dict[str, Any],
+    plan_tracking_payload: dict[str, Any],
+    profile_readiness_payload: dict[str, Any],
+    existing_recommendations: list[dict[str, Any]],
+    creator: RecommendationCreator | None = None,
+    dry_run: bool = True,
+    limit: int = 10,
+    now: datetime | None = None,
+) -> RecommendationFactoryResult:
+    resolved_now = now or datetime.now(timezone.utc)
+    if resolved_now.tzinfo is None:
+        resolved_now = resolved_now.replace(tzinfo=timezone.utc)
+    generated_at = _now_iso(resolved_now)
+    active_keys = _active_dedupe_keys(existing_recommendations)
+    bounded_limit = max(1, min(int(limit), 50))
+
+    candidates: list[dict[str, Any]] = []
+    created: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+
+    for candidate in _stale_assumption_candidates(
+        plan_detail_payload=plan_detail_payload,
+        plan_tracking_payload=plan_tracking_payload,
+        profile_readiness_payload=profile_readiness_payload,
+        generated_at=generated_at,
+        now=resolved_now,
+    ):
+        generator = candidate.get("action_payload", {}).get("generator", {})
+        dedupe_key = str(generator.get("dedupe_key") or "").strip()
+        signal_key = str(generator.get("signal_key") or "").strip()
+        if dedupe_key in active_keys:
+            skipped.append(
+                {
+                    "dedupe_key": dedupe_key,
+                    "reason": "active_duplicate",
+                    "title": candidate["title"],
+                    "signal_key": signal_key,
+                }
+            )
+            continue
+        if len(candidates) >= bounded_limit:
+            skipped.append(
+                {
+                    "dedupe_key": dedupe_key,
+                    "reason": "limit_exceeded",
+                    "title": candidate["title"],
+                    "signal_key": signal_key,
+                }
+            )
+            continue
+
+        candidates.append(candidate)
+        active_keys.add(dedupe_key)
+        if not dry_run and creator is not None:
+            created.append(
+                creator.create(
+                    title=candidate["title"],
+                    detail=candidate["detail"],
+                    priority=candidate["priority"],
+                    recommendation_type=candidate["recommendation_type"],
+                    source=candidate["source"],
+                    plan_id=candidate["plan_id"],
+                    action_payload=candidate["action_payload"],
+                    status="proposed",
+                )
+            )
 
     return RecommendationFactoryResult(
         generated_count=len(created) if not dry_run else len(candidates),

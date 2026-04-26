@@ -10,8 +10,9 @@ test('inbox sweep labels profile completeness factory results', () => {
       counts: {
         portfolio_risk: 1,
         profile_completeness: 1,
+        stale_assumptions: 1,
       },
-      total: 2,
+      total: 3,
       skipped: 0,
     },
     busy: false,
@@ -19,5 +20,6 @@ test('inbox sweep labels profile completeness factory results', () => {
 
   assert.match(html, /portfolio risk/);
   assert.match(html, /profile completeness/);
-  assert.match(html, /Create 2 suggestions/);
+  assert.match(html, /stale assumptions/);
+  assert.match(html, /Create 3 suggestions/);
 });

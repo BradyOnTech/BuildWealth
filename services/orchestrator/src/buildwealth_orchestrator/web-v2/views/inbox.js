@@ -202,6 +202,9 @@ function attachHandlers() {
   delegate(page, 'click', '[data-submit]', (_, t) => {
     submitForm(t.getAttribute('data-submit'), t.getAttribute('data-id'));
   });
+  delegate(page, 'click', '[data-outcome-preset]', (_, t) => {
+    appendOutcomePreset(t);
+  });
   delegate(page, 'click', '[data-sweep]', (_, t) => {
     handleSweep(t.getAttribute('data-sweep'));
   });
@@ -344,6 +347,17 @@ function collectFormData(formEl) {
     data[name] = value;
   }
   return data;
+}
+
+function appendOutcomePreset(button) {
+  const preset = String(button.getAttribute('data-outcome-preset') || '').trim();
+  if (!preset) return;
+  const form = button.closest('[data-form="outcome"]');
+  const textarea = form?.querySelector('textarea[name="outcome_note"]');
+  if (!textarea) return;
+  const current = String(textarea.value || '').trim();
+  textarea.value = current ? `${current}; ${preset}` : preset;
+  textarea.focus();
 }
 
 function cssEscape(s) {

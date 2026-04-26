@@ -1248,6 +1248,12 @@ class ProfileCompletenessRecommendationGenerateRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=50)
 
 
+class StaleAssumptionRecommendationGenerateRequest(BaseModel):
+    dry_run: bool = True
+    plan_id: str | None = None
+    limit: int = Field(default=10, ge=1, le=50)
+
+
 class RecommendationFactoryRunAllRequest(BaseModel):
     dry_run: bool = True
     plan_id: str | None = None

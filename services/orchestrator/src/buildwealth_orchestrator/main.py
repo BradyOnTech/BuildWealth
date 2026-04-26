@@ -106,6 +106,7 @@ from buildwealth_orchestrator.schemas import (
     RecommendationFactoryResponse,
     RecommendationFactoryRunAllRequest,
     RecommendationFactoryRunAllResponse,
+    StaleAssumptionRecommendationGenerateRequest,
     RecommendationPreviewRequest,
     RecommendationPreviewResponse,
     RecommendationRejectRequest,
@@ -306,6 +307,7 @@ from buildwealth_orchestrator.services.recommendation_factory import (
     generate_plan_tracking_recommendations,
     generate_portfolio_risk_recommendations,
     generate_profile_completeness_recommendations,
+    generate_stale_assumption_recommendations,
 )
 from buildwealth_orchestrator.services.user_settings import UserSettingsStore
 from buildwealth_orchestrator.settings import get_settings
@@ -11970,6 +11972,65 @@ def generate_profile_completeness_recommendation_candidates(
     return RecommendationFactoryResponse(**result.to_dict())
 
 
+@app.post("/api/recommendations/generate/stale-assumptions", response_model=RecommendationFactoryResponse)
+def generate_stale_assumption_recommendation_candidates(
+    request: StaleAssumptionRecommendationGenerateRequest,
+) -> RecommendationFactoryResponse:
+    try:
+        plan_id = resolve_plan_id_or_active(request.plan_id)
+        detail = plan_workspace.get_plan(plan_id)
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    plan_settings = PlanSettings(**detail.get("settings", {}))
+    snapshots = snapshot_store.recent(limit=90)
+    transactions = portfolio_store.list_transactions(limit=10_000)
+    planner_defaults = {
+        "annual_contribution_usd": settings.planner_annual_contribution_usd,
+        "expected_return_baseline": settings.planner_expected_return_baseline,
+        "hsa_extra_contribution_usd": settings.planner_hsa_delta_default,
+    }
+    tracking_payload = compute_plan_tracking(
+        plan_id=plan_id,
+        plan_title=detail.get("title", ""),
+        plan_settings=plan_settings,
+        planner_defaults=planner_defaults,
+        snapshots=snapshots,
+        transactions=transactions,
+    ).model_dump(mode="json")
+    tracking_payload["plan_settings"] = plan_settings.model_dump(mode="json", exclude_none=True)
+    tracking_payload["planner_defaults"] = planner_defaults
+
+    profile_payload = get_financial_profile_payload()
+    profile_readiness = build_onboarding_status_response(
+        profile_payload=profile_payload,
+        latest_snapshot=None,
+        active_plan_detail=detail,
+        load_fallbacks=False,
+    ).profile_readiness
+    existing_recommendations = recommendation_inbox.list(
+        limit=None,
+        status=None,
+        plan_id=None,
+        include_archived=True,
+        sort="none",
+    )
+    result = generate_stale_assumption_recommendations(
+        plan_detail_payload=detail,
+        plan_tracking_payload=tracking_payload,
+        profile_readiness_payload=profile_readiness.model_dump(mode="json") if profile_readiness else {},
+        existing_recommendations=existing_recommendations,
+        creator=recommendation_inbox if not request.dry_run else None,
+        dry_run=request.dry_run,
+        limit=request.limit,
+    )
+    if not request.dry_run and result.created:
+        _queue_autogit_event("stale_assumption_recommendations_generated")
+    return RecommendationFactoryResponse(**result.to_dict())
+
+
 @app.post("/api/recommendations/generate/run-all", response_model=RecommendationFactoryRunAllResponse)
 def run_all_recommendation_factories(
     request: RecommendationFactoryRunAllRequest,
@@ -12028,6 +12089,19 @@ def run_all_recommendation_factories(
         errors.append({"factory": "profile_completeness", "reason": str(exc.detail)})
     except Exception as exc:
         errors.append({"factory": "profile_completeness", "reason": str(exc)})
+
+    try:
+        factories["stale_assumptions"] = generate_stale_assumption_recommendation_candidates(
+            StaleAssumptionRecommendationGenerateRequest(
+                dry_run=request.dry_run,
+                plan_id=request.plan_id,
+                limit=request.limit,
+            )
+        )
+    except HTTPException as exc:
+        errors.append({"factory": "stale_assumptions", "reason": str(exc.detail)})
+    except Exception as exc:
+        errors.append({"factory": "stale_assumptions", "reason": str(exc)})
 
     generated_count = sum(factory.generated_count for factory in factories.values())
     skipped_count = sum(factory.skipped_count for factory in factories.values())

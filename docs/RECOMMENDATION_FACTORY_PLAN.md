@@ -36,6 +36,8 @@ This plugs into the existing recommendation system:
 - Slice 8 reviewed batch apply guard: implemented
 - Slice 9 cash liquidity recommendation generator: implemented
 - Slice 10 shared recommendation quality metadata: implemented
+- Slice 11 stale assumptions recommendation generator: implemented
+- Slice 12 guided outcome capture by recommendation type: implemented
 
 ## First Slice Scope
 
@@ -137,6 +139,36 @@ The envelope captures confidence, freshness, actionability, reversibility, expec
 Recommendation ranking now uses the shared quality envelope as a first-class input. Previewable, decision-grade rows receive confidence/actionability lift; context-gathering rows with blocking context are scored more conservatively until missing data is resolved. Today top actions also expose a compact quality summary and action hint so the daily command center can explain whether the next move is ready to preview, review-only, or blocked by missing context.
 
 v2 Inbox now uses quality actionability to choose the primary action label and destination. Previewable rows use a `Preview & apply` path, review-only rows route into Copilot with a review-focused prompt, and context-gathering rows route into Copilot with a missing-context prompt. Blocking context is shown by name on the row so the user can see what is missing before opening the recommendation.
+
+## Stale Assumptions Generator
+
+Stale assumption recommendations identify weak or aging planning context before BuildWealth treats downstream advice as decision-grade.
+
+Signals covered:
+
+- active plan assumptions not reviewed recently
+- expected return assumptions missing or due for review
+- contribution assumptions missing or inconsistent with tracking
+- tax/profile readiness gaps blocking higher-confidence guidance
+- stale or empty plan decision log
+- insufficient plan tracking history
+
+Generated rows use source `generator:stale_assumptions` and dedupe keys like `stale_assumptions:plan-1:active_plan_stale`. Rows are intentionally framed as `review_only` or `context_gathering`, not direct apply actions, because the right user action is to review assumptions, complete missing context, or build tracking history before stronger recommendations are generated.
+
+## Guided Outcome Capture
+
+v2 Inbox outcome capture now adapts its prompts to recommendation type, source, and quality actionability.
+
+Initial guidance modes:
+
+- `plan_settings_update`: compare the applied change against preview expectations.
+- `context_gathering` / profile completeness: record whether the missing context was completed.
+- portfolio risk: record whether the user rebalanced, redirected contributions, deferred, or accepted risk.
+- cash liquidity: record whether cash moved, reserve targets changed, or profile assumptions were corrected.
+- stale assumptions: record which assumptions were reviewed and whether follow-up is needed.
+- fallback: generic decision-made/no-action/follow-up capture.
+
+Outcome cues append structured note text into the existing outcome form while preserving the current backend outcome contract. This keeps the first slice focused on better capture ergonomics without changing closure analytics storage.
 
 ## Generated Recommendation Payload
 

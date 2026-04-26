@@ -2,7 +2,7 @@
 // Forms render inside the entry that owns them. Submission is wired
 // in inbox.js via delegated event handlers.
 
-import { html, raw } from '../../lib/dom.js';
+import { html, raw, esc } from '../../lib/dom.js';
 import { fmtUsdSigned } from '../../lib/format.js';
 
 export function renderInlineForm(item, expanded, ctx) {
@@ -56,9 +56,23 @@ function renderDeclineForm(item, { busy, error }) {
 
 function renderOutcomeForm(item, { busy, error }) {
   const nowLocal = toLocalDatetime(new Date());
+  const guidance = outcomeGuidance(item);
   return html`
     <div class="inline-form muted" data-form="outcome" data-id="${item.id}">
-      <p class="inline-form-title">How did it land?</p>
+      <p class="inline-form-title">${guidance.title}</p>
+      ${guidance.summary ? html`<p class="marginalia">${guidance.summary}</p>` : ''}
+      ${guidance.presets.length ? html`
+        <div class="inline-form-row">
+          <label class="inline-label">Outcome cues</label>
+          <div class="entry-actions">
+            ${raw(guidance.presets.map(preset => `
+              <button class="action-link muted" type="button" data-outcome-preset="${esc(preset)}">
+                ${esc(preset)}
+              </button>
+            `).join(''))}
+          </div>
+        </div>
+      ` : ''}
       <div class="inline-form-row cols-2">
         <div>
           <label class="inline-label" for="outcome-fv-${item.id}">Future-value delta (USD)</label>
@@ -81,11 +95,11 @@ function renderOutcomeForm(item, { busy, error }) {
       </div>
       <div class="inline-form-row">
         <label class="inline-label" for="outcome-source-${item.id}">Measurement source</label>
-        <input id="outcome-source-${item.id}" name="measurement_source" type="text" placeholder="snapshot · plan tracking · manual" />
+        <input id="outcome-source-${item.id}" name="measurement_source" type="text" placeholder="${guidance.measurementPlaceholder}" />
       </div>
       <div class="inline-form-row">
         <label class="inline-label" for="outcome-note-${item.id}">Note (optional)</label>
-        <textarea id="outcome-note-${item.id}" name="outcome_note" placeholder="Context worth keeping."></textarea>
+        <textarea id="outcome-note-${item.id}" name="outcome_note" placeholder="${guidance.notePlaceholder}"></textarea>
       </div>
       ${error ? html`<p class="inline-warning">${error}</p>` : ''}
       <div class="inline-form-actions">
@@ -96,6 +110,65 @@ function renderOutcomeForm(item, { busy, error }) {
       </div>
     </div>
   `;
+}
+
+function outcomeGuidance(item) {
+  const source = String(item?.source || '').toLowerCase();
+  const type = String(item?.recommendation_type || '').toLowerCase();
+  const quality = item?.action_payload?.quality || {};
+  const actionability = String(quality.actionability || '').toLowerCase();
+  if (source.includes('stale_assumptions')) {
+    return {
+      title: 'What changed after the assumption review?',
+      summary: 'Record which assumptions were reviewed and whether any follow-up recommendations should be regenerated.',
+      presets: ['Assumptions reviewed', 'Changes made', 'Follow-up needed'],
+      measurementPlaceholder: 'manual assumption review',
+      notePlaceholder: 'reviewed assumptions, changes made, follow-up needed',
+    };
+  }
+  if (actionability === 'context_gathering' || source.includes('profile_completeness')) {
+    return {
+      title: 'Was the missing context completed?',
+      summary: 'Record whether the blocker was resolved so related recommendations can be trusted or regenerated.',
+      presets: ['Context completed', 'Partially completed', 'Still blocked'],
+      measurementPlaceholder: 'profile readiness review',
+      notePlaceholder: 'what context changed, what is still missing, whether to regenerate suggestions',
+    };
+  }
+  if (type === 'plan_settings_update') {
+    return {
+      title: 'Did the plan change behave as expected?',
+      summary: 'Compare the applied change against the preview and note whether the projected delta still feels useful.',
+      presets: ['Applied as previewed', 'Applied with changes', 'Preview missed something'],
+      measurementPlaceholder: 'plan tracking · scenario preview',
+      notePlaceholder: 'preview matched, changed assumptions, follow-up needed',
+    };
+  }
+  if (source.includes('portfolio_risk')) {
+    return {
+      title: 'What happened after the risk review?',
+      summary: 'Record whether you rebalanced, redirected contributions, deferred, or rejected the concentration concern.',
+      presets: ['Rebalanced', 'Redirected contributions', 'Deferred'],
+      measurementPlaceholder: 'portfolio snapshot · manual review',
+      notePlaceholder: 'allocation changed, decision deferred, risk accepted',
+    };
+  }
+  if (source.includes('cash_liquidity')) {
+    return {
+      title: 'What changed after the liquidity review?',
+      summary: 'Record whether cash moved, reserve targets changed, or profile assumptions were corrected.',
+      presets: ['Cash moved', 'Target changed', 'Profile corrected'],
+      measurementPlaceholder: 'cash review · profile update',
+      notePlaceholder: 'reserve target, cash movement, corrected assumptions',
+    };
+  }
+  return {
+    title: 'How did it land?',
+    summary: '',
+    presets: ['Decision made', 'No action taken', 'Follow-up needed'],
+    measurementPlaceholder: 'snapshot · plan tracking · manual',
+    notePlaceholder: 'Context worth keeping.',
+  };
 }
 
 function renderPreview(preview) {
