@@ -445,6 +445,14 @@ function recommendationFocusPrompt(recommendationId, intent) {
       'Call preview_recommendation if a preview is available before suggesting that I apply anything.',
     ].join(' ');
   }
+  if (normalizedIntent === 'investment-fit') {
+    return [
+      `Review investment-fit recommendation ${id} with me.`,
+      'Inspect the recommendation evidence, provider freshness, evidence packet references, portfolio-fit status, blocking gaps, and suggested next step.',
+      'Use assess_portfolio_fit, research_compare, research_dossier, or simulate_trade only when needed.',
+      'Keep the answer framed as fit review, research, comparison, simulation, or missing context. Do not give hidden buy/sell advice.',
+    ].join(' ');
+  }
   return `Tell me about recommendation ${id}.`;
 }
 

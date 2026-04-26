@@ -187,6 +187,53 @@
   border-color: var(--oxblood);
 }
 
+/* ───────────  Investment-fit routing  ─────────── */
+
+.investment-route-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--s-4);
+  align-items: end;
+  padding: var(--s-3) 0;
+  margin-top: var(--s-2);
+  border-top: var(--hair) solid var(--rule-soft);
+  border-bottom: var(--hair) solid var(--rule-soft);
+}
+
+.investment-route-kicker {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+}
+
+.investment-route-panel p {
+  margin: 4px 0 0;
+  font-family: var(--sans);
+  font-size: var(--t-body-sm);
+  color: var(--ink-soft);
+}
+
+.investment-route-actions {
+  display: flex;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: baseline;
+}
+
+@media (max-width: 760px) {
+  .investment-route-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .investment-route-actions {
+    justify-content: flex-start;
+  }
+}
+
 /* ───────────  Inline disclosure (preview / decline / outcome forms)  ─────────── */
 
 .inline-form {

@@ -176,3 +176,90 @@ test('inbox outcome form is guided by recommendation source and actionability', 
   assert.match(profileMarkup, /Context completed/);
   assert.match(profileMarkup, /profile readiness review/);
 });
+
+test('inbox investment research rows render fit routing instead of generic workflow only', () => {
+  const markup = String(renderEntries([
+    {
+      id: 'rec-invest',
+      status: 'proposed',
+      priority: 'high',
+      source: 'generator:watchlist_research',
+      recommendation_type: 'workflow_action',
+      title: 'Review why NVDA does not currently fit',
+      detail: 'NVDA currently conflicts with portfolio-fit checks.',
+      action_payload: {
+        generator: {
+          signal_type: 'watchlist_research',
+        },
+        evidence: {
+          symbol: 'NVDA',
+          provider: 'yfinance',
+          freshness_status: 'fresh',
+          fit_status: 'does_not_fit',
+          research_evidence_packet_id: 'research-evidence:yfinance:NVDA:6mo:1d',
+        },
+        suggested_action: {
+          kind: 'review_portfolio_fit',
+          symbol: 'NVDA',
+          fit_status: 'does_not_fit',
+        },
+        quality: {
+          actionability: 'review_only',
+          confidence_level: 'medium',
+          freshness_status: 'fresh',
+          blocking_context: [],
+        },
+      },
+    },
+  ], {
+    planLookup: new Map(),
+    expanded: null,
+    emptyMessage: '',
+  }));
+
+  assert.match(markup, /Investment-fit route/);
+  assert.match(markup, /symbol NVDA · fresh evidence · via yfinance · does not fit fit/);
+  assert.match(markup, /href="#portfolio\?fit=NVDA&amp;focus=rec-invest"/);
+  assert.match(markup, /href="\/#research\?symbol=NVDA"/);
+  assert.match(markup, /href="\/#research\?compare=NVDA"/);
+  assert.match(markup, /href="#copilot\?focus=rec-invest&amp;intent=investment-fit"/);
+  assert.match(markup, />Review fit <span class="arrow">→<\/span>/);
+});
+
+test('inbox investment research refresh rows route primary action to research', () => {
+  const markup = String(renderEntries([
+    {
+      id: 'rec-refresh',
+      status: 'proposed',
+      priority: 'medium',
+      source: 'generator:watchlist_research',
+      recommendation_type: 'workflow_action',
+      title: 'Refresh research evidence for MSFT',
+      detail: 'Research evidence is partial.',
+      action_payload: {
+        generator: { signal_type: 'watchlist_research' },
+        evidence: {
+          symbol: 'MSFT',
+          provider: 'yfinance',
+          freshness_status: 'partial',
+        },
+        suggested_action: {
+          kind: 'refresh_research_evidence',
+          symbol: 'MSFT',
+        },
+        quality: {
+          actionability: 'context_gathering',
+          blocking_context: ['research.history'],
+        },
+      },
+    },
+  ], {
+    planLookup: new Map(),
+    expanded: null,
+    emptyMessage: '',
+  }));
+
+  assert.match(markup, /Open research/);
+  assert.match(markup, /href="\/#research\?symbol=MSFT"/);
+  assert.doesNotMatch(markup, /Complete context <span class="arrow">→<\/span>/);
+});

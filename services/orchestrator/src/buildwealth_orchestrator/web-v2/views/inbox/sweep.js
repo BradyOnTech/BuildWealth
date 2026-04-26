@@ -8,6 +8,9 @@ const SOURCE_LABELS = {
   portfolio_risk:  'portfolio risk',
   plan_tracking:   'plan tracking',
   cash_liquidity:  'cash & liquidity',
+  profile_completeness: 'profile completeness',
+  stale_assumptions: 'stale assumptions',
+  watchlist_research: 'watchlist research',
 };
 
 export function renderSweep(sweep) {

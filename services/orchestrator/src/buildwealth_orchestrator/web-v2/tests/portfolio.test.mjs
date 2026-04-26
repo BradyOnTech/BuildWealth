@@ -10,6 +10,13 @@ test('portfolio fit review renders safe empty state', () => {
   assert.match(markup, /Ask whether a candidate belongs in this portfolio/);
 });
 
+test('portfolio fit review can be prefilled from inbox route', () => {
+  const markup = String(renderFitReview(null, { initialSymbol: 'nvda' }));
+
+  assert.match(markup, /Fit review: NVDA/);
+  assert.match(markup, /value="NVDA"/);
+});
+
 test('portfolio fit result renders plan horizon and research evidence', () => {
   const markup = String(renderFitResult({
     symbol: 'VTI',

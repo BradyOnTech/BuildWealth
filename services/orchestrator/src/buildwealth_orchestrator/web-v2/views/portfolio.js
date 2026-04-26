@@ -28,7 +28,7 @@ export function template() {
   `;
 }
 
-export async function init() {
+export async function init(params = {}) {
   const root = $('#portfolio-page');
   if (!root) return;
   let data = null;
@@ -47,15 +47,20 @@ export async function init() {
     ${raw(renderStanding(data))}
     ${raw(renderComposition(data))}
     ${raw(renderWatch(data))}
-    ${raw(renderFitReview())}
+    ${raw(renderFitReview(null, { initialSymbol: params.fit || '' }))}
     ${raw(renderLookCloser())}
   `);
   bindFitReview(root);
+  if (params.fit) {
+    const fitSection = root.querySelector('.fit-review');
+    if (fitSection) fitSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
-export function renderFitReview(result = null, { loading = false, error = '' } = {}) {
-  const title = result?.symbol
-    ? `Fit review: ${result.symbol}`
+export function renderFitReview(result = null, { loading = false, error = '', initialSymbol = '' } = {}) {
+  const symbolValue = result?.symbol || String(initialSymbol || '').trim().toUpperCase();
+  const title = symbolValue
+    ? `Fit review: ${symbolValue}`
     : 'Fit review';
   return html`
     <section class="fit-review" aria-labelledby="portfolio-fit-title">
@@ -66,7 +71,7 @@ export function renderFitReview(result = null, { loading = false, error = '' } =
       <form class="fit-review-form" data-fit-review-form>
         <label class="fit-field">
           <span>Candidate</span>
-          <input name="symbol" type="text" autocomplete="off" placeholder="VTI" maxlength="12" value="${result?.symbol || ''}" required>
+          <input name="symbol" type="text" autocomplete="off" placeholder="VTI" maxlength="12" value="${symbolValue}" required>
         </label>
         <label class="fit-field">
           <span>Amount</span>

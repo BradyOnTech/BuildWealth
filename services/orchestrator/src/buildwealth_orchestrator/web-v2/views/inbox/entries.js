@@ -47,6 +47,7 @@ function renderEntry(item, index, ctx) {
         <h3 class="entry-title">${stripHtml(item.title)}</h3>
         ${raw(detailMarkup(item.detail))}
         ${raw(renderQualitySummary(item.action_payload?.quality))}
+        ${raw(renderInvestmentRoutePanel(item))}
         ${reasons.length ? raw(`
           <p class="marginalia">
             <span class="glyph">›</span> ${reasons.map(esc).join(' · ')}
@@ -85,9 +86,10 @@ function renderActions(item, status, expanded) {
   const expandedMode = expanded?.mode || null;
   if (status === 'proposed') {
     const semantics = actionSemantics(item);
-    const copilotHref = semantics.intent
+    const defaultCopilotHref = semantics.intent
       ? `#copilot?focus=${encodeURIComponent(item.id)}&intent=${encodeURIComponent(semantics.intent)}`
       : `#copilot?focus=${encodeURIComponent(item.id)}`;
+    const primaryHref = semantics.href || defaultCopilotHref;
     return html`
       <div class="entry-actions">
         ${semantics.primaryAction === 'apply' ? html`
@@ -96,7 +98,7 @@ function renderActions(item, status, expanded) {
             ${semantics.primaryLabel} <span class="arrow">›</span>
           </button>
         ` : html`
-          <a class="action-link" href="${copilotHref}">
+          <a class="action-link" href="${primaryHref}">
             ${semantics.primaryLabel} <span class="arrow">→</span>
           </a>
         `}
@@ -128,6 +130,39 @@ function renderActions(item, status, expanded) {
 
 function actionSemantics(item) {
   const quality = item?.action_payload?.quality;
+  const investment = investmentContext(item);
+  if (investment) {
+    const suggestedKind = String(investment.suggestedAction?.kind || '').toLowerCase();
+    if (suggestedKind === 'refresh_research_evidence' || suggestedKind === 'research_more' || suggestedKind === 'create_dossier') {
+      return {
+        primaryAction: 'route',
+        primaryLabel: suggestedKind === 'create_dossier' ? 'Create dossier' : 'Open research',
+        href: investment.researchHref,
+        intent: 'investment-fit',
+      };
+    }
+    if (suggestedKind === 'compare_alternatives') {
+      return {
+        primaryAction: 'route',
+        primaryLabel: 'Compare candidates',
+        href: investment.compareHref,
+        intent: 'investment-fit',
+      };
+    }
+    if (suggestedKind === 'update_profile') {
+      return {
+        primaryAction: 'copilot',
+        primaryLabel: 'Complete context',
+        intent: 'complete-context',
+      };
+    }
+    return {
+      primaryAction: 'route',
+      primaryLabel: 'Review fit',
+      href: investment.fitHref,
+      intent: 'investment-fit',
+    };
+  }
   const actionability = quality && typeof quality === 'object'
     ? String(quality.actionability || '').trim().toLowerCase()
     : '';
@@ -156,6 +191,57 @@ function actionSemantics(item) {
     primaryAction: 'apply',
     primaryLabel: 'Apply',
     intent: '',
+  };
+}
+
+function renderInvestmentRoutePanel(item) {
+  const investment = investmentContext(item);
+  if (!investment) return '';
+  const evidence = investment.evidence;
+  const meta = [
+    investment.symbol ? `symbol ${investment.symbol}` : '',
+    evidence.freshness_status ? `${humanText(evidence.freshness_status)} evidence` : '',
+    evidence.provider ? `via ${evidence.provider}` : '',
+    evidence.fit_status ? `${humanText(evidence.fit_status)} fit` : '',
+  ].filter(Boolean);
+  return html`
+    <div class="investment-route-panel">
+      <div>
+        <span class="investment-route-kicker">Investment-fit route</span>
+        <p>${meta.join(' · ') || 'Research-backed review'}</p>
+      </div>
+      <div class="investment-route-actions">
+        <a class="action-link" href="${investment.fitHref}">Review fit <span class="arrow">→</span></a>
+        <a class="action-link muted" href="${investment.researchHref}">Research <span class="arrow">→</span></a>
+        <a class="action-link muted" href="${investment.compareHref}">Compare <span class="arrow">→</span></a>
+        <a class="action-link muted" href="${investment.copilotHref}">Copilot <span class="arrow">→</span></a>
+      </div>
+    </div>
+  `;
+}
+
+function investmentContext(item) {
+  const payload = item?.action_payload;
+  if (!payload || typeof payload !== 'object') return null;
+  const generator = payload.generator && typeof payload.generator === 'object' ? payload.generator : {};
+  const source = String(item?.source || '').toLowerCase();
+  if (source !== 'generator:watchlist_research' && generator.signal_type !== 'watchlist_research') return null;
+  const evidence = payload.evidence && typeof payload.evidence === 'object' ? payload.evidence : {};
+  const suggestedAction = payload.suggested_action && typeof payload.suggested_action === 'object'
+    ? payload.suggested_action
+    : {};
+  const symbol = String(suggestedAction.symbol || evidence.symbol || '').trim().toUpperCase();
+  const encodedSymbol = encodeURIComponent(symbol);
+  const encodedId = encodeURIComponent(item.id || '');
+  const fitHref = symbol ? `#portfolio?fit=${encodedSymbol}&focus=${encodedId}` : `#portfolio?focus=${encodedId}`;
+  return {
+    symbol,
+    evidence,
+    suggestedAction,
+    fitHref,
+    researchHref: symbol ? `/#research?symbol=${encodedSymbol}` : '/#research',
+    compareHref: symbol ? `/#research?compare=${encodedSymbol}` : '/#research',
+    copilotHref: `#copilot?focus=${encodedId}&intent=investment-fit`,
   };
 }
 
