@@ -8,6 +8,11 @@ __pycache__/
 .venv/
 .pytest_cache/
 
+# Node
+node_modules/
+playwright-report/
+test-results/
+
 # Local data and secrets
 infra/env/*.env
 data/snapshots/*.json

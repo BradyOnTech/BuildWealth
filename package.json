@@ -1,0 +1,11 @@
+{
+  "name": "buildwealth",
+  "version": "0.0.0",
+  "private": true,
+  "workspaces": [
+    "services/orchestrator"
+  ],
+  "scripts": {
+    "test:web-v2:browser": "npm --workspace services/orchestrator run test:web-v2:browser"
+  }
+}
