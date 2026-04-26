@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from buildwealth_orchestrator.schemas import (
     Holding,
     PortfolioSnapshot,
+    ProfileReadinessSummary,
     SnapshotHistoryPoint,
     SnapshotHistoryResponse,
     SyncStatusResponse,
@@ -91,6 +92,15 @@ def test_today_dashboard_payload_with_active_plan() -> None:
             ],
             "artifacts": [{"id": "a1"}],
         },
+        profile_readiness=ProfileReadinessSummary(
+            completion_percent=80.0,
+            status="attention",
+            next_gap_key="tax_profile",
+            next_gap_title="Tax profile",
+            next_gap_detail="Set filing status and marginal tax rate.",
+            blocking_recommendation_sources=["profile_completeness", "tax_planning"],
+            sections=[],
+        ),
     )
 
     assert payload.total_value_usd == 300000
@@ -102,6 +112,9 @@ def test_today_dashboard_payload_with_active_plan() -> None:
     assert payload.recommendations
     assert payload.checklist
     assert payload.workflow_steps
+    assert payload.profile_readiness is not None
+    assert payload.profile_readiness.next_gap_key == "tax_profile"
+    assert "Profile readiness: next gap is Tax profile." in payload.context_notes
 
 
 def test_today_dashboard_payload_without_snapshot_or_plan() -> None:

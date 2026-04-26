@@ -243,6 +243,7 @@ function renderRoom(payload, engines) {
             <dl><dt>Inbox</dt><dd>${payload.inbox_open_count ?? 0} open · ${payload.inbox_high_priority_count ?? 0} high</dd></dl>
             <dl><dt>Concentration</dt><dd>${payload.concentration_risk || '—'}</dd></dl>
             <dl><dt>Onboarding</dt><dd>${Math.round(payload.onboarding_completion_percent || 0)}%</dd></dl>
+            <dl><dt>Profile gap</dt><dd>${esc(payload.profile_readiness?.next_gap_title || '—')}</dd></dl>
             <dl><dt>Health</dt><dd>${humanHealth(payload.financial_health_status)}</dd></dl>
             <dl><dt>Context</dt><dd>${closure}</dd></dl>
           </div>

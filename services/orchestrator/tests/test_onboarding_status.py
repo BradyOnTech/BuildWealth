@@ -46,6 +46,10 @@ def test_onboarding_status_complete_path() -> None:
     assert status.completion_percent > 70
     assert any(step.id == "income" and step.status == "complete" for step in status.steps)
     assert any(step.id == "active_plan" and step.status == "complete" for step in status.steps)
+    assert status.profile_readiness is not None
+    assert status.profile_readiness.status == "ready"
+    assert status.profile_readiness.next_gap_key is None
+    assert status.profile_readiness.blocking_recommendation_sources == []
 
 
 def test_onboarding_status_incomplete_path() -> None:
@@ -67,3 +71,8 @@ def test_onboarding_status_incomplete_path() -> None:
     assert status.completion_percent < 40
     assert status.ready_for_daily_review is False
     assert any(step.id == "snapshot" and step.status == "incomplete" for step in status.steps)
+    assert status.profile_readiness is not None
+    assert status.profile_readiness.status == "incomplete"
+    assert status.profile_readiness.next_gap_key == "income"
+    assert "profile_completeness" in status.profile_readiness.blocking_recommendation_sources
+    assert any(section.key == "tax_profile" for section in status.profile_readiness.sections)

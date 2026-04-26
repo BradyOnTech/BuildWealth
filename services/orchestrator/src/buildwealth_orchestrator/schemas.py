@@ -992,6 +992,7 @@ class TodayDashboardResponse(BaseModel):
     active_plan: TodayActivePlanSummary | None = None
     onboarding_completion_percent: float = 0.0
     onboarding_ready_for_daily_review: bool = False
+    profile_readiness: ProfileReadinessSummary | None = None
     inbox_open_count: int = 0
     inbox_high_priority_count: int = 0
     net_worth_usd: float | None = None
@@ -1100,10 +1101,30 @@ class OnboardingStep(BaseModel):
     detail: str
 
 
+class ProfileReadinessSection(BaseModel):
+    key: str
+    title: str
+    status: Literal["complete", "incomplete", "attention"]
+    detail: str
+    required_for: list[str] = Field(default_factory=list)
+    blocking_recommendations: bool = False
+
+
+class ProfileReadinessSummary(BaseModel):
+    completion_percent: float = 0.0
+    status: Literal["ready", "attention", "incomplete"] = "incomplete"
+    next_gap_key: str | None = None
+    next_gap_title: str | None = None
+    next_gap_detail: str | None = None
+    blocking_recommendation_sources: list[str] = Field(default_factory=list)
+    sections: list[ProfileReadinessSection] = Field(default_factory=list)
+
+
 class OnboardingStatusResponse(BaseModel):
     completion_percent: float
     ready_for_daily_review: bool
     steps: list[OnboardingStep] = Field(default_factory=list)
+    profile_readiness: ProfileReadinessSummary | None = None
 
 
 RecommendationStatus = Literal["proposed", "applied", "rejected", "archived"]

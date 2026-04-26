@@ -79,6 +79,10 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
       let status = {
         ready_for_daily_review: false,
         completion_percent: 25,
+        profile_readiness: {
+          next_gap_detail: 'Add income so cash-flow recommendations can be ranked.',
+          blocking_recommendation_sources: ['profile_completeness', 'cash_liquidity'],
+        },
         steps: [
           { key: 'income', title: 'Add income', status: 'pending' },
           { key: 'expenses', title: 'Add expenses', status: 'pending' },
@@ -281,6 +285,7 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
 
   const onboardingButton = page.getByRole('button', { name: /fill it out with copilot/i });
   await onboardingButton.waitFor({ state: 'visible' });
+  await page.getByText('Add income so cash-flow recommendations can be ranked. Needed for profile completeness and cash liquidity.').waitFor({ state: 'visible' });
   await onboardingButton.click();
 
   const textarea = page.locator('#composer-textarea');

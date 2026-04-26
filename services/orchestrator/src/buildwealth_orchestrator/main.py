@@ -70,6 +70,8 @@ from buildwealth_orchestrator.schemas import (
     PlanningResponse,
     HouseholdPlanningContext,
     PortfolioSnapshot,
+    ProfileReadinessSection,
+    ProfileReadinessSummary,
     PortfolioBenchmarkResponse,
     PortfolioAttributionResponse,
     ResearchResponse,
@@ -6032,6 +6034,122 @@ def _plan_settings_completion_percent(active_plan_detail: dict[str, Any] | None)
     return round((set_count / len(PLAN_SETTINGS_FIELDS)) * 100, 1)
 
 
+def _build_profile_readiness_summary(
+    *,
+    income_items: list[Any],
+    expense_items: list[Any],
+    debt_items: list[Any],
+    goal_items: list[Any],
+    physical_assets: list[Any],
+    flags: dict[str, Any],
+    tax_profile: dict[str, Any],
+) -> ProfileReadinessSummary:
+    filing_status = str(tax_profile.get("filing_status") or "").strip()
+    marginal_tax_rate = tax_profile.get("marginal_tax_rate")
+
+    sections = [
+        ProfileReadinessSection(
+            key="income",
+            title="Income profile",
+            status="complete" if len(income_items) > 0 else "incomplete",
+            detail=f"{len(income_items)} income item(s) configured.",
+            required_for=["cash_flow", "planning", "affordability"],
+            blocking_recommendations=len(income_items) == 0,
+        ),
+        ProfileReadinessSection(
+            key="expenses",
+            title="Expense profile",
+            status="complete" if len(expense_items) > 0 else "incomplete",
+            detail=f"{len(expense_items)} expense item(s) configured.",
+            required_for=["cash_flow", "liquidity", "affordability"],
+            blocking_recommendations=len(expense_items) == 0,
+        ),
+        ProfileReadinessSection(
+            key="debt",
+            title="Debt profile",
+            status="complete" if len(debt_items) > 0 or bool(flags.get("no_debt")) else "attention",
+            detail=(
+                f"{len(debt_items)} debt item(s) configured."
+                if len(debt_items) > 0
+                else "Marked as no current debt."
+                if bool(flags.get("no_debt"))
+                else "Add debt balances or mark that you currently have no debt."
+            ),
+            required_for=["cash_flow", "liquidity", "affordability"],
+            blocking_recommendations=len(debt_items) == 0 and not bool(flags.get("no_debt")),
+        ),
+        ProfileReadinessSection(
+            key="goals",
+            title="Goals profile",
+            status="complete" if len(goal_items) > 0 or bool(flags.get("no_goals")) else "attention",
+            detail=(
+                f"{len(goal_items)} goal item(s) configured."
+                if len(goal_items) > 0
+                else "Goals deferred for now."
+                if bool(flags.get("no_goals"))
+                else "Add at least one financial goal or mark goals as deferred."
+            ),
+            required_for=["planning", "investment_fit", "recommendation_ranking"],
+            blocking_recommendations=len(goal_items) == 0 and not bool(flags.get("no_goals")),
+        ),
+        ProfileReadinessSection(
+            key="tax_profile",
+            title="Tax profile",
+            status="complete" if filing_status and marginal_tax_rate is not None else "incomplete",
+            detail=(
+                "Filing status and marginal tax rate are configured."
+                if filing_status and marginal_tax_rate is not None
+                else "Set filing status and marginal tax rate."
+            ),
+            required_for=["tax_planning", "investment_fit", "withdrawal_strategy"],
+            blocking_recommendations=not (filing_status and marginal_tax_rate is not None),
+        ),
+        ProfileReadinessSection(
+            key="physical_assets",
+            title="Physical assets",
+            status="complete" if physical_assets else "attention",
+            detail=(
+                f"{len(physical_assets)} physical asset(s) configured."
+                if physical_assets
+                else "Add physical assets if they matter to net worth or planning."
+            ),
+            required_for=["net_worth", "planning"],
+            blocking_recommendations=False,
+        ),
+    ]
+
+    required_sections = [section for section in sections if section.blocking_recommendations]
+    complete_count = sum(1 for section in sections if section.status == "complete")
+    completion_percent = round((complete_count / len(sections)) * 100, 1) if sections else 0.0
+    next_gap = next((section for section in sections if section.blocking_recommendations), None)
+    blocking_sources: list[str] = []
+    if any(section.blocking_recommendations for section in sections):
+        blocking_sources.append("profile_completeness")
+    if any(section.key == "tax_profile" and section.blocking_recommendations for section in sections):
+        blocking_sources.append("tax_planning")
+    if any(section.key in {"income", "expenses", "debt"} and section.blocking_recommendations for section in sections):
+        blocking_sources.append("cash_liquidity")
+    if any(section.key == "goals" and section.blocking_recommendations for section in sections):
+        blocking_sources.append("investment_fit")
+
+    if not required_sections:
+        status = "ready"
+    elif any(section.status == "incomplete" for section in required_sections):
+        status = "incomplete"
+    else:
+        status = "attention"
+
+    return ProfileReadinessSummary(
+        completion_percent=completion_percent,
+        status=status,
+        next_gap_key=next_gap.key if next_gap else None,
+        next_gap_title=next_gap.title if next_gap else None,
+        next_gap_detail=next_gap.detail if next_gap else None,
+        blocking_recommendation_sources=blocking_sources,
+        sections=sections,
+    )
+
+
 def build_onboarding_status_response(
     profile_payload: dict[str, Any] | None = None,
     latest_snapshot: PortfolioSnapshot | None = None,
@@ -6083,6 +6201,16 @@ def build_onboarding_status_response(
     expense_items = profile.get("expense_items") if isinstance(profile.get("expense_items"), list) else []
     debt_items = profile.get("debt_items") if isinstance(profile.get("debt_items"), list) else []
     goal_items = profile.get("goal_items") if isinstance(profile.get("goal_items"), list) else []
+    physical_assets = profile.get("physical_assets") if isinstance(profile.get("physical_assets"), list) else []
+    profile_readiness = _build_profile_readiness_summary(
+        income_items=income_items,
+        expense_items=expense_items,
+        debt_items=debt_items,
+        goal_items=goal_items,
+        physical_assets=physical_assets,
+        flags=flags,
+        tax_profile=tax_profile,
+    )
 
     steps.append(
         {
@@ -6199,6 +6327,7 @@ def build_onboarding_status_response(
         completion_percent=completion_percent,
         ready_for_daily_review=ready_for_daily_review,
         steps=steps,
+        profile_readiness=profile_readiness,
     )
 
 
@@ -6230,6 +6359,7 @@ def build_today_dashboard_response() -> TodayDashboardResponse:
         active_plan_detail=active_plan_detail,
         onboarding_completion_percent=onboarding_status.completion_percent,
         onboarding_ready_for_daily_review=onboarding_status.ready_for_daily_review,
+        profile_readiness=onboarding_status.profile_readiness,
         inbox_open_count=inbox_open_count,
         inbox_high_priority_count=inbox_high_priority_count,
     )

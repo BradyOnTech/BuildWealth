@@ -344,6 +344,7 @@ function renderProfileOnboardingCard() {
       <p class="profile-draft-summary">
         Your profile is ${percent}% complete${nextStep?.title ? `. Next: ${nextStep.title}.` : '.'}
       </p>
+      ${raw(renderProfileReadinessHint(status.profile_readiness))}
       <div class="entry-actions">
         <button class="action-link" data-profile-onboarding-prompt>
           ${actionLabel} <span class="arrow">›</span>
@@ -351,6 +352,20 @@ function renderProfileOnboardingCard() {
       </div>
     </article>
   `;
+}
+
+function renderProfileReadinessHint(readiness) {
+  if (!readiness || typeof readiness !== 'object') return '';
+  const detail = String(readiness.next_gap_detail || '').trim();
+  const sources = Array.isArray(readiness.blocking_recommendation_sources)
+    ? readiness.blocking_recommendation_sources
+      .map(item => String(item || '').replace(/_/g, ' ').trim())
+      .filter(Boolean)
+      .slice(0, 2)
+    : [];
+  if (!detail && !sources.length) return '';
+  const sourceText = sources.length ? ` Needed for ${sources.join(' and ')}.` : '';
+  return html`<p class="profile-readiness-hint">${esc(detail)}${esc(sourceText)}</p>`;
 }
 
 /* ─────────────  helpers  ───────────── */

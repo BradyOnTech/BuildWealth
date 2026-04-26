@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from buildwealth_orchestrator.schemas import (
     PortfolioSnapshot,
+    ProfileReadinessSummary,
     SnapshotHistoryResponse,
     SyncStatusResponse,
     TodayActivePlanSummary,
@@ -262,6 +263,7 @@ def build_today_dashboard_payload(
     active_plan_detail: dict[str, Any] | None,
     onboarding_completion_percent: float = 0.0,
     onboarding_ready_for_daily_review: bool = False,
+    profile_readiness: ProfileReadinessSummary | None = None,
     inbox_open_count: int = 0,
     inbox_high_priority_count: int = 0,
 ) -> TodayDashboardResponse:
@@ -361,6 +363,8 @@ def build_today_dashboard_payload(
 
     if not onboarding_ready_for_daily_review:
         context_notes.append("Unified financial profile is incomplete.")
+    if profile_readiness is not None and profile_readiness.next_gap_title:
+        context_notes.append(f"Profile readiness: next gap is {profile_readiness.next_gap_title}.")
     if active_plan_summary is None:
         context_notes.append("No active plan is set.")
     if inbox_high_priority_count > 0:
@@ -388,6 +392,7 @@ def build_today_dashboard_payload(
         active_plan=active_plan_summary,
         onboarding_completion_percent=onboarding_completion_percent,
         onboarding_ready_for_daily_review=onboarding_ready_for_daily_review,
+        profile_readiness=profile_readiness,
         inbox_open_count=max(0, int(inbox_open_count)),
         inbox_high_priority_count=max(0, int(inbox_high_priority_count)),
         context_state=context_state,
