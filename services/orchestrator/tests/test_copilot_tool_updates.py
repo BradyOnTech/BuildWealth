@@ -21,6 +21,7 @@ def test_copilot_registry_includes_phase_3_5_tools() -> None:
         "research_dossier",
         "research_dossier_lookup",
         "research_watchlist_rank",
+        "assess_portfolio_fit",
         "update_recommendation_outcome",
         "get_recommendation_closure_analytics",
         "create_plan_recommendation_closure_summary",
@@ -42,6 +43,17 @@ def test_get_buildwealth_context_tool_supports_detail_level_control() -> None:
     detail_field = properties.get("detail_level")
     assert isinstance(detail_field, dict)
     assert detail_field.get("enum") == ["light", "full"]
+
+
+def test_assess_portfolio_fit_tool_contract() -> None:
+    tool = main.copilot.tools["assess_portfolio_fit"]
+    properties = tool.parameters.get("properties", {})
+    assert tool.parameters.get("required") == ["symbol"]
+    assert "symbol" in properties
+    assert "amount_usd" in properties
+    assert "period" in properties
+    assert "interval" in properties
+    assert "does not execute trades" in tool.description
 
 
 def test_compute_tax_tool_supports_state_tax_and_irmaa_inputs() -> None:

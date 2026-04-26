@@ -723,6 +723,12 @@ class ResearchCompareItem(BaseModel):
     dividend_yield_pct: float | None = None
     quote_records: int = 0
     history_records: int = 0
+    research_evidence_packet_id: str | None = None
+    research_provider: str | None = None
+    research_freshness_status: str | None = None
+    research_confidence: str | None = None
+    research_coverage_score: float | None = None
+    research_blocking_gaps: list[str] = Field(default_factory=list)
 
 
 class ResearchCompareSummary(BaseModel):
@@ -829,6 +835,7 @@ class ResearchDossierResponse(BaseModel):
     catalysts: list[str] = Field(default_factory=list)
     key_takeaways: list[str] = Field(default_factory=list)
     freshness: dict[str, Any] = Field(default_factory=dict)
+    evidence_packets: list[dict[str, Any]] = Field(default_factory=list)
     compare: ResearchCompareResponse
     portfolio_fit: dict[str, Any] = Field(default_factory=dict)
     dossier_markdown: str
@@ -900,6 +907,42 @@ class WatchlistRankResponse(BaseModel):
     items: list[WatchlistRankItem] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     updated_at: datetime
+
+
+class PortfolioFitAssessmentRequest(BaseModel):
+    symbol: str
+    amount_usd: float | None = Field(default=None, gt=0)
+    period: str = "6mo"
+    interval: str = "1d"
+
+    @model_validator(mode="after")
+    def _normalize_fields(self) -> "PortfolioFitAssessmentRequest":
+        self.symbol = str(self.symbol or "").strip().upper()
+        self.period = str(self.period or "6mo").strip() or "6mo"
+        self.interval = str(self.interval or "1d").strip() or "1d"
+        return self
+
+
+class PortfolioFitAssessmentResponse(BaseModel):
+    symbol: str
+    fit_status: Literal["fits", "mixed", "does_not_fit", "needs_more_context"]
+    fit_score: float
+    fit_reasons: list[str] = Field(default_factory=list)
+    fit_risks: list[str] = Field(default_factory=list)
+    blocking_gaps: list[str] = Field(default_factory=list)
+    portfolio_impact: dict[str, Any] = Field(default_factory=dict)
+    plan_impact: dict[str, Any] = Field(default_factory=dict)
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    simulation_required: bool = False
+    recommended_next_step: Literal[
+        "research_more",
+        "compare_alternatives",
+        "simulate_trade",
+        "review_concentration",
+        "update_profile",
+        "create_dossier",
+        "discuss_in_copilot",
+    ]
 
 
 class CsvTemplateOption(BaseModel):

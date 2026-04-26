@@ -213,6 +213,13 @@ High-level implementation:
 - treat missing profile/tax/cash context as a reason to pause rather than guess
 - avoid producing "buy" language in fit outputs
 
+Current implementation:
+
+- `PortfolioFitAssessmentRequest` and `PortfolioFitAssessmentResponse` define the first reusable fit contract.
+- `assess_portfolio_fit(...)` combines evidence packet quality, current holdings, risk thresholds, cash runway, profile readiness, and optional trade simulation.
+- `/api/portfolio/fit-assessment` assembles current BuildWealth context and returns a fit assessment for review surfaces.
+- First statuses cover `mixed`, `does_not_fit`, and `needs_more_context`; direct trade recommendations remain out of scope.
+
 ## Layer 4: Investment Recommendation Factory
 
 Purpose: convert research and fit signals into safe, reviewable next actions.
@@ -443,6 +450,8 @@ Current progress:
 - Partial/degraded evidence now appears as a Today command-center warning or critical card before investment-fit advice is built on it.
 - Today research readiness uses a bounded in-memory packet cache, reports cached research age, and exposes a refresh action that clears/rebuilds the sampled evidence.
 - Watchlist ranking now consumes evidence packets first, preserves packet references/freshness/provider coverage on each row, and keeps legacy market metrics available for existing scoring/display paths.
+- Research dossiers now cite evidence packets in the response and dossier markdown, so saved plan artifacts preserve packet id, provider, freshness, confidence, coverage, and blocking-gap context.
+- Research compare rows now cite evidence packet id, provider, freshness, confidence, coverage score, and blocking gaps while preserving existing compare ranking fields.
 
 Done when:
 
@@ -462,6 +471,12 @@ Work:
 - include active plan/time-horizon context where available
 - call trade simulation when a proposed amount is supplied
 - produce a next-step recommendation without buy/sell language
+
+Current progress:
+
+- The first contract and API route exist.
+- Concentration conflicts, missing profile/cash/research context, and simulation-required next steps are covered.
+- Plan/time-horizon and tax-lot impacts remain future enrichments.
 
 Done when:
 

@@ -84,6 +84,77 @@ def test_research_service_compare_scores_and_baseline_delta(monkeypatch) -> None
     assert result.items[0].rank == 1
 
 
+def test_research_service_compare_cites_evidence_packets(monkeypatch) -> None:
+    service = OpenBBResearchService(provider="yfinance")
+
+    def fake_quote(symbol: str) -> ResearchResponse:
+        return ResearchResponse(
+            symbol=symbol,
+            provider="yfinance",
+            available=True,
+            message="quote",
+            records=[{"last": 110.0 if symbol == "AAPL" else 220.0, "change_percent": 1.0}],
+        )
+
+    def fake_price_history(symbol: str, period: str = "6mo", interval: str = "1d") -> ResearchResponse:
+        del period, interval
+        closes = [100.0, 110.0, 120.0] if symbol == "AAPL" else [200.0, 210.0, 220.0]
+        return ResearchResponse(
+            symbol=symbol,
+            provider="yfinance",
+            available=True,
+            message="history",
+            records=[{"close": close} for close in closes],
+        )
+
+    monkeypatch.setattr(service, "quote", fake_quote)
+    monkeypatch.setattr(service, "price_history", fake_price_history)
+
+    result = service.compare(symbols=["AAPL", "MSFT"], period="6mo", interval="1d")
+
+    by_symbol = {item.symbol: item for item in result.items}
+    assert by_symbol["AAPL"].research_evidence_packet_id == "research-evidence:yfinance:AAPL:6mo:1d"
+    assert by_symbol["AAPL"].research_provider == "yfinance"
+    assert by_symbol["AAPL"].research_freshness_status == "fresh"
+    assert by_symbol["AAPL"].research_confidence == "high"
+    assert by_symbol["AAPL"].research_coverage_score == 100.0
+    assert by_symbol["AAPL"].research_blocking_gaps == []
+
+
+def test_research_service_compare_surfaces_evidence_packet_warnings(monkeypatch) -> None:
+    service = OpenBBResearchService(provider="yfinance")
+
+    def fake_quote(symbol: str) -> ResearchResponse:
+        return ResearchResponse(
+            symbol=symbol,
+            provider="yfinance",
+            available=True,
+            message="quote",
+            records=[{"last": 80.0}],
+        )
+
+    def fake_price_history(symbol: str, period: str = "6mo", interval: str = "1d") -> ResearchResponse:
+        del period, interval
+        return ResearchResponse(
+            symbol=symbol,
+            provider="yfinance",
+            available=False,
+            message="history unavailable",
+            records=[],
+        )
+
+    monkeypatch.setattr(service, "quote", fake_quote)
+    monkeypatch.setattr(service, "price_history", fake_price_history)
+
+    result = service.compare(symbols=["MSFT", "AAPL"], period="6mo", interval="1d")
+
+    by_symbol = {item.symbol: item for item in result.items}
+    assert by_symbol["MSFT"].research_freshness_status == "partial"
+    assert by_symbol["MSFT"].research_confidence == "medium"
+    assert by_symbol["MSFT"].research_blocking_gaps == ["history"]
+    assert "MSFT: history unavailable (history unavailable)" in result.warnings
+
+
 def test_research_service_dossier_shape() -> None:
     service = OpenBBResearchService(provider="yfinance")
     result = service.dossier(
@@ -163,6 +234,51 @@ def test_research_service_dossier_portfolio_fit_and_freshness(monkeypatch) -> No
     assert result.portfolio_fit["new_symbols"] == ["MSFT"]
     assert result.portfolio_fit["overlap_weight_pct"] == 6.2
     assert "## Portfolio Fit" in result.dossier_markdown
+
+
+def test_research_service_dossier_cites_research_evidence_packets(monkeypatch) -> None:
+    service = OpenBBResearchService(provider="yfinance")
+
+    def fake_quote(symbol: str) -> ResearchResponse:
+        return ResearchResponse(
+            symbol=symbol,
+            provider="yfinance",
+            available=True,
+            message="quote",
+            records=[{"last": 110.0 if symbol == "AAPL" else 220.0, "change_percent": 1.0}],
+        )
+
+    def fake_price_history(symbol: str, period: str = "6mo", interval: str = "1d") -> ResearchResponse:
+        del period, interval
+        closes = [100.0, 110.0, 120.0] if symbol == "AAPL" else [200.0, 210.0, 220.0]
+        return ResearchResponse(
+            symbol=symbol,
+            provider="yfinance",
+            available=True,
+            message="history",
+            records=[{"date": f"2026-01-0{index + 1}", "close": close} for index, close in enumerate(closes)],
+        )
+
+    monkeypatch.setattr(service, "quote", fake_quote)
+    monkeypatch.setattr(service, "price_history", fake_price_history)
+
+    result = service.dossier(
+        symbols=["AAPL", "MSFT"],
+        period="6mo",
+        interval="1d",
+        thesis="Compare quality compounders.",
+        include_portfolio_fit=False,
+    )
+
+    assert [packet["symbol"] for packet in result.evidence_packets] == ["AAPL", "MSFT"]
+    assert result.evidence_packets[0]["packet_id"] == "research-evidence:yfinance:AAPL:6mo:1d"
+    assert result.evidence_packets[0]["provider"] == "yfinance"
+    assert result.evidence_packets[0]["freshness_status"] == "fresh"
+    assert result.evidence_packets[0]["confidence"] == "high"
+    assert result.evidence_packets[0]["coverage_score"] == 100.0
+    assert result.evidence_packets[0]["blocking_gaps"] == []
+    assert "## Evidence Packets" in result.dossier_markdown
+    assert "research-evidence:yfinance:AAPL:6mo:1d" in result.dossier_markdown
 
 
 def test_research_service_evidence_packet_full_data_is_fresh_and_inspectable(monkeypatch) -> None:

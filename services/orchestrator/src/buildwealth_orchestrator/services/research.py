@@ -333,6 +333,29 @@ class OpenBBResearchService:
             return "medium"
         return "low"
 
+    @staticmethod
+    def _packet_summary(packet: ResearchEvidencePacket) -> tuple[dict[str, Any], list[str]]:
+        freshness = packet.freshness if isinstance(packet.freshness, dict) else {}
+        quality = packet.quality if isinstance(packet.quality, dict) else {}
+        coverage = packet.coverage if isinstance(packet.coverage, dict) else {}
+        packet_warnings = coverage.get("warnings") if isinstance(coverage.get("warnings"), list) else []
+        blocking_gaps = quality.get("blocking_gaps")
+        return (
+            {
+                "symbol": packet.symbol,
+                "packet_id": packet.packet_id,
+                "provider": packet.provider,
+                "generated_at": packet.generated_at.isoformat(),
+                "freshness_status": freshness.get("status"),
+                "confidence": quality.get("confidence"),
+                "coverage_score": quality.get("coverage_score"),
+                "blocking_gaps": blocking_gaps if isinstance(blocking_gaps, list) else [],
+                "quote_available": bool(coverage.get("quote_available")),
+                "history_available": bool(coverage.get("history_available")),
+            },
+            [str(item).strip() for item in packet_warnings if str(item).strip()],
+        )
+
     @classmethod
     def _build_portfolio_fit(
         cls,
@@ -391,6 +414,7 @@ class OpenBBResearchService:
         catalysts: list[str],
         key_takeaways: list[str],
         freshness: dict[str, Any],
+        evidence_packets: list[dict[str, Any]],
         portfolio_fit: dict[str, Any],
     ) -> str:
         lines: list[str] = [
@@ -470,6 +494,34 @@ class OpenBBResearchService:
             ]
         )
 
+        if evidence_packets:
+            lines.extend(
+                [
+                    "",
+                    "## Evidence Packets",
+                    "",
+                    "| Symbol | Packet | Provider | Freshness | Confidence | Coverage | Blocking gaps |",
+                    "| --- | --- | --- | --- | --- | ---: | --- |",
+                ]
+            )
+            for packet in evidence_packets:
+                symbol = str(packet.get("symbol") or "-")
+                packet_id = str(packet.get("packet_id") or "-")
+                provider = str(packet.get("provider") or "-")
+                freshness_status = str(packet.get("freshness_status") or "-")
+                confidence = str(packet.get("confidence") or "-")
+                coverage_score = packet.get("coverage_score")
+                coverage = f"{float(coverage_score):.0f}%" if isinstance(coverage_score, (int, float)) else "-"
+                blocking_gaps_raw = packet.get("blocking_gaps")
+                blocking_gaps = (
+                    ", ".join(str(item) for item in blocking_gaps_raw)
+                    if isinstance(blocking_gaps_raw, list) and blocking_gaps_raw
+                    else "none"
+                )
+                lines.append(
+                    f"| {symbol} | {packet_id} | {provider} | {freshness_status} | {confidence} | {coverage} | {blocking_gaps} |"
+                )
+
         if portfolio_fit:
             existing_symbols = portfolio_fit.get("existing_symbols", [])
             if not isinstance(existing_symbols, list):
@@ -500,6 +552,27 @@ class OpenBBResearchService:
             lines.extend([f"- {warning}" for warning in compare.warnings[:20]])
 
         return "\n".join(lines).strip() + "\n"
+
+    def _build_evidence_packet_summaries(
+        self,
+        *,
+        symbols: list[str],
+        period: str,
+        interval: str,
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        packet_summaries: list[dict[str, Any]] = []
+        warnings: list[str] = []
+        for symbol in symbols:
+            try:
+                packet = self.evidence_packet(symbol=symbol, period=period, interval=interval)
+            except Exception as exc:
+                warnings.append(f"{symbol}: evidence packet unavailable ({exc})")
+                continue
+
+            packet_summary, packet_warnings = self._packet_summary(packet)
+            warnings.extend(packet_warnings)
+            packet_summaries.append(packet_summary)
+        return packet_summaries, warnings
 
     def options_chain(self, symbol: str) -> ResearchResponse:
         try:
@@ -687,6 +760,14 @@ class OpenBBResearchService:
             if not history_response.available:
                 warnings.append(f"{symbol}: history unavailable ({history_response.message})")
 
+            packet_summary: dict[str, Any] = {}
+            try:
+                packet = self.evidence_packet(symbol=symbol, period=period, interval=interval)
+                packet_summary, packet_warnings = self._packet_summary(packet)
+                warnings.extend(packet_warnings)
+            except Exception as exc:
+                warnings.append(f"{symbol}: evidence packet unavailable ({exc})")
+
             items.append(
                 ResearchCompareItem(
                     symbol=symbol,
@@ -702,6 +783,16 @@ class OpenBBResearchService:
                     dividend_yield_pct=quote_metrics.get("dividend_yield_pct"),
                     quote_records=len(quote_response.records),
                     history_records=len(history_response.records),
+                    research_evidence_packet_id=packet_summary.get("packet_id"),
+                    research_provider=packet_summary.get("provider"),
+                    research_freshness_status=packet_summary.get("freshness_status"),
+                    research_confidence=packet_summary.get("confidence"),
+                    research_coverage_score=packet_summary.get("coverage_score"),
+                    research_blocking_gaps=(
+                        packet_summary.get("blocking_gaps")
+                        if isinstance(packet_summary.get("blocking_gaps"), list)
+                        else []
+                    ),
                 )
             )
 
@@ -930,6 +1021,13 @@ class OpenBBResearchService:
         if not compare.items:
             warnings.append("No symbols were available to build a dossier.")
 
+        evidence_packets, evidence_warnings = self._build_evidence_packet_summaries(
+            symbols=compare.symbols,
+            period=compare.period,
+            interval=compare.interval,
+        )
+        warnings.extend(evidence_warnings)
+
         freshness = {
             "generated_at": compare.generated_at.isoformat(),
             "status": self._freshness_status(
@@ -1016,6 +1114,7 @@ class OpenBBResearchService:
             catalysts=normalized_catalysts,
             key_takeaways=key_takeaways,
             freshness=freshness,
+            evidence_packets=evidence_packets,
             portfolio_fit=portfolio_fit,
         )
 
@@ -1032,6 +1131,7 @@ class OpenBBResearchService:
             catalysts=normalized_catalysts,
             key_takeaways=key_takeaways,
             freshness=freshness,
+            evidence_packets=evidence_packets,
             compare=compare,
             portfolio_fit=portfolio_fit,
             dossier_markdown=dossier_markdown,

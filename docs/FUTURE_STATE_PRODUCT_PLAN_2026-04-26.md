@@ -551,9 +551,9 @@ Long-term:
 ## Current Immediate Next Work
 
 1. Add pending Copilot draft/review indicators to Today command cards.
-2. Migrate compare and dossier research surfaces to cite or consume evidence packets.
-3. Add richer provider freshness/coverage metadata around current OpenBB-backed research outputs.
-4. Define the first portfolio-fit assessment contract before generating investment-fit recommendations.
+2. Add richer provider freshness/coverage metadata around current OpenBB-backed research outputs.
+3. Enrich the portfolio-fit assessment with plan/time-horizon and tax-lot context.
+4. Add pending Copilot draft/review indicators to Today command cards.
 5. Continue expanding browser coverage around Plan v2 migration as those surfaces move over.
 
 ## Documentation Governance

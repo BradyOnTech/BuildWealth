@@ -68,6 +68,7 @@ export const api = {
   appendDecision: (id, body) => postJson(`/api/plans/${encodeURIComponent(id)}/decisions`, body),
   setActivePlan: (id) => postJson(`/api/plans/${encodeURIComponent(id)}/activate`, {}),
   holdings:     () => fetchJson('/api/portfolio/holdings'),
+  portfolioFit: (body) => postJson('/api/portfolio/fit-assessment', body),
   profile:      () => fetchJson('/api/financial-profile'),
   updateProfile: (body) => putJson('/api/financial-profile', body),
   onboarding:   () => fetchJson('/api/onboarding/status'),

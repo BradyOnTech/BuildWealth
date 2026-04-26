@@ -47,8 +47,130 @@ export async function init() {
     ${raw(renderStanding(data))}
     ${raw(renderComposition(data))}
     ${raw(renderWatch(data))}
+    ${raw(renderFitReview())}
     ${raw(renderLookCloser())}
   `);
+  bindFitReview(root);
+}
+
+export function renderFitReview(result = null, { loading = false, error = '' } = {}) {
+  const title = result?.symbol
+    ? `Fit review: ${result.symbol}`
+    : 'Fit review';
+  return html`
+    <section class="fit-review" aria-labelledby="portfolio-fit-title">
+      <header class="section-head">
+        <span class="section-eyebrow">Movement IV</span>
+        <h2 class="section-title" id="portfolio-fit-title">${title}</h2>
+      </header>
+      <form class="fit-review-form" data-fit-review-form>
+        <label class="fit-field">
+          <span>Candidate</span>
+          <input name="symbol" type="text" autocomplete="off" placeholder="VTI" maxlength="12" value="${result?.symbol || ''}" required>
+        </label>
+        <label class="fit-field">
+          <span>Amount</span>
+          <input name="amount_usd" type="number" inputmode="decimal" min="1" step="100" placeholder="Optional">
+        </label>
+        <button class="fit-review-button" type="submit" ${loading ? 'disabled' : ''}>${loading ? 'Reviewing' : 'Review fit'}</button>
+      </form>
+      <div class="fit-review-result" data-fit-review-result>
+        ${error ? html`<p class="error-banner">${error}</p>` : raw(renderFitResult(result))}
+      </div>
+    </section>
+  `;
+}
+
+function bindFitReview(root) {
+  const form = root.querySelector('[data-fit-review-form]');
+  const resultEl = root.querySelector('[data-fit-review-result]');
+  if (!form || !resultEl) return;
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const formData = new FormData(form);
+    const symbol = String(formData.get('symbol') || '').trim().toUpperCase();
+    const amountRaw = String(formData.get('amount_usd') || '').trim();
+    if (!symbol) return;
+
+    const button = form.querySelector('button[type="submit"]');
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Reviewing';
+    }
+    setView(resultEl, html`<p class="fit-empty">Checking portfolio, plan horizon, profile readiness, and research evidence.</p>`);
+    try {
+      const body = { symbol };
+      if (amountRaw) body.amount_usd = Number(amountRaw);
+      const result = await api.portfolioFit(body);
+      setView(resultEl, renderFitResult(result));
+    } catch (err) {
+      setView(resultEl, html`<p class="error-banner">${err.message || 'Could not review fit.'}</p>`);
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = 'Review fit';
+      }
+    }
+  });
+}
+
+export function renderFitResult(result) {
+  if (!result) {
+    return html`
+      <p class="fit-empty">Ask whether a candidate belongs in this portfolio before opening a deeper Copilot discussion.</p>
+    `;
+  }
+  const status = labelize(result.fit_status);
+  const next = labelize(result.recommended_next_step);
+  const evidence = result.evidence || {};
+  const plan = result.plan_impact || {};
+  const impact = result.portfolio_impact || {};
+  return html`
+    <article class="fit-result fit-${result.fit_status}">
+      <div class="fit-result-head">
+        <span class="fit-status">${status}</span>
+        <span class="fit-score">${Math.round(Number(result.fit_score || 0))}/100</span>
+      </div>
+      <dl class="fit-meta">
+        <div>
+          <dt>Next</dt>
+          <dd>${next}</dd>
+        </div>
+        <div>
+          <dt>Plan horizon</dt>
+          <dd>${plan.time_horizon ? `${labelize(plan.time_horizon)}${plan.years ? ` · ${plan.years}y` : ''}` : 'Not available'}</dd>
+        </div>
+        <div>
+          <dt>Research</dt>
+          <dd>${evidence.freshness_status || 'Unavailable'}${evidence.confidence ? ` · ${evidence.confidence}` : ''}</dd>
+        </div>
+        <div>
+          <dt>Position</dt>
+          <dd>${impact.existing_position ? `${Number(impact.current_weight_pct || 0).toFixed(1)}% held` : 'Not held'}</dd>
+        </div>
+      </dl>
+      ${raw(renderBullets('Reasons', result.fit_reasons))}
+      ${raw(renderBullets('Risks', result.fit_risks))}
+      ${raw(renderBullets('Needs', result.blocking_gaps))}
+    </article>
+  `;
+}
+
+function renderBullets(label, items = []) {
+  const visible = Array.isArray(items) ? items.filter(Boolean).slice(0, 4) : [];
+  if (!visible.length) return '';
+  return html`
+    <div class="fit-list">
+      <h3>${label}</h3>
+      <ul>${visible.map((item) => html`<li>${item}</li>`)}</ul>
+    </div>
+  `;
+}
+
+function labelize(value) {
+  return String(value || '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (ch) => ch.toUpperCase()) || 'Unknown';
 }
 
 function renderLookCloser() {

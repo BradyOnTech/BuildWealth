@@ -32,6 +32,8 @@ from buildwealth_orchestrator.schemas import (
     OnboardingStatusResponse,
     OptionsChainRequest,
     PriceHistoryRequest,
+    PortfolioFitAssessmentRequest,
+    PortfolioFitAssessmentResponse,
     ResearchCompareRequest,
     ResearchCompareResponse,
     ResearchDossierRequest,
@@ -205,6 +207,7 @@ from buildwealth_orchestrator.services.snapshot_backfill import backfill_snapsho
 from buildwealth_orchestrator.services.affordability import assess_affordability
 from buildwealth_orchestrator.services.statement_importer import parse_statement_csv
 from buildwealth_orchestrator.services.portfolio_simulator import simulate_trade
+from buildwealth_orchestrator.services.portfolio_fit import assess_portfolio_fit
 from buildwealth_orchestrator.services.goal_tracker import compute_goal_progress
 from buildwealth_orchestrator.services.financial_health import compute_financial_health
 from buildwealth_orchestrator.services.plan_tracker import compute_plan_tracking
@@ -8021,6 +8024,20 @@ async def tool_simulate_trade(arguments: dict[str, object]) -> dict[str, object]
     return simulate_portfolio_trade(request).model_dump(mode="json")
 
 
+async def tool_assess_portfolio_fit(arguments: dict[str, object]) -> dict[str, object]:
+    request = PortfolioFitAssessmentRequest(
+        symbol=str(arguments.get("symbol") or ""),
+        amount_usd=(
+            _coerce_float(arguments.get("amount_usd"), 0.0)
+            if arguments.get("amount_usd") is not None
+            else None
+        ),
+        period=str(arguments.get("period") or "6mo"),
+        interval=str(arguments.get("interval") or "1d"),
+    )
+    return build_portfolio_fit_assessment_payload(request).model_dump(mode="json")
+
+
 async def tool_assess_affordability(arguments: dict[str, object]) -> dict[str, object]:
     request = AffordabilityRequest(
         description=str(arguments.get("description") or ""),
@@ -10145,6 +10162,29 @@ def configure_copilot_tools() -> None:
         handler=tool_simulate_trade,
     )
     copilot.register_tool(
+        name="assess_portfolio_fit",
+        description=(
+            "Review whether an investment candidate fits the user's current portfolio, plan horizon, "
+            "cash runway, profile readiness, and research evidence. This is decision support only: "
+            "it does not execute trades and should not be presented as hidden buy/sell advice."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Ticker symbol to review, such as AAPL or VTI."},
+                "amount_usd": {
+                    "type": "number",
+                    "description": "Optional dollar amount to include in a bounded portfolio-impact simulation.",
+                },
+                "period": {"type": "string", "description": "Research lookback period, default 6mo."},
+                "interval": {"type": "string", "description": "Research interval, default 1d."},
+            },
+            "required": ["symbol"],
+            "additionalProperties": False,
+        },
+        handler=tool_assess_portfolio_fit,
+    )
+    copilot.register_tool(
         name="get_onboarding_status",
         description="Read onboarding completion status for unified financial context.",
         parameters=empty_schema,
@@ -12224,6 +12264,70 @@ def simulate_portfolio_trade(request: SimulateTradeRequest) -> SimulateTradeResp
         amount_usd=request.amount_usd,
         name=request.name,
     )
+
+
+def build_portfolio_fit_assessment_payload(
+    request: PortfolioFitAssessmentRequest,
+) -> PortfolioFitAssessmentResponse:
+    if not request.symbol:
+        raise ValueError("Portfolio-fit assessment requires a symbol.")
+    try:
+        snap = snapshot_store.latest()
+    except FileNotFoundError:
+        snap = None
+
+    holdings_payload: dict[str, Any] = {}
+    try:
+        holdings_payload = portfolio_store.get_holdings()
+    except Exception:
+        holdings_payload = {}
+
+    profile_payload = get_financial_profile_payload()
+    profile_readiness = _build_profile_readiness_summary(
+        income_items=profile_payload.get("income_items") if isinstance(profile_payload.get("income_items"), list) else [],
+        expense_items=profile_payload.get("expense_items") if isinstance(profile_payload.get("expense_items"), list) else [],
+        debt_items=profile_payload.get("debt_items") if isinstance(profile_payload.get("debt_items"), list) else [],
+        goal_items=profile_payload.get("goal_items") if isinstance(profile_payload.get("goal_items"), list) else [],
+        physical_assets=profile_payload.get("physical_assets") if isinstance(profile_payload.get("physical_assets"), list) else [],
+        flags=profile_payload.get("flags") if isinstance(profile_payload.get("flags"), dict) else {},
+        tax_profile=profile_payload.get("tax_profile") if isinstance(profile_payload.get("tax_profile"), dict) else {},
+    )
+
+    emergency_fund_months: float | None = None
+    try:
+        emergency_fund_months = get_financial_health().emergency_fund_months
+    except Exception:
+        emergency_fund_months = None
+
+    try:
+        evidence_packet = research_service.evidence_packet(
+            symbol=request.symbol,
+            period=request.period,
+            interval=request.interval,
+        )
+    except ValueError:
+        raise
+    except Exception:
+        evidence_packet = None
+
+    return assess_portfolio_fit(
+        symbol=request.symbol,
+        amount_usd=request.amount_usd,
+        evidence_packet=evidence_packet,
+        snapshot=snap,
+        holdings_payload=holdings_payload,
+        profile_readiness_payload=profile_readiness.model_dump(mode="json"),
+        emergency_fund_months=emergency_fund_months,
+        active_plan_detail=resolve_active_plan_detail(),
+    )
+
+
+@app.post("/api/portfolio/fit-assessment", response_model=PortfolioFitAssessmentResponse)
+def portfolio_fit_assessment(request: PortfolioFitAssessmentRequest) -> PortfolioFitAssessmentResponse:
+    try:
+        return build_portfolio_fit_assessment_payload(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/goals/progress", response_model=GoalProgressResponse)
