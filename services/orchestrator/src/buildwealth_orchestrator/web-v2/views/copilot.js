@@ -1,4 +1,13 @@
-// COPILOT — placeholder. Chat + Inbox side rail planned for next iteration.
+// COPILOT — chat masthead, thread, sticky composer.
+// One conversation visible at a time. Past conversations live behind a picker.
+// Plan scope sets which plan's context is used. Composer auto-grows; ⌘↵ to send.
+
+import { api } from '../lib/api.js';
+import { state } from '../lib/state.js';
+import { html, raw, esc, $, delegate } from '../lib/dom.js';
+import { renderThread } from './copilot/thread.js';
+import { renderComposer, attachComposerBehavior } from './copilot/composer.js';
+import { fmtRelative } from '../lib/format.js';
 
 export const meta = {
   id: 'copilot',
@@ -7,21 +16,346 @@ export const meta = {
   group: 'daily',
 };
 
+const SUGGESTIONS = [
+  'What should I do this week?',
+  'Am I on track with my retirement plan?',
+  'What if I increased my contribution to $2,000 a month?',
+  'Compare AAPL and MSFT for a $10,000 add.',
+  'Can I afford a $450,000 house given my plan?',
+];
+
+const ui = {
+  conversationId: null,
+  conversationTitle: '',
+  messages: [],
+  conversations: [],
+  busy: false,
+  thinking: false,
+  error: null,
+  planId: null,
+  pickerOpen: null,                 // 'conversations' | 'plans' | null
+  draftFocus: null,
+};
+
 export function template() {
-  return `
-    <section class="page">
-      <div class="placeholder">
-        <span class="glyph">¶</span>
-        <h2>Copilot is moving in next.</h2>
-        <p>
-          The chat surface and recommendation inbox will live together
-          here — questions on the left, the day's three things on the
-          right. The classic Copilot view remains available below.
-        </p>
-        <a class="link-editorial" href="/#copilot">Open in classic</a>
-      </div>
+  return html`
+    <section class="page" id="copilot-page">
+      <div id="copilot-masthead"></div>
+      <div id="copilot-body"></div>
+      <div id="copilot-composer"></div>
     </section>
   `;
 }
 
-export function init() { /* no-op */ }
+export async function init(params = {}) {
+  ui.planId = params.plan_id || state.activePlanId || null;
+  ui.conversationId = params.conversation_id || null;
+  ui.conversations = [];
+  ui.messages = [];
+  ui.busy = false;
+  ui.thinking = false;
+  ui.error = null;
+  ui.pickerOpen = null;
+  attachHandlers();
+
+  rerenderAll();
+
+  // Load past conversations, then the active one (if any).
+  loadConversations().then(() => rerenderMasthead()).catch(() => {});
+  if (params.focus) {
+    // Linked from inbox: prefill question. Conversation stays empty until sent.
+    fillDraft(`Tell me about recommendation ${params.focus}.`);
+  }
+}
+
+/* ─────────────  data  ───────────── */
+
+async function loadConversations() {
+  try {
+    const list = await api.conversations(25);
+    ui.conversations = Array.isArray(list) ? list : [];
+  } catch {
+    ui.conversations = [];
+  }
+}
+
+async function loadConversation(id) {
+  ui.busy = true;
+  ui.error = null;
+  rerenderBody();
+  try {
+    const res = await api.conversation(id);
+    ui.conversationId = res.id;
+    ui.conversationTitle = res.title || '';
+    ui.messages = Array.isArray(res.messages) ? res.messages : [];
+  } catch (err) {
+    ui.error = err.message;
+  } finally {
+    ui.busy = false;
+    rerenderAll();
+  }
+}
+
+async function sendMessage(question, { useLive }) {
+  // Optimistic user message.
+  const now = new Date().toISOString();
+  ui.messages.push({ role: 'user', content: question, created_at: now, metadata: {} });
+  ui.thinking = true;
+  ui.error = null;
+  rerenderBody();
+  rerenderComposer({ draft: '' });
+
+  try {
+    const res = await api.copilotChat({
+      question,
+      conversation_id: ui.conversationId,
+      use_live_snapshot: !!useLive,
+      plan_id: ui.planId,
+      context_options: { detail_level: 'full' },
+    });
+    ui.conversationId = res.conversation_id;
+    ui.messages.push({
+      role: 'assistant',
+      content: res.answer || '',
+      created_at: res.created_at || new Date().toISOString(),
+      metadata: { tool_calls: res.tool_calls || [], model: res.model || null },
+    });
+    if (!ui.conversationTitle) ui.conversationTitle = derivedTitle(question);
+    loadConversations().then(() => rerenderMasthead()).catch(() => {});
+  } catch (err) {
+    ui.error = err.message;
+    ui.messages.push({
+      role: 'assistant',
+      content: `_Could not reach Copilot — ${err.message}_`,
+      created_at: new Date().toISOString(),
+      metadata: {},
+    });
+  } finally {
+    ui.thinking = false;
+    rerenderBody();
+    rerenderComposer({ draft: '' });
+    scrollToBottom();
+  }
+}
+
+/* ─────────────  rendering  ───────────── */
+
+function rerenderAll() {
+  rerenderMasthead();
+  rerenderBody();
+  rerenderComposer();
+}
+
+function rerenderMasthead() {
+  const root = $('#copilot-masthead');
+  if (!root) return;
+  root.innerHTML = renderMasthead();
+}
+
+function rerenderBody() {
+  const root = $('#copilot-body');
+  if (!root) return;
+  root.innerHTML = renderBody();
+}
+
+function rerenderComposer({ draft = readDraft() } = {}) {
+  const root = $('#copilot-composer');
+  if (!root) return;
+  root.innerHTML = renderComposer({ busy: ui.busy, draft });
+  attachComposerBehavior(root, {
+    onSubmit: ({ question, useLive }) => sendMessage(question, { useLive }),
+  });
+  if (ui.draftFocus) {
+    const ta = root.querySelector('#composer-textarea');
+    if (ta) {
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    }
+    ui.draftFocus = null;
+  }
+}
+
+function renderMasthead() {
+  const plans = state.plans || [];
+  const plan = plans.find(p => p.id === ui.planId) || plans.find(p => p.is_active) || plans[0];
+  return html`
+    <header class="copilot-masthead">
+      <div class="copilot-masthead-controls">
+        <span class="copilot-masthead-eyebrow">Copilot</span>
+        <span class="copilot-picker">
+          <button class="copilot-picker-button" data-picker="conversations">
+            ${ui.conversationId ? esc(ui.conversationTitle || 'Untitled') : 'New conversation'}
+          </button>
+          ${ui.pickerOpen === 'conversations' ? raw(renderConversationsMenu()) : ''}
+        </span>
+        ${plans.length ? html`
+          <span class="copilot-picker">
+            <button class="copilot-picker-button" data-picker="plans">
+              plan: ${esc(plan?.title || 'none')}
+            </button>
+            ${ui.pickerOpen === 'plans' ? raw(renderPlansMenu(plans, plan?.id)) : ''}
+          </span>
+        ` : ''}
+      </div>
+      <div class="entry-actions">
+        <button class="action-link muted" data-action="new-chat">New conversation <span class="arrow">›</span></button>
+      </div>
+    </header>
+  `;
+}
+
+function renderConversationsMenu() {
+  return html`
+    <div class="copilot-picker-menu open" data-menu="conversations">
+      <button class="copilot-picker-item" data-conversation="__new__">
+        <span class="copilot-picker-item-meta">New conversation</span>
+        <span class="copilot-picker-item-title">Start a fresh thread</span>
+      </button>
+      ${ui.conversations.length ? html`<div class="copilot-picker-divider"></div>` : ''}
+      ${ui.conversations.map(c => html`
+        <button class="copilot-picker-item ${c.id === ui.conversationId ? 'active' : ''}" data-conversation="${c.id}">
+          <span class="copilot-picker-item-meta">${c.updated_at ? fmtRelative(c.updated_at) : ''}</span>
+          <span class="copilot-picker-item-title">${esc(c.title || c.last_message_preview || 'Untitled')}</span>
+        </button>
+      `)}
+    </div>
+  `;
+}
+
+function renderPlansMenu(plans, currentId) {
+  return html`
+    <div class="copilot-picker-menu open" data-menu="plans">
+      <button class="copilot-picker-item ${ui.planId == null ? 'active' : ''}" data-plan="__none__">
+        <span class="copilot-picker-item-meta">no plan</span>
+        <span class="copilot-picker-item-title">Don't include a plan in context</span>
+      </button>
+      <div class="copilot-picker-divider"></div>
+      ${plans.map(p => html`
+        <button class="copilot-picker-item ${p.id === currentId ? 'active' : ''}" data-plan="${p.id}">
+          <span class="copilot-picker-item-meta">${p.is_active ? 'active' : ''}</span>
+          <span class="copilot-picker-item-title">${esc(p.title || 'Untitled')}</span>
+        </button>
+      `)}
+    </div>
+  `;
+}
+
+function renderBody() {
+  if (ui.busy && !ui.messages.length) {
+    return html`<div class="skeleton" style="height: 320px; margin-top: var(--s-7);">.</div>`;
+  }
+  if (!ui.messages.length && !ui.thinking) {
+    return renderEmpty();
+  }
+  return html`
+    ${ui.conversationTitle ? html`
+      <h1 class="conversation-title">${esc(ui.conversationTitle)}</h1>
+    ` : ''}
+    ${raw(renderThread(ui.messages, { thinking: ui.thinking }))}
+    ${ui.error ? html`<p class="error-banner">${esc(ui.error)}</p>` : ''}
+  `;
+}
+
+function renderEmpty() {
+  return html`
+    <div class="copilot-empty">
+      <p class="copilot-empty-headline">Ask anything.</p>
+      <p class="copilot-empty-lede">
+        Copilot has your portfolio, your plan and your profile in scope.
+        It can run scenarios, look at concentration, and recommend changes.
+      </p>
+      <ul class="suggestion-list">
+        ${SUGGESTIONS.map(s => html`
+          <li>
+            <button class="suggestion-row" data-suggest="${esc(s)}">${esc(s)}</button>
+          </li>
+        `)}
+      </ul>
+    </div>
+  `;
+}
+
+/* ─────────────  helpers  ───────────── */
+
+function readDraft() {
+  const ta = document.querySelector('#composer-textarea');
+  return ta ? ta.value : '';
+}
+
+function fillDraft(text) {
+  ui.draftFocus = true;
+  rerenderComposer({ draft: text });
+}
+
+function scrollToBottom() {
+  // Bring the latest message into view without snapping the scroll.
+  const last = document.querySelector('.message:last-of-type');
+  if (last) last.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function derivedTitle(question) {
+  const trimmed = String(question).trim().replace(/\s+/g, ' ');
+  if (trimmed.length <= 60) return trimmed;
+  return trimmed.slice(0, 57) + '…';
+}
+
+/* ─────────────  events  ───────────── */
+
+function attachHandlers() {
+  const page = $('#copilot-page');
+  if (!page) return;
+
+  delegate(page, 'click', '[data-picker]', (e, t) => {
+    e.stopPropagation();
+    const which = t.getAttribute('data-picker');
+    ui.pickerOpen = ui.pickerOpen === which ? null : which;
+    rerenderMasthead();
+  });
+
+  delegate(page, 'click', '[data-conversation]', async (_, t) => {
+    const id = t.getAttribute('data-conversation');
+    ui.pickerOpen = null;
+    if (id === '__new__') {
+      ui.conversationId = null;
+      ui.conversationTitle = '';
+      ui.messages = [];
+      rerenderAll();
+      return;
+    }
+    rerenderMasthead();
+    await loadConversation(id);
+  });
+
+  delegate(page, 'click', '[data-plan]', (_, t) => {
+    const id = t.getAttribute('data-plan');
+    ui.planId = id === '__none__' ? null : id;
+    ui.pickerOpen = null;
+    rerenderMasthead();
+  });
+
+  delegate(page, 'click', '[data-action="new-chat"]', () => {
+    ui.conversationId = null;
+    ui.conversationTitle = '';
+    ui.messages = [];
+    ui.error = null;
+    rerenderAll();
+  });
+
+  delegate(page, 'click', '[data-suggest]', (_, t) => {
+    const text = t.getAttribute('data-suggest') || '';
+    fillDraft(text);
+  });
+
+  // Outside-click closes pickers.
+  document.addEventListener('click', closePickersOnOutsideClick, { passive: true });
+}
+
+function closePickersOnOutsideClick(e) {
+  if (!ui.pickerOpen) return;
+  const masthead = document.querySelector('#copilot-masthead');
+  if (!masthead) return;
+  if (!masthead.contains(e.target)) {
+    ui.pickerOpen = null;
+    rerenderMasthead();
+  }
+}

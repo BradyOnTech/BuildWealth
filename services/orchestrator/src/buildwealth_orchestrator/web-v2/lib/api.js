@@ -60,6 +60,11 @@ export const api = {
   setActivePlan: (id) => postJson(`/api/plans/${encodeURIComponent(id)}/activate`, {}),
   holdings:     () => fetchJson('/api/portfolio/holdings'),
 
+  // Copilot
+  conversations:     (limit = 25) => fetchJson(`/api/copilot/conversations?limit=${limit}`),
+  conversation:      (id) => fetchJson(`/api/copilot/conversations/${encodeURIComponent(id)}`),
+  copilotChat:       (body) => postJson('/api/copilot/chat', body),
+
   // Recommendations
   recommendations: (opts) => fetchJson(recommendationsUrl(opts)),
   recommendation:  (id)   => fetchJson(`/api/recommendations/${encodeURIComponent(id)}`),
