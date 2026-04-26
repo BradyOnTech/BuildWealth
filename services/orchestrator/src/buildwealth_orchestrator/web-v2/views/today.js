@@ -124,10 +124,10 @@ function computeRunway(payload) {
   return Math.round(nw / Math.max(surplus, 1) / 12);
 }
 
-/* ─────────────  THE MOVE  ───────────── */
+/* ─────────────  COMMAND CENTER  ───────────── */
 
 export function renderCommandCards(payload) {
-  const cards = Array.isArray(payload.command_cards) ? payload.command_cards.slice(0, 4) : [];
+  const cards = Array.isArray(payload.command_cards) ? payload.command_cards.slice(0, 7) : [];
   if (!cards.length) {
     return html``;
   }
@@ -178,6 +178,8 @@ function normalizeCardStatus(status) {
   if (status === 'critical' || status === 'warning' || status === 'ready') return status;
   return 'ready';
 }
+
+/* ─────────────  THE MOVE  ───────────── */
 
 export function renderMove(payload) {
   const actions = (payload.top_next_actions || []).slice(0, 3);

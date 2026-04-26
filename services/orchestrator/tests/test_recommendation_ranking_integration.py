@@ -246,3 +246,48 @@ def test_get_plan_includes_top_next_actions(
 
     assert payload.top_next_actions
     assert payload.top_next_actions[0].recommendation_id == recommendation["id"]
+
+
+def test_today_command_cards_include_recommendation_loop_state(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    stale = inbox.create(
+        title="Review stale tax assumptions",
+        detail="Tax assumptions need review before plan advice is decision-grade.",
+        priority="medium",
+        source="generator:stale_assumptions",
+        action_payload={"quality": {"actionability": "review_only"}},
+    )
+    pending = inbox.create(
+        title="Applied contribution change",
+        detail="Measure the realized outcome.",
+        priority="medium",
+        source="generator:plan_tracking",
+        action_payload={
+            "decision_closure": {
+                "expected_vs_realized": {"status": "pending_realized"},
+            }
+        },
+    )
+    inbox.set_status(pending["id"], status="applied")
+
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    dashboard = main.TodayDashboardResponse(
+        generated_at=main.utc_now(),
+        currency="USD",
+        state="MN",
+        sync_status=main.SyncStatusResponse(running=False, runs_total=0, runs_failed=0),
+        context_state="ready",
+        context_notes=[],
+        command_cards=[],
+    )
+
+    cards = {card.id: card for card in main._build_today_command_cards(dashboard)}
+
+    assert cards["stale-assumptions"].status == "warning"
+    assert cards["stale-assumptions"].metric_value == "1"
+    assert cards["stale-assumptions"].href == f"#inbox?focus={stale['id']}"
+    assert cards["outcome-loop"].status == "warning"
+    assert cards["outcome-loop"].metric_value == "1"

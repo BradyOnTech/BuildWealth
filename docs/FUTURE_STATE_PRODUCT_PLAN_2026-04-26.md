@@ -441,10 +441,10 @@ High-level tasks:
 - add profile readiness to Today (started: command card now shows profile completion and next gap)
 - add top-action explanation (started: top actions show quality summary and action hint)
 - add data freshness/degraded-mode warnings (started: command card now shows snapshot/data-trust posture)
-- add pending draft/review indicators
-- add recent financial changes
+- add pending draft/review indicators (started: Today now surfaces pending recommendation outcome capture)
+- add recent financial changes (started: Today now surfaces recent portfolio change from snapshot history)
 - connect each card to a concrete review flow
-- extend command cards beyond profile/data/plan/portfolio into pending outcomes, stale assumptions, recent changes, and research readiness
+- extend command cards beyond profile/data/plan/portfolio into research readiness and pending drafts
 
 Done when:
 

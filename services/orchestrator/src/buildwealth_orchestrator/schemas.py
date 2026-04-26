@@ -1001,6 +1001,8 @@ class TodayDashboardResponse(BaseModel):
     total_value_usd: float | None = None
     net_performance_usd: float | None = None
     net_performance_percent: float | None = None
+    recent_change_usd: float | None = None
+    recent_change_percent: float | None = None
     top_holding_symbol: str | None = None
     top_holding_percent: float | None = None
     concentration_risk: Literal["low", "medium", "high"] = "low"

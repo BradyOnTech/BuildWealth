@@ -265,6 +265,8 @@ def _build_command_cards(
     top_holding_percent: float | None,
     snapshot_as_of: datetime | None,
     snapshot_age_minutes: int | None,
+    recent_change_usd: float | None,
+    recent_change_percent: float | None,
 ) -> list[TodayCommandCard]:
     profile_percent = (
         profile_readiness.completion_percent
@@ -320,6 +322,22 @@ def _build_command_cards(
         symbol = top_holding_symbol or "top holding"
         risk_detail = f"Top holding concentration is {concentration_risk} around {symbol}."
 
+    recent_status: Literal["ready", "warning", "critical"] = "ready"
+    recent_detail = "Recent portfolio change is within normal review range."
+    recent_metric = "Unknown"
+    if recent_change_usd is None:
+        recent_status = "warning"
+        recent_detail = "More snapshot history is needed before recent changes are meaningful."
+    else:
+        recent_metric = _format_card_usd(recent_change_usd)
+        if recent_change_percent is not None and recent_change_percent <= -10:
+            recent_status = "critical"
+            recent_detail = "Portfolio value moved materially lower over the available history window."
+        elif recent_change_percent is not None and abs(recent_change_percent) >= 10:
+            recent_status = "warning"
+            direction = "higher" if recent_change_percent > 0 else "lower"
+            recent_detail = f"Portfolio value moved {direction} by {abs(recent_change_percent):.1f}% over the available history window."
+
     return [
         TodayCommandCard(
             id="profile-readiness",
@@ -367,7 +385,23 @@ def _build_command_cards(
             action_label="Review risk" if risk_status != "ready" else "Open portfolio",
             href="#portfolio",
         ),
+        TodayCommandCard(
+            id="recent-changes",
+            title="Recent changes",
+            status=recent_status,
+            detail=recent_detail,
+            metric_label="Window",
+            metric_value=recent_metric,
+            action_label="Review changes",
+            href="#portfolio",
+        ),
     ]
+
+
+def _format_card_usd(value: float) -> str:
+    rounded = round(value)
+    prefix = "-" if rounded < 0 else ""
+    return f"{prefix}${abs(rounded):,}"
 
 
 def build_today_dashboard_payload(
@@ -504,6 +538,8 @@ def build_today_dashboard_payload(
         top_holding_percent=top_holding_percent,
         snapshot_as_of=snapshot_as_of,
         snapshot_age_minutes=snapshot_age_minutes,
+        recent_change_usd=snapshot_history.delta_total_value_usd,
+        recent_change_percent=snapshot_history.delta_total_value_percent,
     )
 
     return TodayDashboardResponse(
@@ -517,6 +553,8 @@ def build_today_dashboard_payload(
         total_value_usd=total_value,
         net_performance_usd=net_performance_usd,
         net_performance_percent=net_performance_percent,
+        recent_change_usd=snapshot_history.delta_total_value_usd,
+        recent_change_percent=snapshot_history.delta_total_value_percent,
         top_holding_symbol=top_holding_symbol or None,
         top_holding_percent=top_holding_percent,
         concentration_risk=concentration_risk,

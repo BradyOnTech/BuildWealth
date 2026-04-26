@@ -125,6 +125,10 @@ def test_today_dashboard_payload_with_active_plan() -> None:
     assert cards["plan-posture"].status == "ready"
     assert cards["portfolio-risk"].status == "critical"
     assert cards["portfolio-risk"].metric_value == "40%"
+    assert cards["recent-changes"].status == "ready"
+    assert cards["recent-changes"].metric_value == "$15,000"
+    assert payload.recent_change_usd == 15000
+    assert payload.recent_change_percent == 5.2
 
 
 def test_today_dashboard_payload_without_snapshot_or_plan() -> None:

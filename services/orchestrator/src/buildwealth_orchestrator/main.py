@@ -153,6 +153,7 @@ from buildwealth_orchestrator.schemas import (
     GitRestorePreviewResponse,
     GitStatusResponse,
     RuntimeTelemetryResponse,
+    TodayCommandCard,
     TodayDashboardResponse,
     TopNextAction,
     PortfolioReviewPacketListResponse,
@@ -3802,6 +3803,80 @@ def _build_top_next_actions(
     return [_as_top_next_action(row) for row in selected_rows[:bounded_limit]]
 
 
+def _build_today_command_cards(dashboard: TodayDashboardResponse) -> list[TodayCommandCard]:
+    cards = list(dashboard.command_cards)
+    try:
+        proposed_rows = recommendation_inbox.list(limit=500, status="proposed", sort="created_at_desc")
+        closed_rows = recommendation_inbox.list(limit=500, include_archived=True, sort="created_at_desc")
+    except Exception:
+        return cards
+
+    stale_rows = [
+        row for row in proposed_rows
+        if str(row.get("source") or "").strip().lower() == "generator:stale_assumptions"
+    ]
+    first_stale_id = str(stale_rows[0].get("id") or "").strip() if stale_rows else ""
+    cards.append(
+        TodayCommandCard(
+            id="stale-assumptions",
+            title="Stale assumptions",
+            status="warning" if stale_rows else "ready",
+            detail=(
+                f"{len(stale_rows)} assumption review(s) are open before advice can be fully trusted."
+                if stale_rows
+                else "No stale assumption reviews are currently open."
+            ),
+            metric_label="Open",
+            metric_value=str(len(stale_rows)),
+            action_label="Review assumptions" if stale_rows else "Open inbox",
+            href=f"#inbox?focus={first_stale_id}" if first_stale_id else "#inbox",
+        )
+    )
+
+    pending_outcomes = [
+        row for row in closed_rows
+        if _recommendation_needs_outcome(row)
+    ]
+    first_pending_id = str(pending_outcomes[0].get("id") or "").strip() if pending_outcomes else ""
+    cards.append(
+        TodayCommandCard(
+            id="outcome-loop",
+            title="Outcome loop",
+            status="warning" if pending_outcomes else "ready",
+            detail=(
+                f"{len(pending_outcomes)} closed recommendation(s) still need realized outcome capture."
+                if pending_outcomes
+                else "Closed recommendations have no pending outcome capture."
+            ),
+            metric_label="Pending",
+            metric_value=str(len(pending_outcomes)),
+            action_label="Log outcome" if pending_outcomes else "Review outcomes",
+            href=f"#inbox?focus={first_pending_id}" if first_pending_id else "#inbox",
+        )
+    )
+
+    return cards
+
+
+def _recommendation_needs_outcome(row: dict[str, Any]) -> bool:
+    status = str(row.get("status") or "").strip().lower()
+    if status not in {"applied", "rejected"}:
+        return False
+    action_payload = row.get("action_payload")
+    if not isinstance(action_payload, dict):
+        return False
+    closure = action_payload.get("decision_closure")
+    if not isinstance(closure, dict):
+        return False
+    realized = closure.get("realized_outcome")
+    if isinstance(realized, dict) and realized:
+        return False
+    expected_vs_realized = closure.get("expected_vs_realized")
+    if isinstance(expected_vs_realized, dict):
+        return str(expected_vs_realized.get("status") or "").strip().lower() == "pending_realized"
+    return True
+
+
 def _build_plan_detail_response(detail: dict[str, Any]) -> PlanDetailResponse:
     payload = dict(detail)
     plan_id = str(payload.get("id") or "").strip() or None
@@ -6452,6 +6527,8 @@ def build_today_dashboard_response() -> TodayDashboardResponse:
             )
             for item in dashboard.recommendations[:3]
         ]
+
+    dashboard.command_cards = _build_today_command_cards(dashboard)
 
     return dashboard
 
