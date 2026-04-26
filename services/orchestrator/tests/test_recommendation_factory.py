@@ -10,6 +10,7 @@ from buildwealth_orchestrator.services.recommendation_factory import (
     generate_cash_liquidity_recommendations,
     generate_plan_tracking_recommendations,
     generate_portfolio_risk_recommendations,
+    generate_profile_completeness_recommendations,
 )
 from buildwealth_orchestrator.services.recommendation_inbox import RecommendationInbox
 
@@ -86,6 +87,78 @@ def _financial_profile_payload(*, monthly_expenses: float = 4_000.0, monthly_deb
         "flags": {"no_debt": False, "no_goals": False},
         "notes": "",
     }
+
+
+def test_profile_completeness_factory_generates_next_gap_candidate() -> None:
+    readiness = main.build_onboarding_status_response(
+        profile_payload={
+            "income_items": [{"id": "income-1", "label": "Salary", "monthly_amount_usd": 10_000}],
+            "expense_items": [],
+            "debt_items": [],
+            "goal_items": [],
+            "physical_assets": [],
+            "tax_profile": {"filing_status": None, "marginal_tax_rate": None},
+            "flags": {"no_debt": False, "no_goals": False},
+        },
+        latest_snapshot=None,
+        active_plan_detail=None,
+        load_fallbacks=False,
+    ).profile_readiness
+
+    result = generate_profile_completeness_recommendations(
+        profile_readiness_payload=readiness.model_dump(mode="json"),
+        existing_recommendations=[],
+        dry_run=True,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 1
+    candidate = result.candidates[0]
+    assert candidate["source"] == "generator:profile_completeness"
+    assert "Expense profile" in candidate["title"]
+    payload = candidate["action_payload"]
+    assert payload["generator"]["dedupe_key"] == "profile_completeness:expenses"
+    assert payload["evidence"]["data_keys"] == ["financial_profile.readiness"]
+    assert payload["suggested_action"]["kind"] == "complete_profile_section"
+    assert "cash_liquidity" in payload["evidence"]["blocking_recommendation_sources"]
+
+
+def test_profile_completeness_factory_apply_skips_active_duplicates(tmp_path: Path) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    readiness = main.build_onboarding_status_response(
+        profile_payload={
+            "income_items": [],
+            "expense_items": [],
+            "debt_items": [],
+            "goal_items": [],
+            "physical_assets": [],
+            "tax_profile": {"filing_status": None, "marginal_tax_rate": None},
+            "flags": {"no_debt": False, "no_goals": False},
+        },
+        latest_snapshot=None,
+        active_plan_detail=None,
+        load_fallbacks=False,
+    ).profile_readiness
+
+    first = generate_profile_completeness_recommendations(
+        profile_readiness_payload=readiness.model_dump(mode="json"),
+        existing_recommendations=inbox.list(limit=None, include_archived=True, sort="none"),
+        creator=inbox,
+        dry_run=False,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+    second = generate_profile_completeness_recommendations(
+        profile_readiness_payload=readiness.model_dump(mode="json"),
+        existing_recommendations=inbox.list(limit=None, include_archived=True, sort="none"),
+        creator=inbox,
+        dry_run=False,
+        now=datetime(2026, 4, 25, 12, 35, tzinfo=timezone.utc),
+    )
+
+    assert first.generated_count == 1
+    assert len(first.created) == 1
+    assert second.generated_count == 0
+    assert second.skipped[0]["reason"] == "active_duplicate"
 
 
 def test_portfolio_risk_factory_dry_run_generates_specific_candidates() -> None:
@@ -218,6 +291,38 @@ def test_generate_cash_liquidity_route_supports_dry_run_and_apply(
 
     applied = main.generate_cash_liquidity_recommendation_candidates(
         main.CashLiquidityRecommendationGenerateRequest(dry_run=False, plan_id="plan-1", limit=10),
+    )
+
+    assert applied.dry_run is False
+    assert applied.generated_count == 1
+    assert len(applied.created) == 1
+    assert len(inbox.list(limit=None, status="proposed")) == 1
+
+
+def test_generate_profile_completeness_route_supports_dry_run_and_apply(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    profile = _financial_profile_payload()
+    profile["expense_items"] = []
+    profile["debt_items"] = []
+    profile["tax_profile"] = {"filing_status": None, "marginal_tax_rate": None}
+    monkeypatch.setattr(main, "financial_profile_store", _FakeFinancialProfileStore(profile))
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    dry_run = main.generate_profile_completeness_recommendation_candidates(
+        main.ProfileCompletenessRecommendationGenerateRequest(dry_run=True, plan_id="plan-1", limit=10),
+    )
+
+    assert dry_run.dry_run is True
+    assert dry_run.generated_count == 1
+    assert dry_run.candidates[0]["source"] == "generator:profile_completeness"
+    assert dry_run.created == []
+    assert inbox.list(limit=None, status="proposed") == []
+
+    applied = main.generate_profile_completeness_recommendation_candidates(
+        main.ProfileCompletenessRecommendationGenerateRequest(dry_run=False, plan_id="plan-1", limit=10),
     )
 
     assert applied.dry_run is False
@@ -490,13 +595,14 @@ def test_run_all_recommendation_factories_groups_results_and_applies(
     )
 
     assert dry_run.dry_run is True
-    assert dry_run.factory_count == 3
+    assert dry_run.factory_count == 4
     assert dry_run.errors == []
-    assert set(dry_run.factories) == {"portfolio_risk", "plan_tracking", "cash_liquidity"}
+    assert set(dry_run.factories) == {"portfolio_risk", "plan_tracking", "cash_liquidity", "profile_completeness"}
     assert dry_run.factories["portfolio_risk"].generated_count == 2
     assert dry_run.factories["plan_tracking"].generated_count == 2
     assert dry_run.factories["cash_liquidity"].generated_count == 1
-    assert dry_run.generated_count == 5
+    assert dry_run.factories["profile_completeness"].generated_count == 1
+    assert dry_run.generated_count == 6
     assert inbox.list(limit=None, status="proposed") == []
 
     applied = main.run_all_recommendation_factories(
@@ -504,10 +610,10 @@ def test_run_all_recommendation_factories_groups_results_and_applies(
     )
 
     assert applied.dry_run is False
-    assert applied.factory_count == 3
+    assert applied.factory_count == 4
     assert applied.errors == []
-    assert applied.generated_count == 5
-    assert len(inbox.list(limit=None, status="proposed")) == 5
+    assert applied.generated_count == 6
+    assert len(inbox.list(limit=None, status="proposed")) == 6
 
 
 class _NoActivePlanWorkspace:
@@ -529,9 +635,9 @@ def test_run_all_recommendation_factories_keeps_portfolio_results_when_plan_miss
         main.RecommendationFactoryRunAllRequest(dry_run=True, limit=2),
     )
 
-    assert response.factory_count == 2
-    assert set(response.factories) == {"portfolio_risk", "cash_liquidity"}
-    assert response.generated_count == 3
+    assert response.factory_count == 3
+    assert set(response.factories) == {"portfolio_risk", "cash_liquidity", "profile_completeness"}
+    assert response.generated_count == 4
     assert response.errors == [
         {
             "factory": "plan_tracking",

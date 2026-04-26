@@ -15,6 +15,9 @@ PLAN_TRACKING_SOURCE = "generator:plan_tracking"
 CASH_LIQUIDITY_FACTORY_ID = "cash_liquidity_recommendation_factory"
 CASH_LIQUIDITY_FACTORY_VERSION = "v1"
 CASH_LIQUIDITY_SOURCE = "generator:cash_liquidity"
+PROFILE_COMPLETENESS_FACTORY_ID = "profile_completeness_recommendation_factory"
+PROFILE_COMPLETENESS_FACTORY_VERSION = "v1"
+PROFILE_COMPLETENESS_SOURCE = "generator:profile_completeness"
 CASH_RESERVE_MIN_MONTHS = 3.0
 CASH_RESERVE_MAX_MONTHS = 6.0
 
@@ -1075,6 +1078,150 @@ def generate_cash_liquidity_recommendations(
                     status="proposed",
                 )
             )
+
+    return RecommendationFactoryResult(
+        generated_count=len(created) if not dry_run else len(candidates),
+        skipped_count=len(skipped),
+        candidates=candidates,
+        created=created,
+        skipped=skipped,
+        dry_run=dry_run,
+    )
+
+
+def _profile_completeness_dedupe_key(gap_key: str) -> str:
+    return f"profile_completeness:{_clean_key(gap_key)}"
+
+
+def _profile_completeness_candidate(
+    *,
+    profile_readiness_payload: dict[str, Any],
+    generated_at: str,
+    plan_id: str | None,
+) -> dict[str, Any] | None:
+    gap_key = str(profile_readiness_payload.get("next_gap_key") or "").strip()
+    gap_title = str(profile_readiness_payload.get("next_gap_title") or "").strip()
+    gap_detail = str(profile_readiness_payload.get("next_gap_detail") or "").strip()
+    if not gap_key:
+        return None
+
+    blocking_sources = profile_readiness_payload.get("blocking_recommendation_sources")
+    if not isinstance(blocking_sources, list):
+        blocking_sources = []
+    cleaned_sources = [str(item).strip() for item in blocking_sources if str(item).strip()]
+    readiness_status = str(profile_readiness_payload.get("status") or "incomplete").strip().lower()
+    completion_percent = safe_float(profile_readiness_payload.get("completion_percent"), 0.0)
+    dedupe_key = _profile_completeness_dedupe_key(gap_key)
+    title = f"Complete {gap_title or gap_key.replace('_', ' ')}"
+    source_text = ", ".join(source.replace("_", " ") for source in cleaned_sources[:3])
+    detail = gap_detail or "Complete this profile section so BuildWealth can improve recommendation quality."
+    if source_text:
+        detail = f"{detail} This unlocks better {source_text} recommendations."
+
+    action_payload = {
+        "generator": {
+            "id": PROFILE_COMPLETENESS_FACTORY_ID,
+            "version": PROFILE_COMPLETENESS_FACTORY_VERSION,
+            "generated_at": generated_at,
+            "signal_key": gap_key,
+            "signal_type": "profile_readiness_gap",
+            "dedupe_key": dedupe_key,
+            "severity": "blocking" if cleaned_sources else readiness_status,
+        },
+        "evidence": {
+            "summary": detail,
+            "data_keys": ["financial_profile.readiness"],
+            "profile_readiness_status": readiness_status,
+            "profile_completion_percent": completion_percent,
+            "next_gap_key": gap_key,
+            "next_gap_title": gap_title,
+            "next_gap_detail": gap_detail,
+            "blocking_recommendation_sources": cleaned_sources,
+            "sections": profile_readiness_payload.get("sections") if isinstance(profile_readiness_payload.get("sections"), list) else [],
+        },
+        "suggested_action": {
+            "kind": "complete_profile_section",
+            "subject": gap_key,
+            "title": gap_title,
+            "detail": gap_detail,
+        },
+        "expected_outcome": {
+            "expected_delta_context_quality": "profile_readiness_improved",
+            "enabled_recommendation_sources": cleaned_sources,
+        },
+    }
+    return {
+        "title": title,
+        "detail": detail,
+        "priority": "medium" if cleaned_sources else "low",
+        "recommendation_type": "workflow_action",
+        "source": PROFILE_COMPLETENESS_SOURCE,
+        "plan_id": plan_id,
+        "action_payload": action_payload,
+    }
+
+
+def generate_profile_completeness_recommendations(
+    *,
+    profile_readiness_payload: dict[str, Any],
+    existing_recommendations: list[dict[str, Any]],
+    creator: RecommendationCreator | None = None,
+    dry_run: bool = True,
+    plan_id: str | None = None,
+    limit: int = 10,
+    now: datetime | None = None,
+) -> RecommendationFactoryResult:
+    generated_at = _now_iso(now)
+    active_keys = _active_dedupe_keys(existing_recommendations)
+    bounded_limit = max(1, min(int(limit), 50))
+
+    candidates: list[dict[str, Any]] = []
+    created: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+
+    candidate = _profile_completeness_candidate(
+        profile_readiness_payload=profile_readiness_payload,
+        generated_at=generated_at,
+        plan_id=plan_id,
+    )
+    if candidate is not None:
+        generator = candidate.get("action_payload", {}).get("generator", {})
+        dedupe_key = str(generator.get("dedupe_key") or "").strip()
+        signal_key = str(generator.get("signal_key") or "").strip()
+        if dedupe_key in active_keys:
+            skipped.append(
+                {
+                    "dedupe_key": dedupe_key,
+                    "reason": "active_duplicate",
+                    "title": candidate["title"],
+                    "signal_key": signal_key,
+                }
+            )
+        elif len(candidates) >= bounded_limit:
+            skipped.append(
+                {
+                    "dedupe_key": dedupe_key,
+                    "reason": "limit_exceeded",
+                    "title": candidate["title"],
+                    "signal_key": signal_key,
+                }
+            )
+        else:
+            candidates.append(candidate)
+            active_keys.add(dedupe_key)
+            if not dry_run and creator is not None:
+                created.append(
+                    creator.create(
+                        title=candidate["title"],
+                        detail=candidate["detail"],
+                        priority=candidate["priority"],
+                        recommendation_type=candidate["recommendation_type"],
+                        source=candidate["source"],
+                        plan_id=candidate["plan_id"],
+                        action_payload=candidate["action_payload"],
+                        status="proposed",
+                    )
+                )
 
     return RecommendationFactoryResult(
         generated_count=len(created) if not dry_run else len(candidates),

@@ -101,6 +101,7 @@ from buildwealth_orchestrator.schemas import (
     RecommendationOutcomeUpdateRequest,
     CashLiquidityRecommendationGenerateRequest,
     PlanTrackingRecommendationGenerateRequest,
+    ProfileCompletenessRecommendationGenerateRequest,
     PortfolioRiskRecommendationGenerateRequest,
     RecommendationFactoryResponse,
     RecommendationFactoryRunAllRequest,
@@ -304,6 +305,7 @@ from buildwealth_orchestrator.services.recommendation_factory import (
     generate_cash_liquidity_recommendations,
     generate_plan_tracking_recommendations,
     generate_portfolio_risk_recommendations,
+    generate_profile_completeness_recommendations,
 )
 from buildwealth_orchestrator.services.user_settings import UserSettingsStore
 from buildwealth_orchestrator.settings import get_settings
@@ -11893,6 +11895,35 @@ def generate_cash_liquidity_recommendation_candidates(
     return RecommendationFactoryResponse(**result.to_dict())
 
 
+@app.post("/api/recommendations/generate/profile-completeness", response_model=RecommendationFactoryResponse)
+def generate_profile_completeness_recommendation_candidates(
+    request: ProfileCompletenessRecommendationGenerateRequest,
+) -> RecommendationFactoryResponse:
+    profile_payload = get_financial_profile_payload()
+    profile_readiness = build_onboarding_status_response(
+        profile_payload=profile_payload,
+        load_fallbacks=False,
+    ).profile_readiness
+    existing_recommendations = recommendation_inbox.list(
+        limit=None,
+        status=None,
+        plan_id=None,
+        include_archived=True,
+        sort="none",
+    )
+    result = generate_profile_completeness_recommendations(
+        profile_readiness_payload=profile_readiness.model_dump(mode="json") if profile_readiness else {},
+        existing_recommendations=existing_recommendations,
+        creator=recommendation_inbox if not request.dry_run else None,
+        dry_run=request.dry_run,
+        plan_id=request.plan_id,
+        limit=request.limit,
+    )
+    if not request.dry_run and result.created:
+        _queue_autogit_event("profile_completeness_recommendations_generated")
+    return RecommendationFactoryResponse(**result.to_dict())
+
+
 @app.post("/api/recommendations/generate/run-all", response_model=RecommendationFactoryRunAllResponse)
 def run_all_recommendation_factories(
     request: RecommendationFactoryRunAllRequest,
@@ -11938,6 +11969,19 @@ def run_all_recommendation_factories(
         errors.append({"factory": "cash_liquidity", "reason": str(exc.detail)})
     except Exception as exc:
         errors.append({"factory": "cash_liquidity", "reason": str(exc)})
+
+    try:
+        factories["profile_completeness"] = generate_profile_completeness_recommendation_candidates(
+            ProfileCompletenessRecommendationGenerateRequest(
+                dry_run=request.dry_run,
+                plan_id=request.plan_id,
+                limit=request.limit,
+            )
+        )
+    except HTTPException as exc:
+        errors.append({"factory": "profile_completeness", "reason": str(exc.detail)})
+    except Exception as exc:
+        errors.append({"factory": "profile_completeness", "reason": str(exc)})
 
     generated_count = sum(factory.generated_count for factory in factories.values())
     skipped_count = sum(factory.skipped_count for factory in factories.values())
