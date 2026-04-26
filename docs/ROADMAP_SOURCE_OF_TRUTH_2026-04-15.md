@@ -10,6 +10,20 @@ This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active p
 
 ## Progress Log
 
+### 2026-04-25 (Completed - Cash Liquidity Recommendation Factory)
+1. Added a cash/liquidity recommendation generator:
+- uses portfolio cash balances plus financial-profile expenses and debt minimum payments.
+- generates recommendations for missing outflow data, negative cash, emergency-fund shortfalls, and excess idle cash.
+- generated payloads include liquidity evidence, cash gap/excess amounts, target reserve values, and stable `cash_liquidity:{signal}` dedupe keys.
+2. Added API + UI surfaces:
+- `POST /api/recommendations/generate/cash-liquidity` supports dry-run preview and apply mode.
+- `POST /api/recommendations/generate/run-all` now includes cash liquidity as a grouped factory source.
+- Recommendation Inbox includes targeted preview/create controls for Cash Liquidity.
+3. Tests:
+- backend coverage verifies shortfall/excess/dedupe behavior and route dry-run/apply behavior.
+- run-all coverage verifies cash-liquidity grouping.
+- frontend template coverage verifies Cash Liquidity controls and metadata copy.
+
 ### 2026-04-25 (Completed - Reviewed Factory Batch Apply Guard)
 1. Hardened the Factory Review Center creation flow:
 - `Create Reviewed Batch` is disabled until `Preview All Factories` has produced a reviewed batch.

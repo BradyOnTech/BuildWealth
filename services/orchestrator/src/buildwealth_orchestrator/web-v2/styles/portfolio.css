@@ -1,0 +1,292 @@
+/* ─────────────────────────────────────────────────
+   Portfolio · standing, composition, watch
+   ───────────────────────────────────────────────── */
+
+/* ───────────  Allocation strata (editorial bars)  ─────────── */
+
+.strata {
+  display: grid;
+  gap: var(--s-3);
+  margin-top: var(--s-3);
+}
+
+.stratum {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 3fr) auto auto;
+  gap: var(--s-4);
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: var(--hair) solid var(--rule-soft);
+}
+.stratum:last-child { border-bottom: 0; }
+
+.stratum-label {
+  font-family: var(--sans);
+  font-size: var(--t-body-sm);
+  color: var(--ink);
+  font-weight: 500;
+  text-wrap: balance;
+}
+
+.stratum-bar {
+  position: relative;
+  height: 6px;
+  background: transparent;
+  border: var(--hair) solid var(--rule);
+  border-radius: var(--r-pill);
+  overflow: hidden;
+}
+
+.stratum-bar-fill {
+  position: absolute;
+  left: 0; top: 0;
+  height: 100%;
+  background: var(--ink);
+  border-radius: var(--r-pill);
+  transition: width var(--d-mid) var(--ease-page);
+}
+
+.stratum-pct {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 56px;
+}
+
+.stratum-value {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 88px;
+}
+
+/* Three breakdowns side by side */
+.composition-grid {
+  display: grid;
+  gap: var(--s-7);
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  margin-bottom: var(--s-7);
+}
+
+.composition-block .composition-eyebrow {
+  font-family: var(--mono);
+  font-size: var(--t-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--ink-faint);
+  border-bottom: var(--hair) solid var(--rule);
+  padding-bottom: 6px;
+  display: block;
+}
+
+/* ───────────  Top holdings list (compact entry variant)  ─────────── */
+
+.holding-list {
+  display: grid;
+  gap: 0;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.holding-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1.6fr) minmax(0, 1fr) auto auto;
+  gap: var(--s-4);
+  align-items: baseline;
+  padding: var(--s-3) 0;
+  border-bottom: var(--hair) solid var(--rule-soft);
+}
+.holding-row:last-child { border-bottom: 0; }
+
+.holding-numeral {
+  font-family: var(--serif);
+  font-style: italic;
+  font-variation-settings: 'opsz' 36;
+  font-weight: 500;
+  font-size: 18px;
+  color: var(--gilt);
+  text-align: right;
+  font-feature-settings: 'lnum';
+}
+
+.holding-symbol {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-strong);
+  letter-spacing: 0.04em;
+  margin-right: var(--s-3);
+}
+
+.holding-name {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-weight: 500;
+  font-size: 15px;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.holding-meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+
+.holding-value {
+  font-family: var(--mono);
+  font-size: 13.5px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.holding-alloc {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 56px;
+}
+
+.holding-return {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 64px;
+}
+.holding-return.up   { color: var(--up); }
+.holding-return.down { color: var(--down); }
+
+/* ───────────  Risk alert callout  ─────────── */
+
+.alert {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: var(--s-4);
+  align-items: baseline;
+  padding: var(--s-4) var(--s-5) var(--s-4) var(--s-3);
+  border-left: 2px solid var(--brass);
+  border-bottom: var(--hair) solid var(--rule-soft);
+}
+.alert:last-child { border-bottom: 0; }
+.alert.breach { border-left-color: var(--oxblood); }
+.alert.watch  { border-left-color: var(--brass); }
+
+.alert-glyph {
+  font-family: var(--serif);
+  font-style: italic;
+  font-variation-settings: 'opsz' 36;
+  font-size: 22px;
+  color: var(--brass);
+  text-align: center;
+  line-height: 1;
+}
+.alert.breach .alert-glyph { color: var(--oxblood); }
+.alert.watch  .alert-glyph { color: var(--brass); }
+
+.alert-tag {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+}
+.alert.breach .alert-tag { color: var(--oxblood); }
+.alert.watch  .alert-tag { color: var(--brass); }
+
+.alert-title {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 36;
+  font-weight: 600;
+  font-size: 17px;
+  color: var(--ink-strong);
+  margin: 4px 0 4px;
+  text-wrap: balance;
+}
+
+.alert-detail {
+  font-family: var(--sans);
+  font-size: var(--t-body-sm);
+  color: var(--ink-soft);
+  text-wrap: pretty;
+  margin: 0 0 var(--s-2);
+  max-width: var(--measure);
+}
+
+.alert-meta {
+  display: flex;
+  gap: var(--s-4);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  text-transform: lowercase;
+  margin-top: var(--s-2);
+}
+
+/* ───────────  All-clear quote (used when no alerts)  ─────────── */
+
+.allclear-quote {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 36;
+  font-weight: 400;
+  font-style: italic;
+  font-size: 20px;
+  color: var(--ink);
+  text-wrap: balance;
+  max-width: 60ch;
+}
+
+.allclear-stats {
+  display: flex;
+  gap: var(--s-7);
+  flex-wrap: wrap;
+  padding-top: var(--s-3);
+}
+.allclear-stat dt {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+}
+.allclear-stat dd {
+  margin: 4px 0 0;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ───────────  Look-closer footer  ─────────── */
+
+.look-closer {
+  display: grid;
+  gap: var(--s-3);
+  padding: var(--s-5) 0 0;
+  border-top: var(--hair) solid var(--rule);
+}
+
+.look-closer-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-5);
+  align-items: baseline;
+}
+
+.look-closer-note {
+  font-family: var(--serif);
+  font-style: italic;
+  font-variation-settings: 'opsz' 14;
+  font-size: var(--t-marginalia);
+  color: var(--ink-faint);
+}

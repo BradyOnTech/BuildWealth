@@ -1,0 +1,84 @@
+/* ─────────────────────────────────────────────────
+   States · empty, skeleton, error, placeholder
+   ───────────────────────────────────────────────── */
+
+.empty-block {
+  padding: var(--s-7) 0;
+  display: grid;
+  gap: var(--s-3);
+  text-align: center;
+}
+
+.empty-block .glyph {
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ink-quiet);
+  font-size: 36px;
+  font-variation-settings: 'opsz' 144;
+}
+
+.empty-block p {
+  color: var(--ink-soft);
+  font-style: italic;
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, transparent, var(--shade), transparent);
+  background-size: 200% 100%;
+  animation: skel 1400ms ease-in-out infinite;
+  border-radius: var(--r-sm);
+  color: transparent;
+  user-select: none;
+}
+@keyframes skel {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.error-banner {
+  border-left: 3px solid var(--oxblood);
+  padding: var(--s-2) var(--s-4);
+  font-family: var(--sans);
+  font-size: var(--t-body-sm);
+  color: var(--oxblood);
+  background: transparent;
+  text-wrap: pretty;
+}
+
+.placeholder {
+  display: grid;
+  gap: var(--s-4);
+  padding: var(--s-7) 0;
+  border-top: var(--hair) solid var(--rule);
+  border-bottom: var(--hair) solid var(--rule);
+  max-width: var(--measure);
+}
+
+.placeholder .glyph {
+  font-family: var(--serif);
+  font-style: italic;
+  font-variation-settings: 'opsz' 144;
+  font-size: 56px;
+  color: var(--gilt);
+  line-height: 1;
+}
+
+.placeholder h2 {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 72;
+  font-weight: 600;
+  font-size: 32px;
+  letter-spacing: var(--track-tight);
+}
+
+.placeholder p {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-weight: 400;
+  font-style: italic;
+  font-size: 17px;
+  color: var(--ink-soft);
+  line-height: var(--lh-body);
+}

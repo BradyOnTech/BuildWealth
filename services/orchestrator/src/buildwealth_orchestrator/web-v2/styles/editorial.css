@@ -1,0 +1,286 @@
+/* ─────────────────────────────────────────────────
+   Editorial · hero number, section heads, entry list, quiet panel
+   ───────────────────────────────────────────────── */
+
+/* ───────────  Hero number  ─────────── */
+
+.hero-stack {
+  display: grid;
+  gap: var(--s-3);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.hero-eyebrow {
+  font-family: var(--mono);
+  font-size: var(--t-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--ink-faint);
+}
+
+.hero-number {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 144;
+  font-weight: 600;
+  font-size: var(--t-hero);
+  line-height: 0.95;
+  letter-spacing: -0.025em;
+  color: var(--ink-strong);
+  font-variant-numeric: tabular-nums lining-nums;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.hero-number .currency {
+  font-size: 0.45em;
+  font-weight: 500;
+  vertical-align: 0.6em;
+  margin-right: 0.05em;
+  color: var(--ink-soft);
+  font-variation-settings: 'opsz' 72;
+}
+
+.hero-marginalia {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-5);
+  align-items: baseline;
+  color: var(--ink-soft);
+  margin-top: var(--s-3);
+}
+
+.hero-marginalia .glyph {
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ink-quiet);
+  margin-right: 6px;
+  font-size: 14px;
+}
+
+.hero-marginalia b {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13.5px;
+  font-feature-settings: 'tnum';
+}
+
+.hero-marginalia .delta-up   b { color: var(--up); }
+.hero-marginalia .delta-down b { color: var(--down); }
+
+/* ───────────  Section headings  ─────────── */
+
+.section-head {
+  display: grid;
+  gap: var(--s-2);
+  margin-bottom: var(--s-5);
+}
+
+.section-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  font-family: var(--mono);
+  font-size: var(--t-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--ink-faint);
+}
+.section-eyebrow::before {
+  content: '§';
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--gilt);
+  letter-spacing: 0;
+}
+
+.section-title {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 72;
+  font-weight: 600;
+  font-size: var(--t-h1);
+  letter-spacing: var(--track-tight);
+  color: var(--ink-strong);
+  text-wrap: balance;
+  line-height: var(--lh-snug);
+  margin: 0;
+}
+
+.section-lede {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-weight: 400;
+  font-style: italic;
+  font-size: 16px;
+  color: var(--ink-soft);
+  max-width: var(--measure);
+  text-wrap: pretty;
+  margin: 0;
+}
+
+/* ───────────  Editorial entry list (top actions)  ─────────── */
+
+.entry-list {
+  display: grid;
+  gap: var(--s-5);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.entry {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: var(--s-5);
+  align-items: baseline;
+  padding-bottom: var(--s-5);
+  border-bottom: var(--hair) solid var(--rule-soft);
+}
+.entry:last-child { border-bottom: 0; padding-bottom: 0; }
+
+.entry-numeral {
+  font-family: var(--serif);
+  font-style: italic;
+  font-variation-settings: 'opsz' 72;
+  font-weight: 500;
+  font-size: 28px;
+  color: var(--gilt);
+  line-height: 1;
+  text-align: right;
+  letter-spacing: 0;
+  font-feature-settings: 'lnum';
+  user-select: none;
+}
+
+.entry-body { display: grid; gap: var(--s-2); min-width: 0; }
+
+.entry-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+}
+.entry-tag .priority {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--forest-soft);
+}
+.entry-tag .priority.high   { background: var(--oxblood); }
+.entry-tag .priority.medium { background: var(--brass); }
+.entry-tag .priority.low    { background: var(--forest-soft); }
+
+.entry-title {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 72;
+  font-weight: 600;
+  font-size: var(--t-h2);
+  line-height: 1.15;
+  letter-spacing: var(--track-tight);
+  color: var(--ink-strong);
+  text-wrap: balance;
+}
+
+.entry-rationale {
+  font-family: var(--sans);
+  color: var(--ink-soft);
+  font-size: var(--t-body);
+  line-height: var(--lh-body);
+  text-wrap: pretty;
+  max-width: var(--measure);
+}
+
+.entry-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-4);
+  align-items: center;
+  margin-top: var(--s-1);
+}
+
+/* ───────────  Quiet panel (the room)  ─────────── */
+
+.quiet-panel {
+  display: grid;
+  gap: var(--s-4);
+  padding: var(--s-5) 0;
+  border-top: var(--hair) solid var(--rule);
+  border-bottom: var(--hair) solid var(--rule);
+}
+
+.quiet-statement {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 36;
+  font-weight: 400;
+  font-style: italic;
+  font-size: 18px;
+  color: var(--ink);
+  text-wrap: balance;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+}
+
+.quiet-statement .glyph {
+  font-style: normal;
+  color: var(--gilt);
+  font-size: 14px;
+}
+
+.diagnostics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--s-4) var(--s-6);
+  padding-top: var(--s-3);
+}
+
+.diagnostics dl { margin: 0; display: grid; gap: 4px; }
+.diagnostics dt {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink-faint);
+}
+.diagnostics dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+details.diagnostics-toggle { display: contents; }
+details.diagnostics-toggle > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+  list-style: none;
+  border-bottom: var(--hair) solid var(--rule);
+  padding-bottom: 1px;
+  width: max-content;
+  transition: color var(--d-fast) var(--ease-press);
+}
+details.diagnostics-toggle > summary::-webkit-details-marker { display: none; }
+details.diagnostics-toggle > summary::after {
+  content: '↓';
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 11px;
+  transition: transform var(--d-fast) var(--ease-press);
+}
+details.diagnostics-toggle[open] > summary::after { transform: rotate(180deg); }
+details.diagnostics-toggle > summary:hover { color: var(--ink); }

@@ -12,6 +12,11 @@ PORTFOLIO_RISK_SOURCE = "generator:portfolio_risk"
 PLAN_TRACKING_FACTORY_ID = "plan_tracking_recommendation_factory"
 PLAN_TRACKING_FACTORY_VERSION = "v1"
 PLAN_TRACKING_SOURCE = "generator:plan_tracking"
+CASH_LIQUIDITY_FACTORY_ID = "cash_liquidity_recommendation_factory"
+CASH_LIQUIDITY_FACTORY_VERSION = "v1"
+CASH_LIQUIDITY_SOURCE = "generator:cash_liquidity"
+CASH_RESERVE_MIN_MONTHS = 3.0
+CASH_RESERVE_MAX_MONTHS = 6.0
 
 
 class RecommendationCreator(Protocol):
@@ -670,6 +675,366 @@ def generate_plan_tracking_recommendations(
     skipped: list[dict[str, Any]] = []
 
     for candidate in _plan_tracking_candidates(plan_tracking_payload, generated_at=generated_at):
+        generator = candidate.get("action_payload", {}).get("generator", {})
+        dedupe_key = str(generator.get("dedupe_key") or "").strip()
+        signal_key = str(generator.get("signal_key") or "").strip()
+        if dedupe_key in active_keys:
+            skipped.append(
+                {
+                    "dedupe_key": dedupe_key,
+                    "reason": "active_duplicate",
+                    "title": candidate["title"],
+                    "signal_key": signal_key,
+                }
+            )
+            continue
+        if len(candidates) >= bounded_limit:
+            skipped.append(
+                {
+                    "dedupe_key": dedupe_key,
+                    "reason": "limit_exceeded",
+                    "title": candidate["title"],
+                    "signal_key": signal_key,
+                }
+            )
+            continue
+
+        candidates.append(candidate)
+        active_keys.add(dedupe_key)
+
+        if not dry_run and creator is not None:
+            created.append(
+                creator.create(
+                    title=candidate["title"],
+                    detail=candidate["detail"],
+                    priority=candidate["priority"],
+                    recommendation_type=candidate["recommendation_type"],
+                    source=candidate["source"],
+                    plan_id=candidate["plan_id"],
+                    action_payload=candidate["action_payload"],
+                    status="proposed",
+                )
+            )
+
+    return RecommendationFactoryResult(
+        generated_count=len(created) if not dry_run else len(candidates),
+        skipped_count=len(skipped),
+        candidates=candidates,
+        created=created,
+        skipped=skipped,
+        dry_run=dry_run,
+    )
+
+
+def _monthly_expenses_usd(financial_profile_payload: dict[str, Any]) -> float:
+    expenses = financial_profile_payload.get("expense_items")
+    if not isinstance(expenses, list):
+        return 0.0
+    return round(sum(safe_float(item.get("monthly_amount_usd"), 0.0) for item in expenses if isinstance(item, dict)), 2)
+
+
+def _monthly_debt_minimums_usd(financial_profile_payload: dict[str, Any]) -> float:
+    debts = financial_profile_payload.get("debt_items")
+    if not isinstance(debts, list):
+        return 0.0
+    total = 0.0
+    for item in debts:
+        if not isinstance(item, dict):
+            continue
+        custom_payment = item.get("custom_monthly_payment_usd")
+        minimum_payment = item.get("minimum_payment_usd")
+        total += safe_float(custom_payment if custom_payment is not None else minimum_payment, 0.0)
+    return round(total, 2)
+
+
+def _cash_liquidity_dedupe_key(signal_key: str) -> str:
+    return f"cash_liquidity:{signal_key}"
+
+
+def _cash_liquidity_generator_payload(
+    *,
+    generated_at: str,
+    signal_key: str,
+    severity: str,
+) -> dict[str, Any]:
+    return {
+        "id": CASH_LIQUIDITY_FACTORY_ID,
+        "version": CASH_LIQUIDITY_FACTORY_VERSION,
+        "generated_at": generated_at,
+        "signal_key": signal_key,
+        "signal_type": "cash_liquidity",
+        "dedupe_key": _cash_liquidity_dedupe_key(signal_key),
+        "severity": severity,
+    }
+
+
+def _cash_liquidity_evidence(
+    *,
+    summary: str,
+    holdings_payload: dict[str, Any],
+    financial_profile_payload: dict[str, Any],
+    monthly_expenses: float,
+    monthly_debt_minimums: float,
+) -> dict[str, Any]:
+    return {
+        "summary": summary,
+        "data_keys": ["portfolio.holdings", "portfolio.cash", "financial_profile.expenses", "financial_profile.debts"],
+        "snapshot_as_of": holdings_payload.get("updated_at") or holdings_payload.get("prices_updated_at"),
+        "cash_liquidity": {
+            "total_cash_usd": round(safe_float(holdings_payload.get("total_cash"), 0.0), 2),
+            "monthly_expenses_usd": monthly_expenses,
+            "monthly_debt_minimums_usd": monthly_debt_minimums,
+            "monthly_outflow_usd": round(monthly_expenses + monthly_debt_minimums, 2),
+            "account_cash": holdings_payload.get("account_cash") if isinstance(holdings_payload.get("account_cash"), dict) else {},
+        },
+        "financial_profile": {
+            "updated_at": financial_profile_payload.get("updated_at"),
+            "expense_items_count": len(financial_profile_payload.get("expense_items", []))
+            if isinstance(financial_profile_payload.get("expense_items"), list)
+            else 0,
+            "debt_items_count": len(financial_profile_payload.get("debt_items", []))
+            if isinstance(financial_profile_payload.get("debt_items"), list)
+            else 0,
+        },
+    }
+
+
+def _cash_liquidity_candidate(
+    *,
+    signal_key: str,
+    title: str,
+    detail: str,
+    priority: str,
+    generated_at: str,
+    severity: str,
+    suggested_action: dict[str, Any],
+    expected_outcome: dict[str, Any],
+    holdings_payload: dict[str, Any],
+    financial_profile_payload: dict[str, Any],
+    monthly_expenses: float,
+    monthly_debt_minimums: float,
+    plan_id: str | None,
+) -> dict[str, Any]:
+    action_payload = {
+        "generator": _cash_liquidity_generator_payload(
+            generated_at=generated_at,
+            signal_key=signal_key,
+            severity=severity,
+        ),
+        "evidence": _cash_liquidity_evidence(
+            summary=detail,
+            holdings_payload=holdings_payload,
+            financial_profile_payload=financial_profile_payload,
+            monthly_expenses=monthly_expenses,
+            monthly_debt_minimums=monthly_debt_minimums,
+        ),
+        "suggested_action": suggested_action,
+        "expected_outcome": expected_outcome,
+    }
+    return {
+        "title": title,
+        "detail": detail,
+        "priority": priority,
+        "recommendation_type": "workflow_action",
+        "source": CASH_LIQUIDITY_SOURCE,
+        "plan_id": plan_id,
+        "action_payload": action_payload,
+    }
+
+
+def _cash_liquidity_candidates(
+    *,
+    holdings_payload: dict[str, Any],
+    financial_profile_payload: dict[str, Any],
+    generated_at: str,
+    plan_id: str | None,
+) -> list[dict[str, Any]]:
+    total_cash = round(safe_float(holdings_payload.get("total_cash"), 0.0), 2)
+    monthly_expenses = _monthly_expenses_usd(financial_profile_payload)
+    monthly_debt_minimums = _monthly_debt_minimums_usd(financial_profile_payload)
+    monthly_outflow = round(monthly_expenses + monthly_debt_minimums, 2)
+    candidates: list[dict[str, Any]] = []
+
+    if monthly_outflow <= 0:
+        detail = (
+            "BuildWealth cannot evaluate emergency-fund coverage yet because no monthly expenses or debt minimums "
+            "are configured in the financial profile."
+        )
+        candidates.append(
+            _cash_liquidity_candidate(
+                signal_key="profile_outflow_missing",
+                title="Complete cash-flow profile for liquidity review",
+                detail=detail,
+                priority="low",
+                generated_at=generated_at,
+                severity="watch",
+                suggested_action={
+                    "kind": "complete_financial_profile_outflows",
+                    "subject": "financial profile",
+                    "current_value": monthly_outflow,
+                    "threshold": 1,
+                    "unit": "monthly_outflow_usd",
+                },
+                expected_outcome={
+                    "expected_delta_context_quality": "liquidity_review_enabled",
+                },
+                holdings_payload=holdings_payload,
+                financial_profile_payload=financial_profile_payload,
+                monthly_expenses=monthly_expenses,
+                monthly_debt_minimums=monthly_debt_minimums,
+                plan_id=plan_id,
+            )
+        )
+        return candidates
+
+    cash_months = round(total_cash / monthly_outflow, 2)
+    minimum_reserve = round(monthly_outflow * CASH_RESERVE_MIN_MONTHS, 2)
+    maximum_reserve = round(monthly_outflow * CASH_RESERVE_MAX_MONTHS, 2)
+
+    if total_cash < 0:
+        detail = (
+            f"Cash is negative at {_format_signed_money(total_cash)} while monthly outflows are about "
+            f"{_format_money(monthly_outflow)}. Rebuild cash above zero before adding new investing commitments."
+        )
+        candidates.append(
+            _cash_liquidity_candidate(
+                signal_key="negative_cash",
+                title="Restore positive cash balance",
+                detail=detail,
+                priority="high",
+                generated_at=generated_at,
+                severity="breach",
+                suggested_action={
+                    "kind": "restore_positive_cash_balance",
+                    "subject": "cash reserve",
+                    "current_value": total_cash,
+                    "threshold": 0,
+                    "unit": "usd",
+                    "cash_shortfall_usd": round(abs(total_cash), 2),
+                    "monthly_outflow_usd": monthly_outflow,
+                    "liquidity_months": cash_months,
+                },
+                expected_outcome={
+                    "expected_delta_liquidity_status": "cash_positive",
+                    "target_cash_reserve_usd": 0,
+                },
+                holdings_payload=holdings_payload,
+                financial_profile_payload=financial_profile_payload,
+                monthly_expenses=monthly_expenses,
+                monthly_debt_minimums=monthly_debt_minimums,
+                plan_id=plan_id,
+            )
+        )
+        return candidates
+
+    if cash_months < CASH_RESERVE_MIN_MONTHS:
+        shortfall = round(max(minimum_reserve - total_cash, 0.0), 2)
+        priority = "high" if cash_months < 1 else "medium"
+        detail = (
+            f"Cash covers about {cash_months:.1f} month{'s' if cash_months != 1 else ''} of outflows "
+            f"({_format_money(total_cash)} cash vs {_format_money(monthly_outflow)}/month). "
+            f"Build toward a 3-month reserve of {_format_money(minimum_reserve)}, a gap of {_format_money(shortfall)}."
+        )
+        candidates.append(
+            _cash_liquidity_candidate(
+                signal_key="emergency_fund_shortfall",
+                title="Build emergency cash reserve",
+                detail=detail,
+                priority=priority,
+                generated_at=generated_at,
+                severity="breach" if priority == "high" else "watch",
+                suggested_action={
+                    "kind": "build_emergency_cash_reserve",
+                    "subject": "cash reserve",
+                    "current_value": cash_months,
+                    "threshold": CASH_RESERVE_MIN_MONTHS,
+                    "unit": "months",
+                    "current_cash_usd": total_cash,
+                    "target_cash_reserve_usd": minimum_reserve,
+                    "cash_shortfall_usd": shortfall,
+                    "monthly_outflow_usd": monthly_outflow,
+                },
+                expected_outcome={
+                    "expected_delta_liquidity_months": round(CASH_RESERVE_MIN_MONTHS - cash_months, 2),
+                    "target_liquidity_months": CASH_RESERVE_MIN_MONTHS,
+                },
+                holdings_payload=holdings_payload,
+                financial_profile_payload=financial_profile_payload,
+                monthly_expenses=monthly_expenses,
+                monthly_debt_minimums=monthly_debt_minimums,
+                plan_id=plan_id,
+            )
+        )
+        return candidates
+
+    if cash_months > CASH_RESERVE_MAX_MONTHS:
+        excess_cash = round(max(total_cash - maximum_reserve, 0.0), 2)
+        if excess_cash <= 0:
+            return candidates
+        priority = "medium" if cash_months >= 12 else "low"
+        detail = (
+            f"Cash covers about {cash_months:.1f} months of outflows. That is above the 6-month reserve "
+            f"target of {_format_money(maximum_reserve)}, leaving about {_format_money(excess_cash)} to review for goals, debt payoff, or investing."
+        )
+        candidates.append(
+            _cash_liquidity_candidate(
+                signal_key="excess_idle_cash",
+                title="Review excess idle cash",
+                detail=detail,
+                priority=priority,
+                generated_at=generated_at,
+                severity="opportunity",
+                suggested_action={
+                    "kind": "review_excess_idle_cash",
+                    "subject": "cash reserve",
+                    "current_value": cash_months,
+                    "threshold": CASH_RESERVE_MAX_MONTHS,
+                    "unit": "months",
+                    "current_cash_usd": total_cash,
+                    "target_cash_reserve_usd": maximum_reserve,
+                    "excess_cash_usd": excess_cash,
+                    "monthly_outflow_usd": monthly_outflow,
+                },
+                expected_outcome={
+                    "expected_delta_cash_drag_usd": -excess_cash,
+                    "target_liquidity_months": CASH_RESERVE_MAX_MONTHS,
+                },
+                holdings_payload=holdings_payload,
+                financial_profile_payload=financial_profile_payload,
+                monthly_expenses=monthly_expenses,
+                monthly_debt_minimums=monthly_debt_minimums,
+                plan_id=plan_id,
+            )
+        )
+
+    return candidates
+
+
+def generate_cash_liquidity_recommendations(
+    *,
+    holdings_payload: dict[str, Any],
+    financial_profile_payload: dict[str, Any],
+    existing_recommendations: list[dict[str, Any]],
+    creator: RecommendationCreator | None = None,
+    dry_run: bool = True,
+    plan_id: str | None = None,
+    limit: int = 10,
+    now: datetime | None = None,
+) -> RecommendationFactoryResult:
+    generated_at = _now_iso(now)
+    active_keys = _active_dedupe_keys(existing_recommendations)
+    bounded_limit = max(1, min(int(limit), 50))
+
+    candidates: list[dict[str, Any]] = []
+    created: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+
+    for candidate in _cash_liquidity_candidates(
+        holdings_payload=holdings_payload,
+        financial_profile_payload=financial_profile_payload,
+        generated_at=generated_at,
+        plan_id=plan_id,
+    ):
         generator = candidate.get("action_payload", {}).get("generator", {})
         dedupe_key = str(generator.get("dedupe_key") or "").strip()
         signal_key = str(generator.get("signal_key") or "").strip()

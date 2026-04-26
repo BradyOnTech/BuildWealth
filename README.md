@@ -113,6 +113,7 @@ docker compose -f infra/docker-compose.yml --profile legacy-upstream up -d
 - `GET /api/recommendations`
 - `POST /api/recommendations/generate/portfolio-risk`
 - `POST /api/recommendations/generate/plan-tracking`
+- `POST /api/recommendations/generate/cash-liquidity`
 - `POST /api/recommendations/generate/run-all`
 - `GET /api/recommendations/closure-analytics`
 - `POST /api/recommendations/{recommendation_id}/outcome`

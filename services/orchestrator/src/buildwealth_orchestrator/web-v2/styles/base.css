@@ -1,0 +1,168 @@
+/* ─────────────────────────────────────────────────
+   Base · resets, typography, paper grain
+   ───────────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: var(--t-body);
+  line-height: var(--lh-body);
+  font-weight: 400;
+  font-feature-settings: 'kern', 'liga', 'onum', 'tnum';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Subtle paper grain — quiet, never distracting.
+   A 240×240 SVG noise tile baked as data URI; opacity dialled low. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.35;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.10  0 0 0 0 0.13  0 0 0 0 0.10  0 0 0 0.045 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+/* Make sure interactive layers sit above the grain */
+body > * { position: relative; z-index: 1; }
+
+/* Headings */
+h1, h2, h3, h4, h5 {
+  font-family: var(--serif);
+  font-weight: 600;
+  letter-spacing: var(--track-tight);
+  line-height: var(--lh-snug);
+  text-wrap: balance;
+  margin: 0;
+  color: var(--ink-strong);
+  font-variation-settings: 'opsz' 72;
+}
+
+p {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+/* Links — hairline-underlined editorial style */
+a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: var(--hair) solid currentColor;
+  padding-bottom: 1px;
+  transition: color var(--d-fast) var(--ease-press), border-color var(--d-fast) var(--ease-press);
+}
+a:hover { color: var(--forest); }
+
+/* Numerals — global tabular default for any data-feeling element */
+.num,
+.num-display,
+.num-mono,
+[data-num] {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.num-mono {
+  font-family: var(--mono);
+  font-feature-settings: 'tnum', 'lnum', 'ss01';
+}
+
+.num-display {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 144;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* Eyebrow / overline label */
+.eyebrow {
+  font-family: var(--mono);
+  font-size: var(--t-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--ink-faint);
+  font-weight: 500;
+}
+
+/* Marginalia / pencil note */
+.marginalia {
+  font-family: var(--serif);
+  font-style: italic;
+  font-variation-settings: 'opsz' 14;
+  font-weight: 400;
+  font-size: var(--t-marginalia);
+  color: var(--ink-soft);
+  line-height: var(--lh-snug);
+}
+
+/* Caps small label */
+.caps {
+  text-transform: uppercase;
+  letter-spacing: var(--track-caps);
+  font-size: var(--t-caption);
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+/* Hairline rule, top/bottom */
+.rule {
+  border: 0;
+  border-top: var(--hair) solid var(--rule);
+  margin: 0;
+}
+.rule-soft { border-top-color: var(--rule-soft); }
+.rule-strong { border-top-color: var(--rule-strong); }
+
+/* Ornament — small centered glyph between sections */
+.ornament {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-4);
+  color: var(--ink-quiet);
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: var(--t-caption);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  margin: var(--s-7) 0;
+}
+.ornament::before,
+.ornament::after {
+  content: '';
+  flex: 1;
+  border-top: var(--hair) solid var(--rule);
+  max-width: 200px;
+}
+
+/* Selection */
+::selection {
+  background: var(--forest);
+  color: var(--paper-bright);
+}
+
+/* Scrollbar (webkit) — slim, quiet */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  border-radius: var(--r-pill);
+  border: 2px solid var(--paper);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--rule-strong); }
+
+/* Focus outlines — keyboard-friendly without being shouty */
+:focus-visible {
+  outline: var(--hair) solid var(--forest);
+  outline-offset: 3px;
+  border-radius: var(--r-sm);
+}

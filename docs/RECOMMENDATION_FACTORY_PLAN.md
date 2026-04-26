@@ -25,6 +25,7 @@ This plugs into the existing recommendation system:
 - Slice 6 generated recommendation actionability: implemented
 - Slice 7 run-all factory review center: implemented
 - Slice 8 reviewed batch apply guard: implemented
+- Slice 9 cash liquidity recommendation generator: implemented
 
 ## First Slice Scope
 
@@ -87,6 +88,26 @@ The run-all UI now treats factory creation as a reviewed-batch workflow:
 - creation is only enabled when the current plan/limit settings match the previewed batch
 - changing factory settings after preview shows a warning and requires a fresh preview
 - after creation, the reviewed batch is cleared so another create requires another preview
+
+## Cash Liquidity Generator
+
+Cash liquidity recommendations convert portfolio cash and financial-profile outflows into practical reserve guidance.
+
+The generator uses:
+
+- portfolio `total_cash` and `account_cash`
+- financial-profile monthly expenses
+- debt minimum/custom monthly payments
+- a conservative 3-to-6-month reserve band
+
+Signals covered:
+
+- missing cash-flow profile data
+- negative cash balance
+- emergency-fund shortfall below 3 months
+- excess idle cash above 6 months
+
+Generated rows use source `generator:cash_liquidity` and dedupe keys like `cash_liquidity:emergency_fund_shortfall`.
 
 Example generated recommendation:
 
@@ -160,6 +181,8 @@ Add:
 `POST /api/recommendations/generate/portfolio-risk`
 
 `POST /api/recommendations/generate/plan-tracking`
+
+`POST /api/recommendations/generate/cash-liquidity`
 
 `POST /api/recommendations/generate/run-all`
 

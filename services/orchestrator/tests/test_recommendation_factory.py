@@ -7,6 +7,7 @@ import buildwealth_orchestrator.main as main
 from buildwealth_orchestrator.schemas import PortfolioSnapshot
 from buildwealth_orchestrator.services.portfolio_risk_alerts import calculate_portfolio_risk_alerts
 from buildwealth_orchestrator.services.recommendation_factory import (
+    generate_cash_liquidity_recommendations,
     generate_plan_tracking_recommendations,
     generate_portfolio_risk_recommendations,
 )
@@ -61,6 +62,29 @@ def _holdings_payload() -> dict[str, object]:
         "total_value": 100_000.0,
         "holdings": holdings,
         "risk_alerts": risk_alerts,
+    }
+
+
+def _cash_holdings_payload(total_cash: float) -> dict[str, object]:
+    payload = _holdings_payload()
+    payload["total_cash"] = total_cash
+    payload["total_portfolio_value"] = 100_000.0 + total_cash
+    payload["account_cash"] = {"default": total_cash}
+    return payload
+
+
+def _financial_profile_payload(*, monthly_expenses: float = 4_000.0, monthly_debt_payment: float = 500.0) -> dict[str, object]:
+    return {
+        "schema_version": 2,
+        "updated_at": "2026-04-25T12:00:00+00:00",
+        "income_items": [{"id": "income-1", "label": "Salary", "monthly_amount_usd": 10_000.0}],
+        "expense_items": [{"id": "expense-1", "label": "Core expenses", "monthly_amount_usd": monthly_expenses}],
+        "debt_items": [{"id": "debt-1", "label": "Auto loan", "balance_usd": 12_000, "minimum_payment_usd": monthly_debt_payment}],
+        "goal_items": [],
+        "physical_assets": [],
+        "tax_profile": {},
+        "flags": {"no_debt": False, "no_goals": False},
+        "notes": "",
     }
 
 
@@ -127,6 +151,17 @@ class _FakePortfolioStore:
         return []
 
 
+class _FakeFinancialProfileStore:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self.payload = payload
+
+    def get(self) -> dict[str, object]:
+        return self.payload
+
+    def load(self) -> dict[str, object]:
+        return self.payload
+
+
 def test_generate_portfolio_risk_route_supports_dry_run_and_apply(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -160,6 +195,35 @@ def test_generate_portfolio_risk_route_supports_dry_run_and_apply(
     assert duplicate.generated_count == 0
     assert duplicate.skipped_count >= applied.generated_count
     assert len(inbox.list(limit=None, status="proposed")) == applied.generated_count
+
+
+def test_generate_cash_liquidity_route_supports_dry_run_and_apply(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    monkeypatch.setattr(main, "portfolio_store", _FakePortfolioStore(_cash_holdings_payload(2_000.0)))
+    monkeypatch.setattr(main, "financial_profile_store", _FakeFinancialProfileStore(_financial_profile_payload()))
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    dry_run = main.generate_cash_liquidity_recommendation_candidates(
+        main.CashLiquidityRecommendationGenerateRequest(dry_run=True, plan_id="plan-1", limit=10),
+    )
+
+    assert dry_run.dry_run is True
+    assert dry_run.generated_count == 1
+    assert dry_run.candidates[0]["source"] == "generator:cash_liquidity"
+    assert dry_run.created == []
+    assert inbox.list(limit=None, status="proposed") == []
+
+    applied = main.generate_cash_liquidity_recommendation_candidates(
+        main.CashLiquidityRecommendationGenerateRequest(dry_run=False, plan_id="plan-1", limit=10),
+    )
+
+    assert applied.dry_run is False
+    assert applied.generated_count == 1
+    assert len(applied.created) == 1
+    assert len(inbox.list(limit=None, status="proposed")) == 1
 
 
 def _plan_tracking_payload() -> dict[str, object]:
@@ -257,6 +321,88 @@ def test_plan_tracking_factory_apply_creates_rows_and_skips_duplicates(tmp_path:
     assert len(inbox.list(limit=None, status="proposed")) == 3
 
 
+def test_cash_liquidity_factory_generates_emergency_fund_shortfall() -> None:
+    result = generate_cash_liquidity_recommendations(
+        holdings_payload=_cash_holdings_payload(2_000.0),
+        financial_profile_payload=_financial_profile_payload(),
+        existing_recommendations=[],
+        dry_run=True,
+        plan_id="plan-1",
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 1
+    candidate = result.candidates[0]
+    assert candidate["title"] == "Build emergency cash reserve"
+    assert candidate["priority"] == "high"
+    assert candidate["source"] == "generator:cash_liquidity"
+    assert candidate["plan_id"] == "plan-1"
+    payload = candidate["action_payload"]
+    assert payload["generator"]["dedupe_key"] == "cash_liquidity:emergency_fund_shortfall"
+    assert payload["generator"]["signal_type"] == "cash_liquidity"
+    assert payload["evidence"]["data_keys"] == [
+        "portfolio.holdings",
+        "portfolio.cash",
+        "financial_profile.expenses",
+        "financial_profile.debts",
+    ]
+    assert payload["suggested_action"]["cash_shortfall_usd"] == 11_500.0
+    assert payload["suggested_action"]["target_cash_reserve_usd"] == 13_500.0
+
+
+def test_cash_liquidity_factory_generates_excess_cash_review() -> None:
+    result = generate_cash_liquidity_recommendations(
+        holdings_payload=_cash_holdings_payload(80_000.0),
+        financial_profile_payload=_financial_profile_payload(),
+        existing_recommendations=[],
+        dry_run=True,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 1
+    candidate = result.candidates[0]
+    assert candidate["title"] == "Review excess idle cash"
+    assert candidate["priority"] == "medium"
+    assert candidate["action_payload"]["suggested_action"]["excess_cash_usd"] == 53_000.0
+
+
+def test_cash_liquidity_factory_apply_skips_duplicates(tmp_path: Path) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    first = generate_cash_liquidity_recommendations(
+        holdings_payload=_cash_holdings_payload(2_000.0),
+        financial_profile_payload=_financial_profile_payload(),
+        existing_recommendations=inbox.list(limit=None, include_archived=True, sort="none"),
+        creator=inbox,
+        dry_run=False,
+        limit=10,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert first.generated_count == 1
+    assert len(first.created) == 1
+
+    second = generate_cash_liquidity_recommendations(
+        holdings_payload=_cash_holdings_payload(2_000.0),
+        financial_profile_payload=_financial_profile_payload(),
+        existing_recommendations=inbox.list(limit=None, include_archived=True, sort="none"),
+        creator=inbox,
+        dry_run=False,
+        limit=10,
+        now=datetime(2026, 4, 25, 12, 35, tzinfo=timezone.utc),
+    )
+
+    assert second.generated_count == 0
+    assert second.created == []
+    assert second.skipped == [
+        {
+            "dedupe_key": "cash_liquidity:emergency_fund_shortfall",
+            "reason": "active_duplicate",
+            "title": "Build emergency cash reserve",
+            "signal_key": "emergency_fund_shortfall",
+        }
+    ]
+
+
 class _FakePlanWorkspace:
     def get_active_plan_id(self) -> str:
         return "plan-1"
@@ -302,6 +448,7 @@ def test_generate_plan_tracking_route_supports_active_plan_dry_run_and_apply(
     monkeypatch.setattr(main, "plan_workspace", _FakePlanWorkspace())
     monkeypatch.setattr(main, "snapshot_store", _FakeSnapshotStore())
     monkeypatch.setattr(main, "portfolio_store", _FakePortfolioStore(_holdings_payload()))
+    monkeypatch.setattr(main, "financial_profile_store", _FakeFinancialProfileStore(_financial_profile_payload()))
     monkeypatch.setattr(main, "recommendation_inbox", inbox)
 
     dry_run = main.generate_plan_tracking_recommendation_candidates(
@@ -343,12 +490,13 @@ def test_run_all_recommendation_factories_groups_results_and_applies(
     )
 
     assert dry_run.dry_run is True
-    assert dry_run.factory_count == 2
+    assert dry_run.factory_count == 3
     assert dry_run.errors == []
-    assert set(dry_run.factories) == {"portfolio_risk", "plan_tracking"}
+    assert set(dry_run.factories) == {"portfolio_risk", "plan_tracking", "cash_liquidity"}
     assert dry_run.factories["portfolio_risk"].generated_count == 2
     assert dry_run.factories["plan_tracking"].generated_count == 2
-    assert dry_run.generated_count == 4
+    assert dry_run.factories["cash_liquidity"].generated_count == 1
+    assert dry_run.generated_count == 5
     assert inbox.list(limit=None, status="proposed") == []
 
     applied = main.run_all_recommendation_factories(
@@ -356,10 +504,10 @@ def test_run_all_recommendation_factories_groups_results_and_applies(
     )
 
     assert applied.dry_run is False
-    assert applied.factory_count == 2
+    assert applied.factory_count == 3
     assert applied.errors == []
-    assert applied.generated_count == 4
-    assert len(inbox.list(limit=None, status="proposed")) == 4
+    assert applied.generated_count == 5
+    assert len(inbox.list(limit=None, status="proposed")) == 5
 
 
 class _NoActivePlanWorkspace:
@@ -374,15 +522,16 @@ def test_run_all_recommendation_factories_keeps_portfolio_results_when_plan_miss
     inbox = RecommendationInbox(tmp_path / "recommendations.json")
     monkeypatch.setattr(main, "plan_workspace", _NoActivePlanWorkspace())
     monkeypatch.setattr(main, "portfolio_store", _FakePortfolioStore(_holdings_payload()))
+    monkeypatch.setattr(main, "financial_profile_store", _FakeFinancialProfileStore(_financial_profile_payload()))
     monkeypatch.setattr(main, "recommendation_inbox", inbox)
 
     response = main.run_all_recommendation_factories(
         main.RecommendationFactoryRunAllRequest(dry_run=True, limit=2),
     )
 
-    assert response.factory_count == 1
-    assert set(response.factories) == {"portfolio_risk"}
-    assert response.generated_count == 2
+    assert response.factory_count == 2
+    assert set(response.factories) == {"portfolio_risk", "cash_liquidity"}
+    assert response.generated_count == 3
     assert response.errors == [
         {
             "factory": "plan_tracking",

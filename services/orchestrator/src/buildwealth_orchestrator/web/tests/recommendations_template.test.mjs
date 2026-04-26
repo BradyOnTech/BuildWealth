@@ -22,8 +22,10 @@ test('recommendations view exposes outcome tracking workflow', () => {
     'Create Reviewed Batch',
     'Preview Portfolio Risk',
     'Preview Plan Tracking',
+    'Preview Cash Liquidity',
     'Create Portfolio Risk',
     'Create Plan Tracking',
+    'Create Cash Liquidity',
     'Generation Limit',
     'Attach to Plan',
   ]) {
@@ -43,6 +45,8 @@ test('recommendations view exposes outcome tracking workflow', () => {
   assert.match(html, /id="create-portfolio-risk-recommendations"/);
   assert.match(html, /id="preview-plan-tracking-recommendations"/);
   assert.match(html, /id="create-plan-tracking-recommendations"/);
+  assert.match(html, /id="preview-cash-liquidity-recommendations"/);
+  assert.match(html, /id="create-cash-liquidity-recommendations"/);
   assert.match(html, /id="recommendation-factory-limit"/);
   assert.match(html, /id="recommendation-factory-plan"/);
   assert.match(html, /id="recommendation-factory-summary"/);
@@ -62,6 +66,8 @@ test('recommendations row rendering includes factory explainability copy', () =>
   assert.match(source, /Suggested action:/);
   assert.match(source, /estimated rebalance/);
   assert.match(source, /monthly catch-up/);
+  assert.match(source, /cash gap/);
+  assert.match(source, /excess cash/);
   assert.match(source, /generator\.dedupe_key/);
   assert.match(source, /runAllRecommendationFactories/);
   assert.match(source, /collectFactoryResults/);

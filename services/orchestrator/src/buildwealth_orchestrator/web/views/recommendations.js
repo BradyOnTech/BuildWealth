@@ -28,7 +28,7 @@ export function template() {
     </div>
     <div class="form-section">
       <div class="view-header"><h3>Recommendation Factory</h3>
-        <div class="header-actions"><button class="ghost small" id="preview-all-recommendation-factories">Preview All Factories</button><button class="primary small" id="create-all-recommendation-factories" disabled>Create Reviewed Batch</button><button class="ghost small" id="preview-portfolio-risk-recommendations">Preview Portfolio Risk</button><button class="ghost small" id="preview-plan-tracking-recommendations">Preview Plan Tracking</button><button class="ghost small" id="create-portfolio-risk-recommendations">Create Portfolio Risk</button><button class="ghost small" id="create-plan-tracking-recommendations">Create Plan Tracking</button></div>
+        <div class="header-actions"><button class="ghost small" id="preview-all-recommendation-factories">Preview All Factories</button><button class="primary small" id="create-all-recommendation-factories" disabled>Create Reviewed Batch</button><button class="ghost small" id="preview-portfolio-risk-recommendations">Preview Portfolio Risk</button><button class="ghost small" id="preview-plan-tracking-recommendations">Preview Plan Tracking</button><button class="ghost small" id="preview-cash-liquidity-recommendations">Preview Cash Liquidity</button><button class="ghost small" id="create-portfolio-risk-recommendations">Create Portfolio Risk</button><button class="ghost small" id="create-plan-tracking-recommendations">Create Plan Tracking</button><button class="ghost small" id="create-cash-liquidity-recommendations">Create Cash Liquidity</button></div>
       </div>
       <p class="hint">Review all active factory signals together, then create evidence-backed recommendation rows only when the batch looks useful.</p>
       <div class="settings-grid">
@@ -318,9 +318,13 @@ function candidateMeta(candidate) {
   const rebalanceAmount = Number(action.estimated_rebalance_usd);
   const monthlyContribution = Number(action.estimated_monthly_contribution_increase_usd);
   const valueDrift = Number(action.value_drift_usd);
+  const cashShortfall = Number(action.cash_shortfall_usd);
+  const excessCash = Number(action.excess_cash_usd);
   if (Number.isFinite(rebalanceAmount) && rebalanceAmount > 0) parts.push(`estimated rebalance ${fmtCurrency(rebalanceAmount)}`);
   if (Number.isFinite(monthlyContribution) && monthlyContribution > 0) parts.push(`monthly catch-up ${fmtCurrency(monthlyContribution)}`);
   if (Number.isFinite(valueDrift) && valueDrift !== 0) parts.push(`value drift ${fmtCurrency(valueDrift)}`);
+  if (Number.isFinite(cashShortfall) && cashShortfall > 0) parts.push(`cash gap ${fmtCurrency(cashShortfall)}`);
+  if (Number.isFinite(excessCash) && excessCash > 0) parts.push(`excess cash ${fmtCurrency(excessCash)}`);
   if (generator.dedupe_key) parts.push(`dedupe ${generator.dedupe_key}`);
   return parts.join(' • ');
 }
@@ -329,6 +333,7 @@ function factoryLabel(key) {
   const normalized = String(key || '').trim();
   if (normalized === 'portfolio_risk') return 'Portfolio Risk';
   if (normalized === 'plan_tracking') return 'Plan Tracking';
+  if (normalized === 'cash_liquidity') return 'Cash Liquidity';
   return normalized ? normalized.replaceAll('_', ' ') : 'Factory';
 }
 
@@ -561,6 +566,8 @@ function renderTable() {
       const amount = Number(suggestedAction.estimated_rebalance_usd);
       const monthlyContribution = Number(suggestedAction.estimated_monthly_contribution_increase_usd);
       const valueDrift = Number(suggestedAction.value_drift_usd);
+      const cashShortfall = Number(suggestedAction.cash_shortfall_usd);
+      const excessCash = Number(suggestedAction.excess_cash_usd);
       const currentValue = Number(suggestedAction.current_value);
       const threshold = Number(suggestedAction.threshold);
       const unit = String(suggestedAction.unit || '').trim();
@@ -569,6 +576,8 @@ function renderTable() {
       if (Number.isFinite(amount) && amount > 0) actionParts.push(`estimated rebalance ${fmtCurrency(amount)}`);
       if (Number.isFinite(monthlyContribution) && monthlyContribution > 0) actionParts.push(`monthly catch-up ${fmtCurrency(monthlyContribution)}`);
       if (Number.isFinite(valueDrift) && valueDrift !== 0) actionParts.push(`value drift ${fmtCurrency(valueDrift)}`);
+      if (Number.isFinite(cashShortfall) && cashShortfall > 0) actionParts.push(`cash gap ${fmtCurrency(cashShortfall)}`);
+      if (Number.isFinite(excessCash) && excessCash > 0) actionParts.push(`excess cash ${fmtCurrency(excessCash)}`);
       if (Number.isFinite(currentValue) && Number.isFinite(threshold)) {
         const suffix = unit === 'pct' ? '%' : '';
         actionParts.push(`current ${currentValue.toFixed(unit === 'pct' ? 1 : 2)}${suffix} vs threshold ${threshold.toFixed(unit === 'pct' ? 1 : 2)}${suffix}`);
@@ -774,6 +783,10 @@ async function runPortfolioRiskRecommendationFactory(dryRun = true) {
 
 async function runPlanTrackingRecommendationFactory(dryRun = true) {
   await runRecommendationFactory('/api/recommendations/generate/plan-tracking', 'plan tracking', dryRun);
+}
+
+async function runCashLiquidityRecommendationFactory(dryRun = true) {
+  await runRecommendationFactory('/api/recommendations/generate/cash-liquidity', 'cash liquidity', dryRun);
 }
 
 async function runAllRecommendationFactories(dryRun = true) {
@@ -1041,6 +1054,8 @@ export function init() {
   byId('create-portfolio-risk-recommendations').addEventListener('click', () => runPortfolioRiskRecommendationFactory(false).catch(e => writeLog(e.message, null, true)));
   byId('preview-plan-tracking-recommendations').addEventListener('click', () => runPlanTrackingRecommendationFactory(true).catch(e => writeLog(e.message, null, true)));
   byId('create-plan-tracking-recommendations').addEventListener('click', () => runPlanTrackingRecommendationFactory(false).catch(e => writeLog(e.message, null, true)));
+  byId('preview-cash-liquidity-recommendations').addEventListener('click', () => runCashLiquidityRecommendationFactory(true).catch(e => writeLog(e.message, null, true)));
+  byId('create-cash-liquidity-recommendations').addEventListener('click', () => runCashLiquidityRecommendationFactory(false).catch(e => writeLog(e.message, null, true)));
   byId('recommendation-save').addEventListener('click', save);
   byId('recommendation-cancel-edit').addEventListener('click', resetForm);
   byId('recommendation-outcome-next').addEventListener('click', openNextOutcome);

@@ -96,6 +96,7 @@ from buildwealth_orchestrator.schemas import (
     RecommendationCreateRequest,
     RecommendationItem,
     RecommendationOutcomeUpdateRequest,
+    CashLiquidityRecommendationGenerateRequest,
     PlanTrackingRecommendationGenerateRequest,
     PortfolioRiskRecommendationGenerateRequest,
     RecommendationFactoryResponse,
@@ -297,6 +298,7 @@ from buildwealth_orchestrator.services.recommendation_scoring import (
     score_and_sort_recommendations,
 )
 from buildwealth_orchestrator.services.recommendation_factory import (
+    generate_cash_liquidity_recommendations,
     generate_plan_tracking_recommendations,
     generate_portfolio_risk_recommendations,
 )
@@ -320,6 +322,10 @@ app = FastAPI(title=settings.app_name, lifespan=_app_lifespan)
 web_dir = Path(__file__).resolve().parent / "web"
 if web_dir.exists():
     app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
+
+web_v2_dir = Path(__file__).resolve().parent / "web-v2"
+if web_v2_dir.exists():
+    app.mount("/static-v2", StaticFiles(directory=str(web_v2_dir)), name="static-v2")
 
 
 user_settings_store = UserSettingsStore(settings.snapshot_dir.parent / "settings" / "user_settings.json")
@@ -10774,6 +10780,19 @@ def ui_root() -> Response:
     )
 
 
+@app.get("/v2", include_in_schema=False)
+@app.get("/v2/", include_in_schema=False)
+def ui_root_v2() -> Response:
+    index_file = web_v2_dir / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+
+    return HTMLResponse(
+        "<h1>BuildWealth v2 UI not found</h1><p>Expected index.html in orchestrator web-v2 directory.</p>",
+        status_code=500,
+    )
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -11592,6 +11611,33 @@ def generate_plan_tracking_recommendation_candidates(
     return RecommendationFactoryResponse(**result.to_dict())
 
 
+@app.post("/api/recommendations/generate/cash-liquidity", response_model=RecommendationFactoryResponse)
+def generate_cash_liquidity_recommendation_candidates(
+    request: CashLiquidityRecommendationGenerateRequest,
+) -> RecommendationFactoryResponse:
+    holdings_payload = portfolio_store.get_holdings()
+    financial_profile_payload = get_financial_profile_payload()
+    existing_recommendations = recommendation_inbox.list(
+        limit=None,
+        status=None,
+        plan_id=None,
+        include_archived=True,
+        sort="none",
+    )
+    result = generate_cash_liquidity_recommendations(
+        holdings_payload=holdings_payload,
+        financial_profile_payload=financial_profile_payload,
+        existing_recommendations=existing_recommendations,
+        creator=recommendation_inbox if not request.dry_run else None,
+        dry_run=request.dry_run,
+        plan_id=request.plan_id,
+        limit=request.limit,
+    )
+    if not request.dry_run and result.created:
+        _queue_autogit_event("cash_liquidity_recommendations_generated")
+    return RecommendationFactoryResponse(**result.to_dict())
+
+
 @app.post("/api/recommendations/generate/run-all", response_model=RecommendationFactoryRunAllResponse)
 def run_all_recommendation_factories(
     request: RecommendationFactoryRunAllRequest,
@@ -11624,6 +11670,19 @@ def run_all_recommendation_factories(
         errors.append({"factory": "plan_tracking", "reason": str(exc.detail)})
     except Exception as exc:
         errors.append({"factory": "plan_tracking", "reason": str(exc)})
+
+    try:
+        factories["cash_liquidity"] = generate_cash_liquidity_recommendation_candidates(
+            CashLiquidityRecommendationGenerateRequest(
+                dry_run=request.dry_run,
+                plan_id=request.plan_id,
+                limit=request.limit,
+            )
+        )
+    except HTTPException as exc:
+        errors.append({"factory": "cash_liquidity", "reason": str(exc.detail)})
+    except Exception as exc:
+        errors.append({"factory": "cash_liquidity", "reason": str(exc)})
 
     generated_count = sum(factory.generated_count for factory in factories.values())
     skipped_count = sum(factory.skipped_count for factory in factories.values())

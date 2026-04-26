@@ -1,0 +1,123 @@
+/* ─────────────────────────────────────────────────
+   Controls · buttons and editorial links
+   ───────────────────────────────────────────────── */
+
+.btn {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  padding: 11px 18px;
+  border-radius: var(--r-md);
+  font-family: var(--sans);
+  font-size: var(--t-body-sm);
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  line-height: 1;
+  min-height: 40px;
+  position: relative;
+  transition-property: background, color, border-color, transform, box-shadow;
+  transition-duration: var(--d-fast);
+  transition-timing-function: var(--ease-press);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn:active:not(:disabled) { transform: scale(0.96); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn-primary {
+  background: var(--ink);
+  color: var(--paper-bright);
+  box-shadow: var(--shadow-quiet);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--ink-strong);
+  box-shadow: var(--shadow-lift);
+}
+
+.btn-ghost {
+  border: var(--hair) solid var(--rule);
+  color: var(--ink-soft);
+  background: transparent;
+}
+.btn-ghost:hover:not(:disabled) {
+  border-color: var(--ink-soft);
+  color: var(--ink);
+  background: var(--paper-bright);
+}
+
+.btn-quiet {
+  color: var(--ink-soft);
+  padding: 8px 12px;
+  min-height: 32px;
+  font-size: var(--t-caption);
+}
+/* Extend hit area to 40px without inflating the visible chip. */
+.btn-quiet::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+}
+.btn-quiet:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--shade);
+}
+
+.btn-icon {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: var(--r-md);
+  color: var(--ink-soft);
+  border: var(--hair) solid var(--rule);
+  background: transparent;
+}
+.btn-icon:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--ink-soft);
+}
+
+/* ───────────  Editorial link  ─────────── */
+
+.link-editorial {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  border-bottom: var(--hair) solid currentColor;
+  padding-bottom: 1px;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: var(--t-body-sm);
+  color: var(--ink);
+  cursor: pointer;
+  background: transparent;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  padding-left: 0;
+  padding-right: 0;
+  transition: color var(--d-fast) var(--ease-press), border-color var(--d-fast) var(--ease-press), gap var(--d-fast) var(--ease-press);
+}
+
+.link-editorial::after {
+  content: '→';
+  font-family: var(--serif);
+  font-style: italic;
+  transition: transform var(--d-fast) var(--ease-press);
+  display: inline-block;
+}
+
+.link-editorial:hover {
+  color: var(--forest);
+  gap: 10px;
+}
+.link-editorial:hover::after {
+  transform: translateX(2px);
+}

@@ -1,0 +1,135 @@
+// Inbox entries — render the list and each entry header.
+// Inline action forms are rendered by ./forms.js.
+
+import { html, raw, esc, stripHtml } from '../../lib/dom.js';
+import { roman, fmtRelative } from '../../lib/format.js';
+import { renderInlineForm } from './forms.js';
+
+const STATUS_LABELS = {
+  proposed: 'proposed',
+  applied:  'applied',
+  rejected: 'declined',
+  archived: 'archived',
+};
+
+export function renderEntries(items, ctx) {
+  if (!items.length) {
+    return html`
+      <div class="empty-block">
+        <span class="glyph">¶</span>
+        <p>${ctx.emptyMessage || 'No suggestions in this lane.'}</p>
+      </div>
+    `;
+  }
+  return html`
+    <ol class="entry-list">
+      ${raw(items.map((it, i) => renderEntry(it, i + 1, ctx)).join(''))}
+    </ol>
+  `;
+}
+
+function renderEntry(item, index, ctx) {
+  const status = (item.status || 'proposed').toLowerCase();
+  const priority = (item.priority || 'medium').toLowerCase();
+  const source = humanSource(item.source);
+  const recoType = humanText(item.recommendation_type);
+  const planLabel = ctx.planLookup.get(item.plan_id) || (item.plan_id ? 'plan' : '');
+  const score = item.score?.total != null ? Math.round(item.score.total) : null;
+  const reasons = (item.score?.reasons || []).slice(0, 2);
+  const updated = item.updated_at ? fmtRelative(item.updated_at) : '';
+  const expanded = ctx.expanded && ctx.expanded.id === item.id ? ctx.expanded : null;
+
+  return html`
+    <li class="entry" data-id="${item.id}">
+      <span class="entry-numeral">${roman(index)}.</span>
+      <div class="entry-body">
+        ${raw(renderTagRow({ status, priority, source, recoType, planLabel, score, updated }))}
+        <h3 class="entry-title">${stripHtml(item.title)}</h3>
+        ${raw(detailMarkup(item.detail))}
+        ${reasons.length ? raw(`
+          <p class="marginalia">
+            <span class="glyph">›</span> ${reasons.map(esc).join(' · ')}
+          </p>
+        `) : ''}
+        ${raw(renderActions(item, status, expanded))}
+        ${expanded ? raw(renderInlineForm(item, expanded, ctx)) : ''}
+      </div>
+    </li>
+  `;
+}
+
+function renderTagRow({ status, priority, source, recoType, planLabel, score, updated }) {
+  const parts = [];
+  parts.push(html`
+    <span class="status-pill ${status}">
+      <span class="dot"></span>${STATUS_LABELS[status] || status}
+    </span>
+  `);
+  if (status === 'proposed') {
+    parts.push(html`
+      <span class="entry-tag">
+        <span class="priority ${priority}"></span>${priority} priority
+      </span>
+    `);
+  }
+  if (source) parts.push(html`<span class="entry-tag">${source}</span>`);
+  if (recoType && recoType !== 'general') parts.push(html`<span class="entry-tag">${recoType}</span>`);
+  if (planLabel) parts.push(html`<span class="entry-tag">${planLabel}</span>`);
+  if (score != null) parts.push(html`<span class="entry-tag">score ${score}</span>`);
+  if (updated) parts.push(html`<span class="entry-tag">${updated}</span>`);
+  return html`<div class="entry-tag" style="display:flex;flex-wrap:wrap;gap:var(--s-4);">${raw(parts.join(''))}</div>`;
+}
+
+function renderActions(item, status, expanded) {
+  const expandedMode = expanded?.mode || null;
+  if (status === 'proposed') {
+    return html`
+      <div class="entry-actions">
+        <button class="action-link" data-action="apply" data-id="${item.id}"
+          aria-expanded="${expandedMode === 'apply'}">
+          Apply <span class="arrow">›</span>
+        </button>
+        <button class="action-link danger" data-action="decline" data-id="${item.id}"
+          aria-expanded="${expandedMode === 'decline'}">
+          Decline <span class="arrow">›</span>
+        </button>
+        <a class="action-link muted" href="#copilot?focus=${encodeURIComponent(item.id)}">
+          Discuss in Copilot <span class="arrow">→</span>
+        </a>
+      </div>
+    `;
+  }
+  if (status === 'applied' || status === 'rejected') {
+    return html`
+      <div class="entry-actions">
+        <button class="action-link" data-action="outcome" data-id="${item.id}"
+          aria-expanded="${expandedMode === 'outcome'}">
+          Log outcome <span class="arrow">›</span>
+        </button>
+        <button class="action-link muted" data-action="archive" data-id="${item.id}">
+          Archive <span class="arrow">›</span>
+        </button>
+      </div>
+    `;
+  }
+  return '';
+}
+
+function humanText(value) {
+  if (!value) return '';
+  return String(value).replace(/_/g, ' ');
+}
+
+function detailMarkup(raw) {
+  const text = stripHtml(raw);
+  return text ? `<p class="entry-rationale">${esc(text)}</p>` : '';
+}
+
+// Sources arrive as "generator:plan_tracking" / "manual" / "today_dashboard_heuristic".
+// Strip namespace prefix and prepend "from " so the tag reads naturally.
+function humanSource(value) {
+  if (!value) return '';
+  const stripped = String(value).split(':').pop().replace(/_/g, ' ').trim();
+  if (!stripped || stripped === 'manual') return stripped;
+  return `from ${stripped}`;
+}
