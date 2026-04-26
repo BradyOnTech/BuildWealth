@@ -963,6 +963,10 @@ class TopNextAction(BaseModel):
     score_total: float | None = None
     score_rank: int | None = None
     score_reasons: list[str] = Field(default_factory=list)
+    quality_summary: str | None = None
+    quality_actionability: str | None = None
+    quality_decision_grade: bool | None = None
+    blocking_context: list[str] = Field(default_factory=list)
     action_hint: str | None = None
 
 

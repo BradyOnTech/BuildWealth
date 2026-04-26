@@ -15,6 +15,28 @@ from buildwealth_orchestrator.services.recommendation_factory import (
 from buildwealth_orchestrator.services.recommendation_inbox import RecommendationInbox
 
 
+def _assert_quality_metadata(candidate: dict[str, object], *, expected_source: str) -> None:
+    payload = candidate["action_payload"]
+    assert isinstance(payload, dict)
+    quality = payload["quality"]
+    assert quality["schema_version"] == 1
+    assert quality["source"] == expected_source
+    assert quality["confidence_level"] in {"high", "medium", "low"}
+    assert isinstance(quality["confidence_score"], float)
+    assert 0.0 <= quality["confidence_score"] <= 1.0
+    assert quality["confidence_reasons"]
+    assert quality["freshness_status"] in {"fresh", "stale", "unknown"}
+    assert isinstance(quality["freshness_reasons"], list)
+    assert quality["actionability"] in {"previewable", "review_only", "context_gathering"}
+    assert isinstance(quality["actionability_reasons"], list)
+    assert quality["reversibility"] in {"high", "medium", "low", "unknown"}
+    assert isinstance(quality["impact"], dict)
+    assert quality["impact"]["level"] in {"high", "medium", "low"}
+    assert isinstance(quality["impact"]["summary"], str)
+    assert isinstance(quality["blocking_context"], list)
+    assert isinstance(quality["decision_grade"], bool)
+
+
 def _holdings_payload() -> dict[str, object]:
     holdings = {
         "default:AAPL": {
@@ -121,6 +143,9 @@ def test_profile_completeness_factory_generates_next_gap_candidate() -> None:
     assert payload["evidence"]["data_keys"] == ["financial_profile.readiness"]
     assert payload["suggested_action"]["kind"] == "complete_profile_section"
     assert "cash_liquidity" in payload["evidence"]["blocking_recommendation_sources"]
+    _assert_quality_metadata(candidate, expected_source="generator:profile_completeness")
+    assert payload["quality"]["actionability"] == "context_gathering"
+    assert payload["quality"]["decision_grade"] is False
 
 
 def test_profile_completeness_factory_apply_skips_active_duplicates(tmp_path: Path) -> None:
@@ -180,6 +205,7 @@ def test_portfolio_risk_factory_dry_run_generates_specific_candidates() -> None:
     assert payload["generator"]["dedupe_key"].startswith("portfolio_risk_alert:")
     assert payload["evidence"]["data_keys"] == ["portfolio.holdings", "portfolio.risk_alerts"]
     assert payload["suggested_action"]["estimated_rebalance_usd"] is not None
+    _assert_quality_metadata(result.candidates[0], expected_source="generator:portfolio_risk")
 
 
 def test_portfolio_risk_factory_apply_creates_rows_and_skips_duplicates(tmp_path: Path) -> None:
@@ -394,6 +420,9 @@ def test_plan_tracking_factory_dry_run_generates_plan_specific_candidates() -> N
         "annual_contribution_usd": first_payload["suggested_action"]["proposed_annual_contribution_usd"]
     }
     assert "to $" in result.candidates[0]["detail"]
+    _assert_quality_metadata(result.candidates[0], expected_source="generator:plan_tracking")
+    assert first_payload["quality"]["actionability"] == "previewable"
+    assert first_payload["quality"]["decision_grade"] is True
 
 
 def test_plan_tracking_factory_apply_creates_rows_and_skips_duplicates(tmp_path: Path) -> None:
@@ -453,6 +482,9 @@ def test_cash_liquidity_factory_generates_emergency_fund_shortfall() -> None:
     ]
     assert payload["suggested_action"]["cash_shortfall_usd"] == 11_500.0
     assert payload["suggested_action"]["target_cash_reserve_usd"] == 13_500.0
+    _assert_quality_metadata(candidate, expected_source="generator:cash_liquidity")
+    assert payload["quality"]["actionability"] == "review_only"
+    assert payload["quality"]["decision_grade"] is True
 
 
 def test_cash_liquidity_factory_generates_excess_cash_review() -> None:

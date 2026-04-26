@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { renderEntries } from '../views/inbox/entries.js';
 
 test('inbox newest sort control uses backend created_at sort value', () => {
   const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -10,4 +11,42 @@ test('inbox newest sort control uses backend created_at sort value', () => {
 
   assert.match(source, /data-sort="created_at"/);
   assert.doesNotMatch(source, /data-sort="newest"/);
+});
+
+test('inbox entries render recommendation quality metadata', () => {
+  const markup = String(renderEntries([
+    {
+      id: 'rec-1',
+      status: 'proposed',
+      priority: 'high',
+      source: 'generator:cash_liquidity',
+      recommendation_type: 'workflow_action',
+      title: 'Build emergency cash reserve',
+      detail: 'Cash covers less than the target reserve.',
+      action_payload: {
+        quality: {
+          confidence_level: 'high',
+          freshness_status: 'fresh',
+          actionability: 'review_only',
+          reversibility: 'high',
+          impact: {
+            level: 'high',
+            summary: 'Build toward a three-month reserve.',
+          },
+          blocking_context: [],
+          decision_grade: true,
+        },
+      },
+    },
+  ], {
+    planLookup: new Map(),
+    expanded: null,
+    emptyMessage: '',
+  }));
+
+  assert.match(markup, /high confidence/);
+  assert.match(markup, /fresh evidence/);
+  assert.match(markup, /review only/);
+  assert.match(markup, /high impact/);
+  assert.match(markup, /decision grade/);
 });

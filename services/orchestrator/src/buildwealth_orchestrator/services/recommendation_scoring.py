@@ -286,6 +286,13 @@ def _scenario_delta_abs_usd(action_payload: dict[str, Any]) -> float:
     return abs(delta)
 
 
+def _quality_payload(action_payload: dict[str, Any]) -> dict[str, Any]:
+    quality = action_payload.get("quality")
+    if isinstance(quality, dict):
+        return quality
+    return {}
+
+
 def _append_reason(reasons: list[str], text: str) -> None:
     cleaned = str(text or "").strip()
     if not cleaned:
@@ -341,6 +348,17 @@ def score_recommendation_row(
     if isinstance(plan_updates, dict) and plan_updates:
         impact += 6.0
         _append_reason(reasons, "Recommendation includes explicit plan-setting updates.")
+
+    quality = _quality_payload(action_payload)
+    quality_impact = quality.get("impact") if isinstance(quality.get("impact"), dict) else {}
+    quality_impact_level = str(quality_impact.get("level") or "").strip().lower()
+    if quality_impact_level == "high":
+        impact += 6.0
+        _append_reason(reasons, "Quality metadata marks this as high impact.")
+    elif quality_impact_level == "medium":
+        impact += 3.0
+    elif quality_impact_level == "low":
+        impact -= 2.0
 
     confidence = 35.0
     evidence = action_payload.get("evidence")
@@ -405,6 +423,39 @@ def score_recommendation_row(
         confidence += 8.0
         _append_reason(reasons, "Workflow-generated recommendation includes reproducible provenance.")
 
+    if quality:
+        confidence_score = _safe_float(quality.get("confidence_score"), -1.0)
+        if confidence_score >= 0.0:
+            confidence += round(confidence_score * 18.0, 2)
+        confidence_level = str(quality.get("confidence_level") or "").strip().lower()
+        if confidence_level == "high":
+            confidence += 5.0
+        elif confidence_level == "low":
+            confidence -= 5.0
+
+        freshness_status = str(quality.get("freshness_status") or "").strip().lower()
+        if freshness_status == "fresh":
+            confidence += 6.0
+            _append_reason(reasons, "Quality metadata reports fresh evidence.")
+        elif freshness_status == "stale":
+            confidence -= 8.0
+            _append_reason(reasons, "Quality metadata reports stale evidence.")
+        elif freshness_status == "unknown":
+            confidence -= 6.0
+            _append_reason(reasons, "Quality metadata has unknown evidence freshness.")
+
+        blocking_context = quality.get("blocking_context")
+        blocking_count = len(blocking_context) if isinstance(blocking_context, list) else 0
+        if blocking_count:
+            confidence -= min(18.0, blocking_count * 6.0)
+            _append_reason(reasons, "Recommendation is blocked by missing context.")
+
+        if bool(quality.get("decision_grade")):
+            confidence += 8.0
+            _append_reason(reasons, "Recommendation is decision-grade based on quality metadata.")
+        else:
+            confidence -= 4.0
+
     calibration = _calibration_summary_for_row(row, calibration_profile)
     confidence += _safe_float(calibration.get("confidence_delta"), 0.0)
     _append_calibration_reason(reasons, calibration)
@@ -419,6 +470,27 @@ def score_recommendation_row(
         urgency = max(5.0, urgency - 30.0)
 
     reversibility = {"workflow_action": 82.0, "general": 72.0, "plan_settings_update": 56.0}[recommendation_type]
+    if quality:
+        actionability = str(quality.get("actionability") or "").strip().lower()
+        if actionability == "previewable":
+            urgency += 5.0
+            confidence += 4.0
+            _append_reason(reasons, "Recommendation can be previewed before apply.")
+        elif actionability == "review_only":
+            urgency += 2.0
+            _append_reason(reasons, "Recommendation needs review before action.")
+        elif actionability == "context_gathering":
+            urgency -= 8.0
+            _append_reason(reasons, "Recommendation gathers missing context before stronger advice.")
+
+        quality_reversibility = str(quality.get("reversibility") or "").strip().lower()
+        if quality_reversibility == "high":
+            reversibility += 8.0
+        elif quality_reversibility == "medium":
+            reversibility += 2.0
+        elif quality_reversibility == "low":
+            reversibility -= 10.0
+
     if isinstance(plan_updates, dict) and plan_updates:
         update_keys = {str(key).strip() for key in plan_updates.keys()}
         if update_keys & {

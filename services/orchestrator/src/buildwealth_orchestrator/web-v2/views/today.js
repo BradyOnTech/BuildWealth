@@ -124,7 +124,7 @@ function computeRunway(payload) {
 
 /* ─────────────  THE MOVE  ───────────── */
 
-function renderMove(payload) {
+export function renderMove(payload) {
   const actions = (payload.top_next_actions || []).slice(0, 3);
   if (!actions.length) {
     return html`
@@ -168,6 +168,11 @@ function renderAction(action, index) {
         </span>
         <h3 class="entry-title">${stripHtml(action.title)}</h3>
         <p class="entry-rationale">${stripHtml(action.detail || '')}</p>
+        ${action.quality_summary ? raw(`
+          <p class="marginalia">
+            <span class="glyph">›</span> ${esc(action.quality_summary)}
+          </p>
+        `) : ''}
         ${reasons.length ? raw(`
           <p class="marginalia">
             <span class="glyph">›</span> ${reasons.map(esc).join(' · ')}
@@ -175,6 +180,7 @@ function renderAction(action, index) {
         `) : ''}
         <div class="entry-meta">
           ${raw(actionLink(action))}
+          ${action.action_hint ? raw(`<span class="marginalia">${esc(action.action_hint)}</span>`) : ''}
         </div>
       </div>
     </li>

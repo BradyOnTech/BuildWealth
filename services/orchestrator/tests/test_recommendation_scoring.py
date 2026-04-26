@@ -268,3 +268,62 @@ def test_calibration_adjusts_confidence_and_ranking_for_future_recommendations()
     assert by_id["weak-next"]["score"]["calibration"]["confidence_delta"] < 0
     assert by_id["good-next"]["score"]["confidence"] > by_id["weak-next"]["score"]["confidence"]
     assert any("Calibration adjusted confidence" in reason for reason in by_id["good-next"]["score"]["reasons"])
+
+
+def test_quality_metadata_promotes_decision_grade_actions_over_context_gathering() -> None:
+    rows = [
+        {
+            "id": "context-gap",
+            "created_at": "2026-04-14T10:00:00+00:00",
+            "updated_at": "2026-04-14T10:00:00+00:00",
+            "title": "Complete profile gap",
+            "detail": "Missing data blocks better recommendations.",
+            "priority": "high",
+            "status": "proposed",
+            "recommendation_type": "workflow_action",
+            "source": "generator:profile_completeness",
+            "action_payload": {
+                "quality": {
+                    "confidence_level": "high",
+                    "confidence_score": 0.85,
+                    "freshness_status": "unknown",
+                    "actionability": "context_gathering",
+                    "reversibility": "high",
+                    "impact": {"level": "high", "summary": "Improves context."},
+                    "blocking_context": ["financial_profile.expenses"],
+                    "decision_grade": False,
+                }
+            },
+        },
+        {
+            "id": "previewable-plan",
+            "created_at": "2026-04-14T10:00:00+00:00",
+            "updated_at": "2026-04-14T10:00:00+00:00",
+            "title": "Increase contributions",
+            "detail": "Preview contribution change before applying.",
+            "priority": "high",
+            "status": "proposed",
+            "recommendation_type": "plan_settings_update",
+            "source": "generator:plan_tracking",
+            "action_payload": {
+                "plan_settings_updates": {"annual_contribution_usd": 24000.0},
+                "quality": {
+                    "confidence_level": "medium",
+                    "confidence_score": 0.65,
+                    "freshness_status": "fresh",
+                    "actionability": "previewable",
+                    "reversibility": "high",
+                    "impact": {"level": "high", "summary": "Improves plan pace."},
+                    "blocking_context": [],
+                    "decision_grade": True,
+                },
+            },
+        },
+    ]
+
+    ranked = score_and_sort_recommendations(rows, sort="ranked")
+
+    assert [row["id"] for row in ranked] == ["previewable-plan", "context-gap"]
+    assert ranked[0]["score"]["confidence"] > ranked[1]["score"]["confidence"]
+    assert any("decision-grade" in reason.lower() for reason in ranked[0]["score"]["reasons"])
+    assert any("missing context" in reason.lower() for reason in ranked[1]["score"]["reasons"])

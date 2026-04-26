@@ -3682,6 +3682,46 @@ def _normalized_recommendation_type(value: Any) -> str:
     return "general"
 
 
+def _quality_text(value: Any) -> str:
+    return str(value or "").strip().lower().replace("_", "-")
+
+
+def _recommendation_quality_payload(row: dict[str, Any]) -> dict[str, Any]:
+    action_payload = row.get("action_payload")
+    if not isinstance(action_payload, dict):
+        return {}
+    quality = action_payload.get("quality")
+    if isinstance(quality, dict):
+        return quality
+    return {}
+
+
+def _recommendation_quality_summary(quality: dict[str, Any]) -> str | None:
+    if not quality:
+        return None
+    impact = quality.get("impact") if isinstance(quality.get("impact"), dict) else {}
+    parts = [
+        f"{_quality_text(impact.get('level'))} impact" if _quality_text(impact.get("level")) else "",
+        f"{_quality_text(quality.get('confidence_level'))} confidence" if _quality_text(quality.get("confidence_level")) else "",
+        f"{_quality_text(quality.get('freshness_status'))} evidence" if _quality_text(quality.get("freshness_status")) else "",
+        _quality_text(quality.get("actionability")),
+        "decision-grade" if bool(quality.get("decision_grade")) else "",
+    ]
+    cleaned = [part for part in parts if part]
+    return " · ".join(cleaned) if cleaned else None
+
+
+def _top_action_hint_for_quality(quality: dict[str, Any]) -> str:
+    actionability = _quality_text(quality.get("actionability"))
+    if actionability == "previewable":
+        return "Open Recommendation Inbox to preview before applying."
+    if actionability == "context-gathering":
+        return "Open Recommendation Inbox or Copilot to complete missing context."
+    if actionability == "review-only":
+        return "Open Recommendation Inbox to review."
+    return "Open Recommendation Inbox to preview/apply."
+
+
 def _as_top_next_action(row: dict[str, Any]) -> TopNextAction:
     score = row.get("score")
     score_payload = score if isinstance(score, dict) else {}
@@ -3702,6 +3742,8 @@ def _as_top_next_action(row: dict[str, Any]) -> TopNextAction:
     if "total" in score_payload:
         score_total = round(_coerce_float(score_payload.get("total"), 0.0), 2)
 
+    quality = _recommendation_quality_payload(row)
+    blocking_context = quality.get("blocking_context") if isinstance(quality.get("blocking_context"), list) else []
     recommendation_id = str(row.get("id") or "").strip() or None
     return TopNextAction(
         recommendation_id=recommendation_id,
@@ -3714,7 +3756,11 @@ def _as_top_next_action(row: dict[str, Any]) -> TopNextAction:
         score_total=score_total,
         score_rank=normalized_rank,
         score_reasons=score_reasons[:3],
-        action_hint="Open Recommendation Inbox to preview/apply.",
+        quality_summary=_recommendation_quality_summary(quality),
+        quality_actionability=_quality_text(quality.get("actionability")) or None,
+        quality_decision_grade=bool(quality.get("decision_grade")) if quality else None,
+        blocking_context=[str(item).strip() for item in blocking_context if str(item).strip()],
+        action_hint=_top_action_hint_for_quality(quality),
     )
 
 

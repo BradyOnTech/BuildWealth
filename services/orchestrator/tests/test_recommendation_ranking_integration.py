@@ -186,6 +186,43 @@ def test_build_top_next_actions_scopes_to_plan_and_global(
     assert ids[0] == target_plan["id"]
 
 
+def test_top_next_actions_include_quality_explanation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    recommendation = inbox.create(
+        title="Increase annual contributions",
+        detail="Raise annual contribution after preview.",
+        priority="high",
+        recommendation_type="plan_settings_update",
+        plan_id="plan-target",
+        source="generator:plan_tracking",
+        action_payload={
+            "plan_settings_updates": {"annual_contribution_usd": 24000.0},
+            "quality": {
+                "confidence_level": "medium",
+                "confidence_score": 0.65,
+                "freshness_status": "fresh",
+                "actionability": "previewable",
+                "reversibility": "high",
+                "impact": {"level": "high", "summary": "Improves plan contribution pace."},
+                "blocking_context": [],
+                "decision_grade": True,
+            },
+        },
+    )
+
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    actions = main._build_top_next_actions(plan_id="plan-target", limit=1)
+
+    assert actions[0].recommendation_id == recommendation["id"]
+    assert actions[0].quality_actionability == "previewable"
+    assert actions[0].quality_summary == "high impact · medium confidence · fresh evidence · previewable · decision-grade"
+    assert actions[0].blocking_context == []
+    assert actions[0].action_hint == "Open Recommendation Inbox to preview before applying."
+
+
 def test_get_plan_includes_top_next_actions(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

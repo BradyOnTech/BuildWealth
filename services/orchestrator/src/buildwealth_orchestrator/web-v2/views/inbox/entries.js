@@ -46,6 +46,7 @@ function renderEntry(item, index, ctx) {
         ${raw(renderTagRow({ status, priority, source, recoType, planLabel, score, updated }))}
         <h3 class="entry-title">${stripHtml(item.title)}</h3>
         ${raw(detailMarkup(item.detail))}
+        ${raw(renderQualitySummary(item.action_payload?.quality))}
         ${reasons.length ? raw(`
           <p class="marginalia">
             <span class="glyph">›</span> ${reasons.map(esc).join(' · ')}
@@ -113,6 +114,34 @@ function renderActions(item, status, expanded) {
     `;
   }
   return '';
+}
+
+function renderQualitySummary(quality) {
+  if (!quality || typeof quality !== 'object') return '';
+  const confidence = humanText(quality.confidence_level);
+  const freshness = humanText(quality.freshness_status);
+  const actionability = humanText(quality.actionability);
+  const reversibility = humanText(quality.reversibility);
+  const impact = quality.impact && typeof quality.impact === 'object' ? humanText(quality.impact.level) : '';
+  const decisionGrade = quality.decision_grade === true ? 'decision grade' : '';
+  const blocking = Array.isArray(quality.blocking_context) && quality.blocking_context.length
+    ? `${quality.blocking_context.length} blocker${quality.blocking_context.length === 1 ? '' : 's'}`
+    : '';
+  const parts = [
+    confidence ? `${confidence} confidence` : '',
+    freshness ? `${freshness} evidence` : '',
+    actionability,
+    reversibility ? `${reversibility} reversibility` : '',
+    impact ? `${impact} impact` : '',
+    decisionGrade,
+    blocking,
+  ].filter(Boolean);
+  if (!parts.length) return '';
+  return html`
+    <p class="marginalia quality-line">
+      <span class="glyph">›</span> ${parts.map(esc).join(' · ')}
+    </p>
+  `;
 }
 
 function humanText(value) {

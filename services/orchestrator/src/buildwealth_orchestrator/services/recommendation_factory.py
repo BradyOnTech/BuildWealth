@@ -145,6 +145,58 @@ def _format_signed_money(value: float | None) -> str:
     return f"{sign}${abs(value):,.0f}"
 
 
+def _freshness_status(snapshot_as_of: Any) -> str:
+    return "fresh" if str(snapshot_as_of or "").strip() else "unknown"
+
+
+def _quality_metadata(
+    *,
+    source: str,
+    priority: str,
+    evidence: dict[str, Any],
+    suggested_action: dict[str, Any],
+    expected_outcome: dict[str, Any],
+    actionability: str,
+    confidence_level: str,
+    confidence_reasons: list[str],
+    reversibility: str,
+    blocking_context: list[str] | None = None,
+) -> dict[str, Any]:
+    snapshot_as_of = evidence.get("snapshot_as_of")
+    freshness = _freshness_status(snapshot_as_of)
+    impact_level = "high" if priority == "high" else ("medium" if priority == "medium" else "low")
+    confidence_scores = {"high": 0.85, "medium": 0.65, "low": 0.4}
+    actionability_reasons = {
+        "previewable": ["This recommendation has a concrete suggested action that can be previewed before apply."],
+        "review_only": ["This recommendation should be reviewed before any state change is made."],
+        "context_gathering": ["This recommendation improves missing context before stronger advice is generated."],
+    }
+    freshness_reasons = (
+        [f"Evidence snapshot is available as of {snapshot_as_of}."]
+        if freshness == "fresh"
+        else ["Evidence freshness is unknown because no source timestamp was available."]
+    )
+    return {
+        "schema_version": 1,
+        "source": source,
+        "confidence_level": confidence_level,
+        "confidence_score": confidence_scores.get(confidence_level, 0.4),
+        "confidence_reasons": confidence_reasons,
+        "freshness_status": freshness,
+        "freshness_reasons": freshness_reasons,
+        "actionability": actionability,
+        "actionability_reasons": actionability_reasons.get(actionability, []),
+        "reversibility": reversibility,
+        "impact": {
+            "level": impact_level,
+            "summary": str(evidence.get("summary") or expected_outcome.get("expected_delta_context_quality") or "").strip(),
+        },
+        "blocking_context": blocking_context or [],
+        "decision_grade": freshness != "unknown" and not blocking_context,
+        "suggested_action_kind": suggested_action.get("kind"),
+    }
+
+
 def _excess_amount_usd(alert: dict[str, Any], total_market_value: float) -> float | None:
     if total_market_value <= 0:
         return None
@@ -263,11 +315,26 @@ def _candidate_from_alert(
             "unit": str(alert.get("unit") or "").strip().lower(),
         },
     }
+    priority = _priority_for_alert(alert)
+    action_payload["quality"] = _quality_metadata(
+        source=PORTFOLIO_RISK_SOURCE,
+        priority=priority,
+        evidence=action_payload["evidence"],
+        suggested_action=action_payload["suggested_action"],
+        expected_outcome=action_payload["expected_outcome"],
+        actionability="review_only",
+        confidence_level="high" if action_payload["evidence"].get("snapshot_as_of") else "medium",
+        confidence_reasons=[
+            "Generated from structured portfolio holdings and configured risk thresholds.",
+            "Recommendation is based on an active portfolio risk alert.",
+        ],
+        reversibility="medium",
+    )
 
     return {
         "title": _title_for_alert(alert),
         "detail": _detail_for_alert(alert, estimated_amount_usd=estimated_amount_usd),
-        "priority": _priority_for_alert(alert),
+        "priority": priority,
         "recommendation_type": "workflow_action",
         "source": PORTFOLIO_RISK_SOURCE,
         "plan_id": plan_id,
@@ -445,6 +512,7 @@ def _candidate_from_plan_tracking(
 ) -> dict[str, Any]:
     plan_id = _plan_id(plan_tracking_payload)
     dedupe_key = _plan_tracking_dedupe_key(plan_id, signal_key)
+    evidence = _plan_tracking_evidence(plan_tracking_payload, summary=detail)
     action_payload = {
         "generator": _plan_tracking_generator_payload(
             generated_at=generated_at,
@@ -452,10 +520,24 @@ def _candidate_from_plan_tracking(
             severity=severity,
             dedupe_key=dedupe_key,
         ),
-        "evidence": _plan_tracking_evidence(plan_tracking_payload, summary=detail),
+        "evidence": evidence,
         "suggested_action": suggested_action,
         "expected_outcome": expected_outcome,
     }
+    action_payload["quality"] = _quality_metadata(
+        source=PLAN_TRACKING_SOURCE,
+        priority=priority,
+        evidence=evidence,
+        suggested_action=suggested_action,
+        expected_outcome=expected_outcome,
+        actionability="previewable" if recommendation_type == "plan_settings_update" else "review_only",
+        confidence_level="high" if evidence.get("snapshot_as_of") else "medium",
+        confidence_reasons=[
+            "Generated from plan tracking status, plan settings, and portfolio snapshot history.",
+            "Signal uses structured plan-vs-actual metrics.",
+        ],
+        reversibility="high" if recommendation_type == "plan_settings_update" else "medium",
+    )
     if plan_settings_updates:
         action_payload["plan_settings_updates"] = plan_settings_updates
     return {
@@ -818,22 +900,39 @@ def _cash_liquidity_candidate(
     monthly_debt_minimums: float,
     plan_id: str | None,
 ) -> dict[str, Any]:
+    evidence = _cash_liquidity_evidence(
+        summary=detail,
+        holdings_payload=holdings_payload,
+        financial_profile_payload=financial_profile_payload,
+        monthly_expenses=monthly_expenses,
+        monthly_debt_minimums=monthly_debt_minimums,
+    )
     action_payload = {
         "generator": _cash_liquidity_generator_payload(
             generated_at=generated_at,
             signal_key=signal_key,
             severity=severity,
         ),
-        "evidence": _cash_liquidity_evidence(
-            summary=detail,
-            holdings_payload=holdings_payload,
-            financial_profile_payload=financial_profile_payload,
-            monthly_expenses=monthly_expenses,
-            monthly_debt_minimums=monthly_debt_minimums,
-        ),
+        "evidence": evidence,
         "suggested_action": suggested_action,
         "expected_outcome": expected_outcome,
     }
+    blocking_context = ["financial_profile.outflows"] if signal_key == "profile_outflow_missing" else []
+    action_payload["quality"] = _quality_metadata(
+        source=CASH_LIQUIDITY_SOURCE,
+        priority=priority,
+        evidence=evidence,
+        suggested_action=suggested_action,
+        expected_outcome=expected_outcome,
+        actionability="context_gathering" if blocking_context else "review_only",
+        confidence_level="high" if evidence.get("snapshot_as_of") and not blocking_context else "medium",
+        confidence_reasons=[
+            "Generated from portfolio cash plus financial-profile expense and debt outflow data.",
+            "Reserve thresholds use the configured 3-to-6-month liquidity band.",
+        ],
+        reversibility="high",
+        blocking_context=blocking_context,
+    )
     return {
         "title": title,
         "detail": detail,
@@ -1150,6 +1249,21 @@ def _profile_completeness_candidate(
             "enabled_recommendation_sources": cleaned_sources,
         },
     }
+    action_payload["quality"] = _quality_metadata(
+        source=PROFILE_COMPLETENESS_SOURCE,
+        priority="medium" if cleaned_sources else "low",
+        evidence=action_payload["evidence"],
+        suggested_action=action_payload["suggested_action"],
+        expected_outcome=action_payload["expected_outcome"],
+        actionability="context_gathering",
+        confidence_level="high",
+        confidence_reasons=[
+            "Generated from the structured profile readiness model.",
+            "The gap is the next blocking profile section in readiness order.",
+        ],
+        reversibility="high",
+        blocking_context=[f"financial_profile.{gap_key}"],
+    )
     return {
         "title": title,
         "detail": detail,

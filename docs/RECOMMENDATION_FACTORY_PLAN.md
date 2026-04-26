@@ -35,6 +35,7 @@ This plugs into the existing recommendation system:
 - Slice 7 run-all factory review center: implemented
 - Slice 8 reviewed batch apply guard: implemented
 - Slice 9 cash liquidity recommendation generator: implemented
+- Slice 10 shared recommendation quality metadata: implemented
 
 ## First Slice Scope
 
@@ -121,6 +122,19 @@ Generated rows use source `generator:cash_liquidity` and dedupe keys like `cash_
 Example generated recommendation:
 
 > Reduce AAPL concentration from 31% toward the 25% threshold. Consider trimming approximately $14,200 or redirecting new contributions away from AAPL until allocation normalizes.
+
+## Shared Recommendation Quality Metadata
+
+Generated recommendation payloads now include a shared `quality` envelope across active factories:
+
+- portfolio risk
+- plan tracking
+- cash liquidity
+- profile completeness
+
+The envelope captures confidence, freshness, actionability, reversibility, expected impact level, blocking context, and whether the row is currently decision-grade. v2 Inbox renders this metadata on recommendation rows so users can quickly tell whether an item is ready for review, needs more context, or should remain a context-gathering action.
+
+Recommendation ranking now uses the shared quality envelope as a first-class input. Previewable, decision-grade rows receive confidence/actionability lift; context-gathering rows with blocking context are scored more conservatively until missing data is resolved. Today top actions also expose a compact quality summary and action hint so the daily command center can explain whether the next move is ready to preview, review-only, or blocked by missing context.
 
 ## Generated Recommendation Payload
 
