@@ -45,7 +45,21 @@ test('today command cards render decision state with actions', () => {
         action_label: 'Review risk',
         href: '#portfolio',
       },
+      {
+        id: 'stale-assumptions',
+        title: 'Stale assumptions',
+        status: 'warning',
+        detail: '1 assumption review is open.',
+        metric_label: 'Open',
+        metric_value: '1',
+        action_label: 'Review assumptions',
+        href: '#inbox?focus=rec-stale',
+      },
     ],
+  }, {
+    enabled_count: 2,
+    reachable_count: 1,
+    degraded_count: 3,
   }));
 
   assert.match(markup, /Command center/);
@@ -54,4 +68,9 @@ test('today command cards render decision state with actions', () => {
   assert.match(markup, /href="#copilot\?intent=complete-context"/);
   assert.match(markup, /Portfolio risk/);
   assert.match(markup, /40%/);
+  assert.match(markup, /Stale assumptions/);
+  assert.match(markup, /href="#inbox\?focus=rec-stale"/);
+  assert.match(markup, /Engine health/);
+  assert.match(markup, /1\/2/);
+  assert.match(markup, /3 degraded event/);
 });

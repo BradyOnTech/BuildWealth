@@ -423,7 +423,7 @@ High-level tasks:
 - add profile-completeness and stale-assumption generators
 - improve v2 preview/apply/outcome capture
 - feed outcome analytics into ranking inputs
-- add browser tests for recommendation lifecycle flows
+- add browser tests for recommendation lifecycle flows (started: v2 now covers Today daily review, Copilot profile completion, and Inbox preview/apply/outcome)
 
 Done when:
 
@@ -440,9 +440,10 @@ High-level tasks:
 
 - add profile readiness to Today (started: command card now shows profile completion and next gap)
 - add top-action explanation (started: top actions show quality summary and action hint)
-- add data freshness/degraded-mode warnings (started: command card now shows snapshot/data-trust posture)
+- add data freshness/degraded-mode warnings (started: command cards now show snapshot/data-trust and engine-health posture)
 - add pending draft/review indicators (started: Today now surfaces pending recommendation outcome capture)
 - add recent financial changes (started: Today now surfaces recent portfolio change from snapshot history)
+- add cash runway and emergency fund status (started: Today now surfaces cash runway from financial health)
 - connect each card to a concrete review flow
 - extend command cards beyond profile/data/plan/portfolio into research readiness and pending drafts
 
@@ -549,12 +550,12 @@ Long-term:
 
 ## Current Immediate Next Work
 
-1. Complete and land the current physical-assets Copilot profile slice.
-2. Add tax-basics profile filling through Copilot.
-3. Add profile readiness to Today and Copilot.
-4. Add profile-completeness recommendation generation.
-5. Standardize recommendation quality metadata across existing generators.
-6. Improve v2 recommendation preview/apply/outcome flows.
+1. Add pending Copilot draft/review indicators to Today command cards.
+2. Add research readiness to Today using the new research evidence packet contract.
+3. Migrate compare/dossier/watchlist research surfaces to cite or consume evidence packets.
+4. Add richer provider freshness/coverage metadata around current OpenBB-backed research outputs.
+5. Define the first portfolio-fit assessment contract before generating investment-fit recommendations.
+6. Continue expanding browser coverage around Plan v2 migration as those surfaces move over.
 
 ## Documentation Governance
 

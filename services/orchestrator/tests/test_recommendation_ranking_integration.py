@@ -282,6 +282,7 @@ def test_today_command_cards_include_recommendation_loop_state(
         context_state="ready",
         context_notes=[],
         command_cards=[],
+        emergency_fund_months=2.4,
     )
 
     cards = {card.id: card for card in main._build_today_command_cards(dashboard)}
@@ -291,3 +292,6 @@ def test_today_command_cards_include_recommendation_loop_state(
     assert cards["stale-assumptions"].href == f"#inbox?focus={stale['id']}"
     assert cards["outcome-loop"].status == "warning"
     assert cards["outcome-loop"].metric_value == "1"
+    assert cards["cash-runway"].status == "warning"
+    assert cards["cash-runway"].metric_value == "2.4 mo"
+    assert cards["cash-runway"].href == "#inbox"

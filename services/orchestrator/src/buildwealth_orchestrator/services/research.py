@@ -11,6 +11,7 @@ from buildwealth_orchestrator.schemas import (
     ResearchCompareResponse,
     ResearchCompareSummary,
     ResearchDossierResponse,
+    ResearchEvidencePacket,
     ResearchResponse,
 )
 
@@ -265,6 +266,48 @@ class OpenBBResearchService:
         if available_symbols == compared_symbols and warning_count == 0:
             return "fresh"
         return "partial"
+
+    @classmethod
+    def _identity_value(cls, row: dict[str, Any], keys: tuple[str, ...]) -> str | None:
+        for key in keys:
+            value = row.get(key)
+            text = str(value or "").strip()
+            if text:
+                return text
+        return None
+
+    @classmethod
+    def _drawdown_from_high_pct(cls, records: list[dict[str, Any]]) -> float | None:
+        close_values: list[float] = []
+        for row in records:
+            if not isinstance(row, dict):
+                continue
+            close = cls._extract_number(row, ("close", "adj_close", "last", "price"))
+            if close is not None:
+                close_values.append(close)
+
+        if not close_values:
+            return None
+        high = max(close_values)
+        if high == 0:
+            return None
+        return round(((close_values[-1] - high) / high) * 100.0, 4)
+
+    @staticmethod
+    def _evidence_freshness_status(*, quote_available: bool, history_available: bool) -> str:
+        if quote_available and history_available:
+            return "fresh"
+        if quote_available or history_available:
+            return "partial"
+        return "degraded"
+
+    @staticmethod
+    def _evidence_confidence(*, quote_available: bool, history_available: bool) -> str:
+        if quote_available and history_available:
+            return "high"
+        if quote_available or history_available:
+            return "medium"
+        return "low"
 
     @classmethod
     def _build_portfolio_fit(
@@ -712,6 +755,120 @@ class OpenBBResearchService:
             summary=summary,
             items=ranked,
             warnings=deduped_warnings,
+        )
+
+    def evidence_packet(self, *, symbol: str, period: str = "6mo", interval: str = "1d") -> ResearchEvidencePacket:
+        normalized_symbols = self._normalize_symbol_list([symbol], max_symbols=1)
+        normalized_symbol = normalized_symbols[0] if normalized_symbols else ""
+        if not normalized_symbol:
+            raise ValueError("Research evidence packet requires a symbol.")
+        resolved_period = str(period or "6mo").strip() or "6mo"
+        resolved_interval = str(interval or "1d").strip() or "1d"
+
+        quote_response = self.quote(normalized_symbol)
+        history_response = self.price_history(
+            symbol=normalized_symbol,
+            period=resolved_period,
+            interval=resolved_interval,
+        )
+
+        quote_row = (
+            quote_response.records[0]
+            if quote_response.available and quote_response.records and isinstance(quote_response.records[0], dict)
+            else {}
+        )
+        quote_metrics = self._quote_metrics(quote_row)
+        first_close, last_close, period_change_pct = self._compute_price_change(history_response.records)
+        volatility_pct = self._compute_history_volatility_pct(
+            history_response.records,
+            interval=resolved_interval,
+        )
+
+        warnings: list[str] = []
+        if not quote_response.available:
+            warnings.append(f"{normalized_symbol}: quote unavailable ({quote_response.message})")
+        if not history_response.available:
+            warnings.append(f"{normalized_symbol}: history unavailable ({history_response.message})")
+
+        blocking_gaps: list[str] = []
+        if not quote_response.available:
+            blocking_gaps.append("quote")
+        if not history_response.available:
+            blocking_gaps.append("history")
+
+        quote_available = bool(quote_response.available)
+        history_available = bool(history_response.available)
+        available_endpoints = sum(1 for item in (quote_available, history_available) if item)
+        generated_at = datetime.now(timezone.utc)
+
+        return ResearchEvidencePacket(
+            packet_id=f"research-evidence:{self.provider}:{normalized_symbol}:{resolved_period}:{resolved_interval}",
+            symbol=normalized_symbol,
+            name=self._identity_value(quote_row, ("name", "shortName", "longName", "company_name")),
+            asset_type=self._identity_value(quote_row, ("asset_type", "assetType", "security_type", "type")),
+            provider=self.provider,
+            period=resolved_period,
+            interval=resolved_interval,
+            generated_at=generated_at,
+            coverage={
+                "provider": self.provider,
+                "endpoints_attempted": ["quote", "price_history"],
+                "quote_available": quote_available,
+                "history_available": history_available,
+                "quote_message": quote_response.message,
+                "history_message": history_response.message,
+                "warnings": warnings,
+            },
+            freshness={
+                "generated_at": generated_at.isoformat(),
+                "status": self._evidence_freshness_status(
+                    quote_available=quote_available,
+                    history_available=history_available,
+                ),
+                "quote_as_of": self._identity_value(quote_row, ("date", "timestamp", "as_of", "updated_at")),
+                "history_start": self._identity_value(
+                    history_response.records[0] if history_response.records else {},
+                    ("date", "timestamp"),
+                ),
+                "history_end": self._identity_value(
+                    history_response.records[-1] if history_response.records else {},
+                    ("date", "timestamp"),
+                ),
+            },
+            metrics={
+                "last_price": quote_metrics.get("last_price") if quote_metrics.get("last_price") is not None else last_close,
+                "day_change_pct": quote_metrics.get("day_change_pct"),
+                "period_first_close": first_close,
+                "period_last_close": last_close,
+                "period_change_pct": round(period_change_pct, 4) if period_change_pct is not None else None,
+                "volatility_pct": round(volatility_pct, 4) if volatility_pct is not None else None,
+                "market_cap_usd": quote_metrics.get("market_cap_usd"),
+                "pe_ratio": quote_metrics.get("pe_ratio"),
+                "dividend_yield_pct": quote_metrics.get("dividend_yield_pct"),
+            },
+            risk={
+                "drawdown_from_high_pct": self._drawdown_from_high_pct(history_response.records),
+                "volatility_pct": round(volatility_pct, 4) if volatility_pct is not None else None,
+                "data_gaps": blocking_gaps,
+            },
+            quality={
+                "coverage_score": round((available_endpoints / 2.0) * 100.0, 2),
+                "confidence": self._evidence_confidence(
+                    quote_available=quote_available,
+                    history_available=history_available,
+                ),
+                "blocking_gaps": blocking_gaps,
+                "decision_ready": quote_available and history_available,
+            },
+            provenance={
+                "source": "openbb",
+                "provider": self.provider,
+                "quote_records": len(quote_response.records),
+                "history_records": len(history_response.records),
+                "quote_message": quote_response.message,
+                "history_message": history_response.message,
+                "warnings": warnings,
+            },
         )
 
     def dossier(

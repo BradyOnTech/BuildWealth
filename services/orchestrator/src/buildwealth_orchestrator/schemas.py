@@ -749,6 +749,36 @@ class ResearchCompareResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ResearchEvidencePacketRequest(BaseModel):
+    symbol: str
+    period: str = "6mo"
+    interval: str = "1d"
+
+    @model_validator(mode="after")
+    def _normalize_fields(self) -> "ResearchEvidencePacketRequest":
+        self.symbol = str(self.symbol or "").strip().upper()
+        self.period = str(self.period or "6mo").strip() or "6mo"
+        self.interval = str(self.interval or "1d").strip() or "1d"
+        return self
+
+
+class ResearchEvidencePacket(BaseModel):
+    packet_id: str
+    symbol: str
+    name: str | None = None
+    asset_type: str | None = None
+    provider: str
+    period: str
+    interval: str
+    generated_at: datetime
+    coverage: dict[str, Any] = Field(default_factory=dict)
+    freshness: dict[str, Any] = Field(default_factory=dict)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    risk: dict[str, Any] = Field(default_factory=dict)
+    quality: dict[str, Any] = Field(default_factory=dict)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+
 class ResearchDossierRequest(BaseModel):
     symbols: list[str] = Field(default_factory=list)
     period: str = "6mo"
@@ -1015,6 +1045,7 @@ class TodayDashboardResponse(BaseModel):
     net_worth_usd: float | None = None
     monthly_surplus_usd: float | None = None
     savings_rate_pct: float | None = None
+    emergency_fund_months: float | None = None
     financial_health_status: Literal["healthy", "needs_attention", "critical", "insufficient_data"] | None = None
     context_state: Literal["ready", "warning", "critical"] = "warning"
     context_notes: list[str] = Field(default_factory=list)

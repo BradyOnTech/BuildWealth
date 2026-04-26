@@ -59,7 +59,7 @@ async function load() {
 
   setView(root, html`
     ${raw(renderHero(payload))}
-    ${raw(renderCommandCards(payload))}
+    ${raw(renderCommandCards(payload, engines))}
     ${raw(renderMove(payload))}
     ${raw(renderRoom(payload, engines))}
   `);
@@ -126,14 +126,17 @@ function computeRunway(payload) {
 
 /* ─────────────  COMMAND CENTER  ───────────── */
 
-export function renderCommandCards(payload) {
-  const cards = Array.isArray(payload.command_cards) ? payload.command_cards.slice(0, 7) : [];
-  if (!cards.length) {
+export function renderCommandCards(payload, engines = null) {
+  const cards = Array.isArray(payload.command_cards) ? [...payload.command_cards] : [];
+  const engineCard = buildEngineCommandCard(engines);
+  if (engineCard) cards.push(engineCard);
+  const visibleCards = cards.slice(0, 8);
+  if (!visibleCards.length) {
     return html``;
   }
 
-  const criticalCount = cards.filter((card) => card.status === 'critical').length;
-  const warningCount = cards.filter((card) => card.status === 'warning').length;
+  const criticalCount = visibleCards.filter((card) => card.status === 'critical').length;
+  const warningCount = visibleCards.filter((card) => card.status === 'warning').length;
   const lede = criticalCount
     ? `${criticalCount} area${criticalCount === 1 ? '' : 's'} need immediate attention.`
     : warningCount
@@ -144,10 +147,32 @@ export function renderCommandCards(payload) {
     <section>
       ${raw(sectionHead('II', 'Command center', lede))}
       <div class="command-card-grid">
-        ${raw(cards.map(renderCommandCard).join(''))}
+        ${raw(visibleCards.map(renderCommandCard).join(''))}
       </div>
     </section>
   `;
+}
+
+function buildEngineCommandCard(engines) {
+  if (!engines || typeof engines !== 'object') return null;
+  const enabled = Number(engines.enabled_count ?? 0);
+  const reachable = Number(engines.reachable_count ?? 0);
+  const degraded = Number(engines.degraded_count ?? 0);
+  const status = degraded > 0 || reachable < enabled ? 'warning' : 'ready';
+  return {
+    id: 'engine-health',
+    title: 'Engine health',
+    status,
+    detail: degraded > 0
+      ? `${degraded} degraded event${degraded === 1 ? '' : 's'} recorded across compute engines.`
+      : reachable < enabled
+        ? 'Some configured compute engines are not reachable.'
+        : 'Compute engines are reachable with no degraded events.',
+    metric_label: 'Reachable',
+    metric_value: `${reachable}/${enabled}`,
+    action_label: 'Open operations',
+    href: '#atelier',
+  };
 }
 
 function renderCommandCard(card) {

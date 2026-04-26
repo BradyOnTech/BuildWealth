@@ -8,7 +8,7 @@ import uuid
 from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
@@ -37,6 +37,8 @@ from buildwealth_orchestrator.schemas import (
     ResearchDossierRequest,
     ResearchDossierResponse,
     ResearchDossierLookupResponse,
+    ResearchEvidencePacket,
+    ResearchEvidencePacketRequest,
     WatchlistRankResponse,
     PlanArtifactSummary,
     PlanArtifactResponse,
@@ -3805,6 +3807,7 @@ def _build_top_next_actions(
 
 def _build_today_command_cards(dashboard: TodayDashboardResponse) -> list[TodayCommandCard]:
     cards = list(dashboard.command_cards)
+    cards.append(_build_cash_runway_command_card(dashboard))
     try:
         proposed_rows = recommendation_inbox.list(limit=500, status="proposed", sort="created_at_desc")
         closed_rows = recommendation_inbox.list(limit=500, include_archived=True, sort="created_at_desc")
@@ -3856,6 +3859,41 @@ def _build_today_command_cards(dashboard: TodayDashboardResponse) -> list[TodayC
     )
 
     return cards
+
+
+def _build_cash_runway_command_card(dashboard: TodayDashboardResponse) -> TodayCommandCard:
+    months = dashboard.emergency_fund_months
+    if months is None:
+        return TodayCommandCard(
+            id="cash-runway",
+            title="Cash runway",
+            status="warning",
+            detail="Add expenses and cash context to estimate emergency-fund runway.",
+            metric_label="Runway",
+            metric_value="Unknown",
+            action_label="Complete context",
+            href="#copilot?intent=complete-context",
+        )
+
+    status: Literal["ready", "warning", "critical"] = "ready"
+    detail = "Emergency-fund runway is at or above the 6-month target."
+    if months < 3:
+        status = "warning"
+        detail = "Emergency-fund runway is below the 3-month minimum target."
+    elif months < 6:
+        status = "warning"
+        detail = "Emergency-fund runway is between the 3-month floor and 6-month target."
+
+    return TodayCommandCard(
+        id="cash-runway",
+        title="Cash runway",
+        status=status,
+        detail=detail,
+        metric_label="Runway",
+        metric_value=f"{months:.1f} mo",
+        action_label="Review liquidity",
+        href="#inbox",
+    )
 
 
 def _recommendation_needs_outcome(row: dict[str, Any]) -> bool:
@@ -6504,6 +6542,7 @@ def build_today_dashboard_response() -> TodayDashboardResponse:
         dashboard.net_worth_usd = health.net_worth_usd
         dashboard.monthly_surplus_usd = health.monthly_surplus_usd
         dashboard.savings_rate_pct = health.savings_rate_pct
+        dashboard.emergency_fund_months = health.emergency_fund_months
         dashboard.financial_health_status = health.status
     except Exception:
         pass
@@ -13846,6 +13885,21 @@ def research_compare(request: ResearchCompareRequest) -> ResearchCompareResponse
         interval=request.interval,
         baseline_symbol=request.baseline_symbol,
     )
+
+
+@app.post("/api/research/evidence-packet", response_model=ResearchEvidencePacket)
+def research_evidence_packet(request: ResearchEvidencePacketRequest) -> ResearchEvidencePacket:
+    if not request.symbol:
+        raise HTTPException(status_code=400, detail="Research evidence packet requires a symbol.")
+
+    try:
+        return research_service.evidence_packet(
+            symbol=request.symbol,
+            period=request.period,
+            interval=request.interval,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/research/dossier", response_model=ResearchDossierResponse)

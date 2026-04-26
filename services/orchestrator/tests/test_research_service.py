@@ -1,5 +1,6 @@
 from buildwealth_orchestrator.schemas import ResearchResponse
 from buildwealth_orchestrator.services.research import OpenBBResearchService
+import pytest
 
 
 def test_research_service_quote_shape() -> None:
@@ -162,3 +163,106 @@ def test_research_service_dossier_portfolio_fit_and_freshness(monkeypatch) -> No
     assert result.portfolio_fit["new_symbols"] == ["MSFT"]
     assert result.portfolio_fit["overlap_weight_pct"] == 6.2
     assert "## Portfolio Fit" in result.dossier_markdown
+
+
+def test_research_service_evidence_packet_full_data_is_fresh_and_inspectable(monkeypatch) -> None:
+    service = OpenBBResearchService(provider="yfinance")
+
+    def fake_quote(symbol: str) -> ResearchResponse:
+        return ResearchResponse(
+            symbol=symbol,
+            provider="yfinance",
+            available=True,
+            message="quote ok",
+            records=[
+                {
+                    "name": "Apple Inc.",
+                    "asset_type": "equity",
+                    "last": 120.0,
+                    "change_percent": 1.5,
+                    "market_cap": 3_000_000_000_000,
+                    "pe_ratio": 29.5,
+                    "dividend_yield": 0.005,
+                }
+            ],
+        )
+
+    def fake_price_history(symbol: str, period: str = "6mo", interval: str = "1d") -> ResearchResponse:
+        del symbol, period, interval
+        return ResearchResponse(
+            symbol="AAPL",
+            provider="yfinance",
+            available=True,
+            message="history ok",
+            records=[
+                {"date": "2026-01-01", "close": 100.0},
+                {"date": "2026-02-01", "close": 110.0},
+                {"date": "2026-03-01", "close": 120.0},
+            ],
+        )
+
+    monkeypatch.setattr(service, "quote", fake_quote)
+    monkeypatch.setattr(service, "price_history", fake_price_history)
+
+    packet = service.evidence_packet(symbol=" aapl ", period="6mo", interval="1d")
+
+    assert packet.packet_id == "research-evidence:yfinance:AAPL:6mo:1d"
+    assert packet.symbol == "AAPL"
+    assert packet.name == "Apple Inc."
+    assert packet.asset_type == "equity"
+    assert packet.freshness["status"] == "fresh"
+    assert packet.coverage["quote_available"] is True
+    assert packet.coverage["history_available"] is True
+    assert packet.metrics["last_price"] == 120.0
+    assert packet.metrics["period_change_pct"] == 20.0
+    assert packet.metrics["dividend_yield_pct"] == 0.5
+    assert packet.risk["drawdown_from_high_pct"] == 0.0
+    assert packet.quality["confidence"] == "high"
+    assert packet.quality["blocking_gaps"] == []
+    assert packet.provenance["quote_records"] == 1
+    assert packet.provenance["history_records"] == 3
+
+
+def test_research_service_evidence_packet_marks_missing_history_as_partial(monkeypatch) -> None:
+    service = OpenBBResearchService(provider="yfinance")
+
+    def fake_quote(symbol: str) -> ResearchResponse:
+        return ResearchResponse(
+            symbol=symbol,
+            provider="yfinance",
+            available=True,
+            message="quote ok",
+            records=[{"last": 80.0, "change_percent": -0.5}],
+        )
+
+    def fake_price_history(symbol: str, period: str = "6mo", interval: str = "1d") -> ResearchResponse:
+        del period, interval
+        return ResearchResponse(
+            symbol=symbol,
+            provider="yfinance",
+            available=False,
+            message="history unavailable",
+            records=[],
+        )
+
+    monkeypatch.setattr(service, "quote", fake_quote)
+    monkeypatch.setattr(service, "price_history", fake_price_history)
+
+    packet = service.evidence_packet(symbol="msft", period="6mo", interval="1d")
+
+    assert packet.symbol == "MSFT"
+    assert packet.freshness["status"] == "partial"
+    assert packet.coverage["endpoints_attempted"] == ["quote", "price_history"]
+    assert packet.coverage["history_available"] is False
+    assert "history" in packet.quality["blocking_gaps"]
+    assert packet.quality["confidence"] == "medium"
+    assert packet.metrics["last_price"] == 80.0
+    assert packet.metrics["period_change_pct"] is None
+    assert packet.provenance["warnings"] == ["MSFT: history unavailable (history unavailable)"]
+
+
+def test_research_service_evidence_packet_rejects_empty_symbol() -> None:
+    service = OpenBBResearchService(provider="yfinance")
+
+    with pytest.raises(ValueError, match="requires a symbol"):
+        service.evidence_packet(symbol=" !!! ")

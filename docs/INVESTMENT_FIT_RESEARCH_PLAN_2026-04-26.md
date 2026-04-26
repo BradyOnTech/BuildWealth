@@ -149,11 +149,19 @@ Evidence packets are not recommendations. They are structured inputs that can be
 High-level implementation:
 
 - define a research evidence packet contract
-- map current compare/dossier outputs into that contract over time
+- map current quote/history outputs into that contract first, then migrate compare/dossier/watchlist consumers over time
 - preserve raw provider references only as trace/provenance
 - calculate simple quality and freshness fields
 - make packet quality visible in Copilot and recommendation evidence
 - store plan-attached dossiers as artifacts when the user chooses to save them
+
+Current implementation:
+
+- `ResearchEvidencePacket` and `ResearchEvidencePacketRequest` define the first stable packet contract.
+- `OpenBBResearchService.evidence_packet(...)` builds a single-symbol packet from quote and price-history responses.
+- `/api/research/evidence-packet` exposes the packet for downstream Today, Copilot, dossier, and recommendation work.
+- The first packet includes identity, provider coverage, freshness, metrics, risk context, quality/confidence, blocking gaps, and provenance summaries.
+- Portfolio-fit is intentionally not part of the packet; that remains the next layer.
 
 ## Layer 3: Portfolio-Fit Engine
 
@@ -423,8 +431,9 @@ Goal: standardize research outputs before generating new investment recommendati
 Work:
 
 - define the evidence packet shape
-- map current quote/history/compare/dossier data into evidence packets
+- map current quote/history data into evidence packets
 - add freshness and coverage quality
+- migrate compare/dossier/watchlist data to consume or cite packets
 - identify which evidence fields are required for different recommendation types
 - expose evidence quality to Copilot and Inbox
 
