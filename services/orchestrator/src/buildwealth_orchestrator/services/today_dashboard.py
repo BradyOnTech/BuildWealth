@@ -10,6 +10,7 @@ from buildwealth_orchestrator.schemas import (
     SyncStatusResponse,
     TodayActivePlanSummary,
     TodayChecklistItem,
+    TodayCommandCard,
     TodayDashboardResponse,
     TodayRecommendation,
 )
@@ -252,6 +253,123 @@ def _build_recommendations(
     return recommendations
 
 
+def _build_command_cards(
+    *,
+    context_state: Literal["ready", "warning", "critical"],
+    context_notes: list[str],
+    profile_readiness: ProfileReadinessSummary | None,
+    onboarding_completion_percent: float,
+    active_plan: TodayActivePlanSummary | None,
+    concentration_risk: str,
+    top_holding_symbol: str | None,
+    top_holding_percent: float | None,
+    snapshot_as_of: datetime | None,
+    snapshot_age_minutes: int | None,
+) -> list[TodayCommandCard]:
+    profile_percent = (
+        profile_readiness.completion_percent
+        if profile_readiness is not None
+        else onboarding_completion_percent
+    )
+    profile_status: Literal["ready", "warning", "critical"] = "ready"
+    profile_detail = "Profile context is ready for daily recommendations."
+    profile_action_label: str | None = None
+    profile_href: str | None = None
+    if profile_readiness is not None and profile_readiness.next_gap_title:
+        profile_status = "warning"
+        profile_detail = f"Next gap: {profile_readiness.next_gap_title}."
+        profile_action_label = "Complete context"
+        profile_href = "#copilot?intent=complete-context"
+    elif profile_percent < 80:
+        profile_status = "warning"
+        profile_detail = "Profile context is incomplete."
+        profile_action_label = "Complete context"
+        profile_href = "#copilot?intent=complete-context"
+
+    data_action_label: str | None = None
+    data_href: str | None = None
+    if context_state == "critical" or snapshot_as_of is None:
+        data_action_label = "Run sync"
+        data_href = "#atelier"
+    elif snapshot_age_minutes is not None and snapshot_age_minutes > (24 * 60):
+        data_action_label = "Refresh data"
+        data_href = "#atelier"
+
+    plan_status: Literal["ready", "warning", "critical"] = "ready"
+    plan_detail = "Active plan assumptions are complete enough for daily review."
+    plan_metric_value: str | None = None
+    plan_action_label: str | None = "Review plan"
+    plan_href: str | None = "#plan"
+    if active_plan is None:
+        plan_status = "warning"
+        plan_detail = "No active plan is set."
+        plan_action_label = "Set active plan"
+    else:
+        plan_metric_value = f"{round(active_plan.settings_completion_percent)}%"
+        if active_plan.settings_completion_percent < 57:
+            plan_status = "warning"
+            plan_detail = "Plan assumptions need more context before recommendations can be trusted."
+
+    risk_status: Literal["ready", "warning", "critical"] = "ready"
+    if concentration_risk == "high":
+        risk_status = "critical"
+    elif concentration_risk == "medium":
+        risk_status = "warning"
+    risk_detail = "Portfolio concentration is low enough for routine review."
+    if risk_status != "ready":
+        symbol = top_holding_symbol or "top holding"
+        risk_detail = f"Top holding concentration is {concentration_risk} around {symbol}."
+
+    return [
+        TodayCommandCard(
+            id="profile-readiness",
+            title="Profile readiness",
+            status=profile_status,
+            detail=profile_detail,
+            metric_label="Complete",
+            metric_value=f"{round(profile_percent)}%",
+            action_label=profile_action_label,
+            href=profile_href,
+        ),
+        TodayCommandCard(
+            id="data-trust",
+            title="Data trust",
+            status=context_state,
+            detail=context_notes[0] if context_notes else "Context is fresh and ready for daily review.",
+            metric_label="Snapshot",
+            metric_value=(
+                f"{snapshot_age_minutes // 60}h old"
+                if snapshot_age_minutes is not None and snapshot_age_minutes >= 60
+                else f"{snapshot_age_minutes}m old"
+                if snapshot_age_minutes is not None
+                else "Missing"
+            ),
+            action_label=data_action_label,
+            href=data_href,
+        ),
+        TodayCommandCard(
+            id="plan-posture",
+            title="Plan posture",
+            status=plan_status,
+            detail=plan_detail,
+            metric_label="Assumptions",
+            metric_value=plan_metric_value,
+            action_label=plan_action_label,
+            href=plan_href,
+        ),
+        TodayCommandCard(
+            id="portfolio-risk",
+            title="Portfolio risk",
+            status=risk_status,
+            detail=risk_detail,
+            metric_label="Top holding",
+            metric_value=f"{round(top_holding_percent)}%" if top_holding_percent is not None else "Unknown",
+            action_label="Review risk" if risk_status != "ready" else "Open portfolio",
+            href="#portfolio",
+        ),
+    ]
+
+
 def build_today_dashboard_payload(
     *,
     now: datetime,
@@ -375,6 +493,19 @@ def build_today_dashboard_payload(
     if not context_notes:
         context_notes.append("Context is fresh and ready for daily review.")
 
+    command_cards = _build_command_cards(
+        context_state=context_state,
+        context_notes=context_notes,
+        profile_readiness=profile_readiness,
+        onboarding_completion_percent=onboarding_completion_percent,
+        active_plan=active_plan_summary,
+        concentration_risk=concentration_risk,
+        top_holding_symbol=top_holding_symbol,
+        top_holding_percent=top_holding_percent,
+        snapshot_as_of=snapshot_as_of,
+        snapshot_age_minutes=snapshot_age_minutes,
+    )
+
     return TodayDashboardResponse(
         generated_at=now,
         currency=currency,
@@ -397,6 +528,7 @@ def build_today_dashboard_payload(
         inbox_high_priority_count=max(0, int(inbox_high_priority_count)),
         context_state=context_state,
         context_notes=context_notes,
+        command_cards=command_cards,
         checklist=checklist,
         recommendations=recommendations,
         workflow_steps=workflow_steps,

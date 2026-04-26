@@ -438,12 +438,13 @@ Goal: make Today the default daily review experience.
 
 High-level tasks:
 
-- add profile readiness to Today
-- add top-action explanation
-- add data freshness/degraded-mode warnings
+- add profile readiness to Today (started: command card now shows profile completion and next gap)
+- add top-action explanation (started: top actions show quality summary and action hint)
+- add data freshness/degraded-mode warnings (started: command card now shows snapshot/data-trust posture)
 - add pending draft/review indicators
 - add recent financial changes
 - connect each card to a concrete review flow
+- extend command cards beyond profile/data/plan/portfolio into pending outcomes, stale assumptions, recent changes, and research readiness
 
 Done when:
 

@@ -101,6 +101,7 @@ def test_today_dashboard_payload_with_active_plan() -> None:
             blocking_recommendation_sources=["profile_completeness", "tax_planning"],
             sections=[],
         ),
+        inbox_high_priority_count=2,
     )
 
     assert payload.total_value_usd == 300000
@@ -115,6 +116,15 @@ def test_today_dashboard_payload_with_active_plan() -> None:
     assert payload.profile_readiness is not None
     assert payload.profile_readiness.next_gap_key == "tax_profile"
     assert "Profile readiness: next gap is Tax profile." in payload.context_notes
+    cards = {card.id: card for card in payload.command_cards}
+    assert cards["profile-readiness"].status == "warning"
+    assert cards["profile-readiness"].metric_value == "80%"
+    assert cards["profile-readiness"].href == "#copilot?intent=complete-context"
+    assert cards["data-trust"].status == "warning"
+    assert cards["data-trust"].metric_value == "59m old"
+    assert cards["plan-posture"].status == "ready"
+    assert cards["portfolio-risk"].status == "critical"
+    assert cards["portfolio-risk"].metric_value == "40%"
 
 
 def test_today_dashboard_payload_without_snapshot_or_plan() -> None:
@@ -134,3 +144,8 @@ def test_today_dashboard_payload_without_snapshot_or_plan() -> None:
     assert any("no portfolio snapshot" in note.lower() for note in payload.context_notes)
     assert any(item.id == "sync-first-snapshot" for item in payload.checklist)
     assert any(item.id == "create-plan" for item in payload.recommendations)
+    cards = {card.id: card for card in payload.command_cards}
+    assert cards["data-trust"].status == "critical"
+    assert cards["data-trust"].action_label == "Run sync"
+    assert cards["plan-posture"].status == "warning"
+    assert cards["plan-posture"].href == "#plan"

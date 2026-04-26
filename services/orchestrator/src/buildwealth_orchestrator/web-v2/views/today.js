@@ -20,8 +20,9 @@ export function template() {
   return html`
     <section class="page" id="today-page">
       ${raw(skeletonHero())}
-      ${raw(skeletonSection('II', 'The move'))}
-      ${raw(skeletonSection('III', 'The room'))}
+      ${raw(skeletonSection('II', 'Command center'))}
+      ${raw(skeletonSection('III', 'The move'))}
+      ${raw(skeletonSection('IV', 'The room'))}
     </section>
   `;
 }
@@ -58,6 +59,7 @@ async function load() {
 
   setView(root, html`
     ${raw(renderHero(payload))}
+    ${raw(renderCommandCards(payload))}
     ${raw(renderMove(payload))}
     ${raw(renderRoom(payload, engines))}
   `);
@@ -124,12 +126,65 @@ function computeRunway(payload) {
 
 /* ─────────────  THE MOVE  ───────────── */
 
+export function renderCommandCards(payload) {
+  const cards = Array.isArray(payload.command_cards) ? payload.command_cards.slice(0, 4) : [];
+  if (!cards.length) {
+    return html``;
+  }
+
+  const criticalCount = cards.filter((card) => card.status === 'critical').length;
+  const warningCount = cards.filter((card) => card.status === 'warning').length;
+  const lede = criticalCount
+    ? `${criticalCount} area${criticalCount === 1 ? '' : 's'} need immediate attention.`
+    : warningCount
+      ? `${warningCount} area${warningCount === 1 ? '' : 's'} need review before high-confidence advice.`
+      : 'The inputs behind today’s advice are ready.';
+
+  return html`
+    <section>
+      ${raw(sectionHead('II', 'Command center', lede))}
+      <div class="command-card-grid">
+        ${raw(cards.map(renderCommandCard).join(''))}
+      </div>
+    </section>
+  `;
+}
+
+function renderCommandCard(card) {
+  const status = normalizeCardStatus(card.status);
+  const href = card.href ? String(card.href) : '';
+  const action = card.action_label && href
+    ? `<a class="link-editorial" href="${esc(href)}" data-route>${esc(card.action_label)}</a>`
+    : '';
+
+  return html`
+    <article class="command-card ${status}">
+      <div class="command-card-topline">
+        <span class="command-card-status">${status}</span>
+        ${card.metric_value ? raw(`
+          <span class="command-card-metric">
+            ${card.metric_label ? `${esc(card.metric_label)} ` : ''}<b>${esc(card.metric_value)}</b>
+          </span>
+        `) : ''}
+      </div>
+      <h3>${stripHtml(card.title || 'Command card')}</h3>
+      <p>${stripHtml(card.detail || '')}</p>
+      ${action ? raw(`<div class="command-card-action">${action}</div>`) : ''}
+    </article>
+  `;
+}
+
+function normalizeCardStatus(status) {
+  if (status === 'critical' || status === 'warning' || status === 'ready') return status;
+  return 'ready';
+}
+
 export function renderMove(payload) {
   const actions = (payload.top_next_actions || []).slice(0, 3);
   if (!actions.length) {
     return html`
       <section>
-        ${raw(sectionHead('II', 'The move', 'Nothing pressing today.'))}
+        ${raw(sectionHead('III', 'The move', 'Nothing pressing today.'))}
         <div class="empty-block">
           <span class="glyph">¶</span>
           <p>The inbox is quiet. Come back tomorrow.</p>
@@ -144,7 +199,7 @@ export function renderMove(payload) {
 
   return html`
     <section>
-      ${raw(sectionHead('II', 'The move', lede))}
+      ${raw(sectionHead('III', 'The move', lede))}
       <ol class="entry-list">
         ${raw(actions.map((a, i) => renderAction(a, i + 1)).join(''))}
       </ol>
@@ -233,7 +288,7 @@ function renderRoom(payload, engines) {
 
   return html`
     <section>
-      ${raw(sectionHead('III', 'The room', null))}
+      ${raw(sectionHead('IV', 'The room', null))}
       <div class="quiet-panel">
         <p class="quiet-statement">
           <span class="glyph">§</span>

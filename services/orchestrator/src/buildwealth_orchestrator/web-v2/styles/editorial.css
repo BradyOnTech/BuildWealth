@@ -122,6 +122,98 @@
 
 /* ───────────  Editorial entry list (top actions)  ─────────── */
 
+.command-card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s-4);
+}
+
+.command-card {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: var(--s-3);
+  min-height: 190px;
+  padding: var(--s-4) 0;
+  border-top: var(--hair) solid var(--rule);
+  border-bottom: var(--hair) solid var(--rule-soft);
+}
+
+.command-card-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
+.command-card-status,
+.command-card-metric {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+}
+
+.command-card-status::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--forest-soft);
+  vertical-align: 1px;
+}
+
+.command-card.warning .command-card-status::before { background: var(--brass); }
+.command-card.critical .command-card-status::before { background: var(--oxblood); }
+
+.command-card-metric {
+  text-align: right;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+.command-card-metric b {
+  color: var(--ink);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.command-card h3 {
+  margin: 0;
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 36;
+  font-weight: 600;
+  font-size: 22px;
+  line-height: var(--lh-snug);
+  color: var(--ink-strong);
+  text-wrap: balance;
+}
+
+.command-card p {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: var(--lh-body);
+  text-wrap: pretty;
+}
+
+.command-card-action {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+}
+
+@media (max-width: 1080px) {
+  .command-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 640px) {
+  .command-card-grid { grid-template-columns: minmax(0, 1fr); }
+  .command-card { min-height: 0; }
+}
+
 .entry-list {
   display: grid;
   gap: var(--s-5);

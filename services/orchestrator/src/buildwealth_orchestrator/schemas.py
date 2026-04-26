@@ -970,6 +970,17 @@ class TopNextAction(BaseModel):
     action_hint: str | None = None
 
 
+class TodayCommandCard(BaseModel):
+    id: str
+    title: str
+    status: Literal["ready", "warning", "critical"] = "ready"
+    detail: str
+    metric_label: str | None = None
+    metric_value: str | None = None
+    action_label: str | None = None
+    href: str | None = None
+
+
 class TodayActivePlanSummary(BaseModel):
     id: str
     title: str
@@ -1005,6 +1016,7 @@ class TodayDashboardResponse(BaseModel):
     financial_health_status: Literal["healthy", "needs_attention", "critical", "insufficient_data"] | None = None
     context_state: Literal["ready", "warning", "critical"] = "warning"
     context_notes: list[str] = Field(default_factory=list)
+    command_cards: list[TodayCommandCard] = Field(default_factory=list)
     top_next_actions: list[TopNextAction] = Field(default_factory=list)
     checklist: list[TodayChecklistItem] = Field(default_factory=list)
     recommendations: list[TodayRecommendation] = Field(default_factory=list)
