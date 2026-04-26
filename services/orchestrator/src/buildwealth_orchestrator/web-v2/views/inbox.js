@@ -1,5 +1,5 @@
 // INBOX — three movements.
-//   I.  The list  · ranked / newest, filtered by status and plan
+//   I.  The list  · ranked / created_at, filtered by status and plan
 //   II. A new sweep · run all factories and create candidates
 //   III. Quality · how past suggestions played out
 
@@ -113,7 +113,7 @@ function rerenderControls() {
         <span class="label">sort</span>
         <button data-sort="ranked"  aria-pressed="${inbox.sort === 'ranked'}">ranked</button>
         <span aria-hidden="true">·</span>
-        <button data-sort="newest"  aria-pressed="${inbox.sort === 'newest'}">newest</button>
+        <button data-sort="created_at"  aria-pressed="${inbox.sort === 'created_at'}">newest</button>
       </div>
     </div>
   `;

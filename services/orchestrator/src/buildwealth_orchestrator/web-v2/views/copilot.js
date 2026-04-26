@@ -24,11 +24,20 @@ const SUGGESTIONS = [
   'Can I afford a $450,000 house given my plan?',
 ];
 
+const PROFILE_SETUP_PROMPT = [
+  'Help me fill out my financial profile.',
+  'First call get_onboarding_status and get_financial_profile.',
+  'Ask me one focused question at a time for missing income, expenses, debt, goals, tax basics, and physical assets.',
+  'When you have enough information, call draft_financial_profile_update so I can review the changes.',
+  'do not save anything with update_financial_profile until I explicitly confirm the draft.',
+].join(' ');
+
 const ui = {
   conversationId: null,
   conversationTitle: '',
   messages: [],
   conversations: [],
+  onboarding: null,
   busy: false,
   thinking: false,
   error: null,
@@ -52,6 +61,7 @@ export async function init(params = {}) {
   ui.conversationId = params.conversation_id || null;
   ui.conversations = [];
   ui.messages = [];
+  ui.onboarding = null;
   ui.busy = false;
   ui.thinking = false;
   ui.error = null;
@@ -62,6 +72,7 @@ export async function init(params = {}) {
 
   // Load past conversations, then the active one (if any).
   loadConversations().then(() => rerenderMasthead()).catch(() => {});
+  loadOnboarding().then(() => rerenderBody()).catch(() => {});
   if (params.focus) {
     // Linked from inbox: prefill question. Conversation stays empty until sent.
     fillDraft(`Tell me about recommendation ${params.focus}.`);
@@ -76,6 +87,14 @@ async function loadConversations() {
     ui.conversations = Array.isArray(list) ? list : [];
   } catch {
     ui.conversations = [];
+  }
+}
+
+async function loadOnboarding() {
+  try {
+    ui.onboarding = await api.onboarding();
+  } catch {
+    ui.onboarding = null;
   }
 }
 
@@ -264,6 +283,7 @@ function renderEmpty() {
         Copilot has your portfolio, your plan and your profile in scope.
         It can run scenarios, look at concentration, and recommend changes.
       </p>
+      ${raw(renderProfileOnboardingCard())}
       <ul class="suggestion-list">
         ${SUGGESTIONS.map(s => html`
           <li>
@@ -272,6 +292,27 @@ function renderEmpty() {
         `)}
       </ul>
     </div>
+  `;
+}
+
+function renderProfileOnboardingCard() {
+  const status = ui.onboarding;
+  if (!status || status.ready_for_daily_review) return '';
+  const percent = Math.round(Number(status.completion_percent || 0));
+  const steps = Array.isArray(status.steps) ? status.steps : [];
+  const nextStep = steps.find(step => step.status !== 'complete');
+  return html`
+    <article class="profile-onboarding-card">
+      <p class="profile-draft-eyebrow">Profile setup</p>
+      <p class="profile-draft-summary">
+        Your profile is ${percent}% complete${nextStep?.title ? `. Next: ${nextStep.title}.` : '.'}
+      </p>
+      <div class="entry-actions">
+        <button class="action-link" data-profile-onboarding-prompt>
+          Fill it out with Copilot <span class="arrow">›</span>
+        </button>
+      </div>
+    </article>
   `;
 }
 
@@ -346,8 +387,64 @@ function attachHandlers() {
     fillDraft(text);
   });
 
+  delegate(page, 'click', '[data-profile-draft]', (_, t) => {
+    applyProfileDraft(t);
+  });
+
+  delegate(page, 'click', '[data-profile-onboarding-prompt]', () => {
+    fillDraft(PROFILE_SETUP_PROMPT);
+  });
+
   // Outside-click closes pickers.
   document.addEventListener('click', closePickersOnOutsideClick, { passive: true });
+}
+
+async function applyProfileDraft(button) {
+  const encoded = button.getAttribute('data-profile-draft') || '';
+  let patch = null;
+  try {
+    patch = JSON.parse(decodeURIComponent(encoded));
+  } catch {
+    ui.error = 'Could not read the drafted profile update.';
+    rerenderBody();
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = 'Applying...';
+  ui.error = null;
+
+  try {
+    const current = await api.profile();
+    const saved = await api.updateProfile(mergeProfileDraft(current, patch));
+    state.financialProfile = saved;
+    ui.messages.push({
+      role: 'assistant',
+      content: 'Profile update applied. Your financial profile is now updated for future reviews.',
+      created_at: new Date().toISOString(),
+      metadata: {},
+    });
+  } catch (err) {
+    ui.error = err.message;
+  } finally {
+    rerenderBody();
+    scrollToBottom();
+  }
+}
+
+function mergeProfileDraft(current, patch) {
+  const merged = { ...(current || {}) };
+  for (const key of ['income_items', 'expense_items', 'debt_items', 'goal_items', 'physical_assets']) {
+    if (Array.isArray(patch?.[key])) merged[key] = patch[key];
+  }
+  if (typeof patch?.notes === 'string') merged.notes = patch.notes;
+  if (patch?.tax_profile && typeof patch.tax_profile === 'object') {
+    merged.tax_profile = { ...(merged.tax_profile || {}), ...patch.tax_profile };
+  }
+  if (patch?.flags && typeof patch.flags === 'object') {
+    merged.flags = { ...(merged.flags || {}), ...patch.flags };
+  }
+  return merged;
 }
 
 function closePickersOnOutsideClick(e) {

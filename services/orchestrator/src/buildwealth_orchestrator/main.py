@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 import time
+import uuid
 from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -589,6 +590,9 @@ copilot = FinancialCopilot(
         "- After calling get_buildwealth_context, inspect `quality` and `warnings` fields before making recommendations. "
         "If `quality.freshness.snapshot_stale=true` or coverage is missing sections, call that out clearly and suggest refresh actions.\n"
         "- For 'how am I doing?' or 'what is my financial situation?' → call get_financial_health first.\n"
+        "- For profile onboarding or filling out missing profile fields → call get_onboarding_status, "
+        "ask one focused question at a time, then call draft_financial_profile_update before saving. "
+        "Only call update_financial_profile after the user explicitly confirms the drafted changes.\n"
         "- For account-level balances/cash breakdowns → call get_account_balances.\n"
         "- For allocation mix or rebalancing discussions → call get_asset_allocation.\n"
         "- For 'can I afford X?' → call assess_affordability with the monthly cost or purchase price. "
@@ -7413,6 +7417,103 @@ async def tool_get_onboarding_status(_: dict[str, object]) -> dict[str, object]:
     return build_onboarding_status_response().model_dump(mode="json")
 
 
+PROFILE_UPDATE_LIST_KEYS = (
+    "income_items",
+    "expense_items",
+    "debt_items",
+    "goal_items",
+    "physical_assets",
+)
+PROFILE_UPDATE_ITEM_ID_PREFIXES = {
+    "income_items": "income",
+    "expense_items": "expense",
+    "debt_items": "debt",
+    "goal_items": "goal",
+    "physical_assets": "asset",
+}
+
+
+def _normalize_profile_update_items(key: str, value: list[object]) -> list[object]:
+    prefix = PROFILE_UPDATE_ITEM_ID_PREFIXES.get(key, "item")
+    normalized: list[object] = []
+    for raw_item in value:
+        if not isinstance(raw_item, dict):
+            normalized.append(raw_item)
+            continue
+        item = dict(raw_item)
+        item_id = str(item.get("id") or "").strip()
+        if not item_id:
+            item["id"] = f"{prefix}-{uuid.uuid4().hex[:10]}"
+        normalized.append(item)
+    return normalized
+
+
+def _build_financial_profile_update_draft(arguments: dict[str, object]) -> dict[str, object]:
+    profile_payload = get_financial_profile_payload()
+    proposed_payload = dict(profile_payload)
+    patch_payload: dict[str, object] = {}
+    section_counts: dict[str, int] = {}
+
+    for key in PROFILE_UPDATE_LIST_KEYS:
+        value = arguments.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, list):
+            raise ValueError(f"{key} must be a list")
+        normalized_value = _normalize_profile_update_items(key, value)
+        proposed_payload[key] = normalized_value
+        patch_payload[key] = normalized_value
+        section_counts[key] = len(normalized_value)
+
+    notes = arguments.get("notes")
+    if notes is not None:
+        proposed_payload["notes"] = str(notes)
+        patch_payload["notes"] = str(notes)
+        section_counts["notes"] = 1
+
+    tax_profile = arguments.get("tax_profile")
+    if tax_profile is not None:
+        if not isinstance(tax_profile, dict):
+            raise ValueError("tax_profile must be an object")
+        merged_tax = dict(proposed_payload.get("tax_profile", {}))
+        merged_tax.update(tax_profile)
+        proposed_payload["tax_profile"] = merged_tax
+        patch_payload["tax_profile"] = tax_profile
+        section_counts["tax_profile"] = len(tax_profile)
+
+    flags = arguments.get("flags")
+    if flags is not None:
+        if not isinstance(flags, dict):
+            raise ValueError("flags must be an object")
+        merged_flags = dict(proposed_payload.get("flags", {}))
+        merged_flags.update(flags)
+        proposed_payload["flags"] = merged_flags
+        patch_payload["flags"] = flags
+        section_counts["flags"] = len(flags)
+
+    validated = FinancialProfileRequest(**proposed_payload)
+    response_payload = {
+        **validated.model_dump(mode="json"),
+        "schema_version": int(profile_payload.get("schema_version") or 1),
+        "updated_at": profile_payload.get("updated_at"),
+    }
+    proposed_profile = FinancialProfileResponse(**response_payload).model_dump(mode="json")
+    section_labels = ", ".join(key.replace("_", " ") for key in section_counts) or "no sections"
+    return {
+        "draft_kind": "financial_profile_update",
+        "summary": f"Drafted financial profile updates for {section_labels}.",
+        "section_counts": section_counts,
+        "patch_payload": patch_payload,
+        "proposed_profile": proposed_profile,
+        "current_profile": FinancialProfileResponse(**profile_payload).model_dump(mode="json"),
+        "requires_confirmation": True,
+    }
+
+
+async def tool_draft_financial_profile_update(arguments: dict[str, object]) -> dict[str, object]:
+    return _build_financial_profile_update_draft(arguments)
+
+
 async def tool_update_financial_profile(arguments: dict[str, object]) -> dict[str, object]:
     profile_payload = get_financial_profile_payload()
 
@@ -7422,12 +7523,13 @@ async def tool_update_financial_profile(arguments: dict[str, object]) -> dict[st
             return
         if not isinstance(value, list):
             raise ValueError(f"{key} must be a list")
-        profile_payload[key] = value
+        profile_payload[key] = _normalize_profile_update_items(key, value)
 
     _merge_list("income_items")
     _merge_list("expense_items")
     _merge_list("debt_items")
     _merge_list("goal_items")
+    _merge_list("physical_assets")
 
     notes = arguments.get("notes")
     if notes is not None:
@@ -9429,11 +9531,10 @@ def configure_copilot_tools() -> None:
         handler=tool_get_onboarding_status,
     )
     copilot.register_tool(
-        name="update_financial_profile",
+        name="draft_financial_profile_update",
         description=(
-            "Update financial profile collections and tax settings. "
-            "You may provide any subset of income_items, expense_items, debt_items, goal_items, "
-            "tax_profile, flags, and notes."
+            "Draft financial profile changes for user review without saving them. "
+            "Use this during guided onboarding before calling update_financial_profile."
         ),
         parameters={
             "type": "object",
@@ -9442,6 +9543,30 @@ def configure_copilot_tools() -> None:
                 "expense_items": {"type": "array", "items": {"type": "object"}},
                 "debt_items": {"type": "array", "items": {"type": "object"}},
                 "goal_items": {"type": "array", "items": {"type": "object"}},
+                "physical_assets": {"type": "array", "items": {"type": "object"}},
+                "tax_profile": {"type": "object"},
+                "flags": {"type": "object"},
+                "notes": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_draft_financial_profile_update,
+    )
+    copilot.register_tool(
+        name="update_financial_profile",
+        description=(
+            "Update financial profile collections and tax settings. "
+            "You may provide any subset of income_items, expense_items, debt_items, goal_items, "
+            "physical_assets, tax_profile, flags, and notes. Only use after explicit user confirmation."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "income_items": {"type": "array", "items": {"type": "object"}},
+                "expense_items": {"type": "array", "items": {"type": "object"}},
+                "debt_items": {"type": "array", "items": {"type": "object"}},
+                "goal_items": {"type": "array", "items": {"type": "object"}},
+                "physical_assets": {"type": "array", "items": {"type": "object"}},
                 "tax_profile": {"type": "object"},
                 "flags": {"type": "object"},
                 "notes": {"type": "string"},

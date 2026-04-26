@@ -25,6 +25,7 @@ def test_copilot_registry_includes_phase_3_5_tools() -> None:
         "get_recommendation_closure_analytics",
         "create_plan_recommendation_closure_summary",
         "preview_recommendation",
+        "draft_financial_profile_update",
     }
     assert required_tools <= set(main.copilot.tools.keys())
 
@@ -155,6 +156,141 @@ def test_list_recommendations_tool_contract_includes_sort() -> None:
     assert "limit" in properties
     assert "include_archived" in properties
     assert "sort" in properties
+
+
+def test_draft_financial_profile_update_tool_contract() -> None:
+    tool = main.copilot.tools["draft_financial_profile_update"]
+    properties = tool.parameters.get("properties", {})
+    assert "income_items" in properties
+    assert "expense_items" in properties
+    assert "debt_items" in properties
+    assert "goal_items" in properties
+    assert "physical_assets" in properties
+    assert "tax_profile" in properties
+    assert "flags" in properties
+    assert "notes" in properties
+
+
+def test_tool_draft_financial_profile_update_validates_without_saving(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeProfileStore:
+        def __init__(self) -> None:
+            self.saved_payload = None
+            self.payload = {
+                "schema_version": 2,
+                "income_items": [],
+                "expense_items": [],
+                "debt_items": [],
+                "goal_items": [],
+                "physical_assets": [],
+                "tax_profile": {
+                    "filing_status": None,
+                    "marginal_tax_rate": None,
+                    "effective_tax_rate": None,
+                    "state_tax_rate": None,
+                    "state": None,
+                },
+                "flags": {"no_debt": False, "no_goals": False},
+                "notes": "",
+                "updated_at": "2026-04-26T12:00:00+00:00",
+            }
+
+        def load(self) -> dict[str, object]:
+            return dict(self.payload)
+
+        def get(self) -> dict[str, object]:
+            return dict(self.payload)
+
+        def save(self, payload: dict[str, object]) -> dict[str, object]:
+            self.saved_payload = payload
+            return dict(payload)
+
+    store = FakeProfileStore()
+    monkeypatch.setattr(main, "financial_profile_store", store)
+
+    payload = asyncio.run(
+        main.tool_draft_financial_profile_update(
+            {
+                "income_items": [
+                    {
+                        "id": "income-salary",
+                        "label": "Salary",
+                        "monthly_amount_usd": 11000,
+                        "source_type": "salary",
+                    }
+                ],
+                "expense_items": [
+                    {
+                        "id": "expense-rent",
+                        "label": "Rent",
+                        "monthly_amount_usd": 2600,
+                        "category": "housing",
+                    }
+                ],
+                "flags": {"no_debt": True},
+            }
+        )
+    )
+
+    assert store.saved_payload is None
+    assert payload["draft_kind"] == "financial_profile_update"
+    assert payload["section_counts"] == {"income_items": 1, "expense_items": 1, "flags": 1}
+    assert payload["proposed_profile"]["income_items"][0]["label"] == "Salary"
+    assert payload["proposed_profile"]["expense_items"][0]["label"] == "Rent"
+    assert payload["proposed_profile"]["flags"]["no_debt"] is True
+
+
+def test_tool_draft_financial_profile_update_generates_missing_item_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeProfileStore:
+        def get(self) -> dict[str, object]:
+            return {
+                "schema_version": 2,
+                "income_items": [],
+                "expense_items": [],
+                "debt_items": [],
+                "goal_items": [],
+                "physical_assets": [],
+                "tax_profile": {
+                    "filing_status": None,
+                    "marginal_tax_rate": None,
+                    "effective_tax_rate": None,
+                    "state_tax_rate": None,
+                    "state": None,
+                },
+                "flags": {"no_debt": False, "no_goals": False},
+                "notes": "",
+                "updated_at": "2026-04-26T12:00:00+00:00",
+            }
+
+    monkeypatch.setattr(main, "financial_profile_store", FakeProfileStore())
+
+    payload = asyncio.run(
+        main.tool_draft_financial_profile_update(
+            {
+                "income_items": [
+                    {
+                        "label": "Salary",
+                        "monthly_amount_usd": 11000,
+                        "source_type": "salary",
+                    }
+                ],
+                "goal_items": [
+                    {
+                        "label": "Emergency fund",
+                        "target_amount_usd": 30000,
+                    }
+                ],
+            }
+        )
+    )
+
+    assert payload["patch_payload"]["income_items"][0]["id"].startswith("income-")
+    assert payload["patch_payload"]["goal_items"][0]["id"].startswith("goal-")
+    assert payload["proposed_profile"]["income_items"][0]["id"].startswith("income-")
+    assert payload["proposed_profile"]["goal_items"][0]["id"].startswith("goal-")
 
 
 def test_pin_watchlist_research_tool_contract() -> None:

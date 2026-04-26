@@ -38,6 +38,14 @@ function postJson(url, body = {}) {
   });
 }
 
+function putJson(url, body = {}) {
+  return fetchJson(url, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
 function recommendationsUrl({ status = '', planId = '', sort = 'ranked', limit = 200 } = {}) {
   const params = new URLSearchParams();
   params.set('limit', String(limit));
@@ -59,6 +67,9 @@ export const api = {
   appendDecision: (id, body) => postJson(`/api/plans/${encodeURIComponent(id)}/decisions`, body),
   setActivePlan: (id) => postJson(`/api/plans/${encodeURIComponent(id)}/activate`, {}),
   holdings:     () => fetchJson('/api/portfolio/holdings'),
+  profile:      () => fetchJson('/api/financial-profile'),
+  updateProfile: (body) => putJson('/api/financial-profile', body),
+  onboarding:   () => fetchJson('/api/onboarding/status'),
 
   // Copilot
   conversations:     (limit = 25) => fetchJson(`/api/copilot/conversations?limit=${limit}`),

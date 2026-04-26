@@ -474,6 +474,62 @@
   transform: translateX(3px);
 }
 
+/* ───────────  Profile Draft Review  ─────────── */
+
+.profile-draft-card,
+.profile-onboarding-card {
+  margin-top: var(--s-4);
+  border: var(--hair) solid var(--rule);
+  border-radius: var(--r-md);
+  background: var(--paper-bright);
+  padding: var(--s-4);
+  display: grid;
+  gap: var(--s-3);
+}
+
+.profile-draft-eyebrow,
+.profile-draft-section-title {
+  font-family: var(--mono);
+  font-size: var(--t-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.profile-draft-summary {
+  max-width: var(--measure);
+  color: var(--ink-soft);
+}
+
+.profile-draft-section ul {
+  list-style: none;
+  margin: var(--s-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s-2);
+}
+
+.profile-draft-section li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-4);
+  border-top: var(--hair) solid var(--rule-soft);
+  padding-top: var(--s-2);
+}
+
+.profile-draft-section b {
+  font-family: var(--mono);
+  font-size: var(--t-caption);
+  color: var(--ink-strong);
+  font-weight: 500;
+}
+
+.profile-draft-flag {
+  color: var(--forest);
+  font-family: var(--serif);
+  font-style: italic;
+}
+
 /* ───────────  Composer  ─────────── */
 
 .composer {
