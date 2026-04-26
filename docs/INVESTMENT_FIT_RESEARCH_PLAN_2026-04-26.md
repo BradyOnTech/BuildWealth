@@ -435,7 +435,12 @@ Work:
 - add freshness and coverage quality
 - migrate compare/dossier/watchlist data to consume or cite packets
 - identify which evidence fields are required for different recommendation types
-- expose evidence quality to Copilot and Inbox
+- expose evidence quality to Today, Copilot, and Inbox
+
+Current progress:
+
+- Today research readiness samples the top holding and watchlist symbols through evidence packets.
+- Partial/degraded evidence now appears as a Today command-center warning or critical card before investment-fit advice is built on it.
 
 Done when:
 

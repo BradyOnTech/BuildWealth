@@ -295,3 +295,117 @@ def test_today_command_cards_include_recommendation_loop_state(
     assert cards["cash-runway"].status == "warning"
     assert cards["cash-runway"].metric_value == "2.4 mo"
     assert cards["cash-runway"].href == "#inbox"
+
+
+def test_today_command_cards_include_research_readiness_from_evidence_packets(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+
+    class FakePortfolioStore:
+        def list_watchlist(self) -> list[dict[str, object]]:
+            return [{"symbol": "MSFT"}, {"symbol": "NVDA"}]
+
+    class FakeResearchService:
+        def evidence_packet(self, *, symbol: str, period: str = "6mo", interval: str = "1d"):
+            del period, interval
+            status = "fresh" if symbol in {"AAPL", "MSFT"} else "partial"
+            blocking_gaps = [] if status == "fresh" else ["history"]
+            return main.ResearchEvidencePacket(
+                packet_id=f"research-evidence:yfinance:{symbol}:6mo:1d",
+                symbol=symbol,
+                provider="yfinance",
+                period="6mo",
+                interval="1d",
+                generated_at=main.utc_now(),
+                coverage={
+                    "quote_available": True,
+                    "history_available": status == "fresh",
+                    "warnings": [] if status == "fresh" else [f"{symbol}: history unavailable"],
+                },
+                freshness={"status": status},
+                quality={
+                    "confidence": "high" if status == "fresh" else "medium",
+                    "blocking_gaps": blocking_gaps,
+                },
+                provenance={"warnings": [] if status == "fresh" else [f"{symbol}: history unavailable"]},
+            )
+
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    monkeypatch.setattr(main, "portfolio_store", FakePortfolioStore())
+    monkeypatch.setattr(main, "research_service", FakeResearchService())
+
+    dashboard = main.TodayDashboardResponse(
+        generated_at=main.utc_now(),
+        currency="USD",
+        state="MN",
+        sync_status=main.SyncStatusResponse(running=False, runs_total=0, runs_failed=0),
+        top_holding_symbol="AAPL",
+        context_state="ready",
+        context_notes=[],
+        command_cards=[],
+        emergency_fund_months=8.0,
+    )
+
+    cards = {card.id: card for card in main._build_today_command_cards(dashboard)}
+
+    assert cards["research-readiness"].status == "warning"
+    assert cards["research-readiness"].metric_label == "Ready"
+    assert cards["research-readiness"].metric_value == "2/3"
+    assert cards["research-readiness"].detail == "1 research symbol has partial or degraded evidence: NVDA."
+    assert cards["research-readiness"].action_label == "Review research"
+    assert cards["research-readiness"].href == "#portfolio?section=watchlist"
+
+
+def test_today_command_cards_mark_research_provider_degraded(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+
+    class FakePortfolioStore:
+        def list_watchlist(self) -> list[dict[str, object]]:
+            return [{"symbol": "MSFT"}]
+
+    class FakeResearchService:
+        def evidence_packet(self, *, symbol: str, period: str = "6mo", interval: str = "1d"):
+            del period, interval
+            return main.ResearchEvidencePacket(
+                packet_id=f"research-evidence:yfinance:{symbol}:6mo:1d",
+                symbol=symbol,
+                provider="yfinance",
+                period="6mo",
+                interval="1d",
+                generated_at=main.utc_now(),
+                coverage={
+                    "quote_available": False,
+                    "history_available": False,
+                    "warnings": [f"{symbol}: OpenBB unavailable"],
+                },
+                freshness={"status": "degraded"},
+                quality={"confidence": "low", "blocking_gaps": ["quote", "history"]},
+                provenance={"warnings": [f"{symbol}: OpenBB unavailable"]},
+            )
+
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    monkeypatch.setattr(main, "portfolio_store", FakePortfolioStore())
+    monkeypatch.setattr(main, "research_service", FakeResearchService())
+
+    dashboard = main.TodayDashboardResponse(
+        generated_at=main.utc_now(),
+        currency="USD",
+        state="MN",
+        sync_status=main.SyncStatusResponse(running=False, runs_total=0, runs_failed=0),
+        top_holding_symbol="AAPL",
+        context_state="ready",
+        context_notes=[],
+        command_cards=[],
+        emergency_fund_months=8.0,
+    )
+
+    cards = {card.id: card for card in main._build_today_command_cards(dashboard)}
+
+    assert cards["research-readiness"].status == "critical"
+    assert cards["research-readiness"].metric_value == "0/2"
+    assert "degraded provider/data coverage" in cards["research-readiness"].detail

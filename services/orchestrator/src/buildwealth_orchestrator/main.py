@@ -3808,6 +3808,7 @@ def _build_top_next_actions(
 def _build_today_command_cards(dashboard: TodayDashboardResponse) -> list[TodayCommandCard]:
     cards = list(dashboard.command_cards)
     cards.append(_build_cash_runway_command_card(dashboard))
+    cards.append(_build_research_readiness_command_card(dashboard))
     try:
         proposed_rows = recommendation_inbox.list(limit=500, status="proposed", sort="created_at_desc")
         closed_rows = recommendation_inbox.list(limit=500, include_archived=True, sort="created_at_desc")
@@ -3859,6 +3860,133 @@ def _build_today_command_cards(dashboard: TodayDashboardResponse) -> list[TodayC
     )
 
     return cards
+
+
+def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) -> TodayCommandCard:
+    symbols: list[str] = []
+    seen: set[str] = set()
+
+    def add_symbol(raw_symbol: Any) -> None:
+        symbol = re.sub(r"[^A-Z0-9._-]+", "", str(raw_symbol or "").strip().upper())
+        if not symbol or symbol in seen or len(symbols) >= 4:
+            return
+        seen.add(symbol)
+        symbols.append(symbol)
+
+    add_symbol(dashboard.top_holding_symbol)
+    try:
+        for item in portfolio_store.list_watchlist():
+            if not isinstance(item, dict):
+                continue
+            add_symbol(item.get("symbol"))
+            if len(symbols) >= 4:
+                break
+    except Exception:
+        pass
+
+    if not symbols:
+        return TodayCommandCard(
+            id="research-readiness",
+            title="Research readiness",
+            status="warning",
+            detail="Add portfolio holdings or watchlist symbols before investment research can be checked.",
+            metric_label="Ready",
+            metric_value="0/0",
+            action_label="Open portfolio",
+            href="#portfolio",
+        )
+
+    ready_symbols: list[str] = []
+    weak_symbols: list[str] = []
+    degraded_symbols: list[str] = []
+    provider_failures: list[str] = []
+    for symbol in symbols:
+        try:
+            packet = research_service.evidence_packet(symbol=symbol, period="6mo", interval="1d")
+        except Exception:
+            provider_failures.append(symbol)
+            continue
+
+        freshness = packet.freshness if isinstance(packet.freshness, dict) else {}
+        quality = packet.quality if isinstance(packet.quality, dict) else {}
+        status = str(freshness.get("status") or "").strip().lower()
+        blocking_gaps = quality.get("blocking_gaps")
+        has_blocking_gaps = isinstance(blocking_gaps, list) and bool(blocking_gaps)
+        coverage = packet.coverage if isinstance(packet.coverage, dict) else {}
+        quote_available = bool(coverage.get("quote_available"))
+        history_available = bool(coverage.get("history_available"))
+        if status == "degraded" or (not quote_available and not history_available):
+            degraded_symbols.append(symbol)
+            continue
+        if status == "fresh" and not has_blocking_gaps:
+            ready_symbols.append(symbol)
+        else:
+            weak_symbols.append(symbol)
+
+    ready_count = len(ready_symbols)
+    total_count = len(symbols)
+    if degraded_symbols:
+        degraded_label = ", ".join(degraded_symbols[:3])
+        extra = "" if len(degraded_symbols) <= 3 else f" +{len(degraded_symbols) - 3} more"
+        return TodayCommandCard(
+            id="research-readiness",
+            title="Research readiness",
+            status="critical",
+            detail=(
+                f"{len(degraded_symbols)} research symbol(s) have degraded provider/data coverage: "
+                f"{degraded_label}{extra}."
+            ),
+            metric_label="Ready",
+            metric_value=f"{ready_count}/{total_count}",
+            action_label="Review research",
+            href="#portfolio?section=watchlist",
+        )
+
+    if provider_failures:
+        degraded_label = ", ".join(provider_failures[:3])
+        extra = "" if len(provider_failures) <= 3 else f" +{len(provider_failures) - 3} more"
+        return TodayCommandCard(
+            id="research-readiness",
+            title="Research readiness",
+            status="critical",
+            detail=(
+                f"{len(provider_failures)} research symbol(s) hit provider/data failure: "
+                f"{degraded_label}{extra}."
+            ),
+            metric_label="Ready",
+            metric_value=f"{ready_count}/{total_count}",
+            action_label="Review research",
+            href="#portfolio?section=watchlist",
+        )
+
+    if weak_symbols:
+        weak_label = ", ".join(weak_symbols[:3])
+        extra = "" if len(weak_symbols) <= 3 else f" +{len(weak_symbols) - 3} more"
+        noun = "symbol has" if len(weak_symbols) == 1 else "symbols have"
+        return TodayCommandCard(
+            id="research-readiness",
+            title="Research readiness",
+            status="warning",
+            detail=(
+                f"{len(weak_symbols)} research {noun} partial or degraded evidence: "
+                f"{weak_label}{extra}."
+            ),
+            metric_label="Ready",
+            metric_value=f"{ready_count}/{total_count}",
+            action_label="Review research",
+            href="#portfolio?section=watchlist",
+        )
+
+    return TodayCommandCard(
+        id="research-readiness",
+        title="Research readiness",
+        status="ready",
+        detail=f"Research evidence is fresh for {ready_count} tracked symbol(s).",
+        metric_label="Ready",
+        metric_value=f"{ready_count}/{total_count}",
+        action_label="Open research",
+        href="#portfolio?section=watchlist",
+    )
 
 
 def _build_cash_runway_command_card(dashboard: TodayDashboardResponse) -> TodayCommandCard:

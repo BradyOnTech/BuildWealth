@@ -130,7 +130,7 @@ export function renderCommandCards(payload, engines = null) {
   const cards = Array.isArray(payload.command_cards) ? [...payload.command_cards] : [];
   const engineCard = buildEngineCommandCard(engines);
   if (engineCard) cards.push(engineCard);
-  const visibleCards = cards.slice(0, 8);
+  const visibleCards = cards.slice(0, 10);
   if (!visibleCards.length) {
     return html``;
   }
