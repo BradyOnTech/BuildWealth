@@ -41,12 +41,31 @@ const GOAL_SETUP_PROMPT = [
   'do not save anything with update_financial_profile until I explicitly confirm the draft.',
 ].join(' ');
 
+const DEBT_SETUP_PROMPT = [
+  'Help me review debt for my financial profile.',
+  'First call get_onboarding_status and get_financial_profile.',
+  'Focus only on missing debt_items or flags.no_debt for now.',
+  'Ask me one focused question at a time for each debt label, balance_usd, interest_rate, minimum_monthly_payment_usd, and payoff priority when relevant.',
+  'If I have no current debt, call draft_financial_profile_update with flags.no_debt set to true instead of creating debt_items.',
+  'When you have enough information, call draft_financial_profile_update with debt_items or flags.no_debt so I can review the changes.',
+  'do not save anything with update_financial_profile until I explicitly confirm the draft.',
+].join(' ');
+
 const PHYSICAL_ASSET_SETUP_PROMPT = [
   'Help me add physical assets to my financial profile.',
   'First call get_onboarding_status and get_financial_profile.',
   'Focus only on missing physical_assets for now.',
   'Ask me one focused question at a time for each asset label, current_value_usd, asset_type, purchase_date, and annual_growth_rate when known.',
   'When you have enough information, call draft_financial_profile_update with physical_assets so I can review the changes.',
+  'do not save anything with update_financial_profile until I explicitly confirm the draft.',
+].join(' ');
+
+const TAX_SETUP_PROMPT = [
+  'Help me add tax basics to my financial profile.',
+  'First call get_onboarding_status and get_financial_profile.',
+  'Focus only on missing tax_profile fields for now.',
+  'Ask me one focused question at a time for filing_status, marginal_tax_rate, and state.',
+  'When you have enough information, call draft_financial_profile_update with tax_profile so I can review the changes.',
   'do not save anything with update_financial_profile until I explicitly confirm the draft.',
 ].join(' ');
 
@@ -357,22 +376,38 @@ function isGoalOnboardingStep(step) {
   return key.includes('goal') || title.includes('goal');
 }
 
+function isDebtOnboardingStep(step) {
+  const key = String(step?.key || '').toLowerCase();
+  const title = String(step?.title || '').toLowerCase();
+  return key.includes('debt') || title.includes('debt');
+}
+
 function isPhysicalAssetOnboardingStep(step) {
   const key = String(step?.key || '').toLowerCase();
   const title = String(step?.title || '').toLowerCase();
   return key.includes('physical_asset') || title.includes('physical asset') || title.includes('asset');
 }
 
+function isTaxOnboardingStep(step) {
+  const key = String(step?.key || '').toLowerCase();
+  const title = String(step?.title || '').toLowerCase();
+  return key.includes('tax') || title.includes('tax');
+}
+
 function onboardingActionLabel(status) {
   const step = nextOnboardingStep(status);
+  if (isDebtOnboardingStep(step)) return 'Add debt with Copilot';
   if (isGoalOnboardingStep(step)) return 'Add goals with Copilot';
+  if (isTaxOnboardingStep(step)) return 'Add tax basics with Copilot';
   if (isPhysicalAssetOnboardingStep(step)) return 'Add assets with Copilot';
   return 'Fill it out with Copilot';
 }
 
 function onboardingPrompt(status) {
   const step = nextOnboardingStep(status);
+  if (isDebtOnboardingStep(step)) return DEBT_SETUP_PROMPT;
   if (isGoalOnboardingStep(step)) return GOAL_SETUP_PROMPT;
+  if (isTaxOnboardingStep(step)) return TAX_SETUP_PROMPT;
   if (isPhysicalAssetOnboardingStep(step)) return PHYSICAL_ASSET_SETUP_PROMPT;
   return PROFILE_SETUP_PROMPT;
 }

@@ -44,7 +44,11 @@ test('copilot thread renders financial profile draft review card', () => {
                   annual_growth_rate: 0.03,
                   purchase_date: '2020-05-15T00:00:00.000Z',
                 }],
-                tax_profile: {},
+                tax_profile: {
+                  filing_status: 'married_filing_jointly',
+                  marginal_tax_rate: 0.24,
+                  state: 'MN',
+                },
                 flags: { no_debt: true },
                 notes: '',
               },
@@ -71,6 +75,9 @@ test('copilot thread renders financial profile draft review card', () => {
   assert.match(html, /Real estate/);
   assert.match(html, /Purchased May 15, 2020/);
   assert.match(html, /Growth 3%\/yr/);
+  assert.match(html, /Tax profile/);
+  assert.match(html, /Married filing jointly/);
+  assert.match(html, /Marginal 24% · State MN/);
   assert.match(html, /No debt/);
   assert.match(html, /data-profile-draft=/);
   assert.match(html, /Apply profile update/);
@@ -103,4 +110,15 @@ test('copilot view exposes guided profile onboarding entry point', () => {
   assert.match(copilotSource, /get_onboarding_status/);
   assert.match(copilotSource, /draft_financial_profile_update/);
   assert.match(copilotSource, /do not save/);
+});
+
+test('copilot view exposes guided debt onboarding entry point', () => {
+  const currentDir = dirname(fileURLToPath(import.meta.url));
+  const copilotSource = readFileSync(resolve(currentDir, '../views/copilot.js'), 'utf8');
+
+  assert.match(copilotSource, /DEBT_SETUP_PROMPT/);
+  assert.match(copilotSource, /Help me review debt for my financial profile/);
+  assert.match(copilotSource, /debt_items/);
+  assert.match(copilotSource, /no_debt/);
+  assert.match(copilotSource, /Add debt with Copilot/);
 });

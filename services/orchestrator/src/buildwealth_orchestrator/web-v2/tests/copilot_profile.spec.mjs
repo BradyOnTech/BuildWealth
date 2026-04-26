@@ -92,10 +92,11 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
             { key: 'income', title: 'Add income', status: 'complete' },
             { key: 'expenses', title: 'Add expenses', status: 'complete' },
             { key: 'goals', title: 'Add goals', status: 'complete' },
+            { key: 'tax_profile', title: 'Add tax basics', status: 'complete' },
             { key: 'physical_assets', title: 'Add physical assets', status: 'complete' },
           ],
         };
-      } else if (savedProfile?.goal_items?.length) {
+      } else if (savedProfile?.tax_profile?.marginal_tax_rate != null) {
         status = {
           ready_for_daily_review: false,
           completion_percent: 90,
@@ -103,6 +104,19 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
             { key: 'income', title: 'Add income', status: 'complete' },
             { key: 'expenses', title: 'Add expenses', status: 'complete' },
             { key: 'goals', title: 'Add goals', status: 'complete' },
+            { key: 'tax_profile', title: 'Add tax basics', status: 'complete' },
+            { key: 'physical_assets', title: 'Add physical assets', status: 'pending' },
+          ],
+        };
+      } else if (savedProfile?.goal_items?.length) {
+        status = {
+          ready_for_daily_review: false,
+          completion_percent: 82,
+          steps: [
+            { key: 'income', title: 'Add income', status: 'complete' },
+            { key: 'expenses', title: 'Add expenses', status: 'complete' },
+            { key: 'goals', title: 'Add goals', status: 'complete' },
+            { key: 'tax_profile', title: 'Add tax basics', status: 'pending' },
             { key: 'physical_assets', title: 'Add physical assets', status: 'pending' },
           ],
         };
@@ -126,6 +140,7 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
       chatPayloads.push(chatPayload);
       const isGoalPrompt = /add financial goals/i.test(chatPayload.question || '');
       const isAssetPrompt = /add physical assets/i.test(chatPayload.question || '');
+      const isTaxPrompt = /add tax basics/i.test(chatPayload.question || '');
       const toolResult = isAssetPrompt
         ? {
             draft_kind: 'financial_profile_update',
@@ -151,6 +166,29 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
                 annual_growth_rate: 0.03,
                 purchase_date: '2020-05-15T00:00:00.000Z',
               }],
+            },
+            requires_confirmation: true,
+          }
+        : isTaxPrompt
+        ? {
+            draft_kind: 'financial_profile_update',
+            summary: 'Drafted tax basics for review.',
+            section_counts: { tax_profile: 1 },
+            patch_payload: {
+              tax_profile: {
+                filing_status: 'married_filing_jointly',
+                marginal_tax_rate: 0.24,
+                state: 'MN',
+              },
+            },
+            proposed_profile: {
+              ...(savedProfile || baseProfile),
+              tax_profile: {
+                ...(savedProfile || baseProfile).tax_profile,
+                filing_status: 'married_filing_jointly',
+                marginal_tax_rate: 0.24,
+                state: 'MN',
+              },
             },
             requires_confirmation: true,
           }
@@ -205,9 +243,11 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
       await route.fulfill(jsonResponse({
         conversation_id: isAssetPrompt
           ? 'conversation-asset-setup'
-          : isGoalPrompt
-            ? 'conversation-goal-setup'
-            : 'conversation-profile-setup',
+          : isTaxPrompt
+            ? 'conversation-tax-setup'
+            : isGoalPrompt
+              ? 'conversation-goal-setup'
+              : 'conversation-profile-setup',
         answer: 'I drafted a profile update for your review.',
         created_at: '2026-04-26T12:00:00.000Z',
         model: 'browser-test',
@@ -314,6 +354,45 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
   ]);
 
   await page.getByRole('button', { name: /new conversation/i }).click();
+  await page.getByText('Your profile is 82% complete. Next: Add tax basics.').waitFor({ state: 'visible' });
+
+  const taxButton = page.getByRole('button', { name: /add tax basics with copilot/i });
+  await taxButton.click();
+
+  const taxDraft = await textarea.inputValue();
+  assert.match(taxDraft, /Help me add tax basics/);
+  assert.match(taxDraft, /tax_profile/);
+  assert.match(taxDraft, /filing_status/);
+  assert.match(taxDraft, /marginal_tax_rate/);
+  assert.match(taxDraft, /state/);
+  assert.match(taxDraft, /do not save anything/i);
+
+  await page.locator('#composer-submit').click();
+  await page.getByText('Tax profile').waitFor({ state: 'visible' });
+  await page.getByText('Married filing jointly').waitFor({ state: 'visible' });
+  await page.getByText('Marginal 24% · State MN').waitFor({ state: 'visible' });
+
+  assert.equal(chatPayloads.length, 3);
+  assert.match(chatPayloads[2].question, /Help me add tax basics/);
+
+  await page.locator('[data-profile-draft]').last().click();
+  await page.getByText('Profile update applied').last().waitFor({ state: 'visible' });
+
+  assert.deepEqual(savedProfile.tax_profile, {
+    filing_status: 'married_filing_jointly',
+    marginal_tax_rate: 0.24,
+    state: 'MN',
+  });
+  assert.deepEqual(savedProfile.goal_items, [{
+    id: 'goal_home_down_payment',
+    label: 'Home down payment',
+    target_amount_usd: 80000,
+    target_date: '2028-06-01T00:00:00.000Z',
+    priority: 'high',
+    notes: 'Keep this goal separate from emergency reserves.',
+  }]);
+
+  await page.getByRole('button', { name: /new conversation/i }).click();
   await page.getByText('Your profile is 90% complete. Next: Add physical assets.').waitFor({ state: 'visible' });
 
   const assetsButton = page.getByRole('button', { name: /add assets with copilot/i });
@@ -333,8 +412,8 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
   await page.getByText('$450,000').waitFor({ state: 'visible' });
   await page.getByText('Real estate · Purchased May 15, 2020 · Growth 3%/yr').waitFor({ state: 'visible' });
 
-  assert.equal(chatPayloads.length, 3);
-  assert.match(chatPayloads[2].question, /Help me add physical assets/);
+  assert.equal(chatPayloads.length, 4);
+  assert.match(chatPayloads[3].question, /Help me add physical assets/);
 
   await page.locator('[data-profile-draft]').last().click();
   await page.getByText('Profile update applied').last().waitFor({ state: 'visible' });

@@ -78,6 +78,7 @@ function renderProfileDraftCard(result) {
     renderItemSection('Expense items', profile.expense_items, 'monthly_amount_usd'),
     renderItemSection('Debt items', profile.debt_items, 'balance_usd'),
     renderGoalSection(profile.goal_items),
+    renderTaxSection(profile.tax_profile),
     renderPhysicalAssetSection(profile.physical_assets),
   ].filter(Boolean);
   const flagLine = profile.flags?.no_debt
@@ -173,6 +174,31 @@ function renderPhysicalAssetSection(items) {
             </li>
           `;
         })}
+      </ul>
+    </div>
+  `;
+}
+
+function renderTaxSection(taxProfile) {
+  if (!taxProfile || typeof taxProfile !== 'object') return '';
+  const filingStatus = String(taxProfile.filing_status || '').trim();
+  const marginalTaxRate = taxProfile.marginal_tax_rate;
+  const state = String(taxProfile.state || '').trim().toUpperCase();
+  if (!filingStatus && marginalTaxRate == null && !state) return '';
+
+  const details = [
+    marginalTaxRate != null ? `Marginal ${formatPercent(marginalTaxRate)}` : '',
+    state ? `State ${state}` : '',
+  ].filter(Boolean);
+
+  return html`
+    <div class="profile-draft-section">
+      <p class="profile-draft-section-title">Tax profile</p>
+      <ul>
+        <li class="profile-draft-tax">
+          <span>${filingStatus ? titleCase(filingStatus) : 'Tax basics'}</span>
+          ${details.length ? html`<p class="profile-draft-meta">${details.join(' · ')}</p>` : ''}
+        </li>
       </ul>
     </div>
   `;
