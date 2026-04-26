@@ -2,11 +2,14 @@
 
 ## Date: 2026-04-10
 
-## Status (2026-04-20)
+## Status (2026-04-26)
 Historical implementation plan and progress log.
 
-For active roadmap sequencing and current priorities, use:
-- [BuildWealth Product Roadmap (Source of Truth, 2026-04-15)](./ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md)
+For active product direction and current phase sequencing, use:
+- [BuildWealth Future State Product Plan (2026-04-26)](./FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
+
+For historical roadmap context after Phase 3.7, use:
+- [BuildWealth Product Roadmap (historical source of truth, 2026-04-15)](./ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md)
 
 Notes:
 - The Progress Log below remains the canonical historical record of completed slices.

@@ -1,4 +1,4 @@
-# BuildWealth Product Backlog (Current)
+# BuildWealth Product Backlog
 
 ## Product Goal
 Build a production-grade all-in-one financial command center that combines:
@@ -8,12 +8,18 @@ Build a production-grade all-in-one financial command center that combines:
 - LLM workflows grounded in structured BuildWealth context.
 
 ## Planning Source of Truth
-Detailed implementation sequencing lives in:
-- [BuildWealth Product Roadmap (Source of Truth, 2026-04-15)](./ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md)
+Active product direction and high-level phase sequencing now live in:
+- [BuildWealth Future State Product Plan (2026-04-26)](./FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
+
+Historical implementation sequencing and progress logs remain in:
+- [BuildWealth Product Roadmap (historical source of truth, 2026-04-15)](./ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md)
 - [Standalone Build Plan (historical progress log)](./STANDALONE_BUILD_PLAN.md)
 - [Next Execution Steps (2026-04-14, historical)](./NEXT_EXECUTION_STEPS_2026-04-14.md)
 
-## Active Product Workstreams
+## Product Workstreams
+
+The future-state plan reframes these workstreams around operating loops instead of isolated feature queues. Keep this list as a backlog lens, not as the active prioritization source.
+
 1. Research intelligence depth (multi-symbol compare, dossiers, ranked watchlist context).
 2. Decision intelligence engine (ranked recommendations, pre-apply simulation, closure analytics).
 3. Planning realism expansion (advanced tax/withdrawal/simulation modes and household modeling).

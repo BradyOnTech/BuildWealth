@@ -78,6 +78,7 @@ function renderProfileDraftCard(result) {
     renderItemSection('Expense items', profile.expense_items, 'monthly_amount_usd'),
     renderItemSection('Debt items', profile.debt_items, 'balance_usd'),
     renderGoalSection(profile.goal_items),
+    renderPhysicalAssetSection(profile.physical_assets),
   ].filter(Boolean);
   const flagLine = profile.flags?.no_debt
     ? html`<p class="profile-draft-flag">No debt</p>`
@@ -147,6 +148,36 @@ function renderGoalSection(items) {
   `;
 }
 
+function renderPhysicalAssetSection(items) {
+  if (!Array.isArray(items) || !items.length) return '';
+  return html`
+    <div class="profile-draft-section">
+      <p class="profile-draft-section-title">Physical assets</p>
+      <ul>
+        ${items.slice(0, 4).map(item => {
+          const amount = item?.current_value_usd != null
+            ? MONEY_FMT.format(Number(item.current_value_usd) || 0)
+            : '';
+          const details = [
+            item?.asset_type ? titleCase(item.asset_type) : '',
+            item?.purchase_date ? `Purchased ${formatGoalDate(item.purchase_date)}` : '',
+            item?.annual_growth_rate != null ? `Growth ${formatPercent(item.annual_growth_rate)}/yr` : '',
+          ].filter(Boolean);
+          return html`
+            <li class="profile-draft-asset">
+              <div class="profile-draft-asset-row">
+                <span>${item?.label || 'Untitled asset'}</span>
+                ${amount ? html`<b>${amount}</b>` : ''}
+              </div>
+              ${details.length ? html`<p class="profile-draft-meta">${details.join(' · ')}</p>` : ''}
+            </li>
+          `;
+        })}
+      </ul>
+    </div>
+  `;
+}
+
 function formatGoalDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
@@ -157,6 +188,12 @@ function titleCase(value) {
   const text = String(value || '').replace(/[_-]+/g, ' ').trim();
   if (!text) return '';
   return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function formatPercent(value) {
+  const percent = Number(value) * 100;
+  if (!Number.isFinite(percent)) return String(value);
+  return `${percent.toLocaleString('en-US', { maximumFractionDigits: 2 })}%`;
 }
 
 function formatTrace(trace) {

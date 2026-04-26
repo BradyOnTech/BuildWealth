@@ -41,6 +41,15 @@ const GOAL_SETUP_PROMPT = [
   'do not save anything with update_financial_profile until I explicitly confirm the draft.',
 ].join(' ');
 
+const PHYSICAL_ASSET_SETUP_PROMPT = [
+  'Help me add physical assets to my financial profile.',
+  'First call get_onboarding_status and get_financial_profile.',
+  'Focus only on missing physical_assets for now.',
+  'Ask me one focused question at a time for each asset label, current_value_usd, asset_type, purchase_date, and annual_growth_rate when known.',
+  'When you have enough information, call draft_financial_profile_update with physical_assets so I can review the changes.',
+  'do not save anything with update_financial_profile until I explicitly confirm the draft.',
+].join(' ');
+
 const ui = {
   conversationId: null,
   conversationTitle: '',
@@ -348,16 +357,24 @@ function isGoalOnboardingStep(step) {
   return key.includes('goal') || title.includes('goal');
 }
 
+function isPhysicalAssetOnboardingStep(step) {
+  const key = String(step?.key || '').toLowerCase();
+  const title = String(step?.title || '').toLowerCase();
+  return key.includes('physical_asset') || title.includes('physical asset') || title.includes('asset');
+}
+
 function onboardingActionLabel(status) {
-  return isGoalOnboardingStep(nextOnboardingStep(status))
-    ? 'Add goals with Copilot'
-    : 'Fill it out with Copilot';
+  const step = nextOnboardingStep(status);
+  if (isGoalOnboardingStep(step)) return 'Add goals with Copilot';
+  if (isPhysicalAssetOnboardingStep(step)) return 'Add assets with Copilot';
+  return 'Fill it out with Copilot';
 }
 
 function onboardingPrompt(status) {
-  return isGoalOnboardingStep(nextOnboardingStep(status))
-    ? GOAL_SETUP_PROMPT
-    : PROFILE_SETUP_PROMPT;
+  const step = nextOnboardingStep(status);
+  if (isGoalOnboardingStep(step)) return GOAL_SETUP_PROMPT;
+  if (isPhysicalAssetOnboardingStep(step)) return PHYSICAL_ASSET_SETUP_PROMPT;
+  return PROFILE_SETUP_PROMPT;
 }
 
 function scrollToBottom() {

@@ -37,7 +37,13 @@ test('copilot thread renders financial profile draft review card', () => {
                   priority: 'high',
                   notes: 'Keep the goal separate from emergency reserves.',
                 }],
-                physical_assets: [],
+                physical_assets: [{
+                  label: 'Primary residence',
+                  current_value_usd: 450000,
+                  asset_type: 'real_estate',
+                  annual_growth_rate: 0.03,
+                  purchase_date: '2020-05-15T00:00:00.000Z',
+                }],
                 tax_profile: {},
                 flags: { no_debt: true },
                 notes: '',
@@ -60,6 +66,11 @@ test('copilot thread renders financial profile draft review card', () => {
   assert.match(html, /Jun 1, 2028/);
   assert.match(html, /High priority/);
   assert.match(html, /Keep the goal separate from emergency reserves\./);
+  assert.match(html, /Primary residence/);
+  assert.match(html, /\$450,000/);
+  assert.match(html, /Real estate/);
+  assert.match(html, /Purchased May 15, 2020/);
+  assert.match(html, /Growth 3%\/yr/);
   assert.match(html, /No debt/);
   assert.match(html, /data-profile-draft=/);
   assert.match(html, /Apply profile update/);

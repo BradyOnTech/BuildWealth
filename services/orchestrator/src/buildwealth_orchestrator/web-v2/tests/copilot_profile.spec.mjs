@@ -76,8 +76,38 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
 
     if (url.pathname === '/api/onboarding/status') {
       onboardingStatusCalls += 1;
-      const status = savedProfile
-        ? {
+      let status = {
+        ready_for_daily_review: false,
+        completion_percent: 25,
+        steps: [
+          { key: 'income', title: 'Add income', status: 'pending' },
+          { key: 'expenses', title: 'Add expenses', status: 'pending' },
+        ],
+      };
+      if (savedProfile?.physical_assets?.length) {
+        status = {
+          ready_for_daily_review: true,
+          completion_percent: 100,
+          steps: [
+            { key: 'income', title: 'Add income', status: 'complete' },
+            { key: 'expenses', title: 'Add expenses', status: 'complete' },
+            { key: 'goals', title: 'Add goals', status: 'complete' },
+            { key: 'physical_assets', title: 'Add physical assets', status: 'complete' },
+          ],
+        };
+      } else if (savedProfile?.goal_items?.length) {
+        status = {
+          ready_for_daily_review: false,
+          completion_percent: 90,
+          steps: [
+            { key: 'income', title: 'Add income', status: 'complete' },
+            { key: 'expenses', title: 'Add expenses', status: 'complete' },
+            { key: 'goals', title: 'Add goals', status: 'complete' },
+            { key: 'physical_assets', title: 'Add physical assets', status: 'pending' },
+          ],
+        };
+      } else if (savedProfile) {
+        status = {
             ready_for_daily_review: false,
             completion_percent: 75,
             steps: [
@@ -85,15 +115,8 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
               { key: 'expenses', title: 'Add expenses', status: 'complete' },
               { key: 'goals', title: 'Add goals', status: 'pending' },
             ],
-          }
-        : {
-            ready_for_daily_review: false,
-            completion_percent: 25,
-            steps: [
-              { key: 'income', title: 'Add income', status: 'pending' },
-              { key: 'expenses', title: 'Add expenses', status: 'pending' },
-            ],
           };
+      }
       await route.fulfill(jsonResponse(status));
       return;
     }
@@ -102,7 +125,36 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
       const chatPayload = request.postDataJSON();
       chatPayloads.push(chatPayload);
       const isGoalPrompt = /add financial goals/i.test(chatPayload.question || '');
-      const toolResult = isGoalPrompt
+      const isAssetPrompt = /add physical assets/i.test(chatPayload.question || '');
+      const toolResult = isAssetPrompt
+        ? {
+            draft_kind: 'financial_profile_update',
+            summary: 'Drafted a physical asset for review.',
+            section_counts: { physical_assets: 1 },
+            patch_payload: {
+              physical_assets: [{
+                id: 'asset_primary_residence',
+                label: 'Primary residence',
+                current_value_usd: 450000,
+                asset_type: 'real_estate',
+                annual_growth_rate: 0.03,
+                purchase_date: '2020-05-15T00:00:00.000Z',
+              }],
+            },
+            proposed_profile: {
+              ...(savedProfile || baseProfile),
+              physical_assets: [{
+                id: 'asset_primary_residence',
+                label: 'Primary residence',
+                current_value_usd: 450000,
+                asset_type: 'real_estate',
+                annual_growth_rate: 0.03,
+                purchase_date: '2020-05-15T00:00:00.000Z',
+              }],
+            },
+            requires_confirmation: true,
+          }
+        : isGoalPrompt
         ? {
             draft_kind: 'financial_profile_update',
             summary: 'Drafted a financial goal for review.',
@@ -151,7 +203,11 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
             requires_confirmation: true,
           };
       await route.fulfill(jsonResponse({
-        conversation_id: isGoalPrompt ? 'conversation-goal-setup' : 'conversation-profile-setup',
+        conversation_id: isAssetPrompt
+          ? 'conversation-asset-setup'
+          : isGoalPrompt
+            ? 'conversation-goal-setup'
+            : 'conversation-profile-setup',
         answer: 'I drafted a profile update for your review.',
         created_at: '2026-04-26T12:00:00.000Z',
         model: 'browser-test',
@@ -256,4 +312,47 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
   assert.deepEqual(savedProfile.income_items, [
     { id: 'income_salary', label: 'Salary', monthly_amount_usd: 11000 },
   ]);
+
+  await page.getByRole('button', { name: /new conversation/i }).click();
+  await page.getByText('Your profile is 90% complete. Next: Add physical assets.').waitFor({ state: 'visible' });
+
+  const assetsButton = page.getByRole('button', { name: /add assets with copilot/i });
+  await assetsButton.click();
+
+  const assetsDraft = await textarea.inputValue();
+  assert.match(assetsDraft, /Help me add physical assets/);
+  assert.match(assetsDraft, /physical_assets/);
+  assert.match(assetsDraft, /current_value_usd/);
+  assert.match(assetsDraft, /asset_type/);
+  assert.match(assetsDraft, /purchase_date/);
+  assert.match(assetsDraft, /annual_growth_rate/);
+  assert.match(assetsDraft, /do not save anything/i);
+
+  await page.locator('#composer-submit').click();
+  await page.getByText('Primary residence').waitFor({ state: 'visible' });
+  await page.getByText('$450,000').waitFor({ state: 'visible' });
+  await page.getByText('Real estate · Purchased May 15, 2020 · Growth 3%/yr').waitFor({ state: 'visible' });
+
+  assert.equal(chatPayloads.length, 3);
+  assert.match(chatPayloads[2].question, /Help me add physical assets/);
+
+  await page.locator('[data-profile-draft]').last().click();
+  await page.getByText('Profile update applied').last().waitFor({ state: 'visible' });
+
+  assert.deepEqual(savedProfile.physical_assets, [{
+    id: 'asset_primary_residence',
+    label: 'Primary residence',
+    current_value_usd: 450000,
+    asset_type: 'real_estate',
+    annual_growth_rate: 0.03,
+    purchase_date: '2020-05-15T00:00:00.000Z',
+  }]);
+  assert.deepEqual(savedProfile.goal_items, [{
+    id: 'goal_home_down_payment',
+    label: 'Home down payment',
+    target_amount_usd: 80000,
+    target_date: '2028-06-01T00:00:00.000Z',
+    priority: 'high',
+    notes: 'Keep this goal separate from emergency reserves.',
+  }]);
 });

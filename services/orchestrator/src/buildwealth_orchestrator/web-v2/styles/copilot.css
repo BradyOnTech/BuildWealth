@@ -524,12 +524,14 @@
   font-weight: 500;
 }
 
-.profile-draft-section li.profile-draft-goal {
+.profile-draft-section li.profile-draft-goal,
+.profile-draft-section li.profile-draft-asset {
   display: grid;
   gap: var(--s-1);
 }
 
-.profile-draft-goal-row {
+.profile-draft-goal-row,
+.profile-draft-asset-row {
   display: flex;
   justify-content: space-between;
   gap: var(--s-4);

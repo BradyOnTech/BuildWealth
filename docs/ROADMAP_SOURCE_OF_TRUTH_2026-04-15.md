@@ -1,12 +1,17 @@
-# BuildWealth Product Roadmap (Source of Truth)
+# BuildWealth Product Roadmap (Historical Source of Truth)
 
 ## Date
 2026-04-15
 
 ## Status
-Active canonical roadmap for post-Phase-3.7 execution.
+Historical roadmap and progress log for post-Phase-3.7 execution.
 
-This document replaces `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active planning sequence and supersedes roadmap sections in `docs/STANDALONE_BUILD_PLAN.md` that are now stale or already complete.
+Active product direction and future-state phase sequencing now live in:
+- [BuildWealth Future State Product Plan (2026-04-26)](./FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
+
+This document is retained for traceability of completed slices, historical rationale, and domain-specific implementation context. It should not be used as the primary source for choosing the next product slice.
+
+Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active planning sequence and superseded roadmap sections in `docs/STANDALONE_BUILD_PLAN.md`.
 
 ## Progress Log
 
@@ -863,19 +868,24 @@ The highest-leverage missing work is no longer raw parity checkboxes. It is deci
 3. Local security hardening for sensitive financial and conversation data.
 4. Performance budgets and observability SLOs (API latency, cache behavior, snapshot freshness).
 
-## Execution Plan (Phased)
+## Historical Execution Plan (Phased)
+
+The section below records the phased plan as it existed on 2026-04-15. Many slices have since been completed, reshaped, or superseded by the future-state operating-loop plan.
+
+For current sequencing, use:
+- [BuildWealth Future State Product Plan (2026-04-26)](./FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
 
 ### Phase 4.0 - Truth Reset and Platform Baseline (1 week)
 Goal: remove doc drift and reduce architecture entropy before adding major surface area.
 
 Slices:
-1. Adopt this roadmap as canonical and convert older planning docs to historical pointers.
+1. Adopt this roadmap as canonical and convert older planning docs to historical pointers. Completed historically; this document has since been superseded by the future-state product plan.
 2. Correct stale capability audit references and parity assumptions in legacy docs.
 3. Add license/compliance checklist to engineering workflow for upstream reuse.
 4. Start route/module decomposition plan for `main.py` and large UI view files.
 
 Definition of done:
-1. Every planning doc points to one canonical active roadmap.
+1. Every planning doc points to one canonical active roadmap. Superseded target: planning docs now point to the future-state product plan.
 2. Stale or contradictory parity statements are marked historical.
 3. No new feature work starts without explicit source-provenance note.
 

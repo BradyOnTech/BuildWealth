@@ -153,10 +153,11 @@ make down
 ## Docs
 
 - [Architecture](./docs/ARCHITECTURE.md)
+- [Future State Product Plan (active, 2026-04-26)](./docs/FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
 - [Git Integration Design](./docs/GIT_INTEGRATION_DESIGN.md)
 - [Git Integration Implementation Plan](./docs/GIT_INTEGRATION_IMPLEMENTATION_PLAN.md)
 - [Sidecar Adapter Architecture](./docs/SIDECAR_ADAPTER_ARCHITECTURE.md)
 - [Standalone Operations](./docs/OPERATIONS_STANDALONE.md)
 - [Migration and Compatibility](./docs/MIGRATION_AND_COMPATIBILITY.md)
-- [Standalone Build Plan](./docs/STANDALONE_BUILD_PLAN.md)
-- [Product Roadmap (Source of Truth, 2026-04-15)](./docs/ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md)
+- [Standalone Build Plan (historical)](./docs/STANDALONE_BUILD_PLAN.md)
+- [Product Roadmap (historical source of truth, 2026-04-15)](./docs/ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md)
