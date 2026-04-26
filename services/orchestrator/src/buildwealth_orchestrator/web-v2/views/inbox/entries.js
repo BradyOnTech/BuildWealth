@@ -84,12 +84,22 @@ function renderTagRow({ status, priority, source, recoType, planLabel, score, up
 function renderActions(item, status, expanded) {
   const expandedMode = expanded?.mode || null;
   if (status === 'proposed') {
+    const semantics = actionSemantics(item);
+    const copilotHref = semantics.intent
+      ? `#copilot?focus=${encodeURIComponent(item.id)}&intent=${encodeURIComponent(semantics.intent)}`
+      : `#copilot?focus=${encodeURIComponent(item.id)}`;
     return html`
       <div class="entry-actions">
-        <button class="action-link" data-action="apply" data-id="${item.id}"
-          aria-expanded="${expandedMode === 'apply'}">
-          Apply <span class="arrow">›</span>
-        </button>
+        ${semantics.primaryAction === 'apply' ? html`
+          <button class="action-link" data-action="apply" data-id="${item.id}"
+            aria-expanded="${expandedMode === 'apply'}">
+            ${semantics.primaryLabel} <span class="arrow">›</span>
+          </button>
+        ` : html`
+          <a class="action-link" href="${copilotHref}">
+            ${semantics.primaryLabel} <span class="arrow">→</span>
+          </a>
+        `}
         <button class="action-link danger" data-action="decline" data-id="${item.id}"
           aria-expanded="${expandedMode === 'decline'}">
           Decline <span class="arrow">›</span>
@@ -116,6 +126,39 @@ function renderActions(item, status, expanded) {
   return '';
 }
 
+function actionSemantics(item) {
+  const quality = item?.action_payload?.quality;
+  const actionability = quality && typeof quality === 'object'
+    ? String(quality.actionability || '').trim().toLowerCase()
+    : '';
+  if (actionability === 'context_gathering') {
+    return {
+      primaryAction: 'copilot',
+      primaryLabel: 'Complete context',
+      intent: 'complete-context',
+    };
+  }
+  if (actionability === 'review_only') {
+    return {
+      primaryAction: 'copilot',
+      primaryLabel: 'Review decision',
+      intent: 'review-decision',
+    };
+  }
+  if (actionability === 'previewable') {
+    return {
+      primaryAction: 'apply',
+      primaryLabel: 'Preview & apply',
+      intent: '',
+    };
+  }
+  return {
+    primaryAction: 'apply',
+    primaryLabel: 'Apply',
+    intent: '',
+  };
+}
+
 function renderQualitySummary(quality) {
   if (!quality || typeof quality !== 'object') return '';
   const confidence = humanText(quality.confidence_level);
@@ -124,8 +167,11 @@ function renderQualitySummary(quality) {
   const reversibility = humanText(quality.reversibility);
   const impact = quality.impact && typeof quality.impact === 'object' ? humanText(quality.impact.level) : '';
   const decisionGrade = quality.decision_grade === true ? 'decision grade' : '';
-  const blocking = Array.isArray(quality.blocking_context) && quality.blocking_context.length
-    ? `${quality.blocking_context.length} blocker${quality.blocking_context.length === 1 ? '' : 's'}`
+  const blockers = Array.isArray(quality.blocking_context)
+    ? quality.blocking_context.map(humanText).filter(Boolean)
+    : [];
+  const blocking = blockers.length
+    ? `${blockers.length} blocker${blockers.length === 1 ? '' : 's'}: ${blockers.slice(0, 3).join(', ')}`
     : '';
   const parts = [
     confidence ? `${confidence} confidence` : '',
@@ -146,7 +192,7 @@ function renderQualitySummary(quality) {
 
 function humanText(value) {
   if (!value) return '';
-  return String(value).replace(/_/g, ' ');
+  return String(value).replace(/[_.]/g, ' ');
 }
 
 function detailMarkup(raw) {

@@ -112,7 +112,7 @@ export async function init(params = {}) {
   loadOnboarding().then(() => rerenderBody()).catch(() => {});
   if (params.focus) {
     // Linked from inbox: prefill question. Conversation stays empty until sent.
-    fillDraft(`Tell me about recommendation ${params.focus}.`);
+    fillDraft(recommendationFocusPrompt(params.focus, params.intent));
   }
 }
 
@@ -425,6 +425,27 @@ function onboardingPrompt(status) {
   if (isTaxOnboardingStep(step)) return TAX_SETUP_PROMPT;
   if (isPhysicalAssetOnboardingStep(step)) return PHYSICAL_ASSET_SETUP_PROMPT;
   return PROFILE_SETUP_PROMPT;
+}
+
+function recommendationFocusPrompt(recommendationId, intent) {
+  const id = String(recommendationId || '').trim();
+  const normalizedIntent = String(intent || '').trim().toLowerCase();
+  if (normalizedIntent === 'complete-context') {
+    return [
+      `Help me complete the missing context for recommendation ${id}.`,
+      'First inspect the recommendation and its quality metadata, especially blocking_context.',
+      'Then use get_onboarding_status and get_financial_profile if profile data is missing.',
+      'Ask me one focused question at a time and draft any profile updates for review before saving.',
+    ].join(' ');
+  }
+  if (normalizedIntent === 'review-decision') {
+    return [
+      `Review recommendation ${id} with me.`,
+      'Explain the evidence, expected impact, confidence, freshness, reversibility, and downside.',
+      'Call preview_recommendation if a preview is available before suggesting that I apply anything.',
+    ].join(' ');
+  }
+  return `Tell me about recommendation ${id}.`;
 }
 
 function scrollToBottom() {

@@ -136,6 +136,8 @@ The envelope captures confidence, freshness, actionability, reversibility, expec
 
 Recommendation ranking now uses the shared quality envelope as a first-class input. Previewable, decision-grade rows receive confidence/actionability lift; context-gathering rows with blocking context are scored more conservatively until missing data is resolved. Today top actions also expose a compact quality summary and action hint so the daily command center can explain whether the next move is ready to preview, review-only, or blocked by missing context.
 
+v2 Inbox now uses quality actionability to choose the primary action label and destination. Previewable rows use a `Preview & apply` path, review-only rows route into Copilot with a review-focused prompt, and context-gathering rows route into Copilot with a missing-context prompt. Blocking context is shown by name on the row so the user can see what is missing before opening the recommendation.
+
 ## Generated Recommendation Payload
 
 Generated recommendations should reuse the existing recommendation row model and add richer `action_payload` metadata.

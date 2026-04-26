@@ -122,3 +122,13 @@ test('copilot view exposes guided debt onboarding entry point', () => {
   assert.match(copilotSource, /no_debt/);
   assert.match(copilotSource, /Add debt with Copilot/);
 });
+
+test('copilot view maps inbox recommendation intents to focused draft prompts', () => {
+  const currentDir = dirname(fileURLToPath(import.meta.url));
+  const copilotSource = readFileSync(resolve(currentDir, '../views/copilot.js'), 'utf8');
+
+  assert.match(copilotSource, /recommendationFocusPrompt/);
+  assert.match(copilotSource, /complete-context/);
+  assert.match(copilotSource, /Review recommendation/);
+  assert.match(copilotSource, /missing context/);
+});
