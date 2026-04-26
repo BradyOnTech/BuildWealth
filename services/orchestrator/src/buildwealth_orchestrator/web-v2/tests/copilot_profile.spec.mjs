@@ -37,6 +37,7 @@ async function staticResponse(pathname) {
 
 test('Copilot guides profile setup, renders a draft, and applies the reviewed patch', async ({ page }) => {
   let chatPayload = null;
+  let onboardingStatusCalls = 0;
   let savedProfile = null;
 
   await page.route('**/*', async route => {
@@ -64,14 +65,26 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
     }
 
     if (url.pathname === '/api/onboarding/status') {
-      await route.fulfill(jsonResponse({
-        ready_for_daily_review: false,
-        completion_percent: 25,
-        steps: [
-          { key: 'income', title: 'Add income', status: 'pending' },
-          { key: 'expenses', title: 'Add expenses', status: 'pending' },
-        ],
-      }));
+      onboardingStatusCalls += 1;
+      const status = savedProfile
+        ? {
+            ready_for_daily_review: false,
+            completion_percent: 75,
+            steps: [
+              { key: 'income', title: 'Add income', status: 'complete' },
+              { key: 'expenses', title: 'Add expenses', status: 'complete' },
+              { key: 'goals', title: 'Add goals', status: 'pending' },
+            ],
+          }
+        : {
+            ready_for_daily_review: false,
+            completion_percent: 25,
+            steps: [
+              { key: 'income', title: 'Add income', status: 'pending' },
+              { key: 'expenses', title: 'Add expenses', status: 'pending' },
+            ],
+          };
+      await route.fulfill(jsonResponse(status));
       return;
     }
 
@@ -172,4 +185,19 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
   ]);
   assert.deepEqual(savedProfile.tax_profile, { filing_status: 'single' });
   assert.equal(savedProfile.notes, 'Keep this note.');
+  assert.equal(onboardingStatusCalls, 2);
+
+  await page.getByRole('button', { name: /new conversation/i }).click();
+  await page.getByText('Your profile is 75% complete. Next: Add goals.').waitFor({ state: 'visible' });
+
+  const goalsButton = page.getByRole('button', { name: /add goals with copilot/i });
+  await goalsButton.click();
+
+  const goalsDraft = await textarea.inputValue();
+  assert.match(goalsDraft, /Help me add financial goals/);
+  assert.match(goalsDraft, /goal_items/);
+  assert.match(goalsDraft, /target_amount_usd/);
+  assert.match(goalsDraft, /target_date/);
+  assert.match(goalsDraft, /priority/);
+  assert.match(goalsDraft, /do not save anything/i);
 });

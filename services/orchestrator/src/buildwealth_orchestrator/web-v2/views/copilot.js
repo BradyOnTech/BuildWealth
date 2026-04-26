@@ -32,6 +32,15 @@ const PROFILE_SETUP_PROMPT = [
   'do not save anything with update_financial_profile until I explicitly confirm the draft.',
 ].join(' ');
 
+const GOAL_SETUP_PROMPT = [
+  'Help me add financial goals to my financial profile.',
+  'First call get_onboarding_status and get_financial_profile.',
+  'Focus only on missing goal_items for now.',
+  'Ask me one focused question at a time for each goal label, target_amount_usd, target_date, priority, and any useful notes.',
+  'When you have enough information, call draft_financial_profile_update with goal_items so I can review the changes.',
+  'do not save anything with update_financial_profile until I explicitly confirm the draft.',
+].join(' ');
+
 const ui = {
   conversationId: null,
   conversationTitle: '',
@@ -299,8 +308,8 @@ function renderProfileOnboardingCard() {
   const status = ui.onboarding;
   if (!status || status.ready_for_daily_review) return '';
   const percent = Math.round(Number(status.completion_percent || 0));
-  const steps = Array.isArray(status.steps) ? status.steps : [];
-  const nextStep = steps.find(step => step.status !== 'complete');
+  const nextStep = nextOnboardingStep(status);
+  const actionLabel = onboardingActionLabel(status);
   return html`
     <article class="profile-onboarding-card">
       <p class="profile-draft-eyebrow">Profile setup</p>
@@ -309,7 +318,7 @@ function renderProfileOnboardingCard() {
       </p>
       <div class="entry-actions">
         <button class="action-link" data-profile-onboarding-prompt>
-          Fill it out with Copilot <span class="arrow">›</span>
+          ${actionLabel} <span class="arrow">›</span>
         </button>
       </div>
     </article>
@@ -326,6 +335,29 @@ function readDraft() {
 function fillDraft(text) {
   ui.draftFocus = true;
   rerenderComposer({ draft: text });
+}
+
+function nextOnboardingStep(status) {
+  const steps = Array.isArray(status?.steps) ? status.steps : [];
+  return steps.find(step => step.status !== 'complete');
+}
+
+function isGoalOnboardingStep(step) {
+  const key = String(step?.key || '').toLowerCase();
+  const title = String(step?.title || '').toLowerCase();
+  return key.includes('goal') || title.includes('goal');
+}
+
+function onboardingActionLabel(status) {
+  return isGoalOnboardingStep(nextOnboardingStep(status))
+    ? 'Add goals with Copilot'
+    : 'Fill it out with Copilot';
+}
+
+function onboardingPrompt(status) {
+  return isGoalOnboardingStep(nextOnboardingStep(status))
+    ? GOAL_SETUP_PROMPT
+    : PROFILE_SETUP_PROMPT;
 }
 
 function scrollToBottom() {
@@ -392,7 +424,7 @@ function attachHandlers() {
   });
 
   delegate(page, 'click', '[data-profile-onboarding-prompt]', () => {
-    fillDraft(PROFILE_SETUP_PROMPT);
+    fillDraft(onboardingPrompt(ui.onboarding));
   });
 
   // Outside-click closes pickers.
@@ -424,6 +456,7 @@ async function applyProfileDraft(button) {
       created_at: new Date().toISOString(),
       metadata: {},
     });
+    await loadOnboarding();
   } catch (err) {
     ui.error = err.message;
   } finally {
