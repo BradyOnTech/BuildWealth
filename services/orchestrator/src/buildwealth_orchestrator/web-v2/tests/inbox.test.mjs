@@ -271,6 +271,46 @@ test('inbox copilot investment drafts render fit routing', () => {
   assert.match(markup, /href="#copilot\?focus=rec-copilot-invest&amp;intent=investment-fit"/);
 });
 
+test('inbox copilot investment outcome form captures process calibration', () => {
+  const markup = String(renderEntries([
+    {
+      id: 'rec-copilot-invest',
+      status: 'applied',
+      priority: 'high',
+      source: 'copilot:investment_fit',
+      recommendation_type: 'workflow_action',
+      title: 'Review NVDA fit before changing exposure',
+      detail: 'NVDA conflicts with current concentration policy.',
+      action_payload: {
+        generator: {
+          signal_type: 'investment_fit_discussion',
+        },
+        evidence: {
+          symbol: 'NVDA',
+          freshness_status: 'fresh',
+        },
+        quality: {
+          actionability: 'review_only',
+          calibration: {
+            domain: 'investment_research',
+            track_process_outcome: true,
+          },
+        },
+      },
+    },
+  ], {
+    planLookup: new Map(),
+    expanded: { id: 'rec-copilot-invest', mode: 'outcome', busy: false, error: null },
+    emptyMessage: '',
+  }));
+
+  assert.match(markup, /Did the investment-fit review help\?/);
+  assert.match(markup, /name="process_outcome"/);
+  assert.match(markup, /data-outcome-code="useful_review"/);
+  assert.match(markup, /Evidence insufficient/);
+  assert.match(markup, /copilot investment review/);
+});
+
 test('inbox investment research refresh rows route primary action to research', () => {
   const markup = String(renderEntries([
     {

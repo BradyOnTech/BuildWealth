@@ -149,9 +149,9 @@ test('Inbox previews, applies, and captures recommendation outcome', async ({ pa
   await page.locator('input[name="measurement_source"]').fill('manual browser review');
   await page.getByRole('button', { name: 'Save outcome' }).click();
 
-  assert.equal(outcomePayload.future_value_delta_usd, 13500);
-  assert.equal(outcomePayload.real_value_delta_usd, 9000);
-  assert.equal(outcomePayload.measurement_window_days, 30);
+  assert.equal(outcomePayload.realized_delta_future_value_usd, 13500);
+  assert.equal(outcomePayload.realized_delta_real_value_usd, 9000);
+  assert.equal(outcomePayload.observation_window_days, 30);
   assert.equal(outcomePayload.measurement_source, 'manual browser review');
-  assert.match(outcomePayload.outcome_note, /Applied as previewed/);
+  assert.match(outcomePayload.note, /Applied as previewed/);
 });

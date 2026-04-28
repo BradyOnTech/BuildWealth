@@ -339,11 +339,15 @@ async function handleSweep(action) {
 function collectFormData(formEl) {
   const data = {};
   for (const field of formEl.querySelectorAll('input, textarea, select')) {
-    const name = field.name;
+    let name = field.name;
     if (!name) continue;
     let value = field.value;
     if (field.type === 'number' && value !== '') value = Number(value);
     if (value === '' || value == null) continue;
+    if (name === 'outcome_note') name = 'note';
+    if (name === 'future_value_delta_usd') name = 'realized_delta_future_value_usd';
+    if (name === 'real_value_delta_usd') name = 'realized_delta_real_value_usd';
+    if (name === 'measurement_window_days') name = 'observation_window_days';
     data[name] = value;
   }
   return data;
@@ -357,6 +361,12 @@ function appendOutcomePreset(button) {
   if (!textarea) return;
   const current = String(textarea.value || '').trim();
   textarea.value = current ? `${current}; ${preset}` : preset;
+  const processOutcome = String(button.getAttribute('data-outcome-code') || '').trim();
+  const evidenceSufficiency = String(button.getAttribute('data-evidence-sufficiency') || '').trim();
+  const processField = form.querySelector('input[name="process_outcome"]');
+  const evidenceField = form.querySelector('input[name="evidence_sufficiency"]');
+  if (processField && processOutcome) processField.value = processOutcome;
+  if (evidenceField && evidenceSufficiency) evidenceField.value = evidenceSufficiency;
   textarea.focus();
 }
 

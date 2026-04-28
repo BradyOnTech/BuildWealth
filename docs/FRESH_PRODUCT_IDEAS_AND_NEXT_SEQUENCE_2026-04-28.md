@@ -76,9 +76,9 @@ Goal: learn whether Copilot-drafted investment/research reviews actually helped 
 
 First slices:
 
-- tag outcomes for `copilot:investment_fit` recommendation rows
-- distinguish useful review, insufficient evidence, deferred, acted elsewhere, and not useful
-- feed that source/type outcome history into confidence and ranking
+- tag outcomes for `copilot:investment_fit` recommendation rows (started)
+- distinguish useful review, insufficient evidence, deferred, acted elsewhere, and not useful (started)
+- feed that source/type outcome history into confidence and ranking (started)
 - show calibration hints in Inbox and Today
 
 Important boundary:

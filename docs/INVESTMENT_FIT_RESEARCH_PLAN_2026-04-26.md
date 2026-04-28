@@ -568,9 +568,9 @@ Goal: make investment recommendations improve over time.
 
 Work:
 
-- capture outcomes for research/investment recommendations
-- track whether simulation/research/review actions were useful
-- calibrate confidence for similar future recommendation classes
+- capture outcomes for research/investment recommendations (started: Copilot-drafted investment-fit rows now record process outcomes)
+- track whether simulation/research/review actions were useful (started: useful review, insufficient evidence, deferred, acted elsewhere, and not useful)
+- calibrate confidence for similar future recommendation classes (started: process outcomes feed source/type scoring calibration)
 - show which investment recommendation types have historically helped
 - keep outcome tracking separate from market performance chasing
 

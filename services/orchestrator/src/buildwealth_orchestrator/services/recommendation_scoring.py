@@ -10,6 +10,13 @@ RECOMMENDATION_SCORE_MODEL_VERSION = "v1"
 RECOMMENDATION_CALIBRATION_MODEL_VERSION = "calibration_v1"
 DEFAULT_RECOMMENDATION_SORT = "ranked"
 VALID_RECOMMENDATION_SORTS = {"ranked", "created_at"}
+PROCESS_OUTCOME_WEIGHTS = {
+    "useful_review": 1.0,
+    "acted_elsewhere": 0.5,
+    "deferred": 0.0,
+    "insufficient_evidence": -0.6,
+    "not_useful": -1.0,
+}
 
 
 def utc_now() -> datetime:
@@ -123,6 +130,12 @@ def _expected_vs_realized_metrics(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _decision_process_calibration(row: dict[str, Any]) -> dict[str, Any]:
+    closure = _decision_closure(row)
+    calibration = closure.get("decision_process_calibration")
+    return calibration if isinstance(calibration, dict) else {}
+
+
 def _normalized_source(row: dict[str, Any]) -> str:
     return str(row.get("source") or "manual").strip().lower() or "manual"
 
@@ -133,6 +146,10 @@ def _empty_calibration_bucket(key: str) -> dict[str, Any]:
         "measured_count": 0,
         "direction_match_count": 0,
         "future_value_abs_error_total_usd": 0.0,
+        "process_count": 0,
+        "process_score_total": 0.0,
+        "useful_process_count": 0,
+        "weak_process_count": 0,
     }
 
 
@@ -144,15 +161,33 @@ def _add_calibration_observation(bucket: dict[str, Any], metrics: dict[str, Any]
     bucket["future_value_abs_error_total_usd"] = _safe_float(bucket.get("future_value_abs_error_total_usd"), 0.0) + abs(gap)
 
 
+def _add_process_calibration_observation(bucket: dict[str, Any], calibration: dict[str, Any]) -> None:
+    outcome = str(calibration.get("process_outcome") or "").strip().lower()
+    if outcome not in PROCESS_OUTCOME_WEIGHTS:
+        return
+    weight = PROCESS_OUTCOME_WEIGHTS[outcome]
+    bucket["process_count"] = int(bucket.get("process_count") or 0) + 1
+    bucket["process_score_total"] = _safe_float(bucket.get("process_score_total"), 0.0) + weight
+    if weight > 0:
+        bucket["useful_process_count"] = int(bucket.get("useful_process_count") or 0) + 1
+    elif weight < 0:
+        bucket["weak_process_count"] = int(bucket.get("weak_process_count") or 0) + 1
+
+
 def _finalize_calibration_bucket(bucket: dict[str, Any]) -> dict[str, Any]:
     measured_count = int(bucket.get("measured_count") or 0)
     direction_match_count = int(bucket.get("direction_match_count") or 0)
+    process_count = int(bucket.get("process_count") or 0)
+    useful_process_count = int(bucket.get("useful_process_count") or 0)
+    weak_process_count = int(bucket.get("weak_process_count") or 0)
     match_rate = round((direction_match_count / measured_count) * 100.0, 2) if measured_count else None
     mean_abs_error = (
         round(_safe_float(bucket.get("future_value_abs_error_total_usd"), 0.0) / measured_count, 2)
         if measured_count
         else None
     )
+    process_score = round(_safe_float(bucket.get("process_score_total"), 0.0) / process_count, 2) if process_count else None
+    process_useful_rate = round((useful_process_count / process_count) * 100.0, 2) if process_count else None
     adjustment = 0.0
     if measured_count >= 2 and match_rate is not None:
         if match_rate >= 75.0:
@@ -165,12 +200,26 @@ def _finalize_calibration_bucket(bucket: dict[str, Any]) -> dict[str, Any]:
             adjustment = -6.0
         if mean_abs_error is not None and mean_abs_error >= 100_000.0:
             adjustment -= 3.0
+    if process_count >= 2 and process_score is not None:
+        if process_score >= 0.6:
+            adjustment += 6.0
+        elif process_score >= 0.25:
+            adjustment += 3.0
+        elif process_score <= -0.6:
+            adjustment -= 8.0
+        elif process_score <= -0.25:
+            adjustment -= 4.0
     return {
         "key": str(bucket.get("key") or ""),
         "measured_count": measured_count,
         "direction_match_count": direction_match_count,
         "future_value_direction_match_rate_pct": match_rate,
         "mean_future_value_abs_error_usd": mean_abs_error,
+        "process_count": process_count,
+        "useful_process_count": useful_process_count,
+        "weak_process_count": weak_process_count,
+        "process_useful_rate_pct": process_useful_rate,
+        "process_score": process_score,
         "confidence_adjustment": round(_clamp(adjustment, min_value=-12.0, max_value=10.0), 2),
     }
 
@@ -181,15 +230,25 @@ def build_recommendation_calibration_profile(rows: list[dict[str, Any]]) -> dict
 
     for row in rows:
         metrics = _expected_vs_realized_metrics(row)
-        if str(metrics.get("status") or "").strip().lower() != "measured":
+        process_calibration = _decision_process_calibration(row)
+        has_measured_metrics = str(metrics.get("status") or "").strip().lower() == "measured"
+        has_process_calibration = (
+            str(process_calibration.get("process_outcome") or "").strip().lower()
+            in PROCESS_OUTCOME_WEIGHTS
+        )
+        if not has_measured_metrics and not has_process_calibration:
             continue
 
         source = _normalized_source(row)
         recommendation_type = _normalized_recommendation_type(row)
         source_bucket = by_source.setdefault(source, _empty_calibration_bucket(source))
         type_bucket = by_type.setdefault(recommendation_type, _empty_calibration_bucket(recommendation_type))
-        _add_calibration_observation(source_bucket, metrics)
-        _add_calibration_observation(type_bucket, metrics)
+        if has_measured_metrics:
+            _add_calibration_observation(source_bucket, metrics)
+            _add_calibration_observation(type_bucket, metrics)
+        if has_process_calibration:
+            _add_process_calibration_observation(source_bucket, process_calibration)
+            _add_process_calibration_observation(type_bucket, process_calibration)
 
     return {
         "model_version": RECOMMENDATION_CALIBRATION_MODEL_VERSION,
@@ -233,6 +292,8 @@ def _append_calibration_reason(reasons: list[str], calibration: dict[str, Any]) 
     type_bucket = calibration.get("type") if isinstance(calibration.get("type"), dict) else None
     source_count = int(source_bucket.get("measured_count") or 0) if source_bucket else 0
     source_rate = source_bucket.get("future_value_direction_match_rate_pct") if source_bucket else None
+    source_process_count = int(source_bucket.get("process_count") or 0) if source_bucket else 0
+    source_process_rate = source_bucket.get("process_useful_rate_pct") if source_bucket else None
     type_count = int(type_bucket.get("measured_count") or 0) if type_bucket else 0
     type_rate = type_bucket.get("future_value_direction_match_rate_pct") if type_bucket else None
 
@@ -240,6 +301,11 @@ def _append_calibration_reason(reasons: list[str], calibration: dict[str, Any]) 
         _append_reason(
             reasons,
             f"Calibration adjusted confidence {confidence_delta:+.1f}: {calibration.get('source_key')} has {float(source_rate):.1f}% direction-match rate across {source_count} measured outcomes.",
+        )
+    elif source_process_count >= 2 and source_process_rate is not None:
+        _append_reason(
+            reasons,
+            f"Calibration adjusted confidence {confidence_delta:+.1f}: {calibration.get('source_key')} has {float(source_process_rate):.1f}% useful process outcomes across {source_process_count} calibrated reviews.",
         )
     elif type_count >= 2 and type_rate is not None:
         _append_reason(

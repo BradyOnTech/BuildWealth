@@ -61,15 +61,22 @@ function renderOutcomeForm(item, { busy, error }) {
     <div class="inline-form muted" data-form="outcome" data-id="${item.id}">
       <p class="inline-form-title">${guidance.title}</p>
       ${guidance.summary ? html`<p class="marginalia">${guidance.summary}</p>` : ''}
+      ${guidance.calibrationDomain ? html`
+        <input type="hidden" name="process_outcome" value="" />
+        <input type="hidden" name="evidence_sufficiency" value="" />
+      ` : ''}
       ${guidance.presets.length ? html`
         <div class="inline-form-row">
           <label class="inline-label">Outcome cues</label>
           <div class="entry-actions">
-            ${raw(guidance.presets.map(preset => `
-              <button class="action-link muted" type="button" data-outcome-preset="${esc(preset)}">
-                ${esc(preset)}
+            ${raw(guidance.presets.map(rawPreset => {
+              const preset = normalizeOutcomePreset(rawPreset);
+              return `
+              <button class="action-link muted" type="button" data-outcome-preset="${esc(preset.label)}"${preset.code ? ` data-outcome-code="${esc(preset.code)}"` : ''}${preset.evidence ? ` data-evidence-sufficiency="${esc(preset.evidence)}"` : ''}>
+                ${esc(preset.label)}
               </button>
-            `).join(''))}
+            `;
+            }).join(''))}
           </div>
         </div>
       ` : ''}
@@ -117,6 +124,27 @@ function outcomeGuidance(item) {
   const type = String(item?.recommendation_type || '').toLowerCase();
   const quality = item?.action_payload?.quality || {};
   const actionability = String(quality.actionability || '').toLowerCase();
+  const generator = item?.action_payload?.generator || {};
+  const isInvestmentResearch = source === 'copilot:investment_fit'
+    || source.includes('watchlist_research')
+    || generator.signal_type === 'investment_fit_discussion'
+    || quality.calibration?.domain === 'investment_research';
+  if (isInvestmentResearch) {
+    return {
+      title: 'Did the investment-fit review help?',
+      summary: '',
+      calibrationDomain: 'investment_research',
+      presets: [
+        { label: 'Useful review', code: 'useful_review', evidence: 'sufficient' },
+        { label: 'Evidence insufficient', code: 'insufficient_evidence', evidence: 'insufficient' },
+        { label: 'Deferred', code: 'deferred', evidence: 'partial' },
+        { label: 'Acted elsewhere', code: 'acted_elsewhere', evidence: 'sufficient' },
+        { label: 'Not useful', code: 'not_useful', evidence: 'not_reviewed' },
+      ],
+      measurementPlaceholder: 'copilot investment review',
+      notePlaceholder: 'decision clarified, evidence missing, deferred, acted elsewhere, not useful',
+    };
+  }
   if (source.includes('stale_assumptions')) {
     return {
       title: 'What changed after the assumption review?',
@@ -168,6 +196,21 @@ function outcomeGuidance(item) {
     presets: ['Decision made', 'No action taken', 'Follow-up needed'],
     measurementPlaceholder: 'snapshot · plan tracking · manual',
     notePlaceholder: 'Context worth keeping.',
+  };
+}
+
+function normalizeOutcomePreset(preset) {
+  if (preset && typeof preset === 'object') {
+    return {
+      label: String(preset.label || '').trim(),
+      code: String(preset.code || '').trim(),
+      evidence: String(preset.evidence || '').trim(),
+    };
+  }
+  return {
+    label: String(preset || '').trim(),
+    code: '',
+    evidence: '',
   };
 }
 

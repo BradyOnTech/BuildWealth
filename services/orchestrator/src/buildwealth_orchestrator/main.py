@@ -3857,17 +3857,24 @@ def _build_today_command_cards(dashboard: TodayDashboardResponse) -> list[TodayC
         row for row in closed_rows
         if _recommendation_needs_outcome(row)
     ]
+    pending_process_outcomes = [
+        row for row in pending_outcomes
+        if _recommendation_needs_process_outcome(row)
+    ]
     first_pending_id = str(pending_outcomes[0].get("id") or "").strip() if pending_outcomes else ""
+    pending_detail = "Closed recommendations have no pending outcome capture."
+    if pending_process_outcomes:
+        pending_detail = (
+            f"{len(pending_process_outcomes)} investment/research review(s) need decision-process calibration."
+        )
+    elif pending_outcomes:
+        pending_detail = f"{len(pending_outcomes)} closed recommendation(s) still need realized outcome capture."
     cards.append(
         TodayCommandCard(
             id="outcome-loop",
             title="Outcome loop",
             status="warning" if pending_outcomes else "ready",
-            detail=(
-                f"{len(pending_outcomes)} closed recommendation(s) still need realized outcome capture."
-                if pending_outcomes
-                else "Closed recommendations have no pending outcome capture."
-            ),
+            detail=pending_detail,
             metric_label="Pending",
             metric_value=str(len(pending_outcomes)),
             action_label="Log outcome" if pending_outcomes else "Review outcomes",
@@ -4159,6 +4166,8 @@ def _recommendation_needs_outcome(row: dict[str, Any]) -> bool:
     closure = action_payload.get("decision_closure")
     if not isinstance(closure, dict):
         return False
+    if _recommendation_needs_process_outcome(row):
+        return True
     realized = closure.get("realized_outcome")
     if isinstance(realized, dict) and realized:
         return False
@@ -4166,6 +4175,24 @@ def _recommendation_needs_outcome(row: dict[str, Any]) -> bool:
     if isinstance(expected_vs_realized, dict):
         return str(expected_vs_realized.get("status") or "").strip().lower() == "pending_realized"
     return True
+
+
+def _recommendation_needs_process_outcome(row: dict[str, Any]) -> bool:
+    status = str(row.get("status") or "").strip().lower()
+    if status not in {"applied", "rejected"}:
+        return False
+    action_payload = row.get("action_payload")
+    if not isinstance(action_payload, dict):
+        return False
+    if not _tracks_investment_process_calibration(row, action_payload):
+        return False
+    closure = action_payload.get("decision_closure")
+    if not isinstance(closure, dict):
+        return False
+    calibration = closure.get("decision_process_calibration")
+    if not isinstance(calibration, dict):
+        return True
+    return not str(calibration.get("process_outcome") or "").strip()
 
 
 def _build_plan_detail_response(detail: dict[str, Any]) -> PlanDetailResponse:
@@ -5957,6 +5984,104 @@ def _build_calibration_windows(rows: list[dict[str, Any]]) -> list[dict[str, Any
     return payload
 
 
+INVESTMENT_RESEARCH_PROCESS_OUTCOMES = {
+    "useful_review",
+    "insufficient_evidence",
+    "deferred",
+    "acted_elsewhere",
+    "not_useful",
+}
+
+INVESTMENT_RESEARCH_EVIDENCE_SUFFICIENCY = {
+    "sufficient",
+    "partial",
+    "insufficient",
+    "not_reviewed",
+}
+
+
+def _normalize_investment_process_outcome(value: Any) -> str | None:
+    cleaned = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+    aliases = {
+        "useful": "useful_review",
+        "helpful": "useful_review",
+        "helpful_review": "useful_review",
+        "evidence_insufficient": "insufficient_evidence",
+        "not_enough_evidence": "insufficient_evidence",
+        "acted_outside": "acted_elsewhere",
+        "action_elsewhere": "acted_elsewhere",
+        "unhelpful": "not_useful",
+    }
+    normalized = aliases.get(cleaned, cleaned)
+    return normalized if normalized in INVESTMENT_RESEARCH_PROCESS_OUTCOMES else None
+
+
+def _normalize_evidence_sufficiency(value: Any, *, process_outcome: str | None = None) -> str | None:
+    cleaned = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+    aliases = {
+        "enough": "sufficient",
+        "complete": "sufficient",
+        "mixed": "partial",
+        "incomplete": "partial",
+        "not_enough": "insufficient",
+        "missing": "insufficient",
+        "none": "not_reviewed",
+    }
+    normalized = aliases.get(cleaned, cleaned)
+    if normalized in INVESTMENT_RESEARCH_EVIDENCE_SUFFICIENCY:
+        return normalized
+    if process_outcome == "insufficient_evidence":
+        return "insufficient"
+    if process_outcome in {"useful_review", "acted_elsewhere"}:
+        return "sufficient"
+    return None
+
+
+def _tracks_investment_process_calibration(recommendation: dict[str, Any], action_payload: dict[str, Any]) -> bool:
+    source = str(recommendation.get("source") or "").strip().lower()
+    if source in {INVESTMENT_RESEARCH_RECOMMENDATION_SOURCE, "generator:watchlist_research"}:
+        return True
+    quality = action_payload.get("quality") if isinstance(action_payload.get("quality"), dict) else {}
+    calibration = quality.get("calibration") if isinstance(quality.get("calibration"), dict) else {}
+    return str(calibration.get("domain") or "").strip().lower() == "investment_research"
+
+
+def _build_decision_process_calibration(
+    *,
+    recommendation: dict[str, Any],
+    action_payload: dict[str, Any],
+    request: RecommendationOutcomeUpdateRequest,
+) -> dict[str, Any] | None:
+    if not _tracks_investment_process_calibration(recommendation, action_payload):
+        return None
+    process_outcome = _normalize_investment_process_outcome(request.process_outcome)
+    if not process_outcome:
+        return None
+
+    evidence = action_payload.get("evidence") if isinstance(action_payload.get("evidence"), dict) else {}
+    suggested_action = (
+        action_payload.get("suggested_action")
+        if isinstance(action_payload.get("suggested_action"), dict)
+        else {}
+    )
+    payload = {
+        "domain": "investment_research",
+        "model_version": "investment_process_calibration_v1",
+        "recorded_at": context_utc_now_iso(),
+        "process_outcome": process_outcome,
+        "evidence_sufficiency": _normalize_evidence_sufficiency(
+            request.evidence_sufficiency,
+            process_outcome=process_outcome,
+        ),
+        "symbol": evidence.get("symbol") or suggested_action.get("symbol"),
+        "research_evidence_packet_id": evidence.get("research_evidence_packet_id"),
+        "fit_status": evidence.get("fit_status") or suggested_action.get("fit_status"),
+        "suggested_action_kind": suggested_action.get("kind"),
+        "measurement_source": str(request.measurement_source or "").strip() or None,
+    }
+    return {key: value for key, value in payload.items() if value is not None}
+
+
 def update_recommendation_outcome(
     recommendation_id: str,
     request: RecommendationOutcomeUpdateRequest,
@@ -5971,6 +6096,7 @@ def update_recommendation_outcome(
     observed_at_value = request.observed_at.isoformat() if isinstance(request.observed_at, datetime) else None
     note = str(request.note or "").strip()
     measurement_source = str(request.measurement_source or "").strip()
+    process_outcome = _normalize_investment_process_outcome(request.process_outcome)
     if (
         realized_future is None
         and realized_real is None
@@ -5978,6 +6104,7 @@ def update_recommendation_outcome(
         and not note
         and not measurement_source
         and request.observation_window_days is None
+        and not process_outcome
     ):
         raise ValueError("Provide at least one realized outcome field (delta, date, source, note, or window).")
 
@@ -6014,6 +6141,13 @@ def update_recommendation_outcome(
         expected_outcome=expected_outcome,
         realized_outcome=realized_outcome,
     )
+    process_calibration = _build_decision_process_calibration(
+        recommendation=recommendation,
+        action_payload=action_payload,
+        request=request,
+    )
+    if process_calibration is not None:
+        decision_closure["decision_process_calibration"] = process_calibration
     action_payload["decision_closure"] = decision_closure
 
     resolved_plan_id = str(request.plan_id or "").strip() or str(recommendation.get("plan_id") or "").strip() or None
@@ -6110,6 +6244,11 @@ def build_recommendation_closure_analytics_payload(
             if isinstance(closure.get("expected_vs_realized"), dict)
             else _build_expected_vs_realized_metrics(expected_outcome=expected_outcome, realized_outcome=realized_outcome)
         )
+        process_calibration = (
+            closure.get("decision_process_calibration")
+            if isinstance(closure.get("decision_process_calibration"), dict)
+            else {}
+        )
         if (not include_pending_realized) and (str(expected_vs_realized.get("status") or "").strip().lower() != "measured"):
             continue
 
@@ -6137,6 +6276,12 @@ def build_recommendation_closure_analytics_payload(
                 "tracking_status": expected_vs_realized.get("status"),
                 "observation_window_days": realized_outcome.get("observation_window_days"),
                 "measurement_source": realized_outcome.get("measurement_source"),
+                "process_outcome": process_calibration.get("process_outcome"),
+                "evidence_sufficiency": process_calibration.get("evidence_sufficiency"),
+                "process_calibration_domain": process_calibration.get("domain"),
+                "process_calibration_model_version": process_calibration.get("model_version"),
+                "symbol": process_calibration.get("symbol"),
+                "research_evidence_packet_id": process_calibration.get("research_evidence_packet_id"),
             }
         )
         if len(selected_rows) >= max_rows:
@@ -6149,6 +6294,11 @@ def build_recommendation_closure_analytics_payload(
     with_realized_count = 0
     measured_count = 0
     direction_match_count = 0
+    process_counts: dict[str, int] = {}
+    evidence_sufficiency_counts: dict[str, int] = {}
+    process_count = 0
+    useful_process_count = 0
+    weak_process_count = 0
     expected_future_total = 0.0
     realized_future_total = 0.0
     future_gap_total = 0.0
@@ -6186,10 +6336,23 @@ def build_recommendation_closure_analytics_payload(
             if bool(row.get("future_value_direction_match")):
                 direction_match_count += 1
 
+        process_outcome = str(row.get("process_outcome") or "").strip().lower()
+        if process_outcome:
+            process_count += 1
+            process_counts[process_outcome] = process_counts.get(process_outcome, 0) + 1
+            if process_outcome in {"useful_review", "acted_elsewhere"}:
+                useful_process_count += 1
+            elif process_outcome in {"insufficient_evidence", "not_useful"}:
+                weak_process_count += 1
+        evidence_sufficiency = str(row.get("evidence_sufficiency") or "").strip().lower()
+        if evidence_sufficiency:
+            evidence_sufficiency_counts[evidence_sufficiency] = evidence_sufficiency_counts.get(evidence_sufficiency, 0) + 1
+
     count = len(selected_rows)
     coverage_pct = round((with_realized_count / count) * 100.0, 2) if count else 0.0
     direction_match_rate_pct = round((direction_match_count / measured_count) * 100.0, 2) if measured_count else None
     mean_abs_error = round((future_abs_error_total / measured_count), 2) if measured_count else None
+    process_useful_rate_pct = round((useful_process_count / process_count) * 100.0, 2) if process_count else None
     calibration_summary = _build_calibration_row(key="all", rows=selected_rows)
     calibration_by_type = _build_segmented_calibration_rows(
         rows=selected_rows,
@@ -6218,6 +6381,14 @@ def build_recommendation_closure_analytics_payload(
         "calibration_by_type": calibration_by_type,
         "calibration_by_source": calibration_by_source,
         "calibration_windows": calibration_windows,
+        "process_calibration_summary": {
+            "count": process_count,
+            "useful_count": useful_process_count,
+            "weak_count": weak_process_count,
+            "useful_rate_pct": process_useful_rate_pct,
+        },
+        "process_calibration_by_outcome": _counter_to_rows(process_counts),
+        "process_calibration_by_evidence_sufficiency": _counter_to_rows(evidence_sufficiency_counts),
         "summary": {
             "closed_count": count,
             "with_expected_count": with_expected_count,
@@ -8455,6 +8626,11 @@ async def tool_draft_investment_research_recommendation(arguments: dict[str, obj
             and not quality_blocking_context
         ),
         "suggested_action_kind": suggested_action_kind,
+        "calibration": {
+            "domain": "investment_research",
+            "track_process_outcome": True,
+            "process_outcomes": sorted(INVESTMENT_RESEARCH_PROCESS_OUTCOMES),
+        },
     }
     action_payload = {
         "generator": {
@@ -8589,6 +8765,8 @@ async def tool_update_recommendation_outcome(arguments: dict[str, object]) -> di
         ),
         measurement_source=str(arguments.get("measurement_source") or ""),
         note=str(arguments.get("note") or ""),
+        process_outcome=str(arguments.get("process_outcome") or ""),
+        evidence_sufficiency=str(arguments.get("evidence_sufficiency") or ""),
     )
     result = update_recommendation_outcome(recommendation_id, request)
     return result.model_dump(mode="json")
@@ -10644,7 +10822,8 @@ def configure_copilot_tools() -> None:
     copilot.register_tool(
         name="update_recommendation_outcome",
         description=(
-            "Record realized outcomes for an applied/rejected recommendation and compute expected-vs-realized deltas."
+            "Record realized outcomes for an applied/rejected recommendation and compute expected-vs-realized "
+            "or decision-process calibration."
         ),
         parameters={
             "type": "object",
@@ -10657,6 +10836,14 @@ def configure_copilot_tools() -> None:
                 "observation_window_days": {"type": "integer"},
                 "measurement_source": {"type": "string"},
                 "note": {"type": "string"},
+                "process_outcome": {
+                    "type": "string",
+                    "enum": sorted(INVESTMENT_RESEARCH_PROCESS_OUTCOMES),
+                },
+                "evidence_sufficiency": {
+                    "type": "string",
+                    "enum": sorted(INVESTMENT_RESEARCH_EVIDENCE_SUFFICIENCY),
+                },
             },
             "required": ["recommendation_id"],
             "additionalProperties": False,

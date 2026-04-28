@@ -354,6 +354,51 @@ def test_today_command_cards_surface_copilot_drafted_reviews(
     assert "review-only" in card.detail
 
 
+def test_today_outcome_loop_surfaces_copilot_investment_process_calibration(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    recommendation = inbox.create(
+        title="Review NVDA fit before changing exposure",
+        detail="NVDA conflicts with current concentration policy.",
+        priority="high",
+        status="applied",
+        source="copilot:investment_fit",
+        recommendation_type="workflow_action",
+        action_payload={
+            "evidence": {"symbol": "NVDA", "freshness_status": "fresh"},
+            "quality": {
+                "actionability": "review_only",
+                "calibration": {"domain": "investment_research", "track_process_outcome": True},
+            },
+            "decision_closure": {
+                "decision_status": "accepted",
+                "expected_vs_realized": {"status": "unavailable"},
+            },
+        },
+    )
+
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    dashboard = main.TodayDashboardResponse(
+        generated_at=main.utc_now(),
+        currency="USD",
+        state="MN",
+        sync_status=main.SyncStatusResponse(running=False, runs_total=0, runs_failed=0),
+        context_state="ready",
+        context_notes=[],
+        command_cards=[],
+        emergency_fund_months=8.0,
+    )
+
+    cards = {card.id: card for card in main._build_today_command_cards(dashboard)}
+
+    assert cards["outcome-loop"].status == "warning"
+    assert cards["outcome-loop"].metric_value == "1"
+    assert cards["outcome-loop"].href == f"#inbox?focus={recommendation['id']}"
+    assert "decision-process calibration" in cards["outcome-loop"].detail
+
+
 def test_today_command_cards_include_research_readiness_from_evidence_packets(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

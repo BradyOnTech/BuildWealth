@@ -196,6 +196,10 @@ def test_draft_investment_research_recommendation_tool_contract() -> None:
     assert "suggested_action_kind" in properties
     assert "review-only" in tool.description
     assert "does not create buy/sell actions" in tool.description
+    outcome_tool = main.copilot.tools["update_recommendation_outcome"]
+    outcome_properties = outcome_tool.parameters.get("properties", {})
+    assert "process_outcome" in outcome_properties
+    assert "evidence_sufficiency" in outcome_properties
 
 
 def test_tool_draft_investment_research_recommendation_creates_review_only_row(
@@ -251,6 +255,8 @@ def test_tool_draft_investment_research_recommendation_creates_review_only_row(
     assert quality["actionability"] == "review_only"
     assert quality["decision_grade"] is True
     assert quality["freshness_status"] == "fresh"
+    assert quality["calibration"]["domain"] == "investment_research"
+    assert quality["calibration"]["track_process_outcome"] is True
 
     stored = inbox.list(limit=None)
     assert len(stored) == 1

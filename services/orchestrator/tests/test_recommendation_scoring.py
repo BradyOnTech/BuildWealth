@@ -227,6 +227,36 @@ def _proposed_recommendation(
     }
 
 
+def _process_calibrated_recommendation(
+    recommendation_id: str,
+    *,
+    source: str,
+    process_outcome: str,
+    recommendation_type: str = "workflow_action",
+) -> dict[str, object]:
+    return {
+        "id": recommendation_id,
+        "created_at": "2026-04-10T10:00:00+00:00",
+        "updated_at": "2026-04-11T10:00:00+00:00",
+        "title": recommendation_id,
+        "detail": "Closed investment research recommendation with process calibration.",
+        "priority": "medium",
+        "status": "applied",
+        "recommendation_type": recommendation_type,
+        "source": source,
+        "action_payload": {
+            "decision_closure": {
+                "expected_vs_realized": {"status": "unavailable"},
+                "decision_process_calibration": {
+                    "domain": "investment_research",
+                    "process_outcome": process_outcome,
+                    "evidence_sufficiency": "sufficient",
+                },
+            }
+        },
+    }
+
+
 def test_calibration_profile_summarizes_measured_outcomes_by_source_and_type() -> None:
     profile = build_recommendation_calibration_profile(
         [
@@ -268,6 +298,28 @@ def test_calibration_adjusts_confidence_and_ranking_for_future_recommendations()
     assert by_id["weak-next"]["score"]["calibration"]["confidence_delta"] < 0
     assert by_id["good-next"]["score"]["confidence"] > by_id["weak-next"]["score"]["confidence"]
     assert any("Calibration adjusted confidence" in reason for reason in by_id["good-next"]["score"]["reasons"])
+
+
+def test_investment_process_outcomes_calibrate_future_copilot_drafts() -> None:
+    rows = [
+        _proposed_recommendation("next-useful", source="copilot:investment_fit", recommendation_type="workflow_action"),
+        _proposed_recommendation("next-weak", source="copilot:weak_investment_fit", recommendation_type="workflow_action"),
+    ]
+    calibration_rows = [
+        _process_calibrated_recommendation("useful-1", source="copilot:investment_fit", process_outcome="useful_review"),
+        _process_calibrated_recommendation("useful-2", source="copilot:investment_fit", process_outcome="acted_elsewhere"),
+        _process_calibrated_recommendation("weak-1", source="copilot:weak_investment_fit", process_outcome="insufficient_evidence"),
+        _process_calibrated_recommendation("weak-2", source="copilot:weak_investment_fit", process_outcome="not_useful"),
+    ]
+
+    ranked = score_and_sort_recommendations(rows, sort="ranked", calibration_rows=calibration_rows)
+    by_id = {row["id"]: row for row in ranked}
+
+    assert ranked[0]["id"] == "next-useful"
+    assert by_id["next-useful"]["score"]["calibration"]["source"]["process_count"] == 2
+    assert by_id["next-useful"]["score"]["calibration"]["confidence_delta"] > 0
+    assert by_id["next-weak"]["score"]["calibration"]["confidence_delta"] < 0
+    assert any("process outcomes" in reason for reason in by_id["next-useful"]["score"]["reasons"])
 
 
 def test_quality_metadata_promotes_decision_grade_actions_over_context_gathering() -> None:

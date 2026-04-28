@@ -65,6 +65,68 @@ def test_update_recommendation_outcome_records_realized_metrics_and_artifact(
     assert closure["realized_outcome"]["measurement_source"] == "manual-review"
 
 
+def test_update_recommendation_outcome_records_investment_process_calibration(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    recommendation = inbox.create(
+        title="Review NVDA fit",
+        detail="Copilot drafted an investment-fit review.",
+        recommendation_type="workflow_action",
+        source="copilot:investment_fit",
+        status="applied",
+        action_payload={
+            "evidence": {
+                "symbol": "NVDA",
+                "research_evidence_packet_id": "research-evidence:yfinance:NVDA:6mo:1d",
+            },
+            "quality": {
+                "actionability": "review_only",
+                "calibration": {"domain": "investment_research", "track_process_outcome": True},
+            },
+            "decision_closure": {
+                "decision_status": "accepted",
+                "expected_outcome": {
+                    "expected_delta_context_quality": "research_or_fit_reviewed",
+                    "expected_next_safe_action": "review_portfolio_fit",
+                },
+                "expected_vs_realized": {"status": "unavailable"},
+            },
+        },
+    )
+
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    response = main.update_recommendation_outcome(
+        recommendation["id"],
+        main.RecommendationOutcomeUpdateRequest(
+            process_outcome="useful_review",
+            evidence_sufficiency="sufficient",
+            measurement_source="copilot investment review",
+            note="The review clarified concentration risk before acting.",
+        ),
+    )
+
+    calibration = response.decision_closure.get("decision_process_calibration", {})
+    assert calibration["domain"] == "investment_research"
+    assert calibration["process_outcome"] == "useful_review"
+    assert calibration["evidence_sufficiency"] == "sufficient"
+    assert calibration["symbol"] == "NVDA"
+    assert calibration["research_evidence_packet_id"] == "research-evidence:yfinance:NVDA:6mo:1d"
+    assert response.decision_closure.get("expected_vs_realized", {}).get("status") == "unavailable"
+
+    payload = main.build_recommendation_closure_analytics_payload(
+        limit=200,
+        statuses=["applied", "rejected"],
+        include_pending_realized=True,
+    )
+    assert payload["process_calibration_summary"]["count"] == 1
+    assert payload["process_calibration_summary"]["useful_count"] == 1
+    assert payload["process_calibration_by_outcome"][0]["key"] == "useful_review"
+    assert payload["items"][0]["process_outcome"] == "useful_review"
+
+
 def test_build_recommendation_closure_analytics_payload_summarizes_outcomes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

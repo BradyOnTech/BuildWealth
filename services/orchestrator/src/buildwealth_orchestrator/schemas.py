@@ -1317,6 +1317,8 @@ class RecommendationOutcomeUpdateRequest(BaseModel):
     observation_window_days: int | None = Field(default=None, ge=0, le=3650)
     measurement_source: str = ""
     note: str = ""
+    process_outcome: str = ""
+    evidence_sufficiency: str = ""
 
 
 class PortfolioRiskRecommendationGenerateRequest(BaseModel):
@@ -1411,6 +1413,9 @@ class RecommendationClosureAnalyticsResponse(BaseModel):
     calibration_by_type: list[dict[str, Any]] = Field(default_factory=list)
     calibration_by_source: list[dict[str, Any]] = Field(default_factory=list)
     calibration_windows: list[dict[str, Any]] = Field(default_factory=list)
+    process_calibration_summary: dict[str, Any] = Field(default_factory=dict)
+    process_calibration_by_outcome: list[dict[str, Any]] = Field(default_factory=list)
+    process_calibration_by_evidence_sufficiency: list[dict[str, Any]] = Field(default_factory=list)
     by_status: list[dict[str, Any]] = Field(default_factory=list)
     by_type: list[dict[str, Any]] = Field(default_factory=list)
     by_source: list[dict[str, Any]] = Field(default_factory=list)

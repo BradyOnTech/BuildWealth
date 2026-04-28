@@ -551,7 +551,7 @@ Long-term:
 
 ## Current Immediate Next Work
 
-1. Add outcome calibration for Copilot-drafted investment/research recommendation rows.
+1. Expand outcome calibration visibility in Today and Inbox now that Copilot investment/research rows can capture process outcomes and feed ranking.
 2. Continue v2 research migration with Today/Plan links into packet, compare, and dossier surfaces.
 3. Deepen portfolio-fit account context with explicit proposed-account selection and tax-policy preferences.
 4. Continue expanding browser coverage around Plan v2 migration as those surfaces move over.
