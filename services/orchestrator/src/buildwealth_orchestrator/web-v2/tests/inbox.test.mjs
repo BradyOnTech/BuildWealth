@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { renderEntries } from '../views/inbox/entries.js';
+import { renderQuality } from '../views/inbox/quality.js';
 
 test('inbox newest sort control uses backend created_at sort value', () => {
   const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -19,6 +20,33 @@ test('inbox wires outcome preset buttons into outcome notes', () => {
 
   assert.match(source, /data-outcome-preset/);
   assert.match(source, /appendOutcomePreset/);
+});
+
+test('inbox quality renders investment process calibration summary', () => {
+  const markup = String(renderQuality({
+    count: 4,
+    calibration_summary: {
+      measured_count: 1,
+      future_value_direction_match_rate_pct: 100,
+      mean_future_value_abs_error_usd: 500,
+    },
+    process_calibration_summary: {
+      count: 3,
+      useful_count: 2,
+      weak_count: 1,
+      useful_rate_pct: 66.67,
+    },
+    process_calibration_by_outcome: [
+      { key: 'useful_review', count: 2 },
+      { key: 'insufficient_evidence', count: 1 },
+    ],
+  }));
+
+  assert.match(markup, /Investment review calibration/);
+  assert.match(markup, /2 of 3 investment\/research reviews were useful/);
+  assert.match(markup, /Useful review/);
+  assert.match(markup, /Evidence insufficient/);
+  assert.match(markup, /67%/);
 });
 
 test('inbox entries render recommendation quality metadata', () => {

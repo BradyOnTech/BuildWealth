@@ -571,7 +571,7 @@ Work:
 - capture outcomes for research/investment recommendations (started: Copilot-drafted investment-fit rows now record process outcomes)
 - track whether simulation/research/review actions were useful (started: useful review, insufficient evidence, deferred, acted elsewhere, and not useful)
 - calibrate confidence for similar future recommendation classes (started: process outcomes feed source/type scoring calibration)
-- show which investment recommendation types have historically helped
+- show which investment recommendation types have historically helped (started: Today and Inbox now surface investment/research process calibration)
 - keep outcome tracking separate from market performance chasing
 
 Done when:
@@ -619,7 +619,7 @@ Recommended sequence:
 
 1. Keep provider/freshness/coverage metadata explicit around OpenBB-backed research outputs as provider depth increases.
 2. Continue migrating v2 research/portfolio surfaces away from classic fallbacks where high-frequency investment decisions happen.
-3. Add outcome calibration for Copilot-drafted investment/research recommendation rows.
+3. Start Personal Investment Policy so fit assessment can cite user-specific exposure, evidence, cash, risk, and tax preferences instead of relying only on generic thresholds.
 4. Deepen account-location context later with explicit proposed-account selection and tax-policy preferences.
 
 ## Relationship to Existing Plans

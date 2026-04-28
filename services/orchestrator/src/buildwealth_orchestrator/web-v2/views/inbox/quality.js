@@ -1,7 +1,7 @@
 // Quality — Movement III.
 // Quiet pull-quote about how past suggestions actually played out.
 
-import { html, raw } from '../../lib/dom.js';
+import { html, raw, esc } from '../../lib/dom.js';
 import { fmtUsd } from '../../lib/format.js';
 
 export function renderQuality(closure) {
@@ -31,6 +31,7 @@ function renderQualityBody(closure) {
     return html`
       <p class="quality-quote">${phrase}</p>
       <p class="marginalia">Apply a suggestion, then come back and log an outcome to start calibration.</p>
+      ${raw(renderProcessCalibration(closure))}
     `;
   }
 
@@ -64,6 +65,42 @@ function renderQualityBody(closure) {
         </div>
       ` : ''}
     </dl>
+    ${raw(renderProcessCalibration(closure))}
+  `;
+}
+
+function renderProcessCalibration(closure) {
+  const summary = closure?.process_calibration_summary || {};
+  const count = numberOrNull(summary.count);
+  if (!count || count <= 0) return '';
+
+  const useful = numberOrNull(summary.useful_count) ?? 0;
+  const weak = numberOrNull(summary.weak_count) ?? 0;
+  const usefulRate = numberOrNull(summary.useful_rate_pct);
+  const rows = Array.isArray(closure.process_calibration_by_outcome)
+    ? closure.process_calibration_by_outcome.slice(0, 4)
+    : [];
+
+  return html`
+    <div class="quality-process">
+      <p class="quality-quote small">
+        Investment review calibration: ${useful} of ${count} investment/research reviews were useful${weak ? `; ${weak} flagged weak evidence or low usefulness` : ''}.
+      </p>
+      <dl class="quality-stats">
+        ${usefulRate != null ? html`
+          <div class="quality-stat">
+            <dt>Useful process</dt>
+            <dd>${Math.round(usefulRate)}%</dd>
+          </div>
+        ` : ''}
+        ${raw(rows.map(row => html`
+          <div class="quality-stat">
+            <dt>${esc(outcomeLabel(row.key))}</dt>
+            <dd>${esc(row.count ?? 0)}</dd>
+          </div>
+        `).join(''))}
+      </dl>
+    </div>
   `;
 }
 
@@ -71,6 +108,24 @@ function numberOrNull(v) {
   if (v == null) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+function labelCase(value) {
+  const text = String(value || '').replace(/[_.-]/g, ' ').trim().toLowerCase();
+  if (!text) return '';
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function outcomeLabel(value) {
+  const key = String(value || '').trim().toLowerCase();
+  const labels = {
+    useful_review: 'Useful review',
+    insufficient_evidence: 'Evidence insufficient',
+    acted_elsewhere: 'Acted elsewhere',
+    not_useful: 'Not useful',
+    deferred: 'Deferred',
+  };
+  return labels[key] || labelCase(key);
 }
 
 function sectionHead(numeral, title, lede) {

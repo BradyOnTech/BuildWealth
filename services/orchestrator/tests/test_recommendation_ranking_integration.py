@@ -399,6 +399,56 @@ def test_today_outcome_loop_surfaces_copilot_investment_process_calibration(
     assert "decision-process calibration" in cards["outcome-loop"].detail
 
 
+def test_today_command_cards_surface_investment_process_calibration_history(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    for index, outcome in enumerate(["useful_review", "acted_elsewhere", "insufficient_evidence"], start=1):
+        inbox.create(
+            title=f"Investment review {index}",
+            detail="Closed investment/research review.",
+            priority="medium",
+            status="applied",
+            source="copilot:investment_fit",
+            recommendation_type="workflow_action",
+            action_payload={
+                "decision_closure": {
+                    "decision_status": "accepted",
+                    "expected_vs_realized": {"status": "unavailable"},
+                    "decision_process_calibration": {
+                        "domain": "investment_research",
+                        "process_outcome": outcome,
+                        "evidence_sufficiency": "sufficient",
+                    },
+                },
+            },
+        )
+
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    dashboard = main.TodayDashboardResponse(
+        generated_at=main.utc_now(),
+        currency="USD",
+        state="MN",
+        sync_status=main.SyncStatusResponse(running=False, runs_total=0, runs_failed=0),
+        context_state="ready",
+        context_notes=[],
+        command_cards=[],
+        emergency_fund_months=8.0,
+    )
+
+    cards = {card.id: card for card in main._build_today_command_cards(dashboard)}
+
+    card = cards["investment-calibration"]
+    assert card.status == "ready"
+    assert card.metric_label == "Useful"
+    assert card.metric_value == "67%"
+    assert "3 investment/research outcomes calibrated" in card.detail
+    assert "2 useful" in card.detail
+    assert "1 weak" in card.detail
+    assert card.href == "#inbox"
+
+
 def test_today_command_cards_include_research_readiness_from_evidence_packets(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

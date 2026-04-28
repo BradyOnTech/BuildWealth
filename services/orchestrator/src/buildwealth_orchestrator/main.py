@@ -3881,8 +3881,47 @@ def _build_today_command_cards(dashboard: TodayDashboardResponse) -> list[TodayC
             href=f"#inbox?focus={first_pending_id}" if first_pending_id else "#inbox",
         )
     )
+    investment_calibration_card = _build_investment_calibration_command_card()
+    if investment_calibration_card is not None:
+        cards.append(investment_calibration_card)
 
     return cards
+
+
+def _build_investment_calibration_command_card() -> TodayCommandCard | None:
+    try:
+        payload = build_recommendation_closure_analytics_payload(
+            limit=500,
+            statuses=["applied", "rejected"],
+            include_pending_realized=True,
+        )
+    except Exception:
+        return None
+    summary = payload.get("process_calibration_summary") if isinstance(payload, dict) else {}
+    if not isinstance(summary, dict):
+        return None
+    count = _coerce_int(summary.get("count"), 0)
+    if count <= 0:
+        return None
+    useful = _coerce_int(summary.get("useful_count"), 0)
+    weak = _coerce_int(summary.get("weak_count"), 0)
+    useful_rate = _coerce_optional_float(summary.get("useful_rate_pct"))
+    useful_rate_label = f"{int(round(useful_rate))}%" if useful_rate is not None else "n/a"
+    status = "warning" if weak > useful or (useful_rate is not None and useful_rate < 50.0) else "ready"
+    detail = f"{count} investment/research outcomes calibrated: {useful} useful"
+    if weak:
+        detail = f"{detail}, {weak} weak"
+    detail = f"{detail}."
+    return TodayCommandCard(
+        id="investment-calibration",
+        title="Investment calibration",
+        status=status,
+        detail=detail,
+        metric_label="Useful",
+        metric_value=useful_rate_label,
+        action_label="Review quality",
+        href="#inbox",
+    )
 
 
 def _build_copilot_drafts_command_card(
