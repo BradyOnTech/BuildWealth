@@ -474,9 +474,10 @@
   transform: translateX(3px);
 }
 
-/* ───────────  Profile Draft Review  ─────────── */
+/* ───────────  Copilot Review Cards  ─────────── */
 
 .profile-draft-card,
+.investment-fit-card,
 .profile-onboarding-card {
   margin-top: var(--s-4);
   border: var(--hair) solid var(--rule);
@@ -551,6 +552,79 @@
   color: var(--forest);
   font-family: var(--serif);
   font-style: italic;
+}
+
+.investment-fit-card {
+  gap: var(--s-4);
+}
+
+.investment-fit-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--s-4);
+}
+
+.investment-fit-title {
+  margin-top: var(--s-1);
+  font-family: var(--serif);
+  font-size: 22px;
+  line-height: 1.15;
+  color: var(--ink-strong);
+}
+
+.investment-fit-score {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: var(--t-caption);
+  color: var(--ink-strong);
+  border: var(--hair) solid var(--rule);
+  border-radius: var(--r-sm);
+  padding: var(--s-1) var(--s-2);
+  background: var(--paper);
+}
+
+.investment-fit-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-2);
+}
+
+.investment-fit-meta {
+  border-top: var(--hair) solid var(--rule-soft);
+  padding-top: var(--s-2);
+  display: grid;
+  gap: 2px;
+}
+
+.investment-fit-meta span {
+  font-family: var(--mono);
+  font-size: var(--t-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.investment-fit-meta b {
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--ink-strong);
+  font-weight: 500;
+}
+
+.investment-fit-section li {
+  display: block;
+  color: var(--ink-soft);
+}
+
+@media (max-width: 680px) {
+  .investment-fit-head {
+    display: grid;
+  }
+
+  .investment-fit-meta-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ───────────  Composer  ─────────── */

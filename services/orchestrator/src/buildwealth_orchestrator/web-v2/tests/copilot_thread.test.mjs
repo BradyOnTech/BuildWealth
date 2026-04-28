@@ -83,6 +83,65 @@ test('copilot thread renders financial profile draft review card', () => {
   assert.match(html, /Apply profile update/);
 });
 
+test('copilot thread renders portfolio fit tool results as review cards', () => {
+  const html = String(renderThread([
+    {
+      role: 'assistant',
+      content: 'I checked whether this investment fits your current plan.',
+      created_at: '2026-04-26T12:00:00.000Z',
+      metadata: {
+        tool_calls: [
+          {
+            name: 'assess_portfolio_fit',
+            arguments: { symbol: 'NVDA' },
+            result: {
+              symbol: 'NVDA',
+              fit_status: 'does_not_fit',
+              fit_score: 25,
+              recommended_next_step: 'review_concentration',
+              fit_reasons: [
+                'Your active plan horizon is long enough to evaluate growth exposure.',
+              ],
+              fit_risks: [
+                'NVDA already represents 40.0% of the portfolio.',
+              ],
+              blocking_gaps: [
+                'Concentration is above the configured single-symbol limit.',
+              ],
+              evidence: {
+                freshness_status: 'fresh',
+                confidence: 'high',
+                packet_id: 'research-evidence:yfinance:NVDA:6mo:1d',
+              },
+              plan_impact: {
+                time_horizon: 'long',
+                years: 25,
+              },
+              portfolio_impact: {
+                existing_position: true,
+                current_weight_pct: 40,
+              },
+            },
+          },
+        ],
+      },
+    },
+  ]));
+
+  assert.match(html, /Investment-fit review/);
+  assert.match(html, /NVDA/);
+  assert.match(html, /Does not fit/);
+  assert.match(html, /25\/100/);
+  assert.match(html, /Review concentration/);
+  assert.match(html, /Fresh · High/);
+  assert.match(html, /Long · 25y/);
+  assert.match(html, /40% held/);
+  assert.match(html, /active plan horizon is long enough/);
+  assert.match(html, /already represents 40\.0% of the portfolio/);
+  assert.match(html, /Concentration is above/);
+  assert.doesNotMatch(html, /"fit_status"/);
+});
+
 test('copilot view wires profile draft apply action to profile API', () => {
   const currentDir = dirname(fileURLToPath(import.meta.url));
   const copilotSource = readFileSync(resolve(currentDir, '../views/copilot.js'), 'utf8');
@@ -131,4 +190,6 @@ test('copilot view maps inbox recommendation intents to focused draft prompts', 
   assert.match(copilotSource, /complete-context/);
   assert.match(copilotSource, /Review recommendation/);
   assert.match(copilotSource, /missing context/);
+  assert.match(copilotSource, /investment-fit/);
+  assert.match(copilotSource, /hidden buy\/sell advice/);
 });

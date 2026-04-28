@@ -54,6 +54,9 @@ function renderToolTrace(t) {
   if (isProfileDraftTrace(t)) {
     return renderProfileDraftCard(t.result);
   }
+  if (isPortfolioFitTrace(t)) {
+    return renderPortfolioFitCard(t.result);
+  }
   return html`
     <details class="tool-trace">
       <summary>
@@ -69,6 +72,69 @@ function isProfileDraftTrace(trace) {
   return trace?.name === 'draft_financial_profile_update'
     && trace?.result?.draft_kind === 'financial_profile_update'
     && trace?.result?.proposed_profile;
+}
+
+function isPortfolioFitTrace(trace) {
+  return trace?.name === 'assess_portfolio_fit'
+    && trace?.result?.symbol
+    && trace?.result?.fit_status;
+}
+
+function renderPortfolioFitCard(result) {
+  const symbol = String(result.symbol || '').toUpperCase();
+  const fitStatus = titleCase(result.fit_status);
+  const nextStep = titleCase(result.recommended_next_step || 'review_context');
+  const score = formatFitScore(result.fit_score);
+  const evidence = result.evidence || {};
+  const plan = result.plan_impact || {};
+  const portfolio = result.portfolio_impact || {};
+  const meta = [
+    renderFitMeta('Next step', nextStep),
+    renderFitMeta('Evidence', formatEvidenceStatus(evidence)),
+    renderFitMeta('Plan horizon', formatPlanHorizon(plan)),
+    renderFitMeta('Position', formatPortfolioPosition(portfolio)),
+  ].filter(Boolean);
+
+  return html`
+    <article class="investment-fit-card">
+      <div class="investment-fit-head">
+        <div>
+          <p class="profile-draft-eyebrow">Investment-fit review</p>
+          <p class="investment-fit-title">${symbol} · ${fitStatus}</p>
+        </div>
+        ${score ? html`<p class="investment-fit-score">${score}</p>` : ''}
+      </div>
+      <div class="investment-fit-meta-grid">
+        ${meta}
+      </div>
+      ${renderFitList('Why it matters', result.fit_reasons)}
+      ${renderFitList('Risks to review', result.fit_risks)}
+      ${renderFitList('Blocking gaps', result.blocking_gaps)}
+      ${evidence.packet_id ? html`<p class="profile-draft-meta">Evidence packet ${evidence.packet_id}</p>` : ''}
+    </article>
+  `;
+}
+
+function renderFitMeta(label, value) {
+  if (!value) return '';
+  return html`
+    <div class="investment-fit-meta">
+      <span>${label}</span>
+      <b>${value}</b>
+    </div>
+  `;
+}
+
+function renderFitList(title, items) {
+  if (!Array.isArray(items) || !items.length) return '';
+  return html`
+    <div class="profile-draft-section investment-fit-section">
+      <p class="profile-draft-section-title">${title}</p>
+      <ul>
+        ${items.slice(0, 4).map(item => html`<li>${item}</li>`)}
+      </ul>
+    </div>
+  `;
 }
 
 function renderProfileDraftCard(result) {
@@ -220,6 +286,41 @@ function formatPercent(value) {
   const percent = Number(value) * 100;
   if (!Number.isFinite(percent)) return String(value);
   return `${percent.toLocaleString('en-US', { maximumFractionDigits: 2 })}%`;
+}
+
+function formatFitScore(value) {
+  const score = Number(value);
+  if (!Number.isFinite(score)) return '';
+  return `${Math.round(score)}/100`;
+}
+
+function formatEvidenceStatus(evidence) {
+  const parts = [
+    evidence?.freshness_status ? titleCase(evidence.freshness_status) : '',
+    evidence?.confidence ? titleCase(evidence.confidence) : '',
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
+
+function formatPlanHorizon(plan) {
+  const parts = [
+    plan?.time_horizon ? titleCase(plan.time_horizon) : '',
+    Number.isFinite(Number(plan?.years)) ? `${Number(plan.years).toLocaleString('en-US', { maximumFractionDigits: 1 })}y` : '',
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
+
+function formatPortfolioPosition(portfolio) {
+  if (!portfolio || typeof portfolio !== 'object') return '';
+  if (portfolio.current_weight_pct != null) {
+    const weight = Number(portfolio.current_weight_pct);
+    if (Number.isFinite(weight)) {
+      return `${weight.toLocaleString('en-US', { maximumFractionDigits: 1 })}% held`;
+    }
+  }
+  if (portfolio.existing_position === false) return 'Not held';
+  if (portfolio.existing_position === true) return 'Held';
+  return '';
 }
 
 function formatTrace(trace) {

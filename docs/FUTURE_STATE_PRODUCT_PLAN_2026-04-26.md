@@ -550,8 +550,8 @@ Long-term:
 
 ## Current Immediate Next Work
 
-1. Bring generated investment-fit rows into v2 Inbox routing for compare, dossier, simulation, and Copilot.
-2. Add pending Copilot draft/review indicators to Today command cards.
+1. Add pending Copilot draft/review indicators to Today command cards.
+2. Let Copilot draft reviewable research/investment recommendations from investment-fit discussions.
 3. Continue enriching portfolio-fit with tax-lot/account-location context.
 4. Continue expanding browser coverage around Plan v2 migration as those surfaces move over.
 

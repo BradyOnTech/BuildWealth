@@ -54,6 +54,7 @@ export async function init(params = {}) {
   if (params.fit) {
     const fitSection = root.querySelector('.fit-review');
     if (fitSection) fitSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    runFitReview(root);
   }
 }
 
@@ -88,35 +89,41 @@ export function renderFitReview(result = null, { loading = false, error = '', in
 
 function bindFitReview(root) {
   const form = root.querySelector('[data-fit-review-form]');
-  const resultEl = root.querySelector('[data-fit-review-result]');
-  if (!form || !resultEl) return;
+  if (!form) return;
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const formData = new FormData(form);
-    const symbol = String(formData.get('symbol') || '').trim().toUpperCase();
-    const amountRaw = String(formData.get('amount_usd') || '').trim();
-    if (!symbol) return;
-
-    const button = form.querySelector('button[type="submit"]');
-    if (button) {
-      button.disabled = true;
-      button.textContent = 'Reviewing';
-    }
-    setView(resultEl, html`<p class="fit-empty">Checking portfolio, plan horizon, profile readiness, and research evidence.</p>`);
-    try {
-      const body = { symbol };
-      if (amountRaw) body.amount_usd = Number(amountRaw);
-      const result = await api.portfolioFit(body);
-      setView(resultEl, renderFitResult(result));
-    } catch (err) {
-      setView(resultEl, html`<p class="error-banner">${err.message || 'Could not review fit.'}</p>`);
-    } finally {
-      if (button) {
-        button.disabled = false;
-        button.textContent = 'Review fit';
-      }
-    }
+    runFitReview(root);
   });
+}
+
+async function runFitReview(root) {
+  const form = root.querySelector('[data-fit-review-form]');
+  const resultEl = root.querySelector('[data-fit-review-result]');
+  if (!form || !resultEl) return;
+  const formData = new FormData(form);
+  const symbol = String(formData.get('symbol') || '').trim().toUpperCase();
+  const amountRaw = String(formData.get('amount_usd') || '').trim();
+  if (!symbol) return;
+
+  const button = form.querySelector('button[type="submit"]');
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Reviewing';
+  }
+  setView(resultEl, html`<p class="fit-empty">Checking portfolio, plan horizon, profile readiness, and research evidence.</p>`);
+  try {
+    const body = { symbol };
+    if (amountRaw) body.amount_usd = Number(amountRaw);
+    const result = await api.portfolioFit(body);
+    setView(resultEl, renderFitResult(result));
+  } catch (err) {
+    setView(resultEl, html`<p class="error-banner">${err.message || 'Could not review fit.'}</p>`);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = 'Review fit';
+    }
+  }
 }
 
 export function renderFitResult(result) {

@@ -38,6 +38,7 @@ async function staticResponse(pathname) {
 test('generated investment recommendation routes through Inbox, Portfolio, and Copilot', async ({ page }) => {
   let recommendationCreated = false;
   let sweepCreatePayload = null;
+  let fitRequestPayload = null;
 
   const investmentRecommendation = () => ({
     id: 'rec-invest',
@@ -172,6 +173,24 @@ test('generated investment recommendation routes through Inbox, Portfolio, and C
       return;
     }
 
+    if (url.pathname === '/api/portfolio/fit-assessment' && request.method() === 'POST') {
+      fitRequestPayload = request.postDataJSON();
+      await route.fulfill(jsonResponse({
+        symbol: 'NVDA',
+        fit_status: 'does_not_fit',
+        fit_score: 25,
+        fit_reasons: ['Active plan horizon is long (25 years).'],
+        fit_risks: ['NVDA would worsen concentration risk.'],
+        blocking_gaps: ['concentration'],
+        portfolio_impact: { existing_position: false },
+        plan_impact: { time_horizon: 'long', years: 25 },
+        evidence: { freshness_status: 'fresh', confidence: 'high' },
+        simulation_required: false,
+        recommended_next_step: 'review_concentration',
+      }));
+      return;
+    }
+
     if (url.pathname === '/api/copilot/conversations') {
       await route.fulfill(jsonResponse([]));
       return;
@@ -199,6 +218,9 @@ test('generated investment recommendation routes through Inbox, Portfolio, and C
   await page.waitForURL('**/#portfolio?fit=NVDA&focus=rec-invest');
   await page.locator('input[name="symbol"]').waitFor({ state: 'visible' });
   await assertInputValue(page, 'input[name="symbol"]', 'NVDA');
+  await page.getByText('Does Not Fit').waitFor({ state: 'visible' });
+  await page.getByText('NVDA would worsen concentration risk.').waitFor({ state: 'visible' });
+  assert.equal(fitRequestPayload.symbol, 'NVDA');
 
   await page.goto('http://buildwealth-v2.test/#inbox?focus=rec-invest');
   await page.getByText('Investment-fit route').waitFor({ state: 'visible' });

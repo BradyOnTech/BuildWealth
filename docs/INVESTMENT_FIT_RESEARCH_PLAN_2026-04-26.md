@@ -484,7 +484,8 @@ Current progress:
 
 - The first contract and API route exist.
 - Concentration conflicts, missing profile/cash/research context, and simulation-required next steps are covered.
-- Plan/time-horizon and tax-lot impacts remain future enrichments.
+- Plan/time-horizon context is included in the API, Copilot tool, and v2 Portfolio fit review.
+- Tax-lot and account-location impacts remain future enrichments.
 
 Done when:
 
@@ -538,6 +539,12 @@ Work:
 - make missing data and stale evidence explicit in answers
 - let Copilot draft research/review recommendations
 - render investment-fit traces in v2 Copilot
+
+Current progress:
+
+- Copilot can call the portfolio-fit assessment tool with plan/time-horizon, research evidence, portfolio exposure, profile readiness, cash runway, and optional simulation context.
+- v2 Copilot renders `assess_portfolio_fit` results as investment-fit review cards instead of raw tool JSON.
+- Focused investment-fit prompts from Inbox keep the discussion framed around fit review, research, comparison, simulation, or missing context, not hidden buy/sell advice.
 
 Done when:
 
@@ -600,10 +607,10 @@ Do not start by adding direct buy/sell recommendation logic.
 
 Recommended sequence:
 
-1. Finish profile readiness and recommendation-quality work from the main future-state plan.
-2. Keep provider/freshness/coverage metadata explicit around OpenBB-backed research outputs.
-3. Bring generated investment-fit rows into v2 Inbox routing for compare, dossier, simulation, and Copilot.
-4. Continue enriching portfolio-fit with tax-lot/account-location context after the safer review loop is established.
+1. Keep provider/freshness/coverage metadata explicit around OpenBB-backed research outputs as provider depth increases.
+2. Let Copilot draft reviewable research/investment recommendations from investment-fit discussions.
+3. Continue enriching portfolio-fit with tax-lot/account-location context after the safer review loop is established.
+4. Continue migrating v2 research/portfolio surfaces away from classic fallbacks where high-frequency investment decisions happen.
 
 ## Relationship to Existing Plans
 
