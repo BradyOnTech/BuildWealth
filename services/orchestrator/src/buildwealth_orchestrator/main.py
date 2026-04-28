@@ -3846,6 +3846,13 @@ def _build_today_command_cards(dashboard: TodayDashboardResponse) -> list[TodayC
         )
     )
 
+    copilot_rows = [
+        row for row in proposed_rows
+        if str(row.get("source") or "").strip().lower().startswith("copilot:")
+    ]
+    first_copilot_id = str(copilot_rows[0].get("id") or "").strip() if copilot_rows else ""
+    cards.append(_build_copilot_drafts_command_card(copilot_rows, first_copilot_id))
+
     pending_outcomes = [
         row for row in closed_rows
         if _recommendation_needs_outcome(row)
@@ -3869,6 +3876,55 @@ def _build_today_command_cards(dashboard: TodayDashboardResponse) -> list[TodayC
     )
 
     return cards
+
+
+def _build_copilot_drafts_command_card(
+    rows: list[dict[str, Any]],
+    first_recommendation_id: str,
+) -> TodayCommandCard:
+    if not rows:
+        return TodayCommandCard(
+            id="copilot-drafts",
+            title="Copilot prepared reviews",
+            status="ready",
+            detail="No Copilot-drafted reviews are waiting.",
+            metric_label="Drafts",
+            metric_value="0",
+            action_label="Open Copilot",
+            href="#copilot",
+        )
+
+    first = rows[0]
+    action_payload = first.get("action_payload") if isinstance(first.get("action_payload"), dict) else {}
+    evidence = action_payload.get("evidence") if isinstance(action_payload.get("evidence"), dict) else {}
+    quality = action_payload.get("quality") if isinstance(action_payload.get("quality"), dict) else {}
+    symbol = str(evidence.get("symbol") or "").strip().upper()
+    freshness = _quality_text(quality.get("freshness_status") or evidence.get("freshness_status"))
+    actionability = _quality_text(quality.get("actionability"))
+    focus = " · ".join(
+        [
+            symbol,
+            f"{freshness} evidence" if freshness else "",
+            actionability.replace("_", "-") if actionability else "",
+        ]
+    ).strip(" ·")
+    noun = "review is" if len(rows) == 1 else "reviews are"
+    detail = f"{len(rows)} Copilot-drafted {noun} waiting"
+    if focus:
+        detail = f"{detail}: {focus}."
+    else:
+        detail = f"{detail}."
+
+    return TodayCommandCard(
+        id="copilot-drafts",
+        title="Copilot prepared reviews",
+        status="warning",
+        detail=detail,
+        metric_label="Drafts",
+        metric_value=str(len(rows)),
+        action_label="Review draft" if len(rows) == 1 else "Review drafts",
+        href=f"#inbox?focus={first_recommendation_id}" if first_recommendation_id else "#inbox",
+    )
 
 
 TODAY_RESEARCH_EVIDENCE_CACHE_TTL_SECONDS = 15 * 60

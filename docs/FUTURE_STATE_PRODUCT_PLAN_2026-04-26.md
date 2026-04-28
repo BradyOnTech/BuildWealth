@@ -441,7 +441,7 @@ High-level tasks:
 - add profile readiness to Today (started: command card now shows profile completion and next gap)
 - add top-action explanation (started: top actions show quality summary and action hint)
 - add data freshness/degraded-mode warnings (started: command cards now show snapshot/data-trust and engine-health posture)
-- add pending draft/review indicators (started: Today now surfaces pending recommendation outcome capture)
+- add pending draft/review indicators (started: Today now surfaces pending outcome capture and Copilot-drafted reviews)
 - add recent financial changes (started: Today now surfaces recent portfolio change from snapshot history)
 - add cash runway and emergency fund status (started: Today now surfaces cash runway from financial health)
 - connect each card to a concrete review flow
@@ -550,9 +550,9 @@ Long-term:
 
 ## Current Immediate Next Work
 
-1. Add pending Copilot draft/review indicators to Today command cards.
-2. Continue enriching portfolio-fit with tax-lot/account-location context.
-3. Continue migrating v2 research/portfolio surfaces away from classic fallbacks where high-frequency investment decisions happen.
+1. Continue enriching portfolio-fit with tax-lot/account-location context.
+2. Continue migrating v2 research/portfolio surfaces away from classic fallbacks where high-frequency investment decisions happen.
+3. Add outcome calibration for Copilot-drafted investment/research recommendation rows.
 4. Continue expanding browser coverage around Plan v2 migration as those surfaces move over.
 
 ## Documentation Governance

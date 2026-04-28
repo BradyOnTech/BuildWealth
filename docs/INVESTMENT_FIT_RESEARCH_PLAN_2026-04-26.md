@@ -546,6 +546,7 @@ Current progress:
 - v2 Copilot renders `assess_portfolio_fit` results as investment-fit review cards instead of raw tool JSON.
 - Focused investment-fit prompts from Inbox keep the discussion framed around fit review, research, comparison, simulation, or missing context, not hidden buy/sell advice.
 - Copilot can draft proposed review-only investment/research Inbox rows from investment-fit discussions via `draft_investment_research_recommendation`.
+- Today surfaces Copilot-drafted investment/research reviews as command-center cards linked back to the focused Inbox item.
 
 Done when:
 

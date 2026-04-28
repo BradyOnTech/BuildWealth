@@ -297,6 +297,63 @@ def test_today_command_cards_include_recommendation_loop_state(
     assert cards["cash-runway"].href == "#inbox"
 
 
+def test_today_command_cards_surface_copilot_drafted_reviews(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    draft = inbox.create(
+        title="Review NVDA fit before changing exposure",
+        detail="NVDA conflicts with current concentration policy.",
+        priority="high",
+        source="copilot:investment_fit",
+        recommendation_type="workflow_action",
+        action_payload={
+            "evidence": {
+                "symbol": "NVDA",
+                "freshness_status": "fresh",
+                "confidence": "high",
+                "fit_status": "does_not_fit",
+            },
+            "suggested_action": {
+                "kind": "review_portfolio_fit",
+                "symbol": "NVDA",
+            },
+            "quality": {
+                "actionability": "review_only",
+                "freshness_status": "fresh",
+                "confidence_level": "high",
+                "decision_grade": True,
+            },
+        },
+    )
+
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    dashboard = main.TodayDashboardResponse(
+        generated_at=main.utc_now(),
+        currency="USD",
+        state="MN",
+        sync_status=main.SyncStatusResponse(running=False, runs_total=0, runs_failed=0),
+        context_state="ready",
+        context_notes=[],
+        command_cards=[],
+        emergency_fund_months=8.0,
+    )
+
+    cards = {card.id: card for card in main._build_today_command_cards(dashboard)}
+
+    card = cards["copilot-drafts"]
+    assert card.status == "warning"
+    assert card.title == "Copilot prepared reviews"
+    assert card.metric_label == "Drafts"
+    assert card.metric_value == "1"
+    assert card.action_label == "Review draft"
+    assert card.href == f"#inbox?focus={draft['id']}"
+    assert "NVDA" in card.detail
+    assert "fresh" in card.detail
+    assert "review-only" in card.detail
+
+
 def test_today_command_cards_include_research_readiness_from_evidence_packets(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

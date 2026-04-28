@@ -65,6 +65,16 @@ test('today command cards render decision state with actions', () => {
         action_label: 'Refresh research',
         href: '#today?refresh=research',
       },
+      {
+        id: 'copilot-drafts',
+        title: 'Copilot prepared reviews',
+        status: 'warning',
+        detail: '1 Copilot-drafted review is waiting: NVDA · fresh evidence · review-only.',
+        metric_label: 'Drafts',
+        metric_value: '1',
+        action_label: 'Review draft',
+        href: '#inbox?focus=rec-copilot',
+      },
     ],
   }, {
     enabled_count: 2,
@@ -82,6 +92,9 @@ test('today command cards render decision state with actions', () => {
   assert.match(markup, /href="#inbox\?focus=rec-stale"/);
   assert.match(markup, /Research readiness/);
   assert.match(markup, /href="#today\?refresh=research"/);
+  assert.match(markup, /Copilot prepared reviews/);
+  assert.match(markup, /NVDA · fresh evidence · review-only/);
+  assert.match(markup, /href="#inbox\?focus=rec-copilot"/);
   assert.match(markup, /Engine health/);
   assert.match(markup, /1\/2/);
   assert.match(markup, /3 degraded event/);
