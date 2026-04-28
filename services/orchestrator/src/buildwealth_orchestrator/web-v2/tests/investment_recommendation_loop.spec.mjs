@@ -175,12 +175,14 @@ test('generated investment recommendation routes through Inbox, Portfolio, and C
 
     if (url.pathname === '/api/portfolio/fit-assessment' && request.method() === 'POST') {
       fitRequestPayload = request.postDataJSON();
+      assert.equal(fitRequestPayload.symbol, 'NVDA');
+      const symbol = String(fitRequestPayload.symbol).toUpperCase();
       await route.fulfill(jsonResponse({
-        symbol: 'NVDA',
+        symbol,
         fit_status: 'does_not_fit',
         fit_score: 25,
         fit_reasons: ['Active plan horizon is long (25 years).'],
-        fit_risks: ['NVDA would worsen concentration risk.'],
+        fit_risks: [`${symbol} would worsen concentration risk.`],
         blocking_gaps: ['concentration'],
         portfolio_impact: { existing_position: false },
         plan_impact: { time_horizon: 'long', years: 25 },
