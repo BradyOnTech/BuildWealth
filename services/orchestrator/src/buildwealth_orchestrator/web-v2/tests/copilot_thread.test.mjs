@@ -142,6 +142,62 @@ test('copilot thread renders portfolio fit tool results as review cards', () => 
   assert.doesNotMatch(html, /"fit_status"/);
 });
 
+test('copilot thread renders drafted investment recommendation tool results as review cards', () => {
+  const html = String(renderThread([
+    {
+      role: 'assistant',
+      content: 'I drafted a review step for your Inbox.',
+      created_at: '2026-04-26T12:00:00.000Z',
+      metadata: {
+        tool_calls: [
+          {
+            name: 'draft_investment_research_recommendation',
+            arguments: { symbol: 'NVDA' },
+            result: {
+              draft_kind: 'investment_research_recommendation',
+              requires_review: true,
+              recommendation: {
+                id: 'rec-invest-draft',
+                title: 'Review NVDA fit before changing exposure',
+                detail: 'NVDA conflicts with current concentration policy. Review fit context before making any portfolio decision.',
+                priority: 'high',
+                status: 'proposed',
+                recommendation_type: 'workflow_action',
+                source: 'copilot:investment_fit',
+                action_payload: {
+                  evidence: {
+                    symbol: 'NVDA',
+                    freshness_status: 'fresh',
+                    confidence: 'high',
+                    fit_status: 'does_not_fit',
+                  },
+                  suggested_action: {
+                    kind: 'review_portfolio_fit',
+                    symbol: 'NVDA',
+                  },
+                  quality: {
+                    actionability: 'review_only',
+                    decision_grade: true,
+                  },
+                },
+              },
+            },
+          },
+        ],
+      },
+    },
+  ]));
+
+  assert.match(html, /Drafted investment review/);
+  assert.match(html, /Review NVDA fit before changing exposure/);
+  assert.match(html, /NVDA · Fresh · High/);
+  assert.match(html, /Review portfolio fit/);
+  assert.match(html, /Review only/);
+  assert.match(html, /Decision-grade/);
+  assert.match(html, /href="#inbox\?focus=rec-invest-draft"/);
+  assert.doesNotMatch(html, /"draft_kind"/);
+});
+
 test('copilot view wires profile draft apply action to profile API', () => {
   const currentDir = dirname(fileURLToPath(import.meta.url));
   const copilotSource = readFileSync(resolve(currentDir, '../views/copilot.js'), 'utf8');

@@ -634,6 +634,9 @@ copilot = FinancialCopilot(
         "- For structured multi-symbol research memos with thesis/risks/catalysts and plan artifacts → call research_dossier.\n"
         "- To reuse saved dossier evidence and artifact references for recommendation rationale → call research_dossier_lookup.\n"
         "- For ranking watchlist candidates by momentum/trend/target/data quality → call research_watchlist_rank.\n"
+        "- After an investment-fit discussion identifies a safe next review step, call "
+        "draft_investment_research_recommendation to create a proposed review-only Inbox item. "
+        "Never use it to create buy/sell instructions.\n"
         "- For 'what if I buy/sell X?' → call simulate_trade to show allocation and concentration impact.\n"
         "- For daily reviews → call get_financial_health, get_plan_tracking, and get_today_dashboard.\n\n"
         "RESPONSE GUIDELINES:\n"
@@ -4131,6 +4134,8 @@ RECOMMENDATION_CITATION_MODEL_VERSION = "citation_v1"
 
 def _recommendation_source_requires_dossier_citations(source: str) -> bool:
     normalized = str(source or "").strip().lower()
+    if normalized == "copilot:investment_fit":
+        return False
     return normalized.startswith("copilot")
 
 
@@ -8265,6 +8270,173 @@ async def tool_create_recommendation(arguments: dict[str, object]) -> dict[str, 
     return {"recommendation": _recommendation_item_from_row(recommendation).model_dump(mode="json")}
 
 
+INVESTMENT_RESEARCH_RECOMMENDATION_SOURCE = "copilot:investment_fit"
+INVESTMENT_RESEARCH_SAFE_ACTION_KINDS = {
+    "review_portfolio_fit",
+    "refresh_research_evidence",
+    "research_dossier",
+    "research_compare",
+    "simulate_trade",
+    "discuss_in_copilot",
+    "update_profile_context",
+}
+
+
+def _investment_research_action_kind(value: Any) -> str:
+    kind = str(value or "review_portfolio_fit").strip().lower()
+    if kind not in INVESTMENT_RESEARCH_SAFE_ACTION_KINDS:
+        raise ValueError(
+            "Investment research recommendations must use review, compare, simulate, refresh, discuss, "
+            "or context actions."
+        )
+    return kind
+
+
+def _investment_research_text_list(value: Any, *, limit: int = 6) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    cleaned: list[str] = []
+    for item in value:
+        text = str(item or "").strip()
+        if text:
+            cleaned.append(text)
+        if len(cleaned) >= limit:
+            break
+    return cleaned
+
+
+async def tool_draft_investment_research_recommendation(arguments: dict[str, object]) -> dict[str, object]:
+    symbols = normalize_research_symbols([arguments.get("symbol")], max_symbols=1)
+    if not symbols:
+        raise ValueError("symbol is required")
+    symbol = symbols[0]
+
+    suggested_action_kind = _investment_research_action_kind(arguments.get("suggested_action_kind"))
+    priority = _normalized_recommendation_priority(arguments.get("priority"))
+    plan_id = str(arguments.get("plan_id") or "").strip() or plan_workspace.get_active_plan_id()
+    fit_status = str(arguments.get("fit_status") or "").strip().lower()
+    freshness_status = str(arguments.get("freshness_status") or "").strip().lower() or "unknown"
+    confidence = str(arguments.get("confidence") or "").strip().lower() or "medium"
+    blocking_gaps = _investment_research_text_list(arguments.get("blocking_gaps"))
+    actionability = (
+        "context_gathering"
+        if suggested_action_kind in {"refresh_research_evidence", "update_profile_context"}
+        else "review_only"
+    )
+    quality_blocking_context = blocking_gaps if actionability == "context_gathering" else []
+    fit_reasons = _investment_research_text_list(arguments.get("fit_reasons"))
+    fit_risks = _investment_research_text_list(arguments.get("fit_risks"))
+    source_recommendation_id = str(arguments.get("source_recommendation_id") or "").strip() or None
+    detail = str(arguments.get("detail") or "").strip()
+    if not detail:
+        detail = (
+            f"Review {symbol} with portfolio-fit context, research evidence freshness, and any blocking gaps "
+            "before making a portfolio decision."
+        )
+    title = str(arguments.get("title") or "").strip() or f"Review investment fit for {symbol}"
+    generated_at = context_utc_now_iso()
+
+    evidence = {
+        "summary": detail,
+        "data_keys": [
+            "portfolio.fit_assessment",
+            "research.evidence_packet",
+            "copilot.investment_fit_discussion",
+        ],
+        "symbol": symbol,
+        "research_symbols": [symbol],
+        "research_evidence_packet_id": str(arguments.get("research_evidence_packet_id") or "").strip() or None,
+        "provider": str(arguments.get("provider") or "").strip() or None,
+        "freshness_status": freshness_status,
+        "confidence": confidence,
+        "coverage_score": arguments.get("coverage_score"),
+        "fit_status": fit_status or None,
+        "fit_score": arguments.get("fit_score"),
+        "fit_reasons": fit_reasons,
+        "fit_risks": fit_risks,
+        "blocking_gaps": blocking_gaps,
+        "source_recommendation_id": source_recommendation_id,
+    }
+    evidence = {key: value for key, value in evidence.items() if value is not None}
+    suggested_action = {
+        "kind": suggested_action_kind,
+        "symbol": symbol,
+        "fit_status": fit_status or None,
+        "source": "copilot_investment_fit_discussion",
+    }
+    suggested_action = {key: value for key, value in suggested_action.items() if value is not None}
+    expected_outcome = {
+        "expected_delta_context_quality": "research_or_fit_reviewed",
+        "expected_next_safe_action": suggested_action_kind,
+    }
+    quality = {
+        "schema_version": 1,
+        "source": INVESTMENT_RESEARCH_RECOMMENDATION_SOURCE,
+        "confidence_level": confidence if confidence in {"high", "medium", "low"} else "medium",
+        "confidence_score": {"high": 0.85, "medium": 0.65, "low": 0.4}.get(confidence, 0.65),
+        "confidence_reasons": [
+            "Drafted by Copilot from an investment-fit discussion.",
+            "Action is limited to review, compare, simulate, refresh, discuss, or context gathering.",
+        ],
+        "freshness_status": freshness_status,
+        "freshness_reasons": [
+            f"Research evidence freshness was reported as {freshness_status}.",
+        ],
+        "actionability": actionability,
+        "actionability_reasons": [
+            "This recommendation should be reviewed before any portfolio state change is made."
+            if actionability == "review_only"
+            else "This recommendation gathers or refreshes context before stronger advice is generated."
+        ],
+        "reversibility": "high",
+        "impact": {
+            "level": "high" if priority == "high" else ("medium" if priority == "medium" else "low"),
+            "summary": detail,
+        },
+        "blocking_context": quality_blocking_context,
+        "decision_grade": (
+            freshness_status not in {"unknown", "stale", "degraded", "unavailable"}
+            and not quality_blocking_context
+        ),
+        "suggested_action_kind": suggested_action_kind,
+    }
+    action_payload = {
+        "generator": {
+            "id": "copilot_investment_fit_draft",
+            "version": "v1",
+            "generated_at": generated_at,
+            "signal_type": "investment_fit_discussion",
+            "signal_key": f"{symbol}:{suggested_action_kind}",
+            "source_recommendation_id": source_recommendation_id,
+        },
+        "evidence": evidence,
+        "suggested_action": suggested_action,
+        "expected_outcome": expected_outcome,
+        "quality": quality,
+        "research_symbols": [symbol],
+    }
+    prepared_payload = _prepare_recommendation_action_payload(
+        source=INVESTMENT_RESEARCH_RECOMMENDATION_SOURCE,
+        action_payload=action_payload,
+        plan_id=plan_id,
+    )
+    recommendation = recommendation_inbox.create(
+        title=title,
+        detail=detail,
+        priority=priority,
+        recommendation_type="workflow_action",
+        source=INVESTMENT_RESEARCH_RECOMMENDATION_SOURCE,
+        plan_id=plan_id,
+        action_payload=prepared_payload,
+    )
+    return {
+        "draft_kind": "investment_research_recommendation",
+        "requires_review": True,
+        "safe_action_kinds": sorted(INVESTMENT_RESEARCH_SAFE_ACTION_KINDS),
+        "recommendation": _recommendation_item_from_row(recommendation).model_dump(mode="json"),
+    }
+
+
 async def tool_apply_recommendation(arguments: dict[str, object]) -> dict[str, object]:
     recommendation_id = str(arguments.get("recommendation_id") or "").strip()
     if not recommendation_id:
@@ -10204,6 +10376,50 @@ def configure_copilot_tools() -> None:
             "additionalProperties": False,
         },
         handler=tool_assess_portfolio_fit,
+    )
+    copilot.register_tool(
+        name="draft_investment_research_recommendation",
+        description=(
+            "Create a proposed, review-only investment/research recommendation from an investment-fit discussion. "
+            "Use only after fit or research context has been inspected. This creates an Inbox item for review and "
+            "does not create buy/sell actions."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Ticker symbol discussed in the fit review."},
+                "title": {"type": "string"},
+                "detail": {"type": "string"},
+                "priority": {"type": "string", "enum": ["high", "medium", "low"]},
+                "plan_id": {"type": "string"},
+                "fit_status": {"type": "string"},
+                "fit_score": {"type": "number"},
+                "fit_reasons": {"type": "array", "items": {"type": "string"}},
+                "fit_risks": {"type": "array", "items": {"type": "string"}},
+                "blocking_gaps": {"type": "array", "items": {"type": "string"}},
+                "research_evidence_packet_id": {"type": "string"},
+                "provider": {"type": "string"},
+                "freshness_status": {"type": "string"},
+                "confidence": {"type": "string"},
+                "coverage_score": {"type": "number"},
+                "suggested_action_kind": {
+                    "type": "string",
+                    "enum": [
+                        "review_portfolio_fit",
+                        "refresh_research_evidence",
+                        "research_dossier",
+                        "research_compare",
+                        "simulate_trade",
+                        "discuss_in_copilot",
+                        "update_profile_context",
+                    ],
+                },
+                "source_recommendation_id": {"type": "string"},
+            },
+            "required": ["symbol"],
+            "additionalProperties": False,
+        },
+        handler=tool_draft_investment_research_recommendation,
     )
     copilot.register_tool(
         name="get_onboarding_status",

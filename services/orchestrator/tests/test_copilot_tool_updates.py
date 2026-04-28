@@ -5,6 +5,7 @@ import pytest
 
 import buildwealth_orchestrator.main as main
 from buildwealth_orchestrator.services.plan_workspace import PlanWorkspace
+from buildwealth_orchestrator.services.recommendation_inbox import RecommendationInbox
 
 
 def test_copilot_registry_includes_phase_3_5_tools() -> None:
@@ -22,6 +23,7 @@ def test_copilot_registry_includes_phase_3_5_tools() -> None:
         "research_dossier_lookup",
         "research_watchlist_rank",
         "assess_portfolio_fit",
+        "draft_investment_research_recommendation",
         "update_recommendation_outcome",
         "get_recommendation_closure_analytics",
         "create_plan_recommendation_closure_summary",
@@ -181,6 +183,90 @@ def test_draft_financial_profile_update_tool_contract() -> None:
     assert "tax_profile" in properties
     assert "flags" in properties
     assert "notes" in properties
+
+
+def test_draft_investment_research_recommendation_tool_contract() -> None:
+    tool = main.copilot.tools["draft_investment_research_recommendation"]
+    properties = tool.parameters.get("properties", {})
+    assert tool.parameters.get("required") == ["symbol"]
+    assert "symbol" in properties
+    assert "fit_status" in properties
+    assert "fit_score" in properties
+    assert "research_evidence_packet_id" in properties
+    assert "suggested_action_kind" in properties
+    assert "review-only" in tool.description
+    assert "does not create buy/sell actions" in tool.description
+
+
+def test_tool_draft_investment_research_recommendation_creates_review_only_row(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    workspace = PlanWorkspace(tmp_path / "plans")
+    plan = workspace.create_plan(title="Investment Fit Plan")
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    monkeypatch.setattr(main, "plan_workspace", workspace)
+
+    payload = asyncio.run(
+        main.tool_draft_investment_research_recommendation(
+            {
+                "symbol": "nvda",
+                "title": "Review NVDA fit before changing exposure",
+                "detail": "NVDA conflicts with current concentration policy. Review fit context before making any portfolio decision.",
+                "priority": "high",
+                "fit_status": "does_not_fit",
+                "fit_score": 25,
+                "fit_reasons": ["Active plan horizon is long enough to evaluate growth exposure."],
+                "fit_risks": ["NVDA would worsen concentration risk."],
+                "blocking_gaps": ["concentration"],
+                "research_evidence_packet_id": "research-evidence:yfinance:NVDA:6mo:1d",
+                "provider": "yfinance",
+                "freshness_status": "fresh",
+                "confidence": "high",
+                "coverage_score": 100,
+                "suggested_action_kind": "review_portfolio_fit",
+                "source_recommendation_id": "rec-invest",
+            }
+        )
+    )
+
+    recommendation = payload["recommendation"]
+    action_payload = recommendation["action_payload"]
+    evidence = action_payload["evidence"]
+    quality = action_payload["quality"]
+
+    assert payload["draft_kind"] == "investment_research_recommendation"
+    assert payload["requires_review"] is True
+    assert recommendation["source"] == "copilot:investment_fit"
+    assert recommendation["status"] == "proposed"
+    assert recommendation["recommendation_type"] == "workflow_action"
+    assert recommendation["plan_id"] == plan["id"]
+    assert action_payload["suggested_action"]["kind"] == "review_portfolio_fit"
+    assert action_payload["suggested_action"]["symbol"] == "NVDA"
+    assert evidence["symbol"] == "NVDA"
+    assert evidence["research_symbols"] == ["NVDA"]
+    assert evidence["research_evidence_packet_id"] == "research-evidence:yfinance:NVDA:6mo:1d"
+    assert evidence["fit_status"] == "does_not_fit"
+    assert quality["actionability"] == "review_only"
+    assert quality["decision_grade"] is True
+    assert quality["freshness_status"] == "fresh"
+
+    stored = inbox.list(limit=None)
+    assert len(stored) == 1
+    assert stored[0]["id"] == recommendation["id"]
+
+
+def test_tool_draft_investment_research_recommendation_rejects_direct_trade_actions() -> None:
+    with pytest.raises(ValueError, match="review, compare, simulate, refresh, discuss, or context"):
+        asyncio.run(
+            main.tool_draft_investment_research_recommendation(
+                {
+                    "symbol": "NVDA",
+                    "suggested_action_kind": "buy",
+                }
+            )
+        )
 
 
 def test_tool_draft_financial_profile_update_validates_without_saving(

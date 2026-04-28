@@ -545,6 +545,7 @@ Current progress:
 - Copilot can call the portfolio-fit assessment tool with plan/time-horizon, research evidence, portfolio exposure, profile readiness, cash runway, and optional simulation context.
 - v2 Copilot renders `assess_portfolio_fit` results as investment-fit review cards instead of raw tool JSON.
 - Focused investment-fit prompts from Inbox keep the discussion framed around fit review, research, comparison, simulation, or missing context, not hidden buy/sell advice.
+- Copilot can draft proposed review-only investment/research Inbox rows from investment-fit discussions via `draft_investment_research_recommendation`.
 
 Done when:
 
@@ -608,9 +609,9 @@ Do not start by adding direct buy/sell recommendation logic.
 Recommended sequence:
 
 1. Keep provider/freshness/coverage metadata explicit around OpenBB-backed research outputs as provider depth increases.
-2. Let Copilot draft reviewable research/investment recommendations from investment-fit discussions.
-3. Continue enriching portfolio-fit with tax-lot/account-location context after the safer review loop is established.
-4. Continue migrating v2 research/portfolio surfaces away from classic fallbacks where high-frequency investment decisions happen.
+2. Continue enriching portfolio-fit with tax-lot/account-location context after the safer review loop is established.
+3. Continue migrating v2 research/portfolio surfaces away from classic fallbacks where high-frequency investment decisions happen.
+4. Add outcome calibration for Copilot-drafted investment/research recommendation rows.
 
 ## Relationship to Existing Plans
 

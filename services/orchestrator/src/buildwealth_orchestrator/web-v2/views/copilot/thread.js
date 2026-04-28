@@ -57,6 +57,9 @@ function renderToolTrace(t) {
   if (isPortfolioFitTrace(t)) {
     return renderPortfolioFitCard(t.result);
   }
+  if (isInvestmentRecommendationDraftTrace(t)) {
+    return renderInvestmentRecommendationDraftCard(t.result);
+  }
   return html`
     <details class="tool-trace">
       <summary>
@@ -78,6 +81,56 @@ function isPortfolioFitTrace(trace) {
   return trace?.name === 'assess_portfolio_fit'
     && trace?.result?.symbol
     && trace?.result?.fit_status;
+}
+
+function isInvestmentRecommendationDraftTrace(trace) {
+  return trace?.name === 'draft_investment_research_recommendation'
+    && trace?.result?.draft_kind === 'investment_research_recommendation'
+    && trace?.result?.recommendation?.id;
+}
+
+function renderInvestmentRecommendationDraftCard(result) {
+  const recommendation = result.recommendation || {};
+  const actionPayload = recommendation.action_payload || {};
+  const evidence = actionPayload.evidence || {};
+  const suggestedAction = actionPayload.suggested_action || {};
+  const quality = actionPayload.quality || {};
+  const recommendationId = String(recommendation.id || '').trim();
+  const symbol = String(evidence.symbol || suggestedAction.symbol || '').trim().toUpperCase();
+  const meta = [
+    symbol,
+    evidence.freshness_status ? titleCase(evidence.freshness_status) : '',
+    evidence.confidence ? titleCase(evidence.confidence) : '',
+  ].filter(Boolean).join(' · ');
+  const qualityLabels = [
+    quality.actionability ? titleCase(quality.actionability) : '',
+    quality.decision_grade ? 'Decision-grade' : '',
+  ].filter(Boolean).join(' · ');
+
+  return html`
+    <article class="investment-fit-card">
+      <div class="investment-fit-head">
+        <div>
+          <p class="profile-draft-eyebrow">Drafted investment review</p>
+          <p class="investment-fit-title">${recommendation.title || 'Review investment research'}</p>
+        </div>
+        ${recommendation.priority ? html`<p class="investment-fit-score">${titleCase(recommendation.priority)}</p>` : ''}
+      </div>
+      ${meta ? html`<p class="profile-draft-meta">${meta}</p>` : ''}
+      ${recommendation.detail ? html`<p class="profile-draft-summary">${recommendation.detail}</p>` : ''}
+      <div class="investment-fit-meta-grid">
+        ${renderFitMeta('Next step', titleCase(suggestedAction.kind || 'review_portfolio_fit'))}
+        ${renderFitMeta('Quality', qualityLabels)}
+      </div>
+      ${recommendationId ? html`
+        <div class="entry-actions">
+          <a class="action-link" href="#inbox?focus=${recommendationId}">
+            Open in Inbox <span class="arrow">→</span>
+          </a>
+        </div>
+      ` : ''}
+    </article>
+  `;
 }
 
 function renderPortfolioFitCard(result) {

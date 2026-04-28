@@ -551,8 +551,8 @@ Long-term:
 ## Current Immediate Next Work
 
 1. Add pending Copilot draft/review indicators to Today command cards.
-2. Let Copilot draft reviewable research/investment recommendations from investment-fit discussions.
-3. Continue enriching portfolio-fit with tax-lot/account-location context.
+2. Continue enriching portfolio-fit with tax-lot/account-location context.
+3. Continue migrating v2 research/portfolio surfaces away from classic fallbacks where high-frequency investment decisions happen.
 4. Continue expanding browser coverage around Plan v2 migration as those surfaces move over.
 
 ## Documentation Governance
