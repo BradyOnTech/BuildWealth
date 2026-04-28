@@ -18,7 +18,8 @@
 }
 
 .research-compare-strip,
-.research-compare-packets {
+.research-compare-packets,
+.research-dossier-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--s-5);
@@ -53,6 +54,51 @@
 .research-rank-item p {
   margin: var(--s-2) 0 0;
   color: var(--muted);
+}
+
+.research-dossier-item {
+  border-top: 1px solid var(--line);
+  padding-top: var(--s-4);
+}
+
+.research-dossier-item span {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.research-dossier-item h3 {
+  margin: var(--s-2) 0;
+  font-family: var(--display);
+  font-size: 28px;
+  font-weight: 500;
+}
+
+.research-dossier-item p {
+  margin: var(--s-2) 0;
+  color: var(--muted);
+}
+
+.research-dossier-markdown {
+  border-top: 1px solid var(--line);
+  padding-top: var(--s-5);
+}
+
+.research-dossier-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.research-dossier-markdown th,
+.research-dossier-markdown td {
+  border-bottom: 1px solid var(--line-soft);
+  padding: var(--s-2);
+  text-align: left;
+  vertical-align: top;
 }
 
 .research-panel {

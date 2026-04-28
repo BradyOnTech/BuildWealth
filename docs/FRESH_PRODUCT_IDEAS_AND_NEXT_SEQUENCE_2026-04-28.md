@@ -61,7 +61,7 @@ First slices should focus on:
 
 - v2 research evidence packet display (started: `#research?symbol=...` renders packet freshness, coverage, metrics, risk, quality, gaps, and provenance)
 - v2 compare surface for a small symbol set (started: `#research?compare=...` adds compare ranking context while reusing packet evidence cards)
-- v2 dossier lookup/detail surface for saved plan artifacts
+- v2 dossier lookup/detail surface for saved plan artifacts (started: `#research?dossiers=1` lists saved research dossiers and `#research?dossier=...` renders packet citations from the saved artifact)
 - direct route targets from Inbox, Portfolio, Today, and Copilot (started: Inbox, Portfolio fit review, and Copilot fit cards now link to v2 Research evidence)
 - provider/freshness/warning visibility on every research surface
 

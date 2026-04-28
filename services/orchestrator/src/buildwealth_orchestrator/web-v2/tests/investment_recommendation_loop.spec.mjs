@@ -295,6 +295,56 @@ test('generated investment recommendation routes through Inbox, Portfolio, and C
       return;
     }
 
+    if (url.pathname === '/api/research/dossiers') {
+      await route.fulfill(jsonResponse({
+        plan_id: 'plan-1',
+        count: 1,
+        items: [
+          {
+            artifact_id: 'artifact-dossier',
+            file_name: '2026-research-dossier-nvda-msft.md',
+            title: 'Research Dossier - NVDA vs MSFT',
+            created_at: '2026-04-26T12:00:00Z',
+            plan_id: 'plan-1',
+            symbols: ['NVDA', 'MSFT'],
+            content_preview: [
+              '## Evidence Packets',
+              '',
+              '| Symbol | Packet | Provider | Freshness | Confidence | Coverage | Blocking gaps |',
+              '| --- | --- | --- | --- | --- | ---: | --- |',
+              '| NVDA | research-evidence:yfinance:NVDA:6mo:1d | yfinance | fresh | high | 100% | none |',
+            ].join('\n'),
+          },
+        ],
+        warnings: [],
+      }));
+      return;
+    }
+
+    if (url.pathname === '/api/plans/plan-1/artifacts/artifact-dossier') {
+      await route.fulfill(jsonResponse({
+        id: 'artifact-dossier',
+        file_name: '2026-research-dossier-nvda-msft.md',
+        title: 'Research Dossier - NVDA vs MSFT',
+        created_at: '2026-04-26T12:00:00Z',
+        content: [
+          '# Research Dossier: NVDA vs MSFT',
+          '',
+          '## Thesis',
+          '',
+          'Compare AI infrastructure exposure.',
+          '',
+          '## Evidence Packets',
+          '',
+          '| Symbol | Packet | Provider | Freshness | Confidence | Coverage | Blocking gaps |',
+          '| --- | --- | --- | --- | --- | ---: | --- |',
+          '| NVDA | research-evidence:yfinance:NVDA:6mo:1d | yfinance | fresh | high | 100% | none |',
+          '| MSFT | research-evidence:yfinance:MSFT:6mo:1d | yfinance | fresh | high | 100% | none |',
+        ].join('\n'),
+      }));
+      return;
+    }
+
     if (url.pathname === '/api/copilot/conversations') {
       await route.fulfill(jsonResponse([]));
       return;
@@ -330,6 +380,17 @@ test('generated investment recommendation routes through Inbox, Portfolio, and C
   await page.getByText('Rank 1').waitFor({ state: 'visible' });
   await page.getByText('Microsoft').waitFor({ state: 'visible' });
   assert.deepEqual(comparePayload.symbols, ['NVDA', 'MSFT']);
+
+  await page.goto('http://buildwealth-v2.test/#research?dossiers=1');
+  await page.getByText('Research dossiers').waitFor({ state: 'visible' });
+  await page.getByText('Research Dossier - NVDA vs MSFT').waitFor({ state: 'visible' });
+  await page.getByRole('link', { name: /Open dossier/ }).click();
+  await page.waitForURL('**/#research?dossier=artifact-dossier&plan=plan-1');
+  await page.getByText('Dossier detail').waitFor({ state: 'visible' });
+  await page.getByText('Packet citations').waitFor({ state: 'visible' });
+  await page.getByText('Compare AI infrastructure exposure.').waitFor({ state: 'visible' });
+  await page.getByRole('link', { name: /research-evidence:yfinance:NVDA:6mo:1d/ }).click();
+  await page.waitForURL('**/#research?symbol=NVDA&packet=research-evidence%3Ayfinance%3ANVDA%3A6mo%3A1d');
 
   await page.goto('http://buildwealth-v2.test/#inbox?focus=rec-invest');
   await page.getByRole('link', { name: /Review fit/ }).first().click();

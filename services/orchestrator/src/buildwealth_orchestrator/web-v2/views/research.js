@@ -3,6 +3,7 @@
 import { api } from '../lib/api.js';
 import { html, raw, $, setView } from '../lib/dom.js';
 import { fmtPctSigned, fmtTimeShort, fmtUsd } from '../lib/format.js';
+import { renderMarkdown } from './copilot/markdown.js';
 
 export const meta = {
   id: 'research',
@@ -26,6 +27,34 @@ export async function init(params = {}) {
   const symbol = String(params.symbol || compareSymbols[0] || '').trim().toUpperCase();
   const period = String(params.period || '6mo').trim() || '6mo';
   const interval = String(params.interval || '1d').trim() || '1d';
+  const planId = String(params.plan || params.plan_id || '').trim();
+
+  if (params.dossier) {
+    const dossierId = String(params.dossier || '').trim();
+    if (!dossierId || !planId) {
+      setView(root, renderResearchError('Dossier', new Error('Dossier detail requires a plan and artifact id.')));
+      return;
+    }
+    setView(root, renderResearchLoading('Dossier'));
+    try {
+      const artifact = await api.planArtifact(planId, dossierId);
+      setView(root, renderDossierDetail(artifact, { planId }));
+    } catch (err) {
+      setView(root, renderResearchError('Dossier', err));
+    }
+    return;
+  }
+
+  if (params.dossiers != null) {
+    setView(root, renderResearchLoading('Dossiers'));
+    try {
+      const lookup = await api.researchDossiers({ planId, limit: 10, includeContent: true });
+      setView(root, renderDossierLookupSurface(lookup));
+    } catch (err) {
+      setView(root, renderResearchError('Dossiers', err));
+    }
+    return;
+  }
 
   if (compareSymbols.length >= 2) {
     setView(root, renderResearchLoading(compareSymbols.join(' / '), 'compare'));
@@ -126,6 +155,7 @@ function renderResearchPage(packet, { requestedPacketId = '' } = {}) {
       <div class="look-closer-row">
         <a class="link-editorial" href="#portfolio?fit=${encodeURIComponent(packet.symbol)}">Review fit</a>
         <a class="link-editorial" href="#copilot?intent=investment-fit">Discuss in Copilot</a>
+        <a class="link-editorial" href="#research?dossiers=1">Dossiers</a>
         ${packetId ? html`<span class="marginalia">${packetId}</span>` : ''}
       </div>
     </footer>
@@ -190,6 +220,9 @@ export function renderCompareSurface(compare, packets = []) {
         ${items.slice(0, 4).map(item => raw(renderCompareRankItem(item, summary)))}
       </div>
       ${raw(renderListPanel('Warnings', warnings))}
+      <div class="entry-actions">
+        <a class="action-link muted" href="#research?dossiers=1">Dossiers <span class="arrow">→</span></a>
+      </div>
     </section>
 
     <section class="research-compare-packets" aria-label="Compare evidence packets">
@@ -201,6 +234,123 @@ export function renderCompareSurface(compare, packets = []) {
       ))}
     </section>
   `;
+}
+
+export function renderDossierLookupSurface(lookup = {}) {
+  const items = Array.isArray(lookup.items) ? lookup.items : [];
+  const warnings = Array.isArray(lookup.warnings) ? lookup.warnings : [];
+  return html`
+    <section class="hero-stack research-hero">
+      <span class="hero-eyebrow">Research dossiers</span>
+      <h1 class="hero-number">Saved evidence</h1>
+      <p class="hero-marginalia">Saved research artifacts preserve thesis context, packet citations, and the trail back to provider evidence.</p>
+    </section>
+
+    <section class="research-packet" aria-label="Research dossiers">
+      <header class="section-head">
+        <span class="section-eyebrow">${lookup.plan_id || 'active plan'} · ${lookup.count ?? items.length} dossier${(lookup.count ?? items.length) === 1 ? '' : 's'}</span>
+        <h2 class="section-title">Dossier lookup</h2>
+      </header>
+      ${items.length ? html`
+        <div class="research-dossier-list">
+          ${items.map(item => raw(renderDossierLookupItem(item)))}
+        </div>
+      ` : html`<p class="fit-empty">No saved research dossiers found for this plan.</p>`}
+      ${raw(renderListPanel('Warnings', warnings))}
+    </section>
+  `;
+}
+
+function renderDossierLookupItem(item = {}) {
+  const citations = parsePacketCitations(item.content_preview || '');
+  const symbols = Array.isArray(item.symbols) ? item.symbols.filter(Boolean) : [];
+  const planId = String(item.plan_id || '').trim();
+  const artifactId = String(item.artifact_id || '').trim();
+  const href = artifactId && planId
+    ? `#research?dossier=${encodeURIComponent(artifactId)}&plan=${encodeURIComponent(planId)}`
+    : '#research?dossiers=1';
+  return html`
+    <article class="research-dossier-item">
+      <span>${fmtTimeShort(item.created_at) || item.file_name || 'Saved dossier'}</span>
+      <h3>${item.title || artifactId || 'Research dossier'}</h3>
+      ${symbols.length ? html`<p>${symbols.join(' · ')}</p>` : ''}
+      <p>${citations.length} packet citation${citations.length === 1 ? '' : 's'}</p>
+      <a class="action-link muted" href="${href}">Open dossier <span class="arrow">→</span></a>
+    </article>
+  `;
+}
+
+export function renderDossierDetail(artifact = {}, { planId = '' } = {}) {
+  const content = String(artifact.content || '');
+  const citations = parsePacketCitations(content);
+  const symbols = Array.from(new Set(citations.map(citation => citation.symbol).filter(Boolean)));
+  return html`
+    <section class="hero-stack research-hero">
+      <span class="hero-eyebrow">Dossier detail</span>
+      <h1 class="hero-number">${symbols.join(' / ') || 'Dossier'}</h1>
+      <p class="hero-marginalia">${artifact.title || artifact.file_name || 'Saved research artifact'}</p>
+    </section>
+
+    <section class="research-packet" aria-label="Research dossier detail">
+      <header class="section-head">
+        <span class="section-eyebrow">${planId || 'plan'} · ${fmtTimeShort(artifact.created_at) || 'saved artifact'}</span>
+        <h2 class="section-title">${artifact.title || 'Research dossier'}</h2>
+      </header>
+      ${citations.length ? html`
+        <div class="fit-list">
+          <h3>Packet citations</h3>
+          <ul>${citations.map(citation => html`<li>${raw(renderPacketCitation(citation))}</li>`)}</ul>
+        </div>
+      ` : ''}
+      ${symbols.length >= 2 ? html`
+        <div class="entry-actions">
+          <a class="action-link muted" href="#research?compare=${encodeURIComponent(symbols.slice(0, 4).join(','))}">
+            Compare cited symbols <span class="arrow">→</span>
+          </a>
+        </div>
+      ` : ''}
+      <article class="research-dossier-markdown">
+        ${raw(renderMarkdown(content))}
+      </article>
+    </section>
+  `;
+}
+
+function renderPacketCitation(citation) {
+  const href = citation.symbol && citation.packet_id
+    ? `#research?symbol=${encodeURIComponent(citation.symbol)}&packet=${encodeURIComponent(citation.packet_id)}`
+    : '#research';
+  const meta = [
+    citation.provider,
+    titleCase(citation.freshness),
+    titleCase(citation.confidence),
+    citation.coverage,
+  ].filter(Boolean).join(' · ');
+  return html`
+    <a href="${href}">${citation.packet_id}</a>
+    <span>${citation.symbol}${meta ? ` · ${meta}` : ''}</span>
+  `;
+}
+
+function parsePacketCitations(markdown) {
+  const lines = String(markdown || '').split(/\r?\n/);
+  const citations = [];
+  for (const line of lines) {
+    if (!line.includes('research-evidence:')) continue;
+    const cells = line.split('|').slice(1, -1).map(cell => cell.trim());
+    const packetIndex = cells.findIndex(cell => cell.startsWith('research-evidence:'));
+    if (packetIndex < 0) continue;
+    citations.push({
+      symbol: String(cells[0] || '').trim().toUpperCase(),
+      packet_id: cells[packetIndex],
+      provider: cells[packetIndex + 1] || '',
+      freshness: cells[packetIndex + 2] || '',
+      confidence: cells[packetIndex + 3] || '',
+      coverage: cells[packetIndex + 4] || '',
+      blocking_gaps: cells[packetIndex + 5] || '',
+    });
+  }
+  return citations.slice(0, 12);
 }
 
 export function renderEvidencePacketCard(packet) {

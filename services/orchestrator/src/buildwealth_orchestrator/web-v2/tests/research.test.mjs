@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import {
   normalizeCompareSymbols,
+  renderDossierDetail,
+  renderDossierLookupSurface,
   renderCompareSurface,
   renderEvidencePacket,
   renderResearchEmpty,
@@ -175,6 +177,64 @@ test('research compare normalizes and bounds symbols', () => {
   );
 });
 
+test('research view renders saved dossier lookup rows', () => {
+  const markup = String(renderDossierLookupSurface({
+    plan_id: 'plan-1',
+    count: 1,
+    items: [
+      {
+        artifact_id: 'artifact-dossier',
+        file_name: '2026-research-dossier-nvda-msft.md',
+        title: 'Research Dossier - NVDA vs MSFT',
+        created_at: '2026-04-28T12:00:00Z',
+        plan_id: 'plan-1',
+        symbols: ['NVDA', 'MSFT'],
+        content_preview: '## Evidence Packets\n\n| Symbol | Packet | Provider | Freshness | Confidence | Coverage | Blocking gaps |\n| --- | --- | --- | --- | --- | ---: | --- |\n| NVDA | research-evidence:yfinance:NVDA:6mo:1d | yfinance | fresh | high | 100% | none |',
+      },
+    ],
+    warnings: [],
+  }));
+
+  assert.match(markup, /Research dossiers/);
+  assert.match(markup, /Research Dossier - NVDA vs MSFT/);
+  assert.match(markup, /NVDA · MSFT/);
+  assert.match(markup, /1 packet citation/);
+  assert.match(markup, /href="#research\?dossier=artifact-dossier&amp;plan=plan-1"/);
+  assert.doesNotMatch(markup, /classic/i);
+});
+
+test('research view renders dossier detail with packet citation links', () => {
+  const markup = String(renderDossierDetail({
+    id: 'artifact-dossier',
+    file_name: '2026-research-dossier-nvda-msft.md',
+    title: 'Research Dossier - NVDA vs MSFT',
+    created_at: '2026-04-28T12:00:00Z',
+    content: [
+      '# Research Dossier: NVDA vs MSFT',
+      '',
+      '## Thesis',
+      '',
+      'Compare AI infrastructure exposure.',
+      '',
+      '## Evidence Packets',
+      '',
+      '| Symbol | Packet | Provider | Freshness | Confidence | Coverage | Blocking gaps |',
+      '| --- | --- | --- | --- | --- | ---: | --- |',
+      '| NVDA | research-evidence:yfinance:NVDA:6mo:1d | yfinance | fresh | high | 100% | none |',
+      '| MSFT | research-evidence:yfinance:MSFT:6mo:1d | yfinance | fresh | high | 100% | none |',
+    ].join('\n'),
+  }, { planId: 'plan-1' }));
+
+  assert.match(markup, /Dossier detail/);
+  assert.match(markup, /Research Dossier - NVDA vs MSFT/);
+  assert.match(markup, /Packet citations/);
+  assert.match(markup, /research-evidence:yfinance:NVDA:6mo:1d/);
+  assert.match(markup, /href="#research\?symbol=NVDA&amp;packet=research-evidence%3Ayfinance%3ANVDA%3A6mo%3A1d"/);
+  assert.match(markup, /href="#research\?compare=NVDA%2CMSFT"/);
+  assert.match(markup, /Compare AI infrastructure exposure\./);
+  assert.doesNotMatch(markup, /buy/i);
+});
+
 test('research view renders an empty state without classic fallback copy', () => {
   const markup = String(renderResearchEmpty());
 
@@ -190,8 +250,12 @@ test('research view and app wire packet endpoint and route', () => {
 
   assert.match(apiSource, /researchEvidencePacket/);
   assert.match(apiSource, /researchCompare/);
+  assert.match(apiSource, /researchDossiers/);
+  assert.match(apiSource, /planArtifact/);
   assert.match(apiSource, /\/api\/research\/evidence-packet/);
   assert.match(apiSource, /\/api\/research\/compare/);
+  assert.match(apiSource, /\/api\/research\/dossiers/);
+  assert.match(apiSource, /\/api\/plans\/.*artifacts/);
   assert.match(appSource, /views\/research\.js/);
   assert.match(appSource, /research/);
 });

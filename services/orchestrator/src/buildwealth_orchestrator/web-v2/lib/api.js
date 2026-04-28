@@ -55,6 +55,14 @@ function recommendationsUrl({ status = '', planId = '', sort = 'ranked', limit =
   return `/api/recommendations?${params.toString()}`;
 }
 
+function researchDossiersUrl({ planId = '', limit = 10, includeContent = false } = {}) {
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  if (planId) params.set('plan_id', planId);
+  if (includeContent) params.set('include_content', 'true');
+  return `/api/research/dossiers?${params.toString()}`;
+}
+
 export const api = {
   today:        () => fetchJson('/api/dashboard/today'),
   refreshTodayResearch: () => postJson('/api/dashboard/today/research-readiness/refresh', {}),
@@ -71,6 +79,8 @@ export const api = {
   portfolioFit: (body) => postJson('/api/portfolio/fit-assessment', body),
   researchEvidencePacket: (body) => postJson('/api/research/evidence-packet', body),
   researchCompare: (body) => postJson('/api/research/compare', body),
+  researchDossiers: (opts = {}) => fetchJson(researchDossiersUrl(opts)),
+  planArtifact: (planId, artifactId) => fetchJson(`/api/plans/${encodeURIComponent(planId)}/artifacts/${encodeURIComponent(artifactId)}`),
   profile:      () => fetchJson('/api/financial-profile'),
   updateProfile: (body) => putJson('/api/financial-profile', body),
   onboarding:   () => fetchJson('/api/onboarding/status'),

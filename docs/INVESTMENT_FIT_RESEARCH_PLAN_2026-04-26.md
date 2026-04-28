@@ -527,6 +527,7 @@ Current progress:
 
 - v2 Research has a packet-native evidence view at `#research?symbol=...`.
 - v2 Research has a small-set compare view at `#research?compare=NVDA,MSFT` that calls the compare contract for ranking context while rendering each symbol through evidence packet cards.
+- v2 Research has saved dossier lookup/detail at `#research?dossiers=1` and `#research?dossier=...`, with packet citations parsed from saved plan artifacts and linked back to packet evidence.
 - Inbox investment/research rows now route research and compare links into v2 Research instead of the classic research route.
 - v2 Portfolio fit review and Copilot investment-fit trace cards link evidence packet ids into v2 Research.
 
