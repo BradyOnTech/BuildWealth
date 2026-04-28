@@ -39,6 +39,12 @@ class FinancialProfileStore:
                 "state_tax_rate": None,
                 "state": None,
             },
+            "investment_policy": {
+                "max_single_symbol_exposure_pct": None,
+                "minimum_research_confidence": None,
+                "tax_sensitivity": None,
+                "risk_tolerance": None,
+            },
             "flags": {
                 "no_debt": False,
                 "no_goals": False,
@@ -120,6 +126,13 @@ class FinancialProfileStore:
         tax_defaults = self._default_payload()["tax_profile"]
         tax_defaults.update(tax_profile)
         defaults["tax_profile"] = tax_defaults
+
+        investment_policy = defaults.get("investment_policy")
+        if not isinstance(investment_policy, dict):
+            investment_policy = {}
+        policy_defaults = self._default_payload()["investment_policy"]
+        policy_defaults.update(investment_policy)
+        defaults["investment_policy"] = policy_defaults
 
         flags = defaults.get("flags")
         if not isinstance(flags, dict):

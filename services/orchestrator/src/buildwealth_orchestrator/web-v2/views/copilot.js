@@ -570,6 +570,9 @@ function mergeProfileDraft(current, patch) {
   if (patch?.tax_profile && typeof patch.tax_profile === 'object') {
     merged.tax_profile = { ...(merged.tax_profile || {}), ...patch.tax_profile };
   }
+  if (patch?.investment_policy && typeof patch.investment_policy === 'object') {
+    merged.investment_policy = { ...(merged.investment_policy || {}), ...patch.investment_policy };
+  }
   if (patch?.flags && typeof patch.flags === 'object') {
     merged.flags = { ...(merged.flags || {}), ...patch.flags };
   }

@@ -59,6 +59,33 @@ def test_portfolio_fit_flags_concentration_conflict_for_existing_large_holding()
     assert result.evidence["packet_id"] == "research-evidence:yfinance:AAPL:6mo:1d"
 
 
+def test_portfolio_fit_uses_personal_investment_policy_single_symbol_cap() -> None:
+    result = assess_portfolio_fit(
+        symbol="MSFT",
+        amount_usd=20_000.0,
+        evidence_packet=_packet("MSFT"),
+        snapshot=_snapshot(),
+        holdings_payload={
+            "risk_policy": {"thresholds": {"single_holding_max_pct": 35.0}},
+            "investment_policy": {
+                "max_single_symbol_exposure_pct": 10.0,
+                "minimum_research_confidence": "medium",
+            },
+            "total_cash": 50_000.0,
+        },
+        profile_readiness_payload={"status": "ready", "completion_percent": 100.0},
+        emergency_fund_months=8.0,
+    )
+
+    assert result.fit_status == "does_not_fit"
+    assert result.recommended_next_step == "review_concentration"
+    assert "concentration" in result.blocking_gaps
+    assert result.portfolio_impact["single_holding_max_pct"] == 10.0
+    assert result.portfolio_impact["single_holding_policy_source"] == "profile.investment_policy"
+    assert result.portfolio_impact["simulated_symbol_weight_pct"] == 16.67
+    assert any("personal policy cap is 10.0%" in risk for risk in result.fit_risks)
+
+
 def test_portfolio_fit_includes_account_location_and_tax_lot_context() -> None:
     result = assess_portfolio_fit(
         symbol="AAPL",
@@ -287,6 +314,10 @@ def test_build_portfolio_fit_assessment_payload_assembles_context(monkeypatch) -
             "expense_items": [{"id": "expense-1"}],
             "goal_items": [{"id": "goal-1"}],
             "physical_assets": [{"id": "asset-1"}],
+            "investment_policy": {
+                "max_single_symbol_exposure_pct": 12.0,
+                "minimum_research_confidence": "medium",
+            },
             "flags": {"no_debt": True},
             "tax_profile": {"filing_status": "single", "marginal_tax_rate": 0.24},
         },
@@ -309,6 +340,8 @@ def test_build_portfolio_fit_assessment_payload_assembles_context(monkeypatch) -
     assert result.symbol == "MSFT"
     assert result.evidence["packet_id"] == "research-evidence:yfinance:MSFT:6mo:1d"
     assert result.portfolio_impact["amount_usd"] == 2_000.0
+    assert result.portfolio_impact["single_holding_max_pct"] == 12.0
+    assert result.portfolio_impact["single_holding_policy_source"] == "profile.investment_policy"
     assert result.plan_impact["plan_id"] == "plan-long"
     assert result.plan_impact["time_horizon"] == "long"
     assert result.recommended_next_step == "simulate_trade"

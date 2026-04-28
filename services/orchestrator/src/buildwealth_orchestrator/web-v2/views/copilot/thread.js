@@ -146,6 +146,7 @@ function renderPortfolioFitCard(result) {
     renderFitMeta('Evidence', formatEvidenceStatus(evidence)),
     renderFitMeta('Plan horizon', formatPlanHorizon(plan)),
     renderFitMeta('Position', formatPortfolioPosition(portfolio)),
+    renderFitMeta('Policy cap', formatPolicyCap(portfolio)),
     renderFitMeta('Account location', formatAccountLocationSummary(portfolio.account_location)),
   ].filter(Boolean);
 
@@ -228,6 +229,7 @@ function renderProfileDraftCard(result) {
     renderItemSection('Debt items', profile.debt_items, 'balance_usd'),
     renderGoalSection(profile.goal_items),
     renderTaxSection(profile.tax_profile),
+    renderInvestmentPolicySection(profile.investment_policy),
     renderPhysicalAssetSection(profile.physical_assets),
   ].filter(Boolean);
   const flagLine = profile.flags?.no_debt
@@ -353,6 +355,34 @@ function renderTaxSection(taxProfile) {
   `;
 }
 
+function renderInvestmentPolicySection(policy) {
+  if (!policy || typeof policy !== 'object') return '';
+  const maxSingle = policy.max_single_symbol_exposure_pct;
+  const confidence = String(policy.minimum_research_confidence || '').trim();
+  const taxSensitivity = String(policy.tax_sensitivity || '').trim();
+  const riskTolerance = String(policy.risk_tolerance || '').trim();
+  if (maxSingle == null && !confidence && !taxSensitivity && !riskTolerance) return '';
+
+  const details = [
+    maxSingle != null ? `Max single symbol ${Number(maxSingle).toFixed(0)}%` : '',
+    confidence ? `Research confidence ${titleCase(confidence)}` : '',
+    taxSensitivity ? `Tax sensitivity ${titleCase(taxSensitivity)}` : '',
+    riskTolerance ? `Risk ${titleCase(riskTolerance)}` : '',
+  ].filter(Boolean);
+
+  return html`
+    <div class="profile-draft-section">
+      <p class="profile-draft-section-title">Investment policy</p>
+      <ul>
+        <li class="profile-draft-tax">
+          <span>Rules of the road</span>
+          ${details.length ? html`<p class="profile-draft-meta">${details.join(' · ')}</p>` : ''}
+        </li>
+      </ul>
+    </div>
+  `;
+}
+
 function formatGoalDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
@@ -404,6 +434,16 @@ function formatPortfolioPosition(portfolio) {
   if (portfolio.existing_position === false) return 'Not held';
   if (portfolio.existing_position === true) return 'Held';
   return '';
+}
+
+function formatPolicyCap(portfolio) {
+  if (!portfolio || typeof portfolio !== 'object') return '';
+  const cap = Number(portfolio.single_holding_max_pct);
+  if (!Number.isFinite(cap)) return '';
+  const source = portfolio.single_holding_policy_source === 'profile.investment_policy'
+    ? 'Personal policy'
+    : 'Portfolio policy';
+  return `${cap.toLocaleString('en-US', { maximumFractionDigits: 1 })}% · ${source}`;
 }
 
 function formatAccountLocationSummary(accountLocation) {

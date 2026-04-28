@@ -1163,6 +1163,13 @@ class TaxProfile(BaseModel):
     state: str | None = None
 
 
+class InvestmentPolicy(BaseModel):
+    max_single_symbol_exposure_pct: float | None = Field(default=None, ge=0, le=100)
+    minimum_research_confidence: Literal["low", "medium", "high"] | None = None
+    tax_sensitivity: Literal["low", "medium", "high"] | None = None
+    risk_tolerance: Literal["conservative", "moderate", "aggressive"] | None = None
+
+
 class ProfileFlags(BaseModel):
     no_debt: bool = False
     no_goals: bool = False
@@ -1184,6 +1191,7 @@ class FinancialProfileRequest(BaseModel):
     goal_items: list[GoalItem] = Field(default_factory=list)
     physical_assets: list[PhysicalAssetItem] = Field(default_factory=list)
     tax_profile: TaxProfile = Field(default_factory=TaxProfile)
+    investment_policy: InvestmentPolicy = Field(default_factory=InvestmentPolicy)
     flags: ProfileFlags = Field(default_factory=ProfileFlags)
     notes: str = ""
 

@@ -181,6 +181,7 @@ def test_draft_financial_profile_update_tool_contract() -> None:
     assert "goal_items" in properties
     assert "physical_assets" in properties
     assert "tax_profile" in properties
+    assert "investment_policy" in properties
     assert "flags" in properties
     assert "notes" in properties
 
@@ -395,6 +396,44 @@ def test_tool_draft_financial_profile_update_generates_missing_item_ids(
     assert payload["patch_payload"]["goal_items"][0]["id"].startswith("goal-")
     assert payload["proposed_profile"]["income_items"][0]["id"].startswith("income-")
     assert payload["proposed_profile"]["goal_items"][0]["id"].startswith("goal-")
+
+
+def test_tool_draft_financial_profile_update_supports_investment_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeProfileStore:
+        def get(self) -> dict[str, object]:
+            return {
+                "schema_version": 2,
+                "income_items": [],
+                "expense_items": [],
+                "debt_items": [],
+                "goal_items": [],
+                "physical_assets": [],
+                "tax_profile": {},
+                "investment_policy": {},
+                "flags": {"no_debt": False, "no_goals": False},
+                "notes": "",
+                "updated_at": "2026-04-26T12:00:00+00:00",
+            }
+
+    monkeypatch.setattr(main, "financial_profile_store", FakeProfileStore())
+
+    payload = asyncio.run(
+        main.tool_draft_financial_profile_update(
+            {
+                "investment_policy": {
+                    "max_single_symbol_exposure_pct": 10.0,
+                    "minimum_research_confidence": "medium",
+                    "tax_sensitivity": "high",
+                },
+            }
+        )
+    )
+
+    assert payload["section_counts"] == {"investment_policy": 3}
+    assert payload["patch_payload"]["investment_policy"]["max_single_symbol_exposure_pct"] == 10.0
+    assert payload["proposed_profile"]["investment_policy"]["minimum_research_confidence"] == "medium"
 
 
 def test_pin_watchlist_research_tool_contract() -> None:

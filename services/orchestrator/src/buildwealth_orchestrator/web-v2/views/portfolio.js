@@ -163,6 +163,12 @@ export function renderFitResult(result) {
           <dt>Position</dt>
           <dd>${impact.existing_position ? `${Number(impact.current_weight_pct || 0).toFixed(1)}% held` : 'Not held'}</dd>
         </div>
+        ${formatPolicyCap(impact) ? html`
+          <div>
+            <dt>Policy cap</dt>
+            <dd>${formatPolicyCap(impact)}</dd>
+          </div>
+        ` : ''}
         <div>
           <dt>Account location</dt>
           <dd>${formatTaxTreatments(accountLocation)}</dd>
@@ -227,6 +233,15 @@ function formatTaxTreatments(accountLocation = {}) {
   if (treatments.length) return treatments.map(labelize).join(', ');
   if (accountLocation.tax_lot_coverage === 'missing') return 'Tax lots missing';
   return 'Not available';
+}
+
+function formatPolicyCap(portfolioImpact = {}) {
+  const cap = Number(portfolioImpact.single_holding_max_pct);
+  if (!Number.isFinite(cap)) return '';
+  const source = portfolioImpact.single_holding_policy_source === 'profile.investment_policy'
+    ? 'Personal policy'
+    : 'Portfolio policy';
+  return `${cap.toLocaleString('en-US', { maximumFractionDigits: 1 })}% · ${source}`;
 }
 
 function renderBullets(label, items = []) {

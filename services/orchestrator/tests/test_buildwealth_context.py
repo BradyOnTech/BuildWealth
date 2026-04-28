@@ -291,6 +291,7 @@ def test_shape_context_payload_light_reduces_heavy_sections() -> None:
                 "goal_items": [{"name": "Emergency"}],
                 "physical_assets": [{"name": "Home"}],
                 "tax_profile": {"filing_status": "single"},
+                "investment_policy": {"max_single_symbol_exposure_pct": 10},
                 "flags": {"ready": True},
             },
             "watchlist": {
@@ -379,6 +380,9 @@ def test_shape_context_payload_light_reduces_heavy_sections() -> None:
     assert "points" not in shaped["financial_picture"]["snapshot_history"]
     assert "income_items" not in shaped["financial_picture"]["financial_profile"]
     assert shaped["financial_picture"]["financial_profile"]["income_items_count"] == 1
+    assert shaped["financial_picture"]["financial_profile"]["investment_policy"] == {
+        "max_single_symbol_exposure_pct": 10
+    }
     assert "settings" not in shaped["planning"]["active_plan"]
     assert len(shaped["planning"]["tracking"]["warnings"]) == 3
     assert shaped["planning"]["branch_templates"]["templates_count"] == 1

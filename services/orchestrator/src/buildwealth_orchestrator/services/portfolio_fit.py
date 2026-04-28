@@ -30,6 +30,15 @@ def _threshold(holdings_payload: dict[str, Any], key: str, default: float) -> fl
     return _safe_float(thresholds.get(key), default) if isinstance(thresholds, dict) else default
 
 
+def _single_symbol_policy(holdings_payload: dict[str, Any]) -> tuple[float, str]:
+    investment_policy = holdings_payload.get("investment_policy") if isinstance(holdings_payload, dict) else {}
+    if isinstance(investment_policy, dict):
+        profile_cap = _safe_float(investment_policy.get("max_single_symbol_exposure_pct"), 0.0)
+        if profile_cap > 0:
+            return profile_cap, "profile.investment_policy"
+    return _threshold(holdings_payload, "single_holding_max_pct", 35.0), "portfolio.risk_policy"
+
+
 def _evidence_summary(packet: ResearchEvidencePacket | None) -> dict[str, Any]:
     if packet is None:
         return {"available": False}
@@ -345,12 +354,13 @@ def assess_portfolio_fit(
         if holding is not None and snapshot.total_value_usd > 0:
             current_weight_pct = round((holding.value_usd / snapshot.total_value_usd) * 100.0, 2)
 
-        max_single_pct = _threshold(holdings_payload, "single_holding_max_pct", 35.0)
+        max_single_pct, max_single_source = _single_symbol_policy(holdings_payload)
         portfolio_impact.update(
             {
                 "existing_position": existing_position,
                 "current_weight_pct": current_weight_pct,
                 "single_holding_max_pct": max_single_pct,
+                "single_holding_policy_source": max_single_source,
                 "amount_usd": amount_usd,
             }
         )
@@ -387,10 +397,20 @@ def assess_portfolio_fit(
                 action="buy",
                 amount_usd=float(amount_usd),
             )
+            simulated_symbol = next(
+                (
+                    row
+                    for row in simulation.top_holdings
+                    if str(row.symbol or "").strip().upper() == normalized_symbol
+                ),
+                None,
+            )
+            simulated_symbol_weight = simulated_symbol.new_allocation_pct if simulated_symbol else None
             portfolio_impact.update(
                 {
                     "simulated_new_top_holding_symbol": simulation.new_top_holding_symbol,
                     "simulated_new_top_holding_pct": simulation.new_top_holding_pct,
+                    "simulated_symbol_weight_pct": simulated_symbol_weight,
                     "simulated_concentration_change": simulation.concentration_change,
                     "simulated_new_concentration_risk": simulation.new_concentration_risk,
                     "simulation_highlights": simulation.highlights,
@@ -398,6 +418,13 @@ def assess_portfolio_fit(
             )
             if simulation.concentration_change == "worsened":
                 fit_risks.append("Simulated trade worsens concentration risk.")
+            if simulated_symbol_weight is not None and simulated_symbol_weight >= max_single_pct:
+                blocking_gaps.append("concentration")
+                if max_single_source == "profile.investment_policy":
+                    fit_risks.append(
+                        f"{normalized_symbol} would reach {simulated_symbol_weight:.1f}% of the portfolio; "
+                        f"personal policy cap is {max_single_pct:.1f}%."
+                    )
 
     if not fit_reasons and evidence.get("freshness_status") == "fresh":
         fit_reasons.append("Research evidence is fresh enough for a preliminary fit review.")

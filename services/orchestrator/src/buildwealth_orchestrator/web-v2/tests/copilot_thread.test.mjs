@@ -49,6 +49,11 @@ test('copilot thread renders financial profile draft review card', () => {
                   marginal_tax_rate: 0.24,
                   state: 'MN',
                 },
+                investment_policy: {
+                  max_single_symbol_exposure_pct: 10,
+                  minimum_research_confidence: 'medium',
+                  tax_sensitivity: 'high',
+                },
                 flags: { no_debt: true },
                 notes: '',
               },
@@ -78,6 +83,10 @@ test('copilot thread renders financial profile draft review card', () => {
   assert.match(html, /Tax profile/);
   assert.match(html, /Married filing jointly/);
   assert.match(html, /Marginal 24% · State MN/);
+  assert.match(html, /Investment policy/);
+  assert.match(html, /Max single symbol 10%/);
+  assert.match(html, /Research confidence Medium/);
+  assert.match(html, /Tax sensitivity High/);
   assert.match(html, /No debt/);
   assert.match(html, /data-profile-draft=/);
   assert.match(html, /Apply profile update/);
@@ -120,6 +129,8 @@ test('copilot thread renders portfolio fit tool results as review cards', () => 
               portfolio_impact: {
                 existing_position: true,
                 current_weight_pct: 40,
+                single_holding_max_pct: 10,
+                single_holding_policy_source: 'profile.investment_policy',
                 account_location: {
                   status: 'partial',
                   tax_lot_coverage: 'missing',
@@ -149,6 +160,7 @@ test('copilot thread renders portfolio fit tool results as review cards', () => 
   assert.match(html, /Fresh · High/);
   assert.match(html, /Long · 25y/);
   assert.match(html, /40% held/);
+  assert.match(html, /10% · Personal policy/);
   assert.match(html, /Taxable · Tax lots missing/);
   assert.match(html, /Taxable Brokerage · Taxable · \$12,500 gain\/loss/);
   assert.match(html, /href="#research\?symbol=NVDA&amp;packet=research-evidence%3Ayfinance%3ANVDA%3A6mo%3A1d"/);

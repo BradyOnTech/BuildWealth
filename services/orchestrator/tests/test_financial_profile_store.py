@@ -15,6 +15,8 @@ def test_financial_profile_store_defaults(tmp_path: Path) -> None:
     assert payload["physical_assets"] == []
     assert payload["tax_profile"]["filing_status"] is None
     assert payload["tax_profile"]["state_tax_rate"] is None
+    assert payload["investment_policy"]["max_single_symbol_exposure_pct"] is None
+    assert payload["investment_policy"]["minimum_research_confidence"] is None
     assert payload["flags"]["no_debt"] is False
     assert payload["updated_at"]
 
@@ -36,6 +38,23 @@ def test_financial_profile_store_save_generates_ids(tmp_path: Path) -> None:
     assert saved["debt_items"][0]["id"].startswith("debt-")
     assert saved["goal_items"][0]["id"].startswith("goal-")
     assert saved["physical_assets"][0]["id"].startswith("asset-")
+
+
+def test_financial_profile_store_saves_investment_policy(tmp_path: Path) -> None:
+    store = FinancialProfileStore(tmp_path / "financial_profile.json")
+    saved = store.save(
+        {
+            "investment_policy": {
+                "max_single_symbol_exposure_pct": 10.0,
+                "minimum_research_confidence": "medium",
+                "tax_sensitivity": "high",
+            },
+        }
+    )
+
+    assert saved["investment_policy"]["max_single_symbol_exposure_pct"] == 10.0
+    assert saved["investment_policy"]["minimum_research_confidence"] == "medium"
+    assert saved["investment_policy"]["tax_sensitivity"] == "high"
 
 
 def test_financial_profile_store_migrates_legacy_payload(tmp_path: Path) -> None:
@@ -61,3 +80,4 @@ def test_financial_profile_store_migrates_legacy_payload(tmp_path: Path) -> None
     assert payload["debt_items"][0]["payoff_strategy"] == "minimum"
     assert payload["debt_items"][0]["custom_monthly_payment_usd"] is None
     assert payload["physical_assets"] == []
+    assert payload["investment_policy"]["max_single_symbol_exposure_pct"] is None

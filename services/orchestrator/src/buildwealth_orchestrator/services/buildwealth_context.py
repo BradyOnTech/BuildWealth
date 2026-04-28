@@ -585,6 +585,11 @@ def shape_context_payload(
                     if isinstance(financial_profile.get("tax_profile"), dict)
                     else {}
                 ),
+                "investment_policy": (
+                    financial_profile.get("investment_policy")
+                    if isinstance(financial_profile.get("investment_policy"), dict)
+                    else {}
+                ),
                 "flags": (
                     financial_profile.get("flags")
                     if isinstance(financial_profile.get("flags"), dict)

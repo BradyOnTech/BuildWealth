@@ -27,6 +27,7 @@ def test_onboarding_status_complete_path() -> None:
             "debt_items": [],
             "goal_items": [{"id": "goal-1", "label": "FI", "target_amount_usd": 1200000}],
             "tax_profile": {"filing_status": "single", "marginal_tax_rate": 0.24},
+            "investment_policy": {"max_single_symbol_exposure_pct": 10},
             "flags": {"no_debt": True, "no_goals": False},
             "notes": "",
         },
@@ -50,6 +51,12 @@ def test_onboarding_status_complete_path() -> None:
     assert status.profile_readiness.status == "ready"
     assert status.profile_readiness.next_gap_key is None
     assert status.profile_readiness.blocking_recommendation_sources == []
+    assert any(
+        section.key == "investment_policy"
+        and section.status == "complete"
+        and "10%" in section.detail
+        for section in status.profile_readiness.sections
+    )
 
 
 def test_onboarding_status_incomplete_path() -> None:
@@ -76,3 +83,9 @@ def test_onboarding_status_incomplete_path() -> None:
     assert status.profile_readiness.next_gap_key == "income"
     assert "profile_completeness" in status.profile_readiness.blocking_recommendation_sources
     assert any(section.key == "tax_profile" for section in status.profile_readiness.sections)
+    assert any(
+        section.key == "investment_policy"
+        and section.status == "attention"
+        and section.blocking_recommendations is False
+        for section in status.profile_readiness.sections
+    )

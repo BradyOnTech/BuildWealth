@@ -6671,9 +6671,17 @@ def _build_profile_readiness_summary(
     physical_assets: list[Any],
     flags: dict[str, Any],
     tax_profile: dict[str, Any],
+    investment_policy: dict[str, Any],
 ) -> ProfileReadinessSummary:
     filing_status = str(tax_profile.get("filing_status") or "").strip()
     marginal_tax_rate = tax_profile.get("marginal_tax_rate")
+    single_symbol_cap = investment_policy.get("max_single_symbol_exposure_pct")
+    single_symbol_cap_value: float | None
+    try:
+        single_symbol_cap_value = float(single_symbol_cap)
+    except (TypeError, ValueError):
+        single_symbol_cap_value = None
+    policy_complete = single_symbol_cap_value is not None
 
     sections = [
         ProfileReadinessSection(
@@ -6733,6 +6741,18 @@ def _build_profile_readiness_summary(
             blocking_recommendations=not (filing_status and marginal_tax_rate is not None),
         ),
         ProfileReadinessSection(
+            key="investment_policy",
+            title="Investment policy",
+            status="complete" if policy_complete else "attention",
+            detail=(
+                f"Single-symbol exposure cap is {single_symbol_cap_value:g}%."
+                if policy_complete
+                else "Set personal investment guardrails such as max single-symbol exposure."
+            ),
+            required_for=["investment_fit", "recommendation_ranking", "research_review"],
+            blocking_recommendations=False,
+        ),
+        ProfileReadinessSection(
             key="physical_assets",
             title="Physical assets",
             status="complete" if physical_assets else "attention",
@@ -6787,6 +6807,11 @@ def build_onboarding_status_response(
     profile = profile_payload or get_financial_profile_payload()
     flags = profile.get("flags") if isinstance(profile.get("flags"), dict) else {}
     tax_profile = profile.get("tax_profile") if isinstance(profile.get("tax_profile"), dict) else {}
+    investment_policy = (
+        profile.get("investment_policy")
+        if isinstance(profile.get("investment_policy"), dict)
+        else {}
+    )
 
     if latest_snapshot is None and load_fallbacks:
         try:
@@ -6838,6 +6863,7 @@ def build_onboarding_status_response(
         physical_assets=physical_assets,
         flags=flags,
         tax_profile=tax_profile,
+        investment_policy=investment_policy,
     )
 
     steps.append(
@@ -8410,6 +8436,16 @@ def _build_financial_profile_update_draft(arguments: dict[str, object]) -> dict[
         patch_payload["tax_profile"] = tax_profile
         section_counts["tax_profile"] = len(tax_profile)
 
+    investment_policy = arguments.get("investment_policy")
+    if investment_policy is not None:
+        if not isinstance(investment_policy, dict):
+            raise ValueError("investment_policy must be an object")
+        merged_policy = dict(proposed_payload.get("investment_policy", {}))
+        merged_policy.update(investment_policy)
+        proposed_payload["investment_policy"] = merged_policy
+        patch_payload["investment_policy"] = investment_policy
+        section_counts["investment_policy"] = len(investment_policy)
+
     flags = arguments.get("flags")
     if flags is not None:
         if not isinstance(flags, dict):
@@ -8471,6 +8507,14 @@ async def tool_update_financial_profile(arguments: dict[str, object]) -> dict[st
         merged_tax = dict(profile_payload.get("tax_profile", {}))
         merged_tax.update(tax_profile)
         profile_payload["tax_profile"] = merged_tax
+
+    investment_policy = arguments.get("investment_policy")
+    if investment_policy is not None:
+        if not isinstance(investment_policy, dict):
+            raise ValueError("investment_policy must be an object")
+        merged_policy = dict(profile_payload.get("investment_policy", {}))
+        merged_policy.update(investment_policy)
+        profile_payload["investment_policy"] = merged_policy
 
     flags = arguments.get("flags")
     if flags is not None:
@@ -10715,6 +10759,7 @@ def configure_copilot_tools() -> None:
                 "goal_items": {"type": "array", "items": {"type": "object"}},
                 "physical_assets": {"type": "array", "items": {"type": "object"}},
                 "tax_profile": {"type": "object"},
+                "investment_policy": {"type": "object"},
                 "flags": {"type": "object"},
                 "notes": {"type": "string"},
             },
@@ -10727,7 +10772,7 @@ def configure_copilot_tools() -> None:
         description=(
             "Update financial profile collections and tax settings. "
             "You may provide any subset of income_items, expense_items, debt_items, goal_items, "
-            "physical_assets, tax_profile, flags, and notes. Only use after explicit user confirmation."
+            "physical_assets, tax_profile, investment_policy, flags, and notes. Only use after explicit user confirmation."
         ),
         parameters={
             "type": "object",
@@ -10738,6 +10783,7 @@ def configure_copilot_tools() -> None:
                 "goal_items": {"type": "array", "items": {"type": "object"}},
                 "physical_assets": {"type": "array", "items": {"type": "object"}},
                 "tax_profile": {"type": "object"},
+                "investment_policy": {"type": "object"},
                 "flags": {"type": "object"},
                 "notes": {"type": "string"},
             },
@@ -12802,6 +12848,14 @@ def build_portfolio_fit_assessment_payload(
         holdings_payload = {}
 
     profile_payload = get_financial_profile_payload()
+    investment_policy = (
+        profile_payload.get("investment_policy")
+        if isinstance(profile_payload.get("investment_policy"), dict)
+        else {}
+    )
+    if investment_policy:
+        holdings_payload = dict(holdings_payload)
+        holdings_payload["investment_policy"] = investment_policy
     profile_readiness = _build_profile_readiness_summary(
         income_items=profile_payload.get("income_items") if isinstance(profile_payload.get("income_items"), list) else [],
         expense_items=profile_payload.get("expense_items") if isinstance(profile_payload.get("expense_items"), list) else [],
@@ -12810,6 +12864,7 @@ def build_portfolio_fit_assessment_payload(
         physical_assets=profile_payload.get("physical_assets") if isinstance(profile_payload.get("physical_assets"), list) else [],
         flags=profile_payload.get("flags") if isinstance(profile_payload.get("flags"), dict) else {},
         tax_profile=profile_payload.get("tax_profile") if isinstance(profile_payload.get("tax_profile"), dict) else {},
+        investment_policy=investment_policy,
     )
 
     emergency_fund_months: float | None = None
