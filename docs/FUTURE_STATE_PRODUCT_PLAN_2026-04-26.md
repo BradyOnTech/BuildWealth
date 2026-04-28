@@ -17,6 +17,7 @@ Those documents remain useful as historical progress logs, implementation record
 
 Domain expansion plans:
 - [Investment Fit and Market Research Plan (2026-04-26)](./INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md)
+- [Fresh Product Ideas and Next Build Sequence (2026-04-28)](./FRESH_PRODUCT_IDEAS_AND_NEXT_SEQUENCE_2026-04-28.md)
 
 ## Product Thesis
 
@@ -565,6 +566,7 @@ Use older documents as follows:
 - `docs/STANDALONE_BUILD_PLAN.md`: historical standalone build plan and implementation progress record.
 - `docs/RECOMMENDATION_FACTORY_PLAN.md`: domain-specific recommendation factory design reference.
 - `docs/INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md`: investment-fit, market data, OpenBB, research evidence, and watchlist recommendation strategy.
+- `docs/FRESH_PRODUCT_IDEAS_AND_NEXT_SEQUENCE_2026-04-28.md`: newest idea backlog and agreed near-term build sequence.
 - `docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`: codebase quality and refactor guardrail reference.
 - `docs/ARCHITECTURE.md`: runtime architecture and system-of-record reference.
 - `docs/OPERATIONS_STANDALONE.md`: local operations reference.
