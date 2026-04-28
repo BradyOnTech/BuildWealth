@@ -37,6 +37,10 @@ test('portfolio fit result renders plan horizon and research evidence', () => {
       current_weight_pct: 12.5,
       single_holding_max_pct: 10,
       single_holding_policy_source: 'profile.investment_policy',
+      investment_policy: {
+        minimum_research_confidence: 'high',
+        tax_sensitivity: 'high',
+      },
       account_location: {
         status: 'known',
         tax_lot_coverage: 'known',
@@ -60,6 +64,7 @@ test('portfolio fit result renders plan horizon and research evidence', () => {
   assert.match(markup, /partial · medium/);
   assert.match(markup, /12\.5% held/);
   assert.match(markup, /10% · Personal policy/);
+  assert.match(markup, /Research High · Tax High/);
   assert.match(markup, /Taxable, Tax Free/);
   assert.match(markup, /Taxable Brokerage · Taxable · \$1,250 gain\/loss · Mixed lots/);
   assert.match(markup, /href="#research\?symbol=VTI&amp;packet=research-evidence%3Ayfinance%3AVTI%3A6mo%3A1d"/);

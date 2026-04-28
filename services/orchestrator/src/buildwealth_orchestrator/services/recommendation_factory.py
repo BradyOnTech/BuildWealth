@@ -1813,10 +1813,20 @@ def _watchlist_research_candidate(
         if isinstance(fit_payload.get("portfolio_impact"), dict)
         else {}
     )
+    investment_policy = (
+        portfolio_impact.get("investment_policy")
+        if isinstance(portfolio_impact.get("investment_policy"), dict)
+        else {}
+    )
     account_location = (
         portfolio_impact.get("account_location")
         if isinstance(portfolio_impact.get("account_location"), dict)
         else {}
+    )
+    fit_blocking_gaps = (
+        fit_payload.get("blocking_gaps")
+        if isinstance(fit_payload.get("blocking_gaps"), list)
+        else []
     )
 
     signal_key = ""
@@ -1854,6 +1864,24 @@ def _watchlist_research_candidate(
             "fit_status": fit_status,
             "next_step": recommended_next_step or "review_concentration",
         }
+    elif fit_status == "needs_more_context" and "research:confidence_policy" in fit_blocking_gaps:
+        signal_key = "policy_research_confidence"
+        title = f"Review {symbol} research confidence against policy"
+        minimum_confidence = str(investment_policy.get("minimum_research_confidence") or "").strip()
+        detail = (
+            f"{symbol} research evidence is below the personal policy confidence minimum"
+            f"{f' ({minimum_confidence})' if minimum_confidence else ''}. Review the evidence before relying on fit guidance."
+        )
+        priority = "medium"
+        actionability = "review_only"
+        suggested_action = {
+            "kind": "review_research_evidence",
+            "symbol": symbol,
+            "fit_status": fit_status,
+            "next_step": recommended_next_step or "research_more",
+            "policy_gap": "research:confidence_policy",
+        }
+        blocking_context = ["research.confidence_policy"]
     elif fit_status == "needs_more_context":
         signal_key = f"fit_needs_context:{recommended_next_step or 'unknown'}"
         title = f"Gather context before judging {symbol}"
@@ -1871,6 +1899,22 @@ def _watchlist_research_candidate(
             for gap in suggested_action["blocking_gaps"]
             if str(gap).strip()
         ]
+    elif "tax:policy_review" in fit_blocking_gaps:
+        signal_key = "policy_tax_sensitivity"
+        title = f"Review {symbol} tax-sensitive fit"
+        detail = (
+            f"{symbol} has taxable-account or tax-sensitive fit context under the personal investment policy. "
+            "Review tax friction before changing exposure."
+        )
+        priority = "medium"
+        actionability = "review_only"
+        suggested_action = {
+            "kind": "review_portfolio_fit",
+            "symbol": symbol,
+            "fit_status": fit_status,
+            "next_step": recommended_next_step or "discuss_in_copilot",
+            "policy_gap": "tax:policy_review",
+        }
     elif fit_status == "mixed":
         signal_key = "fit_mixed_review"
         title = f"Review fit tradeoffs for {symbol}"
@@ -1900,6 +1944,8 @@ def _watchlist_research_candidate(
         "fit_score": fit_payload.get("fit_score"),
         "fit_reasons": fit_payload.get("fit_reasons") if isinstance(fit_payload.get("fit_reasons"), list) else [],
         "fit_risks": fit_payload.get("fit_risks") if isinstance(fit_payload.get("fit_risks"), list) else [],
+        "fit_blocking_gaps": fit_blocking_gaps,
+        "investment_policy": investment_policy,
         "account_location": account_location,
         "provider_coverage": item.get("provider_coverage") if isinstance(item.get("provider_coverage"), dict) else {},
     }

@@ -131,6 +131,10 @@ test('copilot thread renders portfolio fit tool results as review cards', () => 
                 current_weight_pct: 40,
                 single_holding_max_pct: 10,
                 single_holding_policy_source: 'profile.investment_policy',
+                investment_policy: {
+                  minimum_research_confidence: 'high',
+                  tax_sensitivity: 'high',
+                },
                 account_location: {
                   status: 'partial',
                   tax_lot_coverage: 'missing',
@@ -161,6 +165,7 @@ test('copilot thread renders portfolio fit tool results as review cards', () => 
   assert.match(html, /Long · 25y/);
   assert.match(html, /40% held/);
   assert.match(html, /10% · Personal policy/);
+  assert.match(html, /Research High · Tax High/);
   assert.match(html, /Taxable · Tax lots missing/);
   assert.match(html, /Taxable Brokerage · Taxable · \$12,500 gain\/loss/);
   assert.match(html, /href="#research\?symbol=NVDA&amp;packet=research-evidence%3Ayfinance%3ANVDA%3A6mo%3A1d"/);

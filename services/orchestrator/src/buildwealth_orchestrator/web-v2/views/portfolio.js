@@ -140,6 +140,8 @@ export function renderFitResult(result) {
   const plan = result.plan_impact || {};
   const impact = result.portfolio_impact || {};
   const accountLocation = impact.account_location || {};
+  const policyCap = formatPolicyCap(impact);
+  const policyGuardrails = formatPolicyGuardrails(impact.investment_policy);
   return html`
     <article class="fit-result fit-${result.fit_status}">
       <div class="fit-result-head">
@@ -163,10 +165,16 @@ export function renderFitResult(result) {
           <dt>Position</dt>
           <dd>${impact.existing_position ? `${Number(impact.current_weight_pct || 0).toFixed(1)}% held` : 'Not held'}</dd>
         </div>
-        ${formatPolicyCap(impact) ? html`
+        ${policyCap ? html`
           <div>
             <dt>Policy cap</dt>
-            <dd>${formatPolicyCap(impact)}</dd>
+            <dd>${policyCap}</dd>
+          </div>
+        ` : ''}
+        ${policyGuardrails ? html`
+          <div>
+            <dt>Policy</dt>
+            <dd>${policyGuardrails}</dd>
           </div>
         ` : ''}
         <div>
@@ -242,6 +250,16 @@ function formatPolicyCap(portfolioImpact = {}) {
     ? 'Personal policy'
     : 'Portfolio policy';
   return `${cap.toLocaleString('en-US', { maximumFractionDigits: 1 })}% · ${source}`;
+}
+
+function formatPolicyGuardrails(policy = {}) {
+  if (!policy || typeof policy !== 'object') return '';
+  const parts = [
+    policy.minimum_research_confidence ? `Research ${labelize(policy.minimum_research_confidence)}` : '',
+    policy.tax_sensitivity ? `Tax ${labelize(policy.tax_sensitivity)}` : '',
+    policy.risk_tolerance ? `Risk ${labelize(policy.risk_tolerance)}` : '',
+  ].filter(Boolean);
+  return parts.join(' · ');
 }
 
 function renderBullets(label, items = []) {

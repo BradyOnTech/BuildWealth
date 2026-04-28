@@ -39,6 +39,34 @@ def _single_symbol_policy(holdings_payload: dict[str, Any]) -> tuple[float, str]
     return _threshold(holdings_payload, "single_holding_max_pct", 35.0), "portfolio.risk_policy"
 
 
+def _investment_policy(holdings_payload: dict[str, Any]) -> dict[str, Any]:
+    policy = holdings_payload.get("investment_policy") if isinstance(holdings_payload, dict) else {}
+    if not isinstance(policy, dict):
+        return {}
+    return {
+        key: policy.get(key)
+        for key in (
+            "max_single_symbol_exposure_pct",
+            "minimum_research_confidence",
+            "tax_sensitivity",
+            "risk_tolerance",
+        )
+        if policy.get(key) is not None
+    }
+
+
+_CONFIDENCE_RANKS = {
+    "low": 1,
+    "medium": 2,
+    "high": 3,
+}
+
+
+def _confidence_rank(value: Any) -> int | None:
+    text = str(value or "").strip().lower()
+    return _CONFIDENCE_RANKS.get(text)
+
+
 def _evidence_summary(packet: ResearchEvidencePacket | None) -> dict[str, Any]:
     if packet is None:
         return {"available": False}
@@ -311,11 +339,14 @@ def assess_portfolio_fit(
         profile_readiness_payload if isinstance(profile_readiness_payload, dict) else {}
     )
     evidence = _evidence_summary(evidence_packet)
+    investment_policy = _investment_policy(holdings_payload)
 
     fit_reasons: list[str] = []
     fit_risks: list[str] = []
     blocking_gaps: list[str] = []
     portfolio_impact: dict[str, Any] = {}
+    if investment_policy:
+        portfolio_impact["investment_policy"] = investment_policy
     simulation_required = amount_usd is not None
     plan_impact, plan_reasons, plan_blocking_gaps = _plan_impact(active_plan_detail)
     fit_reasons.extend(plan_reasons)
@@ -331,6 +362,16 @@ def assess_portfolio_fit(
         blocking_gaps.append(f"research:{evidence.get('freshness_status') or 'unknown'}")
     for gap in evidence.get("blocking_gaps", []):
         blocking_gaps.append(f"research:{gap}")
+
+    minimum_confidence = str(investment_policy.get("minimum_research_confidence") or "").strip().lower()
+    evidence_confidence = str(evidence.get("confidence") or "").strip().lower()
+    minimum_rank = _confidence_rank(minimum_confidence)
+    evidence_rank = _confidence_rank(evidence_confidence)
+    if minimum_rank is not None and evidence_rank is not None and evidence_rank < minimum_rank:
+        blocking_gaps.append("research:confidence_policy")
+        fit_risks.append(
+            f"Research confidence is {evidence_confidence}, below personal policy minimum {minimum_confidence}."
+        )
 
     readiness_status = str(profile_readiness_payload.get("status") or "").strip().lower()
     if readiness_status and readiness_status != "ready":
@@ -371,12 +412,18 @@ def assess_portfolio_fit(
             existing_position=existing_position,
         )
         portfolio_impact["account_location"] = account_location
+        tax_sensitivity = str(investment_policy.get("tax_sensitivity") or "").strip().lower()
         if account_location.get("confidence_gap"):
             if account_location.get("status") in {"missing", "partial"}:
                 blocking_gaps.append("tax:account_location")
             if account_location.get("tax_lot_coverage") in {"missing", "partial"}:
                 blocking_gaps.append("tax:lots")
             fit_risks.append("Account location or tax-lot context is incomplete, so tax friction review is limited.")
+            if tax_sensitivity == "high":
+                blocking_gaps.append("tax:policy_context")
+                fit_risks.append(
+                    "Personal tax sensitivity is high, so missing account or tax-lot context limits fit confidence."
+                )
 
         if existing_position:
             fit_risks.append(f"{normalized_symbol} already represents {current_weight_pct:.1f}% of the portfolio.")
@@ -385,6 +432,11 @@ def assess_portfolio_fit(
                 fit_risks.append(
                     f"{normalized_symbol} has taxable-account exposure with unrealized gain/loss context to review."
                 )
+                if tax_sensitivity == "high":
+                    blocking_gaps.append("tax:policy_review")
+                    fit_risks.append(
+                        f"Personal tax sensitivity is high; taxable exposure should be reviewed before changing {normalized_symbol}."
+                    )
             if current_weight_pct >= max_single_pct:
                 blocking_gaps.append("concentration")
         else:
@@ -446,6 +498,14 @@ def assess_portfolio_fit(
         fit_status = "needs_more_context"
         recommended_next_step = "research_more"
         fit_score = 45.0
+    elif "tax:policy_context" in unique_blocking_gaps:
+        fit_status = "needs_more_context"
+        recommended_next_step = "update_profile"
+        fit_score = 42.0
+    elif "tax:policy_review" in unique_blocking_gaps:
+        fit_status = "mixed"
+        recommended_next_step = "discuss_in_copilot"
+        fit_score = 55.0
     else:
         fit_status = "mixed"
         recommended_next_step = "simulate_trade" if simulation_required else "discuss_in_copilot"

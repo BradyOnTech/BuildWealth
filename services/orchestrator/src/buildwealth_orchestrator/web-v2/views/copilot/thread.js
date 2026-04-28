@@ -147,6 +147,7 @@ function renderPortfolioFitCard(result) {
     renderFitMeta('Plan horizon', formatPlanHorizon(plan)),
     renderFitMeta('Position', formatPortfolioPosition(portfolio)),
     renderFitMeta('Policy cap', formatPolicyCap(portfolio)),
+    renderFitMeta('Policy', formatPolicyGuardrails(portfolio.investment_policy)),
     renderFitMeta('Account location', formatAccountLocationSummary(portfolio.account_location)),
   ].filter(Boolean);
 
@@ -444,6 +445,16 @@ function formatPolicyCap(portfolio) {
     ? 'Personal policy'
     : 'Portfolio policy';
   return `${cap.toLocaleString('en-US', { maximumFractionDigits: 1 })}% · ${source}`;
+}
+
+function formatPolicyGuardrails(policy) {
+  if (!policy || typeof policy !== 'object') return '';
+  const parts = [
+    policy.minimum_research_confidence ? `Research ${titleCase(policy.minimum_research_confidence)}` : '',
+    policy.tax_sensitivity ? `Tax ${titleCase(policy.tax_sensitivity)}` : '',
+    policy.risk_tolerance ? `Risk ${titleCase(policy.risk_tolerance)}` : '',
+  ].filter(Boolean);
+  return parts.join(' · ');
 }
 
 function formatAccountLocationSummary(accountLocation) {

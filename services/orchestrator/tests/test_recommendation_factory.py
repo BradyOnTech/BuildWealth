@@ -306,6 +306,107 @@ def test_watchlist_research_factory_generates_fit_conflict_review_without_trade_
     assert "sell" not in joined.lower()
 
 
+def test_watchlist_research_factory_generates_policy_confidence_review() -> None:
+    result = generate_watchlist_research_recommendations(
+        watchlist_rank_payload={
+            "items": [
+                {
+                    "symbol": "MSFT",
+                    "research_evidence_packet_id": "research-evidence:yfinance:MSFT:6mo:1d",
+                    "research_provider": "yfinance",
+                    "research_freshness_status": "fresh",
+                    "research_confidence": "medium",
+                    "research_coverage_score": 95.0,
+                    "research_blocking_gaps": [],
+                }
+            ]
+        },
+        fit_assessments_by_symbol={
+            "MSFT": {
+                "fit_status": "needs_more_context",
+                "fit_score": 45.0,
+                "fit_reasons": [],
+                "fit_risks": ["Research confidence is medium, below personal policy minimum high."],
+                "blocking_gaps": ["research:confidence_policy"],
+                "portfolio_impact": {
+                    "investment_policy": {"minimum_research_confidence": "high"},
+                },
+                "recommended_next_step": "research_more",
+            }
+        },
+        existing_recommendations=[],
+        dry_run=True,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 1
+    candidate = result.candidates[0]
+    assert candidate["title"] == "Review MSFT research confidence against policy"
+    assert candidate["source"] == "generator:watchlist_research"
+    payload = candidate["action_payload"]
+    assert payload["generator"]["signal_key"] == "policy_research_confidence"
+    assert payload["generator"]["dedupe_key"] == "watchlist_research:msft:policy_research_confidence"
+    assert payload["suggested_action"]["kind"] == "review_research_evidence"
+    assert payload["evidence"]["investment_policy"]["minimum_research_confidence"] == "high"
+    assert "research:confidence_policy" in payload["evidence"]["fit_blocking_gaps"]
+    assert payload["quality"]["actionability"] == "review_only"
+    assert "research.confidence_policy" in payload["quality"]["blocking_context"]
+
+
+def test_watchlist_research_factory_generates_tax_sensitive_policy_review() -> None:
+    result = generate_watchlist_research_recommendations(
+        watchlist_rank_payload={
+            "items": [
+                {
+                    "symbol": "AAPL",
+                    "research_evidence_packet_id": "research-evidence:yfinance:AAPL:6mo:1d",
+                    "research_provider": "yfinance",
+                    "research_freshness_status": "fresh",
+                    "research_confidence": "high",
+                    "research_coverage_score": 100.0,
+                    "research_blocking_gaps": [],
+                }
+            ]
+        },
+        fit_assessments_by_symbol={
+            "AAPL": {
+                "fit_status": "mixed",
+                "fit_score": 55.0,
+                "fit_reasons": ["Cash runway is at or above the 6-month target."],
+                "fit_risks": ["Personal tax sensitivity is high; taxable exposure should be reviewed before changing AAPL."],
+                "blocking_gaps": ["tax:policy_review"],
+                "portfolio_impact": {
+                    "investment_policy": {"tax_sensitivity": "high"},
+                    "account_location": {
+                        "status": "known",
+                        "tax_lot_coverage": "known",
+                        "tax_treatments": ["taxable"],
+                        "confidence_gap": False,
+                    },
+                },
+                "recommended_next_step": "discuss_in_copilot",
+            }
+        },
+        existing_recommendations=[],
+        dry_run=True,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 1
+    candidate = result.candidates[0]
+    assert candidate["title"] == "Review AAPL tax-sensitive fit"
+    assert candidate["priority"] == "medium"
+    payload = candidate["action_payload"]
+    assert payload["generator"]["signal_key"] == "policy_tax_sensitivity"
+    assert payload["suggested_action"]["kind"] == "review_portfolio_fit"
+    assert payload["evidence"]["investment_policy"]["tax_sensitivity"] == "high"
+    assert payload["evidence"]["account_location"]["tax_treatments"] == ["taxable"]
+    assert payload["quality"]["actionability"] == "review_only"
+    joined = " ".join([candidate["title"], candidate["detail"], payload["suggested_action"]["kind"]])
+    assert "buy" not in joined.lower()
+    assert "sell" not in joined.lower()
+
+
 def test_portfolio_risk_factory_apply_creates_rows_and_skips_duplicates(tmp_path: Path) -> None:
     inbox = RecommendationInbox(tmp_path / "recommendations.json")
     first = generate_portfolio_risk_recommendations(

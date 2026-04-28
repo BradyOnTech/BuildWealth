@@ -86,6 +86,73 @@ def test_portfolio_fit_uses_personal_investment_policy_single_symbol_cap() -> No
     assert any("personal policy cap is 10.0%" in risk for risk in result.fit_risks)
 
 
+def test_portfolio_fit_blocks_when_research_confidence_below_personal_policy() -> None:
+    result = assess_portfolio_fit(
+        symbol="MSFT",
+        amount_usd=2_000.0,
+        evidence_packet=_packet("MSFT", confidence="medium"),
+        snapshot=_snapshot(),
+        holdings_payload={
+            "risk_policy": {"thresholds": {"single_holding_max_pct": 35.0}},
+            "investment_policy": {
+                "minimum_research_confidence": "high",
+            },
+            "total_cash": 50_000.0,
+        },
+        profile_readiness_payload={"status": "ready", "completion_percent": 100.0},
+        emergency_fund_months=8.0,
+    )
+
+    assert result.fit_status == "needs_more_context"
+    assert result.recommended_next_step == "research_more"
+    assert "research:confidence_policy" in result.blocking_gaps
+    assert result.portfolio_impact["investment_policy"]["minimum_research_confidence"] == "high"
+    assert any("below personal policy minimum high" in risk for risk in result.fit_risks)
+
+
+def test_portfolio_fit_applies_high_tax_sensitivity_to_taxable_exposure() -> None:
+    result = assess_portfolio_fit(
+        symbol="AAPL",
+        amount_usd=2_000.0,
+        evidence_packet=_packet("AAPL"),
+        snapshot=_snapshot(),
+        holdings_payload={
+            "accounts": [
+                {"id": "default", "name": "Taxable Brokerage", "type": "taxable"},
+            ],
+            "holdings": {
+                "default:AAPL": {
+                    "symbol": "AAPL",
+                    "account": "default",
+                    "quantity": 10,
+                    "current_value": 3_000.0,
+                    "cost_basis": 2_000.0,
+                    "lots": [
+                        {
+                            "lot_id": "lot-long",
+                            "acquired_date": "2024-01-15",
+                            "remaining_quantity": 10,
+                            "unit_cost": 200.0,
+                        },
+                    ],
+                },
+            },
+            "risk_policy": {"thresholds": {"single_holding_max_pct": 60.0}},
+            "investment_policy": {
+                "tax_sensitivity": "high",
+            },
+        },
+        profile_readiness_payload={"status": "ready", "completion_percent": 100.0},
+        emergency_fund_months=8.0,
+    )
+
+    assert result.fit_status == "mixed"
+    assert result.recommended_next_step == "discuss_in_copilot"
+    assert "tax:policy_review" in result.blocking_gaps
+    assert result.portfolio_impact["investment_policy"]["tax_sensitivity"] == "high"
+    assert any("Personal tax sensitivity is high" in risk for risk in result.fit_risks)
+
+
 def test_portfolio_fit_includes_account_location_and_tax_lot_context() -> None:
     result = assess_portfolio_fit(
         symbol="AAPL",

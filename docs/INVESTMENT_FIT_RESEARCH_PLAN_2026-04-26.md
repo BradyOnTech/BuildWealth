@@ -220,7 +220,7 @@ Current implementation:
 - `/api/portfolio/fit-assessment` assembles current BuildWealth context and returns a fit assessment for API, Copilot, and v2 Portfolio review surfaces.
 - First statuses cover `mixed`, `does_not_fit`, and `needs_more_context`; direct trade recommendations remain out of scope.
 - Tax-lot/account-location context now surfaces account treatment, unrealized gain/loss, lot-term mix, and missing account/lot confidence gaps where available; deeper tax-lot optimization remains out of scope.
-- The first Personal Investment Policy slices add profile-backed investment guardrails, keep them in lightweight BuildWealth context, let the profile max single-symbol exposure override the generic portfolio threshold in fit assessment, and surface missing guardrails in Today/Copilot. Portfolio and Copilot fit review cards cite whether the cap came from personal policy or portfolio policy.
+- The first Personal Investment Policy slices add profile-backed investment guardrails, keep them in lightweight BuildWealth context, let the profile max single-symbol exposure override the generic portfolio threshold in fit assessment, gate research-backed fit when evidence confidence is below the user's minimum, and make high tax sensitivity raise taxable-exposure/tax-context review constraints. Today/Copilot surface missing guardrails, and Portfolio/Copilot fit review cards cite the active policy guardrails.
 
 ## Layer 4: Investment Recommendation Factory
 
@@ -274,8 +274,9 @@ High-level implementation:
 Current implementation:
 
 - `generator:watchlist_research` creates the first safe review rows from watchlist evidence and portfolio-fit context.
-- Generated actions are limited to refresh research evidence, gather missing context, review fit conflicts, simulate/compare, or discuss in Copilot.
-- Rows include evidence packet id, provider, freshness, confidence, coverage score, provider coverage metadata, fit status, fit score, fit reasons, and fit risks.
+- Generated actions are limited to refresh research evidence, gather missing context, review policy/fit conflicts, simulate/compare, or discuss in Copilot.
+- Rows include evidence packet id, provider, freshness, confidence, coverage score, provider coverage metadata, fit status, fit score, fit reasons, fit risks, fit blocking gaps, account-location context, and applied investment policy.
+- Policy-aware rows now distinguish research confidence below the user's minimum and high tax-sensitivity fit reviews, while remaining review-only and avoiding direct trade language.
 - The generator is available through `/api/recommendations/generate/watchlist-research` and participates in the run-all factory endpoint.
 
 ## Layer 5: Copilot Investment Guidance
@@ -510,6 +511,7 @@ Done when:
 
 - watchlist/research signals can create reviewable Inbox rows
 - rows include evidence, freshness, fit status, and next step
+- personal investment policy can generate review-only research-confidence and tax-sensitive fit rows
 - no generated recommendation uses direct trade language
 
 ### Phase 5: v2 Research and Portfolio Integration
@@ -620,7 +622,7 @@ Recommended sequence:
 
 1. Keep provider/freshness/coverage metadata explicit around OpenBB-backed research outputs as provider depth increases.
 2. Continue migrating v2 research/portfolio surfaces away from classic fallbacks where high-frequency investment decisions happen.
-3. Continue Personal Investment Policy by expanding beyond single-symbol exposure into risk, evidence, cash, and tax preferences.
+3. Continue Personal Investment Policy by expanding beyond single-symbol exposure, research confidence, and tax sensitivity into cash, asset-class/sector, simplicity, and restriction preferences.
 4. Deepen account-location context later with explicit proposed-account selection and tax-policy preferences.
 
 ## Relationship to Existing Plans
