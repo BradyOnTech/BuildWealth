@@ -146,6 +146,7 @@ function renderPortfolioFitCard(result) {
     renderFitMeta('Evidence', formatEvidenceStatus(evidence)),
     renderFitMeta('Plan horizon', formatPlanHorizon(plan)),
     renderFitMeta('Position', formatPortfolioPosition(portfolio)),
+    renderFitMeta('Account location', formatAccountLocationSummary(portfolio.account_location)),
   ].filter(Boolean);
 
   return html`
@@ -162,6 +163,7 @@ function renderPortfolioFitCard(result) {
       </div>
       ${renderFitList('Why it matters', result.fit_reasons)}
       ${renderFitList('Risks to review', result.fit_risks)}
+      ${renderAccountLocationList(portfolio.account_location)}
       ${renderFitList('Blocking gaps', result.blocking_gaps)}
       ${evidence.packet_id ? html`<p class="profile-draft-meta">Evidence packet ${evidence.packet_id}</p>` : ''}
     </article>
@@ -188,6 +190,21 @@ function renderFitList(title, items) {
       </ul>
     </div>
   `;
+}
+
+function renderAccountLocationList(accountLocation = {}) {
+  const accounts = Array.isArray(accountLocation?.accounts)
+    ? accountLocation.accounts.filter(Boolean).slice(0, 3)
+    : [];
+  const warnings = Array.isArray(accountLocation?.warnings)
+    ? accountLocation.warnings.filter(Boolean).slice(0, 2)
+    : [];
+  if (!accounts.length && !warnings.length) return '';
+  const rows = [
+    ...accounts.map(formatAccountLocationRow),
+    ...warnings,
+  ];
+  return renderFitList('Account and tax context', rows);
 }
 
 function renderProfileDraftCard(result) {
@@ -374,6 +391,33 @@ function formatPortfolioPosition(portfolio) {
   if (portfolio.existing_position === false) return 'Not held';
   if (portfolio.existing_position === true) return 'Held';
   return '';
+}
+
+function formatAccountLocationSummary(accountLocation) {
+  if (!accountLocation || typeof accountLocation !== 'object') return '';
+  const treatments = Array.isArray(accountLocation.tax_treatments)
+    ? accountLocation.tax_treatments.filter(Boolean).map(titleCase)
+    : [];
+  const lotCoverage = String(accountLocation.tax_lot_coverage || '').trim();
+  const parts = [
+    treatments.join(', '),
+    lotCoverage && lotCoverage !== 'known' && lotCoverage !== 'not_applicable'
+      ? `Tax lots ${titleCase(lotCoverage).toLowerCase()}`
+      : '',
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
+
+function formatAccountLocationRow(account = {}) {
+  const gainLoss = account.unrealized_gain_loss_usd != null
+    ? `${MONEY_FMT.format(Number(account.unrealized_gain_loss_usd) || 0)} gain/loss`
+    : '';
+  return [
+    account.account_name || account.account_id || 'Unknown account',
+    titleCase(account.tax_treatment || account.account_type || 'unknown'),
+    gainLoss,
+    account.lot_term_mix ? `${titleCase(account.lot_term_mix)} lots` : '',
+  ].filter(Boolean).join(' · ');
 }
 
 function formatTrace(trace) {

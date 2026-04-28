@@ -1808,6 +1808,16 @@ def _watchlist_research_candidate(
     fit_payload = fit_payload if isinstance(fit_payload, dict) else {}
     fit_status = str(fit_payload.get("fit_status") or "").strip().lower()
     recommended_next_step = str(fit_payload.get("recommended_next_step") or "").strip().lower()
+    portfolio_impact = (
+        fit_payload.get("portfolio_impact")
+        if isinstance(fit_payload.get("portfolio_impact"), dict)
+        else {}
+    )
+    account_location = (
+        portfolio_impact.get("account_location")
+        if isinstance(portfolio_impact.get("account_location"), dict)
+        else {}
+    )
 
     signal_key = ""
     title = ""
@@ -1890,6 +1900,7 @@ def _watchlist_research_candidate(
         "fit_score": fit_payload.get("fit_score"),
         "fit_reasons": fit_payload.get("fit_reasons") if isinstance(fit_payload.get("fit_reasons"), list) else [],
         "fit_risks": fit_payload.get("fit_risks") if isinstance(fit_payload.get("fit_risks"), list) else [],
+        "account_location": account_location,
         "provider_coverage": item.get("provider_coverage") if isinstance(item.get("provider_coverage"), dict) else {},
     }
     expected_outcome = {

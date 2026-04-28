@@ -277,6 +277,14 @@ def test_watchlist_research_factory_generates_fit_conflict_review_without_trade_
                 "fit_reasons": [],
                 "fit_risks": ["Simulated trade worsens concentration risk."],
                 "blocking_gaps": ["concentration"],
+                "portfolio_impact": {
+                    "account_location": {
+                        "status": "partial",
+                        "tax_lot_coverage": "missing",
+                        "tax_treatments": ["taxable"],
+                        "confidence_gap": True,
+                    },
+                },
                 "recommended_next_step": "review_concentration",
             }
         },
@@ -291,6 +299,8 @@ def test_watchlist_research_factory_generates_fit_conflict_review_without_trade_
     assert candidate["priority"] == "high"
     payload = candidate["action_payload"]
     assert payload["suggested_action"]["kind"] == "review_portfolio_fit"
+    assert payload["evidence"]["account_location"]["tax_lot_coverage"] == "missing"
+    assert payload["evidence"]["account_location"]["confidence_gap"] is True
     joined = " ".join([candidate["title"], candidate["detail"], payload["suggested_action"]["kind"]])
     assert "buy" not in joined.lower()
     assert "sell" not in joined.lower()

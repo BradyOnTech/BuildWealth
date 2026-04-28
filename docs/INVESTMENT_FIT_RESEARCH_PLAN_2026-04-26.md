@@ -216,10 +216,10 @@ High-level implementation:
 Current implementation:
 
 - `PortfolioFitAssessmentRequest` and `PortfolioFitAssessmentResponse` define the first reusable fit contract.
-- `assess_portfolio_fit(...)` combines evidence packet quality, current holdings, risk thresholds, cash runway, profile readiness, active plan/time-horizon context, and optional trade simulation.
+- `assess_portfolio_fit(...)` combines evidence packet quality, current holdings, risk thresholds, cash runway, profile readiness, active plan/time-horizon context, tax-lot/account-location context, and optional trade simulation.
 - `/api/portfolio/fit-assessment` assembles current BuildWealth context and returns a fit assessment for API, Copilot, and v2 Portfolio review surfaces.
 - First statuses cover `mixed`, `does_not_fit`, and `needs_more_context`; direct trade recommendations remain out of scope.
-- Tax-lot/account-location impacts remain future enrichments.
+- Tax-lot/account-location context now surfaces account treatment, unrealized gain/loss, lot-term mix, and missing account/lot confidence gaps where available; deeper tax-lot optimization remains out of scope.
 
 ## Layer 4: Investment Recommendation Factory
 
@@ -485,7 +485,7 @@ Current progress:
 - The first contract and API route exist.
 - Concentration conflicts, missing profile/cash/research context, and simulation-required next steps are covered.
 - Plan/time-horizon context is included in the API, Copilot tool, and v2 Portfolio fit review.
-- Tax-lot and account-location impacts remain future enrichments.
+- Tax-lot/account-location context is included in the API, v2 Portfolio fit review, Copilot fit cards, and generated investment/research recommendation evidence.
 
 Done when:
 
@@ -610,9 +610,9 @@ Do not start by adding direct buy/sell recommendation logic.
 Recommended sequence:
 
 1. Keep provider/freshness/coverage metadata explicit around OpenBB-backed research outputs as provider depth increases.
-2. Continue enriching portfolio-fit with tax-lot/account-location context after the safer review loop is established.
-3. Continue migrating v2 research/portfolio surfaces away from classic fallbacks where high-frequency investment decisions happen.
-4. Add outcome calibration for Copilot-drafted investment/research recommendation rows.
+2. Continue migrating v2 research/portfolio surfaces away from classic fallbacks where high-frequency investment decisions happen.
+3. Add outcome calibration for Copilot-drafted investment/research recommendation rows.
+4. Deepen account-location context later with explicit proposed-account selection and tax-policy preferences.
 
 ## Relationship to Existing Plans
 

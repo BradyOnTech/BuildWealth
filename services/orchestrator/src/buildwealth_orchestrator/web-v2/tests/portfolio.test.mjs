@@ -28,7 +28,23 @@ test('portfolio fit result renders plan horizon and research evidence', () => {
     blocking_gaps: ['research:partial'],
     plan_impact: { time_horizon: 'long', years: 25 },
     evidence: { freshness_status: 'partial', confidence: 'medium' },
-    portfolio_impact: { existing_position: false },
+    portfolio_impact: {
+      existing_position: true,
+      current_weight_pct: 12.5,
+      account_location: {
+        status: 'known',
+        tax_lot_coverage: 'known',
+        tax_treatments: ['taxable', 'tax_free'],
+        accounts: [
+          {
+            account_name: 'Taxable Brokerage',
+            tax_treatment: 'taxable',
+            unrealized_gain_loss_usd: 1250,
+            lot_term_mix: 'mixed',
+          },
+        ],
+      },
+    },
   }));
 
   assert.match(markup, /Mixed/);
@@ -36,6 +52,9 @@ test('portfolio fit result renders plan horizon and research evidence', () => {
   assert.match(markup, /Discuss In Copilot/);
   assert.match(markup, /Long · 25y/);
   assert.match(markup, /partial · medium/);
+  assert.match(markup, /12\.5% held/);
+  assert.match(markup, /Taxable, Tax Free/);
+  assert.match(markup, /Taxable Brokerage · Taxable · \$1,250 gain\/loss · Mixed lots/);
   assert.match(markup, /Active plan horizon is long \(25 years\)\./);
   assert.match(markup, /research:partial/);
 });

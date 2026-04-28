@@ -551,9 +551,9 @@ Long-term:
 
 ## Current Immediate Next Work
 
-1. Continue enriching portfolio-fit with tax-lot/account-location context.
-2. Continue migrating v2 research/portfolio surfaces away from classic fallbacks where high-frequency investment decisions happen.
-3. Add outcome calibration for Copilot-drafted investment/research recommendation rows.
+1. Continue migrating v2 research/portfolio surfaces away from classic fallbacks where high-frequency investment decisions happen.
+2. Add outcome calibration for Copilot-drafted investment/research recommendation rows.
+3. Deepen portfolio-fit account context with explicit proposed-account selection and tax-policy preferences.
 4. Continue expanding browser coverage around Plan v2 migration as those surfaces move over.
 
 ## Documentation Governance

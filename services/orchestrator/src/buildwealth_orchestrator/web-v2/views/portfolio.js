@@ -11,6 +11,8 @@ import { renderStanding } from './portfolio/standing.js';
 import { renderComposition } from './portfolio/composition.js';
 import { renderWatch } from './portfolio/watch.js';
 
+const MONEY_FMT = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+
 export const meta = {
   id: 'portfolio',
   label: 'Portfolio',
@@ -137,6 +139,7 @@ export function renderFitResult(result) {
   const evidence = result.evidence || {};
   const plan = result.plan_impact || {};
   const impact = result.portfolio_impact || {};
+  const accountLocation = impact.account_location || {};
   return html`
     <article class="fit-result fit-${result.fit_status}">
       <div class="fit-result-head">
@@ -160,12 +163,58 @@ export function renderFitResult(result) {
           <dt>Position</dt>
           <dd>${impact.existing_position ? `${Number(impact.current_weight_pct || 0).toFixed(1)}% held` : 'Not held'}</dd>
         </div>
+        <div>
+          <dt>Account location</dt>
+          <dd>${formatTaxTreatments(accountLocation)}</dd>
+        </div>
       </dl>
+      ${raw(renderAccountLocation(accountLocation))}
       ${raw(renderBullets('Reasons', result.fit_reasons))}
       ${raw(renderBullets('Risks', result.fit_risks))}
       ${raw(renderBullets('Needs', result.blocking_gaps))}
     </article>
   `;
+}
+
+function renderAccountLocation(accountLocation = {}) {
+  const accounts = Array.isArray(accountLocation.accounts)
+    ? accountLocation.accounts.filter(Boolean).slice(0, 3)
+    : [];
+  const warnings = Array.isArray(accountLocation.warnings)
+    ? accountLocation.warnings.filter(Boolean).slice(0, 2)
+    : [];
+  if (!accounts.length && !warnings.length) return '';
+
+  return html`
+    <div class="fit-list">
+      <h3>Account location</h3>
+      <ul>
+        ${accounts.map((account) => html`<li>${formatAccountLocationRow(account)}</li>`)}
+        ${warnings.map((warning) => html`<li>${warning}</li>`)}
+      </ul>
+    </div>
+  `;
+}
+
+function formatAccountLocationRow(account = {}) {
+  const parts = [
+    account.account_name || account.account_id || 'Unknown account',
+    labelize(account.tax_treatment || account.account_type || 'unknown'),
+    account.unrealized_gain_loss_usd != null
+      ? `${MONEY_FMT.format(Number(account.unrealized_gain_loss_usd) || 0)} gain/loss`
+      : '',
+    account.lot_term_mix ? `${labelize(account.lot_term_mix)} lots` : '',
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
+
+function formatTaxTreatments(accountLocation = {}) {
+  const treatments = Array.isArray(accountLocation.tax_treatments)
+    ? accountLocation.tax_treatments.filter(Boolean)
+    : [];
+  if (treatments.length) return treatments.map(labelize).join(', ');
+  if (accountLocation.tax_lot_coverage === 'missing') return 'Tax lots missing';
+  return 'Not available';
 }
 
 function renderBullets(label, items = []) {

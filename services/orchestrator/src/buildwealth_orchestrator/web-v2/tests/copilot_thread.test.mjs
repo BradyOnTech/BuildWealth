@@ -120,6 +120,19 @@ test('copilot thread renders portfolio fit tool results as review cards', () => 
               portfolio_impact: {
                 existing_position: true,
                 current_weight_pct: 40,
+                account_location: {
+                  status: 'partial',
+                  tax_lot_coverage: 'missing',
+                  tax_treatments: ['taxable'],
+                  accounts: [
+                    {
+                      account_name: 'Taxable Brokerage',
+                      tax_treatment: 'taxable',
+                      unrealized_gain_loss_usd: 12500,
+                      lot_term_mix: 'unknown',
+                    },
+                  ],
+                },
               },
             },
           },
@@ -136,6 +149,8 @@ test('copilot thread renders portfolio fit tool results as review cards', () => 
   assert.match(html, /Fresh · High/);
   assert.match(html, /Long · 25y/);
   assert.match(html, /40% held/);
+  assert.match(html, /Taxable · Tax lots missing/);
+  assert.match(html, /Taxable Brokerage · Taxable · \$12,500 gain\/loss/);
   assert.match(html, /active plan horizon is long enough/);
   assert.match(html, /already represents 40\.0% of the portfolio/);
   assert.match(html, /Concentration is above/);

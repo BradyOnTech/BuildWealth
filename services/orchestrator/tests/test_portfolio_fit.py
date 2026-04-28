@@ -59,6 +59,110 @@ def test_portfolio_fit_flags_concentration_conflict_for_existing_large_holding()
     assert result.evidence["packet_id"] == "research-evidence:yfinance:AAPL:6mo:1d"
 
 
+def test_portfolio_fit_includes_account_location_and_tax_lot_context() -> None:
+    result = assess_portfolio_fit(
+        symbol="AAPL",
+        amount_usd=5_000.0,
+        evidence_packet=_packet("AAPL"),
+        snapshot=_snapshot(),
+        holdings_payload={
+            "accounts": [
+                {"id": "default", "name": "Taxable Brokerage", "type": "taxable"},
+                {"id": "roth", "name": "Roth IRA", "type": "roth_ira"},
+            ],
+            "holdings": {
+                "default:AAPL": {
+                    "symbol": "AAPL",
+                    "account": "default",
+                    "quantity": 10,
+                    "current_value": 3_000.0,
+                    "cost_basis": 2_000.0,
+                    "cost_basis_method": "FIFO",
+                    "lots": [
+                        {
+                            "lot_id": "lot-long",
+                            "acquired_date": "2024-01-15",
+                            "remaining_quantity": 6,
+                            "unit_cost": 100.0,
+                        },
+                        {
+                            "lot_id": "lot-short",
+                            "acquired_date": "2026-01-20",
+                            "remaining_quantity": 4,
+                            "unit_cost": 350.0,
+                        },
+                    ],
+                },
+                "roth:AAPL": {
+                    "symbol": "AAPL",
+                    "account": "roth",
+                    "quantity": 5,
+                    "current_value": 1_000.0,
+                    "cost_basis": 900.0,
+                    "lots": [
+                        {
+                            "lot_id": "lot-roth",
+                            "acquired_date": "2025-01-01",
+                            "remaining_quantity": 5,
+                            "unit_cost": 180.0,
+                        }
+                    ],
+                },
+            },
+            "risk_policy": {"thresholds": {"single_holding_max_pct": 35.0}},
+        },
+        profile_readiness_payload={"status": "ready", "completion_percent": 100.0},
+        emergency_fund_months=8.0,
+    )
+
+    account_location = result.portfolio_impact["account_location"]
+    assert account_location["status"] == "known"
+    assert account_location["tax_lot_coverage"] == "known"
+    assert account_location["confidence_gap"] is False
+    assert account_location["tax_treatments"] == ["tax_free", "taxable"]
+    assert len(account_location["accounts"]) == 2
+    taxable = next(item for item in account_location["accounts"] if item["account_id"] == "default")
+    assert taxable["account_name"] == "Taxable Brokerage"
+    assert taxable["account_type"] == "taxableBrokerage"
+    assert taxable["tax_treatment"] == "taxable"
+    assert taxable["unrealized_gain_loss_usd"] == 1000.0
+    assert taxable["unrealized_gain_loss_pct"] == 50.0
+    assert taxable["lot_term_mix"] == "mixed"
+    assert any("taxable" in risk.lower() for risk in result.fit_risks)
+
+
+def test_portfolio_fit_flags_missing_account_location_as_confidence_gap() -> None:
+    result = assess_portfolio_fit(
+        symbol="AAPL",
+        amount_usd=5_000.0,
+        evidence_packet=_packet("AAPL"),
+        snapshot=_snapshot(),
+        holdings_payload={
+            "holdings": {
+                "mystery:AAPL": {
+                    "symbol": "AAPL",
+                    "account": "mystery",
+                    "quantity": 10,
+                    "current_value": 3_000.0,
+                    "cost_basis": 2_000.0,
+                    "lots": [],
+                },
+            },
+            "risk_policy": {"thresholds": {"single_holding_max_pct": 35.0}},
+        },
+        profile_readiness_payload={"status": "ready", "completion_percent": 100.0},
+        emergency_fund_months=8.0,
+    )
+
+    account_location = result.portfolio_impact["account_location"]
+    assert account_location["status"] == "partial"
+    assert account_location["tax_lot_coverage"] == "missing"
+    assert account_location["confidence_gap"] is True
+    assert "tax:account_location" in result.blocking_gaps
+    assert "tax:lots" in result.blocking_gaps
+    assert any("Account location or tax-lot context is incomplete" in risk for risk in result.fit_risks)
+
+
 def test_portfolio_fit_blocks_when_context_is_missing() -> None:
     result = assess_portfolio_fit(
         symbol="NVDA",
