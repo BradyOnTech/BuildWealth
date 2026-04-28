@@ -169,10 +169,22 @@ export function renderFitResult(result) {
         </div>
       </dl>
       ${raw(renderAccountLocation(accountLocation))}
+      ${raw(renderEvidenceAction(result.symbol, evidence))}
       ${raw(renderBullets('Reasons', result.fit_reasons))}
       ${raw(renderBullets('Risks', result.fit_risks))}
       ${raw(renderBullets('Needs', result.blocking_gaps))}
     </article>
+  `;
+}
+
+function renderEvidenceAction(symbol, evidence = {}) {
+  const packetId = String(evidence.packet_id || evidence.research_evidence_packet_id || '').trim();
+  if (!symbol || !packetId) return '';
+  const href = `#research?symbol=${encodeURIComponent(String(symbol).toUpperCase())}&packet=${encodeURIComponent(packetId)}`;
+  return html`
+    <div class="entry-actions">
+      <a class="action-link muted" href="${href}">Open evidence <span class="arrow">→</span></a>
+    </div>
   `;
 }
 

@@ -7,13 +7,14 @@ import * as plan from './views/plan.js';
 import * as copilot from './views/copilot.js';
 import * as atelier from './views/atelier.js';
 import * as inbox from './views/inbox.js';
+import * as research from './views/research.js';
 
 import { state } from './lib/state.js';
 import { api } from './lib/api.js';
 import { html, raw, $ } from './lib/dom.js';
 import { fmtDateLong } from './lib/format.js';
 
-const VIEWS = [today, portfolio, plan, copilot, atelier, inbox];
+const VIEWS = [today, portfolio, plan, copilot, research, atelier, inbox];
 
 const VIEW_BY_ID = new Map(VIEWS.map(v => [v.meta.id, v]));
 const SIDEBAR_VIEWS = VIEWS.filter(v => v.meta.group !== 'hidden');

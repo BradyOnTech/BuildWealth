@@ -59,10 +59,10 @@ Goal: reduce classic-route dependence for high-frequency investment research wor
 
 First slices should focus on:
 
-- v2 research evidence packet display
+- v2 research evidence packet display (started: `#research?symbol=...` renders packet freshness, coverage, metrics, risk, quality, gaps, and provenance)
 - v2 compare surface for a small symbol set
 - v2 dossier lookup/detail surface for saved plan artifacts
-- direct route targets from Inbox, Portfolio, Today, and Copilot
+- direct route targets from Inbox, Portfolio, Today, and Copilot (started: Inbox, Portfolio fit review, and Copilot fit cards now link to v2 Research evidence)
 - provider/freshness/warning visibility on every research surface
 
 Done when:
@@ -254,4 +254,3 @@ Then pull in the fresh ideas in this order:
 3. Research Thesis Expiration, because it extends the investment-fit evidence loop.
 4. Decision Pre-Mortem, because it improves outcome learning and calibration.
 5. Confidence Heat Map, because it can unify readiness/freshness once more domain signals exist.
-

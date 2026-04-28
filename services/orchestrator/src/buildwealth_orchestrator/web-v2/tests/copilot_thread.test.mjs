@@ -151,6 +151,7 @@ test('copilot thread renders portfolio fit tool results as review cards', () => 
   assert.match(html, /40% held/);
   assert.match(html, /Taxable · Tax lots missing/);
   assert.match(html, /Taxable Brokerage · Taxable · \$12,500 gain\/loss/);
+  assert.match(html, /href="#research\?symbol=NVDA&amp;packet=research-evidence%3Ayfinance%3ANVDA%3A6mo%3A1d"/);
   assert.match(html, /active plan horizon is long enough/);
   assert.match(html, /already represents 40\.0% of the portfolio/);
   assert.match(html, /Concentration is above/);

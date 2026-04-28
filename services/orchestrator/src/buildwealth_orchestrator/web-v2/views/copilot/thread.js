@@ -165,7 +165,7 @@ function renderPortfolioFitCard(result) {
       ${renderFitList('Risks to review', result.fit_risks)}
       ${renderAccountLocationList(portfolio.account_location)}
       ${renderFitList('Blocking gaps', result.blocking_gaps)}
-      ${evidence.packet_id ? html`<p class="profile-draft-meta">Evidence packet ${evidence.packet_id}</p>` : ''}
+      ${renderEvidencePacketLink(symbol, evidence)}
     </article>
   `;
 }
@@ -189,6 +189,19 @@ function renderFitList(title, items) {
         ${items.slice(0, 4).map(item => html`<li>${item}</li>`)}
       </ul>
     </div>
+  `;
+}
+
+function renderEvidencePacketLink(symbol, evidence = {}) {
+  const packetId = String(evidence.packet_id || evidence.research_evidence_packet_id || '').trim();
+  if (!packetId) return '';
+  const href = symbol
+    ? `#research?symbol=${encodeURIComponent(symbol)}&packet=${encodeURIComponent(packetId)}`
+    : '#research';
+  return html`
+    <p class="profile-draft-meta">
+      Evidence packet <a href="${href}">${packetId}</a>
+    </p>
   `;
 }
 

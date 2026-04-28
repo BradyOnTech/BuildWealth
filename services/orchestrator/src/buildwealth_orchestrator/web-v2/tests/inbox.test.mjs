@@ -220,8 +220,8 @@ test('inbox investment research rows render fit routing instead of generic workf
   assert.match(markup, /Investment-fit route/);
   assert.match(markup, /symbol NVDA · fresh evidence · via yfinance · does not fit fit/);
   assert.match(markup, /href="#portfolio\?fit=NVDA&amp;focus=rec-invest"/);
-  assert.match(markup, /href="\/#research\?symbol=NVDA"/);
-  assert.match(markup, /href="\/#research\?compare=NVDA"/);
+  assert.match(markup, /href="#research\?symbol=NVDA&amp;packet=research-evidence%3Ayfinance%3ANVDA%3A6mo%3A1d"/);
+  assert.match(markup, /href="#research\?compare=NVDA&amp;packet=research-evidence%3Ayfinance%3ANVDA%3A6mo%3A1d"/);
   assert.match(markup, /href="#copilot\?focus=rec-invest&amp;intent=investment-fit"/);
   assert.match(markup, />Review fit <span class="arrow">→<\/span>/);
 });
@@ -305,6 +305,6 @@ test('inbox investment research refresh rows route primary action to research', 
   }));
 
   assert.match(markup, /Open research/);
-  assert.match(markup, /href="\/#research\?symbol=MSFT"/);
+  assert.match(markup, /href="#research\?symbol=MSFT"/);
   assert.doesNotMatch(markup, /Complete context <span class="arrow">→<\/span>/);
 });

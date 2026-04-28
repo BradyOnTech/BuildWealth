@@ -27,7 +27,11 @@ test('portfolio fit result renders plan horizon and research evidence', () => {
     fit_risks: ['Research evidence is partial.'],
     blocking_gaps: ['research:partial'],
     plan_impact: { time_horizon: 'long', years: 25 },
-    evidence: { freshness_status: 'partial', confidence: 'medium' },
+    evidence: {
+      freshness_status: 'partial',
+      confidence: 'medium',
+      packet_id: 'research-evidence:yfinance:VTI:6mo:1d',
+    },
     portfolio_impact: {
       existing_position: true,
       current_weight_pct: 12.5,
@@ -55,6 +59,7 @@ test('portfolio fit result renders plan horizon and research evidence', () => {
   assert.match(markup, /12\.5% held/);
   assert.match(markup, /Taxable, Tax Free/);
   assert.match(markup, /Taxable Brokerage · Taxable · \$1,250 gain\/loss · Mixed lots/);
+  assert.match(markup, /href="#research\?symbol=VTI&amp;packet=research-evidence%3Ayfinance%3AVTI%3A6mo%3A1d"/);
   assert.match(markup, /Active plan horizon is long \(25 years\)\./);
   assert.match(markup, /research:partial/);
 });

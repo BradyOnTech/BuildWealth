@@ -69,6 +69,7 @@ export const api = {
   setActivePlan: (id) => postJson(`/api/plans/${encodeURIComponent(id)}/activate`, {}),
   holdings:     () => fetchJson('/api/portfolio/holdings'),
   portfolioFit: (body) => postJson('/api/portfolio/fit-assessment', body),
+  researchEvidencePacket: (body) => postJson('/api/research/evidence-packet', body),
   profile:      () => fetchJson('/api/financial-profile'),
   updateProfile: (body) => putJson('/api/financial-profile', body),
   onboarding:   () => fetchJson('/api/onboarding/status'),

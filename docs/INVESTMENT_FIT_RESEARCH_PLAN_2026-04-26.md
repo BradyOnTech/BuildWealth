@@ -523,6 +523,12 @@ Work:
 - make research artifacts visible from Plan when saved
 - expose stale research warnings in Today when important
 
+Current progress:
+
+- v2 Research has a packet-native evidence view at `#research?symbol=...`.
+- Inbox investment/research rows now route research and compare links into v2 Research instead of the classic research route.
+- v2 Portfolio fit review and Copilot investment-fit trace cards link evidence packet ids into v2 Research.
+
 Done when:
 
 - the user can move from Today or Inbox into research, simulation, and Copilot without falling into disconnected classic views

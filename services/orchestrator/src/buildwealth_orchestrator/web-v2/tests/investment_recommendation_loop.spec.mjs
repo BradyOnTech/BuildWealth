@@ -39,6 +39,7 @@ test('generated investment recommendation routes through Inbox, Portfolio, and C
   let recommendationCreated = false;
   let sweepCreatePayload = null;
   let fitRequestPayload = null;
+  let researchPacketPayload = null;
 
   const investmentRecommendation = () => ({
     id: 'rec-invest',
@@ -186,9 +187,40 @@ test('generated investment recommendation routes through Inbox, Portfolio, and C
         blocking_gaps: ['concentration'],
         portfolio_impact: { existing_position: false },
         plan_impact: { time_horizon: 'long', years: 25 },
-        evidence: { freshness_status: 'fresh', confidence: 'high' },
+        evidence: {
+          freshness_status: 'fresh',
+          confidence: 'high',
+          packet_id: 'research-evidence:yfinance:NVDA:6mo:1d',
+        },
         simulation_required: false,
         recommended_next_step: 'review_concentration',
+      }));
+      return;
+    }
+
+    if (url.pathname === '/api/research/evidence-packet' && request.method() === 'POST') {
+      researchPacketPayload = request.postDataJSON();
+      assert.equal(researchPacketPayload.symbol, 'NVDA');
+      await route.fulfill(jsonResponse({
+        packet_id: 'research-evidence:yfinance:NVDA:6mo:1d',
+        symbol: 'NVDA',
+        name: 'NVIDIA',
+        provider: 'yfinance',
+        period: '6mo',
+        interval: '1d',
+        generated_at: '2026-04-26T12:00:00Z',
+        coverage: {
+          quote_available: true,
+          history_available: true,
+          provider_status: 'available',
+          endpoints_attempted: ['quote', 'price_history'],
+          warnings: [],
+        },
+        freshness: { status: 'fresh', quote_as_of: '2026-04-26T12:00:00Z' },
+        metrics: { last_price: 875.42, period_change_pct: 12.4, volatility_pct: 28.7 },
+        risk: { drawdown_from_high_pct: -8.2 },
+        quality: { confidence: 'high', coverage_score: 100, blocking_gaps: [] },
+        provenance: { warnings: [] },
       }));
       return;
     }
@@ -216,12 +248,22 @@ test('generated investment recommendation routes through Inbox, Portfolio, and C
   await page.getByText('Investment-fit route').waitFor({ state: 'visible' });
   await page.getByText('symbol NVDA · fresh evidence · via yfinance · does not fit fit').waitFor({ state: 'visible' });
 
+  await page.getByRole('link', { name: 'Research →', exact: true }).click();
+  await page.waitForURL('**/#research?symbol=NVDA&packet=research-evidence%3Ayfinance%3ANVDA%3A6mo%3A1d');
+  await page.getByText('Evidence packet').waitFor({ state: 'visible' });
+  await page.getByText('NVIDIA').waitFor({ state: 'visible' });
+  assert.equal(researchPacketPayload.symbol, 'NVDA');
+
+  await page.goto('http://buildwealth-v2.test/#inbox?focus=rec-invest');
   await page.getByRole('link', { name: /Review fit/ }).first().click();
   await page.waitForURL('**/#portfolio?fit=NVDA&focus=rec-invest');
   await page.locator('input[name="symbol"]').waitFor({ state: 'visible' });
   await assertInputValue(page, 'input[name="symbol"]', 'NVDA');
   await page.getByText('Does Not Fit').waitFor({ state: 'visible' });
   await page.getByText('NVDA would worsen concentration risk.').waitFor({ state: 'visible' });
+  await page.getByRole('link', { name: /Open evidence/ }).click();
+  await page.waitForURL('**/#research?symbol=NVDA&packet=research-evidence%3Ayfinance%3ANVDA%3A6mo%3A1d');
+  await page.getByText('Evidence packet').waitFor({ state: 'visible' });
   assert.equal(fitRequestPayload.symbol, 'NVDA');
 
   await page.goto('http://buildwealth-v2.test/#inbox?focus=rec-invest');

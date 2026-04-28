@@ -237,14 +237,16 @@ function investmentContext(item) {
   const symbol = String(suggestedAction.symbol || evidence.symbol || '').trim().toUpperCase();
   const encodedSymbol = encodeURIComponent(symbol);
   const encodedId = encodeURIComponent(item.id || '');
+  const packetId = String(evidence.research_evidence_packet_id || evidence.packet_id || '').trim();
+  const packetQuery = packetId ? `&packet=${encodeURIComponent(packetId)}` : '';
   const fitHref = symbol ? `#portfolio?fit=${encodedSymbol}&focus=${encodedId}` : `#portfolio?focus=${encodedId}`;
   return {
     symbol,
     evidence,
     suggestedAction,
     fitHref,
-    researchHref: symbol ? `/#research?symbol=${encodedSymbol}` : '/#research',
-    compareHref: symbol ? `/#research?compare=${encodedSymbol}` : '/#research',
+    researchHref: symbol ? `#research?symbol=${encodedSymbol}${packetQuery}` : '#research',
+    compareHref: symbol ? `#research?compare=${encodedSymbol}${packetQuery}` : '#research',
     copilotHref: `#copilot?focus=${encodedId}&intent=investment-fit`,
   };
 }

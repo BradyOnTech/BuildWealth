@@ -4,7 +4,7 @@
 export const meta = {
   id: 'atelier',
   label: 'Atelier',
-  numeral: 'V',
+  numeral: 'VI',
   group: 'studio',
 };
 
@@ -24,7 +24,7 @@ export function template() {
         <div class="entry-meta">
           <a class="link-editorial" href="/#profile">Profile</a>
           <a class="link-editorial" href="/#sync">Sync &amp; Import</a>
-          <a class="link-editorial" href="/#research">Research</a>
+          <a class="link-editorial" href="#research">Research</a>
           <a class="link-editorial" href="/#workflows">Workflows</a>
           <a class="link-editorial" href="/#settings">Settings</a>
         </div>
