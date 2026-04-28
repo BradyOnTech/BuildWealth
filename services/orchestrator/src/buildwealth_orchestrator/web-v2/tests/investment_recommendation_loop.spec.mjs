@@ -40,6 +40,7 @@ test('generated investment recommendation routes through Inbox, Portfolio, and C
   let sweepCreatePayload = null;
   let fitRequestPayload = null;
   let researchPacketPayload = null;
+  let comparePayload = null;
 
   const investmentRecommendation = () => ({
     id: 'rec-invest',
@@ -200,11 +201,12 @@ test('generated investment recommendation routes through Inbox, Portfolio, and C
 
     if (url.pathname === '/api/research/evidence-packet' && request.method() === 'POST') {
       researchPacketPayload = request.postDataJSON();
-      assert.equal(researchPacketPayload.symbol, 'NVDA');
+      const symbol = String(researchPacketPayload.symbol || '').toUpperCase();
+      assert.ok(['NVDA', 'MSFT'].includes(symbol));
       await route.fulfill(jsonResponse({
-        packet_id: 'research-evidence:yfinance:NVDA:6mo:1d',
-        symbol: 'NVDA',
-        name: 'NVIDIA',
+        packet_id: `research-evidence:yfinance:${symbol}:6mo:1d`,
+        symbol,
+        name: symbol === 'NVDA' ? 'NVIDIA' : 'Microsoft',
         provider: 'yfinance',
         period: '6mo',
         interval: '1d',
@@ -217,10 +219,78 @@ test('generated investment recommendation routes through Inbox, Portfolio, and C
           warnings: [],
         },
         freshness: { status: 'fresh', quote_as_of: '2026-04-26T12:00:00Z' },
-        metrics: { last_price: 875.42, period_change_pct: 12.4, volatility_pct: 28.7 },
-        risk: { drawdown_from_high_pct: -8.2 },
+        metrics: {
+          last_price: symbol === 'NVDA' ? 875.42 : 410.18,
+          period_change_pct: symbol === 'NVDA' ? 12.4 : 4.2,
+          volatility_pct: symbol === 'NVDA' ? 28.7 : 19.1,
+        },
+        risk: { drawdown_from_high_pct: symbol === 'NVDA' ? -8.2 : -3.1 },
         quality: { confidence: 'high', coverage_score: 100, blocking_gaps: [] },
         provenance: { warnings: [] },
+      }));
+      return;
+    }
+
+    if (url.pathname === '/api/research/compare' && request.method() === 'POST') {
+      comparePayload = request.postDataJSON();
+      assert.deepEqual(comparePayload.symbols, ['NVDA', 'MSFT']);
+      await route.fulfill(jsonResponse({
+        provider: 'yfinance',
+        period: '6mo',
+        interval: '1d',
+        generated_at: '2026-04-26T12:00:00Z',
+        symbols: ['NVDA', 'MSFT'],
+        summary: {
+          requested_symbols: 2,
+          compared_symbols: 2,
+          available_symbols: 2,
+          baseline_symbol: 'NVDA',
+          ranked_symbols: ['NVDA', 'MSFT'],
+          best_period_return_symbol: 'NVDA',
+          worst_period_return_symbol: 'MSFT',
+          highest_volatility_symbol: 'NVDA',
+          lowest_volatility_symbol: 'MSFT',
+          baseline_relative_return_pct: { NVDA: 0, MSFT: -8.2 },
+        },
+        items: [
+          {
+            symbol: 'NVDA',
+            available: true,
+            message: 'Research data available.',
+            rank: 1,
+            score: 84,
+            last_price: 875.42,
+            period_change_pct: 12.4,
+            volatility_pct: 28.7,
+            quote_records: 1,
+            history_records: 120,
+            research_evidence_packet_id: 'research-evidence:yfinance:NVDA:6mo:1d',
+            research_provider: 'yfinance',
+            research_freshness_status: 'fresh',
+            research_confidence: 'high',
+            research_coverage_score: 100,
+            research_blocking_gaps: [],
+          },
+          {
+            symbol: 'MSFT',
+            available: true,
+            message: 'Research data available.',
+            rank: 2,
+            score: 71,
+            last_price: 410.18,
+            period_change_pct: 4.2,
+            volatility_pct: 19.1,
+            quote_records: 1,
+            history_records: 120,
+            research_evidence_packet_id: 'research-evidence:yfinance:MSFT:6mo:1d',
+            research_provider: 'yfinance',
+            research_freshness_status: 'fresh',
+            research_confidence: 'high',
+            research_coverage_score: 100,
+            research_blocking_gaps: [],
+          },
+        ],
+        warnings: [],
       }));
       return;
     }
@@ -251,8 +321,15 @@ test('generated investment recommendation routes through Inbox, Portfolio, and C
   await page.getByRole('link', { name: 'Research →', exact: true }).click();
   await page.waitForURL('**/#research?symbol=NVDA&packet=research-evidence%3Ayfinance%3ANVDA%3A6mo%3A1d');
   await page.getByText('Evidence packet').waitFor({ state: 'visible' });
-  await page.getByText('NVIDIA').waitFor({ state: 'visible' });
+  await page.getByText('NVIDIA').first().waitFor({ state: 'visible' });
   assert.equal(researchPacketPayload.symbol, 'NVDA');
+
+  await page.goto('http://buildwealth-v2.test/#research?compare=NVDA,MSFT');
+  await page.getByText('Compare evidence').waitFor({ state: 'visible' });
+  await page.getByText('NVDA / MSFT').waitFor({ state: 'visible' });
+  await page.getByText('Rank 1').waitFor({ state: 'visible' });
+  await page.getByText('Microsoft').waitFor({ state: 'visible' });
+  assert.deepEqual(comparePayload.symbols, ['NVDA', 'MSFT']);
 
   await page.goto('http://buildwealth-v2.test/#inbox?focus=rec-invest');
   await page.getByRole('link', { name: /Review fit/ }).first().click();

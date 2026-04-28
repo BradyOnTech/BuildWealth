@@ -17,6 +17,44 @@
   gap: var(--s-5);
 }
 
+.research-compare-strip,
+.research-compare-packets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--s-5);
+}
+
+.research-compare-packets {
+  align-items: start;
+}
+
+.research-rank-item {
+  border-top: 1px solid var(--line);
+  padding-top: var(--s-4);
+}
+
+.research-rank-item span {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.research-rank-item b {
+  display: block;
+  margin-top: var(--s-2);
+  font-family: var(--display);
+  font-size: 32px;
+  font-weight: 500;
+}
+
+.research-rank-item p {
+  margin: var(--s-2) 0 0;
+  color: var(--muted);
+}
+
 .research-panel {
   border-top: 1px solid var(--line);
   padding-top: var(--s-4);

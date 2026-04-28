@@ -22,10 +22,40 @@ export function template() {
 export async function init(params = {}) {
   const root = $('#research-page');
   if (!root) return;
-  const symbol = String(params.symbol || params.compare || '').trim().toUpperCase();
+  const compareSymbols = normalizeCompareSymbols(params.compare || '');
+  const symbol = String(params.symbol || compareSymbols[0] || '').trim().toUpperCase();
   const period = String(params.period || '6mo').trim() || '6mo';
   const interval = String(params.interval || '1d').trim() || '1d';
-  const mode = params.compare ? 'compare' : 'evidence';
+
+  if (compareSymbols.length >= 2) {
+    setView(root, renderResearchLoading(compareSymbols.join(' / '), 'compare'));
+    try {
+      const [compare, packets] = await Promise.all([
+        api.researchCompare({ symbols: compareSymbols, period, interval, baseline_symbol: compareSymbols[0] }),
+        Promise.all(compareSymbols.map(compareSymbol => api.researchEvidencePacket({
+          symbol: compareSymbol,
+          period,
+          interval,
+        }).catch(err => ({
+          symbol: compareSymbol,
+          provider: '',
+          period,
+          interval,
+          generated_at: '',
+          coverage: { warnings: [err?.message || 'Evidence packet unavailable.'] },
+          freshness: { status: 'unavailable' },
+          metrics: {},
+          risk: {},
+          quality: { confidence: 'low', coverage_score: 0, blocking_gaps: ['research:evidence_packet'] },
+          provenance: {},
+        })))),
+      ]);
+      setView(root, renderCompareSurface(compare, packets));
+    } catch (err) {
+      setView(root, renderResearchError(compareSymbols.join(' / '), err));
+    }
+    return;
+  }
 
   if (!symbol) {
     setView(root, renderResearchEmpty());
@@ -35,10 +65,26 @@ export async function init(params = {}) {
   setView(root, renderResearchLoading(symbol));
   try {
     const packet = await api.researchEvidencePacket({ symbol, period, interval });
-    setView(root, renderResearchPage(packet, { mode, requestedPacketId: params.packet || '' }));
+    setView(root, renderResearchPage(packet, { requestedPacketId: params.packet || '' }));
   } catch (err) {
     setView(root, renderResearchError(symbol, err));
   }
+}
+
+export function normalizeCompareSymbols(value) {
+  const parts = String(value || '')
+    .split(/[\s,]+/)
+    .map(part => part.trim().toUpperCase())
+    .filter(Boolean);
+  const seen = new Set();
+  const symbols = [];
+  for (const symbol of parts) {
+    if (seen.has(symbol)) continue;
+    seen.add(symbol);
+    symbols.push(symbol);
+    if (symbols.length >= 4) break;
+  }
+  return symbols;
 }
 
 export function renderResearchEmpty() {
@@ -51,10 +97,10 @@ export function renderResearchEmpty() {
   `;
 }
 
-function renderResearchLoading(symbol) {
+function renderResearchLoading(symbol, mode = 'evidence') {
   return html`
     <section class="hero-stack research-hero">
-      <span class="hero-eyebrow">Research evidence</span>
+      <span class="hero-eyebrow">${mode === 'compare' ? 'Compare evidence' : 'Research evidence'}</span>
       <h1 class="hero-number">${symbol}</h1>
       <p class="hero-marginalia">Loading packet evidence.</p>
     </section>
@@ -71,10 +117,10 @@ function renderResearchError(symbol, err) {
   `;
 }
 
-function renderResearchPage(packet, { mode = 'evidence', requestedPacketId = '' } = {}) {
+function renderResearchPage(packet, { requestedPacketId = '' } = {}) {
   const packetId = String(packet?.packet_id || requestedPacketId || '').trim();
   return html`
-    ${raw(renderEvidencePacket(packet, { mode }))}
+    ${raw(renderEvidencePacket(packet))}
     <footer class="look-closer">
       <span class="section-eyebrow">Move through the loop</span>
       <div class="look-closer-row">
@@ -86,8 +132,79 @@ function renderResearchPage(packet, { mode = 'evidence', requestedPacketId = '' 
   `;
 }
 
-export function renderEvidencePacket(packet, { mode = 'evidence' } = {}) {
+export function renderEvidencePacket(packet) {
   if (!packet || typeof packet !== 'object') return renderResearchEmpty();
+  return html`
+    <section class="hero-stack research-hero">
+      <span class="hero-eyebrow">Research evidence</span>
+      <h1 class="hero-number">${packet.symbol}</h1>
+      <p class="hero-marginalia">${packet.name || packet.asset_type || packet.provider || 'Evidence packet'}</p>
+    </section>
+
+    ${raw(renderEvidencePacketCard(packet))}
+  `;
+}
+
+export function renderCompareSurface(compare, packets = []) {
+  const symbols = normalizeCompareSymbols((compare?.symbols || []).join(','));
+  const summary = compare?.summary || {};
+  const items = Array.isArray(compare?.items) ? compare.items : [];
+  const warnings = Array.isArray(compare?.warnings) ? compare.warnings : [];
+  const packetBySymbol = new Map(
+    packets
+      .filter(packet => packet && typeof packet === 'object' && packet.symbol)
+      .map(packet => [String(packet.symbol).toUpperCase(), packet])
+  );
+  return html`
+    <section class="hero-stack research-hero">
+      <span class="hero-eyebrow">Compare evidence</span>
+      <h1 class="hero-number">${symbols.join(' / ') || 'Compare'}</h1>
+      <p class="hero-marginalia">${compare?.provider || 'Provider'} · ${compare?.period || 'period'} · ${compare?.interval || 'interval'}</p>
+    </section>
+
+    <section class="research-packet" aria-label="Research compare">
+      <header class="section-head">
+        <span class="section-eyebrow">Small set comparison</span>
+        <h2 class="section-title">Evidence ranking</h2>
+      </header>
+      <dl class="fit-meta research-meta">
+        <div>
+          <dt>Compared</dt>
+          <dd>${summary.compared_symbols ?? items.length}</dd>
+        </div>
+        <div>
+          <dt>Available</dt>
+          <dd>${summary.available_symbols ?? items.filter(item => item.available).length}</dd>
+        </div>
+        <div>
+          <dt>Baseline</dt>
+          <dd>${summary.baseline_symbol || symbols[0] || 'Unknown'}</dd>
+        </div>
+        <div>
+          <dt>Highest volatility</dt>
+          <dd>${summary.highest_volatility_symbol || 'Unknown'}</dd>
+        </div>
+      </dl>
+
+      <div class="research-compare-strip">
+        ${items.slice(0, 4).map(item => raw(renderCompareRankItem(item, summary)))}
+      </div>
+      ${raw(renderListPanel('Warnings', warnings))}
+    </section>
+
+    <section class="research-compare-packets" aria-label="Compare evidence packets">
+      ${symbols.map(symbol => raw(
+        renderEvidencePacketCard(packetBySymbol.get(symbol) || compareItemToPacket(
+          items.find(item => item.symbol === symbol),
+          compare,
+        ))
+      ))}
+    </section>
+  `;
+}
+
+export function renderEvidencePacketCard(packet) {
+  if (!packet || typeof packet !== 'object') return '';
   const coverage = packet.coverage || {};
   const freshness = packet.freshness || {};
   const metrics = packet.metrics || {};
@@ -101,16 +218,11 @@ export function renderEvidencePacket(packet, { mode = 'evidence' } = {}) {
   ].filter(Boolean);
 
   return html`
-    <section class="hero-stack research-hero">
-      <span class="hero-eyebrow">Research evidence</span>
-      <h1 class="hero-number">${packet.symbol}</h1>
-      <p class="hero-marginalia">${packet.name || packet.asset_type || packet.provider || 'Evidence packet'}${mode === 'compare' ? ' · comparison seed' : ''}</p>
-    </section>
-
     <section class="research-packet" aria-label="Research evidence packet">
       <header class="section-head">
-        <span class="section-eyebrow">${packet.provider || 'provider'} · ${packet.period || 'period'} · ${packet.interval || 'interval'}</span>
-        <h2 class="section-title">Evidence packet</h2>
+        <span class="section-eyebrow">${packet.symbol || 'symbol'} · ${packet.provider || 'provider'} · ${packet.period || 'period'} · ${packet.interval || 'interval'}</span>
+        <h2 class="section-title">${packet.symbol || 'Research'} evidence packet</h2>
+        ${packet.name ? html`<p class="marginalia">${packet.name}</p>` : ''}
       </header>
 
       <dl class="fit-meta research-meta">
@@ -159,6 +271,52 @@ export function renderEvidencePacket(packet, { mode = 'evidence' } = {}) {
       <p class="marginalia">${packet.packet_id || ''}</p>
     </section>
   `;
+}
+
+function renderCompareRankItem(item = {}, summary = {}) {
+  const relative = summary.baseline_relative_return_pct && typeof summary.baseline_relative_return_pct === 'object'
+    ? summary.baseline_relative_return_pct[item.symbol]
+    : null;
+  return html`
+    <article class="research-rank-item">
+      <span>Rank ${item.rank || '—'}</span>
+      <b>${item.symbol || 'Unknown'}</b>
+      <p>Score ${formatNumber(item.score) || '—'} · ${titleCase(item.research_freshness_status || 'unknown')} · ${titleCase(item.research_confidence || 'unknown')}</p>
+      ${relative != null ? html`<p>vs baseline ${fmtPctSigned(relative)}</p>` : ''}
+    </article>
+  `;
+}
+
+function compareItemToPacket(item = {}, compare = {}) {
+  return {
+    packet_id: item?.research_evidence_packet_id,
+    symbol: item?.symbol || 'Unknown',
+    provider: item?.research_provider || compare?.provider || '',
+    period: compare?.period || '6mo',
+    interval: compare?.interval || '1d',
+    generated_at: compare?.generated_at,
+    coverage: {
+      quote_available: Number(item?.quote_records || 0) > 0,
+      history_available: Number(item?.history_records || 0) > 0,
+      warnings: [],
+    },
+    freshness: { status: item?.research_freshness_status || 'unknown' },
+    metrics: {
+      last_price: item?.last_price,
+      period_change_pct: item?.period_change_pct,
+      volatility_pct: item?.volatility_pct,
+      market_cap_usd: item?.market_cap_usd,
+      pe_ratio: item?.pe_ratio,
+      dividend_yield_pct: item?.dividend_yield_pct,
+    },
+    risk: {},
+    quality: {
+      confidence: item?.research_confidence,
+      coverage_score: item?.research_coverage_score,
+      blocking_gaps: Array.isArray(item?.research_blocking_gaps) ? item.research_blocking_gaps : [],
+    },
+    provenance: { warnings: item?.message ? [item.message] : [] },
+  };
 }
 
 function renderMetricPanel(title, rows) {

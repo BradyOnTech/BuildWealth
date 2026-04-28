@@ -70,6 +70,7 @@ export const api = {
   holdings:     () => fetchJson('/api/portfolio/holdings'),
   portfolioFit: (body) => postJson('/api/portfolio/fit-assessment', body),
   researchEvidencePacket: (body) => postJson('/api/research/evidence-packet', body),
+  researchCompare: (body) => postJson('/api/research/compare', body),
   profile:      () => fetchJson('/api/financial-profile'),
   updateProfile: (body) => putJson('/api/financial-profile', body),
   onboarding:   () => fetchJson('/api/onboarding/status'),

@@ -551,7 +551,7 @@ Long-term:
 
 ## Current Immediate Next Work
 
-1. Continue v2 research migration with compare and dossier surfaces now that packet-native evidence exists.
+1. Continue v2 research migration with dossier lookup/detail now that packet-native evidence and small-set compare exist.
 2. Add outcome calibration for Copilot-drafted investment/research recommendation rows.
 3. Deepen portfolio-fit account context with explicit proposed-account selection and tax-policy preferences.
 4. Continue expanding browser coverage around Plan v2 migration as those surfaces move over.
