@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:web-v2:browser": "playwright test src/buildwealth_orchestrator/web-v2/tests/copilot_profile.spec.mjs src/buildwealth_orchestrator/web-v2/tests/today_daily_review.spec.mjs src/buildwealth_orchestrator/web-v2/tests/recommendation_lifecycle.spec.mjs --browser=chromium --reporter=line"
+    "test:web-v2:browser": "playwright test src/buildwealth_orchestrator/web-v2/tests/*.spec.mjs --browser=chromium --reporter=line"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1"

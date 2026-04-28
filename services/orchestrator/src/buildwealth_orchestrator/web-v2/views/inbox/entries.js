@@ -225,7 +225,11 @@ function investmentContext(item) {
   if (!payload || typeof payload !== 'object') return null;
   const generator = payload.generator && typeof payload.generator === 'object' ? payload.generator : {};
   const source = String(item?.source || '').toLowerCase();
-  if (source !== 'generator:watchlist_research' && generator.signal_type !== 'watchlist_research') return null;
+  const isResearchRecommendation = source === 'generator:watchlist_research'
+    || generator.signal_type === 'watchlist_research';
+  const isCopilotInvestmentDraft = source === 'copilot:investment_fit'
+    || generator.signal_type === 'investment_fit_discussion';
+  if (!isResearchRecommendation && !isCopilotInvestmentDraft) return null;
   const evidence = payload.evidence && typeof payload.evidence === 'object' ? payload.evidence : {};
   const suggestedAction = payload.suggested_action && typeof payload.suggested_action === 'object'
     ? payload.suggested_action

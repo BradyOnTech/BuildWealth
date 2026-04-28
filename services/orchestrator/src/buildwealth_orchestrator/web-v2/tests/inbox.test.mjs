@@ -226,6 +226,51 @@ test('inbox investment research rows render fit routing instead of generic workf
   assert.match(markup, />Review fit <span class="arrow">→<\/span>/);
 });
 
+test('inbox copilot investment drafts render fit routing', () => {
+  const markup = String(renderEntries([
+    {
+      id: 'rec-copilot-invest',
+      status: 'proposed',
+      priority: 'high',
+      source: 'copilot:investment_fit',
+      recommendation_type: 'workflow_action',
+      title: 'Review NVDA fit before changing exposure',
+      detail: 'NVDA conflicts with current concentration policy.',
+      action_payload: {
+        generator: {
+          signal_type: 'investment_fit_discussion',
+        },
+        evidence: {
+          symbol: 'NVDA',
+          provider: 'yfinance',
+          freshness_status: 'fresh',
+          fit_status: 'does_not_fit',
+        },
+        suggested_action: {
+          kind: 'review_portfolio_fit',
+          symbol: 'NVDA',
+          fit_status: 'does_not_fit',
+        },
+        quality: {
+          actionability: 'review_only',
+          confidence_level: 'high',
+          freshness_status: 'fresh',
+          blocking_context: [],
+        },
+      },
+    },
+  ], {
+    planLookup: new Map(),
+    expanded: null,
+    emptyMessage: '',
+  }));
+
+  assert.match(markup, /Investment-fit route/);
+  assert.match(markup, /symbol NVDA · fresh evidence · via yfinance · does not fit fit/);
+  assert.match(markup, /href="#portfolio\?fit=NVDA&amp;focus=rec-copilot-invest"/);
+  assert.match(markup, /href="#copilot\?focus=rec-copilot-invest&amp;intent=investment-fit"/);
+});
+
 test('inbox investment research refresh rows route primary action to research', () => {
   const markup = String(renderEntries([
     {
