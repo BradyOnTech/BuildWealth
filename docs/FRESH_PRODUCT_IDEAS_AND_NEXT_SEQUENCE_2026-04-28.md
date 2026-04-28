@@ -119,7 +119,7 @@ Example:
 Likely first slice:
 
 - add a small investment policy profile section (started: profile storage/API, Copilot draft/review cards, and readiness summary now include investment policy)
-- expose policy readiness in Profile, Today, and Copilot (started: onboarding/profile readiness and Copilot profile draft display include policy; Today-specific command-center policy surfacing remains future work)
+- expose policy readiness in Profile, Today, and Copilot (started: onboarding/profile readiness, Today command-center policy guardrail card, Copilot investment-policy prompt, and Copilot profile draft display include policy)
 - use max single-symbol exposure in portfolio-fit before expanding to other policy fields (started: profile policy cap overrides generic portfolio risk threshold and is cited in Portfolio/Copilot fit review cards)
 
 ### 2. Decision Pre-Mortem

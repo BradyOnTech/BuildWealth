@@ -277,3 +277,16 @@ test('copilot view maps inbox recommendation intents to focused draft prompts', 
   assert.match(copilotSource, /investment-fit/);
   assert.match(copilotSource, /hidden buy\/sell advice/);
 });
+
+test('copilot view exposes investment policy guardrail prompt', () => {
+  const currentDir = dirname(fileURLToPath(import.meta.url));
+  const copilotSource = readFileSync(resolve(currentDir, '../views/copilot.js'), 'utf8');
+
+  assert.match(copilotSource, /INVESTMENT_POLICY_SETUP_PROMPT/);
+  assert.match(copilotSource, /Help me define my personal investment policy/);
+  assert.match(copilotSource, /max_single_symbol_exposure_pct/);
+  assert.match(copilotSource, /minimum_research_confidence/);
+  assert.match(copilotSource, /tax_sensitivity/);
+  assert.match(copilotSource, /#copilot\\?intent=investment-policy|investment-policy/);
+  assert.match(copilotSource, /Define policy with Copilot/);
+});

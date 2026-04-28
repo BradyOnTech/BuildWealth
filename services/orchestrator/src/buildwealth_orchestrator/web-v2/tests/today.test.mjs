@@ -75,6 +75,16 @@ test('today command cards render decision state with actions', () => {
         action_label: 'Review draft',
         href: '#inbox?focus=rec-copilot',
       },
+      {
+        id: 'investment-policy',
+        title: 'Investment policy',
+        status: 'warning',
+        detail: 'Set personal investment guardrails such as max single-symbol exposure. Investment-fit confidence improves after these guardrails are defined.',
+        metric_label: 'Guardrails',
+        metric_value: 'Missing',
+        action_label: 'Define policy',
+        href: '#copilot?intent=investment-policy',
+      },
     ],
   }, {
     enabled_count: 2,
@@ -95,6 +105,9 @@ test('today command cards render decision state with actions', () => {
   assert.match(markup, /Copilot prepared reviews/);
   assert.match(markup, /NVDA · fresh evidence · review-only/);
   assert.match(markup, /href="#inbox\?focus=rec-copilot"/);
+  assert.match(markup, /Investment policy/);
+  assert.match(markup, /Guardrails <b>Missing<\/b>/);
+  assert.match(markup, /href="#copilot\?intent=investment-policy"/);
   assert.match(markup, /Engine health/);
   assert.match(markup, /1\/2/);
   assert.match(markup, /3 degraded event/);

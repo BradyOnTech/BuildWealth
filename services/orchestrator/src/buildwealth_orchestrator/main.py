@@ -3817,6 +3817,9 @@ def _build_top_next_actions(
 def _build_today_command_cards(dashboard: TodayDashboardResponse) -> list[TodayCommandCard]:
     cards = list(dashboard.command_cards)
     cards.append(_build_cash_runway_command_card(dashboard))
+    investment_policy_card = _build_investment_policy_command_card(dashboard)
+    if investment_policy_card is not None:
+        cards.append(investment_policy_card)
     cards.append(_build_research_readiness_command_card(dashboard))
     try:
         proposed_rows = recommendation_inbox.list(limit=500, status="proposed", sort="created_at_desc")
@@ -3886,6 +3889,34 @@ def _build_today_command_cards(dashboard: TodayDashboardResponse) -> list[TodayC
         cards.append(investment_calibration_card)
 
     return cards
+
+
+def _build_investment_policy_command_card(dashboard: TodayDashboardResponse) -> TodayCommandCard | None:
+    readiness = dashboard.profile_readiness
+    if readiness is None:
+        return None
+    policy_section = next(
+        (section for section in readiness.sections if section.key == "investment_policy"),
+        None,
+    )
+    if policy_section is None or policy_section.status == "complete":
+        return None
+
+    raw_detail = str(policy_section.detail or "").strip()
+    detail = raw_detail or "Set personal investment guardrails before relying on stronger fit advice."
+    if "investment-fit confidence" not in detail.lower():
+        detail = f"{detail} Defining these guardrails improves investment-fit confidence."
+
+    return TodayCommandCard(
+        id="investment-policy",
+        title="Investment policy",
+        status="warning",
+        detail=detail,
+        metric_label="Guardrails",
+        metric_value="Missing" if policy_section.status == "attention" else "Weak",
+        action_label="Define policy",
+        href="#copilot?intent=investment-policy",
+    )
 
 
 def _build_investment_calibration_command_card() -> TodayCommandCard | None:

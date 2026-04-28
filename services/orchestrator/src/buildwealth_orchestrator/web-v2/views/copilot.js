@@ -69,6 +69,16 @@ const TAX_SETUP_PROMPT = [
   'do not save anything with update_financial_profile until I explicitly confirm the draft.',
 ].join(' ');
 
+const INVESTMENT_POLICY_SETUP_PROMPT = [
+  'Help me define my personal investment policy.',
+  'First call get_onboarding_status and get_financial_profile.',
+  'Focus only on missing or weak investment_policy fields for now.',
+  'Ask me one focused question at a time for max_single_symbol_exposure_pct, minimum_research_confidence, tax_sensitivity, and risk_tolerance.',
+  'Frame this as investment-fit guardrails, not buy/sell advice.',
+  'When you have enough information, call draft_financial_profile_update with investment_policy so I can review the changes.',
+  'do not save anything with update_financial_profile until I explicitly confirm the draft.',
+].join(' ');
+
 const ui = {
   conversationId: null,
   conversationTitle: '',
@@ -110,6 +120,9 @@ export async function init(params = {}) {
   // Load past conversations, then the active one (if any).
   loadConversations().then(() => rerenderMasthead()).catch(() => {});
   loadOnboarding().then(() => rerenderBody()).catch(() => {});
+  if (String(params.intent || '').trim().toLowerCase() === 'investment-policy') {
+    fillDraft(INVESTMENT_POLICY_SETUP_PROMPT);
+  }
   if (params.focus) {
     // Linked from inbox: prefill question. Conversation stays empty until sent.
     fillDraft(recommendationFocusPrompt(params.focus, params.intent));
@@ -409,11 +422,20 @@ function isTaxOnboardingStep(step) {
   return key.includes('tax') || title.includes('tax');
 }
 
+function isInvestmentPolicyOnboardingStep(step) {
+  const key = String(step?.key || '').toLowerCase();
+  const title = String(step?.title || '').toLowerCase();
+  return key.includes('investment_policy')
+    || title.includes('investment policy')
+    || title.includes('guardrail');
+}
+
 function onboardingActionLabel(status) {
   const step = nextOnboardingStep(status);
   if (isDebtOnboardingStep(step)) return 'Add debt with Copilot';
   if (isGoalOnboardingStep(step)) return 'Add goals with Copilot';
   if (isTaxOnboardingStep(step)) return 'Add tax basics with Copilot';
+  if (isInvestmentPolicyOnboardingStep(step)) return 'Define policy with Copilot';
   if (isPhysicalAssetOnboardingStep(step)) return 'Add assets with Copilot';
   return 'Fill it out with Copilot';
 }
@@ -423,6 +445,7 @@ function onboardingPrompt(status) {
   if (isDebtOnboardingStep(step)) return DEBT_SETUP_PROMPT;
   if (isGoalOnboardingStep(step)) return GOAL_SETUP_PROMPT;
   if (isTaxOnboardingStep(step)) return TAX_SETUP_PROMPT;
+  if (isInvestmentPolicyOnboardingStep(step)) return INVESTMENT_POLICY_SETUP_PROMPT;
   if (isPhysicalAssetOnboardingStep(step)) return PHYSICAL_ASSET_SETUP_PROMPT;
   return PROFILE_SETUP_PROMPT;
 }

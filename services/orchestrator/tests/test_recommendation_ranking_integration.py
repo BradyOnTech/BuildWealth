@@ -354,6 +354,51 @@ def test_today_command_cards_surface_copilot_drafted_reviews(
     assert "review-only" in card.detail
 
 
+def test_today_command_cards_surface_missing_investment_policy_guardrails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    dashboard = main.TodayDashboardResponse(
+        generated_at=main.utc_now(),
+        currency="USD",
+        state="MN",
+        sync_status=main.SyncStatusResponse(running=False, runs_total=0, runs_failed=0),
+        context_state="ready",
+        context_notes=[],
+        command_cards=[],
+        emergency_fund_months=8.0,
+        profile_readiness=main.ProfileReadinessSummary(
+            completion_percent=92.0,
+            status="ready",
+            sections=[
+                main.ProfileReadinessSection(
+                    key="investment_policy",
+                    title="Investment policy",
+                    status="attention",
+                    detail="Set personal investment guardrails such as max single-symbol exposure.",
+                    required_for=["investment_fit", "recommendation_ranking", "research_review"],
+                    blocking_recommendations=False,
+                )
+            ],
+        ),
+    )
+
+    cards = {card.id: card for card in main._build_today_command_cards(dashboard)}
+
+    card = cards["investment-policy"]
+    assert card.status == "warning"
+    assert card.title == "Investment policy"
+    assert card.metric_label == "Guardrails"
+    assert card.metric_value == "Missing"
+    assert "max single-symbol exposure" in card.detail
+    assert "investment-fit confidence" in card.detail
+    assert card.action_label == "Define policy"
+    assert card.href == "#copilot?intent=investment-policy"
+
+
 def test_today_outcome_loop_surfaces_copilot_investment_process_calibration(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
