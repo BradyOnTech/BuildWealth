@@ -514,6 +514,7 @@ Current progress:
 - `generator:research_thesis_expiration` creates deduped review-only rows for saved dossier artifacts whose thesis review window has expired.
 - v2 Inbox routes thesis-expiration rows back to the saved dossier review surface instead of treating them as generic workflow rows.
 - `generator:watchlist_research` can create review-only rows for stale watchlist theses and material price moves from a stored thesis reference price.
+- Applying a `review_research_thesis` row now refreshes thesis metadata where possible: watchlist rows update `thesis_reviewed_at`, `thesis_expires_at`, and `thesis_reference_price_usd`; saved dossiers receive a thesis-review metadata section.
 
 Done when:
 

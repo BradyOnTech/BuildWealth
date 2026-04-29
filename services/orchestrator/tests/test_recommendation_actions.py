@@ -5,6 +5,7 @@ import pytest
 
 import buildwealth_orchestrator.main as main
 from buildwealth_orchestrator.services.plan_workspace import PlanWorkspace
+from buildwealth_orchestrator.services.portfolio_store import PortfolioStore
 from buildwealth_orchestrator.services.recommendation_factory import generate_plan_tracking_recommendations
 from buildwealth_orchestrator.services.recommendation_inbox import RecommendationInbox
 
@@ -218,6 +219,145 @@ def test_apply_recommendation_updates_research_bridge_metadata(
     assert bridge_meta.get("pinned_symbols") == ["VTI"]
     closure_artifact_meta = updated_recommendation["action_payload"].get("decision_closure_artifact", {})
     assert closure_artifact_meta.get("artifact_id") == response.decision_closure_artifact.id
+
+
+def test_apply_watchlist_thesis_review_refreshes_watchlist_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = PlanWorkspace(tmp_path / "plans")
+    plan = workspace.create_plan(title="Watchlist Thesis Plan")
+    portfolio = PortfolioStore(tmp_path / "portfolio")
+    portfolio.upsert_watchlist_item(
+        symbol="NVDA",
+        thesis="AI compute thesis.",
+        thesis_reference_price_usd=800.0,
+        target_price_usd=1200.0,
+        tags=["ai"],
+    )
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    recommendation = inbox.create(
+        title="Review NVDA thesis after a material price move",
+        detail="NVDA moved enough to review the saved thesis.",
+        recommendation_type="workflow_action",
+        source="generator:watchlist_research",
+        plan_id=plan["id"],
+        action_payload={
+            "suggested_action": {
+                "kind": "review_research_thesis",
+                "symbol": "NVDA",
+                "reason": "material_price_change",
+            },
+            "evidence": {
+                "symbol": "NVDA",
+                "current_price_usd": 980.0,
+                "reference_price_usd": 800.0,
+            },
+        },
+    )
+
+    monkeypatch.setattr(main, "plan_workspace", workspace)
+    monkeypatch.setattr(main, "portfolio_store", portfolio)
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    response = asyncio.run(
+        main.apply_recommendation_with_decision_packet(
+            recommendation["id"],
+            main.RecommendationApplyRequest(
+                create_decision_packet=False,
+                capture_scenario_diff=False,
+                pin_research_bridge=False,
+                rationale="Thesis still fits after review.",
+            ),
+        )
+    )
+
+    item = portfolio.list_watchlist()[0]
+    assert item["symbol"] == "NVDA"
+    assert item["thesis_reference_price_usd"] == pytest.approx(980.0)
+    assert item["thesis_reviewed_at"]
+    assert item["thesis_expires_at"]
+    assert item["updated_at"] == item["thesis_reviewed_at"]
+
+    payload = inbox.get(recommendation["id"])["action_payload"]
+    thesis_review = payload["thesis_review"]
+    assert thesis_review["status"] == "refreshed"
+    assert thesis_review["target"] == "watchlist"
+    assert thesis_review["symbol"] == "NVDA"
+    assert thesis_review["reference_price_usd"] == pytest.approx(980.0)
+    assert response.recommendation.status == "applied"
+
+
+def test_apply_saved_dossier_thesis_review_writes_artifact_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = PlanWorkspace(tmp_path / "plans")
+    plan = workspace.create_plan(title="Dossier Thesis Plan")
+    artifact = workspace.write_artifact(
+        plan_id=plan["id"],
+        title="Research Dossier - MSFT vs VTI",
+        markdown="# Research Dossier: MSFT vs VTI\n\n## Thesis\n\nCompare MSFT against broad-market exposure.\n",
+        kind="research_dossier",
+    )
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    recommendation = inbox.create(
+        title="Refresh stale research thesis for MSFT / VTI",
+        detail="The saved dossier thesis is past its review window.",
+        recommendation_type="workflow_action",
+        source="generator:research_thesis_expiration",
+        plan_id=plan["id"],
+        action_payload={
+            "suggested_action": {
+                "kind": "review_research_thesis",
+                "artifact_id": artifact["id"],
+                "plan_id": plan["id"],
+                "symbols": ["MSFT", "VTI"],
+            },
+            "evidence": {
+                "artifact_id": artifact["id"],
+                "plan_id": plan["id"],
+                "symbols": ["MSFT", "VTI"],
+                "current_price_usd": 410.0,
+            },
+        },
+    )
+
+    monkeypatch.setattr(main, "plan_workspace", workspace)
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    response = asyncio.run(
+        main.apply_recommendation_with_decision_packet(
+            recommendation["id"],
+            main.RecommendationApplyRequest(
+                create_decision_packet=False,
+                capture_scenario_diff=False,
+                pin_research_bridge=False,
+                rationale="Dossier thesis reviewed.",
+            ),
+        )
+    )
+
+    refreshed_artifact = workspace.read_artifact(plan["id"], artifact["id"])
+    assert "## Thesis Review Metadata" in refreshed_artifact["content"]
+    assert "- Reviewed at:" in refreshed_artifact["content"]
+    assert "- Expires at:" in refreshed_artifact["content"]
+    assert "- Reference price USD: `410.0`" in refreshed_artifact["content"]
+
+    lookup = main.build_research_dossier_lookup_payload(
+        plan_id=plan["id"],
+        limit=5,
+        include_content=True,
+    )
+    assert lookup["items"][0]["thesis_review"]["status"] == "current"
+    assert lookup["items"][0]["thesis_review"]["reference_price_usd"] == pytest.approx(410.0)
+
+    payload = inbox.get(recommendation["id"])["action_payload"]
+    thesis_review = payload["thesis_review"]
+    assert thesis_review["status"] == "refreshed"
+    assert thesis_review["target"] == "dossier"
+    assert thesis_review["artifact_id"] == artifact["id"]
+    assert response.recommendation.status == "applied"
 
 
 def test_reject_recommendation_returns_suggested_research_symbols(

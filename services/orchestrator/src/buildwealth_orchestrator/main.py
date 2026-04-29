@@ -4512,6 +4512,7 @@ def _list_research_dossier_artifacts(
                 artifact_payload = plan_workspace.read_artifact(plan_id=plan_id, artifact_id=artifact_id)
                 content = str(artifact_payload.get("content") or "")
                 row["content_preview"] = content[:1600]
+                row.update(_extract_thesis_review_metadata_from_markdown(content))
                 if not row["symbols"]:
                     row["symbols"] = _extract_symbols_from_research_dossier_title(
                         artifact_payload.get("title")
@@ -4560,6 +4561,58 @@ def build_research_dossier_lookup_payload(
         "warnings": normalize_context_warnings(warnings, max_warnings=20),
         "updated_at": context_utc_now_iso(),
     }
+
+
+def _extract_thesis_review_metadata_from_markdown(markdown: Any) -> dict[str, Any]:
+    text = str(markdown or "")
+    if "## Thesis Review Metadata" not in text:
+        return {}
+    metadata: dict[str, Any] = {}
+    reviewed_match = re.search(r"-\s*Reviewed at:\s*`?([^`\n]+)`?", text, flags=re.IGNORECASE)
+    expires_match = re.search(r"-\s*Expires at:\s*`?([^`\n]+)`?", text, flags=re.IGNORECASE)
+    price_match = re.search(r"-\s*Reference price USD:\s*`?([^`\n]+)`?", text, flags=re.IGNORECASE)
+    if reviewed_match:
+        metadata["reviewed_at"] = reviewed_match.group(1).strip()
+    if expires_match:
+        metadata["expires_at"] = expires_match.group(1).strip()
+    if price_match:
+        metadata["reference_price_usd"] = _coerce_optional_float(price_match.group(1).strip())
+    return metadata
+
+
+def _build_thesis_review_metadata_section(
+    *,
+    reviewed_at: str,
+    expires_at: str,
+    reference_price_usd: float | None,
+) -> str:
+    lines = [
+        "## Thesis Review Metadata",
+        "",
+        f"- Reviewed at: `{reviewed_at}`",
+        f"- Expires at: `{expires_at}`",
+    ]
+    if reference_price_usd is not None:
+        lines.append(f"- Reference price USD: `{round(float(reference_price_usd), 4)}`")
+    return "\n".join(lines).strip()
+
+
+def _replace_thesis_review_metadata_section(
+    markdown: str,
+    *,
+    reviewed_at: str,
+    expires_at: str,
+    reference_price_usd: float | None,
+) -> str:
+    section = _build_thesis_review_metadata_section(
+        reviewed_at=reviewed_at,
+        expires_at=expires_at,
+        reference_price_usd=reference_price_usd,
+    )
+    pattern = r"\n*## Thesis Review Metadata\n(?:.|\n)*?(?=\n## |\Z)"
+    if re.search(pattern, markdown):
+        return re.sub(pattern, f"\n\n{section}\n", markdown).strip() + "\n"
+    return markdown.rstrip() + "\n\n" + section + "\n"
 
 
 def _normalize_recommendation_evidence_citations(raw_citations: Any) -> list[dict[str, Any]]:
@@ -5743,6 +5796,20 @@ async def apply_recommendation_with_decision_packet(
 
     action_payload_raw = recommendation_payload.get("action_payload")
     action_payload = dict(action_payload_raw) if isinstance(action_payload_raw, dict) else {}
+    thesis_review_payload: dict[str, Any] = {}
+    try:
+        thesis_review_payload = refresh_research_thesis_review_from_recommendation(
+            recommendation_payload,
+            plan_id=plan_id or None,
+        )
+    except Exception as exc:
+        thesis_review_payload = {
+            "status": "skipped",
+            "reason": str(exc),
+            "updated_at": context_utc_now_iso(),
+        }
+    if thesis_review_payload:
+        action_payload["thesis_review"] = thesis_review_payload
     if suggested_symbols:
         action_payload["suggested_research_symbols"] = suggested_symbols
     if research_bridge_payload:
@@ -5794,6 +5861,140 @@ async def apply_recommendation_with_decision_packet(
             f"{research_bridge_message_suffix}{closure_message_suffix}"
         ),
     )
+
+
+def _thesis_review_action_context(recommendation: dict[str, Any]) -> dict[str, Any] | None:
+    action_payload = recommendation.get("action_payload")
+    if not isinstance(action_payload, dict):
+        return None
+    suggested_action = action_payload.get("suggested_action")
+    if not isinstance(suggested_action, dict):
+        return None
+    if str(suggested_action.get("kind") or "").strip().lower() != "review_research_thesis":
+        return None
+    evidence = action_payload.get("evidence") if isinstance(action_payload.get("evidence"), dict) else {}
+    return {
+        "suggested_action": suggested_action,
+        "evidence": evidence,
+        "action_payload": action_payload,
+    }
+
+
+def _thesis_review_symbols(*, suggested_action: dict[str, Any], evidence: dict[str, Any]) -> list[str]:
+    values: list[Any] = []
+    for raw in (suggested_action.get("symbol"), evidence.get("symbol")):
+        if raw:
+            values.append(raw)
+    for raw_list in (suggested_action.get("symbols"), evidence.get("symbols")):
+        if isinstance(raw_list, list):
+            values.extend(raw_list)
+    return normalize_research_symbols(values, max_symbols=8)
+
+
+def _resolve_thesis_review_reference_price(
+    *,
+    suggested_action: dict[str, Any],
+    evidence: dict[str, Any],
+    symbols: list[str],
+) -> float | None:
+    for key in (
+        "current_price_usd",
+        "current_price",
+        "quote_price",
+        "last_price",
+        "reference_price_usd",
+        "thesis_reference_price_usd",
+    ):
+        for source in (suggested_action, evidence):
+            value = _coerce_optional_float(source.get(key))
+            if value is not None and value > 0:
+                return value
+    if not symbols:
+        return None
+    with suppress(Exception):
+        packet = research_service.evidence_packet(symbol=symbols[0], period="6mo", interval="1d")
+        metrics = packet.metrics if isinstance(packet.metrics, dict) else {}
+        value = _coerce_optional_float(metrics.get("last_price"))
+        if value is not None and value > 0:
+            return value
+    return None
+
+
+def refresh_research_thesis_review_from_recommendation(
+    recommendation: dict[str, Any],
+    *,
+    plan_id: str | None,
+) -> dict[str, Any]:
+    context = _thesis_review_action_context(recommendation)
+    if context is None:
+        return {}
+    suggested_action = context["suggested_action"]
+    evidence = context["evidence"]
+    symbols = _thesis_review_symbols(suggested_action=suggested_action, evidence=evidence)
+    reviewed_at_dt = utc_now()
+    reviewed_at = reviewed_at_dt.isoformat()
+    expires_at = (reviewed_at_dt + timedelta(days=TODAY_THESIS_REVIEW_DAYS)).isoformat()
+    reference_price = _resolve_thesis_review_reference_price(
+        suggested_action=suggested_action,
+        evidence=evidence,
+        symbols=symbols,
+    )
+
+    artifact_id = str(suggested_action.get("artifact_id") or evidence.get("artifact_id") or "").strip()
+    resolved_plan_id = str(
+        suggested_action.get("plan_id")
+        or evidence.get("plan_id")
+        or plan_id
+        or recommendation.get("plan_id")
+        or ""
+    ).strip()
+    if artifact_id and resolved_plan_id:
+        artifact = plan_workspace.read_artifact(plan_id=resolved_plan_id, artifact_id=artifact_id)
+        updated_content = _replace_thesis_review_metadata_section(
+            str(artifact.get("content") or ""),
+            reviewed_at=reviewed_at,
+            expires_at=expires_at,
+            reference_price_usd=reference_price,
+        )
+        updated_artifact = plan_workspace.update_artifact_content(
+            plan_id=resolved_plan_id,
+            artifact_id=artifact_id,
+            markdown=updated_content,
+        )
+        return {
+            "status": "refreshed",
+            "target": "dossier",
+            "artifact_id": updated_artifact.get("id") or artifact_id,
+            "plan_id": resolved_plan_id,
+            "symbols": symbols,
+            "reviewed_at": reviewed_at,
+            "expires_at": expires_at,
+            "reference_price_usd": reference_price,
+        }
+
+    symbol = symbols[0] if symbols else ""
+    if symbol:
+        updated = portfolio_store.refresh_watchlist_thesis_review(
+            symbol=symbol,
+            data_source=str(suggested_action.get("data_source") or evidence.get("data_source") or "OPENBB"),
+            reviewed_at=reviewed_at,
+            expires_at=expires_at,
+            reference_price_usd=reference_price,
+        )
+        return {
+            "status": "refreshed",
+            "target": "watchlist",
+            "symbol": str(updated.get("symbol") or symbol),
+            "reviewed_at": reviewed_at,
+            "expires_at": expires_at,
+            "reference_price_usd": reference_price,
+        }
+
+    return {
+        "status": "skipped",
+        "reason": "No dossier artifact or watchlist symbol was available for thesis review refresh.",
+        "reviewed_at": reviewed_at,
+    }
 
 
 def apply_recommendation(
@@ -14373,6 +14574,7 @@ def read_plan_artifact(plan_id: str, artifact_id: str) -> PlanArtifactResponse:
     except PlanNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if str(artifact.get("title") or "").lower().startswith("research dossier") or "-research-dossier-" in str(artifact.get("file_name") or ""):
+        artifact.update(_extract_thesis_review_metadata_from_markdown(artifact.get("content")))
         artifact["thesis_review"] = research_thesis_review_metadata(artifact)
     return PlanArtifactResponse(**artifact)
 

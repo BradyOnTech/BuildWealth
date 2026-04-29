@@ -2291,13 +2291,22 @@ def research_thesis_review_metadata(
         status = "expired" if expires_dt <= resolved_now else "current"
     elif age is not None:
         status = "expired" if age >= bounded_days else "current"
-    return {
+    reference_price = _optional_float(
+        artifact.get("reference_price_usd")
+        or artifact.get("thesis_reference_price_usd")
+        or embedded.get("reference_price_usd")
+        or embedded.get("thesis_reference_price_usd")
+    )
+    payload = {
         "status": status,
         "age_days": age,
         "stale_after_days": bounded_days,
         "reviewed_at": reviewed_dt.isoformat() if reviewed_dt is not None else None,
         "expires_at": expires_at,
     }
+    if reference_price is not None:
+        payload["reference_price_usd"] = round(reference_price, 4)
+    return payload
 
 
 def _research_thesis_expiration_candidate(

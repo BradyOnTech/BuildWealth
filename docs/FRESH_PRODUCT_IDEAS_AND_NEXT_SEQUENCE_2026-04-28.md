@@ -252,6 +252,6 @@ Then pull in the fresh ideas in this order:
 
 1. Personal Investment Policy, because it improves portfolio-fit immediately.
 2. What Changed Since Last Review, because it strengthens Today as the command center.
-3. Research Thesis Expiration, because it extends the investment-fit evidence loop (started with saved dossier expiry metadata, recommendation generation, v2 Research visibility, Inbox dossier routing, Today readiness warnings, stale watchlist-thesis triggers, and material price-move triggers).
+3. Research Thesis Expiration, because it extends the investment-fit evidence loop (started with saved dossier expiry metadata, recommendation generation, v2 Research visibility, Inbox dossier routing, Today readiness warnings, stale watchlist-thesis triggers, material price-move triggers, and apply-side thesis review metadata refresh).
 4. Decision Pre-Mortem, because it improves outcome learning and calibration.
 5. Confidence Heat Map, because it can unify readiness/freshness once more domain signals exist.

@@ -893,6 +893,8 @@ class PortfolioStore:
                 "data_source": data_source,
                 "note": str(raw_item.get("note") or ""),
                 "thesis": str(raw_item.get("thesis") or ""),
+                "thesis_reviewed_at": str(raw_item.get("thesis_reviewed_at") or ""),
+                "thesis_expires_at": str(raw_item.get("thesis_expires_at") or ""),
                 "thesis_reference_price_usd": (
                     round(float(thesis_reference_price), 4)
                     if thesis_reference_price is not None
@@ -2951,6 +2953,8 @@ class PortfolioStore:
                 "data_source": normalized_data_source,
                 "note": str(note or ""),
                 "thesis": str(thesis or ""),
+                "thesis_reviewed_at": "",
+                "thesis_expires_at": "",
                 "thesis_reference_price_usd": (
                     round(float(normalized_thesis_reference), 4)
                     if normalized_thesis_reference is not None
@@ -2969,6 +2973,8 @@ class PortfolioStore:
                 "data_source": normalized_data_source,
                 "note": str(note if note is not None else existing.get("note") or ""),
                 "thesis": str(thesis if thesis is not None else existing.get("thesis") or ""),
+                "thesis_reviewed_at": str(existing.get("thesis_reviewed_at") or ""),
+                "thesis_expires_at": str(existing.get("thesis_expires_at") or ""),
                 "thesis_reference_price_usd": (
                     round(float(normalized_thesis_reference), 4)
                     if normalized_thesis_reference is not None
@@ -2991,6 +2997,47 @@ class PortfolioStore:
         payload["updated_at"] = now
         self._write_json(self._watchlist_path, payload)
         return entry
+
+    def refresh_watchlist_thesis_review(
+        self,
+        *,
+        symbol: str,
+        data_source: str = "OPENBB",
+        reviewed_at: str,
+        expires_at: str,
+        reference_price_usd: float | None = None,
+    ) -> dict[str, Any]:
+        normalized_symbol = self._normalize_symbol(symbol)
+        if not normalized_symbol:
+            raise ValueError("symbol is required")
+        normalized_data_source = str(data_source or "OPENBB").strip().upper() or "OPENBB"
+
+        payload = self._read_watchlist_payload()
+        items = payload.get("items") if isinstance(payload.get("items"), list) else []
+        for index, item in enumerate(items):
+            if not isinstance(item, dict):
+                continue
+            if self._normalize_symbol(item.get("symbol")) != normalized_symbol:
+                continue
+            if str(item.get("data_source") or "OPENBB").strip().upper() != normalized_data_source:
+                continue
+
+            updated = dict(item)
+            updated["thesis_reviewed_at"] = reviewed_at
+            updated["thesis_expires_at"] = expires_at
+            updated["updated_at"] = reviewed_at
+            if reference_price_usd is not None:
+                price = float(reference_price_usd)
+                if price <= 0:
+                    raise ValueError("reference_price_usd must be greater than 0")
+                updated["thesis_reference_price_usd"] = round(price, 4)
+            items[index] = updated
+            payload["items"] = items
+            payload["updated_at"] = reviewed_at
+            self._write_json(self._watchlist_path, payload)
+            return updated
+
+        raise ValueError(f"Watchlist item not found: {normalized_symbol}")
 
     def delete_watchlist_item(self, symbol: str, *, data_source: str | None = None) -> bool:
         normalized_symbol = self._normalize_symbol(symbol)

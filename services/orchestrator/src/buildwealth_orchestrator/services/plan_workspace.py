@@ -1569,6 +1569,19 @@ class PlanWorkspace:
             "content": text,
         }
 
+    def update_artifact_content(self, plan_id: str, artifact_id: str, markdown: str) -> dict[str, Any]:
+        plan_dir = self._plan_dir(plan_id)
+        if not plan_dir.exists():
+            raise PlanNotFoundError(f"Plan not found: {plan_id}")
+
+        artifact_name = artifact_id if artifact_id.endswith(".md") else f"{artifact_id}.md"
+        artifact_path = self._artifacts_dir(plan_id) / artifact_name
+        if not artifact_path.exists():
+            raise PlanNotFoundError(f"Artifact not found: {artifact_id}")
+
+        artifact_path.write_text(markdown, encoding="utf-8")
+        return self.read_artifact(plan_id=plan_id, artifact_id=artifact_path.stem)
+
     def write_artifact(
         self,
         plan_id: str,
