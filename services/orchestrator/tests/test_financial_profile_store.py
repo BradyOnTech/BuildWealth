@@ -16,7 +16,10 @@ def test_financial_profile_store_defaults(tmp_path: Path) -> None:
     assert payload["tax_profile"]["filing_status"] is None
     assert payload["tax_profile"]["state_tax_rate"] is None
     assert payload["investment_policy"]["max_single_symbol_exposure_pct"] is None
+    assert payload["investment_policy"]["max_sector_exposure_pct"] is None
     assert payload["investment_policy"]["minimum_research_confidence"] is None
+    assert payload["investment_policy"]["restricted_symbols"] == []
+    assert payload["investment_policy"]["restricted_sectors"] == []
     assert payload["flags"]["no_debt"] is False
     assert payload["updated_at"]
 
@@ -46,15 +49,21 @@ def test_financial_profile_store_saves_investment_policy(tmp_path: Path) -> None
         {
             "investment_policy": {
                 "max_single_symbol_exposure_pct": 10.0,
+                "max_sector_exposure_pct": 30.0,
                 "minimum_research_confidence": "medium",
                 "tax_sensitivity": "high",
+                "restricted_symbols": ["NVDA"],
+                "restricted_sectors": ["Crypto"],
             },
         }
     )
 
     assert saved["investment_policy"]["max_single_symbol_exposure_pct"] == 10.0
+    assert saved["investment_policy"]["max_sector_exposure_pct"] == 30.0
     assert saved["investment_policy"]["minimum_research_confidence"] == "medium"
     assert saved["investment_policy"]["tax_sensitivity"] == "high"
+    assert saved["investment_policy"]["restricted_symbols"] == ["NVDA"]
+    assert saved["investment_policy"]["restricted_sectors"] == ["Crypto"]
 
 
 def test_financial_profile_store_migrates_legacy_payload(tmp_path: Path) -> None:

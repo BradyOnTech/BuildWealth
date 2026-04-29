@@ -148,6 +148,7 @@ function renderPortfolioFitCard(result) {
     renderFitMeta('Position', formatPortfolioPosition(portfolio)),
     renderFitMeta('Policy cap', formatPolicyCap(portfolio)),
     renderFitMeta('Policy', formatPolicyGuardrails(portfolio.investment_policy)),
+    renderFitMeta('Sector policy', formatSectorPolicy(portfolio)),
     renderFitMeta('Account location', formatAccountLocationSummary(portfolio.account_location)),
   ].filter(Boolean);
 
@@ -359,16 +360,30 @@ function renderTaxSection(taxProfile) {
 function renderInvestmentPolicySection(policy) {
   if (!policy || typeof policy !== 'object') return '';
   const maxSingle = policy.max_single_symbol_exposure_pct;
+  const maxSector = policy.max_sector_exposure_pct;
   const confidence = String(policy.minimum_research_confidence || '').trim();
   const taxSensitivity = String(policy.tax_sensitivity || '').trim();
   const riskTolerance = String(policy.risk_tolerance || '').trim();
-  if (maxSingle == null && !confidence && !taxSensitivity && !riskTolerance) return '';
+  const restrictedSymbols = Array.isArray(policy.restricted_symbols) ? policy.restricted_symbols.filter(Boolean) : [];
+  const restrictedSectors = Array.isArray(policy.restricted_sectors) ? policy.restricted_sectors.filter(Boolean) : [];
+  if (
+    maxSingle == null
+    && maxSector == null
+    && !confidence
+    && !taxSensitivity
+    && !riskTolerance
+    && !restrictedSymbols.length
+    && !restrictedSectors.length
+  ) return '';
 
   const details = [
     maxSingle != null ? `Max single symbol ${Number(maxSingle).toFixed(0)}%` : '',
+    maxSector != null ? `Max sector ${Number(maxSector).toFixed(0)}%` : '',
     confidence ? `Research confidence ${titleCase(confidence)}` : '',
     taxSensitivity ? `Tax sensitivity ${titleCase(taxSensitivity)}` : '',
     riskTolerance ? `Risk ${titleCase(riskTolerance)}` : '',
+    restrictedSymbols.length ? `Avoid ${restrictedSymbols.slice(0, 2).join(', ')}` : '',
+    restrictedSectors.length ? `Avoid sectors ${restrictedSectors.slice(0, 2).map(titleCase).join(', ')}` : '',
   ].filter(Boolean);
 
   return html`
@@ -449,12 +464,26 @@ function formatPolicyCap(portfolio) {
 
 function formatPolicyGuardrails(policy) {
   if (!policy || typeof policy !== 'object') return '';
+  const restrictedSymbols = Array.isArray(policy.restricted_symbols) ? policy.restricted_symbols.filter(Boolean) : [];
+  const restrictedSectors = Array.isArray(policy.restricted_sectors) ? policy.restricted_sectors.filter(Boolean) : [];
   const parts = [
     policy.minimum_research_confidence ? `Research ${titleCase(policy.minimum_research_confidence)}` : '',
     policy.tax_sensitivity ? `Tax ${titleCase(policy.tax_sensitivity)}` : '',
     policy.risk_tolerance ? `Risk ${titleCase(policy.risk_tolerance)}` : '',
+    policy.max_sector_exposure_pct != null ? `Sector cap ${Number(policy.max_sector_exposure_pct).toLocaleString('en-US', { maximumFractionDigits: 1 })}%` : '',
+    restrictedSymbols.length ? `Avoid ${restrictedSymbols.slice(0, 2).join(', ')}` : '',
+    restrictedSectors.length ? `Avoid ${restrictedSectors.slice(0, 2).map(titleCase).join(', ')}` : '',
   ].filter(Boolean);
   return parts.join(' · ');
+}
+
+function formatSectorPolicy(portfolio) {
+  if (!portfolio || typeof portfolio !== 'object') return '';
+  const sector = String(portfolio.candidate_sector || '').trim();
+  const weight = Number(portfolio.sector_weight_after_trade_pct);
+  const cap = Number(portfolio.sector_max_pct);
+  if (!sector || !Number.isFinite(weight) || !Number.isFinite(cap)) return '';
+  return `${sector} ${weight.toLocaleString('en-US', { maximumFractionDigits: 1 })}% · cap ${cap.toLocaleString('en-US', { maximumFractionDigits: 1 })}%`;
 }
 
 function formatAccountLocationSummary(accountLocation) {

@@ -1853,6 +1853,43 @@ def _watchlist_research_candidate(
             "blocking_gaps": blocking_gaps,
         }
         blocking_context = [f"research.{gap}" for gap in blocking_gaps] or ["research.evidence_packet"]
+    elif "policy:restricted_symbol" in fit_blocking_gaps or "policy:restricted_sector" in fit_blocking_gaps:
+        gap = (
+            "policy:restricted_symbol"
+            if "policy:restricted_symbol" in fit_blocking_gaps
+            else "policy:restricted_sector"
+        )
+        signal_key = "policy_restriction"
+        title = f"Review {symbol} against your investment policy"
+        detail = f"{symbol} conflicts with a restriction in the personal investment policy. Review the policy fit before relying on this research."
+        priority = "high"
+        actionability = "review_only"
+        suggested_action = {
+            "kind": "review_portfolio_fit",
+            "symbol": symbol,
+            "fit_status": fit_status,
+            "next_step": recommended_next_step or "review_policy_restriction",
+            "policy_gap": gap,
+        }
+        blocking_context = [gap.replace(":", ".")]
+    elif "sector:policy_cap" in fit_blocking_gaps:
+        signal_key = "policy_sector_exposure"
+        title = f"Review {symbol} sector exposure against policy"
+        candidate_sector = str(portfolio_impact.get("candidate_sector") or "").strip()
+        detail = (
+            f"{symbol} may push {candidate_sector or 'sector'} exposure above the personal investment policy cap. "
+            "Review sector concentration before changing exposure."
+        )
+        priority = "high"
+        actionability = "review_only"
+        suggested_action = {
+            "kind": "review_portfolio_fit",
+            "symbol": symbol,
+            "fit_status": fit_status,
+            "next_step": recommended_next_step or "review_sector_exposure",
+            "policy_gap": "sector:policy_cap",
+        }
+        blocking_context = ["sector.policy_cap"]
     elif fit_status == "does_not_fit":
         signal_key = "fit_conflict"
         title = f"Review why {symbol} does not currently fit"
@@ -1945,6 +1982,7 @@ def _watchlist_research_candidate(
         "fit_reasons": fit_payload.get("fit_reasons") if isinstance(fit_payload.get("fit_reasons"), list) else [],
         "fit_risks": fit_payload.get("fit_risks") if isinstance(fit_payload.get("fit_risks"), list) else [],
         "fit_blocking_gaps": fit_blocking_gaps,
+        "portfolio_impact": portfolio_impact,
         "investment_policy": investment_policy,
         "account_location": account_location,
         "provider_coverage": item.get("provider_coverage") if isinstance(item.get("provider_coverage"), dict) else {},

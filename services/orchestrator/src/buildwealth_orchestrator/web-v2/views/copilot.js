@@ -73,7 +73,7 @@ const INVESTMENT_POLICY_SETUP_PROMPT = [
   'Help me define my personal investment policy.',
   'First call get_onboarding_status and get_financial_profile.',
   'Focus only on missing or weak investment_policy fields for now.',
-  'Ask me one focused question at a time for max_single_symbol_exposure_pct, minimum_research_confidence, tax_sensitivity, and risk_tolerance.',
+  'Ask me one focused question at a time for max_single_symbol_exposure_pct, max_sector_exposure_pct, minimum_research_confidence, tax_sensitivity, risk_tolerance, restricted_symbols, and restricted_sectors.',
   'Frame this as investment-fit guardrails, not buy/sell advice.',
   'When you have enough information, call draft_financial_profile_update with investment_policy so I can review the changes.',
   'do not save anything with update_financial_profile until I explicitly confirm the draft.',

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from buildwealth_orchestrator.schemas import (
+    Holding,
     PortfolioFitAssessmentResponse,
     PortfolioSnapshot,
     ResearchEvidencePacket,
@@ -47,12 +48,22 @@ def _investment_policy(holdings_payload: dict[str, Any]) -> dict[str, Any]:
         key: policy.get(key)
         for key in (
             "max_single_symbol_exposure_pct",
+            "max_sector_exposure_pct",
             "minimum_research_confidence",
             "tax_sensitivity",
             "risk_tolerance",
+            "restricted_symbols",
+            "restricted_sectors",
         )
         if policy.get(key) is not None
     }
+
+
+def _policy_terms(policy: dict[str, Any], key: str) -> list[str]:
+    values = policy.get(key)
+    if not isinstance(values, list):
+        return []
+    return [str(value).strip() for value in values if str(value or "").strip()]
 
 
 _CONFIDENCE_RANKS = {
@@ -78,6 +89,7 @@ def _evidence_summary(packet: ResearchEvidencePacket | None) -> dict[str, Any]:
         "available": True,
         "packet_id": packet.packet_id,
         "provider": packet.provider,
+        "sector": packet.sector,
         "freshness_status": freshness.get("status"),
         "confidence": quality.get("confidence"),
         "coverage_score": quality.get("coverage_score"),
@@ -217,6 +229,27 @@ def _matching_holdings_by_symbol(holdings_payload: dict[str, Any], symbol: str) 
     return matches
 
 
+def _holding_sector(holding: Holding | dict[str, Any] | None) -> str:
+    if holding is None:
+        return ""
+    if isinstance(holding, Holding):
+        return str(holding.sector or "").strip()
+    if isinstance(holding, dict):
+        return str(holding.get("sector") or "").strip()
+    return ""
+
+
+def _sector_value(snapshot: PortfolioSnapshot, sector: str) -> float:
+    normalized_sector = sector.strip().lower()
+    if not normalized_sector:
+        return 0.0
+    return sum(
+        float(holding.value_usd or 0.0)
+        for holding in snapshot.holdings
+        if str(holding.sector or "").strip().lower() == normalized_sector
+    )
+
+
 def _coverage_from_bools(values: list[bool]) -> str:
     if not values:
         return "not_applicable"
@@ -340,6 +373,7 @@ def assess_portfolio_fit(
     )
     evidence = _evidence_summary(evidence_packet)
     investment_policy = _investment_policy(holdings_payload)
+    candidate_sector = str(evidence.get("sector") or "").strip()
 
     fit_reasons: list[str] = []
     fit_risks: list[str] = []
@@ -347,6 +381,8 @@ def assess_portfolio_fit(
     portfolio_impact: dict[str, Any] = {}
     if investment_policy:
         portfolio_impact["investment_policy"] = investment_policy
+    if candidate_sector:
+        portfolio_impact["candidate_sector"] = candidate_sector
     simulation_required = amount_usd is not None
     plan_impact, plan_reasons, plan_blocking_gaps = _plan_impact(active_plan_detail)
     fit_reasons.extend(plan_reasons)
@@ -373,6 +409,16 @@ def assess_portfolio_fit(
             f"Research confidence is {evidence_confidence}, below personal policy minimum {minimum_confidence}."
         )
 
+    restricted_symbols = {term.upper() for term in _policy_terms(investment_policy, "restricted_symbols")}
+    if normalized_symbol in restricted_symbols:
+        blocking_gaps.append("policy:restricted_symbol")
+        fit_risks.append(f"The personal investment policy restricts {normalized_symbol}.")
+
+    restricted_sectors = {term.lower() for term in _policy_terms(investment_policy, "restricted_sectors")}
+    if candidate_sector and candidate_sector.lower() in restricted_sectors:
+        blocking_gaps.append("policy:restricted_sector")
+        fit_risks.append(f"The personal investment policy restricts {candidate_sector} exposure.")
+
     readiness_status = str(profile_readiness_payload.get("status") or "").strip().lower()
     if readiness_status and readiness_status != "ready":
         gap_key = str(profile_readiness_payload.get("next_gap_key") or "profile").strip()
@@ -394,6 +440,10 @@ def assess_portfolio_fit(
         existing_position = holding is not None
         if holding is not None and snapshot.total_value_usd > 0:
             current_weight_pct = round((holding.value_usd / snapshot.total_value_usd) * 100.0, 2)
+        if not candidate_sector:
+            candidate_sector = _holding_sector(holding)
+            if candidate_sector:
+                portfolio_impact["candidate_sector"] = candidate_sector
 
         max_single_pct, max_single_source = _single_symbol_policy(holdings_payload)
         portfolio_impact.update(
@@ -412,6 +462,29 @@ def assess_portfolio_fit(
             existing_position=existing_position,
         )
         portfolio_impact["account_location"] = account_location
+        max_sector_pct = _safe_float(investment_policy.get("max_sector_exposure_pct"), 0.0)
+        if candidate_sector and max_sector_pct > 0 and snapshot.total_value_usd > 0:
+            current_sector_value = _sector_value(snapshot, candidate_sector)
+            sector_weight_before = round((current_sector_value / snapshot.total_value_usd) * 100.0, 2)
+            amount_value = float(amount_usd or 0.0)
+            sector_weight_after = round(
+                ((current_sector_value + amount_value) / (snapshot.total_value_usd + amount_value)) * 100.0,
+                2,
+            )
+            portfolio_impact.update(
+                {
+                    "sector_weight_before_trade_pct": sector_weight_before,
+                    "sector_weight_after_trade_pct": sector_weight_after,
+                    "sector_max_pct": max_sector_pct,
+                    "sector_policy_source": "profile.investment_policy",
+                }
+            )
+            if sector_weight_after >= max_sector_pct:
+                blocking_gaps.append("sector:policy_cap")
+                fit_risks.append(
+                    f"{candidate_sector} exposure would be {sector_weight_after:.1f}%, "
+                    f"above personal policy cap {max_sector_pct:.1f}%."
+                )
         tax_sensitivity = str(investment_policy.get("tax_sensitivity") or "").strip().lower()
         if account_location.get("confidence_gap"):
             if account_location.get("status") in {"missing", "partial"}:
@@ -490,6 +563,14 @@ def assess_portfolio_fit(
         fit_status = "needs_more_context"
         recommended_next_step = "update_profile"
         fit_score = 35.0
+    elif any(gap.startswith("policy:") for gap in unique_blocking_gaps):
+        fit_status = "does_not_fit"
+        recommended_next_step = "review_policy_restriction"
+        fit_score = 20.0
+    elif "sector:policy_cap" in unique_blocking_gaps:
+        fit_status = "does_not_fit"
+        recommended_next_step = "review_sector_exposure"
+        fit_score = 30.0
     elif "concentration" in unique_blocking_gaps:
         fit_status = "does_not_fit"
         recommended_next_step = "review_concentration"

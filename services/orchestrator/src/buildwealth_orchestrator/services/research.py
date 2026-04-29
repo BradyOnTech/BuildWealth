@@ -962,6 +962,7 @@ class OpenBBResearchService:
             symbol=normalized_symbol,
             name=self._identity_value(quote_row, ("name", "shortName", "longName", "company_name")),
             asset_type=self._identity_value(quote_row, ("asset_type", "assetType", "security_type", "type")),
+            sector=self._identity_value(quote_row, ("sector", "sector_name", "industry")),
             provider=self.provider,
             period=resolved_period,
             interval=resolved_interval,

@@ -773,6 +773,7 @@ class ResearchEvidencePacket(BaseModel):
     symbol: str
     name: str | None = None
     asset_type: str | None = None
+    sector: str | None = None
     provider: str
     period: str
     interval: str
@@ -940,6 +941,8 @@ class PortfolioFitAssessmentResponse(BaseModel):
         "compare_alternatives",
         "simulate_trade",
         "review_concentration",
+        "review_policy_restriction",
+        "review_sector_exposure",
         "update_profile",
         "create_dossier",
         "discuss_in_copilot",
@@ -1165,9 +1168,12 @@ class TaxProfile(BaseModel):
 
 class InvestmentPolicy(BaseModel):
     max_single_symbol_exposure_pct: float | None = Field(default=None, ge=0, le=100)
+    max_sector_exposure_pct: float | None = Field(default=None, ge=0, le=100)
     minimum_research_confidence: Literal["low", "medium", "high"] | None = None
     tax_sensitivity: Literal["low", "medium", "high"] | None = None
     risk_tolerance: Literal["conservative", "moderate", "aggressive"] | None = None
+    restricted_symbols: list[str] = Field(default_factory=list)
+    restricted_sectors: list[str] = Field(default_factory=list)
 
 
 class ProfileFlags(BaseModel):

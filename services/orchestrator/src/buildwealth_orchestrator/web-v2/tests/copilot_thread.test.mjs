@@ -51,8 +51,11 @@ test('copilot thread renders financial profile draft review card', () => {
                 },
                 investment_policy: {
                   max_single_symbol_exposure_pct: 10,
+                  max_sector_exposure_pct: 30,
                   minimum_research_confidence: 'medium',
                   tax_sensitivity: 'high',
+                  restricted_symbols: ['NVDA'],
+                  restricted_sectors: ['Crypto'],
                 },
                 flags: { no_debt: true },
                 notes: '',
@@ -85,8 +88,11 @@ test('copilot thread renders financial profile draft review card', () => {
   assert.match(html, /Marginal 24% · State MN/);
   assert.match(html, /Investment policy/);
   assert.match(html, /Max single symbol 10%/);
+  assert.match(html, /Max sector 30%/);
   assert.match(html, /Research confidence Medium/);
   assert.match(html, /Tax sensitivity High/);
+  assert.match(html, /Avoid NVDA/);
+  assert.match(html, /Avoid sectors Crypto/);
   assert.match(html, /No debt/);
   assert.match(html, /data-profile-draft=/);
   assert.match(html, /Apply profile update/);
@@ -131,9 +137,16 @@ test('copilot thread renders portfolio fit tool results as review cards', () => 
                 current_weight_pct: 40,
                 single_holding_max_pct: 10,
                 single_holding_policy_source: 'profile.investment_policy',
+                candidate_sector: 'Technology',
+                sector_weight_after_trade_pct: 31.43,
+                sector_max_pct: 30,
+                sector_policy_source: 'profile.investment_policy',
                 investment_policy: {
                   minimum_research_confidence: 'high',
                   tax_sensitivity: 'high',
+                  max_sector_exposure_pct: 30,
+                  restricted_symbols: ['NVDA'],
+                  restricted_sectors: ['Crypto'],
                 },
                 account_location: {
                   status: 'partial',
@@ -165,7 +178,8 @@ test('copilot thread renders portfolio fit tool results as review cards', () => 
   assert.match(html, /Long · 25y/);
   assert.match(html, /40% held/);
   assert.match(html, /10% · Personal policy/);
-  assert.match(html, /Research High · Tax High/);
+  assert.match(html, /Research High · Tax High · Sector cap 30% · Avoid NVDA · Avoid Crypto/);
+  assert.match(html, /Technology 31\.4% · cap 30%/);
   assert.match(html, /Taxable · Tax lots missing/);
   assert.match(html, /Taxable Brokerage · Taxable · \$12,500 gain\/loss/);
   assert.match(html, /href="#research\?symbol=NVDA&amp;packet=research-evidence%3Ayfinance%3ANVDA%3A6mo%3A1d"/);
@@ -290,8 +304,11 @@ test('copilot view exposes investment policy guardrail prompt', () => {
   assert.match(copilotSource, /INVESTMENT_POLICY_SETUP_PROMPT/);
   assert.match(copilotSource, /Help me define my personal investment policy/);
   assert.match(copilotSource, /max_single_symbol_exposure_pct/);
+  assert.match(copilotSource, /max_sector_exposure_pct/);
   assert.match(copilotSource, /minimum_research_confidence/);
   assert.match(copilotSource, /tax_sensitivity/);
+  assert.match(copilotSource, /restricted_symbols/);
+  assert.match(copilotSource, /restricted_sectors/);
   assert.match(copilotSource, /#copilot\\?intent=investment-policy|investment-policy/);
   assert.match(copilotSource, /Define policy with Copilot/);
 });

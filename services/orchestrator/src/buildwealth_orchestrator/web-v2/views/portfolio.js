@@ -142,6 +142,7 @@ export function renderFitResult(result) {
   const accountLocation = impact.account_location || {};
   const policyCap = formatPolicyCap(impact);
   const policyGuardrails = formatPolicyGuardrails(impact.investment_policy);
+  const sectorPolicy = formatSectorPolicy(impact);
   return html`
     <article class="fit-result fit-${result.fit_status}">
       <div class="fit-result-head">
@@ -175,6 +176,12 @@ export function renderFitResult(result) {
           <div>
             <dt>Policy</dt>
             <dd>${policyGuardrails}</dd>
+          </div>
+        ` : ''}
+        ${sectorPolicy ? html`
+          <div>
+            <dt>Sector policy</dt>
+            <dd>${sectorPolicy}</dd>
           </div>
         ` : ''}
         <div>
@@ -254,12 +261,25 @@ function formatPolicyCap(portfolioImpact = {}) {
 
 function formatPolicyGuardrails(policy = {}) {
   if (!policy || typeof policy !== 'object') return '';
+  const restrictedSymbols = Array.isArray(policy.restricted_symbols) ? policy.restricted_symbols.filter(Boolean) : [];
+  const restrictedSectors = Array.isArray(policy.restricted_sectors) ? policy.restricted_sectors.filter(Boolean) : [];
   const parts = [
     policy.minimum_research_confidence ? `Research ${labelize(policy.minimum_research_confidence)}` : '',
     policy.tax_sensitivity ? `Tax ${labelize(policy.tax_sensitivity)}` : '',
     policy.risk_tolerance ? `Risk ${labelize(policy.risk_tolerance)}` : '',
+    policy.max_sector_exposure_pct != null ? `Sector cap ${Number(policy.max_sector_exposure_pct).toLocaleString('en-US', { maximumFractionDigits: 1 })}%` : '',
+    restrictedSymbols.length ? `Avoid ${restrictedSymbols.slice(0, 2).join(', ')}` : '',
+    restrictedSectors.length ? `Avoid ${restrictedSectors.slice(0, 2).map(labelize).join(', ')}` : '',
   ].filter(Boolean);
   return parts.join(' · ');
+}
+
+function formatSectorPolicy(portfolioImpact = {}) {
+  const sector = String(portfolioImpact.candidate_sector || '').trim();
+  const weight = Number(portfolioImpact.sector_weight_after_trade_pct);
+  const cap = Number(portfolioImpact.sector_max_pct);
+  if (!sector || !Number.isFinite(weight) || !Number.isFinite(cap)) return '';
+  return `${sector} ${weight.toLocaleString('en-US', { maximumFractionDigits: 1 })}% · cap ${cap.toLocaleString('en-US', { maximumFractionDigits: 1 })}%`;
 }
 
 function renderBullets(label, items = []) {

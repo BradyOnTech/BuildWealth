@@ -41,9 +41,12 @@ class FinancialProfileStore:
             },
             "investment_policy": {
                 "max_single_symbol_exposure_pct": None,
+                "max_sector_exposure_pct": None,
                 "minimum_research_confidence": None,
                 "tax_sensitivity": None,
                 "risk_tolerance": None,
+                "restricted_symbols": [],
+                "restricted_sectors": [],
             },
             "flags": {
                 "no_debt": False,

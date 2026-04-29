@@ -19,10 +19,17 @@ def _snapshot() -> PortfolioSnapshot:
     )
 
 
-def _packet(symbol: str = "AAPL", *, status: str = "fresh", confidence: str = "high") -> ResearchEvidencePacket:
+def _packet(
+    symbol: str = "AAPL",
+    *,
+    status: str = "fresh",
+    confidence: str = "high",
+    sector: str | None = None,
+) -> ResearchEvidencePacket:
     return ResearchEvidencePacket(
         packet_id=f"research-evidence:yfinance:{symbol}:6mo:1d",
         symbol=symbol,
+        sector=sector,
         provider="yfinance",
         period="6mo",
         interval="1d",
@@ -151,6 +158,67 @@ def test_portfolio_fit_applies_high_tax_sensitivity_to_taxable_exposure() -> Non
     assert "tax:policy_review" in result.blocking_gaps
     assert result.portfolio_impact["investment_policy"]["tax_sensitivity"] == "high"
     assert any("Personal tax sensitivity is high" in risk for risk in result.fit_risks)
+
+
+def test_portfolio_fit_blocks_restricted_symbol_from_personal_policy() -> None:
+    result = assess_portfolio_fit(
+        symbol="NVDA",
+        amount_usd=2_000.0,
+        evidence_packet=_packet("NVDA", sector="Technology"),
+        snapshot=_snapshot(),
+        holdings_payload={
+            "risk_policy": {"thresholds": {"single_holding_max_pct": 60.0}},
+            "investment_policy": {
+                "restricted_symbols": ["NVDA"],
+                "restricted_sectors": [],
+            },
+        },
+        profile_readiness_payload={"status": "ready", "completion_percent": 100.0},
+        emergency_fund_months=8.0,
+    )
+
+    assert result.fit_status == "does_not_fit"
+    assert result.recommended_next_step == "review_policy_restriction"
+    assert "policy:restricted_symbol" in result.blocking_gaps
+    assert result.portfolio_impact["investment_policy"]["restricted_symbols"] == ["NVDA"]
+    assert any("personal investment policy restricts NVDA" in risk for risk in result.fit_risks)
+
+
+def test_portfolio_fit_blocks_sector_exposure_above_personal_policy_cap() -> None:
+    snapshot = PortfolioSnapshot(
+        as_of=datetime(2026, 4, 26, tzinfo=timezone.utc),
+        base_currency="USD",
+        total_value_usd=100_000.0,
+        total_investment_usd=100_000.0,
+        holdings=[
+            Holding(symbol="AAPL", name="Apple", sector="Technology", value_usd=28_000.0, allocation_percent=28.0),
+            Holding(symbol="VTI", name="Total Market", sector="Diversified", value_usd=45_000.0, allocation_percent=45.0),
+            Holding(symbol="VXUS", name="International", sector="Diversified", value_usd=27_000.0, allocation_percent=27.0),
+        ],
+    )
+
+    result = assess_portfolio_fit(
+        symbol="MSFT",
+        amount_usd=5_000.0,
+        evidence_packet=_packet("MSFT", sector="Technology"),
+        snapshot=snapshot,
+        holdings_payload={
+            "risk_policy": {"thresholds": {"single_holding_max_pct": 60.0}},
+            "investment_policy": {
+                "max_sector_exposure_pct": 30.0,
+            },
+        },
+        profile_readiness_payload={"status": "ready", "completion_percent": 100.0},
+        emergency_fund_months=8.0,
+    )
+
+    assert result.fit_status == "does_not_fit"
+    assert result.recommended_next_step == "review_sector_exposure"
+    assert "sector:policy_cap" in result.blocking_gaps
+    assert result.portfolio_impact["candidate_sector"] == "Technology"
+    assert result.portfolio_impact["sector_policy_source"] == "profile.investment_policy"
+    assert result.portfolio_impact["sector_weight_after_trade_pct"] == 31.43
+    assert any("Technology exposure would be 31.4%" in risk for risk in result.fit_risks)
 
 
 def test_portfolio_fit_includes_account_location_and_tax_lot_context() -> None:

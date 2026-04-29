@@ -551,7 +551,7 @@ Long-term:
 
 ## Current Immediate Next Work
 
-1. Continue Personal Investment Policy beyond the first slices: richer policy fields, stronger Copilot questions for weak guardrails, and fit/recommendation rules beyond single-symbol exposure/research confidence/tax sensitivity.
+1. Continue Personal Investment Policy beyond the current slices: stronger Copilot questions for weak guardrails, and fit/recommendation rules beyond single-symbol exposure, research confidence, tax sensitivity, sector caps, and symbol/sector restrictions.
 2. Continue v2 research migration with Today/Plan links into packet, compare, and dossier surfaces.
 3. Deepen portfolio-fit account context with explicit proposed-account selection and tax-policy preferences.
 4. Continue expanding browser coverage around Plan v2 migration as those surfaces move over.

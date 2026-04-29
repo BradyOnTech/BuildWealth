@@ -407,6 +407,99 @@ def test_watchlist_research_factory_generates_tax_sensitive_policy_review() -> N
     assert "sell" not in joined.lower()
 
 
+def test_watchlist_research_factory_generates_policy_restriction_review() -> None:
+    result = generate_watchlist_research_recommendations(
+        watchlist_rank_payload={
+            "items": [
+                {
+                    "symbol": "NVDA",
+                    "research_evidence_packet_id": "research-evidence:yfinance:NVDA:6mo:1d",
+                    "research_provider": "yfinance",
+                    "research_freshness_status": "fresh",
+                    "research_confidence": "high",
+                    "research_coverage_score": 100.0,
+                    "research_blocking_gaps": [],
+                }
+            ]
+        },
+        fit_assessments_by_symbol={
+            "NVDA": {
+                "fit_status": "does_not_fit",
+                "fit_score": 20.0,
+                "fit_reasons": [],
+                "fit_risks": ["The personal investment policy restricts NVDA."],
+                "blocking_gaps": ["policy:restricted_symbol"],
+                "portfolio_impact": {
+                    "investment_policy": {"restricted_symbols": ["NVDA"]},
+                },
+                "recommended_next_step": "review_policy_restriction",
+            }
+        },
+        existing_recommendations=[],
+        dry_run=True,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 1
+    candidate = result.candidates[0]
+    assert candidate["title"] == "Review NVDA against your investment policy"
+    assert candidate["priority"] == "high"
+    payload = candidate["action_payload"]
+    assert payload["generator"]["signal_key"] == "policy_restriction"
+    assert payload["suggested_action"]["kind"] == "review_portfolio_fit"
+    assert payload["suggested_action"]["policy_gap"] == "policy:restricted_symbol"
+    assert payload["quality"]["actionability"] == "review_only"
+    assert "policy.restricted_symbol" in payload["quality"]["blocking_context"]
+    assert payload["evidence"]["investment_policy"]["restricted_symbols"] == ["NVDA"]
+
+
+def test_watchlist_research_factory_generates_sector_policy_review() -> None:
+    result = generate_watchlist_research_recommendations(
+        watchlist_rank_payload={
+            "items": [
+                {
+                    "symbol": "MSFT",
+                    "research_evidence_packet_id": "research-evidence:yfinance:MSFT:6mo:1d",
+                    "research_provider": "yfinance",
+                    "research_freshness_status": "fresh",
+                    "research_confidence": "high",
+                    "research_coverage_score": 100.0,
+                    "research_blocking_gaps": [],
+                }
+            ]
+        },
+        fit_assessments_by_symbol={
+            "MSFT": {
+                "fit_status": "does_not_fit",
+                "fit_score": 30.0,
+                "fit_reasons": [],
+                "fit_risks": ["Technology exposure would be 31.4%, above personal policy cap 30.0%."],
+                "blocking_gaps": ["sector:policy_cap"],
+                "portfolio_impact": {
+                    "candidate_sector": "Technology",
+                    "investment_policy": {"max_sector_exposure_pct": 30.0},
+                },
+                "recommended_next_step": "review_sector_exposure",
+            }
+        },
+        existing_recommendations=[],
+        dry_run=True,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 1
+    candidate = result.candidates[0]
+    assert candidate["title"] == "Review MSFT sector exposure against policy"
+    payload = candidate["action_payload"]
+    assert payload["generator"]["signal_key"] == "policy_sector_exposure"
+    assert payload["suggested_action"]["policy_gap"] == "sector:policy_cap"
+    assert payload["evidence"]["portfolio_impact"]["candidate_sector"] == "Technology"
+    assert payload["evidence"]["investment_policy"]["max_sector_exposure_pct"] == 30.0
+    joined = " ".join([candidate["title"], candidate["detail"], payload["suggested_action"]["kind"]])
+    assert "buy" not in joined.lower()
+    assert "sell" not in joined.lower()
+
+
 def test_portfolio_risk_factory_apply_creates_rows_and_skips_duplicates(tmp_path: Path) -> None:
     inbox = RecommendationInbox(tmp_path / "recommendations.json")
     first = generate_portfolio_risk_recommendations(
