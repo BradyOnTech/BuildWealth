@@ -14341,6 +14341,32 @@ def generate_research_thesis_expiration_recommendation_candidates(
         limit=request.limit,
         include_content=True,
     )
+    dossier_items = lookup.get("items") if isinstance(lookup.get("items"), list) else []
+    fit_assessments_by_symbol: dict[str, dict[str, Any]] = {}
+    dossier_symbols: list[str] = []
+    for item in dossier_items:
+        if not isinstance(item, dict):
+            continue
+        symbols = item.get("symbols") if isinstance(item.get("symbols"), list) else []
+        for raw_symbol in symbols:
+            symbol = str(raw_symbol or "").strip().upper()
+            if symbol and symbol not in dossier_symbols and len(dossier_symbols) < request.limit:
+                dossier_symbols.append(symbol)
+    for symbol in dossier_symbols:
+        try:
+            fit_assessments_by_symbol[symbol] = build_portfolio_fit_assessment_payload(
+                PortfolioFitAssessmentRequest(symbol=symbol)
+            ).model_dump(mode="json")
+        except Exception as exc:
+            fit_assessments_by_symbol[symbol] = {
+                "symbol": symbol,
+                "fit_status": "needs_more_context",
+                "fit_score": 0.0,
+                "fit_reasons": [],
+                "fit_risks": [f"Portfolio-fit assessment unavailable: {exc}"],
+                "blocking_gaps": ["portfolio_fit"],
+                "recommended_next_step": "research_more",
+            }
     existing_recommendations = recommendation_inbox.list(
         limit=None,
         status=None,
@@ -14349,8 +14375,9 @@ def generate_research_thesis_expiration_recommendation_candidates(
         sort="none",
     )
     result = generate_research_thesis_expiration_recommendations(
-        dossier_artifacts=lookup.get("items") if isinstance(lookup.get("items"), list) else [],
+        dossier_artifacts=dossier_items,
         existing_recommendations=existing_recommendations,
+        fit_assessments_by_symbol=fit_assessments_by_symbol,
         creator=recommendation_inbox if not request.dry_run else None,
         dry_run=request.dry_run,
         plan_id=plan_id,

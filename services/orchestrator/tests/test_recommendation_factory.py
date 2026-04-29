@@ -861,6 +861,53 @@ def test_watchlist_research_factory_generates_simplicity_policy_review() -> None
     assert payload["quality"]["actionability"] == "review_only"
 
 
+def test_watchlist_research_factory_generates_thesis_review_for_policy_material_change() -> None:
+    result = generate_watchlist_research_recommendations(
+        watchlist_rank_payload={
+            "items": [
+                {
+                    "symbol": "MSFT",
+                    "thesis": "Only keep MSFT on the watchlist if it stays inside cash and simplicity policy.",
+                    "research_evidence_packet_id": "research-evidence:yfinance:MSFT:6mo:1d",
+                    "research_provider": "yfinance",
+                    "research_freshness_status": "fresh",
+                    "research_confidence": "high",
+                    "research_coverage_score": 100.0,
+                    "research_blocking_gaps": [],
+                }
+            ]
+        },
+        fit_assessments_by_symbol={
+            "MSFT": {
+                "fit_status": "needs_more_context",
+                "fit_score": 35.0,
+                "fit_reasons": [],
+                "fit_risks": ["Cash runway is 7.0 months, below personal policy floor 9.0 months."],
+                "blocking_gaps": ["cash:policy_floor"],
+                "portfolio_impact": {
+                    "investment_policy": {"minimum_cash_runway_months": 9.0},
+                },
+                "recommended_next_step": "review_cash_floor",
+            }
+        },
+        existing_recommendations=[],
+        dry_run=True,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 1
+    candidate = result.candidates[0]
+    assert candidate["title"] == "Review MSFT thesis after policy context changed"
+    payload = candidate["action_payload"]
+    assert payload["generator"]["signal_key"] == "watchlist_thesis_policy_material_change"
+    assert payload["generator"]["dedupe_key"] == "watchlist_research:msft:watchlist_thesis_policy_material_change"
+    assert payload["suggested_action"]["kind"] == "review_research_thesis"
+    assert payload["suggested_action"]["reason"] == "policy_material_change"
+    assert payload["evidence"]["policy_material_change_gaps"] == ["cash:policy_floor"]
+    assert payload["evidence"]["investment_policy"]["minimum_cash_runway_months"] == 9.0
+    assert "research.policy_material_change" in payload["quality"]["blocking_context"]
+
+
 def test_portfolio_risk_factory_apply_creates_rows_and_skips_duplicates(tmp_path: Path) -> None:
     inbox = RecommendationInbox(tmp_path / "recommendations.json")
     first = generate_portfolio_risk_recommendations(
@@ -1345,6 +1392,37 @@ class _FakeResearchDossierPlanWorkspace(_FakePlanWorkspace):
         }
 
 
+class _FakeCurrentResearchDossierPlanWorkspace(_FakePlanWorkspace):
+    def get_plan(self, plan_id: str) -> dict[str, object]:
+        payload = super().get_plan(plan_id)
+        payload["artifacts"] = [
+            {
+                "id": "artifact-dossier-msft",
+                "file_name": "20260420T120000Z-research-dossier-msft.md",
+                "title": "Research Dossier - MSFT",
+                "created_at": "2026-04-20T12:00:00+00:00",
+            }
+        ]
+        return payload
+
+    def read_artifact(self, plan_id: str, artifact_id: str) -> dict[str, object]:
+        return {
+            "id": artifact_id,
+            "file_name": "20260420T120000Z-research-dossier-msft.md",
+            "title": "Research Dossier - MSFT",
+            "created_at": "2026-04-20T12:00:00+00:00",
+            "content": (
+                "# Research Dossier: MSFT\n\n"
+                "## Thesis\nMSFT remains a candidate while policy context supports more equity exposure.\n\n"
+                "## Thesis Review Metadata\n"
+                "- Reviewed at: 2026-04-20T12:00:00+00:00\n"
+                "- Expires at: 2026-05-20T12:00:00+00:00\n\n"
+                "| Symbol | Packet | Provider | Freshness | Confidence | Coverage | Blocking gaps |\n"
+                "| MSFT | research-evidence:yfinance:MSFT:6mo:1d | yfinance | fresh | high | 100% | none |\n"
+            ),
+        }
+
+
 class _FakeSnapshotStore:
     def recent(self, limit: int | None = None) -> list[PortfolioSnapshot]:
         now = datetime(2026, 4, 25, 12, 0, tzinfo=timezone.utc)
@@ -1458,6 +1536,97 @@ def test_generate_research_thesis_expiration_route_reads_saved_dossiers(
         "research-evidence:yfinance:MSFT:6mo:1d"
     ]
     assert inbox.list(limit=None, status="proposed") == []
+
+
+def test_generate_research_thesis_route_reads_policy_material_change(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class FakeFit:
+        def model_dump(self, mode: str = "json") -> dict[str, object]:
+            return {
+                "symbol": "MSFT",
+                "fit_status": "does_not_fit",
+                "fit_score": 30.0,
+                "fit_reasons": [],
+                "fit_risks": ["equity exposure would be above personal policy cap."],
+                "blocking_gaps": ["asset_class:policy_cap"],
+                "portfolio_impact": {
+                    "candidate_asset_class": "equity",
+                    "investment_policy": {"max_asset_class_exposure_pct": {"equity": 70.0}},
+                },
+                "recommended_next_step": "review_asset_class_exposure",
+            }
+
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    monkeypatch.setattr(main, "plan_workspace", _FakeCurrentResearchDossierPlanWorkspace())
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    monkeypatch.setattr(main, "build_portfolio_fit_assessment_payload", lambda request: FakeFit())
+
+    dry_run = main.generate_research_thesis_expiration_recommendation_candidates(
+        main.ResearchThesisExpirationRecommendationGenerateRequest(
+            dry_run=True,
+            limit=5,
+            stale_after_days=30,
+        ),
+    )
+
+    assert dry_run.generated_count == 1
+    candidate = dry_run.candidates[0]
+    assert candidate["title"] == "Review MSFT thesis after policy context changed"
+    assert candidate["action_payload"]["generator"]["signal_key"] == "thesis_policy_material_change"
+    assert candidate["action_payload"]["evidence"]["policy_material_change_gaps"] == ["asset_class:policy_cap"]
+    assert inbox.list(limit=None, status="proposed") == []
+
+
+def test_research_thesis_generator_creates_policy_material_change_for_current_dossier() -> None:
+    result = generate_research_thesis_expiration_recommendations(
+        dossier_artifacts=[
+            {
+                "artifact_id": "artifact-dossier-msft",
+                "file_name": "20260420T120000Z-research-dossier-msft.md",
+                "title": "Research Dossier - MSFT",
+                "symbols": ["MSFT"],
+                "created_at": "2026-04-20T12:00:00+00:00",
+                "thesis_review": {
+                    "reviewed_at": "2026-04-20T12:00:00+00:00",
+                    "expires_at": "2026-05-20T12:00:00+00:00",
+                },
+                "content": "| MSFT | research-evidence:yfinance:MSFT:6mo:1d |",
+            }
+        ],
+        fit_assessments_by_symbol={
+            "MSFT": {
+                "fit_status": "does_not_fit",
+                "fit_score": 30.0,
+                "fit_reasons": [],
+                "fit_risks": ["equity exposure would be 72.7%, above personal policy cap 70.0%."],
+                "blocking_gaps": ["asset_class:policy_cap"],
+                "portfolio_impact": {
+                    "candidate_asset_class": "equity",
+                    "investment_policy": {"max_asset_class_exposure_pct": {"equity": 70.0}},
+                },
+                "recommended_next_step": "review_asset_class_exposure",
+            }
+        },
+        existing_recommendations=[],
+        dry_run=True,
+        plan_id="plan-1",
+        stale_after_days=30,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 1
+    candidate = result.candidates[0]
+    assert candidate["title"] == "Review MSFT thesis after policy context changed"
+    payload = candidate["action_payload"]
+    assert payload["generator"]["signal_key"] == "thesis_policy_material_change"
+    assert payload["generator"]["dedupe_key"] == "research_thesis_expiration:artifact-dossier-msft:thesis_policy_material_change"
+    assert payload["suggested_action"]["kind"] == "review_research_thesis"
+    assert payload["suggested_action"]["reason"] == "policy_material_change"
+    assert payload["evidence"]["policy_material_change_gaps"] == ["asset_class:policy_cap"]
+    assert payload["evidence"]["portfolio_impact"]["candidate_asset_class"] == "equity"
+    assert payload["quality"]["freshness_status"] == "stale"
 
 
 def test_run_all_recommendation_factories_groups_results_and_applies(

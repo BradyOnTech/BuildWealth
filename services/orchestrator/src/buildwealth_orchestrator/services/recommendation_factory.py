@@ -1846,6 +1846,23 @@ def _watchlist_material_price_change(item: dict[str, Any]) -> dict[str, Any] | N
     }
 
 
+THESIS_POLICY_MATERIAL_CHANGE_GAPS = {
+    "cash:policy_floor",
+    "asset_class:policy_cap",
+    "policy:simplicity_review",
+}
+
+
+def _policy_material_change_gaps(blocking_gaps: Any) -> list[str]:
+    if not isinstance(blocking_gaps, list):
+        return []
+    return [
+        str(gap).strip()
+        for gap in blocking_gaps
+        if str(gap).strip() in THESIS_POLICY_MATERIAL_CHANGE_GAPS
+    ]
+
+
 def _watchlist_research_candidate(
     *,
     item: dict[str, Any],
@@ -1893,6 +1910,8 @@ def _watchlist_research_candidate(
     actionability = "review_only"
     suggested_action: dict[str, Any] = {}
     blocking_context: list[str] = []
+    has_saved_thesis = bool(str(item.get("thesis") or item.get("note") or "").strip())
+    policy_material_gaps = _policy_material_change_gaps(fit_blocking_gaps)
 
     if freshness_status in {"", "partial", "stale", "degraded", "unavailable"} or blocking_gaps:
         signal_key = f"research_{freshness_status or 'unknown'}"
@@ -1910,6 +1929,22 @@ def _watchlist_research_candidate(
             "blocking_gaps": blocking_gaps,
         }
         blocking_context = [f"research.{gap}" for gap in blocking_gaps] or ["research.evidence_packet"]
+    elif has_saved_thesis and policy_material_gaps:
+        signal_key = "watchlist_thesis_policy_material_change"
+        title = f"Review {symbol} thesis after policy context changed"
+        detail = (
+            f"{symbol}'s saved watchlist thesis should be reviewed because current personal policy context "
+            "now affects whether the thesis still fits."
+        )
+        priority = "medium"
+        actionability = "review_only"
+        suggested_action = {
+            "kind": "review_research_thesis",
+            "symbol": symbol,
+            "reason": "policy_material_change",
+            "policy_gaps": policy_material_gaps,
+        }
+        blocking_context = ["research.policy_material_change"]
     elif "policy:restricted_symbol" in fit_blocking_gaps or "policy:restricted_sector" in fit_blocking_gaps:
         gap = (
             "policy:restricted_symbol"
@@ -2093,7 +2128,7 @@ def _watchlist_research_candidate(
             "symbol": symbol,
             "fit_status": fit_status,
         }
-    elif str(item.get("thesis") or item.get("note") or "").strip():
+    elif has_saved_thesis:
         material_move = _watchlist_material_price_change(item)
         thesis_review = _watchlist_thesis_review_metadata(item, now=resolved_now)
         if material_move is not None:
@@ -2173,6 +2208,12 @@ def _watchlist_research_candidate(
         material_move = _watchlist_material_price_change(item)
         if material_move is not None:
             evidence.update(material_move)
+    elif signal_key == "watchlist_thesis_policy_material_change":
+        evidence.update(
+            {
+                "policy_material_change_gaps": policy_material_gaps,
+            }
+        )
     expected_outcome = {
         "expected_delta_context_quality": "research_or_fit_reviewed",
         "expected_next_safe_action": suggested_action.get("kind"),
@@ -2288,6 +2329,10 @@ def generate_watchlist_research_recommendations(
 
 def _research_thesis_dedupe_key(artifact_id: str) -> str:
     return f"research_thesis_expiration:{_clean_key(artifact_id)}"
+
+
+def _research_thesis_signal_dedupe_key(artifact_id: str, signal_key: str) -> str:
+    return f"research_thesis_expiration:{_clean_key(artifact_id)}:{_clean_key(signal_key)}"
 
 
 def _research_symbols_from_title(title: Any) -> list[str]:
@@ -2466,10 +2511,147 @@ def _research_thesis_expiration_candidate(
     }
 
 
+def _research_thesis_policy_material_change_candidate(
+    *,
+    artifact: dict[str, Any],
+    fit_assessments_by_symbol: dict[str, dict[str, Any]],
+    generated_at: str,
+    plan_id: str | None,
+    stale_after_days: int,
+    now: datetime,
+) -> dict[str, Any] | None:
+    artifact_id = str(artifact.get("artifact_id") or artifact.get("id") or "").strip()
+    if not artifact_id:
+        return None
+    review = research_thesis_review_metadata(
+        artifact,
+        stale_after_days=stale_after_days,
+        now=now,
+    )
+    if review.get("status") == "expired":
+        return None
+    symbols = artifact.get("symbols") if isinstance(artifact.get("symbols"), list) else []
+    symbols = [str(symbol or "").strip().upper() for symbol in symbols if str(symbol or "").strip()][:8]
+    if not symbols:
+        symbols = _research_symbols_from_title(artifact.get("title") or artifact.get("file_name"))
+    matched_symbol = ""
+    matched_fit: dict[str, Any] = {}
+    material_gaps: list[str] = []
+    for symbol in symbols:
+        fit_payload = fit_assessments_by_symbol.get(symbol)
+        if not isinstance(fit_payload, dict):
+            continue
+        gaps = _policy_material_change_gaps(fit_payload.get("blocking_gaps"))
+        if gaps:
+            matched_symbol = symbol
+            matched_fit = fit_payload
+            material_gaps = gaps
+            break
+    if not matched_symbol:
+        return None
+
+    label = " / ".join(symbols[:3]) if symbols else matched_symbol
+    title = f"Review {label} thesis after policy context changed"
+    detail = (
+        f"The saved research thesis for {label} should be reviewed because current personal policy context "
+        "now affects whether the thesis still fits."
+    )
+    resolved_plan_id = plan_id or str(artifact.get("plan_id") or "").strip() or None
+    packet_citations = _research_packet_citations(
+        artifact.get("content_preview") or artifact.get("content")
+    )
+    portfolio_impact = (
+        matched_fit.get("portfolio_impact")
+        if isinstance(matched_fit.get("portfolio_impact"), dict)
+        else {}
+    )
+    evidence = {
+        "summary": detail,
+        "data_keys": ["plan.artifacts", "research.dossier", "portfolio.fit_assessment"],
+        "artifact_id": artifact_id,
+        "file_name": artifact.get("file_name"),
+        "title": artifact.get("title"),
+        "plan_id": resolved_plan_id,
+        "symbols": symbols,
+        "reviewed_at": review.get("reviewed_at"),
+        "expires_at": review.get("expires_at"),
+        "thesis_review_status": review.get("status"),
+        "packet_citations": packet_citations,
+        "policy_material_change_symbol": matched_symbol,
+        "policy_material_change_gaps": material_gaps,
+        "fit_status": matched_fit.get("fit_status"),
+        "fit_score": matched_fit.get("fit_score"),
+        "fit_risks": matched_fit.get("fit_risks") if isinstance(matched_fit.get("fit_risks"), list) else [],
+        "fit_blocking_gaps": matched_fit.get("blocking_gaps") if isinstance(matched_fit.get("blocking_gaps"), list) else [],
+        "portfolio_impact": portfolio_impact,
+        "investment_policy": (
+            portfolio_impact.get("investment_policy")
+            if isinstance(portfolio_impact.get("investment_policy"), dict)
+            else {}
+        ),
+    }
+    suggested_action = {
+        "kind": "review_research_thesis",
+        "artifact_id": artifact_id,
+        "plan_id": resolved_plan_id,
+        "symbols": symbols,
+        "reason": "policy_material_change",
+        "policy_gaps": material_gaps,
+    }
+    expected_outcome = {
+        "expected_delta_context_quality": "research_thesis_reviewed",
+        "expected_next_safe_action": "review_policy_fit",
+    }
+    signal_key = "thesis_policy_material_change"
+    action_payload = {
+        "generator": {
+            "id": RESEARCH_THESIS_EXPIRATION_FACTORY_ID,
+            "version": RESEARCH_THESIS_EXPIRATION_FACTORY_VERSION,
+            "generated_at": generated_at,
+            "signal_key": signal_key,
+            "signal_type": "research_thesis_expiration",
+            "dedupe_key": _research_thesis_signal_dedupe_key(artifact_id, signal_key),
+            "severity": "medium",
+        },
+        "evidence": evidence,
+        "suggested_action": suggested_action,
+        "expected_outcome": expected_outcome,
+    }
+    action_payload["quality"] = _quality_metadata(
+        source=RESEARCH_THESIS_EXPIRATION_SOURCE,
+        priority="medium",
+        evidence=evidence,
+        suggested_action=suggested_action,
+        expected_outcome=expected_outcome,
+        actionability="review_only",
+        confidence_level="medium",
+        confidence_reasons=[
+            "Generated from saved research dossier context and current portfolio-fit policy signals.",
+            "Action is review-only so policy changes update the thesis before recommendations rely on it.",
+        ],
+        reversibility="high",
+        blocking_context=["research.policy_material_change"],
+    )
+    action_payload["quality"]["freshness_status"] = "stale"
+    action_payload["quality"]["freshness_reasons"] = [
+        "Personal investment policy context changed since the saved thesis was reviewed."
+    ]
+    return {
+        "title": title,
+        "detail": detail,
+        "priority": "medium",
+        "recommendation_type": "workflow_action",
+        "source": RESEARCH_THESIS_EXPIRATION_SOURCE,
+        "plan_id": resolved_plan_id,
+        "action_payload": action_payload,
+    }
+
+
 def generate_research_thesis_expiration_recommendations(
     *,
     dossier_artifacts: list[dict[str, Any]],
     existing_recommendations: list[dict[str, Any]],
+    fit_assessments_by_symbol: dict[str, dict[str, Any]] | None = None,
     creator: RecommendationCreator | None = None,
     dry_run: bool = True,
     plan_id: str | None = None,
@@ -2481,6 +2663,11 @@ def generate_research_thesis_expiration_recommendations(
     generated_at = _now_iso(resolved_now)
     active_keys = _active_dedupe_keys(existing_recommendations)
     bounded_limit = max(1, min(int(limit), 50))
+    fit_assessments_by_symbol = (
+        {str(key).strip().upper(): value for key, value in fit_assessments_by_symbol.items()}
+        if isinstance(fit_assessments_by_symbol, dict)
+        else {}
+    )
     candidates: list[dict[str, Any]] = []
     created: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
@@ -2495,6 +2682,15 @@ def generate_research_thesis_expiration_recommendations(
             stale_after_days=stale_after_days,
             now=resolved_now,
         )
+        if candidate is None:
+            candidate = _research_thesis_policy_material_change_candidate(
+                artifact=artifact,
+                fit_assessments_by_symbol=fit_assessments_by_symbol,
+                generated_at=generated_at,
+                plan_id=plan_id,
+                stale_after_days=stale_after_days,
+                now=resolved_now,
+            )
         if candidate is None:
             continue
         generator = candidate.get("action_payload", {}).get("generator", {})

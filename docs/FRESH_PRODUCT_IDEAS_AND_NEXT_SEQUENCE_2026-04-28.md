@@ -237,7 +237,7 @@ Why it matters:
 Likely first slice:
 
 - add thesis reviewed_at/expires_at metadata to saved research artifacts where available (started: saved dossier lookup/detail now derives and displays a thesis review status from the artifact timestamp)
-- generate a review-only recommendation when a thesis expires (started: `generator:research_thesis_expiration` creates deduped review-only Inbox rows for expired saved dossiers; `generator:watchlist_research` also creates review-only rows for stale watchlist theses)
+- generate a review-only recommendation when a thesis expires or materially changes (started: `generator:research_thesis_expiration` creates deduped review-only Inbox rows for expired saved dossiers and current dossiers affected by policy material changes; `generator:watchlist_research` also creates review-only rows for stale watchlist theses, price moves, and policy material changes)
 - show expiration/freshness in dossier lookup and Today research readiness (started: v2 dossier lookup/detail and Today research readiness now surface saved-dossier thesis expiry, stale watchlist theses, and material watchlist price moves)
 
 ## Priority Recommendation
