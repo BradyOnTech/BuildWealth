@@ -552,8 +552,8 @@ Long-term:
 ## Current Immediate Next Work
 
 1. Continue Personal Investment Policy beyond the current slices: stronger Copilot questions for weak guardrails, and fit/recommendation rules beyond single-symbol exposure, research confidence, tax sensitivity, sector caps, symbol/sector restrictions, and preferred account-location policy. The next policy slice has started: cash floor, asset-class exposure caps, and simplicity preference are now profile-backed and affect portfolio-fit plus generated review-only research rows.
-2. Continue Research Thesis Expiration beyond the current saved-dossier/watchlist slice: add richer material-change sources beyond price and build a more explicit v2 thesis-review surface. Reviewed theses now write refreshed review/expiry/reference metadata, and policy material changes from cash-floor, asset-class, and simplicity guardrails now create review-only thesis refresh rows.
-3. Continue v2 research migration with Today/Plan links into packet, compare, and dossier surfaces.
+2. Continue Research Thesis Expiration beyond the current saved-dossier/watchlist slice: add richer material-change sources beyond price. Reviewed theses now write refreshed review/expiry/reference metadata; policy material changes from cash-floor, asset-class, and simplicity guardrails now create review-only thesis refresh rows; Today research readiness routes single thesis signals directly into v2 thesis review.
+3. Continue v2 research migration with deeper Plan Workspace integration. Today and Plan now link saved dossier/thesis work into v2 Research surfaces, but plan settings, assumptions, timeline, scenario diffs, and artifacts still need first-class v2 ownership.
 4. Deepen portfolio-fit account context with account-type-specific contribution guidance and richer tax-policy preferences.
 5. Continue expanding browser coverage around Plan v2 migration as those surfaces move over.
 

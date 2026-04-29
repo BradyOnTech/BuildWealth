@@ -463,7 +463,7 @@ Current progress:
 - Research dossiers now cite evidence packets in the response and dossier markdown, so saved plan artifacts preserve packet id, provider, freshness, confidence, coverage, and blocking-gap context.
 - Research compare rows now cite evidence packet id, provider, freshness, confidence, coverage score, and blocking gaps while preserving existing compare ranking fields.
 - Saved research dossiers now expose thesis review metadata in v2 Research, and expired dossiers can generate review-only thesis refresh recommendations.
-- Today research readiness now includes thesis-expiry caveats for saved dossiers and watchlist theses, plus material watchlist price-move warnings when a thesis reference price is available.
+- Today research readiness now includes thesis-expiry caveats for saved dossiers and watchlist theses, material watchlist price-move warnings when a thesis reference price is available, policy-material-change thesis warnings from proposed review rows, and direct v2 thesis-review links when there is a single thesis action.
 
 Done when:
 
@@ -543,6 +543,7 @@ Current progress:
 - v2 Research has saved dossier lookup/detail at `#research?dossiers=1` and `#research?dossier=...`, with packet citations parsed from saved plan artifacts and linked back to packet evidence.
 - Inbox investment/research rows now route research and compare links into v2 Research instead of the classic research route.
 - v2 Portfolio fit review and Copilot investment-fit trace cards link evidence packet ids into v2 Research.
+- Today research readiness and v2 Plan look-closer links now route saved dossier/thesis work into v2 Research rather than only broad classic artifact browsing.
 
 Done when:
 

@@ -238,7 +238,7 @@ Likely first slice:
 
 - add thesis reviewed_at/expires_at metadata to saved research artifacts where available (started: saved dossier lookup/detail now derives and displays a thesis review status from the artifact timestamp)
 - generate a review-only recommendation when a thesis expires or materially changes (started: `generator:research_thesis_expiration` creates deduped review-only Inbox rows for expired saved dossiers and current dossiers affected by policy material changes; `generator:watchlist_research` also creates review-only rows for stale watchlist theses, price moves, and policy material changes)
-- show expiration/freshness in dossier lookup and Today research readiness (started: v2 dossier lookup/detail and Today research readiness now surface saved-dossier thesis expiry, stale watchlist theses, and material watchlist price moves)
+- show expiration/freshness in dossier lookup and Today research readiness (started: v2 dossier lookup/detail and Today research readiness now surface saved-dossier thesis expiry, stale watchlist theses, material watchlist price moves, policy-material-change thesis rows, and direct thesis-review routes)
 
 ## Priority Recommendation
 
@@ -252,6 +252,6 @@ Then pull in the fresh ideas in this order:
 
 1. Personal Investment Policy, because it improves portfolio-fit immediately.
 2. What Changed Since Last Review, because it strengthens Today as the command center.
-3. Research Thesis Expiration, because it extends the investment-fit evidence loop (started with saved dossier expiry metadata, recommendation generation, v2 Research visibility, Inbox dossier routing, Today readiness warnings, stale watchlist-thesis triggers, material price-move triggers, and apply-side thesis review metadata refresh).
+3. Research Thesis Expiration, because it extends the investment-fit evidence loop (started with saved dossier expiry metadata, recommendation generation, v2 Research visibility, Inbox dossier routing, Today readiness warnings, stale watchlist-thesis triggers, material price-move triggers, policy-material-change thesis triggers, Plan links to saved dossiers, and apply-side thesis review metadata refresh).
 4. Decision Pre-Mortem, because it improves outcome learning and calibration.
 5. Confidence Heat Map, because it can unify readiness/freshness once more domain signals exist.

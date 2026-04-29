@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import quote as url_quote
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
@@ -4142,12 +4143,16 @@ def _research_readiness_symbol_label(symbols: list[str]) -> str:
     return label
 
 
+def _research_readiness_clean_symbol(raw_symbol: Any) -> str:
+    return re.sub(r"[^A-Z0-9._-]+", "", str(raw_symbol or "").strip().upper())
+
+
 def _watchlist_thesis_today_signal(
     item: dict[str, Any],
     *,
     current_price: float | None,
 ) -> dict[str, Any] | None:
-    symbol = re.sub(r"[^A-Z0-9._-]+", "", str(item.get("symbol") or "").strip().upper())
+    symbol = _research_readiness_clean_symbol(item.get("symbol"))
     if not symbol:
         return None
     if not str(item.get("thesis") or item.get("note") or "").strip():
@@ -4191,6 +4196,7 @@ def _saved_dossier_thesis_today_signals(symbols: list[str]) -> list[dict[str, An
         lookup = build_research_dossier_lookup_payload(limit=10, include_content=False)
     except Exception:
         return []
+    lookup_plan_id = str(lookup.get("plan_id") or "").strip()
     items = lookup.get("items") if isinstance(lookup.get("items"), list) else []
     signals: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -4219,19 +4225,114 @@ def _saved_dossier_thesis_today_signals(symbols: list[str]) -> list[dict[str, An
                 "symbol": label_symbol,
                 "reason": "saved_dossier_thesis_expired",
                 "artifact_id": artifact_id,
+                "plan_id": str(item.get("plan_id") or lookup_plan_id).strip(),
                 "age_days": review.get("age_days"),
             }
         )
     return signals
 
 
+def _proposed_thesis_review_today_signals() -> list[dict[str, Any]]:
+    try:
+        rows = recommendation_inbox.list(limit=200, status="proposed", sort="created_at_desc")
+    except Exception:
+        return []
+
+    signals: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        action_payload = row.get("action_payload") if isinstance(row.get("action_payload"), dict) else {}
+        suggested_action = (
+            action_payload.get("suggested_action")
+            if isinstance(action_payload.get("suggested_action"), dict)
+            else {}
+        )
+        if str(suggested_action.get("kind") or "").strip() != "review_research_thesis":
+            continue
+        generator = action_payload.get("generator") if isinstance(action_payload.get("generator"), dict) else {}
+        signal_key = str(generator.get("signal_key") or "").strip()
+        reason = str(suggested_action.get("reason") or "").strip()
+        if reason != "policy_material_change" and signal_key not in {
+            "thesis_policy_material_change",
+            "watchlist_thesis_policy_material_change",
+        }:
+            continue
+
+        evidence = action_payload.get("evidence") if isinstance(action_payload.get("evidence"), dict) else {}
+        artifact_id = str(
+            suggested_action.get("artifact_id")
+            or evidence.get("artifact_id")
+            or ""
+        ).strip()
+        plan_id = str(
+            suggested_action.get("plan_id")
+            or evidence.get("plan_id")
+            or row.get("plan_id")
+            or ""
+        ).strip()
+        raw_symbols = suggested_action.get("symbols")
+        if not isinstance(raw_symbols, list):
+            raw_symbols = evidence.get("symbols") if isinstance(evidence.get("symbols"), list) else []
+        symbols = [_research_readiness_clean_symbol(symbol) for symbol in raw_symbols]
+        symbols = [symbol for symbol in symbols if symbol]
+        symbol = symbols[0] if symbols else _research_readiness_clean_symbol(evidence.get("symbol"))
+        dedupe_target = artifact_id or symbol or str(row.get("id") or "").strip()
+        key = ("policy_material_change", dedupe_target)
+        if not dedupe_target or key in seen:
+            continue
+        seen.add(key)
+        signals.append(
+            {
+                "symbol": symbol or artifact_id,
+                "reason": "policy_material_change",
+                "artifact_id": artifact_id,
+                "plan_id": plan_id,
+                "recommendation_id": str(row.get("id") or "").strip(),
+            }
+        )
+    return signals
+
+
+def _merge_research_thesis_today_signals(signals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for signal in signals:
+        reason = str(signal.get("reason") or "").strip()
+        target = str(signal.get("artifact_id") or signal.get("symbol") or "").strip()
+        if not reason or not target:
+            continue
+        key = (reason, target)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(signal)
+    return merged
+
+
+def _research_thesis_today_href(signals: list[dict[str, Any]]) -> str:
+    if len(signals) != 1:
+        return "#research?dossiers=1"
+    signal = signals[0]
+    target = str(signal.get("artifact_id") or signal.get("symbol") or "").strip()
+    if not target:
+        return "#research?dossiers=1"
+    href = f"#research?thesisReview={url_quote(target, safe='')}"
+    plan_id = str(signal.get("plan_id") or "").strip()
+    if plan_id and signal.get("artifact_id"):
+        href = f"{href}&plan={url_quote(plan_id, safe='')}"
+    return href
+
+
 def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) -> TodayCommandCard:
     symbols: list[str] = []
     seen: set[str] = set()
     watchlist_items: list[dict[str, Any]] = []
+    proposed_thesis_signals = _proposed_thesis_review_today_signals()
 
     def add_symbol(raw_symbol: Any) -> None:
-        symbol = re.sub(r"[^A-Z0-9._-]+", "", str(raw_symbol or "").strip().upper())
+        symbol = _research_readiness_clean_symbol(raw_symbol)
         if not symbol or symbol in seen or len(symbols) >= 4:
             return
         seen.add(symbol)
@@ -4251,6 +4352,9 @@ def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) ->
                 break
     except Exception:
         pass
+
+    for signal in proposed_thesis_signals:
+        add_symbol(signal.get("symbol"))
 
     if not symbols:
         return TodayCommandCard(
@@ -4308,7 +4412,7 @@ def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) ->
     thesis_signals = _saved_dossier_thesis_today_signals(symbols)
     watchlist_thesis_signals: list[dict[str, Any]] = []
     for item in watchlist_items:
-        symbol = re.sub(r"[^A-Z0-9._-]+", "", str(item.get("symbol") or "").strip().upper())
+        symbol = _research_readiness_clean_symbol(item.get("symbol"))
         signal = _watchlist_thesis_today_signal(
             item,
             current_price=packet_prices_by_symbol.get(symbol),
@@ -4316,6 +4420,8 @@ def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) ->
         if signal is not None:
             watchlist_thesis_signals.append(signal)
     thesis_signals.extend(watchlist_thesis_signals)
+    thesis_signals.extend(proposed_thesis_signals)
+    thesis_signals = _merge_research_thesis_today_signals(thesis_signals)
     if degraded_symbols:
         degraded_label = ", ".join(degraded_symbols[:3])
         extra = "" if len(degraded_symbols) <= 3 else f" +{len(degraded_symbols) - 3} more"
@@ -4369,6 +4475,11 @@ def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) ->
         )
 
     if thesis_signals:
+        policy_symbols = [
+            str(signal.get("symbol") or "").strip().upper()
+            for signal in thesis_signals
+            if signal.get("reason") == "policy_material_change" and str(signal.get("symbol") or "").strip()
+        ]
         material_symbols = [
             str(signal.get("symbol") or "").strip().upper()
             for signal in thesis_signals
@@ -4377,9 +4488,16 @@ def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) ->
         due_symbols = [
             str(signal.get("symbol") or "").strip().upper()
             for signal in thesis_signals
-            if signal.get("reason") != "material_price_change" and str(signal.get("symbol") or "").strip()
+            if signal.get("reason") not in {"material_price_change", "policy_material_change"}
+            and str(signal.get("symbol") or "").strip()
         ]
-        if material_symbols:
+        if policy_symbols:
+            noun = "thesis has" if len(policy_symbols) == 1 else "theses have"
+            detail = (
+                f"{len(policy_symbols)} saved research {noun} policy context changed: "
+                f"{_research_readiness_symbol_label(policy_symbols)}."
+            )
+        elif material_symbols:
             noun = "thesis has" if len(material_symbols) == 1 else "theses have"
             detail = (
                 f"{len(material_symbols)} watchlist {noun} a material price move: "
@@ -4399,7 +4517,7 @@ def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) ->
             metric_label="Ready",
             metric_value=f"{ready_count}/{total_count}",
             action_label="Review theses",
-            href="#research?dossiers=1",
+            href=_research_thesis_today_href(thesis_signals),
         )
 
     return TodayCommandCard(

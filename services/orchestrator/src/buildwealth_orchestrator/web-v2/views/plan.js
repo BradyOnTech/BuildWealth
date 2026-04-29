@@ -153,8 +153,20 @@ function rerenderDecisions() {
   root.innerHTML = renderDecisions(ui.plan, ui.decisions);
 }
 
-function renderLookCloser(plan) {
+function planResearchDossierArtifacts(plan) {
+  const artifacts = Array.isArray(plan?.artifacts) ? plan.artifacts : [];
+  return artifacts.filter(artifact => {
+    const id = String(artifact?.id || '').trim();
+    if (!id) return false;
+    const fileName = String(artifact?.file_name || '').toLowerCase();
+    const title = String(artifact?.title || '').trim();
+    return fileName.includes('-research-dossier-') || title.toLowerCase().startsWith('research dossier');
+  }).slice(0, 3);
+}
+
+export function renderLookCloser(plan) {
   const id = encodeURIComponent(plan.id);
+  const researchArtifacts = planResearchDossierArtifacts(plan);
   return html`
     <footer class="look-closer">
       <span class="section-eyebrow">Look closer</span>
@@ -167,7 +179,22 @@ function renderLookCloser(plan) {
         <a class="link-editorial" href="/#plans?id=${id}">Compare withdrawal strategies</a>
         <a class="link-editorial" href="/#plans?id=${id}">Browse artifacts</a>
       </div>
-      <p class="look-closer-note">Each opens the classic plan workspace — these surfaces haven't been re-set in the new vocabulary yet.</p>
+      ${researchArtifacts.length ? html`
+        <div class="look-closer-row">
+          ${raw(researchArtifacts.map(artifact => {
+            const artifactId = encodeURIComponent(String(artifact.id || '').trim());
+            const title = esc(artifact.title || artifact.file_name || artifact.id);
+            return html`
+              <span class="link-cluster">
+                <span class="muted">${title}</span>
+                <a class="link-editorial" href="#research?dossier=${artifactId}&plan=${id}">Dossier</a>
+                <a class="link-editorial" href="#research?thesisReview=${artifactId}&plan=${id}">Review thesis</a>
+              </span>
+            `;
+          }).join(''))}
+        </div>
+      ` : ''}
+      <p class="look-closer-note">The remaining settings links open the classic plan workspace while those surfaces move into v2.</p>
     </footer>
   `;
 }

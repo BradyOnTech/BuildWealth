@@ -843,7 +843,7 @@ def test_today_research_readiness_surfaces_expired_saved_dossier_thesis(
     assert "saved research thesis review is due" in cards["research-readiness"].detail
     assert "MSFT" in cards["research-readiness"].detail
     assert cards["research-readiness"].action_label == "Review theses"
-    assert cards["research-readiness"].href == "#research?dossiers=1"
+    assert cards["research-readiness"].href == "#research?thesisReview=artifact-dossier-msft&plan=plan-1"
 
 
 def test_today_research_readiness_surfaces_watchlist_thesis_material_price_move(
@@ -903,6 +903,86 @@ def test_today_research_readiness_surfaces_watchlist_thesis_material_price_move(
     assert "material price move" in cards["research-readiness"].detail
     assert "NVDA" in cards["research-readiness"].detail
     assert cards["research-readiness"].action_label == "Review theses"
+    assert cards["research-readiness"].href == "#research?thesisReview=NVDA"
+
+
+def test_today_research_readiness_surfaces_policy_material_change_thesis_review(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    inbox.create(
+        title="Review MSFT thesis after policy context changed",
+        detail="Your investment policy changed enough to revisit the saved thesis.",
+        priority="medium",
+        recommendation_type="workflow_action",
+        source="generator:research_thesis_expiration",
+        plan_id="plan-1",
+        action_payload={
+            "generator": {
+                "signal_key": "thesis_policy_material_change",
+                "signal_type": "research_thesis_expiration",
+            },
+            "evidence": {
+                "artifact_id": "artifact-dossier-msft",
+                "symbols": ["MSFT"],
+                "policy_material_change_gaps": ["asset_class:policy_cap"],
+            },
+            "suggested_action": {
+                "kind": "review_research_thesis",
+                "reason": "policy_material_change",
+                "artifact_id": "artifact-dossier-msft",
+                "plan_id": "plan-1",
+                "symbols": ["MSFT"],
+            },
+        },
+    )
+
+    class FakePortfolioStore:
+        def list_watchlist(self) -> list[dict[str, object]]:
+            return [{"symbol": "MSFT"}]
+
+    class FakeResearchService:
+        def evidence_packet(self, *, symbol: str, period: str = "6mo", interval: str = "1d"):
+            del period, interval
+            return main.ResearchEvidencePacket(
+                packet_id=f"research-evidence:yfinance:{symbol}:6mo:1d",
+                symbol=symbol,
+                provider="yfinance",
+                period="6mo",
+                interval="1d",
+                generated_at=main.utc_now(),
+                coverage={"quote_available": True, "history_available": True, "warnings": []},
+                freshness={"status": "fresh"},
+                metrics={"last_price": 410.0},
+                quality={"confidence": "high", "blocking_gaps": []},
+                provenance={"warnings": []},
+            )
+
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    monkeypatch.setattr(main, "portfolio_store", FakePortfolioStore())
+    monkeypatch.setattr(main, "research_service", FakeResearchService())
+    monkeypatch.setattr(main, "build_research_dossier_lookup_payload", lambda **_: {"items": []})
+    main.today_research_evidence_cache.clear()
+
+    dashboard = main.TodayDashboardResponse(
+        generated_at=main.utc_now(),
+        currency="USD",
+        state="MN",
+        sync_status=main.SyncStatusResponse(running=False, runs_total=0, runs_failed=0),
+        top_holding_symbol=None,
+        context_state="ready",
+        context_notes=[],
+        command_cards=[],
+        emergency_fund_months=8.0,
+    )
+
+    cards = {card.id: card for card in main._build_today_command_cards(dashboard)}
+
+    assert cards["research-readiness"].status == "warning"
+    assert "policy context changed" in cards["research-readiness"].detail
+    assert "MSFT" in cards["research-readiness"].detail
+    assert cards["research-readiness"].href == "#research?thesisReview=artifact-dossier-msft&plan=plan-1"
 
 
 def test_refresh_today_research_readiness_clears_packet_cache(
