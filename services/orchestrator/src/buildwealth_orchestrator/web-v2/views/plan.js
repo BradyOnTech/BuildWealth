@@ -1,19 +1,21 @@
 // PLAN — masthead + movements + look-closer footer.
 //   I.   The story        — title, lede, key assumptions, top actions
 //   IA.  The assumptions  — durable assumptions, active set, weak fields
+//   IB.  The health       — confidence and review gaps
 //   II.  The trajectory   — plan vs actual tracking
 //   III. The decisions    — decision log + append form
 // Footer — Look closer (links to classic for timeline, contribution rules, scenarios).
 
 import { api } from '../lib/api.js';
 import { state } from '../lib/state.js';
-import { html, raw, esc, $, setView, delegate } from '../lib/dom.js';
+import { html, raw, esc, $, delegate } from '../lib/dom.js';
 import { renderStory } from './plan/story.js';
 import {
   buildAssumptionSetsPayload,
   buildPlanSettingsPatch,
   renderAssumptions,
 } from './plan/assumptions.js';
+import { derivePlanHealth, renderPlanHealth } from './plan/health.js';
 import { renderTrajectory } from './plan/trajectory.js';
 import { renderDecisions } from './plan/decisions.js';
 
@@ -26,8 +28,10 @@ export const meta = {
 
 const ui = {
   selectedId: null,
+  section: '',
   plan: null,
   assumptions: { busy: false, assumptionSets: null, draft: {}, dirty: false, saving: false, error: null },
+  health: { busy: false, recommendations: [], error: null },
   trajectory: { busy: false, tracking: null, error: null },
   decisions: { appendOpen: false, appendBusy: false, appendError: null },
 };
@@ -43,6 +47,7 @@ export function template() {
 
 export async function init(params = {}) {
   ui.selectedId = params.id || pickInitialPlanId();
+  ui.section = String(params.section || '').trim().toLowerCase();
   attachHandlers();
 
   if (!ui.selectedId) {
@@ -51,7 +56,9 @@ export async function init(params = {}) {
   }
   await loadPlan(ui.selectedId);
   await loadAssumptionSets(ui.selectedId);
+  await loadPlanHealth(ui.selectedId);
   rerenderAll();
+  focusRequestedSection(params.section);
   loadTrajectory(ui.selectedId);
 }
 
@@ -103,6 +110,19 @@ async function loadAssumptionSets(id) {
   }
 }
 
+async function loadPlanHealth(id) {
+  ui.health = { busy: true, recommendations: [], error: null };
+  try {
+    ui.health = {
+      busy: false,
+      recommendations: await api.recommendations({ planId: id, status: 'proposed', limit: 200 }),
+      error: null,
+    };
+  } catch (err) {
+    ui.health = { busy: false, recommendations: [], error: err.message };
+  }
+}
+
 async function loadTrajectory(id) {
   ui.trajectory = { busy: true, tracking: null, error: null };
   rerenderTrajectory();
@@ -112,6 +132,7 @@ async function loadTrajectory(id) {
     ui.trajectory = { busy: false, tracking: null, error: err.message };
   }
   rerenderTrajectory();
+  rerenderHealth();
 }
 
 async function refreshPlanList() {
@@ -174,16 +195,30 @@ function rerenderBody() {
   root.innerHTML = html`
     ${raw(renderStory(ui.plan))}
     <div id="plan-assumptions">${raw(renderAssumptions(ui.plan, ui.assumptions))}</div>
-    <div id="plan-trajectory">${raw(renderTrajectory(ui.trajectory))}</div>
-    <div id="plan-decisions">${raw(renderDecisions(ui.plan, ui.decisions))}</div>
+    <div id="plan-health" data-plan-section="health">${raw(renderPlanHealth(ui.plan, currentPlanHealth()))}</div>
+    <div id="plan-trajectory" data-plan-section="trajectory">${raw(renderTrajectory(ui.trajectory))}</div>
+    <div id="plan-decisions" data-plan-section="decisions">${raw(renderDecisions(ui.plan, ui.decisions))}</div>
     ${raw(renderLookCloser(ui.plan))}
   `;
+}
+
+function currentPlanHealth() {
+  return derivePlanHealth(ui.plan, {
+    recommendations: ui.health.recommendations,
+    tracking: ui.trajectory.tracking,
+  });
 }
 
 function rerenderAssumptions() {
   const root = $('#plan-assumptions');
   if (!root || !ui.plan) return;
   root.innerHTML = renderAssumptions(ui.plan, ui.assumptions);
+}
+
+function rerenderHealth() {
+  const root = $('#plan-health');
+  if (!root || !ui.plan) return;
+  root.innerHTML = renderPlanHealth(ui.plan, currentPlanHealth());
 }
 
 function rerenderTrajectory() {
@@ -269,11 +304,14 @@ function attachHandlers() {
     const id = el.value;
     if (!id || id === ui.selectedId) return;
     ui.selectedId = id;
+    ui.section = '';
     ui.plan = null;
     ui.assumptions = { busy: false, assumptionSets: null, draft: {}, dirty: false, saving: false, error: null };
+    ui.health = { busy: false, recommendations: [], error: null };
     rerenderBody();
     await loadPlan(id);
     await loadAssumptionSets(id);
+    await loadPlanHealth(id);
     rerenderAll();
     loadTrajectory(id);
   });
@@ -312,6 +350,7 @@ async function createPlan(body) {
     ui.selectedId = created.id;
     await loadPlan(created.id);
     await loadAssumptionSets(created.id);
+    await loadPlanHealth(created.id);
     rerenderAll();
     loadTrajectory(created.id);
   } catch (err) {
@@ -361,6 +400,7 @@ async function saveAssumptions() {
     if (Object.keys(settingsPatch).length) {
       ui.plan = await api.planSettings(ui.plan.id, settingsPatch);
       state.plan = ui.plan;
+      await loadPlanHealth(ui.plan.id);
     }
     if (activeSetChanged) {
       ui.assumptions.assumptionSets = await api.updatePlanAssumptionSets(
@@ -375,11 +415,20 @@ async function saveAssumptions() {
     ui.assumptions.saving = false;
     ui.assumptions.error = null;
     rerenderAll();
+    focusRequestedSection(ui.section);
   } catch (err) {
     ui.assumptions.saving = false;
     ui.assumptions.error = err.message;
     rerenderAssumptions();
   }
+}
+
+function focusRequestedSection(section) {
+  const requested = String(section || '').trim().toLowerCase();
+  if (!requested) return;
+  const target = document.querySelector(`[data-plan-section="${requested}"]`);
+  if (!target) return;
+  target.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
 async function submitAppendDecision() {

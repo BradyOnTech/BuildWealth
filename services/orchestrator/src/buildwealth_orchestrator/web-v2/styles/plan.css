@@ -277,6 +277,83 @@
   margin-top: var(--s-4);
 }
 
+/* ───────────  Health (Movement IB)  ─────────── */
+
+.plan-health {
+  margin-top: var(--s-7);
+  padding-top: var(--s-6);
+  border-top: var(--hair) solid var(--rule);
+}
+
+.plan-health-list {
+  display: grid;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.plan-health-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--s-4);
+  align-items: center;
+  padding: var(--s-3) 0;
+  border-bottom: var(--hair) dotted var(--rule-soft);
+}
+.plan-health-row:last-child { border-bottom: 0; }
+
+.plan-health-row h3 {
+  margin: 2px 0 0;
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink-strong);
+}
+
+.plan-health-row p {
+  margin: 4px 0 0;
+  max-width: 72ch;
+  font-family: var(--sans);
+  font-size: var(--t-body-sm);
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
+.plan-health-severity {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+}
+.plan-health-row.weak .plan-health-severity { color: var(--oxblood); }
+.plan-health-row.review .plan-health-severity { color: var(--gilt); }
+
+.plan-health-ready {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  padding: var(--s-3) 0;
+  border-top: var(--hair) dotted var(--rule-soft);
+}
+
+.plan-health-ready .glyph {
+  color: var(--forest);
+  font-family: var(--mono);
+  font-size: 15px;
+}
+
+.plan-health-ready p {
+  margin: 0;
+  flex: 1 1 320px;
+  font-family: var(--sans);
+  font-size: var(--t-body-sm);
+  color: var(--ink-soft);
+}
+
 /* ───────────  Trajectory (Movement II)  ─────────── */
 
 .trajectory-quote {

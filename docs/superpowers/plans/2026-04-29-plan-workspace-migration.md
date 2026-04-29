@@ -300,7 +300,7 @@ Expected: frontend render tests pass and backend plan workspace tests remain gre
 - linked research thesis due or policy-material-change review open
 - old accepted decisions with no closure/outcome capture
 
-- [ ] **Step 1: Write failing render tests**
+- [x] **Step 1: Write failing render tests**
 
 Test Plan health renders:
 
@@ -309,7 +309,7 @@ Test Plan health renders:
 - "Open stale-assumption reviews" when proposed `generator:stale_assumptions` rows exist for the plan
 - direct links to `#inbox?focus=...` when rows exist
 
-- [ ] **Step 2: Implement client-side health derivation**
+- [x] **Step 2: Implement client-side health derivation**
 
 Start with data already available from:
 
@@ -322,7 +322,7 @@ Start with data already available from:
 
 Avoid a backend aggregate until repeated fetch cost or shape complexity requires it.
 
-- [ ] **Step 3: Link Today and Inbox back into Plan assumptions**
+- [x] **Step 3: Link Today and Inbox back into Plan assumptions**
 
 Where Today stale-assumption cards point to broad Inbox, keep Inbox as the review queue but ensure Plan-specific actions can link to:
 
@@ -332,7 +332,7 @@ Where Today stale-assumption cards point to broad Inbox, keep Inbox as the revie
 
 If route parsing cannot support `section` cleanly yet, add `params.section` handling in `plan.js`.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 
