@@ -553,7 +553,7 @@ Long-term:
 
 1. Continue Personal Investment Policy beyond the current slices: stronger Copilot questions for weak guardrails, and fit/recommendation rules beyond single-symbol exposure, research confidence, tax sensitivity, sector caps, symbol/sector restrictions, and preferred account-location policy. The next policy slice has started: cash floor, asset-class exposure caps, and simplicity preference are now profile-backed and affect portfolio-fit plus generated review-only research rows.
 2. Continue Research Thesis Expiration beyond the current saved-dossier/watchlist slice: add richer material-change sources beyond price. Reviewed theses now write refreshed review/expiry/reference metadata; policy material changes from cash-floor, asset-class, and simplicity guardrails now create review-only thesis refresh rows; Today research readiness routes single thesis signals directly into v2 thesis review.
-3. Continue v2 research migration with deeper Plan Workspace integration. Today and Plan now link saved dossier/thesis work into v2 Research surfaces, but plan settings, assumptions, timeline, scenario diffs, and artifacts still need first-class v2 ownership.
+3. Continue v2 research migration with deeper Plan Workspace integration. Today and Plan now link saved dossier/thesis work into v2 Research surfaces, but plan settings, assumptions, timeline, scenario diffs, and artifacts still need first-class v2 ownership. Use `docs/superpowers/plans/2026-04-29-plan-workspace-migration.md` as the execution plan.
 4. Deepen portfolio-fit account context with account-type-specific contribution guidance and richer tax-policy preferences.
 5. Continue expanding browser coverage around Plan v2 migration as those surfaces move over.
 
@@ -568,6 +568,7 @@ Use older documents as follows:
 - `docs/RECOMMENDATION_FACTORY_PLAN.md`: domain-specific recommendation factory design reference.
 - `docs/INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md`: investment-fit, market data, OpenBB, research evidence, and watchlist recommendation strategy.
 - `docs/FRESH_PRODUCT_IDEAS_AND_NEXT_SEQUENCE_2026-04-28.md`: newest idea backlog and agreed near-term build sequence.
+- `docs/superpowers/plans/2026-04-29-plan-workspace-migration.md`: detailed implementation plan for migrating v2 Plan into the living financial thesis workspace.
 - `docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`: codebase quality and refactor guardrail reference.
 - `docs/ARCHITECTURE.md`: runtime architecture and system-of-record reference.
 - `docs/OPERATIONS_STANDALONE.md`: local operations reference.

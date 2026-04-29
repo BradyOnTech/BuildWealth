@@ -154,6 +154,129 @@
 .story-actions .entry-numeral { font-size: 22px; }
 .story-actions .entry-title { font-size: 17px; }
 
+/* ───────────  Assumptions (Movement IA)  ─────────── */
+
+.plan-assumptions {
+  margin-top: var(--s-7);
+  padding-top: var(--s-6);
+  border-top: var(--hair) solid var(--rule);
+}
+
+.section-head.compact {
+  margin-bottom: var(--s-4);
+}
+
+.assumption-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--s-7);
+  margin-bottom: var(--s-5);
+}
+@media (max-width: 880px) {
+  .assumption-summary { grid-template-columns: minmax(0, 1fr); }
+}
+
+.assumption-set-name {
+  margin: 0;
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 36;
+  font-weight: 600;
+  font-size: 20px;
+  color: var(--ink-strong);
+  text-wrap: balance;
+}
+
+.assumption-warning-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--sans);
+  font-size: var(--t-body-sm);
+  color: var(--oxblood);
+}
+
+.assumption-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s-4);
+}
+@media (max-width: 980px) {
+  .assumption-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .assumption-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.assumption-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.assumption-field-wide {
+  grid-column: span 2;
+}
+@media (max-width: 640px) {
+  .assumption-field-wide { grid-column: auto; }
+}
+
+.assumption-label,
+.assumption-current {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.assumption-label {
+  color: var(--ink-faint);
+}
+
+.assumption-current {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.assumption-field.weak .assumption-label {
+  color: var(--oxblood);
+}
+
+.assumption-field input,
+.assumption-field select {
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+  border: var(--hair) solid var(--rule);
+  border-radius: var(--r-sm);
+  background: var(--paper-bright);
+  color: var(--ink-strong);
+  font-family: var(--sans);
+  font-size: var(--t-body-sm);
+  padding: 9px 10px;
+  transition: border-color var(--d-fast) var(--ease-press), box-shadow var(--d-fast) var(--ease-press);
+}
+
+.assumption-field input {
+  font-variant-numeric: tabular-nums;
+}
+
+.assumption-field input:focus,
+.assumption-field select:focus {
+  outline: none;
+  border-color: var(--forest);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--forest) 16%, transparent);
+}
+
+.assumption-actions {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin-top: var(--s-4);
+}
+
 /* ───────────  Trajectory (Movement II)  ─────────── */
 
 .trajectory-quote {

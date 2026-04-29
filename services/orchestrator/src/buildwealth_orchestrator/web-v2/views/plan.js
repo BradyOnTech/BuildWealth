@@ -1,5 +1,6 @@
-// PLAN — masthead + four movements + look-closer footer.
+// PLAN — masthead + movements + look-closer footer.
 //   I.   The story        — title, lede, key assumptions, top actions
+//   IA.  The assumptions  — durable assumptions, active set, weak fields
 //   II.  The trajectory   — plan vs actual tracking
 //   III. The decisions    — decision log + append form
 // Footer — Look closer (links to classic for timeline, contribution rules, scenarios).
@@ -8,6 +9,11 @@ import { api } from '../lib/api.js';
 import { state } from '../lib/state.js';
 import { html, raw, esc, $, setView, delegate } from '../lib/dom.js';
 import { renderStory } from './plan/story.js';
+import {
+  buildAssumptionSetsPayload,
+  buildPlanSettingsPatch,
+  renderAssumptions,
+} from './plan/assumptions.js';
 import { renderTrajectory } from './plan/trajectory.js';
 import { renderDecisions } from './plan/decisions.js';
 
@@ -21,6 +27,7 @@ export const meta = {
 const ui = {
   selectedId: null,
   plan: null,
+  assumptions: { busy: false, assumptionSets: null, draft: {}, dirty: false, saving: false, error: null },
   trajectory: { busy: false, tracking: null, error: null },
   decisions: { appendOpen: false, appendBusy: false, appendError: null },
 };
@@ -43,6 +50,7 @@ export async function init(params = {}) {
     return;
   }
   await loadPlan(ui.selectedId);
+  await loadAssumptionSets(ui.selectedId);
   rerenderAll();
   loadTrajectory(ui.selectedId);
 }
@@ -62,6 +70,36 @@ async function loadPlan(id) {
   } catch (err) {
     ui.plan = null;
     ui.error = err.message;
+  }
+}
+
+async function loadAssumptionSets(id) {
+  ui.assumptions = {
+    busy: true,
+    assumptionSets: null,
+    draft: {},
+    dirty: false,
+    saving: false,
+    error: null,
+  };
+  try {
+    ui.assumptions = {
+      busy: false,
+      assumptionSets: await api.planAssumptionSets(id),
+      draft: {},
+      dirty: false,
+      saving: false,
+      error: null,
+    };
+  } catch (err) {
+    ui.assumptions = {
+      busy: false,
+      assumptionSets: null,
+      draft: {},
+      dirty: false,
+      saving: false,
+      error: err.message,
+    };
   }
 }
 
@@ -135,10 +173,17 @@ function rerenderBody() {
 
   root.innerHTML = html`
     ${raw(renderStory(ui.plan))}
+    <div id="plan-assumptions">${raw(renderAssumptions(ui.plan, ui.assumptions))}</div>
     <div id="plan-trajectory">${raw(renderTrajectory(ui.trajectory))}</div>
     <div id="plan-decisions">${raw(renderDecisions(ui.plan, ui.decisions))}</div>
     ${raw(renderLookCloser(ui.plan))}
   `;
+}
+
+function rerenderAssumptions() {
+  const root = $('#plan-assumptions');
+  if (!root || !ui.plan) return;
+  root.innerHTML = renderAssumptions(ui.plan, ui.assumptions);
 }
 
 function rerenderTrajectory() {
@@ -225,8 +270,10 @@ function attachHandlers() {
     if (!id || id === ui.selectedId) return;
     ui.selectedId = id;
     ui.plan = null;
+    ui.assumptions = { busy: false, assumptionSets: null, draft: {}, dirty: false, saving: false, error: null };
     rerenderBody();
     await loadPlan(id);
+    await loadAssumptionSets(id);
     rerenderAll();
     loadTrajectory(id);
   });
@@ -249,6 +296,10 @@ function attachHandlers() {
     createPlan({ title: title.trim(), description: '' });
   });
 
+  delegate(page, 'change', '[data-assumption-field]', (_, el) => stageAssumptionEdit(el));
+  delegate(page, 'click', '[data-assumption-action="reset"]', () => resetAssumptionEdits());
+  delegate(page, 'click', '[data-assumption-action="save"]', () => saveAssumptions());
+
   delegate(page, 'click', '[data-decision-action="open-append"]',  () => { ui.decisions.appendOpen = true;  rerenderDecisions(); });
   delegate(page, 'click', '[data-decision-action="cancel-append"]', () => { ui.decisions = { appendOpen: false, appendBusy: false, appendError: null }; rerenderDecisions(); });
   delegate(page, 'click', '[data-decision-action="submit-append"]', () => submitAppendDecision());
@@ -260,10 +311,74 @@ async function createPlan(body) {
     await refreshPlanList();
     ui.selectedId = created.id;
     await loadPlan(created.id);
+    await loadAssumptionSets(created.id);
     rerenderAll();
     loadTrajectory(created.id);
   } catch (err) {
     window.alert(`Could not create plan: ${err.message}`);
+  }
+}
+
+function stageAssumptionEdit(el) {
+  const field = String(el.dataset.assumptionField || '').trim();
+  if (!field) return;
+  ui.assumptions.draft = {
+    ...(ui.assumptions.draft || {}),
+    [field]: el.value,
+  };
+  ui.assumptions.dirty = true;
+  ui.assumptions.error = null;
+  rerenderAssumptions();
+}
+
+function resetAssumptionEdits() {
+  ui.assumptions.draft = {};
+  ui.assumptions.dirty = false;
+  ui.assumptions.error = null;
+  rerenderAssumptions();
+}
+
+async function saveAssumptions() {
+  if (!ui.plan || !ui.assumptions.dirty || ui.assumptions.saving) return;
+
+  const draft = ui.assumptions.draft || {};
+  const settingsPatch = buildPlanSettingsPatch(ui.plan, draft);
+  const currentAssumptionSets = ui.assumptions.assumptionSets || {};
+  const activeSetId = String(draft.active_assumption_set_id || '').trim();
+  const activeSetChanged = Boolean(activeSetId)
+    && activeSetId !== String(currentAssumptionSets.active_assumption_set_id || '').trim();
+
+  if (!Object.keys(settingsPatch).length && !activeSetChanged) {
+    resetAssumptionEdits();
+    return;
+  }
+
+  ui.assumptions.saving = true;
+  ui.assumptions.error = null;
+  rerenderAssumptions();
+
+  try {
+    if (Object.keys(settingsPatch).length) {
+      ui.plan = await api.planSettings(ui.plan.id, settingsPatch);
+      state.plan = ui.plan;
+    }
+    if (activeSetChanged) {
+      ui.assumptions.assumptionSets = await api.updatePlanAssumptionSets(
+        ui.plan.id,
+        buildAssumptionSetsPayload(currentAssumptionSets, activeSetId),
+      );
+      ui.plan = await api.plan(ui.plan.id);
+      state.plan = ui.plan;
+    }
+    ui.assumptions.draft = {};
+    ui.assumptions.dirty = false;
+    ui.assumptions.saving = false;
+    ui.assumptions.error = null;
+    rerenderAll();
+  } catch (err) {
+    ui.assumptions.saving = false;
+    ui.assumptions.error = err.message;
+    rerenderAssumptions();
   }
 }
 

@@ -46,6 +46,14 @@ function putJson(url, body = {}) {
   });
 }
 
+function patchJson(url, body = {}) {
+  return fetchJson(url, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
 function recommendationsUrl({ status = '', planId = '', sort = 'ranked', limit = 200 } = {}) {
   const params = new URLSearchParams();
   params.set('limit', String(limit));
@@ -72,6 +80,15 @@ export const api = {
   plans:        (limit = 200) => fetchJson(`/api/plans?limit=${limit}`),
   plan:         (id) => fetchJson(`/api/plans/${encodeURIComponent(id)}`),
   planTracking: (id) => fetchJson(`/api/plans/${encodeURIComponent(id)}/tracking`),
+  planSettings: (id, body = {}) => patchJson(`/api/plans/${encodeURIComponent(id)}/settings`, body),
+  planTimeline: (id) => fetchJson(`/api/plans/${encodeURIComponent(id)}/timeline`),
+  updatePlanTimeline: (id, body = {}) => putJson(`/api/plans/${encodeURIComponent(id)}/timeline`, body),
+  planContributionRules: (id) => fetchJson(`/api/plans/${encodeURIComponent(id)}/contribution-rules`),
+  updatePlanContributionRules: (id, body = {}) => putJson(`/api/plans/${encodeURIComponent(id)}/contribution-rules`, body),
+  planAssumptionSets: (id) => fetchJson(`/api/plans/${encodeURIComponent(id)}/assumption-sets`),
+  updatePlanAssumptionSets: (id, body = {}) => putJson(`/api/plans/${encodeURIComponent(id)}/assumption-sets`, body),
+  planScenarioDiff: (id, body = {}) => postJson(`/api/plans/${encodeURIComponent(id)}/scenario-diff`, body),
+  refreshPlanContext: (id) => postJson(`/api/plans/${encodeURIComponent(id)}/refresh-context`, {}),
   createPlan:   (body) => postJson('/api/plans', body),
   appendDecision: (id, body) => postJson(`/api/plans/${encodeURIComponent(id)}/decisions`, body),
   setActivePlan: (id) => postJson(`/api/plans/${encodeURIComponent(id)}/activate`, {}),
