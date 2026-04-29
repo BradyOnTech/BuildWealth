@@ -444,6 +444,59 @@ def test_today_outcome_loop_surfaces_copilot_investment_process_calibration(
     assert "decision-process calibration" in cards["outcome-loop"].detail
 
 
+def test_today_command_cards_surface_pending_thesis_revision_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    recommendation = inbox.create(
+        title="Revise NVDA thesis after concentration review",
+        detail="Copilot prepared a revised thesis for review.",
+        priority="high",
+        status="applied",
+        source="copilot:investment_fit",
+        recommendation_type="workflow_action",
+        action_payload={
+            "thesis_revision": {
+                "event_id": "thesis-revision:watchlist:nvda-1",
+                "target_type": "watchlist",
+                "symbol": "NVDA",
+                "reviewed_at": "2026-04-29T12:00:00Z",
+            },
+            "quality": {
+                "actionability": "review_only",
+                "calibration": {"domain": "investment_research", "track_process_outcome": True},
+            },
+            "decision_closure": {
+                "decision_status": "accepted",
+                "expected_vs_realized": {"status": "unavailable"},
+            },
+        },
+    )
+
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    dashboard = main.TodayDashboardResponse(
+        generated_at=main.utc_now(),
+        currency="USD",
+        state="MN",
+        sync_status=main.SyncStatusResponse(running=False, runs_total=0, runs_failed=0),
+        context_state="ready",
+        context_notes=[],
+        command_cards=[],
+        emergency_fund_months=8.0,
+    )
+
+    cards = {card.id: card for card in main._build_today_command_cards(dashboard)}
+
+    card = cards["thesis-outcome-loop"]
+    assert card.status == "warning"
+    assert card.metric_label == "Pending"
+    assert card.metric_value == "1"
+    assert card.href == f"#inbox?focus={recommendation['id']}"
+    assert "thesis revision outcome" in card.detail
+    assert "NVDA" in card.detail
+
+
 def test_today_command_cards_surface_investment_process_calibration_history(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -491,6 +544,60 @@ def test_today_command_cards_surface_investment_process_calibration_history(
     assert "3 investment/research outcomes calibrated" in card.detail
     assert "2 useful" in card.detail
     assert "1 weak" in card.detail
+    assert card.href == "#inbox"
+
+
+def test_today_command_cards_surface_thesis_revision_calibration_history(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    for index, outcome in enumerate(["useful_review", "insufficient_evidence"], start=1):
+        inbox.create(
+            title=f"Thesis review {index}",
+            detail="Closed thesis revision review.",
+            priority="medium",
+            status="applied",
+            source="copilot:investment_fit",
+            recommendation_type="workflow_action",
+            action_payload={
+                "decision_closure": {
+                    "decision_status": "accepted",
+                    "expected_vs_realized": {"status": "unavailable"},
+                    "decision_process_calibration": {
+                        "domain": "investment_research",
+                        "process_outcome": outcome,
+                        "evidence_sufficiency": "sufficient",
+                        "thesis_revision": {
+                            "event_id": f"thesis-revision:watchlist:nvda-{index}",
+                            "target_type": "watchlist",
+                            "symbol": "NVDA",
+                        },
+                    },
+                },
+            },
+        )
+
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    dashboard = main.TodayDashboardResponse(
+        generated_at=main.utc_now(),
+        currency="USD",
+        state="MN",
+        sync_status=main.SyncStatusResponse(running=False, runs_total=0, runs_failed=0),
+        context_state="ready",
+        context_notes=[],
+        command_cards=[],
+        emergency_fund_months=8.0,
+    )
+
+    cards = {card.id: card for card in main._build_today_command_cards(dashboard)}
+
+    card = cards["thesis-calibration"]
+    assert card.status == "ready"
+    assert card.metric_label == "Useful"
+    assert card.metric_value == "1/2"
+    assert "2 thesis revision outcome(s) calibrated" in card.detail
+    assert "1 useful" in card.detail
     assert card.href == "#inbox"
 
 

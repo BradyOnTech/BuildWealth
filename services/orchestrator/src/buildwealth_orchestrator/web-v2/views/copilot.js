@@ -89,6 +89,7 @@ const ui = {
   thinking: false,
   error: null,
   planId: null,
+  recommendationFocus: null,
   pickerOpen: null,                 // 'conversations' | 'plans' | null
   draftFocus: null,
 };
@@ -112,6 +113,7 @@ export async function init(params = {}) {
   ui.busy = false;
   ui.thinking = false;
   ui.error = null;
+  ui.recommendationFocus = String(params.focus || '').trim() || null;
   ui.pickerOpen = null;
   attachHandlers();
 
@@ -599,6 +601,9 @@ async function saveThesisDraft(button) {
     ui.error = 'Could not read the drafted thesis revision.';
     rerenderBody();
     return;
+  }
+  if (ui.recommendationFocus && !patch.recommendation_id) {
+    patch.recommendation_id = ui.recommendationFocus;
   }
   const targetType = String(patch?.target_type || 'watchlist').trim().toLowerCase();
   const symbol = String(patch?.symbol || '').trim().toUpperCase();

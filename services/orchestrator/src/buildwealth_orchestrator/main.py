@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import time
@@ -3871,6 +3872,10 @@ def _build_today_command_cards(dashboard: TodayDashboardResponse) -> list[TodayC
         row for row in pending_outcomes
         if _recommendation_needs_process_outcome(row)
     ]
+    pending_thesis_outcomes = [
+        row for row in pending_process_outcomes
+        if _recommendation_has_thesis_revision(row)
+    ]
     first_pending_id = str(pending_outcomes[0].get("id") or "").strip() if pending_outcomes else ""
     pending_detail = "Closed recommendations have no pending outcome capture."
     if pending_process_outcomes:
@@ -3891,9 +3896,16 @@ def _build_today_command_cards(dashboard: TodayDashboardResponse) -> list[TodayC
             href=f"#inbox?focus={first_pending_id}" if first_pending_id else "#inbox",
         )
     )
-    investment_calibration_card = _build_investment_calibration_command_card()
+    thesis_outcome_card = _build_thesis_outcome_command_card(pending_thesis_outcomes)
+    if thesis_outcome_card is not None:
+        cards.append(thesis_outcome_card)
+    closure_analytics_payload = _build_today_closure_analytics_payload() or {}
+    investment_calibration_card = _build_investment_calibration_command_card(closure_analytics_payload)
     if investment_calibration_card is not None:
         cards.append(investment_calibration_card)
+    thesis_calibration_card = _build_thesis_calibration_command_card(closure_analytics_payload)
+    if thesis_calibration_card is not None:
+        cards.append(thesis_calibration_card)
 
     return cards
 
@@ -3926,14 +3938,21 @@ def _build_investment_policy_command_card(dashboard: TodayDashboardResponse) -> 
     )
 
 
-def _build_investment_calibration_command_card() -> TodayCommandCard | None:
+def _build_today_closure_analytics_payload() -> dict[str, Any] | None:
     try:
-        payload = build_recommendation_closure_analytics_payload(
+        return build_recommendation_closure_analytics_payload(
             limit=500,
             statuses=["applied", "rejected"],
             include_pending_realized=True,
         )
     except Exception:
+        return None
+
+
+def _build_investment_calibration_command_card(payload: dict[str, Any] | None = None) -> TodayCommandCard | None:
+    if payload is None:
+        payload = _build_today_closure_analytics_payload()
+    if not isinstance(payload, dict):
         return None
     summary = payload.get("process_calibration_summary") if isinstance(payload, dict) else {}
     if not isinstance(summary, dict):
@@ -3958,6 +3977,54 @@ def _build_investment_calibration_command_card() -> TodayCommandCard | None:
         metric_label="Useful",
         metric_value=useful_rate_label,
         action_label="Review quality",
+        href="#inbox",
+    )
+
+
+def _build_thesis_outcome_command_card(rows: list[dict[str, Any]]) -> TodayCommandCard | None:
+    if not rows:
+        return None
+    first = rows[0]
+    first_id = str(first.get("id") or "").strip()
+    revision = _extract_recommendation_thesis_revision(first)
+    target = _thesis_revision_target_label(revision)
+    count = len(rows)
+    detail = f"{count} thesis revision outcome(s) need calibration."
+    if target:
+        detail = f"{detail} Start with {target}."
+    return TodayCommandCard(
+        id="thesis-outcome-loop",
+        title="Thesis outcome",
+        status="warning",
+        detail=detail,
+        metric_label="Pending",
+        metric_value=str(count),
+        action_label="Log thesis outcome",
+        href=f"#inbox?focus={first_id}" if first_id else "#inbox",
+    )
+
+
+def _build_thesis_calibration_command_card(payload: dict[str, Any] | None = None) -> TodayCommandCard | None:
+    if payload is None:
+        payload = _build_today_closure_analytics_payload()
+    if not isinstance(payload, dict):
+        return None
+    summary = payload.get("process_calibration_summary") if isinstance(payload, dict) else {}
+    if not isinstance(summary, dict):
+        return None
+    count = _coerce_int(summary.get("thesis_revision_count"), 0)
+    if count <= 0:
+        return None
+    useful = _coerce_int(summary.get("useful_thesis_revision_count"), 0)
+    status = "warning" if useful <= 0 else "ready"
+    return TodayCommandCard(
+        id="thesis-calibration",
+        title="Thesis calibration",
+        status=status,
+        detail=f"{count} thesis revision outcome(s) calibrated: {useful} useful.",
+        metric_label="Useful",
+        metric_value=f"{useful}/{count}",
+        action_label="Review learning",
         href="#inbox",
     )
 
@@ -4063,6 +4130,9 @@ def _format_research_cache_age(cached_at_values: list[datetime]) -> str:
 
 TODAY_THESIS_REVIEW_DAYS = 30
 TODAY_MATERIAL_PRICE_MOVE_PCT = 15.0
+THESIS_REVISION_HISTORY_LIMIT = 8
+THESIS_REVISION_TEXT_LIMIT = 280
+THESIS_REVISION_LIST_LIMIT = 5
 
 
 def _research_readiness_symbol_label(symbols: list[str]) -> str:
@@ -4403,6 +4473,43 @@ def _recommendation_needs_outcome(row: dict[str, Any]) -> bool:
     return True
 
 
+def _extract_recommendation_thesis_revision(row: dict[str, Any]) -> dict[str, Any]:
+    action_payload = row.get("action_payload")
+    if not isinstance(action_payload, dict):
+        return {}
+    revision = action_payload.get("thesis_revision")
+    if isinstance(revision, dict) and revision:
+        return revision
+    closure = action_payload.get("decision_closure")
+    if not isinstance(closure, dict):
+        return {}
+    calibration = closure.get("decision_process_calibration")
+    if not isinstance(calibration, dict):
+        return {}
+    revision = calibration.get("thesis_revision")
+    return revision if isinstance(revision, dict) else {}
+
+
+def _recommendation_has_thesis_revision(row: dict[str, Any]) -> bool:
+    revision = _extract_recommendation_thesis_revision(row)
+    return bool(
+        str(revision.get("event_id") or "").strip()
+        or str(revision.get("symbol") or "").strip()
+        or str(revision.get("artifact_id") or "").strip()
+    )
+
+
+def _thesis_revision_target_label(revision: dict[str, Any]) -> str:
+    symbol = str(revision.get("symbol") or "").strip().upper()
+    if symbol:
+        return symbol
+    artifact_id = str(revision.get("artifact_id") or "").strip()
+    if artifact_id:
+        return "saved dossier"
+    target_type = str(revision.get("target_type") or "").strip().replace("_", " ")
+    return target_type
+
+
 def _recommendation_needs_process_outcome(row: dict[str, Any]) -> bool:
     status = str(row.get("status") or "").strip().lower()
     if status not in {"applied", "rejected"}:
@@ -4653,6 +4760,247 @@ def _replace_thesis_revision_notes_section(markdown: str, rationale: str) -> str
     if re.search(pattern, markdown):
         return re.sub(pattern, f"\n\n{section}\n", markdown).strip() + "\n"
     return markdown.rstrip() + "\n\n" + section + "\n"
+
+
+def _compact_revision_text(value: Any, *, limit: int = THESIS_REVISION_TEXT_LIMIT) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _compact_revision_hash(value: Any) -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+
+
+def _compact_revision_list(value: Any, *, limit: int = THESIS_REVISION_LIST_LIMIT) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        text = _compact_revision_text(item, limit=160)
+        if text:
+            out.append(text)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _compact_thesis_revision_event(
+    *,
+    target_type: str,
+    previous_thesis: Any,
+    revised_thesis: Any,
+    reviewed_at: str,
+    expires_at: str,
+    reference_price_usd: float | None,
+    review_window_days: int,
+    request: dict[str, Any],
+    symbol: str | None = None,
+    data_source: str | None = None,
+    plan_id: str | None = None,
+    artifact_id: str | None = None,
+) -> dict[str, Any]:
+    previous_text = str(previous_thesis or "")
+    revised_text = str(revised_thesis or "")
+    event: dict[str, Any] = {
+        "event_id": f"thesis-revision:{target_type}:{_compact_revision_hash(f'{reviewed_at}|{symbol or artifact_id}|{revised_text}')}",
+        "target_type": str(target_type or "").strip() or "unknown",
+        "source": str(request.get("source") or "copilot_review").strip() or "copilot_review",
+        "reviewed_at": reviewed_at,
+        "expires_at": expires_at,
+        "reference_price_usd": round(float(reference_price_usd), 4) if reference_price_usd is not None else None,
+        "review_window_days": int(review_window_days),
+        "previous_thesis_excerpt": _compact_revision_text(previous_text),
+        "revised_thesis_excerpt": _compact_revision_text(revised_text),
+        "previous_thesis_hash": _compact_revision_hash(previous_text),
+        "revised_thesis_hash": _compact_revision_hash(revised_text),
+        "previous_thesis_chars": len(previous_text),
+        "revised_thesis_chars": len(revised_text),
+        "rationale_excerpt": _compact_revision_text(request.get("rationale")),
+        "evidence_gaps": _compact_revision_list(request.get("evidence_gaps")),
+        "warnings": _compact_revision_list(request.get("warnings")),
+        "recommendation_id": str(request.get("recommendation_id") or "").strip(),
+        "conversation_id": str(request.get("conversation_id") or "").strip(),
+    }
+    if symbol:
+        event["symbol"] = symbol
+    if data_source:
+        event["data_source"] = data_source
+    if plan_id:
+        event["plan_id"] = plan_id
+    if artifact_id:
+        event["artifact_id"] = artifact_id
+    return {key: value for key, value in event.items() if value not in ("", None, [])}
+
+
+def _compact_thesis_revision_reference(event: dict[str, Any]) -> dict[str, Any]:
+    allowed_keys = [
+        "event_id",
+        "target_type",
+        "symbol",
+        "data_source",
+        "plan_id",
+        "artifact_id",
+        "source",
+        "reviewed_at",
+        "expires_at",
+        "reference_price_usd",
+        "review_window_days",
+        "previous_thesis_hash",
+        "revised_thesis_hash",
+        "previous_thesis_chars",
+        "revised_thesis_chars",
+        "rationale_excerpt",
+        "evidence_gaps",
+        "warnings",
+        "recommendation_id",
+        "conversation_id",
+    ]
+    reference = {key: event.get(key) for key in allowed_keys if event.get(key) not in ("", None, [])}
+    return reference
+
+
+def _link_thesis_revision_to_recommendation(recommendation_id: Any, event: dict[str, Any]) -> None:
+    rec_id = str(recommendation_id or "").strip()
+    if not rec_id:
+        return
+    try:
+        recommendation = recommendation_inbox.get(rec_id)
+    except Exception:
+        return
+    action_payload = recommendation.get("action_payload")
+    payload = dict(action_payload) if isinstance(action_payload, dict) else {}
+    revision_reference = _compact_thesis_revision_reference(event)
+    if not revision_reference:
+        return
+    payload["thesis_revision"] = revision_reference
+    expected = payload.get("expected_outcome") if isinstance(payload.get("expected_outcome"), dict) else {}
+    closure = payload.get("decision_closure") if isinstance(payload.get("decision_closure"), dict) else {}
+    closure_expected = closure.get("expected_outcome") if isinstance(closure.get("expected_outcome"), dict) else {}
+    if isinstance(expected, dict) and expected:
+        expected_outcome = dict(expected)
+    else:
+        expected_outcome = dict(closure_expected)
+    expected_outcome.setdefault("expected_delta_context_quality", "thesis_revised")
+    expected_outcome.setdefault("expected_next_safe_action", "review_outcome_quality")
+    if closure:
+        closure["expected_outcome"] = expected_outcome
+        payload["decision_closure"] = closure
+    else:
+        payload["expected_outcome"] = expected_outcome
+    recommendation_inbox.update(rec_id, updates={"action_payload": payload})
+
+
+def _revision_history_inline(value: Any, *, limit: int = 140) -> str:
+    return _compact_revision_text(value, limit=limit).replace("`", "'").replace("|", "/")
+
+
+def _thesis_revision_history_line(event: dict[str, Any]) -> str:
+    parts = [
+        f"- Reviewed `{_revision_history_inline(event.get('reviewed_at'), limit=80)}`",
+        f"source=`{_revision_history_inline(event.get('source'), limit=40)}`",
+    ]
+    if event.get("symbol"):
+        parts.append(f"symbol=`{_revision_history_inline(event.get('symbol'), limit=20)}`")
+    if event.get("artifact_id"):
+        parts.append(f"artifact=`{_revision_history_inline(event.get('artifact_id'), limit=80)}`")
+    if event.get("reference_price_usd") is not None:
+        parts.append(f"ref=`{event.get('reference_price_usd')}`")
+    if event.get("review_window_days"):
+        parts.append(f"window=`{event.get('review_window_days')}d`")
+    parts.extend([
+        f"prior_hash=`{_revision_history_inline(event.get('previous_thesis_hash'), limit=20)}`",
+        f"revised_hash=`{_revision_history_inline(event.get('revised_thesis_hash'), limit=20)}`",
+        f"prior=`{_revision_history_inline(event.get('previous_thesis_excerpt'))}`",
+        f"revised=`{_revision_history_inline(event.get('revised_thesis_excerpt'))}`",
+    ])
+    if event.get("rationale_excerpt"):
+        parts.append(f"rationale=`{_revision_history_inline(event.get('rationale_excerpt'))}`")
+    if event.get("evidence_gaps"):
+        parts.append(f"gaps=`{_revision_history_inline('; '.join(event.get('evidence_gaps') or []))}`")
+    if event.get("warnings"):
+        parts.append(f"warnings=`{_revision_history_inline('; '.join(event.get('warnings') or []))}`")
+    if event.get("recommendation_id"):
+        parts.append(f"recommendation=`{_revision_history_inline(event.get('recommendation_id'), limit=80)}`")
+    if event.get("conversation_id"):
+        parts.append(f"conversation=`{_revision_history_inline(event.get('conversation_id'), limit=80)}`")
+    return " ".join(parts)
+
+
+def _extract_thesis_revision_history_lines(markdown: Any) -> list[str]:
+    section = _extract_markdown_section(markdown, "Thesis Revision History")
+    lines: list[str] = []
+    for raw in section.splitlines():
+        line = raw.strip()
+        if line.startswith("- Reviewed `"):
+            lines.append(line)
+        if len(lines) >= THESIS_REVISION_HISTORY_LIMIT:
+            break
+    return lines
+
+
+def _parse_thesis_revision_history_line(line: str) -> dict[str, Any]:
+    text = str(line or "").strip()
+    if not text.startswith("- Reviewed `"):
+        return {}
+    reviewed_match = re.match(r"- Reviewed `(?P<reviewed>[^`]*)`", text)
+    pairs = dict(re.findall(r"([a-z_]+)=`([^`]*)`", text))
+    event: dict[str, Any] = {
+        "target_type": "dossier",
+        "reviewed_at": reviewed_match.group("reviewed") if reviewed_match else "",
+        "source": pairs.get("source", ""),
+        "symbol": pairs.get("symbol", ""),
+        "artifact_id": pairs.get("artifact", ""),
+        "previous_thesis_hash": pairs.get("prior_hash", ""),
+        "revised_thesis_hash": pairs.get("revised_hash", ""),
+        "previous_thesis_excerpt": pairs.get("prior", ""),
+        "revised_thesis_excerpt": pairs.get("revised", ""),
+        "rationale_excerpt": pairs.get("rationale", ""),
+        "recommendation_id": pairs.get("recommendation", ""),
+        "conversation_id": pairs.get("conversation", ""),
+    }
+    if pairs.get("ref"):
+        event["reference_price_usd"] = _coerce_optional_float(pairs.get("ref"))
+    if pairs.get("window"):
+        try:
+            event["review_window_days"] = int(str(pairs.get("window") or "").rstrip("d"))
+        except ValueError:
+            pass
+    if pairs.get("gaps"):
+        event["evidence_gaps"] = [
+            item.strip()
+            for item in str(pairs.get("gaps") or "").split(";")
+            if item.strip()
+        ][:THESIS_REVISION_LIST_LIMIT]
+    if pairs.get("warnings"):
+        event["warnings"] = [
+            item.strip()
+            for item in str(pairs.get("warnings") or "").split(";")
+            if item.strip()
+        ][:THESIS_REVISION_LIST_LIMIT]
+    return {key: value for key, value in event.items() if value not in ("", None, [])}
+
+
+def _extract_thesis_revision_history(markdown: Any) -> list[dict[str, Any]]:
+    history: list[dict[str, Any]] = []
+    for line in _extract_thesis_revision_history_lines(markdown):
+        event = _parse_thesis_revision_history_line(line)
+        if event:
+            history.append(event)
+        if len(history) >= THESIS_REVISION_HISTORY_LIMIT:
+            break
+    return history
+
+
+def _replace_thesis_revision_history_section(markdown: str, event: dict[str, Any]) -> str:
+    line = _thesis_revision_history_line(event)
+    existing = _extract_thesis_revision_history_lines(markdown)
+    body = "\n".join([line] + existing[: max(0, THESIS_REVISION_HISTORY_LIMIT - 1)])
+    return _replace_markdown_section(markdown, "Thesis Revision History", body)
 
 
 def _normalize_recommendation_evidence_citations(raw_citations: Any) -> list[dict[str, Any]]:
@@ -6524,26 +6872,56 @@ def _build_decision_process_calibration(
         return None
 
     evidence = action_payload.get("evidence") if isinstance(action_payload.get("evidence"), dict) else {}
+    thesis_revision = (
+        action_payload.get("thesis_revision")
+        if isinstance(action_payload.get("thesis_revision"), dict)
+        else {}
+    )
     suggested_action = (
         action_payload.get("suggested_action")
         if isinstance(action_payload.get("suggested_action"), dict)
         else {}
+    )
+    evidence_sufficiency = _normalize_evidence_sufficiency(
+        request.evidence_sufficiency,
+        process_outcome=process_outcome,
     )
     payload = {
         "domain": "investment_research",
         "model_version": "investment_process_calibration_v1",
         "recorded_at": context_utc_now_iso(),
         "process_outcome": process_outcome,
-        "evidence_sufficiency": _normalize_evidence_sufficiency(
-            request.evidence_sufficiency,
-            process_outcome=process_outcome,
-        ),
+        "evidence_sufficiency": evidence_sufficiency,
         "symbol": evidence.get("symbol") or suggested_action.get("symbol"),
         "research_evidence_packet_id": evidence.get("research_evidence_packet_id"),
         "fit_status": evidence.get("fit_status") or suggested_action.get("fit_status"),
         "suggested_action_kind": suggested_action.get("kind"),
         "measurement_source": str(request.measurement_source or "").strip() or None,
     }
+    if thesis_revision:
+        revision_reference = _compact_thesis_revision_reference(thesis_revision)
+        if revision_reference:
+            payload["thesis_revision"] = revision_reference
+            payload["quality_effects"] = {
+                "decision_clarity": (
+                    "improved"
+                    if process_outcome in {"useful_review", "acted_elsewhere"}
+                    else "unclear"
+                    if process_outcome == "deferred"
+                    else "not_improved"
+                ),
+                "evidence_sufficiency": evidence_sufficiency,
+                "blocking_gaps": (
+                    "remaining"
+                    if evidence_sufficiency in {"partial", "insufficient", "not_reviewed"}
+                    else "not_blocking"
+                ),
+                "next_action": (
+                    "clearer"
+                    if process_outcome in {"useful_review", "acted_elsewhere"}
+                    else "needs_review"
+                ),
+            }
     return {key: value for key, value in payload.items() if value is not None}
 
 
@@ -6747,6 +7125,16 @@ def build_recommendation_closure_analytics_payload(
                 "process_calibration_model_version": process_calibration.get("model_version"),
                 "symbol": process_calibration.get("symbol"),
                 "research_evidence_packet_id": process_calibration.get("research_evidence_packet_id"),
+                "thesis_revision_event_id": (
+                    process_calibration.get("thesis_revision", {}).get("event_id")
+                    if isinstance(process_calibration.get("thesis_revision"), dict)
+                    else None
+                ),
+                "thesis_revision_target_type": (
+                    process_calibration.get("thesis_revision", {}).get("target_type")
+                    if isinstance(process_calibration.get("thesis_revision"), dict)
+                    else None
+                ),
             }
         )
         if len(selected_rows) >= max_rows:
@@ -6764,6 +7152,8 @@ def build_recommendation_closure_analytics_payload(
     process_count = 0
     useful_process_count = 0
     weak_process_count = 0
+    thesis_revision_count = 0
+    useful_thesis_revision_count = 0
     expected_future_total = 0.0
     realized_future_total = 0.0
     future_gap_total = 0.0
@@ -6809,6 +7199,10 @@ def build_recommendation_closure_analytics_payload(
                 useful_process_count += 1
             elif process_outcome in {"insufficient_evidence", "not_useful"}:
                 weak_process_count += 1
+            if row.get("thesis_revision_event_id"):
+                thesis_revision_count += 1
+                if process_outcome in {"useful_review", "acted_elsewhere"}:
+                    useful_thesis_revision_count += 1
         evidence_sufficiency = str(row.get("evidence_sufficiency") or "").strip().lower()
         if evidence_sufficiency:
             evidence_sufficiency_counts[evidence_sufficiency] = evidence_sufficiency_counts.get(evidence_sufficiency, 0) + 1
@@ -6851,6 +7245,8 @@ def build_recommendation_closure_analytics_payload(
             "useful_count": useful_process_count,
             "weak_count": weak_process_count,
             "useful_rate_pct": process_useful_rate_pct,
+            "thesis_revision_count": thesis_revision_count,
+            "useful_thesis_revision_count": useful_thesis_revision_count,
         },
         "process_calibration_by_outcome": _counter_to_rows(process_counts),
         "process_calibration_by_evidence_sufficiency": _counter_to_rows(evidence_sufficiency_counts),
@@ -7918,7 +8314,14 @@ def build_portfolio_watchlist_payload(
                 "data_source": str(item.get("data_source") or "OPENBB").strip().upper() or "OPENBB",
                 "note": str(item.get("note") or ""),
                 "thesis": str(item.get("thesis") or ""),
+                "thesis_reviewed_at": str(item.get("thesis_reviewed_at") or ""),
+                "thesis_expires_at": str(item.get("thesis_expires_at") or ""),
                 "thesis_reference_price_usd": _coerce_optional_float(item.get("thesis_reference_price_usd")),
+                "thesis_revision_history": (
+                    item.get("thesis_revision_history")
+                    if isinstance(item.get("thesis_revision_history"), list)
+                    else []
+                ),
                 "target_price_usd": target_price,
                 "tags": item.get("tags") if isinstance(item.get("tags"), list) else [],
                 "created_at": item.get("created_at"),
@@ -13180,6 +13583,19 @@ def save_portfolio_watchlist_thesis_revision(symbol: str, request: dict[str, Any
         expires_at = (reviewed_at_dt + timedelta(days=review_window_days)).isoformat()
 
     try:
+        current = _watchlist_item_for_symbol(normalized_symbol, data_source) or {}
+        revision_event = _compact_thesis_revision_event(
+            target_type="watchlist",
+            symbol=normalized_symbol,
+            data_source=data_source,
+            previous_thesis=current.get("thesis"),
+            revised_thesis=thesis,
+            reviewed_at=reviewed_at,
+            expires_at=expires_at,
+            reference_price_usd=reference_value,
+            review_window_days=review_window_days,
+            request=request,
+        )
         portfolio_store.upsert_watchlist_item(
             symbol=normalized_symbol,
             data_source=data_source,
@@ -13195,6 +13611,13 @@ def save_portfolio_watchlist_thesis_revision(symbol: str, request: dict[str, Any
             expires_at=expires_at,
             reference_price_usd=reference_value,
         )
+        item = portfolio_store.append_watchlist_thesis_revision_event(
+            symbol=normalized_symbol,
+            data_source=data_source,
+            event=revision_event,
+            limit=THESIS_REVISION_HISTORY_LIMIT,
+        )
+        _link_thesis_revision_to_recommendation(request.get("recommendation_id"), revision_event)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -14857,6 +15280,7 @@ def read_plan_artifact(plan_id: str, artifact_id: str) -> PlanArtifactResponse:
     if str(artifact.get("title") or "").lower().startswith("research dossier") or "-research-dossier-" in str(artifact.get("file_name") or ""):
         artifact.update(_extract_thesis_review_metadata_from_markdown(artifact.get("content")))
         artifact["thesis_review"] = research_thesis_review_metadata(artifact)
+        artifact["thesis_revision_history"] = _extract_thesis_revision_history(artifact.get("content"))
     return PlanArtifactResponse(**artifact)
 
 
@@ -14888,6 +15312,19 @@ def save_plan_artifact_thesis_revision(plan_id: str, artifact_id: str, request: 
 
     try:
         artifact = plan_workspace.read_artifact(plan_id=plan_id, artifact_id=artifact_id)
+        previous_thesis = _extract_markdown_section(artifact.get("content"), "Thesis")
+        revision_event = _compact_thesis_revision_event(
+            target_type="dossier",
+            plan_id=plan_id,
+            artifact_id=artifact_id,
+            previous_thesis=previous_thesis,
+            revised_thesis=thesis,
+            reviewed_at=reviewed_at,
+            expires_at=expires_at,
+            reference_price_usd=reference_value,
+            review_window_days=review_window_days,
+            request=request,
+        )
         updated = _replace_markdown_section(str(artifact.get("content") or ""), "Thesis", thesis)
         updated = _replace_thesis_revision_notes_section(updated, str(request.get("rationale") or ""))
         updated = _replace_thesis_review_metadata_section(
@@ -14896,10 +15333,13 @@ def save_plan_artifact_thesis_revision(plan_id: str, artifact_id: str, request: 
             expires_at=expires_at,
             reference_price_usd=reference_value,
         )
+        updated = _replace_thesis_revision_history_section(updated, revision_event)
         saved = plan_workspace.update_artifact_content(plan_id=plan_id, artifact_id=artifact_id, markdown=updated)
+        _link_thesis_revision_to_recommendation(request.get("recommendation_id"), revision_event)
     except PlanNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    history_lines = _extract_thesis_revision_history_lines(saved.get("content"))
     review = research_thesis_review_metadata(
         {
             "reviewed_at": reviewed_at,
@@ -14919,6 +15359,10 @@ def save_plan_artifact_thesis_revision(plan_id: str, artifact_id: str, request: 
             "reference_price_usd": reference_value,
             "age_days": review.get("age_days"),
         },
+        "thesis_revision_history": [
+            revision_event,
+            *({"summary": line} for line in history_lines[1:THESIS_REVISION_HISTORY_LIMIT]),
+        ],
     }
 
 

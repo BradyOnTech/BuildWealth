@@ -868,6 +868,10 @@ class WatchlistRankItem(BaseModel):
     data_source: str = "OPENBB"
     note: str = ""
     thesis: str = ""
+    thesis_reviewed_at: str | None = None
+    thesis_expires_at: str | None = None
+    thesis_reference_price_usd: float | None = None
+    thesis_revision_history: list[dict[str, Any]] = Field(default_factory=list)
     target_price_usd: float | None = None
     tags: list[str] = Field(default_factory=list)
     created_at: str | None = None
@@ -2017,6 +2021,7 @@ class PlanArtifactResponse(BaseModel):
     created_at: datetime
     content: str
     thesis_review: dict[str, Any] = Field(default_factory=dict)
+    thesis_revision_history: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class PlanRecommendationClosureSummaryRequest(BaseModel):

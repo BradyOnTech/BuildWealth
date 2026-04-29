@@ -125,14 +125,22 @@ function outcomeGuidance(item) {
   const quality = item?.action_payload?.quality || {};
   const actionability = String(quality.actionability || '').toLowerCase();
   const generator = item?.action_payload?.generator || {};
+  const thesisRevision = item?.action_payload?.thesis_revision && typeof item.action_payload.thesis_revision === 'object'
+    ? item.action_payload.thesis_revision
+    : null;
   const isInvestmentResearch = source === 'copilot:investment_fit'
     || source.includes('watchlist_research')
     || generator.signal_type === 'investment_fit_discussion'
     || quality.calibration?.domain === 'investment_research';
   if (isInvestmentResearch) {
+    const thesisTarget = thesisRevision
+      ? String(thesisRevision.symbol || thesisRevision.artifact_id || thesisRevision.target_type || '').trim()
+      : '';
     return {
       title: 'Did the investment-fit review help?',
-      summary: '',
+      summary: thesisTarget
+        ? `This outcome will calibrate the thesis revision for ${thesisTarget}.`
+        : '',
       calibrationDomain: 'investment_research',
       presets: [
         { label: 'Useful review', code: 'useful_review', evidence: 'sufficient' },

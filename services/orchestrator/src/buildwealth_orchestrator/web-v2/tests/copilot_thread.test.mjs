@@ -377,6 +377,8 @@ test('copilot view wires thesis draft save action to watchlist thesis API', () =
   assert.match(apiSource, /\/api\/portfolio\/watchlist\/.*thesis/);
   assert.match(apiSource, /\/api\/plans\/.*artifacts.*thesis/);
   assert.match(copilotSource, /\[data-thesis-draft\]/);
+  assert.match(copilotSource, /recommendationFocus/);
+  assert.match(copilotSource, /patch\.recommendation_id/);
   assert.match(copilotSource, /api\.saveWatchlistThesisRevision/);
   assert.match(copilotSource, /api\.saveDossierThesisRevision/);
   assert.match(copilotSource, /Watchlist thesis updated/);

@@ -365,6 +365,11 @@ test('inbox copilot investment outcome form captures process calibration', () =>
           symbol: 'NVDA',
           freshness_status: 'fresh',
         },
+        thesis_revision: {
+          event_id: 'thesis-revision:watchlist:abc123',
+          target_type: 'watchlist',
+          symbol: 'NVDA',
+        },
         quality: {
           actionability: 'review_only',
           calibration: {
@@ -381,6 +386,7 @@ test('inbox copilot investment outcome form captures process calibration', () =>
   }));
 
   assert.match(markup, /Did the investment-fit review help\?/);
+  assert.match(markup, /This outcome will calibrate the thesis revision for NVDA\./);
   assert.match(markup, /name="process_outcome"/);
   assert.match(markup, /data-outcome-code="useful_review"/);
   assert.match(markup, /Evidence insufficient/);

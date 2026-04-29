@@ -388,6 +388,11 @@ export function renderThesisReviewSurface({
   const detail = recommendation?.detail || evidence.summary || '';
   const thesisExcerpt = thesisExcerptFromMarkdown(content);
   const watchlistPanel = renderWatchlistThesisPanel(watchlistItem);
+  const revisionHistory = Array.isArray(artifact?.thesis_revision_history)
+    ? artifact.thesis_revision_history
+    : Array.isArray(watchlistItem?.thesis_revision_history)
+      ? watchlistItem.thesis_revision_history
+      : [];
 
   return html`
     <section class="hero-stack research-hero">
@@ -431,6 +436,7 @@ export function renderThesisReviewSurface({
         </article>
       ` : ''}
       ${raw(watchlistPanel)}
+      ${raw(renderThesisRevisionHistoryPanel(revisionHistory))}
 
       ${raw(renderPacketCitationPanel(citations))}
       ${packet ? raw(renderEvidencePacketCard(packet)) : ''}
@@ -448,6 +454,41 @@ export function renderThesisReviewSurface({
       </div>
       <p class="marginalia thesis-review-status" aria-live="polite">${successMessage}</p>
     </section>
+  `;
+}
+
+function renderThesisRevisionHistoryPanel(history = []) {
+  const rows = Array.isArray(history)
+    ? history.filter(item => item && typeof item === 'object').slice(0, 5)
+    : [];
+  if (!rows.length) return '';
+  return html`
+    <article class="research-panel thesis-revision-history-panel">
+      <h3>Recent thesis revisions</h3>
+      <ul>
+        ${raw(rows.map(renderThesisRevisionHistoryItem).join(''))}
+      </ul>
+    </article>
+  `;
+}
+
+function renderThesisRevisionHistoryItem(item = {}) {
+  const reviewed = fmtTimeShort(item.reviewed_at) || String(item.reviewed_at || '').trim() || 'Recent review';
+  const source = titleCase(String(item.source || '').replace(/_/g, ' ') || 'review');
+  const revised = String(item.revised_thesis_excerpt || item.summary || '').trim();
+  const prior = String(item.previous_thesis_excerpt || '').trim();
+  const rationale = String(item.rationale_excerpt || '').trim();
+  const gaps = Array.isArray(item.evidence_gaps) ? item.evidence_gaps.filter(Boolean).slice(0, 3) : [];
+  const warnings = Array.isArray(item.warnings) ? item.warnings.filter(Boolean).slice(0, 3) : [];
+  return html`
+    <li>
+      <p><strong>${reviewed}</strong> · ${source}</p>
+      ${revised ? html`<p>${revised}</p>` : ''}
+      ${prior ? html`<p class="marginalia">Previous: ${prior}</p>` : ''}
+      ${rationale ? html`<p class="marginalia">${rationale}</p>` : ''}
+      ${gaps.length ? html`<p class="marginalia">Gaps: ${gaps.join(' · ')}</p>` : ''}
+      ${warnings.length ? html`<p class="marginalia">Warnings: ${warnings.join(' · ')}</p>` : ''}
+    </li>
   `;
 }
 

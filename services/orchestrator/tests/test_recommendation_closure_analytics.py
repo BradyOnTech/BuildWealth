@@ -127,6 +127,77 @@ def test_update_recommendation_outcome_records_investment_process_calibration(
     assert payload["items"][0]["process_outcome"] == "useful_review"
 
 
+def test_update_recommendation_outcome_includes_thesis_revision_calibration(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    recommendation = inbox.create(
+        title="Review NVDA thesis",
+        detail="Copilot revised a watchlist thesis during the investment-fit review.",
+        recommendation_type="workflow_action",
+        source="copilot:investment_fit",
+        status="applied",
+        action_payload={
+            "evidence": {
+                "symbol": "NVDA",
+                "fit_status": "review_needed",
+                "research_evidence_packet_id": "research-evidence:yfinance:NVDA:6mo:1d",
+            },
+            "quality": {
+                "actionability": "review_only",
+                "calibration": {"domain": "investment_research", "track_process_outcome": True},
+            },
+            "thesis_revision": {
+                "event_id": "thesis-revision:watchlist:abc123",
+                "target_type": "watchlist",
+                "symbol": "NVDA",
+                "source": "copilot_review",
+                "reviewed_at": "2026-04-29T12:00:00+00:00",
+                "revised_thesis_hash": "abc123def456",
+                "evidence_gaps": ["tax lot impact not reviewed"],
+                "warnings": ["Review-only; not an action instruction."],
+            },
+            "decision_closure": {
+                "decision_status": "accepted",
+                "expected_outcome": {
+                    "expected_delta_context_quality": "thesis_revised",
+                    "expected_next_safe_action": "review_portfolio_fit",
+                },
+                "expected_vs_realized": {"status": "unavailable"},
+            },
+        },
+    )
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    response = main.update_recommendation_outcome(
+        recommendation["id"],
+        main.RecommendationOutcomeUpdateRequest(
+            process_outcome="useful_review",
+            evidence_sufficiency="sufficient",
+            measurement_source="copilot thesis review",
+            note="The revised thesis made the fit concern clearer.",
+        ),
+    )
+
+    calibration = response.decision_closure["decision_process_calibration"]
+    assert calibration["thesis_revision"]["event_id"] == "thesis-revision:watchlist:abc123"
+    assert calibration["thesis_revision"]["target_type"] == "watchlist"
+    assert calibration["thesis_revision"]["revised_thesis_hash"] == "abc123def456"
+    assert calibration["thesis_revision"]["evidence_gaps"] == ["tax lot impact not reviewed"]
+    assert calibration["quality_effects"]["decision_clarity"] == "improved"
+    assert calibration["quality_effects"]["evidence_sufficiency"] == "sufficient"
+    assert calibration["quality_effects"]["blocking_gaps"] == "not_blocking"
+    analytics = main.build_recommendation_closure_analytics_payload(
+        limit=200,
+        statuses=["applied", "rejected"],
+        include_pending_realized=True,
+    )
+    assert analytics["process_calibration_summary"]["thesis_revision_count"] == 1
+    assert analytics["process_calibration_summary"]["useful_thesis_revision_count"] == 1
+    assert analytics["items"][0]["thesis_revision_event_id"] == "thesis-revision:watchlist:abc123"
+
+
 def test_build_recommendation_closure_analytics_payload_summarizes_outcomes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

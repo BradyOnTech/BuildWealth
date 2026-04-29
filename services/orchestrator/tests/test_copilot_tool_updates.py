@@ -374,6 +374,112 @@ def test_save_watchlist_thesis_revision_updates_review_metadata(
     assert payload["thesis_review"]["symbol"] == "NVDA"
 
 
+def test_save_watchlist_thesis_revision_records_compact_bounded_history(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    portfolio = PortfolioStore(tmp_path / "portfolio")
+    old_long = "Old thesis " + ("with detailed context " * 40)
+    new_long = "Revised thesis " + ("with refreshed fit context " * 40)
+    portfolio.upsert_watchlist_item(
+        symbol="NVDA",
+        data_source="OPENBB",
+        thesis=old_long,
+        note="Old note",
+        thesis_reference_price_usd=800.0,
+    )
+    monkeypatch.setattr(main, "portfolio_store", portfolio)
+
+    for idx in range(10):
+        payload = main.save_portfolio_watchlist_thesis_revision(
+            "nvda",
+            {
+                "data_source": "OPENBB",
+                "thesis": f"{new_long} #{idx}",
+                "note": "Revised note",
+                "thesis_reference_price_usd": 898.0 + idx,
+                "review_window_days": 45,
+                "rationale": "Prior thesis changed after updated evidence and portfolio-fit review.",
+                "evidence_gaps": ["tax lot impact not reviewed", "provider freshness should be refreshed"],
+                "warnings": ["Review-only; not a buy recommendation."],
+                "recommendation_id": "rec-thesis",
+                "conversation_id": "conversation-thesis",
+            },
+        )
+
+    history = payload["item"]["thesis_revision_history"]
+    assert len(history) == main.THESIS_REVISION_HISTORY_LIMIT
+    latest = history[0]
+    assert latest["target_type"] == "watchlist"
+    assert latest["symbol"] == "NVDA"
+    assert latest["source"] == "copilot_review"
+    assert latest["recommendation_id"] == "rec-thesis"
+    assert latest["conversation_id"] == "conversation-thesis"
+    assert latest["reference_price_usd"] == pytest.approx(907.0)
+    assert latest["previous_thesis_chars"] > len(latest["previous_thesis_excerpt"])
+    assert latest["revised_thesis_chars"] > len(latest["revised_thesis_excerpt"])
+    assert len(latest["previous_thesis_hash"]) == 12
+    assert len(latest["revised_thesis_hash"]) == 12
+    assert "tax lot impact not reviewed" in latest["evidence_gaps"]
+    assert "Review-only" in latest["warnings"][0]
+
+
+def test_save_watchlist_thesis_revision_links_related_recommendation_for_calibration(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    portfolio = PortfolioStore(tmp_path / "portfolio")
+    portfolio.upsert_watchlist_item(
+        symbol="NVDA",
+        data_source="OPENBB",
+        thesis="Old thesis",
+        thesis_reference_price_usd=800.0,
+    )
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    recommendation = inbox.create(
+        title="Review NVDA thesis",
+        detail="Copilot should revise the thesis if the review changes.",
+        recommendation_type="workflow_action",
+        source="copilot:investment_fit",
+        status="applied",
+        action_payload={
+            "evidence": {"symbol": "NVDA", "fit_status": "review_needed"},
+            "quality": {
+                "actionability": "review_only",
+                "calibration": {"domain": "investment_research", "track_process_outcome": True},
+            },
+            "decision_closure": {
+                "decision_status": "accepted",
+                "expected_outcome": {"expected_next_safe_action": "review_thesis"},
+            },
+        },
+    )
+    monkeypatch.setattr(main, "portfolio_store", portfolio)
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    payload = main.save_portfolio_watchlist_thesis_revision(
+        "nvda",
+        {
+            "data_source": "OPENBB",
+            "thesis": "Revised thesis",
+            "reference_price_usd": 898.0,
+            "review_window_days": 45,
+            "rationale": "The fit discussion changed the thesis framing.",
+            "evidence_gaps": ["tax lot impact not reviewed"],
+            "recommendation_id": recommendation["id"],
+            "conversation_id": "conversation-thesis",
+        },
+    )
+
+    linked = inbox.get(recommendation["id"])["action_payload"]["thesis_revision"]
+    assert linked["event_id"] == payload["item"]["thesis_revision_history"][0]["event_id"]
+    assert linked["target_type"] == "watchlist"
+    assert linked["symbol"] == "NVDA"
+    assert linked["revised_thesis_hash"] == payload["item"]["thesis_revision_history"][0]["revised_thesis_hash"]
+    assert linked["conversation_id"] == "conversation-thesis"
+    assert linked["evidence_gaps"] == ["tax lot impact not reviewed"]
+
+
 def test_save_dossier_thesis_revision_updates_artifact_content_and_metadata(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -401,7 +507,7 @@ def test_save_dossier_thesis_revision_updates_artifact_content_and_metadata(
 
     updated = workspace.read_artifact(plan["id"], artifact["id"])["content"]
     assert "## Thesis\n\nRevised dossier thesis." in updated
-    assert "Old dossier thesis." not in updated
+    assert main._extract_markdown_section(updated, "Thesis") == "Revised dossier thesis."
     assert "## Evidence Packets\n\nKeep packet table." in updated
     assert "## Thesis Revision Notes" in updated
     assert "Prior thesis expired." in updated
@@ -411,6 +517,63 @@ def test_save_dossier_thesis_revision_updates_artifact_content_and_metadata(
     assert payload["thesis_review"]["status"] == "current"
     assert payload["thesis_review"]["target"] == "dossier"
     assert payload["thesis_review"]["artifact_id"] == artifact["id"]
+
+
+def test_save_dossier_thesis_revision_records_compact_history_section(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = PlanWorkspace(tmp_path / "plans")
+    plan = workspace.create_plan(title="Dossier Plan")
+    artifact = workspace.write_artifact(
+        plan_id=plan["id"],
+        title="Research Dossier - MSFT vs VTI",
+        kind="research_dossier",
+        markdown=(
+            "# Research Dossier: MSFT vs VTI\n\n"
+            "## Thesis\n\n"
+            f"Old dossier thesis {'with extensive supporting details ' * 40}\n\n"
+            "## Evidence Packets\n\n"
+            "Keep packet table.\n"
+        ),
+    )
+    monkeypatch.setattr(main, "plan_workspace", workspace)
+
+    payload = None
+    for idx in range(10):
+        payload = main.save_plan_artifact_thesis_revision(
+            plan["id"],
+            artifact["id"],
+            {
+                "thesis": f"Revised dossier thesis {'with refreshed fit context ' * 40} #{idx}",
+                "rationale": "Prior thesis expired and new evidence changed the review framing.",
+                "reference_price_usd": 410.0 + idx,
+                "review_window_days": 45,
+                "evidence_gaps": ["provider freshness should be refreshed"],
+                "warnings": ["Review-only; not a buy recommendation."],
+                "recommendation_id": "rec-dossier-thesis",
+                "conversation_id": "conversation-dossier-thesis",
+            },
+        )
+
+    assert payload is not None
+    updated = workspace.read_artifact(plan["id"], artifact["id"])["content"]
+    assert "## Thesis Revision History" in updated
+    history_lines = [line for line in updated.splitlines() if line.startswith("- Reviewed `")]
+    assert len(history_lines) == main.THESIS_REVISION_HISTORY_LIMIT
+    assert "rec-dossier-thesis" in history_lines[0]
+    assert "conversation-dossier-thesis" in history_lines[0]
+    assert "prior_hash=`" in history_lines[0]
+    assert "revised_hash=`" in history_lines[0]
+    assert "provider freshness should be refreshed" in history_lines[0]
+    assert "Review-only; not a buy recommendation." in history_lines[0]
+    assert "## Evidence Packets\n\nKeep packet table." in updated
+    assert payload["thesis_revision_history"][0]["target_type"] == "dossier"
+    assert len(payload["thesis_revision_history"]) == main.THESIS_REVISION_HISTORY_LIMIT
+    artifact_response = main.read_plan_artifact(plan["id"], artifact["id"])
+    assert artifact_response.thesis_revision_history[0]["target_type"] == "dossier"
+    assert artifact_response.thesis_revision_history[0]["revised_thesis_excerpt"].startswith("Revised dossier thesis")
+    assert artifact_response.thesis_revision_history[0]["evidence_gaps"] == ["provider freshness should be refreshed"]
 
 
 def test_tool_draft_investment_research_recommendation_creates_review_only_row(

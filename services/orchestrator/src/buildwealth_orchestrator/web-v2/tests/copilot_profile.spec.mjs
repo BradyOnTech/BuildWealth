@@ -575,6 +575,7 @@ test('Copilot reviews and saves a drafted dossier thesis revision', async ({ pag
   assert.equal(savedDossierPatch.target_type, 'dossier');
   assert.equal(savedDossierPatch.plan_id, 'plan-1');
   assert.equal(savedDossierPatch.artifact_id, 'dossier-msft-vti');
+  assert.equal(savedDossierPatch.recommendation_id, 'rec-thesis');
   assert.equal(
     savedDossierPatch.thesis,
     'Revised thesis keeps MSFT as a quality watch item but requires concentration review before action.',

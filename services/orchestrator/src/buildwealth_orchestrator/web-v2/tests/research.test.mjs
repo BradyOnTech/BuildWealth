@@ -268,6 +268,17 @@ test('research view renders a dedicated thesis review surface', () => {
         expires_at: '2026-04-16T12:00:00Z',
         reference_price_usd: 410,
       },
+      thesis_revision_history: [
+        {
+          reviewed_at: '2026-04-29T12:00:00Z',
+          source: 'copilot_review',
+          previous_thesis_excerpt: 'Prior dossier thesis.',
+          revised_thesis_excerpt: 'Revised dossier thesis focused on fit.',
+          rationale_excerpt: 'Evidence changed.',
+          evidence_gaps: ['provider freshness'],
+          warnings: ['Review-only; not an action instruction.'],
+        },
+      ],
       content: [
         '# Research Dossier: MSFT vs VTI',
         '',
@@ -316,6 +327,9 @@ test('research view renders a dedicated thesis review surface', () => {
   assert.match(markup, /Material move/);
   assert.match(markup, /\+12\.2%/);
   assert.match(markup, /Packet citations/);
+  assert.match(markup, /Recent thesis revisions/);
+  assert.match(markup, /Revised dossier thesis focused on fit\./);
+  assert.match(markup, /Evidence changed\./);
   assert.match(markup, /research-evidence:yfinance:MSFT:6mo:1d/);
   assert.match(markup, /href="#research\?symbol=MSFT&amp;packet=research-evidence%3Ayfinance%3AMSFT%3A6mo%3A1d"/);
   assert.match(markup, /Mark thesis reviewed/);
@@ -336,6 +350,17 @@ test('research thesis review surface renders watchlist-only thesis context', () 
       thesis_reviewed_at: '2026-03-17T12:00:00Z',
       thesis_expires_at: '2026-04-16T12:00:00Z',
       thesis_reference_price_usd: 800,
+      thesis_revision_history: [
+        {
+          reviewed_at: '2026-04-29T12:00:00Z',
+          source: 'copilot_review',
+          previous_thesis_excerpt: 'Old NVDA watchlist thesis.',
+          revised_thesis_excerpt: 'Revised NVDA watchlist thesis.',
+          rationale_excerpt: 'Price moved materially.',
+          evidence_gaps: ['tax lot impact'],
+          warnings: ['Review-only; not an action instruction.'],
+        },
+      ],
       watchlist_score_total: 77,
       watchlist_score_reasons: ['positive_momentum', 'near_high'],
     },
@@ -372,6 +397,9 @@ test('research thesis review surface renders watchlist-only thesis context', () 
   assert.match(markup, /Watch for AI infrastructure demand and margin durability\./);
   assert.match(markup, /OPENBB/);
   assert.match(markup, /Score 77/);
+  assert.match(markup, /Recent thesis revisions/);
+  assert.match(markup, /Revised NVDA watchlist thesis\./);
+  assert.match(markup, /tax lot impact/);
   assert.match(markup, /semiconductors · ai/);
   assert.match(markup, /Reference price/);
   assert.match(markup, /\$800\.00/);

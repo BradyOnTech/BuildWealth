@@ -37,6 +37,7 @@ WATCHLIST_SCHEMA_VERSION = 1
 LOT_AUDIT_SCHEMA_VERSION = 1
 CORPORATE_ACTIONS_SCHEMA_VERSION = 1
 RISK_POLICY_SCHEMA_VERSION = 1
+WATCHLIST_THESIS_REVISION_HISTORY_LIMIT = 8
 LOT_AUDIT_MAX_EVENTS = 1500
 CORPORATE_ACTION_MAX_EVENTS = 600
 DEFAULT_ACCOUNT_ID = "default"
@@ -848,6 +849,49 @@ class PortfolioStore:
                 break
         return tags
 
+    @staticmethod
+    def _normalize_thesis_revision_history(raw_history: Any) -> list[dict[str, Any]]:
+        if not isinstance(raw_history, list):
+            return []
+        history: list[dict[str, Any]] = []
+        for raw in raw_history:
+            if not isinstance(raw, dict):
+                continue
+            event = {
+                "event_id": str(raw.get("event_id") or ""),
+                "target_type": str(raw.get("target_type") or "watchlist"),
+                "symbol": str(raw.get("symbol") or ""),
+                "data_source": str(raw.get("data_source") or ""),
+                "source": str(raw.get("source") or ""),
+                "reviewed_at": str(raw.get("reviewed_at") or ""),
+                "expires_at": str(raw.get("expires_at") or ""),
+                "reference_price_usd": _safe_float(raw.get("reference_price_usd"), None),
+                "review_window_days": int(_safe_float(raw.get("review_window_days"), 0) or 0),
+                "previous_thesis_excerpt": str(raw.get("previous_thesis_excerpt") or ""),
+                "revised_thesis_excerpt": str(raw.get("revised_thesis_excerpt") or ""),
+                "previous_thesis_hash": str(raw.get("previous_thesis_hash") or ""),
+                "revised_thesis_hash": str(raw.get("revised_thesis_hash") or ""),
+                "previous_thesis_chars": int(_safe_float(raw.get("previous_thesis_chars"), 0) or 0),
+                "revised_thesis_chars": int(_safe_float(raw.get("revised_thesis_chars"), 0) or 0),
+                "rationale_excerpt": str(raw.get("rationale_excerpt") or ""),
+                "evidence_gaps": (
+                    [str(item).strip() for item in raw.get("evidence_gaps") if str(item).strip()][:5]
+                    if isinstance(raw.get("evidence_gaps"), list)
+                    else []
+                ),
+                "warnings": (
+                    [str(item).strip() for item in raw.get("warnings") if str(item).strip()][:5]
+                    if isinstance(raw.get("warnings"), list)
+                    else []
+                ),
+                "recommendation_id": str(raw.get("recommendation_id") or ""),
+                "conversation_id": str(raw.get("conversation_id") or ""),
+            }
+            history.append({key: value for key, value in event.items() if value not in ("", None, [], 0)})
+            if len(history) >= WATCHLIST_THESIS_REVISION_HISTORY_LIMIT:
+                break
+        return history
+
     def _migrate_watchlist_payload(self, payload: Any) -> dict[str, Any]:
         default_payload = self._default_watchlist_payload()
         if isinstance(payload, list):
@@ -902,6 +946,9 @@ class PortfolioStore:
                 ),
                 "target_price_usd": round(float(target_price), 4) if target_price is not None else None,
                 "tags": self._normalize_watchlist_tags(raw_item.get("tags")),
+                "thesis_revision_history": self._normalize_thesis_revision_history(
+                    raw_item.get("thesis_revision_history")
+                ),
                 "created_at": created_at,
                 "updated_at": updated_at,
             }
@@ -2962,6 +3009,7 @@ class PortfolioStore:
                 ),
                 "target_price_usd": round(float(normalized_target), 4) if normalized_target is not None else None,
                 "tags": self._normalize_watchlist_tags(tags),
+                "thesis_revision_history": [],
                 "created_at": now,
                 "updated_at": now,
             }
@@ -2986,6 +3034,9 @@ class PortfolioStore:
                     else existing.get("target_price_usd")
                 ),
                 "tags": self._normalize_watchlist_tags(tags if tags is not None else existing.get("tags")),
+                "thesis_revision_history": self._normalize_thesis_revision_history(
+                    existing.get("thesis_revision_history")
+                ),
                 "created_at": str(existing.get("created_at") or now),
                 "updated_at": now,
             }
@@ -3034,6 +3085,42 @@ class PortfolioStore:
             items[index] = updated
             payload["items"] = items
             payload["updated_at"] = reviewed_at
+            self._write_json(self._watchlist_path, payload)
+            return updated
+
+        raise ValueError(f"Watchlist item not found: {normalized_symbol}")
+
+    def append_watchlist_thesis_revision_event(
+        self,
+        *,
+        symbol: str,
+        data_source: str = "OPENBB",
+        event: dict[str, Any],
+        limit: int = WATCHLIST_THESIS_REVISION_HISTORY_LIMIT,
+    ) -> dict[str, Any]:
+        normalized_symbol = self._normalize_symbol(symbol)
+        if not normalized_symbol:
+            raise ValueError("symbol is required")
+        normalized_data_source = str(data_source or "OPENBB").strip().upper() or "OPENBB"
+        bounded_limit = max(1, min(int(limit), WATCHLIST_THESIS_REVISION_HISTORY_LIMIT))
+
+        payload = self._read_watchlist_payload()
+        items = payload.get("items") if isinstance(payload.get("items"), list) else []
+        for index, item in enumerate(items):
+            if not isinstance(item, dict):
+                continue
+            if self._normalize_symbol(item.get("symbol")) != normalized_symbol:
+                continue
+            if str(item.get("data_source") or "OPENBB").strip().upper() != normalized_data_source:
+                continue
+
+            existing_history = self._normalize_thesis_revision_history(item.get("thesis_revision_history"))
+            new_history = self._normalize_thesis_revision_history([event]) + existing_history
+            updated = dict(item)
+            updated["thesis_revision_history"] = new_history[:bounded_limit]
+            items[index] = updated
+            payload["items"] = items
+            payload["updated_at"] = str(updated.get("updated_at") or _utc_now())
             self._write_json(self._watchlist_path, payload)
             return updated
 
