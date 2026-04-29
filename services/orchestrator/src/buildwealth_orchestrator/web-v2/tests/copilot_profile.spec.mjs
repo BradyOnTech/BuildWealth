@@ -440,3 +440,146 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
     notes: 'Keep this goal separate from emergency reserves.',
   }]);
 });
+
+test('Copilot reviews and saves a drafted dossier thesis revision', async ({ page }) => {
+  const chatPayloads = [];
+  let savedDossierPatch = null;
+
+  await page.route('**/*', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+
+    if (url.hostname !== 'buildwealth-v2.test') {
+      await route.abort();
+      return;
+    }
+
+    if (url.pathname === '/' || url.pathname.startsWith('/static-v2/')) {
+      await route.fulfill(await staticResponse(url.pathname));
+      return;
+    }
+
+    if (url.pathname === '/api/plans') {
+      await route.fulfill(jsonResponse([{ id: 'plan-1', title: 'Primary Plan', is_active: true }]));
+      return;
+    }
+
+    if (url.pathname === '/api/copilot/conversations') {
+      await route.fulfill(jsonResponse([]));
+      return;
+    }
+
+    if (url.pathname === '/api/onboarding/status') {
+      await route.fulfill(jsonResponse({
+        ready_for_daily_review: true,
+        completion_percent: 100,
+        steps: [],
+      }));
+      return;
+    }
+
+    if (url.pathname === '/api/copilot/chat' && request.method() === 'POST') {
+      const chatPayload = request.postDataJSON();
+      chatPayloads.push(chatPayload);
+      await route.fulfill(jsonResponse({
+        conversation_id: 'conversation-dossier-thesis',
+        answer: 'I drafted a dossier thesis revision for review.',
+        created_at: '2026-04-29T12:00:00.000Z',
+        model: 'browser-test',
+        tool_calls: [
+          {
+            name: 'draft_dossier_thesis_revision',
+            arguments: {
+              plan_id: 'plan-1',
+              artifact_id: 'dossier-msft-vti',
+            },
+            result: {
+              draft_kind: 'dossier_thesis_revision',
+              requires_confirmation: true,
+              target: {
+                type: 'dossier',
+                plan_id: 'plan-1',
+                artifact_id: 'dossier-msft-vti',
+                title: 'Research Dossier: MSFT vs VTI',
+              },
+              current: {
+                thesis: 'Current thesis prefers broad market exposure.',
+                reference_price_usd: 390,
+                reviewed_at: '2026-03-01T12:00:00Z',
+                expires_at: '2026-04-01T12:00:00Z',
+              },
+              proposed: {
+                thesis: 'Revised thesis keeps MSFT as a quality watch item but requires concentration review before action.',
+                reference_price_usd: 410,
+                review_window_days: 45,
+              },
+              rationale: 'New evidence increased conviction but portfolio concentration remains the gating issue.',
+              evidence_gaps: ['Tax-lot impact still needs review.'],
+              warnings: ['Do not treat this as a buy recommendation.'],
+            },
+          },
+        ],
+      }));
+      return;
+    }
+
+    if (
+      url.pathname === '/api/plans/plan-1/artifacts/dossier-msft-vti/thesis'
+      && request.method() === 'PUT'
+    ) {
+      savedDossierPatch = request.postDataJSON();
+      await route.fulfill(jsonResponse({
+        artifact: {
+          id: 'dossier-msft-vti',
+          title: 'Research Dossier: MSFT vs VTI',
+          content: '# Research Dossier: MSFT vs VTI\n\n## Thesis\n\nRevised thesis keeps MSFT as a quality watch item but requires concentration review before action.\n',
+        },
+        thesis_review: {
+          status: 'current',
+          target: 'dossier',
+          plan_id: 'plan-1',
+          artifact_id: 'dossier-msft-vti',
+          reviewed_at: '2026-04-29T12:00:00Z',
+          expires_at: '2026-06-13T12:00:00Z',
+          reference_price_usd: 410,
+          age_days: 0,
+        },
+      }));
+      return;
+    }
+
+    await route.fulfill(jsonResponse({ detail: `Unhandled test route: ${request.method()} ${url.pathname}` }, 404));
+  });
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('http://buildwealth-v2.test/#copilot?focus=rec-thesis&intent=investment-fit');
+
+  const textarea = page.locator('#composer-textarea');
+  const focusedDraft = await textarea.inputValue();
+  assert.match(focusedDraft, /draft_dossier_thesis_revision/);
+
+  await page.locator('#composer-submit').click();
+  await page.getByText('Review thesis revision').waitFor({ state: 'visible' });
+  await page.getByText('Research Dossier: MSFT vs VTI').waitFor({ state: 'visible' });
+  await page.getByText('Current thesis prefers broad market exposure.').waitFor({ state: 'visible' });
+  await page.getByText('Revised thesis keeps MSFT as a quality watch item but requires concentration review before action.').waitFor({ state: 'visible' });
+  await page.getByText('Tax-lot impact still needs review.').waitFor({ state: 'visible' });
+
+  assert.equal(chatPayloads.length, 1);
+  assert.match(chatPayloads[0].question, /Review investment-fit recommendation rec-thesis/);
+
+  await page.getByRole('button', { name: /save revised thesis/i }).click();
+  await page.getByText('Dossier thesis updated for dossier-msft-vti.').waitFor({ state: 'visible' });
+
+  assert.ok(savedDossierPatch, 'expected dossier thesis save request to be sent');
+  assert.equal(savedDossierPatch.target_type, 'dossier');
+  assert.equal(savedDossierPatch.plan_id, 'plan-1');
+  assert.equal(savedDossierPatch.artifact_id, 'dossier-msft-vti');
+  assert.equal(
+    savedDossierPatch.thesis,
+    'Revised thesis keeps MSFT as a quality watch item but requires concentration review before action.',
+  );
+  assert.equal(savedDossierPatch.reference_price_usd, 410);
+  assert.equal(savedDossierPatch.review_window_days, 45);
+  assert.match(savedDossierPatch.rationale, /portfolio concentration/);
+});

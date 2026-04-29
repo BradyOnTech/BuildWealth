@@ -640,6 +640,10 @@ copilot = FinancialCopilot(
         "- After an investment-fit discussion identifies a safe next review step, call "
         "draft_investment_research_recommendation to create a proposed review-only Inbox item. "
         "Never use it to create buy/sell instructions.\n"
+        "- To revise a saved watchlist thesis, call draft_watchlist_thesis_revision for user review without saving. "
+        "Only save thesis revisions after explicit user confirmation.\n"
+        "- To revise a saved research dossier thesis, call draft_dossier_thesis_revision for user review without saving. "
+        "Only save dossier thesis revisions after explicit user confirmation.\n"
         "- For 'what if I buy/sell X?' → call simulate_trade to show allocation and concentration impact.\n"
         "- For daily reviews → call get_financial_health, get_plan_tracking, and get_today_dashboard.\n\n"
         "RESPONSE GUIDELINES:\n"
@@ -4610,6 +4614,42 @@ def _replace_thesis_review_metadata_section(
         reference_price_usd=reference_price_usd,
     )
     pattern = r"\n*## Thesis Review Metadata\n(?:.|\n)*?(?=\n## |\Z)"
+    if re.search(pattern, markdown):
+        return re.sub(pattern, f"\n\n{section}\n", markdown).strip() + "\n"
+    return markdown.rstrip() + "\n\n" + section + "\n"
+
+
+def _extract_markdown_section(markdown: Any, heading: str) -> str:
+    escaped_heading = re.escape(str(heading or "").strip())
+    if not escaped_heading:
+        return ""
+    pattern = rf"(?ims)^##\s+{escaped_heading}\s*$\n(?P<body>.*?)(?=^##\s+|\Z)"
+    match = re.search(pattern, str(markdown or ""))
+    if not match:
+        return ""
+    return match.group("body").strip()
+
+
+def _replace_markdown_section(markdown: str, heading: str, body: str) -> str:
+    title = str(heading or "").strip()
+    section = f"## {title}\n\n{str(body or '').strip()}\n"
+    pattern = rf"(?ims)\n*^##\s+{re.escape(title)}\s*$\n.*?(?=^##\s+|\Z)"
+    if re.search(pattern, markdown):
+        return re.sub(pattern, f"\n\n{section}", markdown).strip() + "\n"
+    return markdown.rstrip() + "\n\n" + section
+
+
+def _replace_thesis_revision_notes_section(markdown: str, rationale: str) -> str:
+    text = str(rationale or "").strip()
+    if not text:
+        return markdown
+    lines = [
+        "## Thesis Revision Notes",
+        "",
+        f"- Rationale: {text}",
+    ]
+    section = "\n".join(lines).strip()
+    pattern = r"\n*## Thesis Revision Notes\n(?:.|\n)*?(?=\n## |\Z)"
     if re.search(pattern, markdown):
         return re.sub(pattern, f"\n\n{section}\n", markdown).strip() + "\n"
     return markdown.rstrip() + "\n\n" + section + "\n"
@@ -9144,6 +9184,121 @@ async def tool_draft_investment_research_recommendation(arguments: dict[str, obj
     }
 
 
+def _watchlist_item_for_symbol(symbol: str, data_source: str = "OPENBB") -> dict[str, Any] | None:
+    normalized_symbol = str(symbol or "").strip().upper()
+    normalized_source = str(data_source or "OPENBB").strip().upper() or "OPENBB"
+    if not normalized_symbol:
+        return None
+    for item in portfolio_store.list_watchlist():
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("symbol") or "").strip().upper() != normalized_symbol:
+            continue
+        if str(item.get("data_source") or "OPENBB").strip().upper() != normalized_source:
+            continue
+        return item
+    return None
+
+
+def _revision_text_list(value: Any, *, limit: int = 6) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        text = str(item or "").strip()
+        if text:
+            out.append(text)
+        if len(out) >= limit:
+            break
+    return out
+
+
+async def tool_draft_watchlist_thesis_revision(arguments: dict[str, object]) -> dict[str, object]:
+    symbols = normalize_research_symbols([arguments.get("symbol")], max_symbols=1)
+    if not symbols:
+        raise ValueError("symbol is required")
+    symbol = symbols[0]
+    proposed_thesis = str(arguments.get("proposed_thesis") or "").strip()
+    if not proposed_thesis:
+        raise ValueError("proposed_thesis is required")
+    data_source = str(arguments.get("data_source") or "OPENBB").strip().upper() or "OPENBB"
+    current = _watchlist_item_for_symbol(symbol, data_source) or {}
+
+    proposed: dict[str, Any] = {
+        "thesis": proposed_thesis,
+        "note": str(arguments.get("proposed_note") or "").strip(),
+        "reference_price_usd": _coerce_optional_float(arguments.get("reference_price_usd")),
+        "review_window_days": max(1, min(int(arguments.get("review_window_days") or TODAY_THESIS_REVIEW_DAYS), 3650)),
+    }
+    proposed = {key: value for key, value in proposed.items() if value not in (None, "")}
+    tags = arguments.get("tags")
+    if isinstance(tags, list):
+        proposed["tags"] = [str(item).strip().lower() for item in tags if str(item).strip()][:20]
+
+    return {
+        "draft_kind": "watchlist_thesis_revision",
+        "requires_confirmation": True,
+        "target": {
+            "type": "watchlist",
+            "symbol": symbol,
+            "data_source": data_source,
+        },
+        "current": {
+            "thesis": str(current.get("thesis") or ""),
+            "note": str(current.get("note") or ""),
+            "reference_price_usd": _coerce_optional_float(current.get("thesis_reference_price_usd")),
+            "reviewed_at": str(current.get("thesis_reviewed_at") or ""),
+            "expires_at": str(current.get("thesis_expires_at") or ""),
+            "tags": current.get("tags") if isinstance(current.get("tags"), list) else [],
+        },
+        "proposed": proposed,
+        "rationale": str(arguments.get("rationale") or "").strip(),
+        "evidence_gaps": _revision_text_list(arguments.get("evidence_gaps")),
+        "warnings": _revision_text_list(arguments.get("warnings")),
+    }
+
+
+async def tool_draft_dossier_thesis_revision(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = str(arguments.get("plan_id") or "").strip()
+    artifact_id = str(arguments.get("artifact_id") or "").strip()
+    proposed_thesis = str(arguments.get("proposed_thesis") or "").strip()
+    if not plan_id:
+        raise ValueError("plan_id is required")
+    if not artifact_id:
+        raise ValueError("artifact_id is required")
+    if not proposed_thesis:
+        raise ValueError("proposed_thesis is required")
+
+    artifact = plan_workspace.read_artifact(plan_id=plan_id, artifact_id=artifact_id)
+    metadata = _extract_thesis_review_metadata_from_markdown(artifact.get("content"))
+    proposed: dict[str, Any] = {
+        "thesis": proposed_thesis,
+        "reference_price_usd": _coerce_optional_float(arguments.get("reference_price_usd")),
+        "review_window_days": max(1, min(int(arguments.get("review_window_days") or TODAY_THESIS_REVIEW_DAYS), 3650)),
+    }
+    proposed = {key: value for key, value in proposed.items() if value not in (None, "")}
+    return {
+        "draft_kind": "dossier_thesis_revision",
+        "requires_confirmation": True,
+        "target": {
+            "type": "dossier",
+            "plan_id": plan_id,
+            "artifact_id": artifact_id,
+            "title": artifact.get("title") or artifact_id,
+        },
+        "current": {
+            "thesis": _extract_markdown_section(artifact.get("content"), "Thesis"),
+            "reference_price_usd": _coerce_optional_float(metadata.get("reference_price_usd")),
+            "reviewed_at": str(metadata.get("reviewed_at") or ""),
+            "expires_at": str(metadata.get("expires_at") or ""),
+        },
+        "proposed": proposed,
+        "rationale": str(arguments.get("rationale") or "").strip(),
+        "evidence_gaps": _revision_text_list(arguments.get("evidence_gaps")),
+        "warnings": _revision_text_list(arguments.get("warnings")),
+    }
+
+
 async def tool_apply_recommendation(arguments: dict[str, object]) -> dict[str, object]:
     recommendation_id = str(arguments.get("recommendation_id") or "").strip()
     if not recommendation_id:
@@ -11135,6 +11290,56 @@ def configure_copilot_tools() -> None:
         handler=tool_draft_investment_research_recommendation,
     )
     copilot.register_tool(
+        name="draft_watchlist_thesis_revision",
+        description=(
+            "Draft a structured watchlist thesis revision for user review without saving it. "
+            "Use after inspecting research evidence, portfolio fit, or thesis freshness. "
+            "The user must explicitly save the reviewed draft."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Watchlist ticker symbol."},
+                "data_source": {"type": "string", "description": "Watchlist data source, default OPENBB."},
+                "proposed_thesis": {"type": "string", "description": "Revised thesis text to review."},
+                "proposed_note": {"type": "string", "description": "Optional supporting note."},
+                "reference_price_usd": {"type": "number", "description": "Optional refreshed thesis reference price."},
+                "review_window_days": {"type": "integer", "description": "Days until the revised thesis should be reviewed again."},
+                "rationale": {"type": "string", "description": "Why the thesis changed."},
+                "evidence_gaps": {"type": "array", "items": {"type": "string"}},
+                "warnings": {"type": "array", "items": {"type": "string"}},
+                "tags": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["symbol", "proposed_thesis"],
+            "additionalProperties": False,
+        },
+        handler=tool_draft_watchlist_thesis_revision,
+    )
+    copilot.register_tool(
+        name="draft_dossier_thesis_revision",
+        description=(
+            "Draft a structured saved research dossier thesis revision for user review without saving it. "
+            "Use after inspecting dossier evidence, packet freshness, or thesis expiration. "
+            "The user must explicitly save the reviewed draft."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string", "description": "Plan id that owns the saved dossier artifact."},
+                "artifact_id": {"type": "string", "description": "Saved dossier artifact id."},
+                "proposed_thesis": {"type": "string", "description": "Revised dossier thesis text to review."},
+                "reference_price_usd": {"type": "number", "description": "Optional refreshed thesis reference price."},
+                "review_window_days": {"type": "integer", "description": "Days until the revised thesis should be reviewed again."},
+                "rationale": {"type": "string", "description": "Why the thesis changed."},
+                "evidence_gaps": {"type": "array", "items": {"type": "string"}},
+                "warnings": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["plan_id", "artifact_id", "proposed_thesis"],
+            "additionalProperties": False,
+        },
+        handler=tool_draft_dossier_thesis_revision,
+    )
+    copilot.register_tool(
         name="get_onboarding_status",
         description="Read onboarding completion status for unified financial context.",
         parameters=empty_schema,
@@ -12939,6 +13144,82 @@ def upsert_portfolio_watchlist_item(request: dict[str, Any]) -> dict[str, Any]:
     return {"item": item}
 
 
+@app.put("/api/portfolio/watchlist/{symbol}/thesis")
+def save_portfolio_watchlist_thesis_revision(symbol: str, request: dict[str, Any]) -> dict[str, Any]:
+    normalized_symbol = str(symbol or request.get("symbol") or "").strip().upper()
+    if not normalized_symbol:
+        raise HTTPException(status_code=400, detail="symbol is required")
+    thesis = str(request.get("thesis") or request.get("proposed_thesis") or "").strip()
+    if not thesis:
+        raise HTTPException(status_code=400, detail="thesis is required")
+    note = request.get("note")
+    data_source = str(request.get("data_source") or "OPENBB").strip().upper() or "OPENBB"
+    reference_raw = (
+        request.get("thesis_reference_price_usd")
+        if request.get("thesis_reference_price_usd") is not None
+        else request.get("reference_price_usd")
+    )
+    reference_value: float | None = None
+    if reference_raw not in (None, "", "null"):
+        try:
+            reference_value = float(reference_raw)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="thesis_reference_price_usd must be a number") from exc
+        if reference_value <= 0:
+            raise HTTPException(status_code=400, detail="thesis_reference_price_usd must be greater than 0")
+
+    try:
+        review_window_days = max(1, min(int(request.get("review_window_days") or TODAY_THESIS_REVIEW_DAYS), 3650))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="review_window_days must be an integer") from exc
+
+    reviewed_at_dt = utc_now()
+    reviewed_at = reviewed_at_dt.isoformat()
+    expires_at = str(request.get("thesis_expires_at") or request.get("expires_at") or "").strip()
+    if not expires_at:
+        expires_at = (reviewed_at_dt + timedelta(days=review_window_days)).isoformat()
+
+    try:
+        portfolio_store.upsert_watchlist_item(
+            symbol=normalized_symbol,
+            data_source=data_source,
+            thesis=thesis,
+            note=str(note) if note is not None else None,
+            thesis_reference_price_usd=reference_value,
+            tags=request.get("tags") if isinstance(request.get("tags"), list) else None,
+        )
+        item = portfolio_store.refresh_watchlist_thesis_review(
+            symbol=normalized_symbol,
+            data_source=data_source,
+            reviewed_at=reviewed_at,
+            expires_at=expires_at,
+            reference_price_usd=reference_value,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    review = research_thesis_review_metadata(
+        {
+            "reviewed_at": item.get("thesis_reviewed_at"),
+            "expires_at": item.get("thesis_expires_at"),
+            "reference_price_usd": item.get("thesis_reference_price_usd"),
+        }
+    )
+    return {
+        "item": item,
+        "thesis_review": {
+            "status": review.get("status") or "current",
+            "target": "watchlist",
+            "symbol": normalized_symbol,
+            "data_source": data_source,
+            "reviewed_at": item.get("thesis_reviewed_at"),
+            "expires_at": item.get("thesis_expires_at"),
+            "reference_price_usd": item.get("thesis_reference_price_usd"),
+            "age_days": review.get("age_days"),
+        },
+    }
+
+
 @app.delete("/api/portfolio/watchlist/{symbol}")
 def delete_portfolio_watchlist_item(symbol: str, data_source: str | None = None) -> dict[str, Any]:
     deleted = portfolio_store.delete_watchlist_item(symbol, data_source=data_source)
@@ -14577,6 +14858,68 @@ def read_plan_artifact(plan_id: str, artifact_id: str) -> PlanArtifactResponse:
         artifact.update(_extract_thesis_review_metadata_from_markdown(artifact.get("content")))
         artifact["thesis_review"] = research_thesis_review_metadata(artifact)
     return PlanArtifactResponse(**artifact)
+
+
+@app.put("/api/plans/{plan_id}/artifacts/{artifact_id}/thesis")
+def save_plan_artifact_thesis_revision(plan_id: str, artifact_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    thesis = str(request.get("thesis") or request.get("proposed_thesis") or "").strip()
+    if not thesis:
+        raise HTTPException(status_code=400, detail="thesis is required")
+
+    reference_raw = (
+        request.get("reference_price_usd")
+        if request.get("reference_price_usd") is not None
+        else request.get("thesis_reference_price_usd")
+    )
+    reference_value = _coerce_optional_float(reference_raw)
+    if reference_raw not in (None, "", "null") and reference_value is None:
+        raise HTTPException(status_code=400, detail="reference_price_usd must be a number")
+    if reference_value is not None and reference_value <= 0:
+        raise HTTPException(status_code=400, detail="reference_price_usd must be greater than 0")
+
+    try:
+        review_window_days = max(1, min(int(request.get("review_window_days") or TODAY_THESIS_REVIEW_DAYS), 3650))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="review_window_days must be an integer") from exc
+
+    reviewed_at_dt = utc_now()
+    reviewed_at = reviewed_at_dt.isoformat()
+    expires_at = str(request.get("expires_at") or "").strip() or (reviewed_at_dt + timedelta(days=review_window_days)).isoformat()
+
+    try:
+        artifact = plan_workspace.read_artifact(plan_id=plan_id, artifact_id=artifact_id)
+        updated = _replace_markdown_section(str(artifact.get("content") or ""), "Thesis", thesis)
+        updated = _replace_thesis_revision_notes_section(updated, str(request.get("rationale") or ""))
+        updated = _replace_thesis_review_metadata_section(
+            updated,
+            reviewed_at=reviewed_at,
+            expires_at=expires_at,
+            reference_price_usd=reference_value,
+        )
+        saved = plan_workspace.update_artifact_content(plan_id=plan_id, artifact_id=artifact_id, markdown=updated)
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    review = research_thesis_review_metadata(
+        {
+            "reviewed_at": reviewed_at,
+            "expires_at": expires_at,
+            "reference_price_usd": reference_value,
+        }
+    )
+    return {
+        "artifact": saved,
+        "thesis_review": {
+            "status": review.get("status") or "current",
+            "target": "dossier",
+            "plan_id": plan_id,
+            "artifact_id": saved.get("id") or artifact_id,
+            "reviewed_at": reviewed_at,
+            "expires_at": expires_at,
+            "reference_price_usd": reference_value,
+            "age_days": review.get("age_days"),
+        },
+    }
 
 
 @app.get("/api/workflows/templates", response_model=list[WorkflowTemplateResponse])

@@ -82,6 +82,14 @@ export const api = {
     period: opts.period || '6mo',
     interval: opts.interval || '1d',
   }).toString()}`),
+  saveWatchlistThesisRevision: (symbol, body = {}) => putJson(
+    `/api/portfolio/watchlist/${encodeURIComponent(symbol)}/thesis`,
+    body,
+  ),
+  saveDossierThesisRevision: (planId, artifactId, body = {}) => putJson(
+    `/api/plans/${encodeURIComponent(planId)}/artifacts/${encodeURIComponent(artifactId)}/thesis`,
+    body,
+  ),
   portfolioFit: (body) => postJson('/api/portfolio/fit-assessment', body),
   researchEvidencePacket: (body) => postJson('/api/research/evidence-packet', body),
   researchCompare: (body) => postJson('/api/research/compare', body),

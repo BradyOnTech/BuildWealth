@@ -251,6 +251,107 @@ test('copilot thread renders drafted investment recommendation tool results as r
   assert.doesNotMatch(html, /"draft_kind"/);
 });
 
+test('copilot thread renders watchlist thesis revision draft cards', () => {
+  const html = String(renderThread([
+    {
+      role: 'assistant',
+      content: 'I drafted a revised watchlist thesis for review.',
+      created_at: '2026-04-29T12:00:00.000Z',
+      metadata: {
+        tool_calls: [
+          {
+            name: 'draft_watchlist_thesis_revision',
+            arguments: { symbol: 'NVDA' },
+            result: {
+              draft_kind: 'watchlist_thesis_revision',
+              requires_confirmation: true,
+              target: { type: 'watchlist', symbol: 'NVDA', data_source: 'OPENBB' },
+              current: {
+                thesis: 'Old NVDA thesis.',
+                reference_price_usd: 800,
+              },
+              proposed: {
+                thesis: 'Only keep NVDA on the watchlist if concentration and valuation stay inside policy.',
+                note: 'Revisit if evidence freshness degrades.',
+                reference_price_usd: 898,
+                review_window_days: 45,
+              },
+              rationale: 'Price moved materially from the prior thesis reference.',
+              evidence_gaps: ['Tax lot impact not reviewed.'],
+            },
+          },
+        ],
+      },
+    },
+  ]));
+
+  assert.match(html, /Review thesis revision/);
+  assert.match(html, /NVDA · OPENBB/);
+  assert.match(html, /Old NVDA thesis\./);
+  assert.match(html, /Only keep NVDA on the watchlist/);
+  assert.match(html, /Revisit if evidence freshness degrades\./);
+  assert.match(html, /\$800/);
+  assert.match(html, /\$898/);
+  assert.match(html, /45 days/);
+  assert.match(html, /Price moved materially/);
+  assert.match(html, /Tax lot impact not reviewed\./);
+  assert.match(html, /data-thesis-draft=/);
+  assert.match(html, /Save revised thesis/);
+  assert.doesNotMatch(html, /"draft_kind"/);
+});
+
+test('copilot thread renders dossier thesis revision draft cards', () => {
+  const html = String(renderThread([
+    {
+      role: 'assistant',
+      content: 'I drafted a dossier thesis revision for review.',
+      created_at: '2026-04-29T12:00:00.000Z',
+      metadata: {
+        tool_calls: [
+          {
+            name: 'draft_dossier_thesis_revision',
+            arguments: { artifact_id: 'artifact-dossier-msft' },
+            result: {
+              draft_kind: 'dossier_thesis_revision',
+              requires_confirmation: true,
+              target: {
+                type: 'dossier',
+                plan_id: 'plan-1',
+                artifact_id: 'artifact-dossier-msft',
+                title: 'Research Dossier - MSFT vs VTI',
+              },
+              current: {
+                thesis: 'Old dossier thesis.',
+                reference_price_usd: 390,
+              },
+              proposed: {
+                thesis: 'Revised dossier thesis focused on fit, evidence freshness, and portfolio concentration.',
+                reference_price_usd: 410,
+                review_window_days: 60,
+              },
+              rationale: 'The prior thesis expired and provider evidence is stale.',
+              evidence_gaps: ['Provider freshness should be refreshed.'],
+            },
+          },
+        ],
+      },
+    },
+  ]));
+
+  assert.match(html, /Review thesis revision/);
+  assert.match(html, /Research Dossier - MSFT vs VTI/);
+  assert.match(html, /Old dossier thesis\./);
+  assert.match(html, /Revised dossier thesis focused on fit/);
+  assert.match(html, /\$390/);
+  assert.match(html, /\$410/);
+  assert.match(html, /60 days/);
+  assert.match(html, /prior thesis expired/);
+  assert.match(html, /Provider freshness should be refreshed\./);
+  assert.match(html, /data-thesis-draft=/);
+  assert.match(html, /Save revised thesis/);
+  assert.doesNotMatch(html, /"draft_kind"/);
+});
+
 test('copilot view wires profile draft apply action to profile API', () => {
   const currentDir = dirname(fileURLToPath(import.meta.url));
   const copilotSource = readFileSync(resolve(currentDir, '../views/copilot.js'), 'utf8');
@@ -264,6 +365,22 @@ test('copilot view wires profile draft apply action to profile API', () => {
   assert.match(copilotSource, /mergeProfileDraft/);
   assert.match(copilotSource, /api\.updateProfile/);
   assert.match(copilotSource, /Profile update applied/);
+});
+
+test('copilot view wires thesis draft save action to watchlist thesis API', () => {
+  const currentDir = dirname(fileURLToPath(import.meta.url));
+  const copilotSource = readFileSync(resolve(currentDir, '../views/copilot.js'), 'utf8');
+  const apiSource = readFileSync(resolve(currentDir, '../lib/api.js'), 'utf8');
+
+  assert.match(apiSource, /saveWatchlistThesisRevision/);
+  assert.match(apiSource, /saveDossierThesisRevision/);
+  assert.match(apiSource, /\/api\/portfolio\/watchlist\/.*thesis/);
+  assert.match(apiSource, /\/api\/plans\/.*artifacts.*thesis/);
+  assert.match(copilotSource, /\[data-thesis-draft\]/);
+  assert.match(copilotSource, /api\.saveWatchlistThesisRevision/);
+  assert.match(copilotSource, /api\.saveDossierThesisRevision/);
+  assert.match(copilotSource, /Watchlist thesis updated/);
+  assert.match(copilotSource, /Dossier thesis updated/);
 });
 
 test('copilot view exposes guided profile onboarding entry point', () => {
@@ -301,6 +418,8 @@ test('copilot view maps inbox recommendation intents to focused draft prompts', 
   assert.match(copilotSource, /missing context/);
   assert.match(copilotSource, /investment-fit/);
   assert.match(copilotSource, /proposed_account_id/);
+  assert.match(copilotSource, /draft_watchlist_thesis_revision/);
+  assert.match(copilotSource, /draft_dossier_thesis_revision/);
   assert.match(copilotSource, /hidden buy\/sell advice/);
 });
 

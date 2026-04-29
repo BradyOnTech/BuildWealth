@@ -60,6 +60,9 @@ function renderToolTrace(t) {
   if (isInvestmentRecommendationDraftTrace(t)) {
     return renderInvestmentRecommendationDraftCard(t.result);
   }
+  if (isThesisRevisionTrace(t)) {
+    return renderThesisRevisionCard(t.result);
+  }
   return html`
     <details class="tool-trace">
       <summary>
@@ -87,6 +90,77 @@ function isInvestmentRecommendationDraftTrace(trace) {
   return trace?.name === 'draft_investment_research_recommendation'
     && trace?.result?.draft_kind === 'investment_research_recommendation'
     && trace?.result?.recommendation?.id;
+}
+
+function isThesisRevisionTrace(trace) {
+  return (trace?.name === 'draft_watchlist_thesis_revision' || trace?.name === 'draft_dossier_thesis_revision')
+    && (trace?.result?.draft_kind === 'watchlist_thesis_revision' || trace?.result?.draft_kind === 'dossier_thesis_revision')
+    && trace?.result?.target
+    && trace?.result?.proposed?.thesis;
+}
+
+function renderThesisRevisionCard(result) {
+  const target = result.target || {};
+  const current = result.current || {};
+  const proposed = result.proposed || {};
+  const symbol = String(target.symbol || '').trim().toUpperCase();
+  const source = String(target.data_source || 'OPENBB').trim().toUpperCase();
+  const targetType = String(target.type || 'watchlist').trim().toLowerCase();
+  const title = targetType === 'dossier'
+    ? String(target.title || target.artifact_id || 'Saved dossier').trim()
+    : `${symbol} · ${source}`;
+  const payload = {
+    target_type: targetType,
+    symbol,
+    data_source: source,
+    plan_id: target.plan_id || '',
+    artifact_id: target.artifact_id || '',
+    thesis: proposed.thesis || '',
+    note: proposed.note || '',
+    reference_price_usd: proposed.reference_price_usd,
+    thesis_reference_price_usd: proposed.reference_price_usd,
+    review_window_days: proposed.review_window_days,
+    tags: proposed.tags,
+    rationale: result.rationale || '',
+  };
+  const encoded = encodeURIComponent(JSON.stringify(payload));
+  return html`
+    <article class="investment-fit-card thesis-draft-card">
+      <div class="investment-fit-head">
+        <div>
+          <p class="profile-draft-eyebrow">Review thesis revision</p>
+          <p class="investment-fit-title">${title}</p>
+        </div>
+        ${proposed.review_window_days ? html`<p class="investment-fit-score">${Number(proposed.review_window_days).toLocaleString('en-US')} days</p>` : ''}
+      </div>
+      ${current.thesis ? html`
+        <div class="profile-draft-section investment-fit-section">
+          <p class="profile-draft-section-title">Current thesis</p>
+          <p>${current.thesis}</p>
+          ${current.reference_price_usd != null ? html`<p class="profile-draft-meta">Reference ${MONEY_FMT.format(Number(current.reference_price_usd) || 0)}</p>` : ''}
+        </div>
+      ` : ''}
+      <div class="profile-draft-section investment-fit-section">
+        <p class="profile-draft-section-title">Proposed thesis</p>
+        <p>${proposed.thesis}</p>
+        ${proposed.note ? html`<p class="profile-draft-note">${proposed.note}</p>` : ''}
+        <p class="profile-draft-meta">
+          ${[
+            proposed.reference_price_usd != null ? `Reference ${MONEY_FMT.format(Number(proposed.reference_price_usd) || 0)}` : '',
+            proposed.review_window_days ? `Review window ${Number(proposed.review_window_days).toLocaleString('en-US')} days` : '',
+          ].filter(Boolean).join(' · ')}
+        </p>
+      </div>
+      ${result.rationale ? html`<p class="profile-draft-summary">${result.rationale}</p>` : ''}
+      ${renderFitList('Evidence gaps', result.evidence_gaps)}
+      ${renderFitList('Warnings', result.warnings)}
+      <div class="entry-actions">
+        <button class="action-link" data-thesis-draft="${encoded}">
+          Save revised thesis <span class="arrow">›</span>
+        </button>
+      </div>
+    </article>
+  `;
 }
 
 function renderInvestmentRecommendationDraftCard(result) {

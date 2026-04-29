@@ -5,6 +5,7 @@ import pytest
 
 import buildwealth_orchestrator.main as main
 from buildwealth_orchestrator.services.plan_workspace import PlanWorkspace
+from buildwealth_orchestrator.services.portfolio_store import PortfolioStore
 from buildwealth_orchestrator.services.recommendation_inbox import RecommendationInbox
 
 
@@ -24,6 +25,8 @@ def test_copilot_registry_includes_phase_3_5_tools() -> None:
         "research_watchlist_rank",
         "assess_portfolio_fit",
         "draft_investment_research_recommendation",
+        "draft_watchlist_thesis_revision",
+        "draft_dossier_thesis_revision",
         "update_recommendation_outcome",
         "get_recommendation_closure_analytics",
         "create_plan_recommendation_closure_summary",
@@ -37,6 +40,9 @@ def test_copilot_prompt_includes_context_quality_guidance() -> None:
     prompt = str(main.copilot.system_prompt)
     assert "quality.freshness.snapshot_stale" in prompt
     assert "caveat recommendations when context quality is degraded" in prompt
+    assert "draft_watchlist_thesis_revision" in prompt
+    assert "draft_dossier_thesis_revision" in prompt
+    assert "user review without saving" in prompt
 
 
 def test_get_buildwealth_context_tool_supports_detail_level_control() -> None:
@@ -201,6 +207,210 @@ def test_draft_investment_research_recommendation_tool_contract() -> None:
     outcome_properties = outcome_tool.parameters.get("properties", {})
     assert "process_outcome" in outcome_properties
     assert "evidence_sufficiency" in outcome_properties
+
+
+def test_draft_watchlist_thesis_revision_tool_contract() -> None:
+    tool = main.copilot.tools["draft_watchlist_thesis_revision"]
+    properties = tool.parameters.get("properties", {})
+    assert tool.parameters.get("required") == ["symbol", "proposed_thesis"]
+    assert "symbol" in properties
+    assert "data_source" in properties
+    assert "proposed_thesis" in properties
+    assert "proposed_note" in properties
+    assert "reference_price_usd" in properties
+    assert "review_window_days" in properties
+    assert "rationale" in properties
+    assert "evidence_gaps" in properties
+    assert "user review" in tool.description
+    assert "without saving" in tool.description
+
+
+def test_draft_dossier_thesis_revision_tool_contract() -> None:
+    tool = main.copilot.tools["draft_dossier_thesis_revision"]
+    properties = tool.parameters.get("properties", {})
+    assert tool.parameters.get("required") == ["plan_id", "artifact_id", "proposed_thesis"]
+    assert "plan_id" in properties
+    assert "artifact_id" in properties
+    assert "proposed_thesis" in properties
+    assert "reference_price_usd" in properties
+    assert "review_window_days" in properties
+    assert "rationale" in properties
+    assert "evidence_gaps" in properties
+    assert "user review" in tool.description
+    assert "without saving" in tool.description
+
+
+def test_tool_draft_watchlist_thesis_revision_does_not_save(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    portfolio = PortfolioStore(tmp_path / "portfolio")
+    portfolio.upsert_watchlist_item(
+        symbol="NVDA",
+        data_source="OPENBB",
+        thesis="Old thesis",
+        thesis_reference_price_usd=800.0,
+        tags=["ai"],
+    )
+    monkeypatch.setattr(main, "portfolio_store", portfolio)
+
+    payload = asyncio.run(
+        main.tool_draft_watchlist_thesis_revision(
+            {
+                "symbol": "nvda",
+                "proposed_thesis": "Only keep NVDA on the watchlist if portfolio concentration and valuation remain inside policy.",
+                "proposed_note": "Revisit if evidence freshness degrades.",
+                "reference_price_usd": 898.0,
+                "review_window_days": 45,
+                "rationale": "Price moved materially from the prior thesis reference.",
+                "evidence_gaps": ["tax lot impact not reviewed"],
+            }
+        )
+    )
+
+    assert payload["draft_kind"] == "watchlist_thesis_revision"
+    assert payload["requires_confirmation"] is True
+    assert payload["target"] == {"type": "watchlist", "symbol": "NVDA", "data_source": "OPENBB"}
+    assert payload["current"]["thesis"] == "Old thesis"
+    assert payload["proposed"]["thesis"].startswith("Only keep NVDA")
+    assert payload["proposed"]["reference_price_usd"] == pytest.approx(898.0)
+    assert payload["proposed"]["review_window_days"] == 45
+    assert payload["rationale"] == "Price moved materially from the prior thesis reference."
+    assert payload["evidence_gaps"] == ["tax lot impact not reviewed"]
+    assert portfolio.list_watchlist()[0]["thesis"] == "Old thesis"
+    assert portfolio.list_watchlist()[0]["thesis_reference_price_usd"] == pytest.approx(800.0)
+
+
+def test_tool_draft_dossier_thesis_revision_does_not_save(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = PlanWorkspace(tmp_path / "plans")
+    plan = workspace.create_plan(title="Dossier Plan")
+    artifact = workspace.write_artifact(
+        plan_id=plan["id"],
+        title="Research Dossier - MSFT vs VTI",
+        kind="research_dossier",
+        markdown="\n".join([
+            "# Research Dossier: MSFT vs VTI",
+            "",
+            "## Thesis",
+            "",
+            "Old dossier thesis.",
+            "",
+            "## Evidence Packets",
+            "",
+            "| Symbol | Packet | Provider | Freshness | Confidence | Coverage | Blocking gaps |",
+            "| --- | --- | --- | --- | --- | ---: | --- |",
+            "| MSFT | research-evidence:yfinance:MSFT:6mo:1d | yfinance | stale | medium | 82% | none |",
+        ]),
+    )
+    monkeypatch.setattr(main, "plan_workspace", workspace)
+
+    payload = asyncio.run(
+        main.tool_draft_dossier_thesis_revision(
+            {
+                "plan_id": plan["id"],
+                "artifact_id": artifact["id"],
+                "proposed_thesis": "Revised dossier thesis focused on fit, evidence freshness, and portfolio concentration.",
+                "reference_price_usd": 410.0,
+                "review_window_days": 60,
+                "rationale": "The prior thesis expired and provider evidence is stale.",
+                "evidence_gaps": ["provider freshness should be refreshed"],
+            }
+        )
+    )
+
+    assert payload["draft_kind"] == "dossier_thesis_revision"
+    assert payload["requires_confirmation"] is True
+    assert payload["target"] == {
+        "type": "dossier",
+        "plan_id": plan["id"],
+        "artifact_id": artifact["id"],
+        "title": "Research Dossier: MSFT vs VTI",
+    }
+    assert payload["current"]["thesis"] == "Old dossier thesis."
+    assert payload["proposed"]["thesis"].startswith("Revised dossier thesis")
+    assert payload["proposed"]["reference_price_usd"] == pytest.approx(410.0)
+    assert payload["proposed"]["review_window_days"] == 60
+    assert payload["evidence_gaps"] == ["provider freshness should be refreshed"]
+    assert "Old dossier thesis." in workspace.read_artifact(plan["id"], artifact["id"])["content"]
+
+
+def test_save_watchlist_thesis_revision_updates_review_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    portfolio = PortfolioStore(tmp_path / "portfolio")
+    portfolio.upsert_watchlist_item(
+        symbol="NVDA",
+        data_source="OPENBB",
+        thesis="Old thesis",
+        note="Old note",
+        thesis_reference_price_usd=800.0,
+    )
+    monkeypatch.setattr(main, "portfolio_store", portfolio)
+
+    payload = main.save_portfolio_watchlist_thesis_revision(
+        "nvda",
+        {
+            "data_source": "OPENBB",
+            "thesis": "Revised thesis",
+            "note": "Revised note",
+            "thesis_reference_price_usd": 898.0,
+            "review_window_days": 45,
+        },
+    )
+
+    item = payload["item"]
+    assert item["symbol"] == "NVDA"
+    assert item["thesis"] == "Revised thesis"
+    assert item["note"] == "Revised note"
+    assert item["thesis_reference_price_usd"] == pytest.approx(898.0)
+    assert item["thesis_reviewed_at"]
+    assert item["thesis_expires_at"]
+    assert payload["thesis_review"]["status"] == "current"
+    assert payload["thesis_review"]["target"] == "watchlist"
+    assert payload["thesis_review"]["symbol"] == "NVDA"
+
+
+def test_save_dossier_thesis_revision_updates_artifact_content_and_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = PlanWorkspace(tmp_path / "plans")
+    plan = workspace.create_plan(title="Dossier Plan")
+    artifact = workspace.write_artifact(
+        plan_id=plan["id"],
+        title="Research Dossier - MSFT vs VTI",
+        kind="research_dossier",
+        markdown="# Research Dossier: MSFT vs VTI\n\n## Thesis\n\nOld dossier thesis.\n\n## Evidence Packets\n\nKeep packet table.\n",
+    )
+    monkeypatch.setattr(main, "plan_workspace", workspace)
+
+    payload = main.save_plan_artifact_thesis_revision(
+        plan["id"],
+        artifact["id"],
+        {
+            "thesis": "Revised dossier thesis.",
+            "rationale": "Prior thesis expired.",
+            "reference_price_usd": 410.0,
+            "review_window_days": 45,
+        },
+    )
+
+    updated = workspace.read_artifact(plan["id"], artifact["id"])["content"]
+    assert "## Thesis\n\nRevised dossier thesis." in updated
+    assert "Old dossier thesis." not in updated
+    assert "## Evidence Packets\n\nKeep packet table." in updated
+    assert "## Thesis Revision Notes" in updated
+    assert "Prior thesis expired." in updated
+    assert "## Thesis Review Metadata" in updated
+    assert "- Reference price USD: `410.0`" in updated
+    assert payload["artifact"]["id"] == artifact["id"]
+    assert payload["thesis_review"]["status"] == "current"
+    assert payload["thesis_review"]["target"] == "dossier"
+    assert payload["thesis_review"]["artifact_id"] == artifact["id"]
 
 
 def test_tool_draft_investment_research_recommendation_creates_review_only_row(

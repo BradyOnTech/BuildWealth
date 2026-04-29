@@ -473,6 +473,8 @@ function recommendationFocusPrompt(recommendationId, intent) {
       `Review investment-fit recommendation ${id} with me.`,
       'Inspect the recommendation evidence, provider freshness, evidence packet references, portfolio-fit status, blocking gaps, and suggested next step.',
       'Use assess_portfolio_fit, research_compare, research_dossier, or simulate_trade only when needed. Pass proposed_account_id to assess_portfolio_fit when the recommendation is about a specific account location.',
+      'If this is a watchlist thesis review and the thesis should change, call draft_watchlist_thesis_revision so I can review and save the revised thesis.',
+      'If this is a saved dossier thesis review and the thesis should change, call draft_dossier_thesis_revision so I can review and save the revised dossier thesis.',
       'Keep the answer framed as fit review, research, comparison, simulation, or missing context. Do not give hidden buy/sell advice.',
     ].join(' ');
   }
@@ -542,6 +544,10 @@ function attachHandlers() {
     applyProfileDraft(t);
   });
 
+  delegate(page, 'click', '[data-thesis-draft]', (_, t) => {
+    saveThesisDraft(t);
+  });
+
   delegate(page, 'click', '[data-profile-onboarding-prompt]', () => {
     fillDraft(onboardingPrompt(ui.onboarding));
   });
@@ -576,6 +582,58 @@ async function applyProfileDraft(button) {
       metadata: {},
     });
     await loadOnboarding();
+  } catch (err) {
+    ui.error = err.message;
+  } finally {
+    rerenderBody();
+    scrollToBottom();
+  }
+}
+
+async function saveThesisDraft(button) {
+  const encoded = button.getAttribute('data-thesis-draft') || '';
+  let patch = null;
+  try {
+    patch = JSON.parse(decodeURIComponent(encoded));
+  } catch {
+    ui.error = 'Could not read the drafted thesis revision.';
+    rerenderBody();
+    return;
+  }
+  const targetType = String(patch?.target_type || 'watchlist').trim().toLowerCase();
+  const symbol = String(patch?.symbol || '').trim().toUpperCase();
+  const planId = String(patch?.plan_id || '').trim();
+  const artifactId = String(patch?.artifact_id || '').trim();
+  if (targetType === 'dossier' && (!planId || !artifactId)) {
+    ui.error = 'Could not identify the saved dossier for this thesis revision.';
+    rerenderBody();
+    return;
+  }
+  if (targetType !== 'dossier' && !symbol) {
+    ui.error = 'Could not identify the watchlist symbol for this thesis revision.';
+    rerenderBody();
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = 'Saving...';
+  ui.error = null;
+
+  try {
+    if (targetType === 'dossier') {
+      await api.saveDossierThesisRevision(planId, artifactId, patch);
+    } else {
+      await api.saveWatchlistThesisRevision(symbol, patch);
+    }
+    const message = targetType === 'dossier'
+      ? `Dossier thesis updated for ${artifactId}. Future thesis readiness checks will use the revised review window.`
+      : `Watchlist thesis updated for ${symbol}. Future thesis readiness checks will use the revised review window.`;
+    ui.messages.push({
+      role: 'assistant',
+      content: message,
+      created_at: new Date().toISOString(),
+      metadata: {},
+    });
   } catch (err) {
     ui.error = err.message;
   } finally {
