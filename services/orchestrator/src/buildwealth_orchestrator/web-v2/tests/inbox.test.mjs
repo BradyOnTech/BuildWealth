@@ -343,7 +343,7 @@ test('inbox research thesis expiration rows route to saved dossier review', () =
 
   assert.match(markup, /Investment-fit route/);
   assert.match(markup, /symbol MSFT · stale evidence/);
-  assert.match(markup, /href="#research\?dossier=artifact-dossier-msft&amp;plan=plan-1"/);
+  assert.match(markup, /href="#research\?thesisReview=artifact-dossier-msft&amp;plan=plan-1&amp;focus=rec-thesis-expired"/);
   assert.match(markup, /Review thesis\s*<span class="arrow">→<\/span>/);
 });
 

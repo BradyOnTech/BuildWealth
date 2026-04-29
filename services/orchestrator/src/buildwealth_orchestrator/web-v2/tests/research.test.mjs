@@ -10,6 +10,7 @@ import {
   renderCompareSurface,
   renderEvidencePacket,
   renderResearchEmpty,
+  renderThesisReviewSurface,
 } from '../views/research.js';
 
 function packet(symbol, overrides = {}) {
@@ -250,6 +251,77 @@ test('research view renders dossier detail with packet citation links', () => {
   assert.match(markup, /href="#research\?symbol=NVDA&amp;packet=research-evidence%3Ayfinance%3ANVDA%3A6mo%3A1d"/);
   assert.match(markup, /href="#research\?compare=NVDA%2CMSFT"/);
   assert.match(markup, /Compare AI infrastructure exposure\./);
+  assert.doesNotMatch(markup, /buy/i);
+});
+
+test('research view renders a dedicated thesis review surface', () => {
+  const markup = String(renderThesisReviewSurface({
+    artifact: {
+      id: 'artifact-dossier-msft',
+      title: 'Research Dossier - MSFT vs VTI',
+      created_at: '2026-03-17T12:00:00Z',
+      thesis_review: {
+        status: 'expired',
+        age_days: 42,
+        stale_after_days: 30,
+        reviewed_at: '2026-03-17T12:00:00Z',
+        expires_at: '2026-04-16T12:00:00Z',
+        reference_price_usd: 410,
+      },
+      content: [
+        '# Research Dossier: MSFT vs VTI',
+        '',
+        '## Thesis',
+        '',
+        'Compare durable software cash flow against broad market exposure.',
+        '',
+        '## Evidence Packets',
+        '',
+        '| Symbol | Packet | Provider | Freshness | Confidence | Coverage | Blocking gaps |',
+        '| --- | --- | --- | --- | --- | ---: | --- |',
+        '| MSFT | research-evidence:yfinance:MSFT:6mo:1d | yfinance | stale | medium | 82% | none |',
+        '| VTI | research-evidence:yfinance:VTI:6mo:1d | yfinance | fresh | high | 96% | none |',
+      ].join('\n'),
+    },
+    recommendation: {
+      id: 'rec-thesis-expired',
+      title: 'Refresh stale research thesis for MSFT / VTI',
+      detail: 'The saved research thesis is past the review window.',
+      plan_id: 'plan-1',
+      action_payload: {
+        evidence: {
+          symbols: ['MSFT', 'VTI'],
+          freshness_status: 'stale',
+          reference_price_usd: 410,
+          material_price_change_pct: 12.2,
+          packet_citations: ['research-evidence:yfinance:MSFT:6mo:1d'],
+        },
+      },
+    },
+    packet: packet('MSFT', {
+      metrics: { last_price: 460.02, period_change_pct: 10.8, volatility_pct: 19.1 },
+      freshness: { status: 'stale' },
+      quality: { confidence: 'medium', coverage_score: 82, blocking_gaps: [] },
+    }),
+    planId: 'plan-1',
+  }));
+
+  assert.match(markup, /Thesis review/);
+  assert.match(markup, /Refresh stale research thesis for MSFT \/ VTI/);
+  assert.match(markup, /Review due/);
+  assert.match(markup, /Reference price/);
+  assert.match(markup, /\$410\.00/);
+  assert.match(markup, /Current price/);
+  assert.match(markup, /\$460\.02/);
+  assert.match(markup, /Material move/);
+  assert.match(markup, /\+12\.2%/);
+  assert.match(markup, /Packet citations/);
+  assert.match(markup, /research-evidence:yfinance:MSFT:6mo:1d/);
+  assert.match(markup, /href="#research\?symbol=MSFT&amp;packet=research-evidence%3Ayfinance%3AMSFT%3A6mo%3A1d"/);
+  assert.match(markup, /Mark thesis reviewed/);
+  assert.match(markup, /Revise in Copilot/);
+  assert.match(markup, /href="#research\?dossier=artifact-dossier-msft&amp;plan=plan-1"/);
+  assert.match(markup, /href="#research\?compare=MSFT%2CVTI"/);
   assert.doesNotMatch(markup, /buy/i);
 });
 

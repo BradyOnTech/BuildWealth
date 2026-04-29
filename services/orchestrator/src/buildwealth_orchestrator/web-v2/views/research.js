@@ -1,7 +1,7 @@
 // RESEARCH — packet-native evidence inspection for investment-fit workflows.
 
 import { api } from '../lib/api.js';
-import { html, raw, $, setView } from '../lib/dom.js';
+import { html, raw, $, setView, delegate } from '../lib/dom.js';
 import { fmtPctSigned, fmtTimeShort, fmtUsd } from '../lib/format.js';
 import { renderMarkdown } from './copilot/markdown.js';
 
@@ -28,6 +28,18 @@ export async function init(params = {}) {
   const period = String(params.period || '6mo').trim() || '6mo';
   const interval = String(params.interval || '1d').trim() || '1d';
   const planId = String(params.plan || params.plan_id || '').trim();
+
+  if (params.thesisReview != null || params.thesis_review != null) {
+    await loadThesisReviewSurface(root, {
+      reviewTarget: String(params.thesisReview || params.thesis_review || '').trim(),
+      focusId: String(params.focus || '').trim(),
+      planId,
+      artifactParam: String(params.artifact || '').trim(),
+      period,
+      interval,
+    });
+    return;
+  }
 
   if (params.dossier) {
     const dossierId = String(params.dossier || '').trim();
@@ -318,6 +330,180 @@ export function renderDossierDetail(artifact = {}, { planId = '' } = {}) {
   `;
 }
 
+export function renderThesisReviewSurface({
+  artifact = null,
+  recommendation = null,
+  packet = null,
+  planId = '',
+  target = '',
+  focusId = '',
+  successMessage = '',
+} = {}) {
+  const content = String(artifact?.content || '');
+  const citations = uniqueCitations([
+    ...parsePacketCitations(content),
+    ...packetCitationsFromEvidence(recommendation?.action_payload?.evidence),
+  ]);
+  const symbols = thesisReviewSymbols({ artifact, recommendation, target, citations });
+  const evidence = recommendation?.action_payload?.evidence && typeof recommendation.action_payload.evidence === 'object'
+    ? recommendation.action_payload.evidence
+    : {};
+  const review = artifact?.thesis_review && typeof artifact.thesis_review === 'object'
+    ? artifact.thesis_review
+    : thesisReviewFromEvidence(evidence);
+  const status = String(review.status || evidence.thesis_review_status || '').trim().toLowerCase();
+  const referencePrice = firstFiniteNumber(
+    review.reference_price_usd,
+    review.thesis_reference_price_usd,
+    evidence.reference_price_usd,
+    evidence.thesis_reference_price_usd,
+  );
+  const currentPrice = firstFiniteNumber(
+    packet?.metrics?.last_price,
+    evidence.current_price_usd,
+    evidence.last_price,
+  );
+  const materialMovePct = firstFiniteNumber(
+    evidence.material_price_change_pct,
+    referencePrice && currentPrice ? ((currentPrice - referencePrice) / referencePrice) * 100 : null,
+  );
+  const hasReviewAction = Boolean(focusId || recommendation?.id);
+  const recommendationId = focusId || recommendation?.id || '';
+  const primarySymbol = symbols[0] || packet?.symbol || '';
+  const compareHref = symbols.length >= 2
+    ? `#research?compare=${encodeURIComponent(symbols.slice(0, 4).join(','))}`
+    : '';
+  const dossierHref = artifact && (artifact.id || artifact.artifact_id) && planId
+    ? `#research?dossier=${encodeURIComponent(artifact.id || artifact.artifact_id)}&plan=${encodeURIComponent(planId)}`
+    : '';
+  const researchHref = primarySymbol
+    ? `#research?symbol=${encodeURIComponent(primarySymbol)}${packet?.packet_id ? `&packet=${encodeURIComponent(packet.packet_id)}` : ''}`
+    : '#research';
+  const copilotHref = recommendationId
+    ? `#copilot?focus=${encodeURIComponent(recommendationId)}&intent=investment-fit`
+    : '#copilot?intent=investment-fit';
+  const title = recommendation?.title || artifact?.title || artifact?.file_name || `${symbols.join(' / ') || 'Saved'} thesis review`;
+  const detail = recommendation?.detail || evidence.summary || '';
+  const thesisExcerpt = thesisExcerptFromMarkdown(content);
+
+  return html`
+    <section class="hero-stack research-hero">
+      <span class="hero-eyebrow">Thesis review</span>
+      <h1 class="hero-number">${symbols.join(' / ') || primarySymbol || 'Research thesis'}</h1>
+      <p class="hero-marginalia">${title}</p>
+    </section>
+
+    <section class="research-packet" aria-label="Research thesis review">
+      <header class="section-head">
+        <span class="section-eyebrow">${planId || 'plan'} · ${status ? titleCase(status) : 'Review'} thesis</span>
+        <h2 class="section-title">${title}</h2>
+        ${detail ? html`<p class="marginalia">${detail}</p>` : ''}
+      </header>
+
+      ${raw(renderThesisReviewSummary(review, { detail: true }))}
+
+      <dl class="fit-meta research-meta">
+        <div>
+          <dt>Status</dt>
+          <dd>${status === 'expired' ? 'Review due' : titleCase(status || 'review')}</dd>
+        </div>
+        <div>
+          <dt>Reference price</dt>
+          <dd>${fmtUsd(referencePrice, { cents: true }) || 'Unknown'}</dd>
+        </div>
+        <div>
+          <dt>Current price</dt>
+          <dd>${fmtUsd(currentPrice, { cents: true }) || 'Unknown'}</dd>
+        </div>
+        <div>
+          <dt>Material move</dt>
+          <dd>${fmtPctSigned(materialMovePct) || 'Unknown'}</dd>
+        </div>
+      </dl>
+
+      ${thesisExcerpt ? html`
+        <article class="research-panel">
+          <h3>Saved thesis</h3>
+          <p>${thesisExcerpt}</p>
+        </article>
+      ` : ''}
+
+      ${raw(renderPacketCitationPanel(citations))}
+      ${packet ? raw(renderEvidencePacketCard(packet)) : ''}
+
+      <div class="entry-actions">
+        ${hasReviewAction ? html`
+          <button class="action-link" data-action="complete-thesis-review" data-id="${recommendationId}">
+            Mark thesis reviewed <span class="arrow">›</span>
+          </button>
+        ` : ''}
+        <a class="action-link muted" href="${copilotHref}">Revise in Copilot <span class="arrow">→</span></a>
+        ${dossierHref ? html`<a class="action-link muted" href="${dossierHref}">Open dossier <span class="arrow">→</span></a>` : ''}
+        ${compareHref ? html`<a class="action-link muted" href="${compareHref}">Compare cited symbols <span class="arrow">→</span></a>` : ''}
+        <a class="action-link muted" href="${researchHref}">Refresh evidence <span class="arrow">→</span></a>
+      </div>
+      <p class="marginalia thesis-review-status" aria-live="polite">${successMessage}</p>
+    </section>
+  `;
+}
+
+async function loadThesisReviewSurface(root, {
+  reviewTarget = '',
+  focusId = '',
+  planId = '',
+  artifactParam = '',
+  period = '6mo',
+  interval = '1d',
+  successMessage = '',
+} = {}) {
+  setView(root, renderResearchLoading('Thesis review'));
+  try {
+    const recommendation = focusId
+      ? await api.recommendation(focusId).catch(() => null)
+      : null;
+    const payload = recommendation?.action_payload && typeof recommendation.action_payload === 'object'
+      ? recommendation.action_payload
+      : {};
+    const evidence = payload.evidence && typeof payload.evidence === 'object' ? payload.evidence : {};
+    const suggestedAction = payload.suggested_action && typeof payload.suggested_action === 'object'
+      ? payload.suggested_action
+      : {};
+    const artifactId = String(
+      suggestedAction.artifact_id
+      || evidence.artifact_id
+      || artifactParam
+      || (planId && reviewTarget && !isLikelySymbol(reviewTarget) ? reviewTarget : '')
+    ).trim();
+    const resolvedPlanId = String(planId || suggestedAction.plan_id || evidence.plan_id || recommendation?.plan_id || '').trim();
+    const artifact = artifactId && resolvedPlanId
+      ? await api.planArtifact(resolvedPlanId, artifactId).catch(() => null)
+      : null;
+    const symbols = thesisReviewSymbols({ artifact, recommendation, target: reviewTarget });
+    const packet = symbols[0]
+      ? await api.researchEvidencePacket({ symbol: symbols[0], period, interval }).catch(() => null)
+      : null;
+    setView(root, renderThesisReviewSurface({
+      artifact,
+      recommendation,
+      packet,
+      planId: resolvedPlanId,
+      target: reviewTarget,
+      focusId,
+      successMessage,
+    }));
+    bindThesisReviewActions(root, {
+      recommendationId: focusId,
+      reviewTarget,
+      planId: resolvedPlanId,
+      artifactParam: artifactId,
+      period,
+      interval,
+    });
+  } catch (err) {
+    setView(root, renderResearchError('Thesis review', err));
+  }
+}
+
 function renderThesisReviewSummary(review = {}, { detail = false } = {}) {
   if (!review || typeof review !== 'object') return '';
   const status = String(review.status || '').trim().toLowerCase();
@@ -355,6 +541,17 @@ function renderPacketCitation(citation) {
   `;
 }
 
+function renderPacketCitationPanel(citations) {
+  const visible = Array.isArray(citations) ? citations.filter(Boolean).slice(0, 12) : [];
+  if (!visible.length) return '';
+  return html`
+    <div class="fit-list">
+      <h3>Packet citations</h3>
+      <ul>${visible.map(citation => html`<li>${raw(renderPacketCitation(citation))}</li>`)}</ul>
+    </div>
+  `;
+}
+
 function parsePacketCitations(markdown) {
   const lines = String(markdown || '').split(/\r?\n/);
   const citations = [];
@@ -374,6 +571,142 @@ function parsePacketCitations(markdown) {
     });
   }
   return citations.slice(0, 12);
+}
+
+function thesisReviewSymbols({ artifact = null, recommendation = null, target = '', citations = null } = {}) {
+  const evidence = recommendation?.action_payload?.evidence && typeof recommendation.action_payload.evidence === 'object'
+    ? recommendation.action_payload.evidence
+    : {};
+  const suggestedAction = recommendation?.action_payload?.suggested_action && typeof recommendation.action_payload.suggested_action === 'object'
+    ? recommendation.action_payload.suggested_action
+    : {};
+  const symbolValues = [
+    suggestedAction.symbol,
+    evidence.symbol,
+    ...(Array.isArray(suggestedAction.symbols) ? suggestedAction.symbols : []),
+    ...(Array.isArray(evidence.symbols) ? evidence.symbols : []),
+    ...(Array.isArray(artifact?.symbols) ? artifact.symbols : []),
+    ...((citations || parsePacketCitations(String(artifact?.content || ''))).map(citation => citation.symbol)),
+    isLikelySymbol(target) ? target : '',
+  ];
+  const seen = new Set();
+  return symbolValues
+    .map(value => String(value || '').trim().toUpperCase())
+    .filter(Boolean)
+    .filter(value => {
+      if (seen.has(value)) return false;
+      seen.add(value);
+      return true;
+    })
+    .slice(0, 8);
+}
+
+function thesisReviewFromEvidence(evidence = {}) {
+  if (!evidence || typeof evidence !== 'object') return {};
+  return {
+    status: evidence.thesis_review_status,
+    age_days: evidence.thesis_age_days || evidence.age_days,
+    stale_after_days: evidence.stale_after_days,
+    reviewed_at: evidence.thesis_reviewed_at || evidence.reviewed_at,
+    expires_at: evidence.thesis_expires_at || evidence.expires_at,
+    reference_price_usd: evidence.reference_price_usd || evidence.thesis_reference_price_usd,
+  };
+}
+
+function packetCitationsFromEvidence(evidence = {}) {
+  if (!evidence || typeof evidence !== 'object') return [];
+  const rawCitations = Array.isArray(evidence.packet_citations)
+    ? evidence.packet_citations
+    : [];
+  return rawCitations
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .map(packetId => ({
+      symbol: packetId.split(':')[2]?.toUpperCase() || String(evidence.symbol || '').toUpperCase(),
+      packet_id: packetId,
+      provider: packetId.split(':')[1] || evidence.provider || '',
+      freshness: evidence.freshness_status || '',
+      confidence: evidence.confidence || '',
+      coverage: evidence.coverage_score != null ? `${evidence.coverage_score}%` : '',
+      blocking_gaps: '',
+    }));
+}
+
+function uniqueCitations(citations) {
+  const seen = new Set();
+  return citations.filter(citation => {
+    const key = `${citation.symbol}:${citation.packet_id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 12);
+}
+
+function thesisExcerptFromMarkdown(markdown) {
+  const text = String(markdown || '');
+  const match = text.match(/## Thesis\s+([\s\S]*?)(?:\n## |\n# |$)/i);
+  if (!match) return '';
+  return match[1]
+    .replace(/\[[^\]]+\]\([^)]+\)/g, '')
+    .replace(/[#*_`>|-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 320);
+}
+
+function bindThesisReviewActions(root, {
+  recommendationId = '',
+  reviewTarget = '',
+  planId = '',
+  artifactParam = '',
+  period = '6mo',
+  interval = '1d',
+} = {}) {
+  if (!recommendationId) return;
+  delegate(root, 'click', '[data-action="complete-thesis-review"]', async (event, button) => {
+    event.preventDefault();
+    const id = button.getAttribute('data-id') || recommendationId;
+    if (!id) return;
+    const status = $('.thesis-review-status', root);
+    button.setAttribute('disabled', '');
+    button.textContent = 'Refreshing thesis review...';
+    if (status) status.textContent = '';
+    try {
+      await api.apply(id, {
+        rationale: 'Reviewed research thesis in v2 Research; thesis metadata refreshed.',
+        decision_status: 'reviewed',
+        create_decision_packet: false,
+        capture_scenario_diff: false,
+        pin_research_bridge: false,
+      });
+      await loadThesisReviewSurface(root, {
+        reviewTarget,
+        focusId: id,
+        planId,
+        artifactParam,
+        period,
+        interval,
+        successMessage: 'Review metadata refreshed. Today and Inbox can now use the updated thesis window.',
+      });
+    } catch (err) {
+      button.removeAttribute('disabled');
+      button.textContent = 'Mark thesis reviewed';
+      if (status) status.textContent = err?.message || 'Could not refresh thesis metadata.';
+    }
+  });
+}
+
+function firstFiniteNumber(...values) {
+  for (const value of values) {
+    if (value == null || value === '') continue;
+    const number = Number(value);
+    if (Number.isFinite(number)) return number;
+  }
+  return null;
+}
+
+function isLikelySymbol(value) {
+  return /^[A-Z][A-Z0-9.-]{0,9}$/i.test(String(value || '').trim());
 }
 
 export function renderEvidencePacketCard(packet) {

@@ -145,7 +145,7 @@ function actionSemantics(item) {
       return {
         primaryAction: 'route',
         primaryLabel: 'Review thesis',
-        href: investment.dossierHref || investment.researchHref,
+        href: investment.thesisReviewHref || investment.dossierHref || investment.researchHref,
         intent: 'investment-fit',
       };
     }
@@ -220,6 +220,7 @@ function renderInvestmentRoutePanel(item) {
       </div>
       <div class="investment-route-actions">
         <a class="action-link" href="${investment.fitHref}">Review fit <span class="arrow">→</span></a>
+        ${investment.thesisReviewHref ? html`<a class="action-link muted" href="${investment.thesisReviewHref}">Thesis <span class="arrow">→</span></a>` : ''}
         ${investment.dossierHref ? html`<a class="action-link muted" href="${investment.dossierHref}">Dossier <span class="arrow">→</span></a>` : ''}
         <a class="action-link muted" href="${investment.researchHref}">Research <span class="arrow">→</span></a>
         <a class="action-link muted" href="${investment.compareHref}">Compare <span class="arrow">→</span></a>
@@ -258,12 +259,18 @@ function investmentContext(item) {
   const dossierHref = artifactId && planId
     ? `#research?dossier=${encodeURIComponent(artifactId)}&plan=${encodeURIComponent(planId)}`
     : '';
+  const thesisTarget = artifactId || symbol;
+  const thesisPlanQuery = planId ? `&plan=${encodeURIComponent(planId)}` : '';
+  const thesisReviewHref = thesisTarget
+    ? `#research?thesisReview=${encodeURIComponent(thesisTarget)}${thesisPlanQuery}&focus=${encodedId}`
+    : '';
   const fitHref = symbol ? `#portfolio?fit=${encodedSymbol}&focus=${encodedId}` : `#portfolio?focus=${encodedId}`;
   return {
     symbol,
     evidence,
     suggestedAction,
     fitHref,
+    thesisReviewHref,
     dossierHref,
     researchHref: symbol ? `#research?symbol=${encodedSymbol}${packetQuery}` : '#research',
     compareHref: symbol ? `#research?compare=${encodedSymbol}${packetQuery}` : '#research',
