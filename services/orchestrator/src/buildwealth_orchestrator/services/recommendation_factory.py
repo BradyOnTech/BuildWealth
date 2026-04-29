@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import re
 from typing import Any, Protocol
 
 from buildwealth_orchestrator.services.value_coercion import safe_float, utc_now_iso
@@ -24,10 +25,15 @@ STALE_ASSUMPTIONS_SOURCE = "generator:stale_assumptions"
 WATCHLIST_RESEARCH_FACTORY_ID = "watchlist_research_recommendation_factory"
 WATCHLIST_RESEARCH_FACTORY_VERSION = "v1"
 WATCHLIST_RESEARCH_SOURCE = "generator:watchlist_research"
+RESEARCH_THESIS_EXPIRATION_FACTORY_ID = "research_thesis_expiration_recommendation_factory"
+RESEARCH_THESIS_EXPIRATION_FACTORY_VERSION = "v1"
+RESEARCH_THESIS_EXPIRATION_SOURCE = "generator:research_thesis_expiration"
 CASH_RESERVE_MIN_MONTHS = 3.0
 CASH_RESERVE_MAX_MONTHS = 6.0
 STALE_PLAN_REVIEW_DAYS = 90
 STALE_DECISION_REVIEW_DAYS = 60
+WATCHLIST_THESIS_REVIEW_DAYS = 30
+WATCHLIST_THESIS_MATERIAL_PRICE_MOVE_PCT = 15.0
 
 
 class RecommendationCreator(Protocol):
@@ -1791,16 +1797,67 @@ def _watchlist_research_dedupe_key(symbol: str, signal_key: str) -> str:
     return f"watchlist_research:{_clean_key(symbol)}:{_clean_key(signal_key)}"
 
 
+def _optional_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _watchlist_thesis_review_metadata(
+    item: dict[str, Any],
+    *,
+    now: datetime,
+    stale_after_days: int = WATCHLIST_THESIS_REVIEW_DAYS,
+) -> dict[str, Any]:
+    return research_thesis_review_metadata(
+        {
+            "created_at": item.get("created_at"),
+            "updated_at": item.get("updated_at"),
+            "reviewed_at": item.get("thesis_reviewed_at") or item.get("reviewed_at"),
+            "expires_at": item.get("thesis_expires_at") or item.get("expires_at"),
+        },
+        stale_after_days=stale_after_days,
+        now=now,
+    )
+
+
+def _watchlist_material_price_change(item: dict[str, Any]) -> dict[str, Any] | None:
+    reference_price = _optional_float(
+        item.get("thesis_reference_price_usd")
+        or item.get("reference_price_usd")
+        or item.get("price_at_review_usd")
+    )
+    current_price = _optional_float(
+        item.get("quote_price")
+        or item.get("last_price")
+        or item.get("current_price_usd")
+    )
+    if reference_price is None or current_price is None or reference_price <= 0:
+        return None
+    change_pct = ((current_price - reference_price) / reference_price) * 100.0
+    if abs(change_pct) < WATCHLIST_THESIS_MATERIAL_PRICE_MOVE_PCT:
+        return None
+    return {
+        "reference_price_usd": round(reference_price, 4),
+        "current_price_usd": round(current_price, 4),
+        "material_price_change_pct": round(change_pct, 2),
+        "threshold_pct": WATCHLIST_THESIS_MATERIAL_PRICE_MOVE_PCT,
+    }
+
+
 def _watchlist_research_candidate(
     *,
     item: dict[str, Any],
     fit_payload: dict[str, Any] | None,
     generated_at: str,
     plan_id: str | None,
+    now: datetime | None = None,
 ) -> dict[str, Any] | None:
     symbol = str(item.get("symbol") or "").strip().upper()
     if not symbol:
         return None
+    resolved_now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
 
     freshness_status = str(item.get("research_freshness_status") or "").strip().lower()
     blocking_gaps = item.get("research_blocking_gaps") if isinstance(item.get("research_blocking_gaps"), list) else []
@@ -1985,6 +2042,46 @@ def _watchlist_research_candidate(
             "symbol": symbol,
             "fit_status": fit_status,
         }
+    elif str(item.get("thesis") or item.get("note") or "").strip():
+        material_move = _watchlist_material_price_change(item)
+        thesis_review = _watchlist_thesis_review_metadata(item, now=resolved_now)
+        if material_move is not None:
+            signal_key = "watchlist_material_price_change"
+            title = f"Review {symbol} thesis after a material price move"
+            change_pct = material_move["material_price_change_pct"]
+            detail = (
+                f"{symbol} moved {change_pct:+.2f}% from the thesis reference price. "
+                "Review whether the saved watchlist thesis still fits current evidence."
+            )
+            priority = "medium"
+            actionability = "review_only"
+            suggested_action = {
+                "kind": "review_research_thesis",
+                "symbol": symbol,
+                "reason": "material_price_change",
+            }
+            blocking_context = ["research.material_price_change"]
+        elif thesis_review.get("status") == "expired":
+            signal_key = "watchlist_thesis_expired"
+            title = f"Refresh stale watchlist thesis for {symbol}"
+            age_days = thesis_review.get("age_days")
+            stale_after_days = thesis_review.get("stale_after_days")
+            detail = (
+                f"{symbol}'s watchlist thesis is {age_days} days old and past the "
+                f"{stale_after_days}-day review window."
+                if isinstance(age_days, int)
+                else f"{symbol}'s watchlist thesis is past its review window."
+            )
+            priority = "medium"
+            actionability = "review_only"
+            suggested_action = {
+                "kind": "review_research_thesis",
+                "symbol": symbol,
+                "reason": "watchlist_thesis_expired",
+            }
+            blocking_context = ["research.watchlist_thesis_expired"]
+        else:
+            return None
     else:
         return None
 
@@ -2010,6 +2107,21 @@ def _watchlist_research_candidate(
         "account_location": account_location,
         "provider_coverage": item.get("provider_coverage") if isinstance(item.get("provider_coverage"), dict) else {},
     }
+    if signal_key == "watchlist_thesis_expired":
+        thesis_review = _watchlist_thesis_review_metadata(item, now=resolved_now)
+        evidence.update(
+            {
+                "thesis_review_status": thesis_review.get("status"),
+                "thesis_age_days": thesis_review.get("age_days"),
+                "thesis_reviewed_at": thesis_review.get("reviewed_at"),
+                "thesis_expires_at": thesis_review.get("expires_at"),
+                "stale_after_days": thesis_review.get("stale_after_days"),
+            }
+        )
+    elif signal_key == "watchlist_material_price_change":
+        material_move = _watchlist_material_price_change(item)
+        if material_move is not None:
+            evidence.update(material_move)
     expected_outcome = {
         "expected_delta_context_quality": "research_or_fit_reviewed",
         "expected_next_safe_action": suggested_action.get("kind"),
@@ -2083,6 +2195,245 @@ def generate_watchlist_research_recommendations(
             fit_payload=fit_assessments_by_symbol.get(symbol),
             generated_at=generated_at,
             plan_id=plan_id,
+            now=now,
+        )
+        if candidate is None:
+            continue
+        generator = candidate.get("action_payload", {}).get("generator", {})
+        dedupe_key = str(generator.get("dedupe_key") or "").strip()
+        signal_key = str(generator.get("signal_key") or "").strip()
+        if dedupe_key in active_keys:
+            skipped.append({"dedupe_key": dedupe_key, "reason": "active_duplicate", "title": candidate["title"], "signal_key": signal_key})
+            continue
+        if len(candidates) >= bounded_limit:
+            skipped.append({"dedupe_key": dedupe_key, "reason": "limit_exceeded", "title": candidate["title"], "signal_key": signal_key})
+            continue
+
+        candidates.append(candidate)
+        active_keys.add(dedupe_key)
+        if not dry_run and creator is not None:
+            created.append(
+                creator.create(
+                    title=candidate["title"],
+                    detail=candidate["detail"],
+                    priority=candidate["priority"],
+                    recommendation_type=candidate["recommendation_type"],
+                    source=candidate["source"],
+                    plan_id=candidate["plan_id"],
+                    action_payload=candidate["action_payload"],
+                    status="proposed",
+                )
+            )
+
+    return RecommendationFactoryResult(
+        generated_count=len(created) if not dry_run else len(candidates),
+        skipped_count=len(skipped),
+        candidates=candidates,
+        created=created,
+        skipped=skipped,
+        dry_run=dry_run,
+    )
+
+
+def _research_thesis_dedupe_key(artifact_id: str) -> str:
+    return f"research_thesis_expiration:{_clean_key(artifact_id)}"
+
+
+def _research_symbols_from_title(title: Any) -> list[str]:
+    text = str(title or "")
+    if "-" in text:
+        text = text.split("-", 1)[1]
+    symbols: list[str] = []
+    for part in re.split(r"\bvs\b|[,/·]", text, flags=re.IGNORECASE):
+        symbol = part.strip().upper()
+        if not symbol or not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,9}", symbol):
+            continue
+        if symbol not in symbols:
+            symbols.append(symbol)
+    return symbols[:8]
+
+
+def _research_packet_citations(markdown: Any) -> list[str]:
+    citations: list[str] = []
+    for match in re.finditer(r"research-evidence:[^\s|)]+", str(markdown or "")):
+        citation = match.group(0).strip()
+        if citation not in citations:
+            citations.append(citation)
+        if len(citations) >= 12:
+            break
+    return citations
+
+
+def research_thesis_review_metadata(
+    artifact: dict[str, Any],
+    *,
+    stale_after_days: int = 30,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    resolved_now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    bounded_days = max(1, min(int(stale_after_days), 3650))
+    embedded = artifact.get("thesis_review") if isinstance(artifact.get("thesis_review"), dict) else {}
+    reviewed_at = (
+        artifact.get("reviewed_at")
+        or artifact.get("updated_at")
+        or embedded.get("reviewed_at")
+        or artifact.get("created_at")
+    )
+    reviewed_dt = _as_utc_datetime(reviewed_at)
+    age = _age_days(reviewed_dt, now=resolved_now) if reviewed_dt else None
+    explicit_expires_dt = _as_utc_datetime(artifact.get("expires_at") or embedded.get("expires_at"))
+    expires_dt = explicit_expires_dt
+    if expires_dt is None and reviewed_dt is not None:
+        expires_dt = reviewed_dt + timedelta(days=bounded_days)
+    expires_at = expires_dt.isoformat() if expires_dt is not None else None
+    status = "unknown"
+    if expires_dt is not None:
+        status = "expired" if expires_dt <= resolved_now else "current"
+    elif age is not None:
+        status = "expired" if age >= bounded_days else "current"
+    return {
+        "status": status,
+        "age_days": age,
+        "stale_after_days": bounded_days,
+        "reviewed_at": reviewed_dt.isoformat() if reviewed_dt is not None else None,
+        "expires_at": expires_at,
+    }
+
+
+def _research_thesis_expiration_candidate(
+    *,
+    artifact: dict[str, Any],
+    generated_at: str,
+    plan_id: str | None,
+    stale_after_days: int,
+    now: datetime,
+) -> dict[str, Any] | None:
+    artifact_id = str(artifact.get("artifact_id") or artifact.get("id") or "").strip()
+    if not artifact_id:
+        return None
+    review = research_thesis_review_metadata(
+        artifact,
+        stale_after_days=stale_after_days,
+        now=now,
+    )
+    if review.get("status") != "expired":
+        return None
+    symbols = artifact.get("symbols") if isinstance(artifact.get("symbols"), list) else []
+    symbols = [str(symbol or "").strip().upper() for symbol in symbols if str(symbol or "").strip()][:8]
+    if not symbols:
+        symbols = _research_symbols_from_title(artifact.get("title") or artifact.get("file_name"))
+    label = " / ".join(symbols[:3]) if symbols else str(artifact.get("title") or "saved research").strip()
+    title = f"Refresh stale research thesis for {label}"
+    age_days = review.get("age_days")
+    stale_days = int(review.get("stale_after_days") or stale_after_days)
+    detail = (
+        f"The saved research thesis for {label} is {age_days} days old and past the "
+        f"{stale_days}-day review window."
+        if isinstance(age_days, int)
+        else f"The saved research thesis for {label} is past its review window."
+    )
+    dedupe_key = _research_thesis_dedupe_key(artifact_id)
+    packet_citations = _research_packet_citations(
+        artifact.get("content_preview") or artifact.get("content")
+    )
+    resolved_plan_id = plan_id or str(artifact.get("plan_id") or "").strip() or None
+    evidence = {
+        "summary": detail,
+        "data_keys": ["plan.artifacts", "research.dossier", "research.evidence_packet"],
+        "artifact_id": artifact_id,
+        "file_name": artifact.get("file_name"),
+        "title": artifact.get("title"),
+        "plan_id": resolved_plan_id,
+        "symbols": symbols,
+        "reviewed_at": review.get("reviewed_at"),
+        "expires_at": review.get("expires_at"),
+        "age_days": age_days,
+        "stale_after_days": stale_days,
+        "thesis_review_status": review.get("status"),
+        "packet_citations": packet_citations,
+    }
+    suggested_action = {
+        "kind": "review_research_thesis",
+        "artifact_id": artifact_id,
+        "plan_id": resolved_plan_id,
+        "symbols": symbols,
+    }
+    expected_outcome = {
+        "expected_delta_context_quality": "research_thesis_reviewed",
+        "expected_next_safe_action": "refresh_research_evidence",
+    }
+    action_payload = {
+        "generator": {
+            "id": RESEARCH_THESIS_EXPIRATION_FACTORY_ID,
+            "version": RESEARCH_THESIS_EXPIRATION_FACTORY_VERSION,
+            "generated_at": generated_at,
+            "signal_key": "thesis_expired",
+            "signal_type": "research_thesis_expiration",
+            "dedupe_key": dedupe_key,
+            "severity": "medium",
+        },
+        "evidence": evidence,
+        "suggested_action": suggested_action,
+        "expected_outcome": expected_outcome,
+    }
+    action_payload["quality"] = _quality_metadata(
+        source=RESEARCH_THESIS_EXPIRATION_SOURCE,
+        priority="medium",
+        evidence=evidence,
+        suggested_action=suggested_action,
+        expected_outcome=expected_outcome,
+        actionability="review_only",
+        confidence_level="medium",
+        confidence_reasons=[
+            "Generated from saved research dossier age and packet citation context.",
+            "Action is review-only so old research is refreshed before fit guidance relies on it.",
+        ],
+        reversibility="high",
+        blocking_context=["research.thesis_expired"],
+    )
+    action_payload["quality"]["freshness_status"] = "stale"
+    action_payload["quality"]["freshness_reasons"] = [
+        f"Saved research thesis expired at {review.get('expires_at') or 'an unknown time'}."
+    ]
+    return {
+        "title": title,
+        "detail": detail,
+        "priority": "medium",
+        "recommendation_type": "workflow_action",
+        "source": RESEARCH_THESIS_EXPIRATION_SOURCE,
+        "plan_id": resolved_plan_id,
+        "action_payload": action_payload,
+    }
+
+
+def generate_research_thesis_expiration_recommendations(
+    *,
+    dossier_artifacts: list[dict[str, Any]],
+    existing_recommendations: list[dict[str, Any]],
+    creator: RecommendationCreator | None = None,
+    dry_run: bool = True,
+    plan_id: str | None = None,
+    limit: int = 10,
+    stale_after_days: int = 30,
+    now: datetime | None = None,
+) -> RecommendationFactoryResult:
+    resolved_now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    generated_at = _now_iso(resolved_now)
+    active_keys = _active_dedupe_keys(existing_recommendations)
+    bounded_limit = max(1, min(int(limit), 50))
+    candidates: list[dict[str, Any]] = []
+    created: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+
+    for artifact in dossier_artifacts:
+        if not isinstance(artifact, dict):
+            continue
+        candidate = _research_thesis_expiration_candidate(
+            artifact=artifact,
+            generated_at=generated_at,
+            plan_id=plan_id,
+            stale_after_days=stale_after_days,
+            now=resolved_now,
         )
         if candidate is None:
             continue

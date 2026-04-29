@@ -299,6 +299,54 @@ test('inbox copilot investment drafts render fit routing', () => {
   assert.match(markup, /href="#copilot\?focus=rec-copilot-invest&amp;intent=investment-fit"/);
 });
 
+test('inbox research thesis expiration rows route to saved dossier review', () => {
+  const markup = String(renderEntries([
+    {
+      id: 'rec-thesis-expired',
+      status: 'proposed',
+      priority: 'medium',
+      source: 'generator:research_thesis_expiration',
+      recommendation_type: 'workflow_action',
+      title: 'Refresh stale research thesis for MSFT / VTI',
+      detail: 'The saved research thesis is past the review window.',
+      plan_id: 'plan-1',
+      action_payload: {
+        generator: {
+          signal_type: 'research_thesis_expiration',
+        },
+        evidence: {
+          artifact_id: 'artifact-dossier-msft',
+          plan_id: 'plan-1',
+          symbols: ['MSFT', 'VTI'],
+          freshness_status: 'stale',
+          packet_citations: ['research-evidence:yfinance:MSFT:6mo:1d'],
+        },
+        suggested_action: {
+          kind: 'review_research_thesis',
+          artifact_id: 'artifact-dossier-msft',
+          plan_id: 'plan-1',
+          symbols: ['MSFT', 'VTI'],
+        },
+        quality: {
+          actionability: 'review_only',
+          confidence_level: 'medium',
+          freshness_status: 'stale',
+          blocking_context: ['research.thesis_expired'],
+        },
+      },
+    },
+  ], {
+    planLookup: new Map([['plan-1', 'Primary Plan']]),
+    expanded: null,
+    emptyMessage: '',
+  }));
+
+  assert.match(markup, /Investment-fit route/);
+  assert.match(markup, /symbol MSFT · stale evidence/);
+  assert.match(markup, /href="#research\?dossier=artifact-dossier-msft&amp;plan=plan-1"/);
+  assert.match(markup, /Review thesis\s*<span class="arrow">→<\/span>/);
+});
+
 test('inbox copilot investment outcome form captures process calibration', () => {
   const markup = String(renderEntries([
     {

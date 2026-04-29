@@ -499,11 +499,15 @@ class TestWatchlist:
         created = store.upsert_watchlist_item(
             symbol="nvda",
             note="AI compute beneficiary",
+            thesis="AI compute thesis",
+            thesis_reference_price_usd=900,
             target_price_usd=1200,
             tags=["ai", "semis", "ai"],
         )
         assert created["symbol"] == "NVDA"
         assert created["data_source"] == "OPENBB"
+        assert created["thesis"] == "AI compute thesis"
+        assert created["thesis_reference_price_usd"] == pytest.approx(900.0, abs=1e-6)
         assert created["target_price_usd"] == pytest.approx(1200.0, abs=1e-6)
         assert created["tags"] == ["ai", "semis"]
 

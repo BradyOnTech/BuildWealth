@@ -11,6 +11,7 @@ from buildwealth_orchestrator.services.recommendation_factory import (
     generate_plan_tracking_recommendations,
     generate_portfolio_risk_recommendations,
     generate_profile_completeness_recommendations,
+    generate_research_thesis_expiration_recommendations,
     generate_stale_assumption_recommendations,
     generate_watchlist_research_recommendations,
 )
@@ -253,6 +254,186 @@ def test_watchlist_research_factory_generates_refresh_candidate_for_partial_evid
     assert payload["evidence"]["freshness_status"] == "partial"
     assert payload["quality"]["actionability"] == "context_gathering"
     _assert_quality_metadata(candidate, expected_source="generator:watchlist_research")
+
+
+def test_watchlist_research_factory_generates_stale_thesis_review() -> None:
+    result = generate_watchlist_research_recommendations(
+        watchlist_rank_payload={
+            "items": [
+                {
+                    "symbol": "MSFT",
+                    "thesis": "Durable cloud and AI platform thesis.",
+                    "updated_at": "2026-03-01T12:00:00+00:00",
+                    "research_evidence_packet_id": "research-evidence:yfinance:MSFT:6mo:1d",
+                    "research_provider": "yfinance",
+                    "research_freshness_status": "fresh",
+                    "research_confidence": "high",
+                    "research_coverage_score": 100.0,
+                    "research_blocking_gaps": [],
+                    "quote_price": 410.0,
+                }
+            ]
+        },
+        fit_assessments_by_symbol={
+            "MSFT": {
+                "fit_status": "fits",
+                "fit_score": 80.0,
+                "blocking_gaps": [],
+            }
+        },
+        existing_recommendations=[],
+        dry_run=True,
+        now=datetime(2026, 4, 25, 12, 0, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 1
+    candidate = result.candidates[0]
+    assert candidate["title"] == "Refresh stale watchlist thesis for MSFT"
+    payload = candidate["action_payload"]
+    assert payload["generator"]["dedupe_key"] == "watchlist_research:msft:watchlist_thesis_expired"
+    assert payload["generator"]["signal_key"] == "watchlist_thesis_expired"
+    assert payload["suggested_action"]["kind"] == "review_research_thesis"
+    assert payload["evidence"]["thesis_age_days"] == 55
+    assert payload["evidence"]["thesis_review_status"] == "expired"
+    assert payload["quality"]["actionability"] == "review_only"
+    assert payload["quality"]["blocking_context"] == ["research.watchlist_thesis_expired"]
+
+
+def test_watchlist_research_factory_generates_material_price_change_thesis_review() -> None:
+    result = generate_watchlist_research_recommendations(
+        watchlist_rank_payload={
+            "items": [
+                {
+                    "symbol": "NVDA",
+                    "thesis": "AI compute thesis.",
+                    "updated_at": "2026-04-20T12:00:00+00:00",
+                    "thesis_reference_price_usd": 800.0,
+                    "quote_price": 980.0,
+                    "research_evidence_packet_id": "research-evidence:yfinance:NVDA:6mo:1d",
+                    "research_provider": "yfinance",
+                    "research_freshness_status": "fresh",
+                    "research_confidence": "high",
+                    "research_coverage_score": 100.0,
+                    "research_blocking_gaps": [],
+                }
+            ]
+        },
+        fit_assessments_by_symbol={
+            "NVDA": {
+                "fit_status": "fits",
+                "fit_score": 78.0,
+                "blocking_gaps": [],
+            }
+        },
+        existing_recommendations=[],
+        dry_run=True,
+        now=datetime(2026, 4, 25, 12, 0, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 1
+    candidate = result.candidates[0]
+    assert candidate["title"] == "Review NVDA thesis after a material price move"
+    payload = candidate["action_payload"]
+    assert payload["generator"]["dedupe_key"] == "watchlist_research:nvda:watchlist_material_price_change"
+    assert payload["suggested_action"]["kind"] == "review_research_thesis"
+    assert payload["evidence"]["reference_price_usd"] == 800.0
+    assert payload["evidence"]["current_price_usd"] == 980.0
+    assert payload["evidence"]["material_price_change_pct"] == 22.5
+    assert payload["quality"]["blocking_context"] == ["research.material_price_change"]
+
+
+def test_research_thesis_expiration_factory_generates_review_only_candidate_for_old_dossier() -> None:
+    result = generate_research_thesis_expiration_recommendations(
+        dossier_artifacts=[
+            {
+                "artifact_id": "artifact-dossier-msft",
+                "file_name": "2026-research-dossier-msft-vti.md",
+                "title": "Research Dossier - MSFT vs VTI",
+                "created_at": "2026-03-01T12:00:00+00:00",
+                "plan_id": "plan-1",
+                "symbols": ["MSFT", "VTI"],
+                "content_preview": (
+                    "| Symbol | Packet | Provider | Freshness | Confidence | Coverage | Blocking gaps |\n"
+                    "| MSFT | research-evidence:yfinance:MSFT:6mo:1d | yfinance | fresh | high | 100% | none |"
+                ),
+            }
+        ],
+        existing_recommendations=[],
+        dry_run=True,
+        plan_id="plan-1",
+        stale_after_days=30,
+        now=datetime(2026, 4, 25, 12, 0, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 1
+    candidate = result.candidates[0]
+    assert candidate["source"] == "generator:research_thesis_expiration"
+    assert candidate["priority"] == "medium"
+    assert "MSFT" in candidate["title"]
+    assert "refresh" in candidate["title"].lower()
+    payload = candidate["action_payload"]
+    assert payload["generator"]["dedupe_key"] == "research_thesis_expiration:artifact-dossier-msft"
+    assert payload["generator"]["signal_type"] == "research_thesis_expiration"
+    assert payload["evidence"]["artifact_id"] == "artifact-dossier-msft"
+    assert payload["evidence"]["symbols"] == ["MSFT", "VTI"]
+    assert payload["evidence"]["age_days"] == 55
+    assert payload["evidence"]["expires_at"] == "2026-03-31T12:00:00+00:00"
+    assert payload["evidence"]["packet_citations"] == ["research-evidence:yfinance:MSFT:6mo:1d"]
+    assert payload["suggested_action"] == {
+        "kind": "review_research_thesis",
+        "artifact_id": "artifact-dossier-msft",
+        "plan_id": "plan-1",
+        "symbols": ["MSFT", "VTI"],
+    }
+    assert payload["quality"]["actionability"] == "review_only"
+    assert payload["quality"]["blocking_context"] == ["research.thesis_expired"]
+    assert payload["quality"]["decision_grade"] is False
+    _assert_quality_metadata(candidate, expected_source="generator:research_thesis_expiration")
+
+
+def test_research_thesis_expiration_factory_skips_active_duplicates(tmp_path: Path) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    dossier_artifacts = [
+        {
+            "artifact_id": "artifact-dossier-nvda",
+            "file_name": "2026-research-dossier-nvda-msft.md",
+            "title": "Research Dossier - NVDA vs MSFT",
+            "created_at": "2026-03-01T12:00:00+00:00",
+            "plan_id": "plan-1",
+            "symbols": ["NVDA", "MSFT"],
+        }
+    ]
+
+    first = generate_research_thesis_expiration_recommendations(
+        dossier_artifacts=dossier_artifacts,
+        existing_recommendations=inbox.list(limit=None, include_archived=True, sort="none"),
+        creator=inbox,
+        dry_run=False,
+        plan_id="plan-1",
+        stale_after_days=30,
+        now=datetime(2026, 4, 25, 12, 0, tzinfo=timezone.utc),
+    )
+    second = generate_research_thesis_expiration_recommendations(
+        dossier_artifacts=dossier_artifacts,
+        existing_recommendations=inbox.list(limit=None, include_archived=True, sort="none"),
+        creator=inbox,
+        dry_run=False,
+        plan_id="plan-1",
+        stale_after_days=30,
+        now=datetime(2026, 4, 25, 12, 5, tzinfo=timezone.utc),
+    )
+
+    assert first.generated_count == 1
+    assert len(first.created) == 1
+    assert second.generated_count == 0
+    assert second.skipped == [
+        {
+            "dedupe_key": "research_thesis_expiration:artifact-dossier-nvda",
+            "reason": "active_duplicate",
+            "title": "Refresh stale research thesis for NVDA / MSFT",
+            "signal_key": "thesis_expired",
+        }
+    ]
 
 
 def test_watchlist_research_factory_generates_fit_conflict_review_without_trade_language() -> None:
@@ -1007,6 +1188,33 @@ class _FakePlanWorkspace:
         }
 
 
+class _FakeResearchDossierPlanWorkspace(_FakePlanWorkspace):
+    def get_plan(self, plan_id: str) -> dict[str, object]:
+        payload = super().get_plan(plan_id)
+        payload["artifacts"] = [
+            {
+                "id": "artifact-dossier-msft",
+                "file_name": "20260301T120000Z-research-dossier-msft-vti.md",
+                "title": "Research Dossier - MSFT vs VTI",
+                "created_at": "2026-03-01T12:00:00+00:00",
+            }
+        ]
+        return payload
+
+    def read_artifact(self, plan_id: str, artifact_id: str) -> dict[str, object]:
+        return {
+            "id": artifact_id,
+            "file_name": "20260301T120000Z-research-dossier-msft-vti.md",
+            "title": "Research Dossier - MSFT vs VTI",
+            "created_at": "2026-03-01T12:00:00+00:00",
+            "content": (
+                "# Research Dossier: MSFT vs VTI\n\n"
+                "| Symbol | Packet | Provider | Freshness | Confidence | Coverage | Blocking gaps |\n"
+                "| MSFT | research-evidence:yfinance:MSFT:6mo:1d | yfinance | fresh | high | 100% | none |\n"
+            ),
+        }
+
+
 class _FakeSnapshotStore:
     def recent(self, limit: int | None = None) -> list[PortfolioSnapshot]:
         now = datetime(2026, 4, 25, 12, 0, tzinfo=timezone.utc)
@@ -1095,6 +1303,33 @@ def test_generate_stale_assumptions_route_supports_dry_run_and_apply(
     assert len(inbox.list(limit=None, status="proposed")) == applied.generated_count
 
 
+def test_generate_research_thesis_expiration_route_reads_saved_dossiers(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    monkeypatch.setattr(main, "plan_workspace", _FakeResearchDossierPlanWorkspace())
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    dry_run = main.generate_research_thesis_expiration_recommendation_candidates(
+        main.ResearchThesisExpirationRecommendationGenerateRequest(
+            dry_run=True,
+            limit=5,
+            stale_after_days=30,
+        ),
+    )
+
+    assert dry_run.dry_run is True
+    assert dry_run.generated_count == 1
+    candidate = dry_run.candidates[0]
+    assert candidate["source"] == "generator:research_thesis_expiration"
+    assert candidate["plan_id"] == "plan-1"
+    assert candidate["action_payload"]["evidence"]["packet_citations"] == [
+        "research-evidence:yfinance:MSFT:6mo:1d"
+    ]
+    assert inbox.list(limit=None, status="proposed") == []
+
+
 def test_run_all_recommendation_factories_groups_results_and_applies(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1111,7 +1346,7 @@ def test_run_all_recommendation_factories_groups_results_and_applies(
 
     assert dry_run.dry_run is True
     assert dry_run.errors == []
-    assert dry_run.factory_count == 6
+    assert dry_run.factory_count == 7
     assert set(dry_run.factories) == {
         "portfolio_risk",
         "plan_tracking",
@@ -1119,6 +1354,7 @@ def test_run_all_recommendation_factories_groups_results_and_applies(
         "profile_completeness",
         "stale_assumptions",
         "watchlist_research",
+        "research_thesis_expiration",
     }
     assert dry_run.factories["portfolio_risk"].generated_count == 2
     assert dry_run.factories["plan_tracking"].generated_count == 2
@@ -1126,6 +1362,7 @@ def test_run_all_recommendation_factories_groups_results_and_applies(
     assert dry_run.factories["profile_completeness"].generated_count == 1
     assert dry_run.factories["stale_assumptions"].generated_count >= 1
     assert dry_run.factories["watchlist_research"].generated_count == 0
+    assert dry_run.factories["research_thesis_expiration"].generated_count == 0
     assert dry_run.generated_count >= 7
     assert inbox.list(limit=None, status="proposed") == []
 
@@ -1134,7 +1371,7 @@ def test_run_all_recommendation_factories_groups_results_and_applies(
     )
 
     assert applied.dry_run is False
-    assert applied.factory_count == 6
+    assert applied.factory_count == 7
     assert applied.errors == []
     assert applied.generated_count == dry_run.generated_count
     assert len(inbox.list(limit=None, status="proposed")) == applied.generated_count
@@ -1174,6 +1411,10 @@ def test_run_all_recommendation_factories_keeps_portfolio_results_when_plan_miss
         },
         {
             "factory": "stale_assumptions",
+            "reason": "No active plan is configured and no plan_id was provided.",
+        },
+        {
+            "factory": "research_thesis_expiration",
             "reason": "No active plan is configured and no plan_id was provided.",
         },
     ]

@@ -236,9 +236,9 @@ Why it matters:
 
 Likely first slice:
 
-- add thesis reviewed_at/expires_at metadata to saved research artifacts where available
-- generate a review-only recommendation when a thesis expires
-- show expiration/freshness in dossier lookup and Today research readiness
+- add thesis reviewed_at/expires_at metadata to saved research artifacts where available (started: saved dossier lookup/detail now derives and displays a thesis review status from the artifact timestamp)
+- generate a review-only recommendation when a thesis expires (started: `generator:research_thesis_expiration` creates deduped review-only Inbox rows for expired saved dossiers; `generator:watchlist_research` also creates review-only rows for stale watchlist theses)
+- show expiration/freshness in dossier lookup and Today research readiness (started: v2 dossier lookup/detail and Today research readiness now surface saved-dossier thesis expiry, stale watchlist theses, and material watchlist price moves)
 
 ## Priority Recommendation
 
@@ -252,6 +252,6 @@ Then pull in the fresh ideas in this order:
 
 1. Personal Investment Policy, because it improves portfolio-fit immediately.
 2. What Changed Since Last Review, because it strengthens Today as the command center.
-3. Research Thesis Expiration, because it extends the investment-fit evidence loop.
+3. Research Thesis Expiration, because it extends the investment-fit evidence loop (started with saved dossier expiry metadata, recommendation generation, v2 Research visibility, Inbox dossier routing, Today readiness warnings, stale watchlist-thesis triggers, and material price-move triggers).
 4. Decision Pre-Mortem, because it improves outcome learning and calibration.
 5. Confidence Heat Map, because it can unify readiness/freshness once more domain signals exist.

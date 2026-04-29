@@ -11,6 +11,7 @@ const SOURCE_LABELS = {
   profile_completeness: 'profile completeness',
   stale_assumptions: 'stale assumptions',
   watchlist_research: 'watchlist research',
+  research_thesis_expiration: 'research thesis refresh',
 };
 
 export function renderSweep(sweep) {

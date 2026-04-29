@@ -274,6 +274,7 @@ function renderDossierLookupItem(item = {}) {
       <span>${fmtTimeShort(item.created_at) || item.file_name || 'Saved dossier'}</span>
       <h3>${item.title || artifactId || 'Research dossier'}</h3>
       ${symbols.length ? html`<p>${symbols.join(' · ')}</p>` : ''}
+      ${raw(renderThesisReviewSummary(item.thesis_review))}
       <p>${citations.length} packet citation${citations.length === 1 ? '' : 's'}</p>
       <a class="action-link muted" href="${href}">Open dossier <span class="arrow">→</span></a>
     </article>
@@ -296,6 +297,7 @@ export function renderDossierDetail(artifact = {}, { planId = '' } = {}) {
         <span class="section-eyebrow">${planId || 'plan'} · ${fmtTimeShort(artifact.created_at) || 'saved artifact'}</span>
         <h2 class="section-title">${artifact.title || 'Research dossier'}</h2>
       </header>
+      ${raw(renderThesisReviewSummary(artifact.thesis_review, { detail: true }))}
       ${citations.length ? html`
         <div class="fit-list">
           <h3>Packet citations</h3>
@@ -313,6 +315,27 @@ export function renderDossierDetail(artifact = {}, { planId = '' } = {}) {
         ${raw(renderMarkdown(content))}
       </article>
     </section>
+  `;
+}
+
+function renderThesisReviewSummary(review = {}, { detail = false } = {}) {
+  if (!review || typeof review !== 'object') return '';
+  const status = String(review.status || '').trim().toLowerCase();
+  if (!status || status === 'unknown') return '';
+  const age = Number(review.age_days);
+  const ageLabel = Number.isFinite(age) ? `${Math.max(0, Math.round(age))} days old` : '';
+  const expires = fmtTimeShort(review.expires_at);
+  const reviewed = fmtTimeShort(review.reviewed_at);
+  const label = status === 'expired' ? 'Review due' : 'Thesis current';
+  const parts = [
+    ageLabel,
+    expires ? `Expires ${expires}` : '',
+    detail && reviewed ? `Reviewed ${reviewed}` : '',
+  ].filter(Boolean);
+  return html`
+    <p class="marginalia thesis-review ${status}">
+      <span class="glyph">›</span> ${label}${parts.length ? ` · ${parts.join(' · ')}` : ''}
+    </p>
   `;
 }
 

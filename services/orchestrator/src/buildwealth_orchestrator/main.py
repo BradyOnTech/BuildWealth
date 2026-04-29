@@ -110,6 +110,7 @@ from buildwealth_orchestrator.schemas import (
     RecommendationFactoryResponse,
     RecommendationFactoryRunAllRequest,
     RecommendationFactoryRunAllResponse,
+    ResearchThesisExpirationRecommendationGenerateRequest,
     StaleAssumptionRecommendationGenerateRequest,
     WatchlistResearchRecommendationGenerateRequest,
     RecommendationPreviewRequest,
@@ -314,8 +315,10 @@ from buildwealth_orchestrator.services.recommendation_factory import (
     generate_plan_tracking_recommendations,
     generate_portfolio_risk_recommendations,
     generate_profile_completeness_recommendations,
+    generate_research_thesis_expiration_recommendations,
     generate_stale_assumption_recommendations,
     generate_watchlist_research_recommendations,
+    research_thesis_review_metadata,
 )
 from buildwealth_orchestrator.services.user_settings import UserSettingsStore
 from buildwealth_orchestrator.settings import get_settings
@@ -4054,9 +4057,104 @@ def _format_research_cache_age(cached_at_values: list[datetime]) -> str:
     return f"{age_hours}h"
 
 
+TODAY_THESIS_REVIEW_DAYS = 30
+TODAY_MATERIAL_PRICE_MOVE_PCT = 15.0
+
+
+def _research_readiness_symbol_label(symbols: list[str]) -> str:
+    label = ", ".join(symbols[:3])
+    if len(symbols) > 3:
+        label = f"{label} +{len(symbols) - 3} more"
+    return label
+
+
+def _watchlist_thesis_today_signal(
+    item: dict[str, Any],
+    *,
+    current_price: float | None,
+) -> dict[str, Any] | None:
+    symbol = re.sub(r"[^A-Z0-9._-]+", "", str(item.get("symbol") or "").strip().upper())
+    if not symbol:
+        return None
+    if not str(item.get("thesis") or item.get("note") or "").strip():
+        return None
+
+    reference_price = _coerce_optional_float(
+        item.get("thesis_reference_price_usd")
+        or item.get("reference_price_usd")
+        or item.get("price_at_review_usd")
+    )
+    if reference_price is not None and current_price is not None and reference_price > 0:
+        change_pct = ((current_price - reference_price) / reference_price) * 100.0
+        if abs(change_pct) >= TODAY_MATERIAL_PRICE_MOVE_PCT:
+            return {
+                "symbol": symbol,
+                "reason": "material_price_change",
+                "change_pct": round(change_pct, 2),
+            }
+
+    review = research_thesis_review_metadata(
+        {
+            "created_at": item.get("created_at"),
+            "updated_at": item.get("updated_at"),
+            "reviewed_at": item.get("thesis_reviewed_at") or item.get("reviewed_at"),
+            "expires_at": item.get("thesis_expires_at") or item.get("expires_at"),
+        },
+        stale_after_days=TODAY_THESIS_REVIEW_DAYS,
+    )
+    if review.get("status") == "expired":
+        return {
+            "symbol": symbol,
+            "reason": "watchlist_thesis_expired",
+            "age_days": review.get("age_days"),
+        }
+    return None
+
+
+def _saved_dossier_thesis_today_signals(symbols: list[str]) -> list[dict[str, Any]]:
+    symbol_set = {symbol for symbol in symbols if symbol}
+    try:
+        lookup = build_research_dossier_lookup_payload(limit=10, include_content=False)
+    except Exception:
+        return []
+    items = lookup.get("items") if isinstance(lookup.get("items"), list) else []
+    signals: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        review = item.get("thesis_review") if isinstance(item.get("thesis_review"), dict) else {}
+        if review.get("status") != "expired":
+            continue
+        item_symbols = [
+            str(symbol or "").strip().upper()
+            for symbol in item.get("symbols", [])
+            if str(symbol or "").strip()
+        ] if isinstance(item.get("symbols"), list) else []
+        if symbol_set and item_symbols and not symbol_set.intersection(item_symbols):
+            continue
+        label_symbol = next((symbol for symbol in item_symbols if symbol in symbol_set), None)
+        label_symbol = label_symbol or (item_symbols[0] if item_symbols else str(item.get("title") or "Dossier"))
+        artifact_id = str(item.get("artifact_id") or "").strip()
+        key = artifact_id or label_symbol
+        if key in seen:
+            continue
+        seen.add(key)
+        signals.append(
+            {
+                "symbol": label_symbol,
+                "reason": "saved_dossier_thesis_expired",
+                "artifact_id": artifact_id,
+                "age_days": review.get("age_days"),
+            }
+        )
+    return signals
+
+
 def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) -> TodayCommandCard:
     symbols: list[str] = []
     seen: set[str] = set()
+    watchlist_items: list[dict[str, Any]] = []
 
     def add_symbol(raw_symbol: Any) -> None:
         symbol = re.sub(r"[^A-Z0-9._-]+", "", str(raw_symbol or "").strip().upper())
@@ -4067,7 +4165,11 @@ def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) ->
 
     add_symbol(dashboard.top_holding_symbol)
     try:
-        for item in portfolio_store.list_watchlist():
+        watchlist_items = [
+            item for item in portfolio_store.list_watchlist()
+            if isinstance(item, dict)
+        ]
+        for item in watchlist_items:
             if not isinstance(item, dict):
                 continue
             add_symbol(item.get("symbol"))
@@ -4093,6 +4195,7 @@ def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) ->
     degraded_symbols: list[str] = []
     provider_failures: list[str] = []
     cached_at_values: list[datetime] = []
+    packet_prices_by_symbol: dict[str, float] = {}
     for symbol in symbols:
         try:
             packet, cached_at, _cache_hit = _cached_research_evidence_packet(
@@ -4105,6 +4208,10 @@ def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) ->
             provider_failures.append(symbol)
             continue
 
+        metrics = packet.metrics if isinstance(packet.metrics, dict) else {}
+        price = _coerce_optional_float(metrics.get("last_price"))
+        if price is not None:
+            packet_prices_by_symbol[symbol] = price
         freshness = packet.freshness if isinstance(packet.freshness, dict) else {}
         quality = packet.quality if isinstance(packet.quality, dict) else {}
         status = str(freshness.get("status") or "").strip().lower()
@@ -4124,6 +4231,17 @@ def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) ->
     ready_count = len(ready_symbols)
     total_count = len(symbols)
     cache_age = _format_research_cache_age(cached_at_values)
+    thesis_signals = _saved_dossier_thesis_today_signals(symbols)
+    watchlist_thesis_signals: list[dict[str, Any]] = []
+    for item in watchlist_items:
+        symbol = re.sub(r"[^A-Z0-9._-]+", "", str(item.get("symbol") or "").strip().upper())
+        signal = _watchlist_thesis_today_signal(
+            item,
+            current_price=packet_prices_by_symbol.get(symbol),
+        )
+        if signal is not None:
+            watchlist_thesis_signals.append(signal)
+    thesis_signals.extend(watchlist_thesis_signals)
     if degraded_symbols:
         degraded_label = ", ".join(degraded_symbols[:3])
         extra = "" if len(degraded_symbols) <= 3 else f" +{len(degraded_symbols) - 3} more"
@@ -4174,6 +4292,40 @@ def _build_research_readiness_command_card(dashboard: TodayDashboardResponse) ->
             metric_value=f"{ready_count}/{total_count}",
             action_label="Refresh research",
             href="#today?refresh=research",
+        )
+
+    if thesis_signals:
+        material_symbols = [
+            str(signal.get("symbol") or "").strip().upper()
+            for signal in thesis_signals
+            if signal.get("reason") == "material_price_change" and str(signal.get("symbol") or "").strip()
+        ]
+        due_symbols = [
+            str(signal.get("symbol") or "").strip().upper()
+            for signal in thesis_signals
+            if signal.get("reason") != "material_price_change" and str(signal.get("symbol") or "").strip()
+        ]
+        if material_symbols:
+            noun = "thesis has" if len(material_symbols) == 1 else "theses have"
+            detail = (
+                f"{len(material_symbols)} watchlist {noun} a material price move: "
+                f"{_research_readiness_symbol_label(material_symbols)}."
+            )
+        else:
+            noun = "review is" if len(due_symbols) == 1 else "reviews are"
+            detail = (
+                f"{len(due_symbols)} saved research thesis {noun} due: "
+                f"{_research_readiness_symbol_label(due_symbols)}."
+            )
+        return TodayCommandCard(
+            id="research-readiness",
+            title="Research readiness",
+            status="warning",
+            detail=detail,
+            metric_label="Ready",
+            metric_value=f"{ready_count}/{total_count}",
+            action_label="Review theses",
+            href="#research?dossiers=1",
         )
 
     return TodayCommandCard(
@@ -4354,6 +4506,7 @@ def _list_research_dossier_artifacts(
             "symbols": _extract_symbols_from_research_dossier_title(title),
             "content_preview": "",
         }
+        row["thesis_review"] = research_thesis_review_metadata(row)
         if include_content:
             with suppress(Exception):
                 artifact_payload = plan_workspace.read_artifact(plan_id=plan_id, artifact_id=artifact_id)
@@ -4363,6 +4516,7 @@ def _list_research_dossier_artifacts(
                     row["symbols"] = _extract_symbols_from_research_dossier_title(
                         artifact_payload.get("title")
                     )
+                row["thesis_review"] = research_thesis_review_metadata({**row, **artifact_payload})
         rows.append(row)
         if len(rows) >= max_rows:
             break
@@ -7523,6 +7677,7 @@ def build_portfolio_watchlist_payload(
                 "data_source": str(item.get("data_source") or "OPENBB").strip().upper() or "OPENBB",
                 "note": str(item.get("note") or ""),
                 "thesis": str(item.get("thesis") or ""),
+                "thesis_reference_price_usd": _coerce_optional_float(item.get("thesis_reference_price_usd")),
                 "target_price_usd": target_price,
                 "tags": item.get("tags") if isinstance(item.get("tags"), list) else [],
                 "created_at": item.get("created_at"),
@@ -12560,6 +12715,13 @@ def upsert_portfolio_watchlist_item(request: dict[str, Any]) -> dict[str, Any]:
             target_price_value = float(target_price_raw)
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail="target_price_usd must be a number") from exc
+    thesis_reference_raw = request.get("thesis_reference_price_usd")
+    thesis_reference_value: float | None = None
+    if thesis_reference_raw not in (None, "", "null"):
+        try:
+            thesis_reference_value = float(thesis_reference_raw)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="thesis_reference_price_usd must be a number") from exc
 
     try:
         item = portfolio_store.upsert_watchlist_item(
@@ -12567,6 +12729,7 @@ def upsert_portfolio_watchlist_item(request: dict[str, Any]) -> dict[str, Any]:
             data_source=str(request.get("data_source") or "OPENBB"),
             note=request.get("note"),
             thesis=request.get("thesis"),
+            thesis_reference_price_usd=thesis_reference_value,
             target_price_usd=target_price_value,
             tags=request.get("tags"),
         )
@@ -13260,6 +13423,40 @@ def generate_watchlist_research_recommendation_candidates(
     return RecommendationFactoryResponse(**result.to_dict())
 
 
+@app.post("/api/recommendations/generate/research-thesis-expiration", response_model=RecommendationFactoryResponse)
+def generate_research_thesis_expiration_recommendation_candidates(
+    request: ResearchThesisExpirationRecommendationGenerateRequest,
+) -> RecommendationFactoryResponse:
+    try:
+        plan_id = resolve_plan_id_or_active(request.plan_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    lookup = build_research_dossier_lookup_payload(
+        plan_id=plan_id,
+        limit=request.limit,
+        include_content=True,
+    )
+    existing_recommendations = recommendation_inbox.list(
+        limit=None,
+        status=None,
+        plan_id=None,
+        include_archived=True,
+        sort="none",
+    )
+    result = generate_research_thesis_expiration_recommendations(
+        dossier_artifacts=lookup.get("items") if isinstance(lookup.get("items"), list) else [],
+        existing_recommendations=existing_recommendations,
+        creator=recommendation_inbox if not request.dry_run else None,
+        dry_run=request.dry_run,
+        plan_id=plan_id,
+        limit=request.limit,
+        stale_after_days=request.stale_after_days,
+    )
+    if not request.dry_run and result.created:
+        _queue_autogit_event("research_thesis_expiration_recommendations_generated")
+    return RecommendationFactoryResponse(**result.to_dict())
+
+
 @app.post("/api/recommendations/generate/run-all", response_model=RecommendationFactoryRunAllResponse)
 def run_all_recommendation_factories(
     request: RecommendationFactoryRunAllRequest,
@@ -13344,6 +13541,19 @@ def run_all_recommendation_factories(
         errors.append({"factory": "watchlist_research", "reason": str(exc.detail)})
     except Exception as exc:
         errors.append({"factory": "watchlist_research", "reason": str(exc)})
+
+    try:
+        factories["research_thesis_expiration"] = generate_research_thesis_expiration_recommendation_candidates(
+            ResearchThesisExpirationRecommendationGenerateRequest(
+                dry_run=request.dry_run,
+                plan_id=request.plan_id,
+                limit=request.limit,
+            )
+        )
+    except HTTPException as exc:
+        errors.append({"factory": "research_thesis_expiration", "reason": str(exc.detail)})
+    except Exception as exc:
+        errors.append({"factory": "research_thesis_expiration", "reason": str(exc)})
 
     generated_count = sum(factory.generated_count for factory in factories.values())
     skipped_count = sum(factory.skipped_count for factory in factories.values())
@@ -14162,6 +14372,8 @@ def read_plan_artifact(plan_id: str, artifact_id: str) -> PlanArtifactResponse:
         artifact = plan_workspace.read_artifact(plan_id=plan_id, artifact_id=artifact_id)
     except PlanNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if str(artifact.get("title") or "").lower().startswith("research dossier") or "-research-dossier-" in str(artifact.get("file_name") or ""):
+        artifact["thesis_review"] = research_thesis_review_metadata(artifact)
     return PlanArtifactResponse(**artifact)
 
 

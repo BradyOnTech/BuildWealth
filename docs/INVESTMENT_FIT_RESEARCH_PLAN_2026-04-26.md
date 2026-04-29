@@ -462,6 +462,8 @@ Current progress:
 - Watchlist ranking now consumes evidence packets first, preserves packet references/freshness/provider coverage on each row, and keeps legacy market metrics available for existing scoring/display paths.
 - Research dossiers now cite evidence packets in the response and dossier markdown, so saved plan artifacts preserve packet id, provider, freshness, confidence, coverage, and blocking-gap context.
 - Research compare rows now cite evidence packet id, provider, freshness, confidence, coverage score, and blocking gaps while preserving existing compare ranking fields.
+- Saved research dossiers now expose thesis review metadata in v2 Research, and expired dossiers can generate review-only thesis refresh recommendations.
+- Today research readiness now includes thesis-expiry caveats for saved dossiers and watchlist theses, plus material watchlist price-move warnings when a thesis reference price is available.
 
 Done when:
 
@@ -506,6 +508,12 @@ Work:
 - include evidence packet references
 - route generated rows through the existing factory review center
 - keep actions phrased as review, compare, simulate, refresh, or update-profile
+
+Current progress:
+
+- `generator:research_thesis_expiration` creates deduped review-only rows for saved dossier artifacts whose thesis review window has expired.
+- v2 Inbox routes thesis-expiration rows back to the saved dossier review surface instead of treating them as generic workflow rows.
+- `generator:watchlist_research` can create review-only rows for stale watchlist theses and material price moves from a stored thesis reference price.
 
 Done when:
 

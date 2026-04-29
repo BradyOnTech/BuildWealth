@@ -852,6 +852,7 @@ class ResearchDossierLookupItem(BaseModel):
     plan_id: str
     symbols: list[str] = Field(default_factory=list)
     content_preview: str = ""
+    thesis_review: dict[str, Any] = Field(default_factory=dict)
 
 
 class ResearchDossierLookupResponse(BaseModel):
@@ -1376,6 +1377,13 @@ class WatchlistResearchRecommendationGenerateRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=50)
     period: str = "6mo"
     interval: str = "1d"
+
+
+class ResearchThesisExpirationRecommendationGenerateRequest(BaseModel):
+    dry_run: bool = True
+    plan_id: str | None = None
+    limit: int = Field(default=10, ge=1, le=50)
+    stale_after_days: int = Field(default=30, ge=1, le=3650)
 
 
 class RecommendationFactoryRunAllRequest(BaseModel):
@@ -2008,6 +2016,7 @@ class PlanArtifactResponse(BaseModel):
     title: str
     created_at: datetime
     content: str
+    thesis_review: dict[str, Any] = Field(default_factory=dict)
 
 
 class PlanRecommendationClosureSummaryRequest(BaseModel):

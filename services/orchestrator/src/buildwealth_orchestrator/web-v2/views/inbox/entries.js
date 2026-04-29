@@ -141,6 +141,14 @@ function actionSemantics(item) {
         intent: 'investment-fit',
       };
     }
+    if (suggestedKind === 'review_research_thesis') {
+      return {
+        primaryAction: 'route',
+        primaryLabel: 'Review thesis',
+        href: investment.dossierHref || investment.researchHref,
+        intent: 'investment-fit',
+      };
+    }
     if (suggestedKind === 'compare_alternatives') {
       return {
         primaryAction: 'route',
@@ -212,6 +220,7 @@ function renderInvestmentRoutePanel(item) {
       </div>
       <div class="investment-route-actions">
         <a class="action-link" href="${investment.fitHref}">Review fit <span class="arrow">→</span></a>
+        ${investment.dossierHref ? html`<a class="action-link muted" href="${investment.dossierHref}">Dossier <span class="arrow">→</span></a>` : ''}
         <a class="action-link muted" href="${investment.researchHref}">Research <span class="arrow">→</span></a>
         <a class="action-link muted" href="${investment.compareHref}">Compare <span class="arrow">→</span></a>
         <a class="action-link muted" href="${investment.copilotHref}">Copilot <span class="arrow">→</span></a>
@@ -226,7 +235,9 @@ function investmentContext(item) {
   const generator = payload.generator && typeof payload.generator === 'object' ? payload.generator : {};
   const source = String(item?.source || '').toLowerCase();
   const isResearchRecommendation = source === 'generator:watchlist_research'
-    || generator.signal_type === 'watchlist_research';
+    || source === 'generator:research_thesis_expiration'
+    || generator.signal_type === 'watchlist_research'
+    || generator.signal_type === 'research_thesis_expiration';
   const isCopilotInvestmentDraft = source === 'copilot:investment_fit'
     || generator.signal_type === 'investment_fit_discussion';
   if (!isResearchRecommendation && !isCopilotInvestmentDraft) return null;
@@ -234,17 +245,26 @@ function investmentContext(item) {
   const suggestedAction = payload.suggested_action && typeof payload.suggested_action === 'object'
     ? payload.suggested_action
     : {};
-  const symbol = String(suggestedAction.symbol || evidence.symbol || '').trim().toUpperCase();
+  const symbolList = Array.isArray(suggestedAction.symbols)
+    ? suggestedAction.symbols
+    : (Array.isArray(evidence.symbols) ? evidence.symbols : []);
+  const symbol = String(suggestedAction.symbol || evidence.symbol || symbolList[0] || '').trim().toUpperCase();
   const encodedSymbol = encodeURIComponent(symbol);
   const encodedId = encodeURIComponent(item.id || '');
   const packetId = String(evidence.research_evidence_packet_id || evidence.packet_id || '').trim();
   const packetQuery = packetId ? `&packet=${encodeURIComponent(packetId)}` : '';
+  const artifactId = String(suggestedAction.artifact_id || evidence.artifact_id || '').trim();
+  const planId = String(suggestedAction.plan_id || evidence.plan_id || item.plan_id || '').trim();
+  const dossierHref = artifactId && planId
+    ? `#research?dossier=${encodeURIComponent(artifactId)}&plan=${encodeURIComponent(planId)}`
+    : '';
   const fitHref = symbol ? `#portfolio?fit=${encodedSymbol}&focus=${encodedId}` : `#portfolio?focus=${encodedId}`;
   return {
     symbol,
     evidence,
     suggestedAction,
     fitHref,
+    dossierHref,
     researchHref: symbol ? `#research?symbol=${encodedSymbol}${packetQuery}` : '#research',
     compareHref: symbol ? `#research?compare=${encodedSymbol}${packetQuery}` : '#research',
     copilotHref: `#copilot?focus=${encodedId}&intent=investment-fit`,

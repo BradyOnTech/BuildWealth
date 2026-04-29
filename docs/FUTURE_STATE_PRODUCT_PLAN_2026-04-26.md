@@ -552,9 +552,10 @@ Long-term:
 ## Current Immediate Next Work
 
 1. Continue Personal Investment Policy beyond the current slices: stronger Copilot questions for weak guardrails, and fit/recommendation rules beyond single-symbol exposure, research confidence, tax sensitivity, sector caps, symbol/sector restrictions, and preferred account-location policy.
-2. Continue v2 research migration with Today/Plan links into packet, compare, and dossier surfaces.
-3. Deepen portfolio-fit account context with account-type-specific contribution guidance and richer tax-policy preferences.
-4. Continue expanding browser coverage around Plan v2 migration as those surfaces move over.
+2. Continue Research Thesis Expiration beyond the current saved-dossier/watchlist slice: add richer material-change sources beyond price, and let reviewed theses write updated review/reference metadata.
+3. Continue v2 research migration with Today/Plan links into packet, compare, and dossier surfaces.
+4. Deepen portfolio-fit account context with account-type-specific contribution guidance and richer tax-policy preferences.
+5. Continue expanding browser coverage around Plan v2 migration as those surfaces move over.
 
 ## Documentation Governance
 

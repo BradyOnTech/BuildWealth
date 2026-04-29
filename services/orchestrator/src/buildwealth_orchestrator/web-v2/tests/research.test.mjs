@@ -189,6 +189,13 @@ test('research view renders saved dossier lookup rows', () => {
         created_at: '2026-04-28T12:00:00Z',
         plan_id: 'plan-1',
         symbols: ['NVDA', 'MSFT'],
+        thesis_review: {
+          status: 'expired',
+          age_days: 42,
+          stale_after_days: 30,
+          reviewed_at: '2026-03-17T12:00:00Z',
+          expires_at: '2026-04-16T12:00:00Z',
+        },
         content_preview: '## Evidence Packets\n\n| Symbol | Packet | Provider | Freshness | Confidence | Coverage | Blocking gaps |\n| --- | --- | --- | --- | --- | ---: | --- |\n| NVDA | research-evidence:yfinance:NVDA:6mo:1d | yfinance | fresh | high | 100% | none |',
       },
     ],
@@ -198,6 +205,8 @@ test('research view renders saved dossier lookup rows', () => {
   assert.match(markup, /Research dossiers/);
   assert.match(markup, /Research Dossier - NVDA vs MSFT/);
   assert.match(markup, /NVDA · MSFT/);
+  assert.match(markup, /Review due/);
+  assert.match(markup, /42 days old/);
   assert.match(markup, /1 packet citation/);
   assert.match(markup, /href="#research\?dossier=artifact-dossier&amp;plan=plan-1"/);
   assert.doesNotMatch(markup, /classic/i);
@@ -209,6 +218,13 @@ test('research view renders dossier detail with packet citation links', () => {
     file_name: '2026-research-dossier-nvda-msft.md',
     title: 'Research Dossier - NVDA vs MSFT',
     created_at: '2026-04-28T12:00:00Z',
+    thesis_review: {
+      status: 'current',
+      age_days: 4,
+      stale_after_days: 30,
+      reviewed_at: '2026-04-24T12:00:00Z',
+      expires_at: '2026-05-24T12:00:00Z',
+    },
     content: [
       '# Research Dossier: NVDA vs MSFT',
       '',
@@ -227,6 +243,8 @@ test('research view renders dossier detail with packet citation links', () => {
 
   assert.match(markup, /Dossier detail/);
   assert.match(markup, /Research Dossier - NVDA vs MSFT/);
+  assert.match(markup, /Thesis current/);
+  assert.match(markup, /Expires/);
   assert.match(markup, /Packet citations/);
   assert.match(markup, /research-evidence:yfinance:NVDA:6mo:1d/);
   assert.match(markup, /href="#research\?symbol=NVDA&amp;packet=research-evidence%3Ayfinance%3ANVDA%3A6mo%3A1d"/);

@@ -877,6 +877,13 @@ class PortfolioStore:
             target_price = _safe_float(target_price_raw, None)
             if target_price is not None and target_price <= 0:
                 target_price = None
+            thesis_reference_price_raw = raw_item.get(
+                "thesis_reference_price_usd",
+                raw_item.get("reference_price_usd", raw_item.get("price_at_review_usd")),
+            )
+            thesis_reference_price = _safe_float(thesis_reference_price_raw, None)
+            if thesis_reference_price is not None and thesis_reference_price <= 0:
+                thesis_reference_price = None
 
             created_at = str(raw_item.get("created_at") or raw_item.get("createdAt") or now)
             updated_at = str(raw_item.get("updated_at") or raw_item.get("updatedAt") or created_at)
@@ -886,6 +893,11 @@ class PortfolioStore:
                 "data_source": data_source,
                 "note": str(raw_item.get("note") or ""),
                 "thesis": str(raw_item.get("thesis") or ""),
+                "thesis_reference_price_usd": (
+                    round(float(thesis_reference_price), 4)
+                    if thesis_reference_price is not None
+                    else None
+                ),
                 "target_price_usd": round(float(target_price), 4) if target_price is not None else None,
                 "tags": self._normalize_watchlist_tags(raw_item.get("tags")),
                 "created_at": created_at,
@@ -2897,6 +2909,7 @@ class PortfolioStore:
         data_source: str = "OPENBB",
         note: str | None = None,
         thesis: str | None = None,
+        thesis_reference_price_usd: float | None = None,
         target_price_usd: float | None = None,
         tags: list[str] | str | None = None,
     ) -> dict[str, Any]:
@@ -2911,6 +2924,11 @@ class PortfolioStore:
             normalized_target = float(target_price_usd)
             if normalized_target <= 0:
                 raise ValueError("target_price_usd must be greater than 0")
+        normalized_thesis_reference: float | None = None
+        if thesis_reference_price_usd is not None:
+            normalized_thesis_reference = float(thesis_reference_price_usd)
+            if normalized_thesis_reference <= 0:
+                raise ValueError("thesis_reference_price_usd must be greater than 0")
 
         payload = self._read_watchlist_payload()
         items = payload.get("items") if isinstance(payload.get("items"), list) else []
@@ -2933,6 +2951,11 @@ class PortfolioStore:
                 "data_source": normalized_data_source,
                 "note": str(note or ""),
                 "thesis": str(thesis or ""),
+                "thesis_reference_price_usd": (
+                    round(float(normalized_thesis_reference), 4)
+                    if normalized_thesis_reference is not None
+                    else None
+                ),
                 "target_price_usd": round(float(normalized_target), 4) if normalized_target is not None else None,
                 "tags": self._normalize_watchlist_tags(tags),
                 "created_at": now,
@@ -2946,6 +2969,11 @@ class PortfolioStore:
                 "data_source": normalized_data_source,
                 "note": str(note if note is not None else existing.get("note") or ""),
                 "thesis": str(thesis if thesis is not None else existing.get("thesis") or ""),
+                "thesis_reference_price_usd": (
+                    round(float(normalized_thesis_reference), 4)
+                    if normalized_thesis_reference is not None
+                    else existing.get("thesis_reference_price_usd")
+                ),
                 "target_price_usd": (
                     round(float(normalized_target), 4)
                     if normalized_target is not None

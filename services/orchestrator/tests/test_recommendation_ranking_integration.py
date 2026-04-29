@@ -667,6 +667,137 @@ def test_today_research_readiness_uses_cached_packets_with_age_and_refresh_actio
     assert first_cards["research-readiness"].metric_value == "2/2"
 
 
+def test_today_research_readiness_surfaces_expired_saved_dossier_thesis(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+
+    class FakePortfolioStore:
+        def list_watchlist(self) -> list[dict[str, object]]:
+            return [{"symbol": "MSFT"}]
+
+    class FakePlanWorkspace:
+        def get_active_plan_id(self) -> str:
+            return "plan-1"
+
+        def get_plan(self, plan_id: str) -> dict[str, object]:
+            return {
+                "id": plan_id,
+                "artifacts": [
+                    {
+                        "id": "artifact-dossier-msft",
+                        "file_name": "20260301T120000Z-research-dossier-msft-vti.md",
+                        "title": "Research Dossier - MSFT vs VTI",
+                        "created_at": "2026-03-01T12:00:00+00:00",
+                    }
+                ],
+            }
+
+    class FakeResearchService:
+        def evidence_packet(self, *, symbol: str, period: str = "6mo", interval: str = "1d"):
+            del period, interval
+            return main.ResearchEvidencePacket(
+                packet_id=f"research-evidence:yfinance:{symbol}:6mo:1d",
+                symbol=symbol,
+                provider="yfinance",
+                period="6mo",
+                interval="1d",
+                generated_at=main.utc_now(),
+                coverage={"quote_available": True, "history_available": True, "warnings": []},
+                freshness={"status": "fresh"},
+                metrics={"last_price": 410.0},
+                quality={"confidence": "high", "blocking_gaps": []},
+                provenance={"warnings": []},
+            )
+
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    monkeypatch.setattr(main, "portfolio_store", FakePortfolioStore())
+    monkeypatch.setattr(main, "plan_workspace", FakePlanWorkspace())
+    monkeypatch.setattr(main, "research_service", FakeResearchService())
+    main.today_research_evidence_cache.clear()
+
+    dashboard = main.TodayDashboardResponse(
+        generated_at=main.utc_now(),
+        currency="USD",
+        state="MN",
+        sync_status=main.SyncStatusResponse(running=False, runs_total=0, runs_failed=0),
+        top_holding_symbol="AAPL",
+        context_state="ready",
+        context_notes=[],
+        command_cards=[],
+        emergency_fund_months=8.0,
+    )
+
+    cards = {card.id: card for card in main._build_today_command_cards(dashboard)}
+
+    assert cards["research-readiness"].status == "warning"
+    assert cards["research-readiness"].metric_value == "2/2"
+    assert "saved research thesis review is due" in cards["research-readiness"].detail
+    assert "MSFT" in cards["research-readiness"].detail
+    assert cards["research-readiness"].action_label == "Review theses"
+    assert cards["research-readiness"].href == "#research?dossiers=1"
+
+
+def test_today_research_readiness_surfaces_watchlist_thesis_material_price_move(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+
+    class FakePortfolioStore:
+        def list_watchlist(self) -> list[dict[str, object]]:
+            return [
+                {
+                    "symbol": "NVDA",
+                    "thesis": "AI compute thesis.",
+                    "updated_at": "2026-04-20T12:00:00+00:00",
+                    "thesis_reference_price_usd": 800.0,
+                }
+            ]
+
+    class FakeResearchService:
+        def evidence_packet(self, *, symbol: str, period: str = "6mo", interval: str = "1d"):
+            del period, interval
+            return main.ResearchEvidencePacket(
+                packet_id=f"research-evidence:yfinance:{symbol}:6mo:1d",
+                symbol=symbol,
+                provider="yfinance",
+                period="6mo",
+                interval="1d",
+                generated_at=main.utc_now(),
+                coverage={"quote_available": True, "history_available": True, "warnings": []},
+                freshness={"status": "fresh"},
+                metrics={"last_price": 980.0},
+                quality={"confidence": "high", "blocking_gaps": []},
+                provenance={"warnings": []},
+            )
+
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    monkeypatch.setattr(main, "portfolio_store", FakePortfolioStore())
+    monkeypatch.setattr(main, "research_service", FakeResearchService())
+    main.today_research_evidence_cache.clear()
+
+    dashboard = main.TodayDashboardResponse(
+        generated_at=main.utc_now(),
+        currency="USD",
+        state="MN",
+        sync_status=main.SyncStatusResponse(running=False, runs_total=0, runs_failed=0),
+        top_holding_symbol=None,
+        context_state="ready",
+        context_notes=[],
+        command_cards=[],
+        emergency_fund_months=8.0,
+    )
+
+    cards = {card.id: card for card in main._build_today_command_cards(dashboard)}
+
+    assert cards["research-readiness"].status == "warning"
+    assert "material price move" in cards["research-readiness"].detail
+    assert "NVDA" in cards["research-readiness"].detail
+    assert cards["research-readiness"].action_label == "Review theses"
+
+
 def test_refresh_today_research_readiness_clears_packet_cache(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
