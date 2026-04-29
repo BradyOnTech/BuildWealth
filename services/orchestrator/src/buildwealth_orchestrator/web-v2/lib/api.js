@@ -76,6 +76,12 @@ export const api = {
   appendDecision: (id, body) => postJson(`/api/plans/${encodeURIComponent(id)}/decisions`, body),
   setActivePlan: (id) => postJson(`/api/plans/${encodeURIComponent(id)}/activate`, {}),
   holdings:     () => fetchJson('/api/portfolio/holdings'),
+  watchlist:    (opts = {}) => fetchJson(`/api/portfolio/watchlist?${new URLSearchParams({
+    limit: String(opts.limit || 200),
+    sort: opts.sort || 'symbol',
+    period: opts.period || '6mo',
+    interval: opts.interval || '1d',
+  }).toString()}`),
   portfolioFit: (body) => postJson('/api/portfolio/fit-assessment', body),
   researchEvidencePacket: (body) => postJson('/api/research/evidence-packet', body),
   researchCompare: (body) => postJson('/api/research/compare', body),

@@ -325,6 +325,63 @@ test('research view renders a dedicated thesis review surface', () => {
   assert.doesNotMatch(markup, /buy/i);
 });
 
+test('research thesis review surface renders watchlist-only thesis context', () => {
+  const markup = String(renderThesisReviewSurface({
+    watchlistItem: {
+      symbol: 'NVDA',
+      data_source: 'OPENBB',
+      thesis: 'Only consider NVDA if valuation and portfolio concentration both remain inside policy.',
+      note: 'Watch for AI infrastructure demand and margin durability.',
+      tags: ['semiconductors', 'ai'],
+      thesis_reviewed_at: '2026-03-17T12:00:00Z',
+      thesis_expires_at: '2026-04-16T12:00:00Z',
+      thesis_reference_price_usd: 800,
+      watchlist_score_total: 77,
+      watchlist_score_reasons: ['positive_momentum', 'near_high'],
+    },
+    recommendation: {
+      id: 'rec-watchlist-thesis',
+      title: 'Review NVDA thesis after a material price move',
+      detail: 'NVDA moved +12.25% from the thesis reference price.',
+      action_payload: {
+        evidence: {
+          symbol: 'NVDA',
+          freshness_status: 'fresh',
+          reference_price_usd: 800,
+          material_price_change_pct: 12.25,
+        },
+        suggested_action: {
+          kind: 'review_research_thesis',
+          symbol: 'NVDA',
+          reason: 'material_price_change',
+        },
+      },
+    },
+    packet: packet('NVDA', {
+      metrics: { last_price: 898, period_change_pct: 12.25, volatility_pct: 28.7 },
+      quality: { confidence: 'high', coverage_score: 100, blocking_gaps: [] },
+    }),
+    target: 'NVDA',
+    focusId: 'rec-watchlist-thesis',
+  }));
+
+  assert.match(markup, /Thesis review/);
+  assert.match(markup, /NVDA/);
+  assert.match(markup, /Watchlist thesis/);
+  assert.match(markup, /Only consider NVDA if valuation and portfolio concentration both remain inside policy\./);
+  assert.match(markup, /Watch for AI infrastructure demand and margin durability\./);
+  assert.match(markup, /OPENBB/);
+  assert.match(markup, /Score 77/);
+  assert.match(markup, /semiconductors · ai/);
+  assert.match(markup, /Reference price/);
+  assert.match(markup, /\$800\.00/);
+  assert.match(markup, /Current price/);
+  assert.match(markup, /\$898\.00/);
+  assert.match(markup, /\+12\.3%/);
+  assert.match(markup, /Mark thesis reviewed/);
+  assert.doesNotMatch(markup, /buy/i);
+});
+
 test('research view renders an empty state without classic fallback copy', () => {
   const markup = String(renderResearchEmpty());
 
@@ -342,10 +399,12 @@ test('research view and app wire packet endpoint and route', () => {
   assert.match(apiSource, /researchCompare/);
   assert.match(apiSource, /researchDossiers/);
   assert.match(apiSource, /planArtifact/);
+  assert.match(apiSource, /watchlist/);
   assert.match(apiSource, /\/api\/research\/evidence-packet/);
   assert.match(apiSource, /\/api\/research\/compare/);
   assert.match(apiSource, /\/api\/research\/dossiers/);
   assert.match(apiSource, /\/api\/plans\/.*artifacts/);
+  assert.match(apiSource, /\/api\/portfolio\/watchlist/);
   assert.match(appSource, /views\/research\.js/);
   assert.match(appSource, /research/);
 });

@@ -231,3 +231,173 @@ test('Inbox thesis review opens v2 Research and refreshes review metadata', asyn
   await page.getByText('$460.02').first().waitFor({ state: 'visible' });
   await page.getByText('Review metadata refreshed').waitFor({ state: 'visible' });
 });
+
+test('Watchlist thesis review opens v2 Research and refreshes watchlist metadata', async ({ page }) => {
+  let thesisReviewed = false;
+  let applyPayload = null;
+
+  const recommendation = () => ({
+    id: 'rec-watchlist-thesis',
+    title: 'Review NVDA thesis after a material price move',
+    detail: 'NVDA moved +12.25% from the thesis reference price.',
+    priority: 'medium',
+    status: thesisReviewed ? 'applied' : 'proposed',
+    source: 'generator:watchlist_research',
+    recommendation_type: 'workflow_action',
+    created_at: '2026-04-26T12:00:00Z',
+    updated_at: thesisReviewed ? '2026-04-29T12:00:00Z' : '2026-04-26T12:00:00Z',
+    action_payload: {
+      generator: {
+        signal_type: 'watchlist_research',
+        signal_key: 'watchlist_material_price_change',
+      },
+      evidence: {
+        symbol: 'NVDA',
+        freshness_status: 'fresh',
+        reference_price_usd: 800,
+        material_price_change_pct: 12.25,
+      },
+      suggested_action: {
+        kind: 'review_research_thesis',
+        symbol: 'NVDA',
+        reason: 'material_price_change',
+      },
+      quality: {
+        actionability: 'review_only',
+        confidence_level: 'medium',
+        freshness_status: 'fresh',
+        blocking_context: ['research.material_price_change'],
+      },
+    },
+  });
+
+  const watchlistItem = () => ({
+    symbol: 'NVDA',
+    data_source: 'OPENBB',
+    thesis: 'Only consider NVDA if valuation and portfolio concentration both remain inside policy.',
+    note: 'Watch for AI infrastructure demand and margin durability.',
+    tags: ['semiconductors', 'ai'],
+    thesis_reviewed_at: thesisReviewed ? '2026-04-29T12:00:00Z' : '2026-03-17T12:00:00Z',
+    thesis_expires_at: thesisReviewed ? '2026-05-29T12:00:00Z' : '2026-04-16T12:00:00Z',
+    thesis_reference_price_usd: thesisReviewed ? 898 : 800,
+    quote_price: 898,
+    watchlist_score_total: 77,
+    watchlist_score_reasons: ['positive_momentum', 'near_high'],
+  });
+
+  await page.route('**/*', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+
+    if (url.hostname !== 'buildwealth-v2.test') {
+      await route.abort();
+      return;
+    }
+
+    if (url.pathname === '/' || url.pathname.startsWith('/static-v2/')) {
+      await route.fulfill(await staticResponse(url.pathname));
+      return;
+    }
+
+    if (url.pathname === '/api/plans') {
+      await route.fulfill(jsonResponse([]));
+      return;
+    }
+
+    if (url.pathname === '/api/recommendations') {
+      const requestedStatus = url.searchParams.get('status') || 'proposed';
+      await route.fulfill(jsonResponse(requestedStatus === recommendation().status ? [recommendation()] : []));
+      return;
+    }
+
+    if (url.pathname === '/api/recommendations/closure-analytics') {
+      await route.fulfill(jsonResponse({}));
+      return;
+    }
+
+    if (url.pathname === '/api/recommendations/rec-watchlist-thesis') {
+      await route.fulfill(jsonResponse(recommendation()));
+      return;
+    }
+
+    if (url.pathname === '/api/recommendations/rec-watchlist-thesis/apply' && request.method() === 'POST') {
+      applyPayload = request.postDataJSON();
+      thesisReviewed = true;
+      await route.fulfill(jsonResponse({
+        recommendation: recommendation(),
+        thesis_review: {
+          status: 'refreshed',
+          target: 'watchlist',
+          symbol: 'NVDA',
+          reviewed_at: '2026-04-29T12:00:00Z',
+          expires_at: '2026-05-29T12:00:00Z',
+          reference_price_usd: 898,
+        },
+      }));
+      return;
+    }
+
+    if (url.pathname === '/api/portfolio/watchlist') {
+      await route.fulfill(jsonResponse({
+        items: [watchlistItem()],
+        count: 1,
+        warnings: [],
+      }));
+      return;
+    }
+
+    if (url.pathname === '/api/research/evidence-packet' && request.method() === 'POST') {
+      const payload = request.postDataJSON();
+      assert.equal(payload.symbol, 'NVDA');
+      await route.fulfill(jsonResponse({
+        packet_id: 'research-evidence:yfinance:NVDA:6mo:1d',
+        symbol: 'NVDA',
+        name: 'NVIDIA',
+        provider: 'yfinance',
+        period: '6mo',
+        interval: '1d',
+        generated_at: '2026-04-29T12:00:00Z',
+        coverage: {
+          quote_available: true,
+          history_available: true,
+          provider_status: 'available',
+          endpoints_attempted: ['quote', 'price_history'],
+          warnings: [],
+        },
+        freshness: { status: 'fresh' },
+        metrics: {
+          last_price: 898,
+          period_change_pct: 12.25,
+          volatility_pct: 28.7,
+        },
+        risk: { drawdown_from_high_pct: -4.1 },
+        quality: { confidence: 'high', coverage_score: 100, blocking_gaps: [] },
+        provenance: { warnings: [] },
+      }));
+      return;
+    }
+
+    await route.fulfill(jsonResponse({}));
+  });
+
+  await page.goto('http://buildwealth-v2.test/#inbox');
+  await page.getByText('Review NVDA thesis after a material price move').waitFor({ state: 'visible' });
+  await page.getByRole('link', { name: /Review thesis/ }).click();
+
+  await page.waitForURL('**/#research?thesisReview=NVDA&focus=rec-watchlist-thesis');
+  await page.getByText('Watchlist thesis').waitFor({ state: 'visible' });
+  await page.getByText('Only consider NVDA if valuation and portfolio concentration both remain inside policy.').waitFor({ state: 'visible' });
+  await page.getByText('Score 77').waitFor({ state: 'visible' });
+  await page.getByText('semiconductors · ai').waitFor({ state: 'visible' });
+  await page.getByText('$800.00').first().waitFor({ state: 'visible' });
+  await page.getByText('$898.00').first().waitFor({ state: 'visible' });
+
+  await page.getByRole('button', { name: /Mark thesis reviewed/ }).click();
+
+  assert.equal(applyPayload.decision_status, 'reviewed');
+  assert.equal(applyPayload.create_decision_packet, false);
+  assert.equal(applyPayload.capture_scenario_diff, false);
+  assert.equal(applyPayload.pin_research_bridge, false);
+  await page.getByText(/Thesis current/).waitFor({ state: 'visible' });
+  await page.getByText('Review metadata refreshed').waitFor({ state: 'visible' });
+});

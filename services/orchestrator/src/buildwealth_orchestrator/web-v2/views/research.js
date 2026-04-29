@@ -332,6 +332,7 @@ export function renderDossierDetail(artifact = {}, { planId = '' } = {}) {
 
 export function renderThesisReviewSurface({
   artifact = null,
+  watchlistItem = null,
   recommendation = null,
   packet = null,
   planId = '',
@@ -350,11 +351,12 @@ export function renderThesisReviewSurface({
     : {};
   const review = artifact?.thesis_review && typeof artifact.thesis_review === 'object'
     ? artifact.thesis_review
-    : thesisReviewFromEvidence(evidence);
+    : watchlistThesisReview(watchlistItem) || thesisReviewFromEvidence(evidence);
   const status = String(review.status || evidence.thesis_review_status || '').trim().toLowerCase();
   const referencePrice = firstFiniteNumber(
     review.reference_price_usd,
     review.thesis_reference_price_usd,
+    watchlistItem?.thesis_reference_price_usd,
     evidence.reference_price_usd,
     evidence.thesis_reference_price_usd,
   );
@@ -385,6 +387,7 @@ export function renderThesisReviewSurface({
   const title = recommendation?.title || artifact?.title || artifact?.file_name || `${symbols.join(' / ') || 'Saved'} thesis review`;
   const detail = recommendation?.detail || evidence.summary || '';
   const thesisExcerpt = thesisExcerptFromMarkdown(content);
+  const watchlistPanel = renderWatchlistThesisPanel(watchlistItem);
 
   return html`
     <section class="hero-stack research-hero">
@@ -427,6 +430,7 @@ export function renderThesisReviewSurface({
           <p>${thesisExcerpt}</p>
         </article>
       ` : ''}
+      ${raw(watchlistPanel)}
 
       ${raw(renderPacketCitationPanel(citations))}
       ${packet ? raw(renderEvidencePacketCard(packet)) : ''}
@@ -479,11 +483,15 @@ async function loadThesisReviewSurface(root, {
       ? await api.planArtifact(resolvedPlanId, artifactId).catch(() => null)
       : null;
     const symbols = thesisReviewSymbols({ artifact, recommendation, target: reviewTarget });
+    const watchlistItem = !artifact
+      ? await loadWatchlistItem(symbols[0] || reviewTarget, { period, interval }).catch(() => null)
+      : null;
     const packet = symbols[0]
       ? await api.researchEvidencePacket({ symbol: symbols[0], period, interval }).catch(() => null)
       : null;
     setView(root, renderThesisReviewSurface({
       artifact,
+      watchlistItem,
       recommendation,
       packet,
       planId: resolvedPlanId,
@@ -611,6 +619,83 @@ function thesisReviewFromEvidence(evidence = {}) {
     expires_at: evidence.thesis_expires_at || evidence.expires_at,
     reference_price_usd: evidence.reference_price_usd || evidence.thesis_reference_price_usd,
   };
+}
+
+function watchlistThesisReview(item = null) {
+  if (!item || typeof item !== 'object') return null;
+  const reviewedAt = String(item.thesis_reviewed_at || item.reviewed_at || item.updated_at || item.created_at || '').trim();
+  const expiresAt = String(item.thesis_expires_at || item.expires_at || '').trim();
+  const reviewedDate = parseDate(reviewedAt);
+  const expiresDate = parseDate(expiresAt);
+  const now = Date.now();
+  let status = '';
+  if (expiresDate) status = expiresDate.getTime() <= now ? 'expired' : 'current';
+  else if (reviewedDate) status = 'current';
+  return {
+    status,
+    age_days: reviewedDate ? Math.max(0, Math.floor((now - reviewedDate.getTime()) / 86400000)) : null,
+    stale_after_days: '',
+    reviewed_at: reviewedAt,
+    expires_at: expiresAt,
+    reference_price_usd: item.thesis_reference_price_usd,
+  };
+}
+
+function renderWatchlistThesisPanel(item = null) {
+  if (!item || typeof item !== 'object') return '';
+  const tags = Array.isArray(item.tags) ? item.tags.filter(Boolean).slice(0, 6) : [];
+  const reasons = Array.isArray(item.watchlist_score_reasons)
+    ? item.watchlist_score_reasons.filter(Boolean).slice(0, 4)
+    : [];
+  const score = firstFiniteNumber(item.watchlist_score_total);
+  return html`
+    <article class="research-panel watchlist-thesis-panel">
+      <h3>Watchlist thesis</h3>
+      ${item.thesis ? html`<p>${item.thesis}</p>` : html`<p>No saved watchlist thesis text yet.</p>`}
+      ${item.note ? html`<p class="marginalia">${item.note}</p>` : ''}
+      <dl>
+        <div>
+          <dt>Source</dt>
+          <dd>${item.data_source || 'Watchlist'}</dd>
+        </div>
+        ${score != null ? html`
+          <div>
+            <dt>Watchlist score</dt>
+            <dd>Score ${formatNumber(score)}</dd>
+          </div>
+        ` : ''}
+        ${item.thesis_reviewed_at ? html`
+          <div>
+            <dt>Reviewed</dt>
+            <dd>${fmtTimeShort(item.thesis_reviewed_at) || 'Unknown'}</dd>
+          </div>
+        ` : ''}
+        ${item.thesis_expires_at ? html`
+          <div>
+            <dt>Expires</dt>
+            <dd>${fmtTimeShort(item.thesis_expires_at) || 'Unknown'}</dd>
+          </div>
+        ` : ''}
+      </dl>
+      ${tags.length ? html`<p class="marginalia">${tags.join(' · ')}</p>` : ''}
+      ${reasons.length ? raw(renderListPanel('Score reasons', reasons)) : ''}
+    </article>
+  `;
+}
+
+async function loadWatchlistItem(symbol, { period = '6mo', interval = '1d' } = {}) {
+  const normalized = String(symbol || '').trim().toUpperCase();
+  if (!normalized) return null;
+  const payload = await api.watchlist({ period, interval, limit: 200, sort: 'symbol' });
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  return items.find(item => String(item?.symbol || '').trim().toUpperCase() === normalized) || null;
+}
+
+function parseDate(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function packetCitationsFromEvidence(evidence = {}) {
