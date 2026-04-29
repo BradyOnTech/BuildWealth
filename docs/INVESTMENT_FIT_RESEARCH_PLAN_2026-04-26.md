@@ -219,8 +219,8 @@ Current implementation:
 - `assess_portfolio_fit(...)` combines evidence packet quality, current holdings, risk thresholds, cash runway, profile readiness, active plan/time-horizon context, tax-lot/account-location context, and optional trade simulation.
 - `/api/portfolio/fit-assessment` assembles current BuildWealth context and returns a fit assessment for API, Copilot, and v2 Portfolio review surfaces.
 - First statuses cover `mixed`, `does_not_fit`, and `needs_more_context`; direct trade recommendations remain out of scope.
-- Tax-lot/account-location context now surfaces account treatment, unrealized gain/loss, lot-term mix, and missing account/lot confidence gaps where available; deeper tax-lot optimization remains out of scope.
-- The first Personal Investment Policy slices add profile-backed investment guardrails, keep them in lightweight BuildWealth context, let the profile max single-symbol exposure override the generic portfolio threshold in fit assessment, gate research-backed fit when evidence confidence is below the user's minimum, make high tax sensitivity raise taxable-exposure/tax-context review constraints, and let sector caps plus symbol/sector restrictions block fit. Today/Copilot surface missing guardrails, and Portfolio/Copilot fit review cards cite the active policy guardrails.
+- Tax-lot/account-location context now surfaces account treatment, unrealized gain/loss, lot-term mix, proposed-account review, and missing account/lot confidence gaps where available; deeper tax-lot optimization remains out of scope.
+- The first Personal Investment Policy slices add profile-backed investment guardrails, keep them in lightweight BuildWealth context, let the profile max single-symbol exposure override the generic portfolio threshold in fit assessment, gate research-backed fit when evidence confidence is below the user's minimum, make high tax sensitivity raise taxable-exposure/tax-context review constraints, let sector caps plus symbol/sector restrictions block fit, and review proposed accounts against preferred account-location policy. Today/Copilot surface missing guardrails, and Portfolio/Copilot fit review cards cite the active policy guardrails.
 
 ## Layer 4: Investment Recommendation Factory
 
@@ -622,8 +622,8 @@ Recommended sequence:
 
 1. Keep provider/freshness/coverage metadata explicit around OpenBB-backed research outputs as provider depth increases.
 2. Continue migrating v2 research/portfolio surfaces away from classic fallbacks where high-frequency investment decisions happen.
-3. Continue Personal Investment Policy by expanding beyond single-symbol exposure, research confidence, tax sensitivity, sector caps, and symbol/sector restrictions into cash, asset-class, simplicity, and account-location preferences.
-4. Deepen account-location context later with explicit proposed-account selection and tax-policy preferences.
+3. Continue Personal Investment Policy by expanding beyond single-symbol exposure, research confidence, tax sensitivity, sector caps, symbol/sector restrictions, and account-location preferences into cash, asset-class, and simplicity preferences.
+4. Deepen account-location context later with account-type-specific contribution guidance and richer tax-policy preferences.
 
 ## Relationship to Existing Plans
 

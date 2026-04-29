@@ -45,6 +45,7 @@ class FinancialProfileStore:
                 "minimum_research_confidence": None,
                 "tax_sensitivity": None,
                 "risk_tolerance": None,
+                "preferred_account_locations": {},
                 "restricted_symbols": [],
                 "restricted_sectors": [],
             },

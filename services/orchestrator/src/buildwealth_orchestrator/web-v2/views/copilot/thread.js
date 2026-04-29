@@ -150,6 +150,7 @@ function renderPortfolioFitCard(result) {
     renderFitMeta('Policy', formatPolicyGuardrails(portfolio.investment_policy)),
     renderFitMeta('Sector policy', formatSectorPolicy(portfolio)),
     renderFitMeta('Account location', formatAccountLocationSummary(portfolio.account_location)),
+    renderFitMeta('Proposed account', formatProposedAccount(portfolio.proposed_account)),
   ].filter(Boolean);
 
   return html`
@@ -499,6 +500,25 @@ function formatAccountLocationSummary(accountLocation) {
       : '',
   ].filter(Boolean);
   return parts.join(' · ');
+}
+
+function formatProposedAccount(account) {
+  if (!account || typeof account !== 'object') return '';
+  const preferred = Array.isArray(account.policy_preferred_treatments)
+    ? account.policy_preferred_treatments.filter(Boolean)
+    : [];
+  return [
+    account.account_name || account.account_id || '',
+    formatTreatmentLabel(account.tax_treatment || account.account_type || ''),
+    preferred.length ? `prefers ${preferred.map(formatTreatmentLabel).join(', ')}` : '',
+  ].filter(Boolean).join(' · ');
+}
+
+function formatTreatmentLabel(value) {
+  return String(value || '')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (ch) => ch.toUpperCase());
 }
 
 function formatAccountLocationRow(account = {}) {

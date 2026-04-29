@@ -7,6 +7,7 @@ test('portfolio fit review renders safe empty state', () => {
 
   assert.match(markup, /Fit review/);
   assert.match(markup, /Review fit/);
+  assert.match(markup, /Proposed account/);
   assert.match(markup, /Ask whether a candidate belongs in this portfolio/);
 });
 
@@ -41,6 +42,11 @@ test('portfolio fit result renders plan horizon and research evidence', () => {
       sector_weight_after_trade_pct: 31.43,
       sector_max_pct: 30,
       sector_policy_source: 'profile.investment_policy',
+      proposed_account: {
+        account_name: 'Taxable Brokerage',
+        tax_treatment: 'taxable',
+        policy_preferred_treatments: ['tax_free'],
+      },
       investment_policy: {
         minimum_research_confidence: 'high',
         tax_sensitivity: 'high',
@@ -73,6 +79,7 @@ test('portfolio fit result renders plan horizon and research evidence', () => {
   assert.match(markup, /10% · Personal policy/);
   assert.match(markup, /Research High · Tax High · Sector cap 30% · Avoid NVDA · Avoid Crypto/);
   assert.match(markup, /Technology 31\.4% · cap 30%/);
+  assert.match(markup, /Taxable Brokerage · Taxable · prefers Tax Free/);
   assert.match(markup, /Taxable, Tax Free/);
   assert.match(markup, /Taxable Brokerage · Taxable · \$1,250 gain\/loss · Mixed lots/);
   assert.match(markup, /href="#research\?symbol=VTI&amp;packet=research-evidence%3Ayfinance%3AVTI%3A6mo%3A1d"/);

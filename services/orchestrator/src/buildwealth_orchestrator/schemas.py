@@ -914,12 +914,15 @@ class WatchlistRankResponse(BaseModel):
 class PortfolioFitAssessmentRequest(BaseModel):
     symbol: str
     amount_usd: float | None = Field(default=None, gt=0)
+    proposed_account_id: str | None = None
     period: str = "6mo"
     interval: str = "1d"
 
     @model_validator(mode="after")
     def _normalize_fields(self) -> "PortfolioFitAssessmentRequest":
         self.symbol = str(self.symbol or "").strip().upper()
+        proposed_account = str(self.proposed_account_id or "").strip()
+        self.proposed_account_id = proposed_account or None
         self.period = str(self.period or "6mo").strip() or "6mo"
         self.interval = str(self.interval or "1d").strip() or "1d"
         return self
@@ -943,6 +946,7 @@ class PortfolioFitAssessmentResponse(BaseModel):
         "review_concentration",
         "review_policy_restriction",
         "review_sector_exposure",
+        "review_account_location",
         "update_profile",
         "create_dossier",
         "discuss_in_copilot",
@@ -1172,6 +1176,7 @@ class InvestmentPolicy(BaseModel):
     minimum_research_confidence: Literal["low", "medium", "high"] | None = None
     tax_sensitivity: Literal["low", "medium", "high"] | None = None
     risk_tolerance: Literal["conservative", "moderate", "aggressive"] | None = None
+    preferred_account_locations: dict[str, list[str]] = Field(default_factory=dict)
     restricted_symbols: list[str] = Field(default_factory=list)
     restricted_sectors: list[str] = Field(default_factory=list)
 

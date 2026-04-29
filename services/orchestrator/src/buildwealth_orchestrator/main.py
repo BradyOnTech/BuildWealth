@@ -8381,6 +8381,11 @@ async def tool_assess_portfolio_fit(arguments: dict[str, object]) -> dict[str, o
             if arguments.get("amount_usd") is not None
             else None
         ),
+        proposed_account_id=(
+            str(arguments.get("proposed_account_id") or "").strip()
+            if arguments.get("proposed_account_id") is not None
+            else None
+        ),
         period=str(arguments.get("period") or "6mo"),
         interval=str(arguments.get("interval") or "1d"),
     )
@@ -10717,6 +10722,10 @@ def configure_copilot_tools() -> None:
                     "type": "number",
                     "description": "Optional dollar amount to include in a bounded portfolio-impact simulation.",
                 },
+                "proposed_account_id": {
+                    "type": "string",
+                    "description": "Optional local account id when reviewing account-location fit.",
+                },
                 "period": {"type": "string", "description": "Research lookback period, default 6mo."},
                 "interval": {"type": "string", "description": "Research interval, default 1d."},
             },
@@ -12918,6 +12927,7 @@ def build_portfolio_fit_assessment_payload(
     return assess_portfolio_fit(
         symbol=request.symbol,
         amount_usd=request.amount_usd,
+        proposed_account_id=request.proposed_account_id,
         evidence_packet=evidence_packet,
         snapshot=snap,
         holdings_payload=holdings_payload,

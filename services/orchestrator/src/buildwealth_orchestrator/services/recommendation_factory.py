@@ -1890,6 +1890,29 @@ def _watchlist_research_candidate(
             "policy_gap": "sector:policy_cap",
         }
         blocking_context = ["sector.policy_cap"]
+    elif "tax:account_location_policy" in fit_blocking_gaps:
+        signal_key = "policy_account_location"
+        title = f"Review {symbol} account location against policy"
+        proposed_account = (
+            portfolio_impact.get("proposed_account")
+            if isinstance(portfolio_impact.get("proposed_account"), dict)
+            else {}
+        )
+        treatment = str(proposed_account.get("tax_treatment") or "selected account").strip()
+        detail = (
+            f"{symbol} has a proposed account-location mismatch under the personal investment policy "
+            f"({treatment}). Review account placement before changing exposure."
+        )
+        priority = "medium"
+        actionability = "review_only"
+        suggested_action = {
+            "kind": "review_portfolio_fit",
+            "symbol": symbol,
+            "fit_status": fit_status,
+            "next_step": recommended_next_step or "review_account_location",
+            "policy_gap": "tax:account_location_policy",
+        }
+        blocking_context = ["tax.account_location_policy"]
     elif fit_status == "does_not_fit":
         signal_key = "fit_conflict"
         title = f"Review why {symbol} does not currently fit"

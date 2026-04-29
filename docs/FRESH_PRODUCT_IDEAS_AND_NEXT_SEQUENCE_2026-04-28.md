@@ -44,6 +44,7 @@ First slice:
 - classify account location when available: taxable, traditional retirement, Roth, cash, unknown
 - surface unrealized gain/loss where available
 - distinguish short-term vs long-term lots where available
+- review a proposed account against preferred account-location policy
 - flag missing tax-lot/account-location data as a confidence gap
 - include this context in `assess_portfolio_fit(...)`, v2 Portfolio fit review, Copilot fit cards, and investment recommendation evidence
 
@@ -120,7 +121,7 @@ Likely first slice:
 
 - add a small investment policy profile section (started: profile storage/API, Copilot draft/review cards, and readiness summary now include investment policy)
 - expose policy readiness in Profile, Today, and Copilot (started: onboarding/profile readiness, Today command-center policy guardrail card, Copilot investment-policy prompt, and Copilot profile draft display include policy)
-- use policy fields in portfolio-fit before expanding to a broader policy engine (started: max single-symbol exposure overrides generic portfolio risk threshold; sector caps and symbol/sector restrictions can block fit; minimum research confidence gates weak evidence; high tax sensitivity flags taxable exposure or missing tax context; policy-aware watchlist recommendations create review-only Inbox rows; Portfolio/Copilot fit review cards cite the active policy guardrails)
+- use policy fields in portfolio-fit before expanding to a broader policy engine (started: max single-symbol exposure overrides generic portfolio risk threshold; sector caps and symbol/sector restrictions can block fit; preferred account-location policy can flag proposed account mismatches; minimum research confidence gates weak evidence; high tax sensitivity flags taxable exposure or missing tax context; policy-aware watchlist recommendations create review-only Inbox rows; Portfolio/Copilot fit review cards cite the active policy guardrails)
 
 ### 2. Decision Pre-Mortem
 

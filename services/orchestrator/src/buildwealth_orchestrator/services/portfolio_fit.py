@@ -52,6 +52,7 @@ def _investment_policy(holdings_payload: dict[str, Any]) -> dict[str, Any]:
             "minimum_research_confidence",
             "tax_sensitivity",
             "risk_tolerance",
+            "preferred_account_locations",
             "restricted_symbols",
             "restricted_sectors",
         )
@@ -64,6 +65,55 @@ def _policy_terms(policy: dict[str, Any], key: str) -> list[str]:
     if not isinstance(values, list):
         return []
     return [str(value).strip() for value in values if str(value or "").strip()]
+
+
+def _normalized_policy_key(value: Any) -> str:
+    return str(value or "").strip().replace("-", "_").replace(" ", "_").lower()
+
+
+def _normalize_tax_treatment(value: Any) -> str:
+    text = _normalized_policy_key(value)
+    if text in {"taxable", "tax_deferred", "tax_free"}:
+        return text
+    if not text:
+        return ""
+    return tax_treatment_for_account_type(text)
+
+
+def _preferred_account_treatments(
+    policy: dict[str, Any],
+    *,
+    symbol: str,
+    asset_type: str,
+    sector: str,
+) -> tuple[str, list[str]]:
+    preferences = policy.get("preferred_account_locations")
+    if not isinstance(preferences, dict):
+        return "", []
+
+    lookup_keys = [
+        symbol.upper(),
+        _normalized_policy_key(asset_type),
+        _normalized_policy_key(sector),
+        "default",
+    ]
+    for key in lookup_keys:
+        raw_values = preferences.get(key)
+        if raw_values is None and key != symbol.upper():
+            raw_values = preferences.get(key.replace("_", " "))
+        if raw_values is None:
+            continue
+        values = raw_values if isinstance(raw_values, list) else [raw_values]
+        normalized = list(
+            dict.fromkeys(
+                treatment
+                for treatment in (_normalize_tax_treatment(value) for value in values)
+                if treatment
+            )
+        )
+        if normalized:
+            return key, normalized
+    return "", []
 
 
 _CONFIDENCE_RANKS = {
@@ -89,6 +139,7 @@ def _evidence_summary(packet: ResearchEvidencePacket | None) -> dict[str, Any]:
         "available": True,
         "packet_id": packet.packet_id,
         "provider": packet.provider,
+        "asset_type": packet.asset_type,
         "sector": packet.sector,
         "freshness_status": freshness.get("status"),
         "confidence": quality.get("confidence"),
@@ -198,6 +249,29 @@ def _account_lookup(holdings_payload: dict[str, Any]) -> dict[str, dict[str, Any
             account_id = f"account-{index}"
         lookup[account_id] = account
     return lookup
+
+
+def _account_context_from_id(holdings_payload: dict[str, Any], account_id: str) -> dict[str, Any]:
+    normalized_id = str(account_id or "").strip()
+    if not normalized_id:
+        return {}
+    account = _account_lookup(holdings_payload).get(normalized_id)
+    if not isinstance(account, dict):
+        return {
+            "account_id": normalized_id,
+            "account_name": normalized_id,
+            "status": "missing",
+            "tax_treatment": "unknown",
+        }
+    account_type_raw = account.get("type") or account.get("account_type")
+    account_type = normalize_account_type(account_type_raw or "unknown")
+    return {
+        "account_id": normalized_id,
+        "account_name": str(account.get("name") or account.get("account_name") or normalized_id),
+        "account_type": account_type,
+        "tax_treatment": tax_treatment_for_account_type(account_type),
+        "status": "known",
+    }
 
 
 def _holding_account_id(key: str, holding: dict[str, Any]) -> str:
@@ -359,6 +433,7 @@ def assess_portfolio_fit(
     *,
     symbol: str,
     amount_usd: float | None = None,
+    proposed_account_id: str | None = None,
     evidence_packet: ResearchEvidencePacket | None = None,
     snapshot: PortfolioSnapshot | None = None,
     holdings_payload: dict[str, Any] | None = None,
@@ -373,6 +448,7 @@ def assess_portfolio_fit(
     )
     evidence = _evidence_summary(evidence_packet)
     investment_policy = _investment_policy(holdings_payload)
+    candidate_asset_type = str(evidence.get("asset_type") or "").strip()
     candidate_sector = str(evidence.get("sector") or "").strip()
 
     fit_reasons: list[str] = []
@@ -381,6 +457,8 @@ def assess_portfolio_fit(
     portfolio_impact: dict[str, Any] = {}
     if investment_policy:
         portfolio_impact["investment_policy"] = investment_policy
+    if candidate_asset_type:
+        portfolio_impact["candidate_asset_type"] = candidate_asset_type
     if candidate_sector:
         portfolio_impact["candidate_sector"] = candidate_sector
     simulation_required = amount_usd is not None
@@ -462,6 +540,28 @@ def assess_portfolio_fit(
             existing_position=existing_position,
         )
         portfolio_impact["account_location"] = account_location
+        proposed_account = _account_context_from_id(holdings_payload, proposed_account_id or "")
+        preferred_key, preferred_treatments = _preferred_account_treatments(
+            investment_policy,
+            symbol=normalized_symbol,
+            asset_type=candidate_asset_type,
+            sector=candidate_sector,
+        )
+        if proposed_account:
+            proposed_account["policy_preference_key"] = preferred_key or None
+            proposed_account["policy_preferred_treatments"] = preferred_treatments
+            portfolio_impact["proposed_account"] = proposed_account
+            if proposed_account.get("status") == "missing":
+                blocking_gaps.append("tax:proposed_account")
+                fit_risks.append("The proposed account was not found, so account-location fit cannot be reviewed.")
+            elif preferred_treatments and proposed_account.get("tax_treatment") not in preferred_treatments:
+                blocking_gaps.append("tax:account_location_policy")
+                preferred_label = ", ".join(preferred_treatments)
+                asset_label = candidate_asset_type or preferred_key or "this asset"
+                fit_risks.append(
+                    f"Personal investment policy prefers {asset_label} in {preferred_label} accounts; "
+                    f"proposed account is {proposed_account.get('tax_treatment')}."
+                )
         max_sector_pct = _safe_float(investment_policy.get("max_sector_exposure_pct"), 0.0)
         if candidate_sector and max_sector_pct > 0 and snapshot.total_value_usd > 0:
             current_sector_value = _sector_value(snapshot, candidate_sector)
@@ -587,6 +687,14 @@ def assess_portfolio_fit(
         fit_status = "mixed"
         recommended_next_step = "discuss_in_copilot"
         fit_score = 55.0
+    elif "tax:account_location_policy" in unique_blocking_gaps:
+        fit_status = "mixed"
+        recommended_next_step = "review_account_location"
+        fit_score = 58.0
+    elif "tax:proposed_account" in unique_blocking_gaps:
+        fit_status = "needs_more_context"
+        recommended_next_step = "review_account_location"
+        fit_score = 42.0
     else:
         fit_status = "mixed"
         recommended_next_step = "simulate_trade" if simulation_required else "discuss_in_copilot"

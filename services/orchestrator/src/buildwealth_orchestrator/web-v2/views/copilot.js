@@ -73,7 +73,7 @@ const INVESTMENT_POLICY_SETUP_PROMPT = [
   'Help me define my personal investment policy.',
   'First call get_onboarding_status and get_financial_profile.',
   'Focus only on missing or weak investment_policy fields for now.',
-  'Ask me one focused question at a time for max_single_symbol_exposure_pct, max_sector_exposure_pct, minimum_research_confidence, tax_sensitivity, risk_tolerance, restricted_symbols, and restricted_sectors.',
+  'Ask me one focused question at a time for max_single_symbol_exposure_pct, max_sector_exposure_pct, minimum_research_confidence, tax_sensitivity, risk_tolerance, preferred_account_locations, restricted_symbols, and restricted_sectors.',
   'Frame this as investment-fit guardrails, not buy/sell advice.',
   'When you have enough information, call draft_financial_profile_update with investment_policy so I can review the changes.',
   'do not save anything with update_financial_profile until I explicitly confirm the draft.',
@@ -472,7 +472,7 @@ function recommendationFocusPrompt(recommendationId, intent) {
     return [
       `Review investment-fit recommendation ${id} with me.`,
       'Inspect the recommendation evidence, provider freshness, evidence packet references, portfolio-fit status, blocking gaps, and suggested next step.',
-      'Use assess_portfolio_fit, research_compare, research_dossier, or simulate_trade only when needed.',
+      'Use assess_portfolio_fit, research_compare, research_dossier, or simulate_trade only when needed. Pass proposed_account_id to assess_portfolio_fit when the recommendation is about a specific account location.',
       'Keep the answer framed as fit review, research, comparison, simulation, or missing context. Do not give hidden buy/sell advice.',
     ].join(' ');
   }

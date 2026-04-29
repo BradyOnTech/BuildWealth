@@ -24,11 +24,13 @@ def _packet(
     *,
     status: str = "fresh",
     confidence: str = "high",
+    asset_type: str | None = "equity",
     sector: str | None = None,
 ) -> ResearchEvidencePacket:
     return ResearchEvidencePacket(
         packet_id=f"research-evidence:yfinance:{symbol}:6mo:1d",
         symbol=symbol,
+        asset_type=asset_type,
         sector=sector,
         provider="yfinance",
         period="6mo",
@@ -291,6 +293,94 @@ def test_portfolio_fit_includes_account_location_and_tax_lot_context() -> None:
     assert taxable["unrealized_gain_loss_pct"] == 50.0
     assert taxable["lot_term_mix"] == "mixed"
     assert any("taxable" in risk.lower() for risk in result.fit_risks)
+
+
+def test_portfolio_fit_reviews_proposed_account_against_location_policy() -> None:
+    result = assess_portfolio_fit(
+        symbol="VTI",
+        amount_usd=5_000.0,
+        proposed_account_id="taxable",
+        evidence_packet=_packet("VTI", asset_type="equity"),
+        snapshot=_snapshot(),
+        holdings_payload={
+            "accounts": [
+                {"id": "taxable", "name": "Taxable Brokerage", "type": "taxable"},
+                {"id": "roth", "name": "Roth IRA", "type": "roth_ira"},
+            ],
+            "risk_policy": {"thresholds": {"single_holding_max_pct": 80.0}},
+            "investment_policy": {
+                "preferred_account_locations": {"equity": ["tax_free"]},
+            },
+        },
+        profile_readiness_payload={"status": "ready", "completion_percent": 100.0},
+        emergency_fund_months=8.0,
+    )
+
+    assert result.fit_status == "mixed"
+    assert result.recommended_next_step == "review_account_location"
+    assert "tax:account_location_policy" in result.blocking_gaps
+    proposed = result.portfolio_impact["proposed_account"]
+    assert proposed["account_id"] == "taxable"
+    assert proposed["account_name"] == "Taxable Brokerage"
+    assert proposed["tax_treatment"] == "taxable"
+    assert proposed["policy_preferred_treatments"] == ["tax_free"]
+    assert any("prefers equity in tax_free accounts" in risk for risk in result.fit_risks)
+
+
+def test_build_portfolio_fit_assessment_payload_threads_proposed_account(monkeypatch) -> None:
+    class FakeSnapshotStore:
+        def latest(self) -> PortfolioSnapshot:
+            return _snapshot()
+
+    class FakePortfolioStore:
+        def get_holdings(self) -> dict[str, object]:
+            return {
+                "accounts": [
+                    {"id": "taxable", "name": "Taxable Brokerage", "type": "taxable"},
+                    {"id": "roth", "name": "Roth IRA", "type": "roth_ira"},
+                ],
+                "risk_policy": {"thresholds": {"single_holding_max_pct": 80.0}},
+                "total_cash": 25_000.0,
+            }
+
+    class FakeResearchService:
+        def evidence_packet(self, *, symbol: str, period: str, interval: str) -> ResearchEvidencePacket:
+            return _packet(symbol, asset_type="equity")
+
+    class FakeHealth:
+        emergency_fund_months = 7.0
+
+    monkeypatch.setattr(main, "snapshot_store", FakeSnapshotStore())
+    monkeypatch.setattr(main, "portfolio_store", FakePortfolioStore())
+    monkeypatch.setattr(main, "research_service", FakeResearchService())
+    monkeypatch.setattr(
+        main,
+        "get_financial_profile_payload",
+        lambda: {
+            "income_items": [{"id": "income-1"}],
+            "expense_items": [{"id": "expense-1"}],
+            "goal_items": [{"id": "goal-1"}],
+            "physical_assets": [{"id": "asset-1"}],
+            "investment_policy": {
+                "preferred_account_locations": {"equity": ["tax_free"]},
+            },
+            "flags": {"no_debt": True},
+            "tax_profile": {"filing_status": "single", "marginal_tax_rate": 0.24},
+        },
+    )
+    monkeypatch.setattr(main, "get_financial_health", lambda: FakeHealth())
+    monkeypatch.setattr(main, "resolve_active_plan_detail", lambda: None)
+
+    result = main.build_portfolio_fit_assessment_payload(
+        main.PortfolioFitAssessmentRequest(
+            symbol="vti",
+            amount_usd=5_000.0,
+            proposed_account_id="taxable",
+        )
+    )
+
+    assert result.portfolio_impact["proposed_account"]["account_id"] == "taxable"
+    assert "tax:account_location_policy" in result.blocking_gaps
 
 
 def test_portfolio_fit_flags_missing_account_location_as_confidence_gap() -> None:

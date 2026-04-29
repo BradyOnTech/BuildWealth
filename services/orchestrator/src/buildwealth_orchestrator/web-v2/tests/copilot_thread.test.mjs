@@ -141,6 +141,11 @@ test('copilot thread renders portfolio fit tool results as review cards', () => 
                 sector_weight_after_trade_pct: 31.43,
                 sector_max_pct: 30,
                 sector_policy_source: 'profile.investment_policy',
+                proposed_account: {
+                  account_name: 'Taxable Brokerage',
+                  tax_treatment: 'taxable',
+                  policy_preferred_treatments: ['tax_free'],
+                },
                 investment_policy: {
                   minimum_research_confidence: 'high',
                   tax_sensitivity: 'high',
@@ -180,6 +185,7 @@ test('copilot thread renders portfolio fit tool results as review cards', () => 
   assert.match(html, /10% · Personal policy/);
   assert.match(html, /Research High · Tax High · Sector cap 30% · Avoid NVDA · Avoid Crypto/);
   assert.match(html, /Technology 31\.4% · cap 30%/);
+  assert.match(html, /Taxable Brokerage · Taxable · prefers Tax Free/);
   assert.match(html, /Taxable · Tax lots missing/);
   assert.match(html, /Taxable Brokerage · Taxable · \$12,500 gain\/loss/);
   assert.match(html, /href="#research\?symbol=NVDA&amp;packet=research-evidence%3Ayfinance%3ANVDA%3A6mo%3A1d"/);
@@ -294,6 +300,7 @@ test('copilot view maps inbox recommendation intents to focused draft prompts', 
   assert.match(copilotSource, /Review recommendation/);
   assert.match(copilotSource, /missing context/);
   assert.match(copilotSource, /investment-fit/);
+  assert.match(copilotSource, /proposed_account_id/);
   assert.match(copilotSource, /hidden buy\/sell advice/);
 });
 

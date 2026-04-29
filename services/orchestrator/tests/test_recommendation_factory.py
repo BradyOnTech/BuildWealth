@@ -407,6 +407,56 @@ def test_watchlist_research_factory_generates_tax_sensitive_policy_review() -> N
     assert "sell" not in joined.lower()
 
 
+def test_watchlist_research_factory_generates_account_location_policy_review() -> None:
+    result = generate_watchlist_research_recommendations(
+        watchlist_rank_payload={
+            "items": [
+                {
+                    "symbol": "VTI",
+                    "research_evidence_packet_id": "research-evidence:yfinance:VTI:6mo:1d",
+                    "research_provider": "yfinance",
+                    "research_freshness_status": "fresh",
+                    "research_confidence": "high",
+                    "research_coverage_score": 100.0,
+                    "research_blocking_gaps": [],
+                }
+            ]
+        },
+        fit_assessments_by_symbol={
+            "VTI": {
+                "fit_status": "mixed",
+                "fit_score": 58.0,
+                "fit_reasons": ["Cash runway is at or above the 6-month target."],
+                "fit_risks": ["Personal investment policy prefers equity in tax_free accounts."],
+                "blocking_gaps": ["tax:account_location_policy"],
+                "portfolio_impact": {
+                    "proposed_account": {
+                        "account_id": "taxable",
+                        "account_name": "Taxable Brokerage",
+                        "tax_treatment": "taxable",
+                        "policy_preferred_treatments": ["tax_free"],
+                    },
+                    "investment_policy": {"preferred_account_locations": {"equity": ["tax_free"]}},
+                },
+                "recommended_next_step": "review_account_location",
+            }
+        },
+        existing_recommendations=[],
+        dry_run=True,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 1
+    candidate = result.candidates[0]
+    assert candidate["title"] == "Review VTI account location against policy"
+    payload = candidate["action_payload"]
+    assert payload["generator"]["signal_key"] == "policy_account_location"
+    assert payload["suggested_action"]["policy_gap"] == "tax:account_location_policy"
+    assert payload["evidence"]["portfolio_impact"]["proposed_account"]["tax_treatment"] == "taxable"
+    assert payload["evidence"]["investment_policy"]["preferred_account_locations"] == {"equity": ["tax_free"]}
+    assert payload["quality"]["actionability"] == "review_only"
+
+
 def test_watchlist_research_factory_generates_policy_restriction_review() -> None:
     result = generate_watchlist_research_recommendations(
         watchlist_rank_payload={

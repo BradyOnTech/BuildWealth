@@ -80,6 +80,10 @@ export function renderFitReview(result = null, { loading = false, error = '', in
           <span>Amount</span>
           <input name="amount_usd" type="number" inputmode="decimal" min="1" step="100" placeholder="Optional">
         </label>
+        <label class="fit-field">
+          <span>Proposed account</span>
+          <input name="proposed_account_id" type="text" autocomplete="off" placeholder="Optional account id">
+        </label>
         <button class="fit-review-button" type="submit" ${loading ? 'disabled' : ''}>${loading ? 'Reviewing' : 'Review fit'}</button>
       </form>
       <div class="fit-review-result" data-fit-review-result>
@@ -105,6 +109,7 @@ async function runFitReview(root) {
   const formData = new FormData(form);
   const symbol = String(formData.get('symbol') || '').trim().toUpperCase();
   const amountRaw = String(formData.get('amount_usd') || '').trim();
+  const proposedAccountId = String(formData.get('proposed_account_id') || '').trim();
   if (!symbol) return;
 
   const button = form.querySelector('button[type="submit"]');
@@ -116,6 +121,7 @@ async function runFitReview(root) {
   try {
     const body = { symbol };
     if (amountRaw) body.amount_usd = Number(amountRaw);
+    if (proposedAccountId) body.proposed_account_id = proposedAccountId;
     const result = await api.portfolioFit(body);
     setView(resultEl, renderFitResult(result));
   } catch (err) {
@@ -140,6 +146,7 @@ export function renderFitResult(result) {
   const plan = result.plan_impact || {};
   const impact = result.portfolio_impact || {};
   const accountLocation = impact.account_location || {};
+  const proposedAccount = formatProposedAccount(impact.proposed_account);
   const policyCap = formatPolicyCap(impact);
   const policyGuardrails = formatPolicyGuardrails(impact.investment_policy);
   const sectorPolicy = formatSectorPolicy(impact);
@@ -188,6 +195,12 @@ export function renderFitResult(result) {
           <dt>Account location</dt>
           <dd>${formatTaxTreatments(accountLocation)}</dd>
         </div>
+        ${proposedAccount ? html`
+          <div>
+            <dt>Proposed account</dt>
+            <dd>${proposedAccount}</dd>
+          </div>
+        ` : ''}
       </dl>
       ${raw(renderAccountLocation(accountLocation))}
       ${raw(renderEvidenceAction(result.symbol, evidence))}
@@ -248,6 +261,19 @@ function formatTaxTreatments(accountLocation = {}) {
   if (treatments.length) return treatments.map(labelize).join(', ');
   if (accountLocation.tax_lot_coverage === 'missing') return 'Tax lots missing';
   return 'Not available';
+}
+
+function formatProposedAccount(account = {}) {
+  if (!account || typeof account !== 'object') return '';
+  const preferred = Array.isArray(account.policy_preferred_treatments)
+    ? account.policy_preferred_treatments.filter(Boolean)
+    : [];
+  const parts = [
+    account.account_name || account.account_id || '',
+    labelize(account.tax_treatment || account.account_type || ''),
+    preferred.length ? `prefers ${preferred.map(labelize).join(', ')}` : '',
+  ].filter(Boolean);
+  return parts.join(' · ');
 }
 
 function formatPolicyCap(portfolioImpact = {}) {
