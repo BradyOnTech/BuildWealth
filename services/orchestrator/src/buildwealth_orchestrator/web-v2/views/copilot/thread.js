@@ -437,6 +437,9 @@ function renderInvestmentPolicySection(policy) {
   const maxSingle = policy.max_single_symbol_exposure_pct;
   const maxSector = policy.max_sector_exposure_pct;
   const confidence = String(policy.minimum_research_confidence || '').trim();
+  const cashFloor = policy.minimum_cash_runway_months;
+  const assetClassCaps = formatAssetClassCaps(policy.max_asset_class_exposure_pct, 'Asset-class cap');
+  const simplicity = String(policy.simplicity_preference || '').trim();
   const taxSensitivity = String(policy.tax_sensitivity || '').trim();
   const riskTolerance = String(policy.risk_tolerance || '').trim();
   const restrictedSymbols = Array.isArray(policy.restricted_symbols) ? policy.restricted_symbols.filter(Boolean) : [];
@@ -445,6 +448,9 @@ function renderInvestmentPolicySection(policy) {
     maxSingle == null
     && maxSector == null
     && !confidence
+    && cashFloor == null
+    && !assetClassCaps
+    && !simplicity
     && !taxSensitivity
     && !riskTolerance
     && !restrictedSymbols.length
@@ -455,6 +461,9 @@ function renderInvestmentPolicySection(policy) {
     maxSingle != null ? `Max single symbol ${Number(maxSingle).toFixed(0)}%` : '',
     maxSector != null ? `Max sector ${Number(maxSector).toFixed(0)}%` : '',
     confidence ? `Research confidence ${titleCase(confidence)}` : '',
+    cashFloor != null ? `Cash floor ${Number(cashFloor).toLocaleString('en-US', { maximumFractionDigits: 1 })} mo` : '',
+    assetClassCaps,
+    simplicity ? `Simplicity ${titleCase(simplicity)}` : '',
     taxSensitivity ? `Tax sensitivity ${titleCase(taxSensitivity)}` : '',
     riskTolerance ? `Risk ${titleCase(riskTolerance)}` : '',
     restrictedSymbols.length ? `Avoid ${restrictedSymbols.slice(0, 2).join(', ')}` : '',
@@ -543,6 +552,9 @@ function formatPolicyGuardrails(policy) {
   const restrictedSectors = Array.isArray(policy.restricted_sectors) ? policy.restricted_sectors.filter(Boolean) : [];
   const parts = [
     policy.minimum_research_confidence ? `Research ${titleCase(policy.minimum_research_confidence)}` : '',
+    policy.minimum_cash_runway_months != null ? `Cash floor ${Number(policy.minimum_cash_runway_months).toLocaleString('en-US', { maximumFractionDigits: 1 })} mo` : '',
+    formatAssetClassCaps(policy.max_asset_class_exposure_pct, 'Asset cap'),
+    policy.simplicity_preference ? `Simplicity ${titleCase(policy.simplicity_preference)}` : '',
     policy.tax_sensitivity ? `Tax ${titleCase(policy.tax_sensitivity)}` : '',
     policy.risk_tolerance ? `Risk ${titleCase(policy.risk_tolerance)}` : '',
     policy.max_sector_exposure_pct != null ? `Sector cap ${Number(policy.max_sector_exposure_pct).toLocaleString('en-US', { maximumFractionDigits: 1 })}%` : '',
@@ -550,6 +562,15 @@ function formatPolicyGuardrails(policy) {
     restrictedSectors.length ? `Avoid ${restrictedSectors.slice(0, 2).map(titleCase).join(', ')}` : '',
   ].filter(Boolean);
   return parts.join(' · ');
+}
+
+function formatAssetClassCaps(caps, label) {
+  if (!caps || typeof caps !== 'object' || Array.isArray(caps)) return '';
+  const rows = Object.entries(caps)
+    .filter(([, value]) => Number.isFinite(Number(value)))
+    .slice(0, 2)
+    .map(([key, value]) => `${titleCase(key)} ${Number(value).toLocaleString('en-US', { maximumFractionDigits: 1 })}%`);
+  return rows.length ? `${label} ${rows.join(', ')}` : '';
 }
 
 function formatSectorPolicy(portfolio) {

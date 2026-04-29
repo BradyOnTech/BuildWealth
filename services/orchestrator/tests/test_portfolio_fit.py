@@ -223,6 +223,87 @@ def test_portfolio_fit_blocks_sector_exposure_above_personal_policy_cap() -> Non
     assert any("Technology exposure would be 31.4%" in risk for risk in result.fit_risks)
 
 
+def test_portfolio_fit_uses_personal_policy_cash_floor() -> None:
+    result = assess_portfolio_fit(
+        symbol="MSFT",
+        amount_usd=2_000.0,
+        evidence_packet=_packet("MSFT"),
+        snapshot=_snapshot(),
+        holdings_payload={
+            "risk_policy": {"thresholds": {"single_holding_max_pct": 60.0}},
+            "investment_policy": {
+                "minimum_cash_runway_months": 9.0,
+            },
+        },
+        profile_readiness_payload={"status": "ready", "completion_percent": 100.0},
+        emergency_fund_months=7.0,
+    )
+
+    assert result.fit_status == "needs_more_context"
+    assert result.recommended_next_step == "review_cash_floor"
+    assert "cash:policy_floor" in result.blocking_gaps
+    assert result.portfolio_impact["investment_policy"]["minimum_cash_runway_months"] == 9.0
+    assert any("below personal policy floor 9.0 months" in risk for risk in result.fit_risks)
+
+
+def test_portfolio_fit_blocks_asset_class_exposure_above_personal_policy_cap() -> None:
+    snapshot = PortfolioSnapshot(
+        as_of=datetime(2026, 4, 26, tzinfo=timezone.utc),
+        base_currency="USD",
+        total_value_usd=100_000.0,
+        total_investment_usd=100_000.0,
+        holdings=[
+            Holding(symbol="VTI", name="Total Market", asset_class="equity", value_usd=70_000.0, allocation_percent=70.0),
+            Holding(symbol="BND", name="Bond Market", asset_class="fixed_income", value_usd=30_000.0, allocation_percent=30.0),
+        ],
+    )
+
+    result = assess_portfolio_fit(
+        symbol="MSFT",
+        amount_usd=10_000.0,
+        evidence_packet=_packet("MSFT", asset_type="equity"),
+        snapshot=snapshot,
+        holdings_payload={
+            "risk_policy": {"thresholds": {"single_holding_max_pct": 60.0}},
+            "investment_policy": {
+                "max_asset_class_exposure_pct": {"equity": 70.0},
+            },
+        },
+        profile_readiness_payload={"status": "ready", "completion_percent": 100.0},
+        emergency_fund_months=8.0,
+    )
+
+    assert result.fit_status == "does_not_fit"
+    assert result.recommended_next_step == "review_asset_class_exposure"
+    assert "asset_class:policy_cap" in result.blocking_gaps
+    assert result.portfolio_impact["candidate_asset_class"] == "equity"
+    assert result.portfolio_impact["asset_class_weight_after_trade_pct"] == 72.73
+    assert any("equity exposure would be 72.7%" in risk for risk in result.fit_risks)
+
+
+def test_portfolio_fit_flags_high_simplicity_preference_for_new_position() -> None:
+    result = assess_portfolio_fit(
+        symbol="MSFT",
+        amount_usd=2_000.0,
+        evidence_packet=_packet("MSFT"),
+        snapshot=_snapshot(),
+        holdings_payload={
+            "risk_policy": {"thresholds": {"single_holding_max_pct": 60.0}},
+            "investment_policy": {
+                "simplicity_preference": "high",
+            },
+        },
+        profile_readiness_payload={"status": "ready", "completion_percent": 100.0},
+        emergency_fund_months=8.0,
+    )
+
+    assert result.fit_status == "mixed"
+    assert result.recommended_next_step == "review_simplicity"
+    assert "policy:simplicity_review" in result.blocking_gaps
+    assert result.portfolio_impact["investment_policy"]["simplicity_preference"] == "high"
+    assert any("simplicity preference is high" in risk for risk in result.fit_risks)
+
+
 def test_portfolio_fit_includes_account_location_and_tax_lot_context() -> None:
     result = assess_portfolio_fit(
         symbol="AAPL",

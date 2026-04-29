@@ -53,6 +53,9 @@ test('copilot thread renders financial profile draft review card', () => {
                   max_single_symbol_exposure_pct: 10,
                   max_sector_exposure_pct: 30,
                   minimum_research_confidence: 'medium',
+                  minimum_cash_runway_months: 9,
+                  max_asset_class_exposure_pct: { equity: 80 },
+                  simplicity_preference: 'high',
                   tax_sensitivity: 'high',
                   restricted_symbols: ['NVDA'],
                   restricted_sectors: ['Crypto'],
@@ -90,6 +93,9 @@ test('copilot thread renders financial profile draft review card', () => {
   assert.match(html, /Max single symbol 10%/);
   assert.match(html, /Max sector 30%/);
   assert.match(html, /Research confidence Medium/);
+  assert.match(html, /Cash floor 9 mo/);
+  assert.match(html, /Asset-class cap Equity 80%/);
+  assert.match(html, /Simplicity High/);
   assert.match(html, /Tax sensitivity High/);
   assert.match(html, /Avoid NVDA/);
   assert.match(html, /Avoid sectors Crypto/);
@@ -148,6 +154,9 @@ test('copilot thread renders portfolio fit tool results as review cards', () => 
                 },
                 investment_policy: {
                   minimum_research_confidence: 'high',
+                  minimum_cash_runway_months: 9,
+                  max_asset_class_exposure_pct: { equity: 80 },
+                  simplicity_preference: 'high',
                   tax_sensitivity: 'high',
                   max_sector_exposure_pct: 30,
                   restricted_symbols: ['NVDA'],
@@ -183,7 +192,7 @@ test('copilot thread renders portfolio fit tool results as review cards', () => 
   assert.match(html, /Long · 25y/);
   assert.match(html, /40% held/);
   assert.match(html, /10% · Personal policy/);
-  assert.match(html, /Research High · Tax High · Sector cap 30% · Avoid NVDA · Avoid Crypto/);
+  assert.match(html, /Research High · Cash floor 9 mo · Asset cap Equity 80% · Simplicity High · Tax High · Sector cap 30% · Avoid NVDA · Avoid Crypto/);
   assert.match(html, /Technology 31\.4% · cap 30%/);
   assert.match(html, /Taxable Brokerage · Taxable · prefers Tax Free/);
   assert.match(html, /Taxable · Tax lots missing/);
@@ -434,6 +443,9 @@ test('copilot view exposes investment policy guardrail prompt', () => {
   assert.match(copilotSource, /max_single_symbol_exposure_pct/);
   assert.match(copilotSource, /max_sector_exposure_pct/);
   assert.match(copilotSource, /minimum_research_confidence/);
+  assert.match(copilotSource, /minimum_cash_runway_months/);
+  assert.match(copilotSource, /max_asset_class_exposure_pct/);
+  assert.match(copilotSource, /simplicity_preference/);
   assert.match(copilotSource, /tax_sensitivity/);
   assert.match(copilotSource, /restricted_symbols/);
   assert.match(copilotSource, /restricted_sectors/);

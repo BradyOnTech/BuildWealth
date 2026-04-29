@@ -951,7 +951,10 @@ class PortfolioFitAssessmentResponse(BaseModel):
         "review_concentration",
         "review_policy_restriction",
         "review_sector_exposure",
+        "review_asset_class_exposure",
         "review_account_location",
+        "review_cash_floor",
+        "review_simplicity",
         "update_profile",
         "create_dossier",
         "discuss_in_copilot",
@@ -1179,6 +1182,9 @@ class InvestmentPolicy(BaseModel):
     max_single_symbol_exposure_pct: float | None = Field(default=None, ge=0, le=100)
     max_sector_exposure_pct: float | None = Field(default=None, ge=0, le=100)
     minimum_research_confidence: Literal["low", "medium", "high"] | None = None
+    minimum_cash_runway_months: float | None = Field(default=None, ge=0)
+    max_asset_class_exposure_pct: dict[str, float] = Field(default_factory=dict)
+    simplicity_preference: Literal["low", "medium", "high"] | None = None
     tax_sensitivity: Literal["low", "medium", "high"] | None = None
     risk_tolerance: Literal["conservative", "moderate", "aggressive"] | None = None
     preferred_account_locations: dict[str, list[str]] = Field(default_factory=dict)

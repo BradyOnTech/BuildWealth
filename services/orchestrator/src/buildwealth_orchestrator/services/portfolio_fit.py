@@ -50,6 +50,9 @@ def _investment_policy(holdings_payload: dict[str, Any]) -> dict[str, Any]:
             "max_single_symbol_exposure_pct",
             "max_sector_exposure_pct",
             "minimum_research_confidence",
+            "minimum_cash_runway_months",
+            "max_asset_class_exposure_pct",
+            "simplicity_preference",
             "tax_sensitivity",
             "risk_tolerance",
             "preferred_account_locations",
@@ -324,6 +327,30 @@ def _sector_value(snapshot: PortfolioSnapshot, sector: str) -> float:
     )
 
 
+def _asset_class_value(snapshot: PortfolioSnapshot, asset_class: str) -> float:
+    normalized = _normalized_policy_key(asset_class)
+    if not normalized:
+        return 0.0
+    return sum(
+        float(holding.value_usd or 0.0)
+        for holding in snapshot.holdings
+        if _normalized_policy_key(holding.asset_class or holding.asset_type) == normalized
+    )
+
+
+def _policy_percent_map(policy: dict[str, Any], key: str) -> dict[str, float]:
+    raw = policy.get(key)
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, float] = {}
+    for raw_key, raw_value in raw.items():
+        normalized_key = _normalized_policy_key(raw_key)
+        value = _safe_float(raw_value, 0.0)
+        if normalized_key and value > 0:
+            out[normalized_key] = value
+    return out
+
+
 def _coverage_from_bools(values: list[bool]) -> str:
     if not values:
         return "not_applicable"
@@ -449,6 +476,7 @@ def assess_portfolio_fit(
     evidence = _evidence_summary(evidence_packet)
     investment_policy = _investment_policy(holdings_payload)
     candidate_asset_type = str(evidence.get("asset_type") or "").strip()
+    candidate_asset_class = _normalized_policy_key(candidate_asset_type)
     candidate_sector = str(evidence.get("sector") or "").strip()
 
     fit_reasons: list[str] = []
@@ -459,6 +487,7 @@ def assess_portfolio_fit(
         portfolio_impact["investment_policy"] = investment_policy
     if candidate_asset_type:
         portfolio_impact["candidate_asset_type"] = candidate_asset_type
+        portfolio_impact["candidate_asset_class"] = candidate_asset_class
     if candidate_sector:
         portfolio_impact["candidate_sector"] = candidate_sector
     simulation_required = amount_usd is not None
@@ -503,8 +532,15 @@ def assess_portfolio_fit(
         blocking_gaps.append(f"profile:{gap_key}")
         fit_risks.append("Profile readiness is incomplete, so investment fit confidence is limited.")
 
+    minimum_cash_runway = _safe_float(investment_policy.get("minimum_cash_runway_months"), 0.0)
     if emergency_fund_months is None:
         blocking_gaps.append("cash_runway")
+    elif minimum_cash_runway > 0 and emergency_fund_months < minimum_cash_runway:
+        blocking_gaps.append("cash:policy_floor")
+        fit_risks.append(
+            f"Cash runway is {emergency_fund_months:.1f} months, below personal policy floor "
+            f"{minimum_cash_runway:.1f} months."
+        )
     elif emergency_fund_months < 3:
         blocking_gaps.append("cash_runway")
         fit_risks.append("Emergency fund runway is below 3 months; preserve liquidity before adding investment risk.")
@@ -522,6 +558,10 @@ def assess_portfolio_fit(
             candidate_sector = _holding_sector(holding)
             if candidate_sector:
                 portfolio_impact["candidate_sector"] = candidate_sector
+        if not candidate_asset_class and holding is not None:
+            candidate_asset_class = _normalized_policy_key(holding.asset_class or holding.asset_type)
+            if candidate_asset_class:
+                portfolio_impact["candidate_asset_class"] = candidate_asset_class
 
         max_single_pct, max_single_source = _single_symbol_policy(holdings_payload)
         portfolio_impact.update(
@@ -585,6 +625,30 @@ def assess_portfolio_fit(
                     f"{candidate_sector} exposure would be {sector_weight_after:.1f}%, "
                     f"above personal policy cap {max_sector_pct:.1f}%."
                 )
+        asset_class_caps = _policy_percent_map(investment_policy, "max_asset_class_exposure_pct")
+        asset_class_cap = asset_class_caps.get(candidate_asset_class)
+        if candidate_asset_class and asset_class_cap and snapshot.total_value_usd > 0:
+            current_asset_class_value = _asset_class_value(snapshot, candidate_asset_class)
+            asset_class_weight_before = round((current_asset_class_value / snapshot.total_value_usd) * 100.0, 2)
+            amount_value = float(amount_usd or 0.0)
+            asset_class_weight_after = round(
+                ((current_asset_class_value + amount_value) / (snapshot.total_value_usd + amount_value)) * 100.0,
+                2,
+            )
+            portfolio_impact.update(
+                {
+                    "asset_class_weight_before_trade_pct": asset_class_weight_before,
+                    "asset_class_weight_after_trade_pct": asset_class_weight_after,
+                    "asset_class_max_pct": asset_class_cap,
+                    "asset_class_policy_source": "profile.investment_policy",
+                }
+            )
+            if asset_class_weight_after >= asset_class_cap:
+                blocking_gaps.append("asset_class:policy_cap")
+                fit_risks.append(
+                    f"{candidate_asset_class} exposure would be {asset_class_weight_after:.1f}%, "
+                    f"above personal policy cap {asset_class_cap:.1f}%."
+                )
         tax_sensitivity = str(investment_policy.get("tax_sensitivity") or "").strip().lower()
         if account_location.get("confidence_gap"):
             if account_location.get("status") in {"missing", "partial"}:
@@ -614,6 +678,13 @@ def assess_portfolio_fit(
                 blocking_gaps.append("concentration")
         else:
             fit_reasons.append(f"{normalized_symbol} is not currently held, so it may add diversification.")
+            simplicity_preference = str(investment_policy.get("simplicity_preference") or "").strip().lower()
+            if simplicity_preference == "high":
+                blocking_gaps.append("policy:simplicity_review")
+                fit_risks.append(
+                    f"Personal simplicity preference is high; a new {normalized_symbol} position should be "
+                    "reviewed for portfolio complexity."
+                )
 
         if amount_usd is not None:
             simulation = simulate_trade(
@@ -663,6 +734,18 @@ def assess_portfolio_fit(
         fit_status = "needs_more_context"
         recommended_next_step = "update_profile"
         fit_score = 35.0
+    elif "cash:policy_floor" in unique_blocking_gaps:
+        fit_status = "needs_more_context"
+        recommended_next_step = "review_cash_floor"
+        fit_score = 35.0
+    elif "asset_class:policy_cap" in unique_blocking_gaps:
+        fit_status = "does_not_fit"
+        recommended_next_step = "review_asset_class_exposure"
+        fit_score = 30.0
+    elif "policy:simplicity_review" in unique_blocking_gaps:
+        fit_status = "mixed"
+        recommended_next_step = "review_simplicity"
+        fit_score = 58.0
     elif any(gap.startswith("policy:") for gap in unique_blocking_gaps):
         fit_status = "does_not_fit"
         recommended_next_step = "review_policy_restriction"

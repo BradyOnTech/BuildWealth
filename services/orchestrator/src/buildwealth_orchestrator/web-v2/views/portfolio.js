@@ -291,6 +291,9 @@ function formatPolicyGuardrails(policy = {}) {
   const restrictedSectors = Array.isArray(policy.restricted_sectors) ? policy.restricted_sectors.filter(Boolean) : [];
   const parts = [
     policy.minimum_research_confidence ? `Research ${labelize(policy.minimum_research_confidence)}` : '',
+    policy.minimum_cash_runway_months != null ? `Cash floor ${Number(policy.minimum_cash_runway_months).toLocaleString('en-US', { maximumFractionDigits: 1 })} mo` : '',
+    formatAssetClassCaps(policy.max_asset_class_exposure_pct, 'Asset cap'),
+    policy.simplicity_preference ? `Simplicity ${labelize(policy.simplicity_preference)}` : '',
     policy.tax_sensitivity ? `Tax ${labelize(policy.tax_sensitivity)}` : '',
     policy.risk_tolerance ? `Risk ${labelize(policy.risk_tolerance)}` : '',
     policy.max_sector_exposure_pct != null ? `Sector cap ${Number(policy.max_sector_exposure_pct).toLocaleString('en-US', { maximumFractionDigits: 1 })}%` : '',
@@ -298,6 +301,15 @@ function formatPolicyGuardrails(policy = {}) {
     restrictedSectors.length ? `Avoid ${restrictedSectors.slice(0, 2).map(labelize).join(', ')}` : '',
   ].filter(Boolean);
   return parts.join(' · ');
+}
+
+function formatAssetClassCaps(caps, label) {
+  if (!caps || typeof caps !== 'object' || Array.isArray(caps)) return '';
+  const rows = Object.entries(caps)
+    .filter(([, value]) => Number.isFinite(Number(value)))
+    .slice(0, 2)
+    .map(([key, value]) => `${labelize(key)} ${Number(value).toLocaleString('en-US', { maximumFractionDigits: 1 })}%`);
+  return rows.length ? `${label} ${rows.join(', ')}` : '';
 }
 
 function formatSectorPolicy(portfolioImpact = {}) {

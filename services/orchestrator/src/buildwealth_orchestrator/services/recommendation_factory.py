@@ -1947,6 +1947,24 @@ def _watchlist_research_candidate(
             "policy_gap": "sector:policy_cap",
         }
         blocking_context = ["sector.policy_cap"]
+    elif "asset_class:policy_cap" in fit_blocking_gaps:
+        signal_key = "policy_asset_class_exposure"
+        title = f"Review {symbol} asset-class exposure against policy"
+        candidate_asset_class = str(portfolio_impact.get("candidate_asset_class") or "").strip()
+        detail = (
+            f"{symbol} may push {candidate_asset_class or 'asset-class'} exposure above the personal investment "
+            "policy cap. Review asset-class concentration before changing exposure."
+        )
+        priority = "high"
+        actionability = "review_only"
+        suggested_action = {
+            "kind": "review_portfolio_fit",
+            "symbol": symbol,
+            "fit_status": fit_status,
+            "next_step": recommended_next_step or "review_asset_class_exposure",
+            "policy_gap": "asset_class:policy_cap",
+        }
+        blocking_context = ["asset_class.policy_cap"]
     elif "tax:account_location_policy" in fit_blocking_gaps:
         signal_key = "policy_account_location"
         title = f"Review {symbol} account location against policy"
@@ -1970,6 +1988,39 @@ def _watchlist_research_candidate(
             "policy_gap": "tax:account_location_policy",
         }
         blocking_context = ["tax.account_location_policy"]
+    elif "cash:policy_floor" in fit_blocking_gaps:
+        signal_key = "policy_cash_floor"
+        title = f"Review {symbol} against your cash floor policy"
+        detail = (
+            f"{symbol} should be reviewed against the personal cash-floor policy before changing exposure."
+        )
+        priority = "medium"
+        actionability = "review_only"
+        suggested_action = {
+            "kind": "review_portfolio_fit",
+            "symbol": symbol,
+            "fit_status": fit_status,
+            "next_step": recommended_next_step or "review_cash_floor",
+            "policy_gap": "cash:policy_floor",
+        }
+        blocking_context = ["cash.policy_floor"]
+    elif "policy:simplicity_review" in fit_blocking_gaps:
+        signal_key = "policy_simplicity"
+        title = f"Review {symbol} against your simplicity preference"
+        detail = (
+            f"{symbol} would add portfolio complexity under the personal simplicity preference. "
+            "Review whether this position belongs in the portfolio before changing exposure."
+        )
+        priority = "medium"
+        actionability = "review_only"
+        suggested_action = {
+            "kind": "review_portfolio_fit",
+            "symbol": symbol,
+            "fit_status": fit_status,
+            "next_step": recommended_next_step or "review_simplicity",
+            "policy_gap": "policy:simplicity_review",
+        }
+        blocking_context = ["policy.simplicity_review"]
     elif fit_status == "does_not_fit":
         signal_key = "fit_conflict"
         title = f"Review why {symbol} does not currently fit"

@@ -731,6 +731,136 @@ def test_watchlist_research_factory_generates_sector_policy_review() -> None:
     assert "sell" not in joined.lower()
 
 
+def test_watchlist_research_factory_generates_cash_floor_policy_review() -> None:
+    result = generate_watchlist_research_recommendations(
+        watchlist_rank_payload={
+            "items": [
+                {
+                    "symbol": "MSFT",
+                    "research_evidence_packet_id": "research-evidence:yfinance:MSFT:6mo:1d",
+                    "research_provider": "yfinance",
+                    "research_freshness_status": "fresh",
+                    "research_confidence": "high",
+                    "research_coverage_score": 100.0,
+                    "research_blocking_gaps": [],
+                }
+            ]
+        },
+        fit_assessments_by_symbol={
+            "MSFT": {
+                "fit_status": "needs_more_context",
+                "fit_score": 35.0,
+                "fit_reasons": [],
+                "fit_risks": ["Cash runway is 7.0 months, below personal policy floor 9.0 months."],
+                "blocking_gaps": ["cash:policy_floor"],
+                "portfolio_impact": {
+                    "investment_policy": {"minimum_cash_runway_months": 9.0},
+                },
+                "recommended_next_step": "review_cash_floor",
+            }
+        },
+        existing_recommendations=[],
+        dry_run=True,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 1
+    candidate = result.candidates[0]
+    assert candidate["title"] == "Review MSFT against your cash floor policy"
+    payload = candidate["action_payload"]
+    assert payload["generator"]["signal_key"] == "policy_cash_floor"
+    assert payload["suggested_action"]["policy_gap"] == "cash:policy_floor"
+    assert payload["evidence"]["investment_policy"]["minimum_cash_runway_months"] == 9.0
+    assert "cash.policy_floor" in payload["quality"]["blocking_context"]
+
+
+def test_watchlist_research_factory_generates_asset_class_policy_review() -> None:
+    result = generate_watchlist_research_recommendations(
+        watchlist_rank_payload={
+            "items": [
+                {
+                    "symbol": "MSFT",
+                    "research_evidence_packet_id": "research-evidence:yfinance:MSFT:6mo:1d",
+                    "research_provider": "yfinance",
+                    "research_freshness_status": "fresh",
+                    "research_confidence": "high",
+                    "research_coverage_score": 100.0,
+                    "research_blocking_gaps": [],
+                }
+            ]
+        },
+        fit_assessments_by_symbol={
+            "MSFT": {
+                "fit_status": "does_not_fit",
+                "fit_score": 30.0,
+                "fit_reasons": [],
+                "fit_risks": ["equity exposure would be 72.7%, above personal policy cap 70.0%."],
+                "blocking_gaps": ["asset_class:policy_cap"],
+                "portfolio_impact": {
+                    "candidate_asset_class": "equity",
+                    "investment_policy": {"max_asset_class_exposure_pct": {"equity": 70.0}},
+                },
+                "recommended_next_step": "review_asset_class_exposure",
+            }
+        },
+        existing_recommendations=[],
+        dry_run=True,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 1
+    candidate = result.candidates[0]
+    assert candidate["title"] == "Review MSFT asset-class exposure against policy"
+    payload = candidate["action_payload"]
+    assert payload["generator"]["signal_key"] == "policy_asset_class_exposure"
+    assert payload["suggested_action"]["policy_gap"] == "asset_class:policy_cap"
+    assert payload["evidence"]["portfolio_impact"]["candidate_asset_class"] == "equity"
+    assert payload["evidence"]["investment_policy"]["max_asset_class_exposure_pct"] == {"equity": 70.0}
+
+
+def test_watchlist_research_factory_generates_simplicity_policy_review() -> None:
+    result = generate_watchlist_research_recommendations(
+        watchlist_rank_payload={
+            "items": [
+                {
+                    "symbol": "MSFT",
+                    "research_evidence_packet_id": "research-evidence:yfinance:MSFT:6mo:1d",
+                    "research_provider": "yfinance",
+                    "research_freshness_status": "fresh",
+                    "research_confidence": "high",
+                    "research_coverage_score": 100.0,
+                    "research_blocking_gaps": [],
+                }
+            ]
+        },
+        fit_assessments_by_symbol={
+            "MSFT": {
+                "fit_status": "mixed",
+                "fit_score": 58.0,
+                "fit_reasons": [],
+                "fit_risks": ["Personal simplicity preference is high; a new MSFT position should be reviewed for portfolio complexity."],
+                "blocking_gaps": ["policy:simplicity_review"],
+                "portfolio_impact": {
+                    "investment_policy": {"simplicity_preference": "high"},
+                },
+                "recommended_next_step": "review_simplicity",
+            }
+        },
+        existing_recommendations=[],
+        dry_run=True,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 1
+    candidate = result.candidates[0]
+    assert candidate["title"] == "Review MSFT against your simplicity preference"
+    payload = candidate["action_payload"]
+    assert payload["generator"]["signal_key"] == "policy_simplicity"
+    assert payload["suggested_action"]["policy_gap"] == "policy:simplicity_review"
+    assert payload["evidence"]["investment_policy"]["simplicity_preference"] == "high"
+    assert payload["quality"]["actionability"] == "review_only"
+
+
 def test_portfolio_risk_factory_apply_creates_rows_and_skips_duplicates(tmp_path: Path) -> None:
     inbox = RecommendationInbox(tmp_path / "recommendations.json")
     first = generate_portfolio_risk_recommendations(

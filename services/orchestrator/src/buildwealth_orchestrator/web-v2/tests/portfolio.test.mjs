@@ -49,6 +49,9 @@ test('portfolio fit result renders plan horizon and research evidence', () => {
       },
       investment_policy: {
         minimum_research_confidence: 'high',
+        minimum_cash_runway_months: 9,
+        max_asset_class_exposure_pct: { equity: 80 },
+        simplicity_preference: 'high',
         tax_sensitivity: 'high',
         max_sector_exposure_pct: 30,
         restricted_symbols: ['NVDA'],
@@ -77,7 +80,7 @@ test('portfolio fit result renders plan horizon and research evidence', () => {
   assert.match(markup, /partial · medium/);
   assert.match(markup, /12\.5% held/);
   assert.match(markup, /10% · Personal policy/);
-  assert.match(markup, /Research High · Tax High · Sector cap 30% · Avoid NVDA · Avoid Crypto/);
+  assert.match(markup, /Research High · Cash floor 9 mo · Asset cap Equity 80% · Simplicity High · Tax High · Sector cap 30% · Avoid NVDA · Avoid Crypto/);
   assert.match(markup, /Technology 31\.4% · cap 30%/);
   assert.match(markup, /Taxable Brokerage · Taxable · prefers Tax Free/);
   assert.match(markup, /Taxable, Tax Free/);

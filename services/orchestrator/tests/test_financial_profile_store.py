@@ -18,6 +18,9 @@ def test_financial_profile_store_defaults(tmp_path: Path) -> None:
     assert payload["investment_policy"]["max_single_symbol_exposure_pct"] is None
     assert payload["investment_policy"]["max_sector_exposure_pct"] is None
     assert payload["investment_policy"]["minimum_research_confidence"] is None
+    assert payload["investment_policy"]["minimum_cash_runway_months"] is None
+    assert payload["investment_policy"]["max_asset_class_exposure_pct"] == {}
+    assert payload["investment_policy"]["simplicity_preference"] is None
     assert payload["investment_policy"]["preferred_account_locations"] == {}
     assert payload["investment_policy"]["restricted_symbols"] == []
     assert payload["investment_policy"]["restricted_sectors"] == []
@@ -52,6 +55,9 @@ def test_financial_profile_store_saves_investment_policy(tmp_path: Path) -> None
                 "max_single_symbol_exposure_pct": 10.0,
                 "max_sector_exposure_pct": 30.0,
                 "minimum_research_confidence": "medium",
+                "minimum_cash_runway_months": 9.0,
+                "max_asset_class_exposure_pct": {"equity": 85.0},
+                "simplicity_preference": "high",
                 "tax_sensitivity": "high",
                 "preferred_account_locations": {"equity": ["tax_free"]},
                 "restricted_symbols": ["NVDA"],
@@ -63,6 +69,9 @@ def test_financial_profile_store_saves_investment_policy(tmp_path: Path) -> None
     assert saved["investment_policy"]["max_single_symbol_exposure_pct"] == 10.0
     assert saved["investment_policy"]["max_sector_exposure_pct"] == 30.0
     assert saved["investment_policy"]["minimum_research_confidence"] == "medium"
+    assert saved["investment_policy"]["minimum_cash_runway_months"] == 9.0
+    assert saved["investment_policy"]["max_asset_class_exposure_pct"] == {"equity": 85.0}
+    assert saved["investment_policy"]["simplicity_preference"] == "high"
     assert saved["investment_policy"]["tax_sensitivity"] == "high"
     assert saved["investment_policy"]["preferred_account_locations"] == {"equity": ["tax_free"]}
     assert saved["investment_policy"]["restricted_symbols"] == ["NVDA"]

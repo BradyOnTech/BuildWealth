@@ -631,7 +631,7 @@ Recommended sequence:
 
 1. Keep provider/freshness/coverage metadata explicit around OpenBB-backed research outputs as provider depth increases.
 2. Continue migrating v2 research/portfolio surfaces away from classic fallbacks where high-frequency investment decisions happen.
-3. Continue Personal Investment Policy by expanding beyond single-symbol exposure, research confidence, tax sensitivity, sector caps, symbol/sector restrictions, and account-location preferences into cash, asset-class, and simplicity preferences.
+3. Continue Personal Investment Policy by expanding beyond single-symbol exposure, research confidence, tax sensitivity, sector caps, symbol/sector restrictions, and account-location preferences into cash, asset-class, and simplicity preferences. Cash floor, asset-class exposure caps, and simplicity preference are now profile-backed and wired into portfolio-fit plus generated review-only watchlist/research rows.
 4. Deepen account-location context later with account-type-specific contribution guidance and richer tax-policy preferences.
 
 ## Relationship to Existing Plans
