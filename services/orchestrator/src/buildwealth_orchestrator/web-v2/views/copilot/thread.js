@@ -63,6 +63,12 @@ function renderToolTrace(t) {
   if (isThesisRevisionTrace(t)) {
     return renderThesisRevisionCard(t.result);
   }
+  if (isPlanReviewTrace(t)) {
+    return renderPlanReviewCard(t.result);
+  }
+  if (isPlanScenarioDiffTrace(t)) {
+    return renderPlanScenarioDiffCard(t.result);
+  }
   return html`
     <details class="tool-trace">
       <summary>
@@ -97,6 +103,131 @@ function isThesisRevisionTrace(trace) {
     && (trace?.result?.draft_kind === 'watchlist_thesis_revision' || trace?.result?.draft_kind === 'dossier_thesis_revision')
     && trace?.result?.target
     && trace?.result?.proposed?.thesis;
+}
+
+function isPlanReviewTrace(trace) {
+  return trace?.name === 'get_plan_review_context'
+    && trace?.result?.plan_id;
+}
+
+function isPlanScenarioDiffTrace(trace) {
+  return trace?.name === 'run_plan_scenario_diff'
+    && trace?.result?.plan_id
+    && Array.isArray(trace?.result?.scenario_deltas);
+}
+
+function renderPlanReviewCard(result = {}) {
+  const planId = String(result.plan_id || '').trim();
+  const title = String(result.title || planId || 'Plan').trim();
+  const activeSet = result.active_assumption_set && typeof result.active_assumption_set === 'object'
+    ? result.active_assumption_set
+    : {};
+  const healthSignals = Array.isArray(result.health_signals) ? result.health_signals.slice(0, 5) : [];
+  const artifacts = Array.isArray(result.selected_artifacts) ? result.selected_artifacts.slice(0, 4) : [];
+  const nextStep = result.suggested_next_step && typeof result.suggested_next_step === 'object'
+    ? result.suggested_next_step
+    : {};
+  const nextSection = String(nextStep.section || healthSignals[0]?.section || 'assumptions').trim() || 'assumptions';
+
+  return html`
+    <article class="investment-fit-card plan-review-card">
+      <div class="investment-fit-head">
+        <div>
+          <p class="profile-draft-eyebrow">Plan review context</p>
+          <p class="investment-fit-title">${title}</p>
+        </div>
+        ${activeSet.name ? html`<p class="investment-fit-score">${activeSet.name}</p>` : ''}
+      </div>
+      <div class="investment-fit-meta-grid">
+        ${renderFitMeta('Active set', activeSet.name || activeSet.id || 'Default')}
+        ${renderFitMeta('Context scope', 'Bounded')}
+      </div>
+      ${renderPlanHealthSignals(planId, healthSignals)}
+      ${renderPlanArtifacts(artifacts)}
+      <div class="entry-actions">
+        <a class="action-link" href="${planSectionHref(planId, nextSection)}">
+          ${nextStep.label || 'Open Plan section'} <span class="arrow">→</span>
+        </a>
+      </div>
+    </article>
+  `;
+}
+
+function renderPlanHealthSignals(planId, signals) {
+  if (!Array.isArray(signals) || !signals.length) {
+    return html`
+      <div class="profile-draft-section investment-fit-section">
+        <p class="profile-draft-section-title">Plan health</p>
+        <p>Plan context is decision-grade for this review.</p>
+      </div>
+    `;
+  }
+  return html`
+    <div class="profile-draft-section investment-fit-section">
+      <p class="profile-draft-section-title">Gaps found</p>
+      <ul>
+        ${signals.map(signal => {
+          const section = String(signal?.section || 'assumptions').trim() || 'assumptions';
+          return html`
+            <li>
+              <a href="${planSectionHref(planId, section)}">${signal?.title || 'Review plan context'}</a>
+              ${signal?.detail ? html`<span> - ${signal.detail}</span>` : ''}
+            </li>
+          `;
+        })}
+      </ul>
+    </div>
+  `;
+}
+
+function renderPlanArtifacts(artifacts) {
+  if (!Array.isArray(artifacts) || !artifacts.length) return '';
+  return html`
+    <div class="profile-draft-section investment-fit-section">
+      <p class="profile-draft-section-title">Selected evidence</p>
+      <ul>
+        ${artifacts.map(artifact => {
+          const citations = Array.isArray(artifact?.citations) ? artifact.citations.filter(Boolean).slice(0, 3) : [];
+          return html`
+            <li>
+              <span>${artifact?.title || artifact?.id || 'Selected artifact'}</span>
+              ${citations.length ? html`<p class="profile-draft-meta">${citations.join(' · ')}</p>` : ''}
+            </li>
+          `;
+        })}
+      </ul>
+    </div>
+  `;
+}
+
+function renderPlanScenarioDiffCard(result = {}) {
+  const planId = String(result.plan_id || '').trim();
+  const deltas = Array.isArray(result.scenario_deltas) ? result.scenario_deltas.slice(0, 3) : [];
+  const monte = result.monte_carlo_delta && typeof result.monte_carlo_delta === 'object'
+    ? result.monte_carlo_delta
+    : {};
+  const warnings = Array.isArray(result.warnings) ? result.warnings.filter(Boolean).slice(0, 3) : [];
+  return html`
+    <article class="investment-fit-card plan-review-card">
+      <div class="investment-fit-head">
+        <div>
+          <p class="profile-draft-eyebrow">Plan scenario diff</p>
+          <p class="investment-fit-title">Scenario compared</p>
+        </div>
+        ${Object.keys(monte).length ? html`<p class="investment-fit-score">Monte Carlo</p>` : ''}
+      </div>
+      <div class="investment-fit-meta-grid">
+        ${deltas.map(delta => renderFitMeta(titleCase(delta?.label || 'scenario'), formatScenarioDelta(delta)))}
+        ${renderFitMeta('Success probability', formatPercentSigned(monte.success_probability_delta))}
+      </div>
+      ${renderFitList('Warnings', warnings)}
+      <div class="entry-actions">
+        <a class="action-link" href="${planSectionHref(planId, 'scenarios')}">
+          Open scenario workspace <span class="arrow">→</span>
+        </a>
+      </div>
+    </article>
+  `;
 }
 
 function renderThesisRevisionCard(result) {
@@ -626,6 +757,36 @@ function formatAccountLocationRow(account = {}) {
     gainLoss,
     account.lot_term_mix ? `${titleCase(account.lot_term_mix)} lots` : '',
   ].filter(Boolean).join(' · ');
+}
+
+function planSectionHref(planId, section) {
+  const id = String(planId || '').trim();
+  const safeSection = encodeURIComponent(String(section || '').trim() || 'assumptions');
+  return id
+    ? `#plan?id=${encodeURIComponent(id)}&section=${safeSection}`
+    : `#plan?section=${safeSection}`;
+}
+
+function formatScenarioDelta(delta = {}) {
+  const parts = [
+    delta.delta_future_value_usd != null ? `Future ${formatMoneySigned(delta.delta_future_value_usd)}` : '',
+    delta.delta_real_value_usd != null ? `Real ${formatMoneySigned(delta.delta_real_value_usd)}` : '',
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
+
+function formatMoneySigned(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '';
+  const sign = number > 0 ? '+' : '';
+  return `${sign}${MONEY_FMT.format(number)}`;
+}
+
+function formatPercentSigned(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '';
+  const sign = number > 0 ? '+' : '';
+  return `${sign}${(number * 100).toLocaleString('en-US', { maximumFractionDigits: 1 })}%`;
 }
 
 function formatTrace(trace) {

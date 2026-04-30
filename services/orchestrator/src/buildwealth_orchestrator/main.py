@@ -619,6 +619,8 @@ copilot = FinancialCopilot(
         "- For 'am I on track?' → call get_plan_tracking for plan assumptions, or get_goal_progress for specific goals.\n"
         "- For 'when will I reach my goal?' or 'what do I need to save?' → call get_goal_progress.\n"
         "- For federal tax estimates (income, capital gains, withholding) → call compute_tax.\n"
+        "- For bounded Plan review from v2 Plan → call get_plan_review_context before discussing assumptions, "
+        "scenario diffs, linked artifacts, or Plan health. Do not pull full artifact contents unless the user opens one.\n"
         "- For plan contribution allocation rules and defaults → call set_contribution_rules "
         "(or get_plan_contribution_rules to inspect current rules).\n"
         "- For comparing retirement withdrawal strategies across outcomes → call compare_withdrawal_strategies.\n"
@@ -10773,6 +10775,274 @@ async def tool_get_plan_context(arguments: dict[str, object]) -> dict[str, objec
     return plan_workspace.get_context_payload(plan_id=resolved)
 
 
+async def tool_get_plan_review_context(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+    detail = plan_workspace.get_plan(plan_id)
+    settings_payload = detail.get("settings", {})
+    settings_dict = settings_payload if isinstance(settings_payload, dict) else {}
+    assumption_sets = plan_workspace.get_plan_assumption_sets(plan_id)
+    active_assumption_set = summarize_active_assumption_set(assumption_sets)
+    try:
+        max_health_signals = max(1, min(int(arguments.get("max_health_signals", 5)), 10))
+    except Exception:
+        max_health_signals = 5
+    health_signals = build_plan_review_health_signals(
+        plan_id=plan_id,
+        settings=settings_dict,
+        max_signals=max_health_signals,
+    )
+    selected_artifacts = build_selected_plan_artifact_summaries(
+        plan_id=plan_id,
+        artifacts=detail.get("artifacts", []),
+        selected_artifact_ids=arguments.get("selected_artifact_ids"),
+    )
+    scenario_diff_summary = summarize_plan_review_scenario_diff(arguments.get("scenario_diff_result"))
+    next_section = "assumptions"
+    if health_signals:
+        next_section = str(health_signals[0].get("section") or "assumptions")
+    elif scenario_diff_summary:
+        next_section = "scenarios"
+    elif selected_artifacts:
+        next_section = "artifacts"
+
+    return {
+        "plan_id": plan_id,
+        "title": detail.get("title"),
+        "active_assumption_set": active_assumption_set,
+        "health_signals": health_signals,
+        "selected_artifacts": selected_artifacts,
+        "scenario_diff_summary": scenario_diff_summary,
+        "suggested_next_step": {
+            "label": plan_review_next_step_label(next_section),
+            "section": next_section,
+        },
+        "context_scope": {
+            "bounded": True,
+            "max_health_signals": max_health_signals,
+            "full_artifact_contents_included": False,
+            "long_decision_history_included": False,
+        },
+    }
+
+
+def summarize_active_assumption_set(assumption_sets: dict[str, Any]) -> dict[str, Any]:
+    active_id = str(assumption_sets.get("active_assumption_set_id") or "default").strip() or "default"
+    sets = assumption_sets.get("sets")
+    rows = sets if isinstance(sets, list) else []
+    active = next(
+        (row for row in rows if isinstance(row, dict) and str(row.get("id") or "").strip() == active_id),
+        rows[0] if rows and isinstance(rows[0], dict) else {},
+    )
+    active_settings = active.get("settings") if isinstance(active, dict) else {}
+    settings_dict = active_settings if isinstance(active_settings, dict) else {}
+    summary_keys = [
+        "annual_contribution_usd",
+        "years",
+        "expected_return_baseline",
+        "inflation_rate",
+        "marginal_tax_rate",
+        "withdrawal_strategy",
+        "drawdown_order",
+        "simulation_mode",
+    ]
+    return {
+        "id": str(active.get("id") or active_id).strip() or active_id,
+        "name": str(active.get("name") or active_id).strip() or active_id,
+        "description": str(active.get("description") or "").strip(),
+        "summary": {
+            key: settings_dict.get(key)
+            for key in summary_keys
+            if key in settings_dict
+        },
+    }
+
+
+def build_plan_review_health_signals(
+    *,
+    plan_id: str,
+    settings: dict[str, Any],
+    max_signals: int,
+) -> list[dict[str, Any]]:
+    signals: list[dict[str, Any]] = []
+    if settings.get("marginal_tax_rate") is None or settings.get("marginal_tax_rate") == "":
+        signals.append(
+            {
+                "id": "tax-assumptions",
+                "severity": "weak",
+                "title": "Tax assumptions need review",
+                "detail": "Marginal tax rate is missing, so plan advice and investment-fit checks carry lower confidence.",
+                "section": "assumptions",
+            }
+        )
+    if settings.get("annual_contribution_usd") is None or _coerce_float(settings.get("annual_contribution_usd"), 0.0) <= 0:
+        signals.append(
+            {
+                "id": "contribution-assumptions",
+                "severity": "weak",
+                "title": "Contribution assumptions need review",
+                "detail": "Annual contribution is missing or zero, which weakens plan trajectory and recommendation quality.",
+                "section": "assumptions",
+            }
+        )
+    if settings.get("expected_return_baseline") is None or settings.get("expected_return_baseline") == "":
+        signals.append(
+            {
+                "id": "return-assumptions",
+                "severity": "review",
+                "title": "Expected return assumption needs review",
+                "detail": "Expected return is missing, so scenario diffs and long-horizon projections need more context.",
+                "section": "assumptions",
+            }
+        )
+    try:
+        rows = recommendation_inbox.list(
+            limit=100,
+            status="proposed",
+            plan_id=plan_id,
+            sort="created_at_desc",
+        )
+    except Exception:
+        rows = []
+    stale_rows = [
+        row for row in rows
+        if isinstance(row, dict) and str(row.get("source") or "").strip().lower() == "generator:stale_assumptions"
+    ]
+    if stale_rows:
+        signals.append(
+            {
+                "id": "open-stale-assumptions",
+                "severity": "review",
+                "title": "Open stale-assumption reviews",
+                "detail": f"{len(stale_rows)} stale-assumption review{'s' if len(stale_rows) != 1 else ''} should be resolved before advice is fully trusted.",
+                "section": "assumptions",
+                "recommendation_id": stale_rows[0].get("id"),
+            }
+        )
+    thesis_rows = [
+        row for row in rows
+        if isinstance(row, dict) and str(row.get("source") or "").strip().lower() == "generator:research_thesis_expiration"
+    ]
+    if thesis_rows:
+        signals.append(
+            {
+                "id": "open-research-thesis-reviews",
+                "severity": "review",
+                "title": "Open research thesis reviews",
+                "detail": f"{len(thesis_rows)} linked research thesis review{'s' if len(thesis_rows) != 1 else ''} should be resolved before evidence guides plan decisions.",
+                "section": "artifacts",
+                "recommendation_id": thesis_rows[0].get("id"),
+            }
+        )
+    return signals[:max_signals]
+
+
+def build_selected_plan_artifact_summaries(
+    *,
+    plan_id: str,
+    artifacts: Any,
+    selected_artifact_ids: object,
+) -> list[dict[str, Any]]:
+    if isinstance(selected_artifact_ids, str):
+        requested_ids = [selected_artifact_ids]
+    elif isinstance(selected_artifact_ids, list):
+        requested_ids = [str(item or "").strip() for item in selected_artifact_ids]
+    else:
+        requested_ids = []
+    requested = [item for item in requested_ids if item]
+    if not requested:
+        return []
+    rows = artifacts if isinstance(artifacts, list) else []
+    summaries: list[dict[str, Any]] = []
+    for artifact_id in requested[:4]:
+        summary = next(
+            (
+                row for row in rows
+                if isinstance(row, dict) and str(row.get("id") or "").strip() == artifact_id
+            ),
+            {"id": artifact_id},
+        )
+        content = ""
+        try:
+            artifact_detail = plan_workspace.read_artifact(plan_id=plan_id, artifact_id=artifact_id)
+            if isinstance(artifact_detail, dict):
+                content = str(artifact_detail.get("content") or "")
+        except Exception:
+            content = ""
+        summaries.append(
+            {
+                "id": artifact_id,
+                "title": str(summary.get("title") or summary.get("file_name") or artifact_id).strip(),
+                "file_name": str(summary.get("file_name") or "").strip(),
+                "citations": extract_research_citations(content),
+            }
+        )
+    return summaries
+
+
+def extract_research_citations(content: str) -> list[str]:
+    citations: list[str] = []
+    for match in re.findall(r"research-evidence:[A-Za-z0-9_.:-]+", content or ""):
+        cleaned = match.rstrip(".,);]")
+        if cleaned and cleaned not in citations:
+            citations.append(cleaned)
+    return citations[:8]
+
+
+def summarize_plan_review_scenario_diff(value: object) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    deltas_raw = value.get("scenario_deltas")
+    deltas = deltas_raw if isinstance(deltas_raw, list) else []
+    monte_raw = value.get("monte_carlo_delta")
+    simulation_raw = value.get("simulation_delta")
+    warnings_raw = value.get("warnings")
+    return {
+        "deltas": [
+            {
+                "label": str(row.get("label") or "scenario"),
+                "delta_future_value_usd": row.get("delta_future_value_usd"),
+                "delta_real_value_usd": row.get("delta_real_value_usd"),
+            }
+            for row in deltas[:3]
+            if isinstance(row, dict)
+        ],
+        "monte_carlo_delta": (
+            {
+                key: monte_raw.get(key)
+                for key in ["success_probability_delta", "p50_future_value_delta_usd", "p10_future_value_delta_usd"]
+                if isinstance(monte_raw, dict) and key in monte_raw
+            }
+            if isinstance(monte_raw, dict)
+            else {}
+        ),
+        "simulation_delta": (
+            {
+                key: simulation_raw.get(key)
+                for key in ["status", "summary"]
+                if isinstance(simulation_raw, dict) and key in simulation_raw
+            }
+            if isinstance(simulation_raw, dict)
+            else {}
+        ),
+        "warnings": [
+            str(item)
+            for item in (warnings_raw if isinstance(warnings_raw, list) else [])
+            if str(item).strip()
+        ][:5],
+    }
+
+
+def plan_review_next_step_label(section: str) -> str:
+    normalized = str(section or "").strip().lower()
+    if normalized == "scenarios":
+        return "Open scenario workspace"
+    if normalized == "artifacts":
+        return "Open Plan evidence"
+    if normalized == "decisions":
+        return "Open decision ledger"
+    return "Review assumptions"
+
+
 async def tool_get_plan_settings(arguments: dict[str, object]) -> dict[str, object]:
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
     detail = plan_workspace.get_plan(plan_id)
@@ -12453,6 +12723,25 @@ def configure_copilot_tools() -> None:
             "additionalProperties": False,
         },
         handler=tool_get_plan_context,
+    )
+    copilot.register_tool(
+        name="get_plan_review_context",
+        description=(
+            "Return bounded v2 Plan review context: active assumption set, top health signals, "
+            "selected artifact ids/citations, and optional scenario diff summary. Does not return "
+            "full artifact contents or long decision history."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                "selected_artifact_ids": {"type": "array", "items": {"type": "string"}},
+                "scenario_diff_result": {"type": "object"},
+                "max_health_signals": {"type": "integer"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_get_plan_review_context,
     )
     copilot.register_tool(
         name="get_plan_settings",

@@ -30,6 +30,7 @@ def test_copilot_registry_includes_phase_3_5_tools() -> None:
         "update_recommendation_outcome",
         "get_recommendation_closure_analytics",
         "create_plan_recommendation_closure_summary",
+        "get_plan_review_context",
         "preview_recommendation",
         "draft_financial_profile_update",
     }
@@ -158,6 +159,17 @@ def test_create_plan_recommendation_closure_summary_tool_contract() -> None:
     assert "write_artifact" in properties
 
 
+def test_get_plan_review_context_tool_contract() -> None:
+    tool = main.copilot.tools["get_plan_review_context"]
+    properties = tool.parameters.get("properties", {})
+    assert "plan_id" in properties
+    assert "selected_artifact_ids" in properties
+    assert "scenario_diff_result" in properties
+    assert "max_health_signals" in properties
+    assert "bounded" in tool.description
+    assert "full artifact contents" in tool.description
+
+
 def test_preview_recommendation_tool_contract() -> None:
     tool = main.copilot.tools["preview_recommendation"]
     properties = tool.parameters.get("properties", {})
@@ -238,6 +250,110 @@ def test_draft_dossier_thesis_revision_tool_contract() -> None:
     assert "evidence_gaps" in properties
     assert "user review" in tool.description
     assert "without saving" in tool.description
+
+
+def test_tool_get_plan_review_context_returns_bounded_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = PlanWorkspace(tmp_path / "plans")
+    plan = workspace.create_plan(title="Bounded Plan")
+    workspace.update_plan_settings(
+        plan_id=plan["id"],
+        updates={
+            "annual_contribution_usd": 0,
+            "expected_return_baseline": 0.065,
+            "marginal_tax_rate": None,
+        },
+        log_decision=False,
+    )
+    workspace.update_plan_assumption_sets(
+        plan_id=plan["id"],
+        assumption_sets_payload={
+            "schema_version": 2,
+            "active_assumption_set_id": "policy",
+            "sets": [
+                {
+                    "id": "policy",
+                    "name": "Policy baseline",
+                    "description": "Use personal policy assumptions.",
+                    "settings": {
+                        "expected_return_baseline": 0.065,
+                        "marginal_tax_rate": None,
+                    },
+                }
+            ],
+        },
+        log_decision=False,
+    )
+    artifact = workspace.write_artifact(
+        plan_id=plan["id"],
+        title="Research Dossier - MSFT",
+        kind="research_dossier",
+        markdown=(
+            "# Research Dossier - MSFT\n\n"
+            "Citation research-evidence:yfinance:MSFT:6mo:1d.\n\n"
+            "SECRET FULL ARTIFACT BODY SHOULD NOT BE RETURNED."
+        ),
+    )
+    workspace.write_artifact(
+        plan_id=plan["id"],
+        title="Unselected Research Dossier - NVDA",
+        kind="research_dossier",
+        markdown="research-evidence:yfinance:NVDA:6mo:1d",
+    )
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    inbox.create(
+        title="Review stale assumptions",
+        detail="Tax context is missing.",
+        source="generator:stale_assumptions",
+        plan_id=plan["id"],
+    )
+    monkeypatch.setattr(main, "plan_workspace", workspace)
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+
+    payload = asyncio.run(
+        main.tool_get_plan_review_context(
+            {
+                "plan_id": plan["id"],
+                "selected_artifact_ids": [artifact["id"]],
+                "scenario_diff_result": {
+                    "scenario_deltas": [
+                        {
+                            "label": "baseline",
+                            "delta_future_value_usd": 42000,
+                            "delta_real_value_usd": 30000,
+                        }
+                    ],
+                    "raw_rows": ["this should be omitted"],
+                },
+                "max_health_signals": 5,
+            }
+        )
+    )
+
+    assert payload["plan_id"] == plan["id"]
+    assert payload["title"] == "Bounded Plan"
+    assert payload["active_assumption_set"]["name"] == "Policy baseline"
+    assert len(payload["health_signals"]) <= 5
+    assert {signal["id"] for signal in payload["health_signals"]} >= {
+        "tax-assumptions",
+        "contribution-assumptions",
+        "open-stale-assumptions",
+    }
+    assert payload["selected_artifacts"] == [
+        {
+            "id": artifact["id"],
+            "title": "Research Dossier - MSFT",
+            "file_name": artifact["file_name"],
+            "citations": ["research-evidence:yfinance:MSFT:6mo:1d"],
+        }
+    ]
+    assert "SECRET FULL ARTIFACT BODY" not in str(payload)
+    assert "Unselected Research Dossier" not in str(payload)
+    assert payload["scenario_diff_summary"]["deltas"][0]["delta_future_value_usd"] == 42000
+    assert "raw_rows" not in str(payload["scenario_diff_summary"])
+    assert payload["suggested_next_step"]["section"] == "assumptions"
 
 
 def test_tool_draft_watchlist_thesis_revision_does_not_save(

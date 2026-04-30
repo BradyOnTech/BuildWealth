@@ -648,11 +648,11 @@ Copilot should receive bounded plan context:
 
 Do not send full artifact contents or long decision history unless the user opens a specific artifact/revision.
 
-- [ ] **Step 1: Write failing Copilot prompt test**
+- [x] **Step 1: Write failing Copilot prompt test**
 
 Assert the Copilot Plan prompt includes plan id, active assumption set, and selected health signals, but does not include all artifacts.
 
-- [ ] **Step 2: Add route prompts**
+- [x] **Step 2: Add route prompts**
 
 Add Plan buttons that navigate to:
 
@@ -661,7 +661,7 @@ Add Plan buttons that navigate to:
 #copilot?intent=explain_scenario_diff&plan=<plan_id>
 ```
 
-- [ ] **Step 3: Render Plan trace cards**
+- [x] **Step 3: Render Plan trace cards**
 
 When Copilot uses Plan tools, render a compact trace card with:
 
@@ -670,7 +670,7 @@ When Copilot uses Plan tools, render a compact trace card with:
 - suggested next step
 - linked Plan section
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 
@@ -702,15 +702,15 @@ Expected: Copilot Plan prompt and trace tests pass.
 - append a decision
 - open Copilot plan-review prompt
 
-- [ ] **Step 1: Write Playwright test with mocked API routes**
+- [x] **Step 1: Write Playwright test with mocked API routes**
 
 Use the existing v2 browser-test pattern. Keep the mocked API payloads small and specific.
 
-- [ ] **Step 2: Add pytest wrapper**
+- [x] **Step 2: Add pytest wrapper**
 
 Use the existing `test_web_v2_*_browser.py` pattern so the browser test runs in the full backend test suite.
 
-- [ ] **Step 3: Verify browser flow**
+- [x] **Step 3: Verify browser flow**
 
 Run:
 

@@ -357,6 +357,8 @@ export function renderLookCloser(plan) {
         <a class="link-editorial" href="#plan?id=${id}&amp;section=timeline">Timeline events</a>
         <a class="link-editorial" href="#plan?id=${id}&amp;section=contributions">Contribution rules</a>
         <a class="link-editorial" href="#plan?id=${id}&amp;section=scenarios">Run a scenario diff</a>
+        <a class="link-editorial" href="#copilot?intent=review_plan_assumptions&amp;plan=${id}">Review with Copilot</a>
+        <a class="link-editorial" href="#copilot?intent=explain_scenario_diff&amp;plan=${id}">Explain scenario</a>
         <a class="link-editorial" href="/#plans?id=${id}">Branch on a life event</a>
         <a class="link-editorial" href="/#plans?id=${id}">Compare withdrawal strategies</a>
         <a class="link-editorial" href="/#plans?id=${id}">Browse artifacts</a>

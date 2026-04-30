@@ -79,6 +79,39 @@ const INVESTMENT_POLICY_SETUP_PROMPT = [
   'do not save anything with update_financial_profile until I explicitly confirm the draft.',
 ].join(' ');
 
+export function buildPlanReviewPrompt(intent, { planId = '' } = {}) {
+  const normalizedIntent = String(intent || '').trim().toLowerCase();
+  const id = String(planId || '').trim();
+  const planPhrase = id ? `plan ${id}` : 'the active plan';
+  const base = [
+    `Review ${planPhrase} with bounded Plan context.`,
+    id
+      ? `First call get_plan_review_context with plan_id="${id}" and max_health_signals=5.`
+      : 'First call get_plan_review_context with max_health_signals=5.',
+    'Use the active assumption set summary, top 5 health signals, selected artifact ids and citations, and selected scenario diff result summary when present.',
+    'Do not request full artifact contents. Do not request long decision history unless I explicitly open a specific artifact or decision.',
+  ];
+  if (normalizedIntent === 'explain_scenario_diff' || normalizedIntent === 'plan-scenario') {
+    return [
+      `Explain the scenario diff for ${planPhrase}.`,
+      ...base.slice(1),
+      'Focus on what changed, why it matters, confidence gaps, and the next review step. Do not apply plan settings automatically.',
+    ].join(' ');
+  }
+  if (normalizedIntent === 'review_stale_assumptions') {
+    return [
+      `Review stale assumptions for ${planPhrase}.`,
+      ...base.slice(1),
+      'Focus on assumptions that block Today, Inbox, Portfolio-fit, Research, or scenario confidence.',
+    ].join(' ');
+  }
+  return [
+    `Review plan assumptions for ${planPhrase}.`,
+    ...base.slice(1),
+    'Explain which assumptions are decision-grade, which are weak, and what should be reviewed next.',
+  ].join(' ');
+}
+
 const ui = {
   conversationId: null,
   conversationTitle: '',
@@ -105,7 +138,7 @@ export function template() {
 }
 
 export async function init(params = {}) {
-  ui.planId = params.plan_id || state.activePlanId || null;
+  ui.planId = params.plan_id || params.plan || state.activePlanId || null;
   ui.conversationId = params.conversation_id || null;
   ui.conversations = [];
   ui.messages = [];
@@ -124,6 +157,9 @@ export async function init(params = {}) {
   loadOnboarding().then(() => rerenderBody()).catch(() => {});
   if (String(params.intent || '').trim().toLowerCase() === 'investment-policy') {
     fillDraft(INVESTMENT_POLICY_SETUP_PROMPT);
+  }
+  if (isPlanReviewIntent(params.intent)) {
+    fillDraft(buildPlanReviewPrompt(params.intent, { planId: ui.planId }));
   }
   if (params.focus) {
     // Linked from inbox: prefill question. Conversation stays empty until sent.
@@ -430,6 +466,14 @@ function isInvestmentPolicyOnboardingStep(step) {
   return key.includes('investment_policy')
     || title.includes('investment policy')
     || title.includes('guardrail');
+}
+
+function isPlanReviewIntent(intent) {
+  const normalized = String(intent || '').trim().toLowerCase();
+  return normalized === 'review_plan_assumptions'
+    || normalized === 'explain_scenario_diff'
+    || normalized === 'review_stale_assumptions'
+    || normalized === 'plan-scenario';
 }
 
 function onboardingActionLabel(status) {

@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
+import { buildPlanReviewPrompt } from '../views/copilot.js';
 import { renderThread } from '../views/copilot/thread.js';
 
 test('copilot thread renders financial profile draft review card', () => {
@@ -258,6 +259,138 @@ test('copilot thread renders drafted investment recommendation tool results as r
   assert.match(html, /Decision-grade/);
   assert.match(html, /href="#inbox\?focus=rec-invest-draft"/);
   assert.doesNotMatch(html, /"draft_kind"/);
+});
+
+test('copilot plan review prompts request bounded context', () => {
+  const prompt = buildPlanReviewPrompt('review_plan_assumptions', { planId: 'plan-abc' });
+
+  assert.match(prompt, /plan-abc/);
+  assert.match(prompt, /get_plan_review_context/);
+  assert.match(prompt, /active assumption set/i);
+  assert.match(prompt, /top 5/i);
+  assert.match(prompt, /health signals/i);
+  assert.match(prompt, /selected artifact ids and citations/i);
+  assert.match(prompt, /Do not request full artifact contents/i);
+  assert.match(prompt, /Do not request long decision history/i);
+});
+
+test('copilot and plan views wire plan review routes', () => {
+  const copilotSource = readFileSync(
+    resolve(import.meta.dirname, '../views/copilot.js'),
+    'utf8',
+  );
+  const planSource = readFileSync(
+    resolve(import.meta.dirname, '../views/plan.js'),
+    'utf8',
+  );
+
+  assert.match(copilotSource, /review_plan_assumptions/);
+  assert.match(copilotSource, /explain_scenario_diff/);
+  assert.match(copilotSource, /params\.plan/);
+  assert.match(planSource, /#copilot\?intent=review_plan_assumptions&amp;plan=/);
+  assert.match(planSource, /#copilot\?intent=explain_scenario_diff&amp;plan=/);
+});
+
+test('copilot thread renders bounded plan review trace cards', () => {
+  const html = String(renderThread([
+    {
+      role: 'assistant',
+      content: 'I reviewed the plan context.',
+      created_at: '2026-04-26T12:00:00.000Z',
+      metadata: {
+        tool_calls: [
+          {
+            name: 'get_plan_review_context',
+            arguments: { plan_id: 'plan-1' },
+            result: {
+              plan_id: 'plan-1',
+              title: 'Retirement Plan',
+              active_assumption_set: {
+                id: 'policy',
+                name: 'Policy baseline',
+                summary: {
+                  expected_return_baseline: 0.065,
+                  marginal_tax_rate: null,
+                },
+              },
+              health_signals: [
+                {
+                  id: 'tax-assumptions',
+                  severity: 'weak',
+                  title: 'Tax assumptions need review',
+                  detail: 'Marginal tax rate is missing.',
+                  section: 'assumptions',
+                },
+              ],
+              selected_artifacts: [
+                {
+                  id: 'artifact-dossier-msft',
+                  title: 'Research Dossier - MSFT',
+                  citations: ['research-evidence:yfinance:MSFT:6mo:1d'],
+                  content: 'This full artifact body should not render.',
+                },
+              ],
+              suggested_next_step: {
+                label: 'Review assumptions',
+                section: 'assumptions',
+              },
+            },
+          },
+        ],
+      },
+    },
+  ]));
+
+  assert.match(html, /Plan review context/);
+  assert.match(html, /Retirement Plan/);
+  assert.match(html, /Policy baseline/);
+  assert.match(html, /Tax assumptions need review/);
+  assert.match(html, /Marginal tax rate is missing\./);
+  assert.match(html, /research-evidence:yfinance:MSFT:6mo:1d/);
+  assert.match(html, /href="#plan\?id=plan-1&amp;section=assumptions"/);
+  assert.match(html, /Review assumptions/);
+  assert.doesNotMatch(html, /full artifact body/);
+  assert.doesNotMatch(html, /"health_signals"/);
+});
+
+test('copilot thread renders plan scenario diff trace cards', () => {
+  const html = String(renderThread([
+    {
+      role: 'assistant',
+      content: 'I compared the scenario.',
+      created_at: '2026-04-26T12:00:00.000Z',
+      metadata: {
+        tool_calls: [
+          {
+            name: 'run_plan_scenario_diff',
+            arguments: { plan_id: 'plan-1', annual_contribution_usd: 30000 },
+            result: {
+              plan_id: 'plan-1',
+              scenario_deltas: [
+                {
+                  label: 'baseline',
+                  base_future_value_usd: 1000000,
+                  candidate_future_value_usd: 1042000,
+                  delta_future_value_usd: 42000,
+                  delta_real_value_usd: 30000,
+                },
+              ],
+              monte_carlo_delta: { success_probability_delta: 0.04 },
+              warnings: ['Contribution rule coverage is partial.'],
+            },
+          },
+        ],
+      },
+    },
+  ]));
+
+  assert.match(html, /Plan scenario diff/);
+  assert.match(html, /Baseline/);
+  assert.match(html, /\+\$42,000/);
+  assert.match(html, /\+4%/);
+  assert.match(html, /Contribution rule coverage is partial\./);
+  assert.match(html, /href="#plan\?id=plan-1&amp;section=scenarios"/);
+  assert.doesNotMatch(html, /"scenario_deltas"/);
 });
 
 test('copilot thread renders watchlist thesis revision draft cards', () => {

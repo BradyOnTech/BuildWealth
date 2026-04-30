@@ -1,7 +1,7 @@
 // Composer — multi-line textarea with auto-grow and ⌘+Enter submit.
 // Stateless renderer; the parent orchestrator wires events via delegation.
 
-import { html, esc } from '../../lib/dom.js';
+import { html } from '../../lib/dom.js';
 
 export function renderComposer({ busy = false, draft = '', useLive = false } = {}) {
   return html`
@@ -13,7 +13,7 @@ export function renderComposer({ busy = false, draft = '', useLive = false } = {
           name="question"
           placeholder="Ask anything — what should I do this week, am I on track, what about a $450k house…"
           rows="1"
-          ${busy ? 'disabled' : ''}>${esc(draft)}</textarea>
+          ${busy ? 'disabled' : ''}>${draft}</textarea>
         <div class="composer-row">
           <span class="composer-hint">
             <kbd>${isMac() ? '⌘' : 'Ctrl'}</kbd><kbd>↵</kbd> to send · <kbd>↵</kbd> for line break
