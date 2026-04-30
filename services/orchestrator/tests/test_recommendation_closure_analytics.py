@@ -216,6 +216,13 @@ def test_build_recommendation_closure_analytics_payload_summarizes_outcomes(
                     "expected_delta_future_value_usd": 1000.0,
                     "expected_delta_real_value_usd": 700.0,
                 },
+                "pre_mortem": {
+                    "expected_benefit": "Retirement baseline improves.",
+                    "main_risk": "Cash runway gets too tight.",
+                    "disconfirming_signal": "Savings rate turns negative.",
+                    "monitoring_plan": "Review cash runway.",
+                    "review_date": "2026-06-30",
+                },
                 "realized_outcome": {
                     "realized_delta_future_value_usd": 800.0,
                     "realized_delta_real_value_usd": 650.0,
@@ -283,14 +290,26 @@ def test_build_recommendation_closure_analytics_payload_summarizes_outcomes(
     summary = payload["summary"]
     assert summary["with_expected_count"] == 3
     assert summary["with_realized_count"] == 2
+    assert summary["pre_mortem_count"] == 1
+    assert summary["pre_mortem_realized_count"] == 1
+    assert summary["pre_mortem_pending_count"] == 0
     assert summary["measured_count"] == 2
     assert summary["pending_realized_count"] == 1
     assert summary["future_value_gap_total_usd"] == 250.0
     assert summary["future_value_direction_match_rate_pct"] == 50.0
     assert payload["calibration_model_version"] == "calibration_v1"
+    assert payload["pre_mortem_summary"] == {
+        "count": 1,
+        "realized_count": 1,
+        "pending_count": 0,
+        "coverage_pct": 33.33,
+        "realized_coverage_pct": 100.0,
+    }
 
     calibration_summary = payload["calibration_summary"]
     assert calibration_summary["count"] == 3
+    assert calibration_summary["pre_mortem_count"] == 1
+    assert calibration_summary["pre_mortem_realized_count"] == 1
     assert calibration_summary["measured_count"] == 2
     assert calibration_summary["future_value_direction_match_rate_pct"] == 50.0
     assert calibration_summary["mean_future_value_abs_error_usd"] == 325.0

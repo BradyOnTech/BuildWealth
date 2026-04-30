@@ -133,10 +133,21 @@ test('Inbox previews, applies, and captures recommendation outcome', async ({ pa
 
   await page.getByRole('button', { name: /Preview & apply/ }).click();
   await page.getByText('terminal value').waitFor({ state: 'visible' });
+  await page.getByText('Decision pre-mortem').waitFor({ state: 'visible' });
   await page.locator('textarea[name="rationale"]').fill('Makes sense after reviewing the scenario preview.');
+  await page.locator('textarea[name="premortem_expected_benefit"]').fill('Retirement baseline improves.');
+  await page.locator('textarea[name="premortem_main_risk"]').fill('Cash runway gets too tight.');
+  await page.locator('textarea[name="premortem_disconfirming_signal"]').fill('Savings rate turns negative.');
+  await page.locator('input[name="premortem_monitoring_plan"]').fill('Review cash runway after two pay cycles.');
+  await page.locator('input[name="premortem_review_date"]').fill('2026-06-30');
   await page.getByRole('button', { name: 'Yes, apply' }).click();
 
   assert.equal(applyPayload.rationale, 'Makes sense after reviewing the scenario preview.');
+  assert.equal(applyPayload.premortem_expected_benefit, 'Retirement baseline improves.');
+  assert.equal(applyPayload.premortem_main_risk, 'Cash runway gets too tight.');
+  assert.equal(applyPayload.premortem_disconfirming_signal, 'Savings rate turns negative.');
+  assert.equal(applyPayload.premortem_monitoring_plan, 'Review cash runway after two pay cycles.');
+  assert.equal(applyPayload.premortem_review_date, '2026-06-30');
 
   await page.getByRole('button', { name: 'applied' }).click();
   await page.getByText('Increase annual contributions').waitFor({ state: 'visible' });

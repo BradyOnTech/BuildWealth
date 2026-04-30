@@ -1315,6 +1315,11 @@ class RecommendationApplyRequest(BaseModel):
     plan_settings_updates: dict[str, Any] = Field(default_factory=dict)
     rationale: str = ""
     decision_status: str = "accepted"
+    premortem_expected_benefit: str = ""
+    premortem_main_risk: str = ""
+    premortem_disconfirming_signal: str = ""
+    premortem_monitoring_plan: str = ""
+    premortem_review_date: date | None = None
     create_decision_packet: bool = True
     capture_scenario_diff: bool = True
     decision_packet_research_symbols: list[str] = Field(default_factory=list)

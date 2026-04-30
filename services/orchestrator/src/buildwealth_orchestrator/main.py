@@ -3885,9 +3885,22 @@ def _build_today_command_cards(dashboard: TodayDashboardResponse) -> list[TodayC
         row for row in pending_process_outcomes
         if _recommendation_has_thesis_revision(row)
     ]
+    pending_pre_mortem_outcomes = [
+        row for row in pending_outcomes
+        if _recommendation_pre_mortem(row)
+    ]
     first_pending_id = str(pending_outcomes[0].get("id") or "").strip() if pending_outcomes else ""
     pending_detail = "Closed recommendations have no pending outcome capture."
-    if pending_process_outcomes:
+    pending_action_label = "Log outcome" if pending_outcomes else "Review outcomes"
+    if pending_pre_mortem_outcomes:
+        first_pre_mortem = _recommendation_pre_mortem(pending_pre_mortem_outcomes[0])
+        first_pending_id = str(pending_pre_mortem_outcomes[0].get("id") or "").strip() or first_pending_id
+        risk = str(first_pre_mortem.get("main_risk") or "").strip()
+        pending_detail = f"{len(pending_pre_mortem_outcomes)} pre-mortem check(s) are ready for outcome review."
+        if risk:
+            pending_detail = f"{pending_detail} First risk: {risk}"
+        pending_action_label = "Check pre-mortem"
+    elif pending_process_outcomes:
         pending_detail = (
             f"{len(pending_process_outcomes)} investment/research review(s) need decision-process calibration."
         )
@@ -3901,7 +3914,7 @@ def _build_today_command_cards(dashboard: TodayDashboardResponse) -> list[TodayC
             detail=pending_detail,
             metric_label="Pending",
             metric_value=str(len(pending_outcomes)),
-            action_label="Log outcome" if pending_outcomes else "Review outcomes",
+            action_label=pending_action_label,
             href=f"#inbox?focus={first_pending_id}" if first_pending_id else "#inbox",
         )
     )
@@ -4845,6 +4858,17 @@ def _recommendation_needs_outcome(row: dict[str, Any]) -> bool:
     if isinstance(expected_vs_realized, dict):
         return str(expected_vs_realized.get("status") or "").strip().lower() == "pending_realized"
     return True
+
+
+def _recommendation_pre_mortem(row: dict[str, Any]) -> dict[str, Any]:
+    action_payload = row.get("action_payload")
+    if not isinstance(action_payload, dict):
+        return {}
+    closure = action_payload.get("decision_closure")
+    if not isinstance(closure, dict):
+        return {}
+    pre_mortem = closure.get("pre_mortem")
+    return pre_mortem if isinstance(pre_mortem, dict) else {}
 
 
 def _extract_recommendation_thesis_revision(row: dict[str, Any]) -> dict[str, Any]:
@@ -5870,6 +5894,17 @@ def _expected_vs_realized_summary_text(metrics: dict[str, Any] | None) -> str:
     return "Expected vs realized outcome unavailable."
 
 
+def _build_decision_pre_mortem_from_request(request: RecommendationApplyRequest) -> dict[str, Any]:
+    payload = {
+        "expected_benefit": str(request.premortem_expected_benefit or "").strip(),
+        "main_risk": str(request.premortem_main_risk or "").strip(),
+        "disconfirming_signal": str(request.premortem_disconfirming_signal or "").strip(),
+        "monitoring_plan": str(request.premortem_monitoring_plan or "").strip(),
+        "review_date": request.premortem_review_date.isoformat() if request.premortem_review_date else "",
+    }
+    return {key: value for key, value in payload.items() if value}
+
+
 def _build_recommendation_closure_markdown(
     *,
     recommendation: dict[str, Any],
@@ -5918,6 +5953,24 @@ def _build_recommendation_closure_markdown(
         lines.append(f"- Rationale: {decision_closure.get('rationale')}")
     if decision_closure.get("reason"):
         lines.append(f"- Reason: {decision_closure.get('reason')}")
+
+    pre_mortem = (
+        decision_closure.get("pre_mortem")
+        if isinstance(decision_closure.get("pre_mortem"), dict)
+        else {}
+    )
+    if pre_mortem:
+        lines.extend(["", "## Decision Pre-Mortem", ""])
+        if pre_mortem.get("expected_benefit"):
+            lines.append(f"- Expected benefit: {pre_mortem.get('expected_benefit')}")
+        if pre_mortem.get("main_risk"):
+            lines.append(f"- Main risk: {pre_mortem.get('main_risk')}")
+        if pre_mortem.get("disconfirming_signal"):
+            lines.append(f"- Disconfirming signal: {pre_mortem.get('disconfirming_signal')}")
+        if pre_mortem.get("monitoring_plan"):
+            lines.append(f"- Monitoring plan: {pre_mortem.get('monitoring_plan')}")
+        if pre_mortem.get("review_date"):
+            lines.append(f"- Review date: `{pre_mortem.get('review_date')}`")
 
     lines.extend(["", "## Outcome Tracking", ""])
     if expected_outcome:
@@ -6464,6 +6517,9 @@ async def apply_recommendation_with_decision_packet(
         "decision_status": str(request.decision_status or "accepted").strip() or "accepted",
         "rationale": request.rationale.strip() if request.rationale else "",
     }
+    pre_mortem_payload = _build_decision_pre_mortem_from_request(request)
+    if pre_mortem_payload:
+        decision_closure_payload["pre_mortem"] = pre_mortem_payload
     if scenario_diff_preview:
         decision_closure_payload["scenario_diff_preview"] = scenario_diff_preview
     expected_outcome = _build_expected_outcome_from_preview(scenario_diff_preview)
@@ -7058,6 +7114,8 @@ def _build_calibration_row(*, key: str, rows: list[dict[str, Any]]) -> dict[str,
     count = len(rows)
     with_expected_count = 0
     with_realized_count = 0
+    pre_mortem_count = 0
+    pre_mortem_realized_count = 0
     measured_count = 0
     pending_realized_count = 0
     direction_match_count = 0
@@ -7081,6 +7139,10 @@ def _build_calibration_row(*, key: str, rows: list[dict[str, Any]]) -> dict[str,
             with_expected_count += 1
         if has_realized:
             with_realized_count += 1
+        if bool(row.get("has_pre_mortem")):
+            pre_mortem_count += 1
+            if has_realized:
+                pre_mortem_realized_count += 1
 
         if expected_future is not None:
             expected_future_total += expected_future
@@ -7114,6 +7176,9 @@ def _build_calibration_row(*, key: str, rows: list[dict[str, Any]]) -> dict[str,
         "count": count,
         "with_expected_count": with_expected_count,
         "with_realized_count": with_realized_count,
+        "pre_mortem_count": pre_mortem_count,
+        "pre_mortem_realized_count": pre_mortem_realized_count,
+        "pre_mortem_pending_count": max(0, pre_mortem_count - pre_mortem_realized_count),
         "measured_count": measured_count,
         "pending_realized_count": pending_realized_count,
         "realized_coverage_pct": realized_coverage_pct,
@@ -7461,6 +7526,7 @@ def build_recommendation_closure_analytics_payload(
             if isinstance(closure.get("expected_vs_realized"), dict)
             else _build_expected_vs_realized_metrics(expected_outcome=expected_outcome, realized_outcome=realized_outcome)
         )
+        pre_mortem = closure.get("pre_mortem") if isinstance(closure.get("pre_mortem"), dict) else {}
         process_calibration = (
             closure.get("decision_process_calibration")
             if isinstance(closure.get("decision_process_calibration"), dict)
@@ -7491,6 +7557,10 @@ def build_recommendation_closure_analytics_payload(
                 "future_value_direction_match": expected_vs_realized.get("future_value_direction_match"),
                 "real_value_direction_match": expected_vs_realized.get("real_value_direction_match"),
                 "tracking_status": expected_vs_realized.get("status"),
+                "has_pre_mortem": bool(pre_mortem),
+                "pre_mortem_main_risk": pre_mortem.get("main_risk"),
+                "pre_mortem_disconfirming_signal": pre_mortem.get("disconfirming_signal"),
+                "pre_mortem_review_date": pre_mortem.get("review_date"),
                 "observation_window_days": realized_outcome.get("observation_window_days"),
                 "measurement_source": realized_outcome.get("measurement_source"),
                 "process_outcome": process_calibration.get("process_outcome"),
@@ -7519,6 +7589,8 @@ def build_recommendation_closure_analytics_payload(
     source_counts: dict[str, int] = {}
     with_expected_count = 0
     with_realized_count = 0
+    pre_mortem_count = 0
+    pre_mortem_realized_count = 0
     measured_count = 0
     direction_match_count = 0
     process_counts: dict[str, int] = {}
@@ -7551,6 +7623,10 @@ def build_recommendation_closure_analytics_payload(
             with_expected_count += 1
         if has_realized:
             with_realized_count += 1
+        if bool(row.get("has_pre_mortem")):
+            pre_mortem_count += 1
+            if has_realized:
+                pre_mortem_realized_count += 1
 
         if expected_future is not None:
             expected_future_total += expected_future
@@ -7586,6 +7662,12 @@ def build_recommendation_closure_analytics_payload(
     direction_match_rate_pct = round((direction_match_count / measured_count) * 100.0, 2) if measured_count else None
     mean_abs_error = round((future_abs_error_total / measured_count), 2) if measured_count else None
     process_useful_rate_pct = round((useful_process_count / process_count) * 100.0, 2) if process_count else None
+    pre_mortem_coverage_pct = round((pre_mortem_count / count) * 100.0, 2) if count else 0.0
+    pre_mortem_realized_coverage_pct = (
+        round((pre_mortem_realized_count / pre_mortem_count) * 100.0, 2)
+        if pre_mortem_count
+        else 0.0
+    )
     calibration_summary = _build_calibration_row(key="all", rows=selected_rows)
     calibration_by_type = _build_segmented_calibration_rows(
         rows=selected_rows,
@@ -7622,12 +7704,22 @@ def build_recommendation_closure_analytics_payload(
             "thesis_revision_count": thesis_revision_count,
             "useful_thesis_revision_count": useful_thesis_revision_count,
         },
+        "pre_mortem_summary": {
+            "count": pre_mortem_count,
+            "realized_count": pre_mortem_realized_count,
+            "pending_count": max(0, pre_mortem_count - pre_mortem_realized_count),
+            "coverage_pct": pre_mortem_coverage_pct,
+            "realized_coverage_pct": pre_mortem_realized_coverage_pct,
+        },
         "process_calibration_by_outcome": _counter_to_rows(process_counts),
         "process_calibration_by_evidence_sufficiency": _counter_to_rows(evidence_sufficiency_counts),
         "summary": {
             "closed_count": count,
             "with_expected_count": with_expected_count,
             "with_realized_count": with_realized_count,
+            "pre_mortem_count": pre_mortem_count,
+            "pre_mortem_realized_count": pre_mortem_realized_count,
+            "pre_mortem_pending_count": max(0, pre_mortem_count - pre_mortem_realized_count),
             "measured_count": measured_count,
             "pending_realized_count": max(0, with_expected_count - measured_count),
             "realized_coverage_pct": coverage_pct,

@@ -87,6 +87,37 @@ test('inbox entries render recommendation quality metadata', () => {
   assert.match(markup, /decision grade/);
 });
 
+test('inbox high-impact apply form asks for a decision pre-mortem', () => {
+  const markup = String(renderEntries([
+    {
+      id: 'high-impact-plan',
+      status: 'proposed',
+      priority: 'high',
+      recommendation_type: 'plan_settings_update',
+      title: 'Increase annual contributions',
+      detail: 'This materially changes long-term plan outcomes.',
+      action_payload: {
+        quality: {
+          actionability: 'previewable',
+          impact: { level: 'high' },
+        },
+      },
+    },
+  ], {
+    planLookup: new Map(),
+    expanded: { id: 'high-impact-plan', mode: 'apply', busy: false, preview: null, error: null },
+    emptyMessage: '',
+  }));
+
+  assert.match(markup, /Decision pre-mortem/);
+  assert.match(markup, /What would make this decision look wrong later\?/);
+  assert.match(markup, /name="premortem_expected_benefit"/);
+  assert.match(markup, /name="premortem_main_risk"/);
+  assert.match(markup, /name="premortem_disconfirming_signal"/);
+  assert.match(markup, /name="premortem_monitoring_plan"/);
+  assert.match(markup, /name="premortem_review_date"/);
+});
+
 test('inbox actions use quality actionability semantics', () => {
   const markup = String(renderEntries([
     {
@@ -203,6 +234,42 @@ test('inbox outcome form is guided by recommendation source and actionability', 
   assert.match(profileMarkup, /Was the missing context completed\?/);
   assert.match(profileMarkup, /Context completed/);
   assert.match(profileMarkup, /profile readiness review/);
+});
+
+test('inbox outcome form shows saved decision pre-mortem context', () => {
+  const markup = String(renderEntries([
+    {
+      id: 'applied-high-impact',
+      status: 'applied',
+      priority: 'high',
+      recommendation_type: 'plan_settings_update',
+      source: 'generator:plan_tracking',
+      title: 'Increase annual contributions',
+      detail: 'Contribution change was accepted.',
+      action_payload: {
+        decision_closure: {
+          pre_mortem: {
+            expected_benefit: 'Retirement baseline improves.',
+            main_risk: 'Cash runway gets too tight.',
+            disconfirming_signal: 'Savings rate turns negative.',
+            monitoring_plan: 'Review cash runway after two pay cycles.',
+            review_date: '2026-06-30',
+          },
+        },
+      },
+    },
+  ], {
+    planLookup: new Map(),
+    expanded: { id: 'applied-high-impact', mode: 'outcome', busy: false, error: null },
+    emptyMessage: '',
+  }));
+
+  assert.match(markup, /Pre-mortem baseline/);
+  assert.match(markup, /Expected benefit: Retirement baseline improves\./);
+  assert.match(markup, /Main risk: Cash runway gets too tight\./);
+  assert.match(markup, /Disconfirming signal: Savings rate turns negative\./);
+  assert.match(markup, /Monitor: Review cash runway after two pay cycles\./);
+  assert.match(markup, /Review date: 2026-06-30/);
 });
 
 test('inbox investment research rows render fit routing instead of generic workflow only', () => {

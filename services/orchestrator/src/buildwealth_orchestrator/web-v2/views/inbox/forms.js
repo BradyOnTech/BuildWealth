@@ -18,6 +18,7 @@ function renderApplyForm(item, { busy, preview, error }) {
     <div class="inline-form" data-form="apply" data-id="${item.id}">
       <p class="inline-form-title">Apply this suggestion?</p>
       ${raw(renderPreview(preview))}
+      ${raw(renderPreMortemPrompt(item))}
       <div class="inline-form-row">
         <label class="inline-label" for="apply-rationale-${item.id}">Rationale (optional)</label>
         <textarea id="apply-rationale-${item.id}" name="rationale"
@@ -32,6 +33,52 @@ function renderApplyForm(item, { busy, preview, error }) {
       </div>
     </div>
   `;
+}
+
+function renderPreMortemPrompt(item) {
+  if (!isHighImpactRecommendation(item)) return '';
+  return html`
+    <div class="inline-form-row">
+      <p class="inline-form-title">Decision pre-mortem</p>
+      <p class="marginalia">What would make this decision look wrong later?</p>
+    </div>
+    <div class="inline-form-row">
+      <label class="inline-label" for="premortem-benefit-${item.id}">Expected benefit</label>
+      <textarea id="premortem-benefit-${item.id}" name="premortem_expected_benefit"
+        placeholder="What should improve if this decision works?"></textarea>
+    </div>
+    <div class="inline-form-row">
+      <label class="inline-label" for="premortem-risk-${item.id}">Main risk</label>
+      <textarea id="premortem-risk-${item.id}" name="premortem_main_risk"
+        placeholder="What could make this decision wrong or poorly timed?"></textarea>
+    </div>
+    <div class="inline-form-row">
+      <label class="inline-label" for="premortem-signal-${item.id}">Disconfirming signal</label>
+      <textarea id="premortem-signal-${item.id}" name="premortem_disconfirming_signal"
+        placeholder="What signal should cause a review, reversal, or pause?"></textarea>
+    </div>
+    <div class="inline-form-row cols-2">
+      <div>
+        <label class="inline-label" for="premortem-monitor-${item.id}">What to monitor</label>
+        <input id="premortem-monitor-${item.id}" name="premortem_monitoring_plan" type="text"
+          placeholder="cash runway, allocation, evidence freshness" />
+      </div>
+      <div>
+        <label class="inline-label" for="premortem-review-${item.id}">Review date</label>
+        <input id="premortem-review-${item.id}" name="premortem_review_date" type="date" />
+      </div>
+    </div>
+  `;
+}
+
+function isHighImpactRecommendation(item) {
+  const priority = String(item?.priority || '').toLowerCase();
+  const quality = item?.action_payload?.quality || {};
+  const impact = quality?.impact && typeof quality.impact === 'object' ? quality.impact : {};
+  const scoreImpact = Number(item?.score?.impact);
+  return priority === 'high'
+    || String(impact.level || '').toLowerCase() === 'high'
+    || (Number.isFinite(scoreImpact) && scoreImpact >= 75);
 }
 
 function renderDeclineForm(item, { busy, error }) {
@@ -61,6 +108,7 @@ function renderOutcomeForm(item, { busy, error }) {
     <div class="inline-form muted" data-form="outcome" data-id="${item.id}">
       <p class="inline-form-title">${guidance.title}</p>
       ${guidance.summary ? html`<p class="marginalia">${guidance.summary}</p>` : ''}
+      ${raw(renderPreMortemBaseline(item))}
       ${guidance.calibrationDomain ? html`
         <input type="hidden" name="process_outcome" value="" />
         <input type="hidden" name="evidence_sufficiency" value="" />
@@ -115,6 +163,31 @@ function renderOutcomeForm(item, { busy, error }) {
         </button>
         <button class="btn btn-ghost" data-cancel data-id="${item.id}" ${busy ? 'disabled' : ''}>Cancel</button>
       </div>
+    </div>
+  `;
+}
+
+function renderPreMortemBaseline(item) {
+  const closure = item?.action_payload?.decision_closure && typeof item.action_payload.decision_closure === 'object'
+    ? item.action_payload.decision_closure
+    : {};
+  const preMortem = closure.pre_mortem && typeof closure.pre_mortem === 'object'
+    ? closure.pre_mortem
+    : {};
+  const rows = [
+    ['Expected benefit', preMortem.expected_benefit],
+    ['Main risk', preMortem.main_risk],
+    ['Disconfirming signal', preMortem.disconfirming_signal],
+    ['Monitor', preMortem.monitoring_plan],
+    ['Review date', preMortem.review_date],
+  ].filter(([, value]) => String(value || '').trim());
+  if (!rows.length) return '';
+  return html`
+    <div class="inline-form-row">
+      <p class="inline-form-title">Pre-mortem baseline</p>
+      <ul class="marginalia">
+        ${raw(rows.map(([label, value]) => `<li>${esc(label)}: ${esc(String(value || '').trim())}</li>`).join(''))}
+      </ul>
     </div>
   `;
 }

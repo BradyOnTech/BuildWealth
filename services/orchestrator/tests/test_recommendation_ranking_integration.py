@@ -570,6 +570,56 @@ def test_today_outcome_loop_surfaces_copilot_investment_process_calibration(
     assert "decision-process calibration" in cards["outcome-loop"].detail
 
 
+def test_today_outcome_loop_prioritizes_pending_pre_mortem_checks(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    recommendation = inbox.create(
+        title="Increase annual contributions",
+        detail="High-impact contribution change accepted.",
+        priority="high",
+        status="applied",
+        source="generator:plan_tracking",
+        recommendation_type="plan_settings_update",
+        action_payload={
+            "decision_closure": {
+                "decision_status": "accepted",
+                "pre_mortem": {
+                    "expected_benefit": "Retirement baseline improves.",
+                    "main_risk": "Cash runway gets too tight.",
+                    "disconfirming_signal": "Savings rate turns negative.",
+                    "monitoring_plan": "Review cash runway after two pay cycles.",
+                    "review_date": "2026-06-30",
+                },
+                "expected_outcome": {"expected_delta_future_value_usd": 1000.0},
+                "expected_vs_realized": {"status": "pending_realized"},
+            }
+        },
+    )
+
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    dashboard = main.TodayDashboardResponse(
+        generated_at=main.utc_now(),
+        currency="USD",
+        state="MN",
+        sync_status=main.SyncStatusResponse(running=False, runs_total=0, runs_failed=0),
+        context_state="ready",
+        context_notes=[],
+        command_cards=[],
+        emergency_fund_months=8.0,
+    )
+
+    cards = {card.id: card for card in main._build_today_command_cards(dashboard)}
+
+    assert cards["outcome-loop"].status == "warning"
+    assert cards["outcome-loop"].metric_value == "1"
+    assert cards["outcome-loop"].action_label == "Check pre-mortem"
+    assert cards["outcome-loop"].href == f"#inbox?focus={recommendation['id']}"
+    assert "pre-mortem check" in cards["outcome-loop"].detail
+    assert "Cash runway gets too tight" in cards["outcome-loop"].detail
+
+
 def test_today_command_cards_surface_pending_thesis_revision_outcome(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

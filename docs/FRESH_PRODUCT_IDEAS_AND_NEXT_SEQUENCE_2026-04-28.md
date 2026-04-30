@@ -148,9 +148,10 @@ Example:
 
 Likely first slice:
 
-- add optional pre-mortem prompts to high-impact Inbox recommendations
-- store the result in recommendation `action_payload.decision_closure`
-- show it during outcome capture
+- add optional pre-mortem prompts to high-impact Inbox recommendations (started: proposed high-priority/high-impact apply forms now ask for expected benefit, main risk, disconfirming signal, monitoring plan, and review date)
+- store the result in recommendation `action_payload.decision_closure` (started: apply now saves `decision_closure.pre_mortem` and writes it into the closure artifact)
+- show it during outcome capture (started: the outcome form now displays the saved pre-mortem baseline before realized outcome entry)
+- use it in calibration and Today follow-up (started: closure analytics now reports pre-mortem coverage/realized coverage, and Today outcome-loop cards prioritize pending pre-mortem checks with the original risk signal)
 
 ### 3. What Changed Since Last Review
 
@@ -250,9 +251,8 @@ Completed/mostly completed agreed sequence:
 
 Current build order:
 
-1. Decision Pre-Mortem, because it improves outcome learning and calibration for high-impact decisions.
-2. Confidence Heat Map, because it can unify readiness/freshness once account-policy, plan, research, provider, and Today-checkpoint signals are richer.
-3. Trust/durability visibility, because backup/restore/protection/audit state needs to be visible before BuildWealth feels dependable as a daily operating system.
+1. Confidence Heat Map, because it can unify readiness/freshness once account-policy, plan, research, provider, recommendation, and Today-checkpoint signals are richer.
+2. Trust/durability visibility, because backup/restore/protection/audit state needs to be visible before BuildWealth feels dependable as a daily operating system.
 
 ### Account-Type Contribution/Fit Guidance Build Plan
 

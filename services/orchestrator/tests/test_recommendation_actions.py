@@ -146,6 +146,74 @@ def test_apply_recommendation_can_skip_decision_packet(
     assert artifacts[0].get("id") == response.decision_closure_artifact.id
 
 
+def test_apply_high_impact_recommendation_captures_decision_pre_mortem(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = PlanWorkspace(tmp_path / "plans")
+    plan = workspace.create_plan(title="Pre-Mortem Plan")
+    inbox = RecommendationInbox(tmp_path / "recommendations.json")
+    recommendation = inbox.create(
+        title="Increase annual contributions",
+        detail="Raise annual contributions for stronger baseline outcomes.",
+        priority="high",
+        recommendation_type="plan_settings_update",
+        plan_id=plan["id"],
+        action_payload={
+            "plan_settings_updates": {
+                "annual_contribution_usd": 26000.0,
+            },
+            "quality": {
+                "impact": {"level": "high"},
+                "actionability": "previewable",
+            },
+        },
+    )
+
+    async def fake_context_payload(**_: object) -> dict[str, object]:
+        return {"generated_at": "2026-04-30T12:00:00+00:00", "summary": "Context."}
+
+    async def fake_preview(*_: object, **__: object) -> dict[str, object]:
+        return {"status": "captured", "scenario_deltas": [{"label": "baseline", "delta_future_value_usd": 2000.0}]}
+
+    monkeypatch.setattr(main, "plan_workspace", workspace)
+    monkeypatch.setattr(main, "recommendation_inbox", inbox)
+    monkeypatch.setattr(main, "build_buildwealth_context_payload", fake_context_payload)
+    monkeypatch.setattr(main, "build_recommendation_scenario_diff_preview", fake_preview)
+
+    response = asyncio.run(
+        main.apply_recommendation_with_decision_packet(
+            recommendation["id"],
+            main.RecommendationApplyRequest(
+                rationale="Contribution increase still fits cash flow.",
+                create_decision_packet=False,
+                premortem_expected_benefit="Retirement baseline improves without lowering emergency runway.",
+                premortem_main_risk="Cash flow gets too tight after bonus income normalizes.",
+                premortem_disconfirming_signal="Emergency fund falls below six months or savings rate turns negative.",
+                premortem_monitoring_plan="Review cash runway and savings rate after two pay cycles.",
+                premortem_review_date="2026-06-30",
+            ),
+        )
+    )
+
+    closure = response.decision_closure
+    pre_mortem = closure.get("pre_mortem", {})
+    assert pre_mortem == {
+        "expected_benefit": "Retirement baseline improves without lowering emergency runway.",
+        "main_risk": "Cash flow gets too tight after bonus income normalizes.",
+        "disconfirming_signal": "Emergency fund falls below six months or savings rate turns negative.",
+        "monitoring_plan": "Review cash runway and savings rate after two pay cycles.",
+        "review_date": "2026-06-30",
+    }
+
+    updated_recommendation = inbox.get(recommendation["id"])
+    assert updated_recommendation["action_payload"]["decision_closure"]["pre_mortem"] == pre_mortem
+    closure_artifact = workspace.read_artifact(plan["id"], response.decision_closure_artifact.id)
+    assert "## Decision Pre-Mortem" in closure_artifact["content"]
+    assert "Cash flow gets too tight" in closure_artifact["content"]
+    assert "Emergency fund falls below six months" in closure_artifact["content"]
+
+
 def test_apply_recommendation_updates_research_bridge_metadata(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
