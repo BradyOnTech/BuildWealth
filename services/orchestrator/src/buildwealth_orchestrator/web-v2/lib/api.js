@@ -91,6 +91,7 @@ export const api = {
   planBranchTemplates: (id) => fetchJson(`/api/plans/${encodeURIComponent(id)}/branch-templates`),
   updatePlanBranchTemplates: (id, body = {}) => putJson(`/api/plans/${encodeURIComponent(id)}/branch-templates`, body),
   planScenarioBranch: (id, body = {}) => postJson(`/api/plans/${encodeURIComponent(id)}/scenario-branch`, body),
+  planWithdrawalStrategyCompare: (id, body = {}) => postJson(`/api/plans/${encodeURIComponent(id)}/withdrawal-strategy-compare`, body),
   refreshPlanContext: (id) => postJson(`/api/plans/${encodeURIComponent(id)}/refresh-context`, {}),
   createPlan:   (body) => postJson('/api/plans', body),
   appendDecision: (id, body) => postJson(`/api/plans/${encodeURIComponent(id)}/decisions`, body),

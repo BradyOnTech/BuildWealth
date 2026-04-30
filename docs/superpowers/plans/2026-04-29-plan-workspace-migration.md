@@ -38,7 +38,8 @@ Already present:
 
 Current gaps:
 
-- Rare advanced planning tools, especially withdrawal-strategy comparison, still remain in the classic workspace.
+- The normal Plan loop no longer depends on classic Plan links.
+- Withdrawal-strategy comparison now has a common v2 review surface; deeper editor-style controls can remain a later advanced slice.
 - Life-event branch templates now have a common v2 preview surface; richer template editing can remain a later advanced slice.
 - Generic artifact detail/focus can be richer inside v2 Plan; current high-frequency links land on the v2 evidence center.
 - Broader browser coverage can continue around advanced Plan, Research, and investment-fit workflows.
@@ -752,7 +753,7 @@ Remove or demote classic links for:
 - decisions
 - artifacts
 
-Keep advanced branch/withdrawal tools in fallback until they have v2 surfaces.
+Keep any remaining low-frequency classic tools as fallback until they have v2 surfaces.
 
 - [x] **Step 3: Update docs**
 
@@ -787,13 +788,13 @@ Plan Workspace migration is complete enough for this phase when:
 - Timeline and contribution rules have first-class v2 surfaces.
 - Copilot can discuss a bounded Plan context without full-history bloat.
 - Browser tests cover the normal Plan review workflow.
-- Classic Plan links remain only for advanced or low-frequency tools.
+- Classic Plan links are no longer needed for the normal Plan review workflow.
 
 ## Near-Term Recommendation
 
 Tasks 1 through 10 are complete for the normal Plan Workspace loop.
 
-The next Plan-specific work should be intentionally narrower: migrate withdrawal-strategy comparison, add focused generic artifact detail inside v2 Plan, deepen branch-template editing if needed, and extend browser coverage around each advanced flow as it graduates.
+The next Plan-specific work should be intentionally narrower: add focused generic artifact detail inside v2 Plan, deepen branch-template editing if needed, and extend browser coverage around edge Plan/Research workflows as each surface graduates.
 
 ## Execution Checkpoints
 

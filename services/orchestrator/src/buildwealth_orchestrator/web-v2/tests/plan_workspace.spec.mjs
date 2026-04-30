@@ -39,6 +39,7 @@ test('v2 Plan workspace covers assumption save, evidence route, scenario decisio
   let settingsPatch = null;
   let scenarioPayload = null;
   let branchPayload = null;
+  let withdrawalPayload = null;
   let decisionPayload = null;
   let planSettings = {
     annual_contribution_usd: 25000,
@@ -302,6 +303,53 @@ test('v2 Plan workspace covers assumption save, evidence route, scenario decisio
       return;
     }
 
+    if (url.pathname === '/api/plans/plan-1/withdrawal-strategy-compare' && request.method() === 'POST') {
+      withdrawalPayload = request.postDataJSON();
+      await route.fulfill(jsonResponse({
+        plan_id: 'plan-1',
+        current_portfolio_value_usd: 650000,
+        strategies: ['four_percent_rule', 'dynamic_guardrails'],
+        best_strategy_by_metric: {
+          future_value: 'dynamic_guardrails',
+          real_value: 'dynamic_guardrails',
+          monte_carlo_p50: 'four_percent_rule',
+        },
+        warnings: ['Dynamic guardrails used local projection fallback.'],
+        comparisons: [
+          {
+            strategy: 'dynamic_guardrails',
+            baseline_future_value_usd: 1250000,
+            baseline_real_value_usd: 930000,
+            total_withdrawals_usd: 820000,
+            total_taxes_usd: 140000,
+            total_roth_conversions_usd: 60000,
+            total_rmds_usd: 90000,
+            terminal_age: 95,
+            terminal_balance_usd: 510000,
+            monte_carlo_p50_future_value_usd: 1180000,
+            average_effective_tax_rate: 0.17,
+            engine_status: 'degraded',
+            warnings: ['Provider fallback used.'],
+          },
+          {
+            strategy: 'four_percent_rule',
+            baseline_future_value_usd: 1100000,
+            baseline_real_value_usd: 820000,
+            total_withdrawals_usd: 760000,
+            total_taxes_usd: 120000,
+            total_roth_conversions_usd: 0,
+            total_rmds_usd: 80000,
+            terminal_age: 95,
+            terminal_balance_usd: 430000,
+            monte_carlo_p50_future_value_usd: 1190000,
+            average_effective_tax_rate: 0.15,
+            engine_status: 'ok',
+          },
+        ],
+      }));
+      return;
+    }
+
     if (url.pathname === '/api/plans/plan-1/decisions' && request.method() === 'POST') {
       decisionPayload = request.postDataJSON();
       decisions.push({
@@ -386,6 +434,25 @@ test('v2 Plan workspace covers assumption save, evidence route, scenario decisio
   assert.equal(decisionPayload.summary, 'Reviewed life-event branch: Job Loss 6 Months');
   assert.equal(decisionPayload.status, 'proposed');
   await page.getByText('Reviewed life-event branch: Job Loss 6 Months').waitFor({ state: 'visible' });
+
+  await page.goto('http://buildwealth-v2.test/#plan?id=plan-1&section=withdrawals');
+  await page.getByRole('heading', { name: 'Compare retirement drawdown paths.' }).waitFor({ state: 'visible' });
+  await page.getByLabel(/Cashflow Only/).uncheck();
+  await page.getByLabel(/Bucket Strategy/).uncheck();
+  await page.getByRole('button', { name: /Compare withdrawal strategies/ }).click();
+
+  assert.deepEqual(withdrawalPayload, {
+    strategies: ['four_percent_rule', 'dynamic_guardrails'],
+    include_raw_results: false,
+  });
+  await page.getByText('Withdrawal strategies compared.').waitFor({ state: 'visible' });
+  await page.getByText('$1,250,000').waitFor({ state: 'visible' });
+  await page.getByText('Dynamic guardrails used local projection fallback.').waitFor({ state: 'visible' });
+
+  await page.locator('#plan-withdrawals').getByRole('button', { name: /Save decision note/ }).click();
+  assert.equal(decisionPayload.summary, 'Reviewed withdrawal strategy comparison');
+  assert.equal(decisionPayload.status, 'proposed');
+  await page.getByText('Reviewed withdrawal strategy comparison').waitFor({ state: 'visible' });
 
   await page.getByRole('link', { name: 'Review with Copilot' }).click();
   await page.waitForURL('**/#copilot?intent=review_plan_assumptions&plan=plan-1');

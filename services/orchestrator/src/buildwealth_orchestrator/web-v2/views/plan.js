@@ -6,8 +6,9 @@
 //   IIA. The evidence     — typed artifacts and citations
 //   IIB. The scenarios    — scenario diff review surface
 //   IIC. The branches     — life-event what-if templates
-//   IID. The timeline     — retirement timing, drawdown posture, events
-//   IIE. The contributions — account priority and target rules
+//   IID. The withdrawals  — retirement drawdown strategy comparison
+//   IIE. The timeline     — retirement timing, drawdown posture, events
+//   IIF. The contributions — account priority and target rules
 //   III. The decisions    — decision log + append form
 // Footer — Look closer (v2-first, with advanced planning fallbacks).
 
@@ -25,6 +26,7 @@ import { renderTrajectory } from './plan/trajectory.js';
 import { renderArtifacts } from './plan/artifacts.js';
 import { buildScenarioBranchPayload, renderBranches } from './plan/branches.js';
 import { buildScenarioDiffPayload, renderScenarios } from './plan/scenarios.js';
+import { buildWithdrawalComparePayload, renderWithdrawals } from './plan/withdrawals.js';
 import { buildTimelinePayload, renderTimeline } from './plan/timeline.js';
 import { buildContributionRulesPayload, renderContributions } from './plan/contributions.js';
 import { renderDecisions } from './plan/decisions.js';
@@ -45,6 +47,7 @@ const ui = {
   trajectory: { busy: false, tracking: null, error: null },
   scenarios: { draft: {}, dirty: false, busy: false, result: null, error: null, focusedRecommendationId: '' },
   branches: { busy: false, branchTemplates: null, selectedTemplateId: '', draft: {}, dirty: false, result: null, error: null },
+  withdrawals: { busy: false, selectedStrategies: ['four_percent_rule', 'dynamic_guardrails', 'bucket_strategy'], draft: {}, dirty: false, result: null, error: null },
   timeline: { busy: false, timeline: null, draft: {}, dirty: false, editing: false, saving: false, error: null },
   contributions: { busy: false, contributionRules: null, draft: {}, dirty: false, editing: false, saving: false, error: null },
   decisions: { appendOpen: false, appendBusy: false, appendError: null },
@@ -318,6 +321,7 @@ function rerenderBody() {
     <div id="plan-artifacts" data-plan-section="artifacts">${raw(renderArtifacts(ui.plan))}</div>
     <div id="plan-scenarios" data-plan-section="scenarios">${raw(renderScenarios(ui.plan, ui.scenarios, ui.assumptions))}</div>
     <div id="plan-branches" data-plan-section="branches">${raw(renderBranches(ui.plan, ui.branches, ui.assumptions))}</div>
+    <div id="plan-withdrawals" data-plan-section="withdrawals">${raw(renderWithdrawals(ui.plan, ui.withdrawals, ui.assumptions))}</div>
     <div id="plan-timeline" data-plan-section="timeline">${raw(renderTimeline(ui.plan, ui.timeline))}</div>
     <div id="plan-contributions" data-plan-section="contributions">${raw(renderContributions(ui.plan, ui.contributions))}</div>
     <div id="plan-decisions" data-plan-section="decisions">${raw(renderDecisions(ui.plan, ui.decisions))}</div>
@@ -368,6 +372,12 @@ function rerenderBranches() {
   root.innerHTML = renderBranches(ui.plan, ui.branches, ui.assumptions);
 }
 
+function rerenderWithdrawals() {
+  const root = $('#plan-withdrawals');
+  if (!root || !ui.plan) return;
+  root.innerHTML = renderWithdrawals(ui.plan, ui.withdrawals, ui.assumptions);
+}
+
 function rerenderTimelineWorkspace() {
   const root = $('#plan-timeline');
   if (!root || !ui.plan) return;
@@ -406,7 +416,7 @@ export function renderLookCloser(plan) {
         <a class="link-editorial" href="#copilot?intent=explain_scenario_diff&amp;plan=${id}">Explain scenario</a>
         <a class="link-editorial" href="#plan?id=${id}&amp;section=artifacts">Plan evidence</a>
         <a class="link-editorial" href="#plan?id=${id}&amp;section=branches">Life event branch</a>
-        <a class="link-editorial" href="/#plans?id=${id}">Advanced withdrawals</a>
+        <a class="link-editorial" href="#plan?id=${id}&amp;section=withdrawals">Withdrawal comparison</a>
       </div>
       ${researchArtifacts.length ? html`
         <div class="look-closer-row">
@@ -459,6 +469,7 @@ function attachHandlers() {
     ui.health = { busy: false, recommendations: [], error: null };
     ui.scenarios = { draft: {}, dirty: false, busy: false, result: null, error: null, focusedRecommendationId: '' };
     ui.branches = { busy: false, branchTemplates: null, selectedTemplateId: '', draft: {}, dirty: false, result: null, error: null };
+    ui.withdrawals = { busy: false, selectedStrategies: ['four_percent_rule', 'dynamic_guardrails', 'bucket_strategy'], draft: {}, dirty: false, result: null, error: null };
     ui.timeline = { busy: false, timeline: null, draft: {}, dirty: false, editing: false, saving: false, error: null };
     ui.contributions = { busy: false, contributionRules: null, draft: {}, dirty: false, editing: false, saving: false, error: null };
     rerenderBody();
@@ -501,6 +512,11 @@ function attachHandlers() {
   delegate(page, 'change', '[data-branch-field]', (_, el) => stageBranchEdit(el));
   delegate(page, 'click', '[data-branch-action="run"]', () => runScenarioBranch());
   delegate(page, 'click', '[data-branch-action="save-decision"]', () => saveBranchDecisionNote());
+
+  delegate(page, 'change', '[data-withdrawal-field]', (_, el) => stageWithdrawalEdit(el));
+  delegate(page, 'change', '[data-withdrawal-strategy]', (_, el) => toggleWithdrawalStrategy(el));
+  delegate(page, 'click', '[data-withdrawal-action="run"]', () => runWithdrawalComparison());
+  delegate(page, 'click', '[data-withdrawal-action="save-decision"]', () => saveWithdrawalDecisionNote());
 
   delegate(page, 'change', '[data-timeline-field]', (_, el) => stageTimelineEdit(el));
   delegate(page, 'click', '[data-timeline-action="edit"]', () => openTimelineEditor());
@@ -587,6 +603,31 @@ function stageBranchEdit(el) {
   rerenderBranches();
 }
 
+function stageWithdrawalEdit(el) {
+  const field = String(el.dataset.withdrawalField || '').trim();
+  if (!field) return;
+  const value = el.type === 'checkbox' ? Boolean(el.checked) : el.value;
+  ui.withdrawals.draft = {
+    ...(ui.withdrawals.draft || {}),
+    [field]: value,
+  };
+  ui.withdrawals.dirty = true;
+  ui.withdrawals.error = null;
+  rerenderWithdrawals();
+}
+
+function toggleWithdrawalStrategy(el) {
+  const strategy = String(el.dataset.withdrawalStrategy || '').trim();
+  if (!strategy) return;
+  const selected = new Set(ui.withdrawals.selectedStrategies || []);
+  if (el.checked) selected.add(strategy);
+  else selected.delete(strategy);
+  ui.withdrawals.selectedStrategies = [...selected];
+  ui.withdrawals.dirty = true;
+  ui.withdrawals.error = null;
+  rerenderWithdrawals();
+}
+
 async function runScenarioDiff() {
   if (!ui.plan || ui.scenarios.busy) return;
   const payload = buildScenarioDiffPayload(ui.scenarios.draft || {});
@@ -610,6 +651,56 @@ async function runScenarioDiff() {
     ui.scenarios.busy = false;
     ui.scenarios.error = err.message;
     rerenderScenarios();
+  }
+}
+
+async function runWithdrawalComparison() {
+  if (!ui.plan || ui.withdrawals.busy) return;
+  if ((ui.withdrawals.selectedStrategies || []).length < 2) {
+    ui.withdrawals.error = 'Select at least two withdrawal strategies to compare.';
+    rerenderWithdrawals();
+    return;
+  }
+  const payload = buildWithdrawalComparePayload({
+    ...(ui.withdrawals.draft || {}),
+    selectedStrategies: ui.withdrawals.selectedStrategies || [],
+  });
+
+  ui.withdrawals.busy = true;
+  ui.withdrawals.error = null;
+  rerenderWithdrawals();
+  try {
+    ui.withdrawals.result = await api.planWithdrawalStrategyCompare(ui.plan.id, payload);
+    ui.withdrawals.busy = false;
+    ui.withdrawals.dirty = false;
+    rerenderWithdrawals();
+  } catch (err) {
+    ui.withdrawals.busy = false;
+    ui.withdrawals.error = err.message;
+    rerenderWithdrawals();
+  }
+}
+
+async function saveWithdrawalDecisionNote() {
+  if (!ui.plan || !ui.withdrawals.result || ui.withdrawals.busy) return;
+  ui.withdrawals.busy = true;
+  ui.withdrawals.error = null;
+  rerenderWithdrawals();
+  try {
+    await api.appendDecision(ui.plan.id, {
+      summary: 'Reviewed withdrawal strategy comparison',
+      rationale: withdrawalDecisionRationale(ui.withdrawals.result),
+      status: 'proposed',
+    });
+    ui.plan = await api.plan(ui.plan.id);
+    state.plan = ui.plan;
+    ui.withdrawals.busy = false;
+    rerenderAll();
+    focusRequestedSection('withdrawals');
+  } catch (err) {
+    ui.withdrawals.busy = false;
+    ui.withdrawals.error = err.message;
+    rerenderWithdrawals();
   }
 }
 
@@ -816,6 +907,18 @@ function branchDecisionRationale(result = {}) {
     const real = Number(baseline.delta_real_value_usd);
     if (Number.isFinite(future)) parts.push(`Future-value delta: ${future}.`);
     if (Number.isFinite(real)) parts.push(`Real-value delta: ${real}.`);
+  }
+  return parts.join(' ');
+}
+
+function withdrawalDecisionRationale(result = {}) {
+  const best = result.best_strategy_by_metric || {};
+  const parts = ['Withdrawal strategy comparison reviewed in v2 Plan.'];
+  if (best.future_value) parts.push(`Best future value: ${best.future_value}.`);
+  if (best.real_value) parts.push(`Best real value: ${best.real_value}.`);
+  if (best.monte_carlo_p50) parts.push(`Best Monte Carlo p50: ${best.monte_carlo_p50}.`);
+  if (Array.isArray(result.warnings) && result.warnings.length) {
+    parts.push(`Warnings: ${result.warnings.slice(0, 2).join('; ')}.`);
   }
   return parts.join(' ');
 }

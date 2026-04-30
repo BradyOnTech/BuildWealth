@@ -11,6 +11,7 @@ import { buildScenarioBranchPayload, renderBranches } from '../views/plan/branch
 import { buildScenarioDiffPayload, renderScenarios } from '../views/plan/scenarios.js';
 import { buildTimelinePayload, renderTimeline } from '../views/plan/timeline.js';
 import { buildContributionRulesPayload, renderContributions } from '../views/plan/contributions.js';
+import { buildWithdrawalComparePayload, renderWithdrawals } from '../views/plan/withdrawals.js';
 
 test('plan api exposes v2 workspace endpoints', () => {
   const apiSource = readFileSync(
@@ -37,6 +38,8 @@ test('plan api exposes v2 workspace endpoints', () => {
   assert.match(apiSource, /updatePlanBranchTemplates:\s*\(id,\s*body/);
   assert.match(apiSource, /planScenarioBranch:\s*\(id,\s*body/);
   assert.match(apiSource, /\/api\/plans\/.*\/scenario-branch/);
+  assert.match(apiSource, /planWithdrawalStrategyCompare:\s*\(id,\s*body/);
+  assert.match(apiSource, /\/api\/plans\/.*\/withdrawal-strategy-compare/);
   assert.match(apiSource, /refreshPlanContext:\s*\(id\)/);
   assert.match(apiSource, /\/api\/plans\/.*\/refresh-context/);
 });
@@ -93,15 +96,19 @@ test('plan view wires scenario diff workspace actions', () => {
 
   assert.match(planSource, /renderScenarios/);
   assert.match(planSource, /renderBranches/);
+  assert.match(planSource, /renderWithdrawals/);
   assert.match(planSource, /buildScenarioDiffPayload/);
   assert.match(planSource, /buildScenarioBranchPayload/);
+  assert.match(planSource, /buildWithdrawalComparePayload/);
   assert.match(planSource, /api\.planScenarioDiff/);
   assert.match(planSource, /api\.planBranchTemplates/);
   assert.match(planSource, /api\.planScenarioBranch/);
+  assert.match(planSource, /api\.planWithdrawalStrategyCompare/);
   assert.match(planSource, /data-scenario-field/);
   assert.match(planSource, /data-scenario-action="run"/);
   assert.match(planSource, /data-scenario-action="save-decision"/);
   assert.match(planSource, /data-branch-action="run"/);
+  assert.match(planSource, /data-withdrawal-action="run"/);
 });
 
 test('plan view wires timeline and contribution rule workspaces', () => {
@@ -156,9 +163,11 @@ test('plan look-closer keeps common plan work in v2', () => {
   assert.match(markup, /href="#plan\?id=plan-1&amp;section=contributions"/);
   assert.match(markup, /href="#plan\?id=plan-1&amp;section=scenarios"/);
   assert.match(markup, /href="#plan\?id=plan-1&amp;section=branches"/);
+  assert.match(markup, /href="#plan\?id=plan-1&amp;section=withdrawals"/);
   assert.match(markup, /href="#plan\?id=plan-1&amp;section=artifacts"/);
   assert.doesNotMatch(markup, /href="\/#plans\?id=plan-1">Edit settings/);
   assert.doesNotMatch(markup, /href="\/#plans\?id=plan-1">Advanced branch/);
+  assert.doesNotMatch(markup, /href="\/#plans\?id=plan-1">Advanced withdrawals/);
   assert.doesNotMatch(markup, /href="\/#plans\?id=plan-1">Browse artifacts/);
 });
 
@@ -518,6 +527,86 @@ test('plan branch workspace renders templates, result, and review handoffs', () 
   assert.match(markup, /Run branch preview/);
   assert.match(markup, /Branch compared/);
   assert.match(markup, /-\$60,000/);
+  assert.match(markup, /Discuss in Copilot/);
+  assert.match(markup, /Save decision note/);
+});
+
+test('plan withdrawal workspace builds compare payload from selected strategies and context', () => {
+  const payload = buildWithdrawalComparePayload({
+    selectedStrategies: ['four_percent_rule', 'dynamic_guardrails', 'four_percent_rule'],
+    current_portfolio_value_usd: '650000',
+    assumption_set_id: 'policy',
+    include_raw_results: true,
+  });
+
+  assert.deepEqual(payload, {
+    strategies: ['four_percent_rule', 'dynamic_guardrails'],
+    current_portfolio_value_usd: 650000,
+    assumption_set_id: 'policy',
+    include_raw_results: true,
+  });
+});
+
+test('plan withdrawal workspace renders strategy comparison rows and review handoffs', () => {
+  const markup = String(renderWithdrawals({
+    id: 'plan-1',
+  }, {
+    selectedStrategies: ['four_percent_rule', 'dynamic_guardrails'],
+    result: {
+      plan_id: 'plan-1',
+      current_portfolio_value_usd: 650000,
+      strategies: ['four_percent_rule', 'dynamic_guardrails'],
+      best_strategy_by_metric: {
+        future_value: 'dynamic_guardrails',
+        real_value: 'dynamic_guardrails',
+        monte_carlo_p50: 'four_percent_rule',
+      },
+      warnings: ['Dynamic guardrails used local projection fallback.'],
+      comparisons: [
+        {
+          strategy: 'dynamic_guardrails',
+          baseline_future_value_usd: 1250000,
+          baseline_real_value_usd: 930000,
+          total_withdrawals_usd: 820000,
+          total_taxes_usd: 140000,
+          total_roth_conversions_usd: 60000,
+          total_rmds_usd: 90000,
+          terminal_age: 95,
+          terminal_balance_usd: 510000,
+          monte_carlo_p50_future_value_usd: 1180000,
+          average_effective_tax_rate: 0.17,
+          engine_status: 'degraded',
+          warnings: ['Provider fallback used.'],
+        },
+        {
+          strategy: 'four_percent_rule',
+          baseline_future_value_usd: 1100000,
+          baseline_real_value_usd: 820000,
+          total_withdrawals_usd: 760000,
+          total_taxes_usd: 120000,
+          terminal_age: 95,
+          terminal_balance_usd: 430000,
+          monte_carlo_p50_future_value_usd: 1190000,
+          average_effective_tax_rate: 0.15,
+          engine_status: 'ok',
+        },
+      ],
+    },
+  }, {
+    assumptionSets: {
+      active_assumption_set_id: 'default',
+      sets: [{ id: 'default', name: 'Default' }, { id: 'policy', name: 'Policy baseline' }],
+    },
+  }));
+
+  assert.match(markup, /Withdrawal strategy comparison/);
+  assert.match(markup, /Dynamic Guardrails/);
+  assert.match(markup, /\$1,250,000/);
+  assert.match(markup, /\$820,000/);
+  assert.match(markup, /\$140,000/);
+  assert.match(markup, /17%/);
+  assert.match(markup, /Best future value/);
+  assert.match(markup, /Provider fallback used\./);
   assert.match(markup, /Discuss in Copilot/);
   assert.match(markup, /Save decision note/);
 });

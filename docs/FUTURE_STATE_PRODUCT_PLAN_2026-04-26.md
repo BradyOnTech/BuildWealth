@@ -271,7 +271,7 @@ Future state:
 
 - v2 Plan owns the main plan experience
 - classic plan links are reduced to advanced fallback only
-- plan settings, timeline events, contribution rules, scenario diffs, life-event branches, decisions, and artifacts are visible in the v2 vocabulary; withdrawal-strategy comparison remains the next advanced migration candidate
+- plan settings, timeline events, contribution rules, scenario diffs, life-event branches, withdrawal-strategy comparison, decisions, and artifacts are visible in the v2 vocabulary
 - plan decisions and recommendation outcomes are connected
 
 High-level implementation:
@@ -471,7 +471,7 @@ High-level tasks:
 Done when:
 
 - v2 Plan can support the user's normal planning workflow (complete for this phase)
-- classic Plan links are no longer required for high-frequency tasks (complete; only advanced branch/withdrawal fallbacks remain)
+- classic Plan links are no longer required for high-frequency tasks (complete for the normal Plan loop)
 - plan changes and decisions are test-covered in browser workflows (complete for the normal v2 Plan loop)
 
 ### Phase 6: Portfolio-Aware Research
@@ -553,7 +553,7 @@ Long-term:
 
 1. Continue Personal Investment Policy beyond the current slices: stronger Copilot questions for weak guardrails, and fit/recommendation rules beyond single-symbol exposure, research confidence, tax sensitivity, sector caps, symbol/sector restrictions, and preferred account-location policy. The next policy slice has started: cash floor, asset-class exposure caps, and simplicity preference are now profile-backed and affect portfolio-fit plus generated review-only research rows.
 2. Continue Research Thesis Expiration beyond the current saved-dossier/watchlist slice: add richer material-change sources beyond price. Reviewed theses now write refreshed review/expiry/reference metadata; policy material changes from cash-floor, asset-class, and simplicity guardrails now create review-only thesis refresh rows; Today research readiness routes single thesis signals directly into v2 thesis review.
-3. Extend the completed v2 Plan Workspace into the remaining advanced planning tools: withdrawal-strategy comparison, focused generic artifact detail, and richer plan-to-research context. v2 Plan now owns normal assumptions, health, evidence/artifacts, decisions, scenario diffs, life-event branch previews, timeline, contribution rules, bounded Copilot review, and high-frequency links.
+3. Extend the completed v2 Plan Workspace with focused generic artifact detail, richer plan-to-research context, deeper branch-template editing, and additional browser coverage around edge workflows. v2 Plan now owns normal assumptions, health, evidence/artifacts, decisions, scenario diffs, life-event branch previews, withdrawal-strategy comparison, timeline, contribution rules, bounded Copilot review, and high-frequency links.
 4. Deepen portfolio-fit account context with account-type-specific contribution guidance and richer tax-policy preferences.
 5. Continue browser coverage around remaining advanced Plan, Research, and investment-fit workflows.
 
