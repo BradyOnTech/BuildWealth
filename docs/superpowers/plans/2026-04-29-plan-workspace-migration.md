@@ -444,7 +444,7 @@ Expected: artifact classification and route rendering pass.
 - "Open in Inbox" link when recommendation id exists
 - "Open artifact" link when artifact id exists
 
-- [ ] **Step 1: Write failing decision render tests**
+- [x] **Step 1: Write failing decision render tests**
 
 Assert that a decision containing recommendation metadata renders:
 
@@ -453,11 +453,11 @@ Assert that a decision containing recommendation metadata renders:
 - closure summary link
 - expected outcome text
 
-- [ ] **Step 2: Implement enriched decision display**
+- [x] **Step 2: Implement enriched decision display**
 
 Keep the existing editorial list, but add compact metadata rows below the rationale.
 
-- [ ] **Step 3: Add missing-backlink detection**
+- [x] **Step 3: Add missing-backlink detection**
 
 If a decision has an accepted/applied status but no outcome/closure artifact, show:
 
@@ -467,7 +467,7 @@ Outcome not captured yet
 
 and link to Inbox when a recommendation id is present.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 

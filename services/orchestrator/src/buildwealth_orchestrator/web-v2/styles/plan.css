@@ -610,6 +610,58 @@
   max-width: var(--measure);
 }
 
+.decision-meta {
+  display: grid;
+  gap: var(--s-3);
+  margin-top: var(--s-3);
+  max-width: var(--measure);
+}
+
+.decision-meta-links {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+}
+
+.decision-meta-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: var(--s-3) 0 0;
+  border-top: var(--hair) dotted var(--rule-soft);
+}
+
+.decision-meta-list div {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: var(--s-3);
+  align-items: baseline;
+}
+
+.decision-meta-list dt {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+}
+
+.decision-meta-list dd {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: var(--t-body-sm);
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
+@media (max-width: 640px) {
+  .decision-meta-list div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}
+
 /* Append-decision form (matches inbox inline-form vocabulary) */
 .append-form {
   margin-top: var(--s-5);

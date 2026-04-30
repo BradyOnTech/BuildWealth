@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { renderLookCloser } from '../views/plan.js';
 import { buildPlanSettingsPatch, renderAssumptions } from '../views/plan/assumptions.js';
 import { classifyPlanArtifact, renderArtifacts } from '../views/plan/artifacts.js';
+import { renderDecisions } from '../views/plan/decisions.js';
 import { derivePlanHealth, renderPlanHealth } from '../views/plan/health.js';
 
 test('plan api exposes v2 workspace endpoints', () => {
@@ -260,6 +261,71 @@ test('plan artifact center renders typed routes and packet citations', () => {
   assert.match(markup, /Outcome\/closure/);
   assert.match(markup, /Scenario report/);
   assert.match(markup, /General artifact/);
+});
+
+test('plan decisions render recommendation, artifact, expected outcome, and scenario metadata', () => {
+  const markup = String(renderDecisions({
+    id: 'plan-1',
+    decisions: [
+      {
+        id: 'decision-1',
+        status: 'accepted',
+        summary: 'Accepted contribution increase',
+        rationale: 'Better aligns the savings rate with the active plan.',
+        created_at: '2026-04-01T12:00:00Z',
+        recommendation_id: 'rec-contribution',
+        action_payload: {
+          decision_packet: {
+            artifact_id: 'artifact-decision',
+          },
+          decision_closure_artifact: {
+            artifact_id: 'artifact-closure',
+          },
+          decision_closure: {
+            expected_outcome: {
+              expected_delta_future_value_usd: 1200,
+              expected_delta_context_quality: 'contribution reviewed',
+            },
+            scenario_diff_preview: {
+              status: 'captured',
+              summary: 'Raises projected final net worth.',
+            },
+          },
+        },
+      },
+    ],
+  }, { appendOpen: false }));
+
+  assert.match(markup, /Open in Inbox/);
+  assert.match(markup, /href="#inbox\?focus=rec-contribution"/);
+  assert.match(markup, /Decision packet/);
+  assert.match(markup, /href="\/#plans\?id=plan-1&amp;artifact=artifact-decision"/);
+  assert.match(markup, /Closure summary/);
+  assert.match(markup, /href="\/#plans\?id=plan-1&amp;artifact=artifact-closure"/);
+  assert.match(markup, /Expected outcome/);
+  assert.match(markup, /\+\$1,200/);
+  assert.match(markup, /contribution reviewed/);
+  assert.match(markup, /Scenario preview/);
+  assert.match(markup, /Raises projected final net worth\./);
+  assert.match(markup, /Outcome captured/);
+});
+
+test('plan decisions flag accepted decisions without closure outcome', () => {
+  const markup = String(renderDecisions({
+    id: 'plan-1',
+    decisions: [
+      {
+        id: 'decision-1',
+        status: 'accepted',
+        summary: 'Accepted tax review',
+        created_at: '2026-02-01T12:00:00Z',
+        recommendation_id: 'rec-tax',
+      },
+    ],
+  }, { appendOpen: false }));
+
+  assert.match(markup, /Outcome not captured yet/);
+  assert.match(markup, /href="#inbox\?focus=rec-tax"/);
 });
 
 test('plan health renders weak assumptions and stale assumption review links', () => {
