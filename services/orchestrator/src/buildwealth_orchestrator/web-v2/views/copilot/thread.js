@@ -356,6 +356,7 @@ function renderPortfolioFitCard(result) {
     renderFitMeta('Sector policy', formatSectorPolicy(portfolio)),
     renderFitMeta('Account location', formatAccountLocationSummary(portfolio.account_location)),
     renderFitMeta('Proposed account', formatProposedAccount(portfolio.proposed_account)),
+    renderFitMeta('Contribution fit', formatContributionGuidance(portfolio.contribution_guidance)),
   ].filter(Boolean);
 
   return html`
@@ -737,6 +738,19 @@ function formatProposedAccount(account) {
     account.account_name || account.account_id || '',
     formatTreatmentLabel(account.tax_treatment || account.account_type || ''),
     preferred.length ? `prefers ${preferred.map(formatTreatmentLabel).join(', ')}` : '',
+  ].filter(Boolean).join(' · ');
+}
+
+function formatContributionGuidance(guidance) {
+  if (!guidance || typeof guidance !== 'object') return '';
+  const reasons = Array.isArray(guidance.review_reasons)
+    ? guidance.review_reasons.filter(Boolean)
+    : [];
+  return [
+    guidance.status ? titleCase(guidance.status) : '',
+    guidance.tax_treatment ? formatTreatmentLabel(guidance.tax_treatment) : '',
+    guidance.recommended_review ? titleCase(guidance.recommended_review) : '',
+    reasons[0] || '',
   ].filter(Boolean).join(' · ');
 }
 

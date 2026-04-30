@@ -465,7 +465,7 @@ High-level tasks:
 - migrate contribution rules (done)
 - migrate scenario diff review (done)
 - migrate plan decisions (done: decisions now link recommendations, artifacts, expected outcomes, and scenario previews)
-- expose artifacts and research links (done: typed evidence center routes dossiers/theses into v2 Research and generic artifact links back into v2 Plan evidence)
+- expose artifacts and research links (done: typed evidence center routes dossiers/theses into v2 Research, and generic artifact links open focused v2 Plan artifact detail)
 - keep rare advanced tools in Atelier until needed
 
 Done when:
@@ -551,11 +551,13 @@ Long-term:
 
 ## Current Immediate Next Work
 
-1. Continue Personal Investment Policy beyond the current slices: stronger Copilot questions for weak guardrails, and fit/recommendation rules beyond single-symbol exposure, research confidence, tax sensitivity, sector caps, symbol/sector restrictions, and preferred account-location policy. The next policy slice has started: cash floor, asset-class exposure caps, and simplicity preference are now profile-backed and affect portfolio-fit plus generated review-only research rows.
-2. Continue Research Thesis Expiration beyond the current saved-dossier/watchlist slice: add richer material-change sources beyond price. Reviewed theses now write refreshed review/expiry/reference metadata; policy material changes from cash-floor, asset-class, and simplicity guardrails now create review-only thesis refresh rows; Today research readiness routes single thesis signals directly into v2 thesis review.
-3. Extend the completed v2 Plan Workspace with focused generic artifact detail, richer plan-to-research context, deeper branch-template editing, and additional browser coverage around edge workflows. v2 Plan now owns normal assumptions, health, evidence/artifacts, decisions, scenario diffs, life-event branch previews, withdrawal-strategy comparison, timeline, contribution rules, bounded Copilot review, and high-frequency links.
-4. Deepen portfolio-fit account context with account-type-specific contribution guidance and richer tax-policy preferences.
-5. Continue browser coverage around remaining advanced Plan, Research, and investment-fit workflows.
+1. Deepen portfolio-fit account context with account-type-specific contribution guidance and richer tax-policy preferences. This is the next best product slice because v2 Plan now owns contribution rules and portfolio-fit already understands policy, evidence, account location, tax lots, cash runway, and plan horizon. The first implementation should stay review-only: identify when proposed or routed contributions conflict with account-location policy, tax sensitivity, concentration, asset-class caps, cash floor, or simplicity preference.
+2. Continue Personal Investment Policy beyond the current slices. Profile-backed guardrails now cover max single-symbol exposure, research confidence, tax sensitivity, sector caps, symbol/sector restrictions, preferred account-location policy, cash floor, asset-class caps, and simplicity preference. Next policy work should make these guardrails more operational in contribution guidance, Copilot questions, Today weak-policy prompts, and generated review-only Inbox rows.
+3. Continue Research Thesis Expiration hardening. The saved dossier/watchlist loop now supports expiry, material price moves, policy material changes, v2 thesis review, watchlist/dossier writeback, Copilot revision writeback, and Today research-readiness routing. Remaining material-change sources should include provider/evidence quality changes, portfolio context changes, and plan-horizon changes.
+4. Use the completed v2 Plan Workspace as the durable financial thesis substrate instead of continuing broad Plan migration. v2 Plan now owns normal assumptions, health, focused evidence/artifact detail, decisions, scenario diffs, life-event branch previews, withdrawal-strategy comparison, timeline, contribution rules, bounded Copilot review, and high-frequency links. Future Plan work should be narrow: richer plan-to-research context, branch-template editing, artifact-specific actions, and browser coverage for edge workflows.
+5. Add Today command-center evolution after the account-policy slice: a "What Changed Since Last Review" card, then a compact Confidence Heat Map across Profile, Cash, Taxes, Plan, Portfolio, Research, Provider Data, and Recommendations.
+6. Productize trust/durability visibility before relying on BuildWealth as a daily operating system: backup/restore/protection/audit status should become visible in v2, with degraded or unprotected states surfaced clearly.
+7. Continue browser coverage around remaining advanced Plan, Research, investment-fit, contribution-routing, and Copilot explanation workflows.
 
 ## Documentation Governance
 

@@ -47,6 +47,14 @@ test('portfolio fit result renders plan horizon and research evidence', () => {
         tax_treatment: 'taxable',
         policy_preferred_treatments: ['tax_free'],
       },
+      contribution_guidance: {
+        status: 'review',
+        account_id: 'taxable',
+        account_type: 'taxableBrokerage',
+        tax_treatment: 'taxable',
+        recommended_review: 'review_account_location',
+        review_reasons: ['Proposed contribution account conflicts with preferred account-location policy.'],
+      },
       investment_policy: {
         minimum_research_confidence: 'high',
         minimum_cash_runway_months: 9,
@@ -83,6 +91,8 @@ test('portfolio fit result renders plan horizon and research evidence', () => {
   assert.match(markup, /Research High · Cash floor 9 mo · Asset cap Equity 80% · Simplicity High · Tax High · Sector cap 30% · Avoid NVDA · Avoid Crypto/);
   assert.match(markup, /Technology 31\.4% · cap 30%/);
   assert.match(markup, /Taxable Brokerage · Taxable · prefers Tax Free/);
+  assert.match(markup, /Contribution fit/);
+  assert.match(markup, /Review · Taxable · Review Account Location · Proposed contribution account conflicts with preferred account-location policy\./);
   assert.match(markup, /Taxable, Tax Free/);
   assert.match(markup, /Taxable Brokerage · Taxable · \$1,250 gain\/loss · Mixed lots/);
   assert.match(markup, /href="#research\?symbol=VTI&amp;packet=research-evidence%3Ayfinance%3AVTI%3A6mo%3A1d"/);

@@ -86,6 +86,10 @@ test('plan view wires typed artifact center into the page', () => {
   assert.match(planSource, /renderArtifacts/);
   assert.match(planSource, /id="plan-artifacts"/);
   assert.match(planSource, /data-plan-section="artifacts"/);
+  assert.match(planSource, /params\.artifact/);
+  assert.match(planSource, /loadFocusedArtifact/);
+  assert.match(planSource, /api\.planArtifact/);
+  assert.match(planSource, /focusedArtifactId/);
 });
 
 test('plan view wires scenario diff workspace actions', () => {
@@ -336,6 +340,43 @@ test('plan artifact center renders typed routes and packet citations', () => {
   assert.match(markup, /Outcome\/closure/);
   assert.match(markup, /Scenario report/);
   assert.match(markup, /General artifact/);
+});
+
+test('plan artifact center renders focused generic artifact detail safely', () => {
+  const markup = String(renderArtifacts({
+    id: 'plan-1',
+    artifacts: [
+      {
+        id: 'artifact-note',
+        title: 'Loose planning note',
+        created_at: '2026-04-20T12:00:00Z',
+      },
+    ],
+  }, {
+    focusedArtifactId: 'artifact-note',
+    focusedArtifact: {
+      id: 'artifact-note',
+      file_name: 'loose-planning-note.md',
+      title: 'Loose planning note',
+      created_at: '2026-04-20T12:00:00Z',
+      content: [
+        '# Loose planning note',
+        '',
+        '<script>alert("nope")</script>',
+        '',
+        'Reviewed research-evidence:yfinance:VTI:6mo:1d.',
+      ].join('\n'),
+    },
+  }));
+
+  assert.match(markup, /Artifact detail/);
+  assert.match(markup, /Loose planning note/);
+  assert.match(markup, /loose-planning-note\.md/);
+  assert.match(markup, /&lt;script&gt;alert\(&quot;nope&quot;\)&lt;\/script&gt;/);
+  assert.doesNotMatch(markup, /<script>alert/);
+  assert.match(markup, /research-evidence:yfinance:VTI:6mo:1d/);
+  assert.match(markup, /href="#research\?packet=VTI"/);
+  assert.match(markup, /href="#plan\?id=plan-1&amp;section=artifacts"/);
 });
 
 test('plan decisions render recommendation, artifact, expected outcome, and scenario metadata', () => {

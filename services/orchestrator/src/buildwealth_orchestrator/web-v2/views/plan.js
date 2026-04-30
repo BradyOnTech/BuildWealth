@@ -45,6 +45,7 @@ const ui = {
   assumptions: { busy: false, assumptionSets: null, draft: {}, dirty: false, saving: false, error: null },
   health: { busy: false, recommendations: [], error: null },
   trajectory: { busy: false, tracking: null, error: null },
+  artifacts: { focusedArtifactId: '', focusedArtifact: null, busy: false, error: null },
   scenarios: { draft: {}, dirty: false, busy: false, result: null, error: null, focusedRecommendationId: '' },
   branches: { busy: false, branchTemplates: null, selectedTemplateId: '', draft: {}, dirty: false, result: null, error: null },
   withdrawals: { busy: false, selectedStrategies: ['four_percent_rule', 'dynamic_guardrails', 'bucket_strategy'], draft: {}, dirty: false, result: null, error: null },
@@ -65,6 +66,7 @@ export function template() {
 export async function init(params = {}) {
   ui.selectedId = params.id || pickInitialPlanId();
   ui.section = String(params.section || '').trim().toLowerCase();
+  ui.artifacts.focusedArtifactId = String(params.artifact || '').trim();
   ui.scenarios.focusedRecommendationId = String(params.focus || params.recommendation || '').trim();
   attachHandlers();
 
@@ -75,6 +77,7 @@ export async function init(params = {}) {
   await loadPlan(ui.selectedId);
   await loadAssumptionSets(ui.selectedId);
   await loadPlanHealth(ui.selectedId);
+  await loadFocusedArtifact(ui.selectedId, params.artifact);
   await loadBranchTemplates(ui.selectedId);
   await loadTimeline(ui.selectedId);
   await loadContributionRules(ui.selectedId);
@@ -143,6 +146,33 @@ async function loadPlanHealth(id) {
     ui.health = { busy: false, recommendations: [], error: err.message };
   }
 }
+
+async function loadFocusedArtifact(planId, artifactId) {
+  const focusedArtifactId = String(artifactId || '').trim();
+  ui.artifacts = {
+    focusedArtifactId,
+    focusedArtifact: null,
+    busy: Boolean(focusedArtifactId),
+    error: null,
+  };
+  if (!focusedArtifactId) return;
+  try {
+    ui.artifacts = {
+      focusedArtifactId,
+      focusedArtifact: await api.planArtifact(planId, focusedArtifactId),
+      busy: false,
+      error: null,
+    };
+  } catch (err) {
+    ui.artifacts = {
+      focusedArtifactId,
+      focusedArtifact: null,
+      busy: false,
+      error: err.message,
+    };
+  }
+}
+
 
 async function loadTimeline(id) {
   ui.timeline = {
@@ -318,7 +348,7 @@ function rerenderBody() {
     <div id="plan-assumptions">${raw(renderAssumptions(ui.plan, ui.assumptions))}</div>
     <div id="plan-health" data-plan-section="health">${raw(renderPlanHealth(ui.plan, currentPlanHealth()))}</div>
     <div id="plan-trajectory" data-plan-section="trajectory">${raw(renderTrajectory(ui.trajectory))}</div>
-    <div id="plan-artifacts" data-plan-section="artifacts">${raw(renderArtifacts(ui.plan))}</div>
+    <div id="plan-artifacts" data-plan-section="artifacts">${raw(renderArtifacts(ui.plan, ui.artifacts))}</div>
     <div id="plan-scenarios" data-plan-section="scenarios">${raw(renderScenarios(ui.plan, ui.scenarios, ui.assumptions))}</div>
     <div id="plan-branches" data-plan-section="branches">${raw(renderBranches(ui.plan, ui.branches, ui.assumptions))}</div>
     <div id="plan-withdrawals" data-plan-section="withdrawals">${raw(renderWithdrawals(ui.plan, ui.withdrawals, ui.assumptions))}</div>
@@ -467,6 +497,7 @@ function attachHandlers() {
     ui.plan = null;
     ui.assumptions = { busy: false, assumptionSets: null, draft: {}, dirty: false, saving: false, error: null };
     ui.health = { busy: false, recommendations: [], error: null };
+    ui.artifacts = { focusedArtifactId: '', focusedArtifact: null, busy: false, error: null };
     ui.scenarios = { draft: {}, dirty: false, busy: false, result: null, error: null, focusedRecommendationId: '' };
     ui.branches = { busy: false, branchTemplates: null, selectedTemplateId: '', draft: {}, dirty: false, result: null, error: null };
     ui.withdrawals = { busy: false, selectedStrategies: ['four_percent_rule', 'dynamic_guardrails', 'bucket_strategy'], draft: {}, dirty: false, result: null, error: null };
@@ -476,6 +507,7 @@ function attachHandlers() {
     await loadPlan(id);
     await loadAssumptionSets(id);
     await loadPlanHealth(id);
+    await loadFocusedArtifact(id, '');
     await loadBranchTemplates(id);
     await loadTimeline(id);
     await loadContributionRules(id);
@@ -541,6 +573,7 @@ async function createPlan(body) {
     await loadPlan(created.id);
     await loadAssumptionSets(created.id);
     await loadPlanHealth(created.id);
+    await loadFocusedArtifact(created.id, '');
     await loadBranchTemplates(created.id);
     await loadTimeline(created.id);
     await loadContributionRules(created.id);

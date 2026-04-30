@@ -80,6 +80,20 @@ test('v2 Plan workspace covers assumption save, evidence route, scenario decisio
       '| VTI | research-evidence:yfinance:VTI:6mo:1d | yfinance | fresh | high | 98% | none |',
     ].join('\n'),
   };
+  const noteArtifact = {
+    id: 'artifact-note',
+    kind: 'general',
+    title: 'Loose planning note',
+    file_name: 'loose-planning-note.md',
+    created_at: '2026-04-23T12:00:00Z',
+    content: [
+      '# Loose planning note',
+      '',
+      '<script>alert("nope")</script>',
+      '',
+      'Reviewed research-evidence:yfinance:VTI:6mo:1d.',
+    ].join('\n'),
+  };
 
   const planDetail = () => ({
     id: 'plan-1',
@@ -91,7 +105,7 @@ test('v2 Plan workspace covers assumption save, evidence route, scenario decisio
     schema_version: 2,
     settings: planSettings,
     decisions,
-    artifacts: [artifact],
+    artifacts: [artifact, noteArtifact],
     top_next_actions: [],
   });
 
@@ -368,6 +382,11 @@ test('v2 Plan workspace covers assumption save, evidence route, scenario decisio
       return;
     }
 
+    if (url.pathname === '/api/plans/plan-1/artifacts/artifact-note') {
+      await route.fulfill(jsonResponse(noteArtifact));
+      return;
+    }
+
     if (url.pathname === '/api/copilot/conversations') {
       await route.fulfill(jsonResponse([]));
       return;
@@ -400,6 +419,14 @@ test('v2 Plan workspace covers assumption save, evidence route, scenario decisio
   await page.waitForURL('**/#research?dossier=artifact-dossier-msft&plan=plan-1');
   await page.getByText('Dossier detail').waitFor({ state: 'visible' });
   await page.getByText('research-evidence:yfinance:MSFT:6mo:1d').first().waitFor({ state: 'visible' });
+
+  await page.goto('http://buildwealth-v2.test/#plan?id=plan-1&section=artifacts&artifact=artifact-note');
+  await page.getByText('Artifact detail').waitFor({ state: 'visible' });
+  await page.locator('.artifact-detail-panel').getByRole('heading', { name: 'Loose planning note' }).waitFor({ state: 'visible' });
+  await page.getByText('research-evidence:yfinance:VTI:6mo:1d').first().waitFor({ state: 'visible' });
+  const artifactContentHtml = await page.locator('.artifact-detail-content').innerHTML();
+  assert.match(artifactContentHtml, /&lt;script&gt;alert\("nope"\)&lt;\/script&gt;/);
+  assert.doesNotMatch(artifactContentHtml, /<script>alert/);
 
   await page.goto('http://buildwealth-v2.test/#plan?id=plan-1&section=scenarios');
   await page.getByRole('heading', { name: 'Compare before deciding.' }).waitFor({ state: 'visible' });

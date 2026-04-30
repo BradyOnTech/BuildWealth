@@ -633,9 +633,10 @@ Do not start by adding direct buy/sell recommendation logic.
 Recommended sequence:
 
 1. Keep provider/freshness/coverage metadata explicit around OpenBB-backed research outputs as provider depth increases.
-2. Continue migrating v2 research/portfolio surfaces away from classic fallbacks where high-frequency investment decisions happen.
-3. Continue Personal Investment Policy by expanding beyond single-symbol exposure, research confidence, tax sensitivity, sector caps, symbol/sector restrictions, and account-location preferences into cash, asset-class, and simplicity preferences. Cash floor, asset-class exposure caps, and simplicity preference are now profile-backed and wired into portfolio-fit plus generated review-only watchlist/research rows.
-4. Deepen account-location context later with account-type-specific contribution guidance and richer tax-policy preferences.
+2. Treat v2 research/portfolio migration as mostly complete for the high-frequency investment-fit path. Evidence packets, compare, saved dossier detail, thesis review, Portfolio fit review, Inbox investment routing, Copilot fit cards, Today research readiness, and Plan evidence links now route through v2 surfaces. Classic research/Plan routes should remain advanced fallbacks rather than the normal decision path.
+3. Continue Personal Investment Policy by making the existing guardrails operational. Single-symbol exposure, research confidence, tax sensitivity, sector caps, symbol/sector restrictions, preferred account-location policy, cash floor, asset-class caps, and simplicity preference are profile-backed and already affect portfolio-fit plus generated review-only research rows.
+4. Next investment-side slice: add account-type-specific contribution and fit guidance. Portfolio-fit should explain when a proposed account or contribution route conflicts with account-location preference, tax sensitivity, asset-class caps, cash floor, concentration, or simplicity preference. Recommendation generation should create review-only Inbox rows such as "review contribution/account location" rather than any buy/sell/change-allocation action.
+5. After account-policy guidance, harden thesis material-change detection with provider/evidence changes, portfolio-context changes, and plan-horizon changes, then add Today "What Changed Since Last Review" and Confidence Heat Map surfaces.
 
 ## Relationship to Existing Plans
 

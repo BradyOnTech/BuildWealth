@@ -1897,6 +1897,11 @@ def _watchlist_research_candidate(
         if isinstance(portfolio_impact.get("account_location"), dict)
         else {}
     )
+    contribution_guidance = (
+        portfolio_impact.get("contribution_guidance")
+        if isinstance(portfolio_impact.get("contribution_guidance"), dict)
+        else {}
+    )
     fit_blocking_gaps = (
         fit_payload.get("blocking_gaps")
         if isinstance(fit_payload.get("blocking_gaps"), list)
@@ -2000,6 +2005,24 @@ def _watchlist_research_candidate(
             "policy_gap": "asset_class:policy_cap",
         }
         blocking_context = ["asset_class.policy_cap"]
+    elif "tax:contribution_account_policy" in fit_blocking_gaps:
+        signal_key = "policy_contribution_account"
+        title = f"Review {symbol} contribution account fit"
+        treatment = str(contribution_guidance.get("tax_treatment") or "selected account").strip()
+        detail = (
+            f"{symbol} has contribution-account fit context to review under the personal investment policy "
+            f"({treatment}). Review account placement before changing contribution routing or exposure."
+        )
+        priority = "medium"
+        actionability = "review_only"
+        suggested_action = {
+            "kind": "review_portfolio_fit",
+            "symbol": symbol,
+            "fit_status": fit_status,
+            "next_step": recommended_next_step or "review_account_location",
+            "policy_gap": "tax:contribution_account_policy",
+        }
+        blocking_context = ["tax.contribution_account_policy"]
     elif "tax:account_location_policy" in fit_blocking_gaps:
         signal_key = "policy_account_location"
         title = f"Review {symbol} account location against policy"
@@ -2191,6 +2214,7 @@ def _watchlist_research_candidate(
         "portfolio_impact": portfolio_impact,
         "investment_policy": investment_policy,
         "account_location": account_location,
+        "contribution_guidance": contribution_guidance,
         "provider_coverage": item.get("provider_coverage") if isinstance(item.get("provider_coverage"), dict) else {},
     }
     if signal_key == "watchlist_thesis_expired":

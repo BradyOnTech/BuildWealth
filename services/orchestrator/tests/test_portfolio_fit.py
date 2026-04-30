@@ -408,6 +408,82 @@ def test_portfolio_fit_reviews_proposed_account_against_location_policy() -> Non
     assert any("prefers equity in tax_free accounts" in risk for risk in result.fit_risks)
 
 
+def test_portfolio_fit_adds_contribution_guidance_for_account_policy_mismatch() -> None:
+    result = assess_portfolio_fit(
+        symbol="VTI",
+        amount_usd=5_000.0,
+        proposed_account_id="taxable",
+        evidence_packet=_packet("VTI", asset_type="equity"),
+        snapshot=_snapshot(),
+        holdings_payload={
+            "accounts": [
+                {"id": "taxable", "name": "Taxable Brokerage", "type": "taxable"},
+                {"id": "roth", "name": "Roth IRA", "type": "roth_ira"},
+            ],
+            "risk_policy": {"thresholds": {"single_holding_max_pct": 80.0}},
+            "investment_policy": {
+                "preferred_account_locations": {"equity": ["tax_free"]},
+                "tax_sensitivity": "high",
+            },
+        },
+        profile_readiness_payload={"status": "ready", "completion_percent": 100.0},
+        emergency_fund_months=8.0,
+    )
+
+    guidance = result.portfolio_impact["contribution_guidance"]
+    assert guidance["status"] == "review"
+    assert guidance["account_id"] == "taxable"
+    assert guidance["account_type"] == "taxableBrokerage"
+    assert guidance["tax_treatment"] == "taxable"
+    assert "tax:contribution_account_policy" in result.blocking_gaps
+    assert "tax:account_location_policy" in guidance["policy_conflicts"]
+    assert "tax:policy_review" in guidance["policy_conflicts"]
+    assert any("preferred account-location policy" in reason for reason in guidance["review_reasons"])
+    assert guidance["recommended_review"] == "review_account_location"
+    assert result.recommended_next_step == "review_account_location"
+
+
+def test_portfolio_fit_adds_contribution_guidance_for_contribution_policy_conflicts() -> None:
+    result = assess_portfolio_fit(
+        symbol="MSFT",
+        amount_usd=10_000.0,
+        proposed_account_id="roth",
+        evidence_packet=_packet("MSFT", asset_type="equity"),
+        snapshot=PortfolioSnapshot(
+            as_of=datetime(2026, 4, 26, tzinfo=timezone.utc),
+            base_currency="USD",
+            total_value_usd=100_000.0,
+            total_investment_usd=100_000.0,
+            holdings=[
+                Holding(symbol="VTI", name="Total Market", asset_class="equity", value_usd=70_000.0, allocation_percent=70.0),
+                Holding(symbol="BND", name="Bond Market", asset_class="fixed_income", value_usd=30_000.0, allocation_percent=30.0),
+            ],
+        ),
+        holdings_payload={
+            "accounts": [
+                {"id": "roth", "name": "Roth IRA", "type": "roth_ira"},
+            ],
+            "risk_policy": {"thresholds": {"single_holding_max_pct": 60.0}},
+            "investment_policy": {
+                "max_asset_class_exposure_pct": {"equity": 70.0},
+                "simplicity_preference": "high",
+            },
+        },
+        profile_readiness_payload={"status": "ready", "completion_percent": 100.0},
+        emergency_fund_months=8.0,
+    )
+
+    guidance = result.portfolio_impact["contribution_guidance"]
+    assert guidance["status"] == "review"
+    assert guidance["account_id"] == "roth"
+    assert guidance["tax_treatment"] == "tax_free"
+    assert "asset_class:policy_cap" in guidance["policy_conflicts"]
+    assert "policy:simplicity_review" in guidance["policy_conflicts"]
+    assert any("asset-class policy cap" in reason for reason in guidance["review_reasons"])
+    assert any("simplicity preference" in reason for reason in guidance["review_reasons"])
+    assert "tax:contribution_account_policy" not in result.blocking_gaps
+
+
 def test_build_portfolio_fit_assessment_payload_threads_proposed_account(monkeypatch) -> None:
     class FakeSnapshotStore:
         def latest(self) -> PortfolioSnapshot:

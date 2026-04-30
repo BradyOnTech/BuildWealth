@@ -638,6 +638,76 @@ def test_watchlist_research_factory_generates_account_location_policy_review() -
     assert payload["quality"]["actionability"] == "review_only"
 
 
+def test_watchlist_research_factory_generates_contribution_account_policy_review() -> None:
+    result = generate_watchlist_research_recommendations(
+        watchlist_rank_payload={
+            "items": [
+                {
+                    "symbol": "VTI",
+                    "research_evidence_packet_id": "research-evidence:yfinance:VTI:6mo:1d",
+                    "research_provider": "yfinance",
+                    "research_freshness_status": "fresh",
+                    "research_confidence": "high",
+                    "research_coverage_score": 100.0,
+                    "research_blocking_gaps": [],
+                }
+            ]
+        },
+        fit_assessments_by_symbol={
+            "VTI": {
+                "fit_status": "mixed",
+                "fit_score": 58.0,
+                "fit_reasons": ["Cash runway is at or above the 6-month target."],
+                "fit_risks": ["Personal tax sensitivity is high; taxable contribution placement should be reviewed."],
+                "blocking_gaps": ["tax:contribution_account_policy", "tax:account_location_policy"],
+                "portfolio_impact": {
+                    "contribution_guidance": {
+                        "status": "review",
+                        "account_id": "taxable",
+                        "account_type": "taxableBrokerage",
+                        "tax_treatment": "taxable",
+                        "policy_conflicts": ["tax:account_location_policy", "tax:policy_review"],
+                        "review_reasons": [
+                            "Proposed contribution account conflicts with preferred account-location policy.",
+                            "Personal tax sensitivity makes this account treatment worth reviewing.",
+                        ],
+                        "recommended_review": "review_account_location",
+                    },
+                    "proposed_account": {
+                        "account_id": "taxable",
+                        "account_name": "Taxable Brokerage",
+                        "tax_treatment": "taxable",
+                        "policy_preferred_treatments": ["tax_free"],
+                    },
+                    "investment_policy": {
+                        "preferred_account_locations": {"equity": ["tax_free"]},
+                        "tax_sensitivity": "high",
+                    },
+                },
+                "recommended_next_step": "review_account_location",
+            }
+        },
+        existing_recommendations=[],
+        dry_run=True,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count == 1
+    candidate = result.candidates[0]
+    assert candidate["title"] == "Review VTI contribution account fit"
+    payload = candidate["action_payload"]
+    assert payload["generator"]["signal_key"] == "policy_contribution_account"
+    assert payload["suggested_action"]["kind"] == "review_portfolio_fit"
+    assert payload["suggested_action"]["policy_gap"] == "tax:contribution_account_policy"
+    assert payload["evidence"]["contribution_guidance"]["account_id"] == "taxable"
+    assert payload["evidence"]["contribution_guidance"]["tax_treatment"] == "taxable"
+    assert payload["quality"]["actionability"] == "review_only"
+    assert "tax.contribution_account_policy" in payload["quality"]["blocking_context"]
+    joined = " ".join([candidate["title"], candidate["detail"], payload["suggested_action"]["kind"]])
+    assert "buy" not in joined.lower()
+    assert "sell" not in joined.lower()
+
+
 def test_watchlist_research_factory_generates_policy_restriction_review() -> None:
     result = generate_watchlist_research_recommendations(
         watchlist_rank_payload={

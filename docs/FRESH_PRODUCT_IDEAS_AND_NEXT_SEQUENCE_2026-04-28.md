@@ -242,16 +242,36 @@ Likely first slice:
 
 ## Priority Recommendation
 
-Start with the agreed sequence:
+Completed/mostly completed agreed sequence:
 
-1. Tax-lot and account-location fit context.
-2. v2 research surface migration.
-3. Copilot and investment outcome calibration.
+1. Tax-lot and account-location fit context is implemented enough for review-grade fit assessment, recommendation evidence, Portfolio cards, and Copilot fit traces.
+2. v2 research surface migration is implemented enough for the normal decision loop: packet, compare, dossier, thesis review, Today, Inbox, Portfolio, Copilot, and Plan links can stay in v2.
+3. Copilot and investment outcome calibration is started and wired into Copilot-drafted investment/research recommendations, Today cards, Inbox quality, and process outcome calibration.
 
-Then pull in the fresh ideas in this order:
+Current build order:
 
-1. Personal Investment Policy, because it improves portfolio-fit immediately.
-2. What Changed Since Last Review, because it strengthens Today as the command center.
-3. Research Thesis Expiration, because it extends the investment-fit evidence loop (started with saved dossier expiry metadata, recommendation generation, v2 Research visibility, Inbox dossier routing, Today readiness warnings, stale watchlist-thesis triggers, material price-move triggers, policy-material-change thesis triggers, Plan links to saved dossiers, and apply-side thesis review metadata refresh).
-4. Decision Pre-Mortem, because it improves outcome learning and calibration.
-5. Confidence Heat Map, because it can unify readiness/freshness once more domain signals exist.
+1. Account-type-specific contribution and fit guidance, because it makes Personal Investment Policy operational inside the "does this investment fit me?" loop.
+2. What Changed Since Last Review, because it strengthens Today as the daily command center.
+3. Decision Pre-Mortem, because it improves outcome learning and calibration for high-impact decisions.
+4. Confidence Heat Map, because it can unify readiness/freshness once account-policy, plan, research, and provider signals are richer.
+5. Trust/durability visibility, because backup/restore/protection/audit state needs to be visible before BuildWealth feels dependable as a daily operating system.
+
+### Account-Type Contribution/Fit Guidance Build Plan
+
+Goal: make portfolio-fit explain whether a candidate or contribution route fits the user's account structure and policy, without giving automatic trading or tax advice.
+
+First implementation slice:
+
+- derive a compact `contribution_guidance` object inside portfolio-fit when a proposed account, contribution route, or account policy is present
+- classify account treatment as taxable, tax-deferred, tax-free, cash, or unknown using existing account-type helpers
+- flag review-only conflicts for high tax sensitivity plus taxable placement, preferred account-location mismatches, concentration or asset-class caps affected by new contributions, cash-floor conflicts, and high-simplicity new-position concerns
+- expose this context in `portfolio_impact` and generated watchlist/research recommendation evidence
+- generate review-only Inbox rows such as "Review MSFT contribution account fit" when contribution/account routing is the key concern
+- route the row into Portfolio fit review and Copilot discussion, not a direct apply action
+
+Testing plan:
+
+- add portfolio-fit tests for account-type contribution guidance
+- add recommendation-factory tests for review-only contribution/account-location policy rows
+- extend v2 Portfolio/Copilot rendering only if the existing fit cards do not already surface the new `portfolio_impact` context clearly
+- add a browser workflow after backend behavior is stable: generated row -> Inbox route -> Portfolio fit review -> Copilot explanation

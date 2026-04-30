@@ -150,6 +150,7 @@ export function renderFitResult(result) {
   const policyCap = formatPolicyCap(impact);
   const policyGuardrails = formatPolicyGuardrails(impact.investment_policy);
   const sectorPolicy = formatSectorPolicy(impact);
+  const contributionGuidance = formatContributionGuidance(impact.contribution_guidance);
   return html`
     <article class="fit-result fit-${result.fit_status}">
       <div class="fit-result-head">
@@ -199,6 +200,12 @@ export function renderFitResult(result) {
           <div>
             <dt>Proposed account</dt>
             <dd>${proposedAccount}</dd>
+          </div>
+        ` : ''}
+        ${contributionGuidance ? html`
+          <div>
+            <dt>Contribution fit</dt>
+            <dd>${contributionGuidance}</dd>
           </div>
         ` : ''}
       </dl>
@@ -272,6 +279,20 @@ function formatProposedAccount(account = {}) {
     account.account_name || account.account_id || '',
     labelize(account.tax_treatment || account.account_type || ''),
     preferred.length ? `prefers ${preferred.map(labelize).join(', ')}` : '',
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
+
+function formatContributionGuidance(guidance = {}) {
+  if (!guidance || typeof guidance !== 'object') return '';
+  const reasons = Array.isArray(guidance.review_reasons)
+    ? guidance.review_reasons.filter(Boolean)
+    : [];
+  const parts = [
+    guidance.status ? labelize(guidance.status) : '',
+    guidance.tax_treatment ? labelize(guidance.tax_treatment) : '',
+    guidance.recommended_review ? labelize(guidance.recommended_review) : '',
+    reasons[0] || '',
   ].filter(Boolean);
   return parts.join(' · ');
 }

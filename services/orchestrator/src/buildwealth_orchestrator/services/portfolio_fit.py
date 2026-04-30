@@ -456,6 +456,88 @@ def _account_location_context(
     }
 
 
+def _contribution_guidance(
+    *,
+    proposed_account: dict[str, Any],
+    investment_policy: dict[str, Any],
+    blocking_gaps: list[str],
+    amount_usd: float | None,
+) -> dict[str, Any]:
+    if amount_usd is None:
+        return {}
+
+    account_id = str(proposed_account.get("account_id") or "").strip()
+    relevant_gaps = [
+        gap
+        for gap in dict.fromkeys(str(gap).strip() for gap in blocking_gaps if str(gap or "").strip())
+        if gap
+        in {
+            "tax:account_location_policy",
+            "tax:policy_review",
+            "tax:policy_context",
+            "tax:proposed_account",
+            "asset_class:policy_cap",
+            "sector:policy_cap",
+            "cash:policy_floor",
+            "concentration",
+            "policy:simplicity_review",
+        }
+    ]
+    if not account_id and not relevant_gaps:
+        return {}
+
+    review_reasons: list[str] = []
+    if "tax:account_location_policy" in relevant_gaps:
+        review_reasons.append("Proposed contribution account conflicts with preferred account-location policy.")
+    if "tax:policy_review" in relevant_gaps or "tax:policy_context" in relevant_gaps:
+        review_reasons.append("Personal tax sensitivity makes this account treatment worth reviewing.")
+    if "tax:proposed_account" in relevant_gaps:
+        review_reasons.append("Proposed contribution account could not be found.")
+    if "asset_class:policy_cap" in relevant_gaps:
+        review_reasons.append("New contributions may push exposure above the asset-class policy cap.")
+    if "sector:policy_cap" in relevant_gaps:
+        review_reasons.append("New contributions may push sector exposure above the policy cap.")
+    if "cash:policy_floor" in relevant_gaps:
+        review_reasons.append("Cash-floor policy should be reviewed before adding investment exposure.")
+    if "concentration" in relevant_gaps:
+        review_reasons.append("New contributions may worsen single-symbol concentration.")
+    if "policy:simplicity_review" in relevant_gaps:
+        review_reasons.append("Personal simplicity preference calls for reviewing another position or route.")
+
+    if not review_reasons:
+        return {}
+
+    if any(gap.startswith("tax:") for gap in relevant_gaps):
+        recommended_review = "review_account_location"
+    elif "asset_class:policy_cap" in relevant_gaps:
+        recommended_review = "review_asset_class_exposure"
+    elif "sector:policy_cap" in relevant_gaps:
+        recommended_review = "review_sector_exposure"
+    elif "cash:policy_floor" in relevant_gaps:
+        recommended_review = "review_cash_floor"
+    elif "concentration" in relevant_gaps:
+        recommended_review = "review_concentration"
+    elif "policy:simplicity_review" in relevant_gaps:
+        recommended_review = "review_simplicity"
+    else:
+        recommended_review = "discuss_in_copilot"
+
+    return {
+        "status": "review",
+        "amount_usd": round(float(amount_usd), 2),
+        "account_id": account_id or None,
+        "account_name": proposed_account.get("account_name"),
+        "account_type": proposed_account.get("account_type"),
+        "tax_treatment": proposed_account.get("tax_treatment"),
+        "policy_preference_key": proposed_account.get("policy_preference_key"),
+        "policy_preferred_treatments": proposed_account.get("policy_preferred_treatments") or [],
+        "policy_conflicts": relevant_gaps,
+        "review_reasons": review_reasons,
+        "recommended_review": recommended_review,
+        "tax_sensitivity": investment_policy.get("tax_sensitivity"),
+    }
+
+
 def assess_portfolio_fit(
     *,
     symbol: str,
@@ -602,6 +684,12 @@ def assess_portfolio_fit(
                     f"Personal investment policy prefers {asset_label} in {preferred_label} accounts; "
                     f"proposed account is {proposed_account.get('tax_treatment')}."
                 )
+            tax_sensitivity = str(investment_policy.get("tax_sensitivity") or "").strip().lower()
+            if tax_sensitivity == "high" and proposed_account.get("tax_treatment") == "taxable":
+                blocking_gaps.append("tax:policy_review")
+                fit_risks.append(
+                    "Personal tax sensitivity is high; taxable contribution placement should be reviewed."
+                )
         max_sector_pct = _safe_float(investment_policy.get("max_sector_exposure_pct"), 0.0)
         if candidate_sector and max_sector_pct > 0 and snapshot.total_value_usd > 0:
             current_sector_value = _sector_value(snapshot, candidate_sector)
@@ -721,6 +809,22 @@ def assess_portfolio_fit(
                         f"{normalized_symbol} would reach {simulated_symbol_weight:.1f}% of the portfolio; "
                         f"personal policy cap is {max_single_pct:.1f}%."
                     )
+        contribution_guidance = _contribution_guidance(
+            proposed_account=(
+                portfolio_impact.get("proposed_account")
+                if isinstance(portfolio_impact.get("proposed_account"), dict)
+                else {}
+            ),
+            investment_policy=investment_policy,
+            blocking_gaps=blocking_gaps,
+            amount_usd=amount_usd,
+        )
+        if contribution_guidance:
+            portfolio_impact["contribution_guidance"] = contribution_guidance
+            if contribution_guidance.get("account_id") and any(
+                str(gap).startswith("tax:") for gap in contribution_guidance.get("policy_conflicts", [])
+            ):
+                blocking_gaps.append("tax:contribution_account_policy")
 
     if not fit_reasons and evidence.get("freshness_status") == "fresh":
         fit_reasons.append("Research evidence is fresh enough for a preliminary fit review.")
@@ -766,6 +870,10 @@ def assess_portfolio_fit(
         fit_status = "needs_more_context"
         recommended_next_step = "update_profile"
         fit_score = 42.0
+    elif "tax:contribution_account_policy" in unique_blocking_gaps:
+        fit_status = "mixed"
+        recommended_next_step = "review_account_location"
+        fit_score = 56.0
     elif "tax:policy_review" in unique_blocking_gaps:
         fit_status = "mixed"
         recommended_next_step = "discuss_in_copilot"

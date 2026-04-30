@@ -41,7 +41,7 @@ Current gaps:
 - The normal Plan loop no longer depends on classic Plan links.
 - Withdrawal-strategy comparison now has a common v2 review surface; deeper editor-style controls can remain a later advanced slice.
 - Life-event branch templates now have a common v2 preview surface; richer template editing can remain a later advanced slice.
-- Generic artifact detail/focus can be richer inside v2 Plan; current high-frequency links land on the v2 evidence center.
+- Generic artifact detail/focus now opens inside v2 Plan from `artifact=` links; richer artifact-specific actions can be added as needed.
 - Broader browser coverage can continue around advanced Plan, Research, and investment-fit workflows.
 
 ## Design Principles
@@ -794,7 +794,7 @@ Plan Workspace migration is complete enough for this phase when:
 
 Tasks 1 through 10 are complete for the normal Plan Workspace loop.
 
-The next Plan-specific work should be intentionally narrower: add focused generic artifact detail inside v2 Plan, deepen branch-template editing if needed, and extend browser coverage around edge Plan/Research workflows as each surface graduates.
+The next Plan-specific work should be intentionally narrower: deepen branch-template editing if needed, enrich artifact-specific actions where useful, and extend browser coverage around edge Plan/Research workflows as each surface graduates.
 
 ## Execution Checkpoints
 

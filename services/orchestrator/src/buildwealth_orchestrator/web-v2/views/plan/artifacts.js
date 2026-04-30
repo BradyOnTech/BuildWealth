@@ -47,7 +47,7 @@ export function classifyPlanArtifact(artifact = {}) {
   return { kind: 'general', label: TYPE_LABELS.general };
 }
 
-export function renderArtifacts(plan = {}) {
+export function renderArtifacts(plan = {}, state = {}) {
   const artifacts = Array.isArray(plan.artifacts) ? plan.artifacts : [];
   const planId = clean(plan.id);
 
@@ -58,6 +58,7 @@ export function renderArtifacts(plan = {}) {
         <h2 class="section-title">Artifacts and evidence.</h2>
         <p class="section-lede">Saved research, decision packets, closure summaries, and scenario reports that explain how this plan learned.</p>
       </header>
+      ${raw(renderFocusedArtifact(planId, state))}
       ${artifacts.length ? html`
         <ol class="artifact-list">
           ${raw(artifacts.slice(0, 12).map(artifact => renderArtifactCard(artifact, planId)).join(''))}
@@ -69,6 +70,59 @@ export function renderArtifacts(plan = {}) {
         </div>
       `}
     </section>
+  `;
+}
+
+function renderFocusedArtifact(planId = '', state = {}) {
+  const artifact = objectValue(state.focusedArtifact);
+  const id = clean(state.focusedArtifactId || artifact.id);
+  if (state.busy && id) {
+    return html`
+      <article class="scenario-result artifact-detail-panel">
+        <span class="section-eyebrow">Artifact detail</span>
+        <div class="skeleton" style="height: 180px;">.</div>
+      </article>
+    `;
+  }
+  if (state.error && id) {
+    return html`
+      <article class="scenario-result artifact-detail-panel">
+        <span class="section-eyebrow">Artifact detail</span>
+        <p class="error-banner">${esc(state.error)}</p>
+        <a class="link-editorial" href="#plan?id=${encodeURIComponent(planId)}&amp;section=artifacts">Back to artifacts</a>
+      </article>
+    `;
+  }
+  if (!Object.keys(artifact).length) return '';
+
+  const classified = classifyPlanArtifact(artifact);
+  const title = clean(artifact.title || artifact.file_name || artifact.id || classified.label);
+  const created = fmtDateLong(artifact.created_at);
+  const content = clean(artifact.content || artifact.content_preview || artifact.summary || artifact.detail);
+  const citations = packetCitations(artifact);
+  const actions = focusedArtifactActions(planId, artifact, classified.kind);
+
+  return html`
+    <article class="scenario-result artifact-detail-panel">
+      <header class="section-head compact">
+        <span class="section-eyebrow">Artifact detail</span>
+        <h3 class="section-title">${esc(title)}</h3>
+        <p class="section-lede">${esc(classified.label)}${created ? ` · ${created}` : ''}${artifact.file_name ? ` · ${artifact.file_name}` : ''}</p>
+      </header>
+
+      ${citations.length ? html`
+        <div class="artifact-citations" aria-label="Packet citations">
+          ${raw(citations.slice(0, 8).map(citation => html`<code>${citation}</code>`).join(''))}
+        </div>
+      ` : ''}
+
+      ${content ? html`<pre class="artifact-detail-content">${content}</pre>` : html`<p class="marginalia">No artifact content was returned.</p>`}
+
+      <div class="scenario-handoff">
+        <a class="link-editorial" href="#plan?id=${encodeURIComponent(planId)}&amp;section=artifacts">Back to artifacts</a>
+        ${raw(actions.map(link => html`<a class="link-editorial" href="${link.href}">${link.label}</a>`).join(''))}
+      </div>
+    </article>
   `;
 }
 
@@ -160,6 +214,23 @@ function artifactLinks(artifact = {}, kind = 'general', planId = '') {
   return links;
 }
 
+function focusedArtifactActions(planId = '', artifact = {}, kind = 'general') {
+  const id = clean(artifact.id || artifact.artifact_id);
+  const recommendationId = clean(artifact.recommendation_id || artifact.source_recommendation_id);
+  const encodedPlan = planId ? encodeURIComponent(planId) : '';
+  const encodedId = id ? encodeURIComponent(id) : '';
+  const links = [];
+  if (kind === 'research_dossier' && encodedId) {
+    links.push({ label: 'Open dossier', href: `#research?dossier=${encodedId}${encodedPlan ? `&plan=${encodedPlan}` : ''}` });
+    links.push({ label: 'Review thesis', href: `#research?thesisReview=${encodedId}${encodedPlan ? `&plan=${encodedPlan}` : ''}` });
+  }
+  const firstSymbol = firstSymbolForArtifact(artifact) || firstSymbolForCitations(packetCitations(artifact));
+  if (firstSymbol) links.push({ label: 'Research symbol', href: `#research?packet=${encodeURIComponent(firstSymbol)}` });
+  if (recommendationId) links.push({ label: 'Open recommendation', href: `#inbox?focus=${encodeURIComponent(recommendationId)}` });
+  if (encodedPlan) links.push({ label: 'Decision ledger', href: `#plan?id=${encodedPlan}&section=decisions` });
+  return links;
+}
+
 function planArtifactHref(planId, artifactId) {
   const params = new URLSearchParams();
   if (planId) params.set('id', planId);
@@ -195,6 +266,18 @@ function packetCitations(artifact = {}) {
 function firstSymbolForArtifact(artifact = {}) {
   const symbols = Array.isArray(artifact.symbols) ? artifact.symbols : [];
   return clean(symbols[0]).toUpperCase();
+}
+
+function firstSymbolForCitations(citations = []) {
+  for (const citation of citations) {
+    const match = clean(citation).match(/^research-evidence:[^:]+:([^:]+):/);
+    if (match) return match[1].toUpperCase();
+  }
+  return '';
+}
+
+function objectValue(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
 function clean(value) {

@@ -153,6 +153,14 @@ test('copilot thread renders portfolio fit tool results as review cards', () => 
                   tax_treatment: 'taxable',
                   policy_preferred_treatments: ['tax_free'],
                 },
+                contribution_guidance: {
+                  status: 'review',
+                  account_id: 'taxable',
+                  account_type: 'taxableBrokerage',
+                  tax_treatment: 'taxable',
+                  recommended_review: 'review_account_location',
+                  review_reasons: ['Proposed contribution account conflicts with preferred account-location policy.'],
+                },
                 investment_policy: {
                   minimum_research_confidence: 'high',
                   minimum_cash_runway_months: 9,
@@ -196,6 +204,8 @@ test('copilot thread renders portfolio fit tool results as review cards', () => 
   assert.match(html, /Research High · Cash floor 9 mo · Asset cap Equity 80% · Simplicity High · Tax High · Sector cap 30% · Avoid NVDA · Avoid Crypto/);
   assert.match(html, /Technology 31\.4% · cap 30%/);
   assert.match(html, /Taxable Brokerage · Taxable · prefers Tax Free/);
+  assert.match(html, /Contribution fit/);
+  assert.match(html, /Review · Taxable · Review account location · Proposed contribution account conflicts with preferred account-location policy\./);
   assert.match(html, /Taxable · Tax lots missing/);
   assert.match(html, /Taxable Brokerage · Taxable · \$12,500 gain\/loss/);
   assert.match(html, /href="#research\?symbol=NVDA&amp;packet=research-evidence%3Ayfinance%3ANVDA%3A6mo%3A1d"/);
