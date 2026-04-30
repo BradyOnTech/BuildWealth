@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { renderLookCloser } from '../views/plan.js';
 import { buildPlanSettingsPatch, renderAssumptions } from '../views/plan/assumptions.js';
+import { classifyPlanArtifact, renderArtifacts } from '../views/plan/artifacts.js';
 import { derivePlanHealth, renderPlanHealth } from '../views/plan/health.js';
 
 test('plan api exposes v2 workspace endpoints', () => {
@@ -61,6 +62,17 @@ test('plan view wires plan health data and section routing', () => {
   assert.match(healthSource, /data-plan-section="health"/);
   assert.match(healthSource, /planSectionHref/);
   assert.match(healthSource, /'assumptions'/);
+});
+
+test('plan view wires typed artifact center into the page', () => {
+  const planSource = readFileSync(
+    resolve(import.meta.dirname, '../views/plan.js'),
+    'utf8',
+  );
+
+  assert.match(planSource, /renderArtifacts/);
+  assert.match(planSource, /id="plan-artifacts"/);
+  assert.match(planSource, /data-plan-section="artifacts"/);
 });
 
 test('plan look-closer links saved research artifacts into v2 research surfaces', () => {
@@ -164,6 +176,90 @@ test('plan assumptions workspace builds precise settings patch from staged edits
     marginal_tax_rate: null,
     filing_status: 'married_filing_jointly',
   });
+});
+
+test('plan artifact classifier groups durable evidence by purpose', () => {
+  assert.equal(classifyPlanArtifact({
+    kind: 'research_dossier',
+    title: 'Research Dossier - MSFT vs VTI',
+  }).kind, 'research_dossier');
+  assert.equal(classifyPlanArtifact({
+    kind: 'research_bridge',
+    title: 'Research bridge pin - NVDA',
+  }).kind, 'research_bridge');
+  assert.equal(classifyPlanArtifact({
+    title: 'Decision packet - increase contributions',
+  }).kind, 'decision_packet');
+  assert.equal(classifyPlanArtifact({
+    title: 'Thesis revision - NVDA',
+  }).kind, 'thesis_revision');
+  assert.equal(classifyPlanArtifact({
+    file_name: 'recommendation-closure-summary.md',
+  }).kind, 'closure_summary');
+  assert.equal(classifyPlanArtifact({
+    title: 'Scenario diff report',
+  }).kind, 'scenario_report');
+  assert.equal(classifyPlanArtifact({
+    title: 'Loose planning note',
+  }).kind, 'general');
+});
+
+test('plan artifact center renders typed routes and packet citations', () => {
+  const markup = String(renderArtifacts({
+    id: 'plan-1',
+    artifacts: [
+      {
+        id: 'artifact-dossier-msft',
+        kind: 'research_dossier',
+        title: 'Research Dossier - MSFT vs VTI',
+        created_at: '2026-04-20T12:00:00Z',
+        packet_citations: ['research-evidence:yfinance:MSFT:6mo:1d'],
+      },
+      {
+        id: 'artifact-bridge-nvda',
+        kind: 'research_bridge',
+        title: 'Research bridge pin - NVDA',
+        symbols: ['NVDA'],
+      },
+      {
+        id: 'artifact-decision',
+        title: 'Decision packet - increase contributions',
+        recommendation_id: 'rec-contribution',
+      },
+      {
+        id: 'artifact-thesis',
+        title: 'Thesis revision - NVDA',
+        content_preview: 'Updated with research-evidence:yfinance:NVDA:6mo:1d after policy review.',
+        symbols: ['NVDA'],
+      },
+      {
+        id: 'artifact-closure',
+        title: 'Recommendation closure summary',
+      },
+      {
+        id: 'artifact-scenario',
+        title: 'Scenario diff report',
+      },
+      {
+        id: 'artifact-note',
+        title: 'Loose planning note',
+      },
+    ],
+  }));
+
+  assert.match(markup, /Plan evidence/);
+  assert.match(markup, /Research dossier/);
+  assert.match(markup, /href="#research\?dossier=artifact-dossier-msft&amp;plan=plan-1"/);
+  assert.match(markup, /href="#research\?thesisReview=artifact-dossier-msft&amp;plan=plan-1"/);
+  assert.match(markup, /research-evidence:yfinance:MSFT:6mo:1d/);
+  assert.match(markup, /Research bridge/);
+  assert.match(markup, /Decision packet/);
+  assert.match(markup, /href="#inbox\?focus=rec-contribution"/);
+  assert.match(markup, /Thesis revision/);
+  assert.match(markup, /research-evidence:yfinance:NVDA:6mo:1d/);
+  assert.match(markup, /Outcome\/closure/);
+  assert.match(markup, /Scenario report/);
+  assert.match(markup, /General artifact/);
 });
 
 test('plan health renders weak assumptions and stale assumption review links', () => {

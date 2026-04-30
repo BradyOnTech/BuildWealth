@@ -367,7 +367,7 @@ Expected: health rendering and Today/Inbox link tests pass.
 - Scenario reports
 - General notes
 
-- [ ] **Step 1: Write failing artifact classification tests**
+- [x] **Step 1: Write failing artifact classification tests**
 
 Given plan artifacts with `kind`, `file_name`, and `title`, assert:
 
@@ -377,7 +377,7 @@ Given plan artifacts with `kind`, `file_name`, and `title`, assert:
 - closure summaries show "Outcome/closure"
 - unknown artifacts show "General artifact"
 
-- [ ] **Step 2: Implement artifact classifier**
+- [x] **Step 2: Implement artifact classifier**
 
 Use a small pure function:
 
@@ -397,7 +397,7 @@ export function classifyPlanArtifact(artifact = {}) {
 }
 ```
 
-- [ ] **Step 3: Render artifact cards**
+- [x] **Step 3: Render artifact cards**
 
 Each card should include:
 
@@ -408,7 +408,7 @@ Each card should include:
 - secondary route when useful
 - packet citations if already available in artifact preview/content
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 

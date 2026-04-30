@@ -429,6 +429,110 @@
   display: block;
 }
 
+/* ───────────  Artifacts (Movement IIA)  ─────────── */
+
+.plan-artifacts {
+  margin-top: var(--s-7);
+  padding-top: var(--s-6);
+  border-top: var(--hair) solid var(--rule);
+}
+
+.artifact-list {
+  display: grid;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.artifact-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--s-5);
+  align-items: start;
+  padding: var(--s-4) 0;
+  border-bottom: var(--hair) dotted var(--rule-soft);
+}
+.artifact-card:last-child { border-bottom: 0; }
+
+.artifact-card-main {
+  min-width: 0;
+}
+
+.artifact-type {
+  display: block;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+}
+
+.artifact-card h3 {
+  margin: 3px 0 0;
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink-strong);
+  text-wrap: balance;
+}
+
+.artifact-meta,
+.artifact-summary {
+  margin: 4px 0 0;
+  font-family: var(--sans);
+  font-size: var(--t-body-sm);
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
+.artifact-meta {
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ink-faint);
+}
+
+.artifact-citations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--s-3);
+}
+
+.artifact-citations code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  border: var(--hair) solid var(--rule-soft);
+  border-radius: var(--r-sm);
+  padding: 3px 6px;
+  background: var(--paper-bright);
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.artifact-actions {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  min-width: 180px;
+}
+
+@media (max-width: 720px) {
+  .artifact-card {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-3);
+  }
+
+  .artifact-actions {
+    justify-content: flex-start;
+    min-width: 0;
+  }
+}
+
 /* ───────────  Decisions (Movement III)  ─────────── */
 
 .decision-list {

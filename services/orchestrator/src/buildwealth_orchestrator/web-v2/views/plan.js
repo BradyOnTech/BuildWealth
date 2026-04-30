@@ -3,6 +3,7 @@
 //   IA.  The assumptions  — durable assumptions, active set, weak fields
 //   IB.  The health       — confidence and review gaps
 //   II.  The trajectory   — plan vs actual tracking
+//   IIA. The evidence     — typed artifacts and citations
 //   III. The decisions    — decision log + append form
 // Footer — Look closer (links to classic for timeline, contribution rules, scenarios).
 
@@ -17,6 +18,7 @@ import {
 } from './plan/assumptions.js';
 import { derivePlanHealth, renderPlanHealth } from './plan/health.js';
 import { renderTrajectory } from './plan/trajectory.js';
+import { renderArtifacts } from './plan/artifacts.js';
 import { renderDecisions } from './plan/decisions.js';
 
 export const meta = {
@@ -197,6 +199,7 @@ function rerenderBody() {
     <div id="plan-assumptions">${raw(renderAssumptions(ui.plan, ui.assumptions))}</div>
     <div id="plan-health" data-plan-section="health">${raw(renderPlanHealth(ui.plan, currentPlanHealth()))}</div>
     <div id="plan-trajectory" data-plan-section="trajectory">${raw(renderTrajectory(ui.trajectory))}</div>
+    <div id="plan-artifacts" data-plan-section="artifacts">${raw(renderArtifacts(ui.plan))}</div>
     <div id="plan-decisions" data-plan-section="decisions">${raw(renderDecisions(ui.plan, ui.decisions))}</div>
     ${raw(renderLookCloser(ui.plan))}
   `;
