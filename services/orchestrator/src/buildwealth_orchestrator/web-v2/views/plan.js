@@ -4,8 +4,11 @@
 //   IB.  The health       — confidence and review gaps
 //   II.  The trajectory   — plan vs actual tracking
 //   IIA. The evidence     — typed artifacts and citations
+//   IIB. The scenarios    — scenario diff review surface
+//   IID. The timeline     — retirement timing, drawdown posture, events
+//   IIE. The contributions — account priority and target rules
 //   III. The decisions    — decision log + append form
-// Footer — Look closer (links to classic for timeline, contribution rules, scenarios).
+// Footer — Look closer (links to advanced classic surfaces during migration).
 
 import { api } from '../lib/api.js';
 import { state } from '../lib/state.js';
@@ -19,6 +22,9 @@ import {
 import { derivePlanHealth, renderPlanHealth } from './plan/health.js';
 import { renderTrajectory } from './plan/trajectory.js';
 import { renderArtifacts } from './plan/artifacts.js';
+import { buildScenarioDiffPayload, renderScenarios } from './plan/scenarios.js';
+import { buildTimelinePayload, renderTimeline } from './plan/timeline.js';
+import { buildContributionRulesPayload, renderContributions } from './plan/contributions.js';
 import { renderDecisions } from './plan/decisions.js';
 
 export const meta = {
@@ -35,6 +41,9 @@ const ui = {
   assumptions: { busy: false, assumptionSets: null, draft: {}, dirty: false, saving: false, error: null },
   health: { busy: false, recommendations: [], error: null },
   trajectory: { busy: false, tracking: null, error: null },
+  scenarios: { draft: {}, dirty: false, busy: false, result: null, error: null, focusedRecommendationId: '' },
+  timeline: { busy: false, timeline: null, draft: {}, dirty: false, editing: false, saving: false, error: null },
+  contributions: { busy: false, contributionRules: null, draft: {}, dirty: false, editing: false, saving: false, error: null },
   decisions: { appendOpen: false, appendBusy: false, appendError: null },
 };
 
@@ -50,6 +59,7 @@ export function template() {
 export async function init(params = {}) {
   ui.selectedId = params.id || pickInitialPlanId();
   ui.section = String(params.section || '').trim().toLowerCase();
+  ui.scenarios.focusedRecommendationId = String(params.focus || params.recommendation || '').trim();
   attachHandlers();
 
   if (!ui.selectedId) {
@@ -59,6 +69,8 @@ export async function init(params = {}) {
   await loadPlan(ui.selectedId);
   await loadAssumptionSets(ui.selectedId);
   await loadPlanHealth(ui.selectedId);
+  await loadTimeline(ui.selectedId);
+  await loadContributionRules(ui.selectedId);
   rerenderAll();
   focusRequestedSection(params.section);
   loadTrajectory(ui.selectedId);
@@ -122,6 +134,72 @@ async function loadPlanHealth(id) {
     };
   } catch (err) {
     ui.health = { busy: false, recommendations: [], error: err.message };
+  }
+}
+
+async function loadTimeline(id) {
+  ui.timeline = {
+    busy: true,
+    timeline: null,
+    draft: {},
+    dirty: false,
+    editing: false,
+    saving: false,
+    error: null,
+  };
+  try {
+    ui.timeline = {
+      busy: false,
+      timeline: await api.planTimeline(id),
+      draft: {},
+      dirty: false,
+      editing: false,
+      saving: false,
+      error: null,
+    };
+  } catch (err) {
+    ui.timeline = {
+      busy: false,
+      timeline: null,
+      draft: {},
+      dirty: false,
+      editing: false,
+      saving: false,
+      error: err.message,
+    };
+  }
+}
+
+async function loadContributionRules(id) {
+  ui.contributions = {
+    busy: true,
+    contributionRules: null,
+    draft: {},
+    dirty: false,
+    editing: false,
+    saving: false,
+    error: null,
+  };
+  try {
+    ui.contributions = {
+      busy: false,
+      contributionRules: await api.planContributionRules(id),
+      draft: {},
+      dirty: false,
+      editing: false,
+      saving: false,
+      error: null,
+    };
+  } catch (err) {
+    ui.contributions = {
+      busy: false,
+      contributionRules: null,
+      draft: {},
+      dirty: false,
+      editing: false,
+      saving: false,
+      error: err.message,
+    };
   }
 }
 
@@ -200,6 +278,9 @@ function rerenderBody() {
     <div id="plan-health" data-plan-section="health">${raw(renderPlanHealth(ui.plan, currentPlanHealth()))}</div>
     <div id="plan-trajectory" data-plan-section="trajectory">${raw(renderTrajectory(ui.trajectory))}</div>
     <div id="plan-artifacts" data-plan-section="artifacts">${raw(renderArtifacts(ui.plan))}</div>
+    <div id="plan-scenarios" data-plan-section="scenarios">${raw(renderScenarios(ui.plan, ui.scenarios, ui.assumptions))}</div>
+    <div id="plan-timeline" data-plan-section="timeline">${raw(renderTimeline(ui.plan, ui.timeline))}</div>
+    <div id="plan-contributions" data-plan-section="contributions">${raw(renderContributions(ui.plan, ui.contributions))}</div>
     <div id="plan-decisions" data-plan-section="decisions">${raw(renderDecisions(ui.plan, ui.decisions))}</div>
     ${raw(renderLookCloser(ui.plan))}
   `;
@@ -236,6 +317,24 @@ function rerenderDecisions() {
   root.innerHTML = renderDecisions(ui.plan, ui.decisions);
 }
 
+function rerenderScenarios() {
+  const root = $('#plan-scenarios');
+  if (!root || !ui.plan) return;
+  root.innerHTML = renderScenarios(ui.plan, ui.scenarios, ui.assumptions);
+}
+
+function rerenderTimelineWorkspace() {
+  const root = $('#plan-timeline');
+  if (!root || !ui.plan) return;
+  root.innerHTML = renderTimeline(ui.plan, ui.timeline);
+}
+
+function rerenderContributionsWorkspace() {
+  const root = $('#plan-contributions');
+  if (!root || !ui.plan) return;
+  root.innerHTML = renderContributions(ui.plan, ui.contributions);
+}
+
 function planResearchDossierArtifacts(plan) {
   const artifacts = Array.isArray(plan?.artifacts) ? plan.artifacts : [];
   return artifacts.filter(artifact => {
@@ -255,9 +354,9 @@ export function renderLookCloser(plan) {
       <span class="section-eyebrow">Look closer</span>
       <div class="look-closer-row">
         <a class="link-editorial" href="/#plans?id=${id}">Edit settings</a>
-        <a class="link-editorial" href="/#plans?id=${id}">Timeline events</a>
-        <a class="link-editorial" href="/#plans?id=${id}">Contribution rules</a>
-        <a class="link-editorial" href="/#plans?id=${id}">Run a scenario diff</a>
+        <a class="link-editorial" href="#plan?id=${id}&amp;section=timeline">Timeline events</a>
+        <a class="link-editorial" href="#plan?id=${id}&amp;section=contributions">Contribution rules</a>
+        <a class="link-editorial" href="#plan?id=${id}&amp;section=scenarios">Run a scenario diff</a>
         <a class="link-editorial" href="/#plans?id=${id}">Branch on a life event</a>
         <a class="link-editorial" href="/#plans?id=${id}">Compare withdrawal strategies</a>
         <a class="link-editorial" href="/#plans?id=${id}">Browse artifacts</a>
@@ -311,10 +410,15 @@ function attachHandlers() {
     ui.plan = null;
     ui.assumptions = { busy: false, assumptionSets: null, draft: {}, dirty: false, saving: false, error: null };
     ui.health = { busy: false, recommendations: [], error: null };
+    ui.scenarios = { draft: {}, dirty: false, busy: false, result: null, error: null, focusedRecommendationId: '' };
+    ui.timeline = { busy: false, timeline: null, draft: {}, dirty: false, editing: false, saving: false, error: null };
+    ui.contributions = { busy: false, contributionRules: null, draft: {}, dirty: false, editing: false, saving: false, error: null };
     rerenderBody();
     await loadPlan(id);
     await loadAssumptionSets(id);
     await loadPlanHealth(id);
+    await loadTimeline(id);
+    await loadContributionRules(id);
     rerenderAll();
     loadTrajectory(id);
   });
@@ -341,6 +445,20 @@ function attachHandlers() {
   delegate(page, 'click', '[data-assumption-action="reset"]', () => resetAssumptionEdits());
   delegate(page, 'click', '[data-assumption-action="save"]', () => saveAssumptions());
 
+  delegate(page, 'change', '[data-scenario-field]', (_, el) => stageScenarioEdit(el));
+  delegate(page, 'click', '[data-scenario-action="run"]', () => runScenarioDiff());
+  delegate(page, 'click', '[data-scenario-action="save-decision"]', () => saveScenarioDecisionNote());
+
+  delegate(page, 'change', '[data-timeline-field]', (_, el) => stageTimelineEdit(el));
+  delegate(page, 'click', '[data-timeline-action="edit"]', () => openTimelineEditor());
+  delegate(page, 'click', '[data-timeline-action="cancel"]', () => resetTimelineEditor());
+  delegate(page, 'click', '[data-timeline-action="save"]', () => saveTimeline());
+
+  delegate(page, 'change', '[data-contribution-field]', (_, el) => stageContributionEdit(el));
+  delegate(page, 'click', '[data-contribution-action="edit"]', () => openContributionEditor());
+  delegate(page, 'click', '[data-contribution-action="cancel"]', () => resetContributionEditor());
+  delegate(page, 'click', '[data-contribution-action="save"]', () => saveContributionRules());
+
   delegate(page, 'click', '[data-decision-action="open-append"]',  () => { ui.decisions.appendOpen = true;  rerenderDecisions(); });
   delegate(page, 'click', '[data-decision-action="cancel-append"]', () => { ui.decisions = { appendOpen: false, appendBusy: false, appendError: null }; rerenderDecisions(); });
   delegate(page, 'click', '[data-decision-action="submit-append"]', () => submitAppendDecision());
@@ -354,6 +472,8 @@ async function createPlan(body) {
     await loadPlan(created.id);
     await loadAssumptionSets(created.id);
     await loadPlanHealth(created.id);
+    await loadTimeline(created.id);
+    await loadContributionRules(created.id);
     rerenderAll();
     loadTrajectory(created.id);
   } catch (err) {
@@ -378,6 +498,183 @@ function resetAssumptionEdits() {
   ui.assumptions.dirty = false;
   ui.assumptions.error = null;
   rerenderAssumptions();
+}
+
+function stageScenarioEdit(el) {
+  const field = String(el.dataset.scenarioField || '').trim();
+  if (!field) return;
+  ui.scenarios.draft = {
+    ...(ui.scenarios.draft || {}),
+    [field]: el.value,
+  };
+  ui.scenarios.dirty = true;
+  ui.scenarios.error = null;
+  rerenderScenarios();
+}
+
+async function runScenarioDiff() {
+  if (!ui.plan || ui.scenarios.busy) return;
+  const payload = buildScenarioDiffPayload(ui.scenarios.draft || {});
+  const hasCompareSettings = Object.keys(payload.compare_settings || {}).length > 0;
+  const hasOtherContext = Boolean(payload.current_portfolio_value_usd || payload.assumption_set_id || payload.candidate_assumption_set_id);
+  if (!hasCompareSettings && !hasOtherContext) {
+    ui.scenarios.error = 'Stage at least one setting or assumption-set comparison.';
+    rerenderScenarios();
+    return;
+  }
+
+  ui.scenarios.busy = true;
+  ui.scenarios.error = null;
+  rerenderScenarios();
+  try {
+    ui.scenarios.result = await api.planScenarioDiff(ui.plan.id, payload);
+    ui.scenarios.busy = false;
+    ui.scenarios.dirty = false;
+    rerenderScenarios();
+  } catch (err) {
+    ui.scenarios.busy = false;
+    ui.scenarios.error = err.message;
+    rerenderScenarios();
+  }
+}
+
+async function saveScenarioDecisionNote() {
+  if (!ui.plan || !ui.scenarios.result || ui.scenarios.busy) return;
+  ui.scenarios.busy = true;
+  ui.scenarios.error = null;
+  rerenderScenarios();
+  try {
+    await api.appendDecision(ui.plan.id, {
+      summary: 'Reviewed scenario diff',
+      rationale: scenarioDecisionRationale(ui.scenarios.result),
+      status: 'proposed',
+    });
+    ui.plan = await api.plan(ui.plan.id);
+    state.plan = ui.plan;
+    ui.scenarios.busy = false;
+    rerenderAll();
+    focusRequestedSection('scenarios');
+  } catch (err) {
+    ui.scenarios.busy = false;
+    ui.scenarios.error = err.message;
+    rerenderScenarios();
+  }
+}
+
+function openTimelineEditor() {
+  ui.timeline.editing = true;
+  ui.timeline.error = null;
+  rerenderTimelineWorkspace();
+}
+
+function resetTimelineEditor() {
+  ui.timeline.draft = {};
+  ui.timeline.dirty = false;
+  ui.timeline.editing = false;
+  ui.timeline.saving = false;
+  ui.timeline.error = null;
+  rerenderTimelineWorkspace();
+}
+
+function stageTimelineEdit(el) {
+  const field = String(el.dataset.timelineField || '').trim();
+  if (!field) return;
+  ui.timeline.draft = {
+    ...(ui.timeline.draft || {}),
+    [field]: el.value,
+  };
+  ui.timeline.dirty = true;
+  ui.timeline.error = null;
+  rerenderTimelineWorkspace();
+}
+
+async function saveTimeline() {
+  if (!ui.plan || ui.timeline.saving) return;
+  const payload = buildTimelinePayload(ui.timeline.timeline || {}, ui.timeline.draft || {});
+  ui.timeline.saving = true;
+  ui.timeline.error = null;
+  rerenderTimelineWorkspace();
+  try {
+    ui.timeline.timeline = await api.updatePlanTimeline(ui.plan.id, payload);
+    ui.plan = await api.plan(ui.plan.id);
+    state.plan = ui.plan;
+    ui.timeline.draft = {};
+    ui.timeline.dirty = false;
+    ui.timeline.editing = false;
+    ui.timeline.saving = false;
+    rerenderAll();
+    focusRequestedSection('timeline');
+  } catch (err) {
+    ui.timeline.saving = false;
+    ui.timeline.error = err.message;
+    rerenderTimelineWorkspace();
+  }
+}
+
+function openContributionEditor() {
+  ui.contributions.editing = true;
+  ui.contributions.error = null;
+  rerenderContributionsWorkspace();
+}
+
+function resetContributionEditor() {
+  ui.contributions.draft = {};
+  ui.contributions.dirty = false;
+  ui.contributions.editing = false;
+  ui.contributions.saving = false;
+  ui.contributions.error = null;
+  rerenderContributionsWorkspace();
+}
+
+function stageContributionEdit(el) {
+  const field = String(el.dataset.contributionField || '').trim();
+  if (!field) return;
+  ui.contributions.draft = {
+    ...(ui.contributions.draft || {}),
+    [field]: el.value,
+  };
+  ui.contributions.dirty = true;
+  ui.contributions.error = null;
+  rerenderContributionsWorkspace();
+}
+
+async function saveContributionRules() {
+  if (!ui.plan || ui.contributions.saving) return;
+  const payload = buildContributionRulesPayload(
+    ui.contributions.contributionRules || {},
+    ui.contributions.draft || {},
+  );
+  ui.contributions.saving = true;
+  ui.contributions.error = null;
+  rerenderContributionsWorkspace();
+  try {
+    ui.contributions.contributionRules = await api.updatePlanContributionRules(ui.plan.id, payload);
+    ui.plan = await api.plan(ui.plan.id);
+    state.plan = ui.plan;
+    ui.contributions.draft = {};
+    ui.contributions.dirty = false;
+    ui.contributions.editing = false;
+    ui.contributions.saving = false;
+    rerenderAll();
+    focusRequestedSection('contributions');
+  } catch (err) {
+    ui.contributions.saving = false;
+    ui.contributions.error = err.message;
+    rerenderContributionsWorkspace();
+  }
+}
+
+function scenarioDecisionRationale(result = {}) {
+  const baseline = Array.isArray(result.scenario_deltas)
+    ? result.scenario_deltas.find(row => String(row?.label || '') === 'baseline') || result.scenario_deltas[0]
+    : null;
+  if (!baseline) return 'Scenario diff reviewed in v2 Plan.';
+  const future = Number(baseline.delta_future_value_usd);
+  const real = Number(baseline.delta_real_value_usd);
+  const parts = ['Scenario diff reviewed in v2 Plan.'];
+  if (Number.isFinite(future)) parts.push(`Future-value delta: ${future}.`);
+  if (Number.isFinite(real)) parts.push(`Real-value delta: ${real}.`);
+  return parts.join(' ');
 }
 
 async function saveAssumptions() {

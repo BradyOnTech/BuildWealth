@@ -7,6 +7,9 @@ import { buildPlanSettingsPatch, renderAssumptions } from '../views/plan/assumpt
 import { classifyPlanArtifact, renderArtifacts } from '../views/plan/artifacts.js';
 import { renderDecisions } from '../views/plan/decisions.js';
 import { derivePlanHealth, renderPlanHealth } from '../views/plan/health.js';
+import { buildScenarioDiffPayload, renderScenarios } from '../views/plan/scenarios.js';
+import { buildTimelinePayload, renderTimeline } from '../views/plan/timeline.js';
+import { buildContributionRulesPayload, renderContributions } from '../views/plan/contributions.js';
 
 test('plan api exposes v2 workspace endpoints', () => {
   const apiSource = readFileSync(
@@ -74,6 +77,38 @@ test('plan view wires typed artifact center into the page', () => {
   assert.match(planSource, /renderArtifacts/);
   assert.match(planSource, /id="plan-artifacts"/);
   assert.match(planSource, /data-plan-section="artifacts"/);
+});
+
+test('plan view wires scenario diff workspace actions', () => {
+  const planSource = readFileSync(
+    resolve(import.meta.dirname, '../views/plan.js'),
+    'utf8',
+  );
+
+  assert.match(planSource, /renderScenarios/);
+  assert.match(planSource, /buildScenarioDiffPayload/);
+  assert.match(planSource, /api\.planScenarioDiff/);
+  assert.match(planSource, /data-scenario-field/);
+  assert.match(planSource, /data-scenario-action="run"/);
+  assert.match(planSource, /data-scenario-action="save-decision"/);
+});
+
+test('plan view wires timeline and contribution rule workspaces', () => {
+  const planSource = readFileSync(
+    resolve(import.meta.dirname, '../views/plan.js'),
+    'utf8',
+  );
+
+  assert.match(planSource, /renderTimeline/);
+  assert.match(planSource, /renderContributions/);
+  assert.match(planSource, /buildTimelinePayload/);
+  assert.match(planSource, /buildContributionRulesPayload/);
+  assert.match(planSource, /api\.planTimeline/);
+  assert.match(planSource, /api\.updatePlanTimeline/);
+  assert.match(planSource, /api\.planContributionRules/);
+  assert.match(planSource, /api\.updatePlanContributionRules/);
+  assert.match(planSource, /data-timeline-action="save"/);
+  assert.match(planSource, /data-contribution-action="save"/);
 });
 
 test('plan look-closer links saved research artifacts into v2 research surfaces', () => {
@@ -326,6 +361,205 @@ test('plan decisions flag accepted decisions without closure outcome', () => {
 
   assert.match(markup, /Outcome not captured yet/);
   assert.match(markup, /href="#inbox\?focus=rec-tax"/);
+});
+
+test('plan scenario workspace builds scenario-diff payload from staged edits', () => {
+  const payload = buildScenarioDiffPayload({
+    annual_contribution_usd: '30000',
+    expected_return_baseline: '7.2',
+    inflation_rate: '2.8',
+    marginal_tax_rate: '',
+    years: '30',
+    current_portfolio_value_usd: '500000',
+    assumption_set_id: 'base',
+    candidate_assumption_set_id: 'policy',
+  });
+
+  assert.deepEqual(payload, {
+    current_portfolio_value_usd: 500000,
+    assumption_set_id: 'base',
+    candidate_assumption_set_id: 'policy',
+    compare_settings: {
+      annual_contribution_usd: 30000,
+      expected_return_baseline: 0.072,
+      inflation_rate: 0.028,
+      years: 30,
+    },
+  });
+});
+
+test('plan scenario workspace renders compact results and decision handoff', () => {
+  const markup = String(renderScenarios({
+    id: 'plan-1',
+    settings: {
+      annual_contribution_usd: 25000,
+      expected_return_baseline: 0.065,
+      inflation_rate: 0.028,
+      years: 25,
+    },
+  }, {
+    draft: { annual_contribution_usd: '30000' },
+    dirty: true,
+    focusedRecommendationId: 'rec-scenario',
+    result: {
+      plan_id: 'plan-1',
+      base_settings: {
+        annual_contribution_usd: 25000,
+        expected_return_baseline: 0.065,
+      },
+      candidate_settings: {
+        annual_contribution_usd: 30000,
+        expected_return_baseline: 0.065,
+      },
+      scenario_deltas: [
+        {
+          label: 'baseline',
+          base_future_value_usd: 1000000,
+          candidate_future_value_usd: 1042000,
+          delta_future_value_usd: 42000,
+          base_real_value_usd: 760000,
+          candidate_real_value_usd: 790000,
+          delta_real_value_usd: 30000,
+        },
+      ],
+      monte_carlo_delta: {
+        success_probability_delta: 0.04,
+      },
+      simulation_delta: {
+        status: 'captured',
+        summary: 'Monte Carlo confidence improved.',
+      },
+    },
+  }, {
+    assumptionSets: {
+      active_assumption_set_id: 'default',
+      sets: [{ id: 'default', name: 'Default' }, { id: 'policy', name: 'Policy baseline' }],
+    },
+  }));
+
+  assert.match(markup, /Scenario diff/);
+  assert.match(markup, /value="30000"/);
+  assert.match(markup, /Run scenario diff/);
+  assert.match(markup, /Baseline/);
+  assert.match(markup, /\+\$42,000/);
+  assert.match(markup, /\+\$30,000/);
+  assert.match(markup, /Monte Carlo/);
+  assert.match(markup, /\+4%/);
+  assert.match(markup, /Monte Carlo confidence improved\./);
+  assert.match(markup, /Discuss in Copilot/);
+  assert.match(markup, /Save decision note/);
+  assert.match(markup, /href="#inbox\?focus=rec-scenario"/);
+});
+
+test('plan timeline workspace renders retirement structure and builds update payload', () => {
+  const timeline = {
+    schema_version: 2,
+    retirement: {
+      target_retirement_age: 62,
+      target_retirement_year: 2048,
+      withdrawal_strategy: 'guardrails',
+      drawdown_order: 'taxable_first',
+    },
+    events: [
+      {
+        id: 'event-retire',
+        date: '2048-01-01',
+        label: 'Retire',
+        event_type: 'retirement',
+        impact_type: 'income_change',
+        amount_usd: 0,
+        recurring_frequency: 'one_time',
+        notes: 'Stop W2 income.',
+      },
+    ],
+  };
+
+  const markup = String(renderTimeline({ id: 'plan-1' }, {
+    timeline,
+    draft: { target_retirement_age: '64' },
+    dirty: true,
+    editing: true,
+  }));
+
+  assert.match(markup, /Plan timeline/);
+  assert.match(markup, /Retirement age/);
+  assert.match(markup, /value="64"/);
+  assert.match(markup, /2048/);
+  assert.match(markup, /Guardrails/);
+  assert.match(markup, /Taxable first/);
+  assert.match(markup, /Retire/);
+  assert.match(markup, /Save timeline/);
+
+  assert.deepEqual(buildTimelinePayload(timeline, {
+    target_retirement_age: '64',
+    withdrawal_strategy: 'bucket',
+    drawdown_order: 'roth_first',
+  }), {
+    schema_version: 2,
+    events: timeline.events,
+    retirement: {
+      target_retirement_age: 64,
+      target_retirement_year: 2048,
+      withdrawal_strategy: 'bucket',
+      drawdown_order: 'roth_first',
+    },
+  });
+});
+
+test('plan contribution workspace renders rule rows and builds update payload', () => {
+  const contributionRules = {
+    schema_version: 2,
+    base_rule: { type: 'save' },
+    profile_id: 'custom_profile',
+    employer_match_target_usd: 6000,
+    age: 40,
+    rules: [
+      {
+        id: 'rule-1',
+        accountId: 'acct-401k',
+        rank: 1,
+        amount: { type: 'dollarAmount', dollarAmount: 10000 },
+        employerMatch: 6000,
+      },
+      {
+        id: 'rule-2',
+        account_id: 'acct-roth',
+        priority: 2,
+        annual_target_usd: 7000,
+      },
+    ],
+  };
+
+  const markup = String(renderContributions({ id: 'plan-1' }, {
+    contributionRules,
+    draft: {
+      employer_match_target_usd: '6500',
+      base_rule_type: 'spend',
+    },
+    dirty: true,
+    editing: true,
+  }));
+
+  assert.match(markup, /Contribution rules/);
+  assert.match(markup, /acct-401k/);
+  assert.match(markup, /acct-roth/);
+  assert.match(markup, /\$10,000/);
+  assert.match(markup, /\$7,000/);
+  assert.match(markup, /value="6500"/);
+  assert.match(markup, /Save contributions/);
+
+  assert.deepEqual(buildContributionRulesPayload(contributionRules, {
+    employer_match_target_usd: '6500',
+    age: '41',
+    base_rule_type: 'spend',
+  }), {
+    schema_version: 2,
+    base_rule: { type: 'spend' },
+    profile_id: 'custom_profile',
+    employer_match_target_usd: 6500,
+    age: 41,
+    rules: contributionRules.rules,
+  });
 });
 
 test('plan health renders weak assumptions and stale assumption review links', () => {

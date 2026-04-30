@@ -533,6 +533,330 @@
   }
 }
 
+/* ───────────  Scenarios (Movement IIB)  ─────────── */
+
+.plan-scenarios {
+  margin-top: var(--s-7);
+  padding-top: var(--s-6);
+  border-top: var(--hair) solid var(--rule);
+}
+
+.scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s-4);
+}
+@media (max-width: 1080px) {
+  .scenario-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .scenario-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.scenario-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.scenario-field input,
+.scenario-field select {
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+  border: var(--hair) solid var(--rule);
+  border-radius: var(--r-sm);
+  background: var(--paper-bright);
+  color: var(--ink-strong);
+  font-family: var(--sans);
+  font-size: var(--t-body-sm);
+  padding: 9px 10px;
+  transition: border-color var(--d-fast) var(--ease-press), box-shadow var(--d-fast) var(--ease-press);
+}
+
+.scenario-field input:focus,
+.scenario-field select:focus {
+  outline: none;
+  border-color: var(--forest);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--forest) 16%, transparent);
+}
+
+.scenario-actions,
+.scenario-handoff {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  margin-top: var(--s-4);
+}
+
+.scenario-result {
+  margin-top: var(--s-6);
+  padding-top: var(--s-5);
+  border-top: var(--hair) dotted var(--rule-soft);
+}
+
+.scenario-change-list,
+.scenario-delta-row dl,
+.scenario-metric-block dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.scenario-change-list div,
+.scenario-delta-row dl div,
+.scenario-metric-block dl div {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: var(--s-3);
+  align-items: baseline;
+}
+
+.scenario-change-list dt,
+.scenario-delta-row dt,
+.scenario-metric-block dt {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+}
+
+.scenario-change-list dd,
+.scenario-delta-row dd,
+.scenario-metric-block dd {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: var(--t-body-sm);
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
+.scenario-delta-table {
+  display: grid;
+  gap: var(--s-4);
+  margin-top: var(--s-4);
+}
+
+.scenario-delta-row {
+  padding: var(--s-3) 0;
+  border-top: var(--hair) dotted var(--rule-soft);
+}
+
+.scenario-delta-row h4 {
+  margin: 0 0 var(--s-2);
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-size: 17px;
+  color: var(--ink-strong);
+}
+
+.scenario-delta-row dd span {
+  font-family: var(--mono);
+  color: var(--forest);
+  margin-left: 6px;
+}
+
+.scenario-metric-block {
+  margin-top: var(--s-4);
+  padding-top: var(--s-3);
+  border-top: var(--hair) dotted var(--rule-soft);
+}
+
+@media (max-width: 640px) {
+  .scenario-change-list div,
+  .scenario-delta-row dl div,
+  .scenario-metric-block dl div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}
+
+/* ───────────  Timeline + Contributions (Movement IID/IIE)  ─────────── */
+
+.plan-timeline,
+.plan-contributions {
+  margin-top: var(--s-7);
+  padding-top: var(--s-6);
+  border-top: var(--hair) solid var(--rule);
+}
+
+.structure-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s-4);
+  margin-bottom: var(--s-5);
+}
+@media (max-width: 980px) {
+  .structure-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .structure-summary { grid-template-columns: minmax(0, 1fr); }
+}
+
+.structure-summary-item {
+  min-width: 0;
+  padding-bottom: var(--s-3);
+  border-bottom: var(--hair) dotted var(--rule-soft);
+}
+
+.structure-summary-item dt {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+}
+
+.structure-summary-item dd {
+  margin: 4px 0 0;
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--ink-strong);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.structure-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s-4);
+}
+@media (max-width: 1080px) {
+  .structure-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .structure-form { grid-template-columns: minmax(0, 1fr); }
+}
+
+.structure-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.structure-field input,
+.structure-field select {
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+  border: var(--hair) solid var(--rule);
+  border-radius: var(--r-sm);
+  background: var(--paper-bright);
+  color: var(--ink-strong);
+  font-family: var(--sans);
+  font-size: var(--t-body-sm);
+  padding: 9px 10px;
+  transition: border-color var(--d-fast) var(--ease-press), box-shadow var(--d-fast) var(--ease-press);
+}
+
+.structure-field input {
+  font-variant-numeric: tabular-nums;
+}
+
+.structure-field input:focus,
+.structure-field select:focus {
+  outline: none;
+  border-color: var(--forest);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--forest) 16%, transparent);
+}
+
+.structure-actions {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  margin: var(--s-4) 0;
+}
+
+.structure-list {
+  margin-top: var(--s-4);
+  padding-top: var(--s-3);
+  border-top: var(--hair) dotted var(--rule-soft);
+}
+
+.structure-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr);
+  gap: var(--s-4);
+  align-items: baseline;
+  padding: var(--s-3) 0;
+  border-bottom: var(--hair) dotted var(--rule-soft);
+}
+.structure-row:last-child { border-bottom: 0; }
+
+.structure-row strong {
+  display: block;
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-size: 17px;
+  color: var(--ink-strong);
+}
+
+.structure-row span,
+.structure-row p {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: var(--t-body-sm);
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
+.structure-table {
+  margin-top: var(--s-4);
+  border-top: var(--hair) solid var(--rule-soft);
+}
+
+.structure-table-head,
+.structure-table-row {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1.2fr) minmax(120px, 0.6fr) minmax(120px, 0.6fr);
+  gap: var(--s-3);
+  align-items: baseline;
+}
+
+.structure-table-head {
+  padding: var(--s-2) 0;
+  border-bottom: var(--hair) solid var(--rule-soft);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+}
+
+.structure-table-row {
+  padding: var(--s-3) 0;
+  border-bottom: var(--hair) dotted var(--rule-soft);
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.structure-table-row:last-child { border-bottom: 0; }
+
+.structure-table-row strong {
+  min-width: 0;
+  color: var(--ink-strong);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .structure-row,
+  .structure-table-head,
+  .structure-table-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .structure-table-head {
+    display: none;
+  }
+}
+
 /* ───────────  Decisions (Movement III)  ─────────── */
 
 .decision-list {

@@ -503,7 +503,7 @@ Expected: decision ledger tests pass and recommendation action persistence remai
 - base assumption set
 - candidate assumption set
 
-- [ ] **Step 1: Write failing scenario render test**
+- [x] **Step 1: Write failing scenario render test**
 
 Assert that a scenario form can render, stage a candidate contribution, and call:
 
@@ -521,11 +521,11 @@ with:
 }
 ```
 
-- [ ] **Step 2: Implement scenario form state**
+- [x] **Step 2: Implement scenario form state**
 
 Store scenario diff form state under `ui.scenarios`.
 
-- [ ] **Step 3: Render result summary**
+- [x] **Step 3: Render result summary**
 
 Show:
 
@@ -537,7 +537,7 @@ Show:
 
 Use compact rows instead of charts in the first slice.
 
-- [ ] **Step 4: Add decision handoff**
+- [x] **Step 4: Add decision handoff**
 
 When a scenario diff is useful, offer:
 
@@ -547,7 +547,7 @@ When a scenario diff is useful, offer:
 
 Do not apply settings automatically from the scenario diff surface.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 
@@ -587,23 +587,23 @@ Expected: scenario unit tests pass and backend suite remains green.
 - contribution priority
 - annual limits/targets where already represented
 
-- [ ] **Step 1: Write failing timeline render/save tests**
+- [x] **Step 1: Write failing timeline render/save tests**
 
 Assert v2 Plan can load timeline, render retirement age, stage a change, and call `PUT /api/plans/{plan_id}/timeline`.
 
-- [ ] **Step 2: Write failing contribution render/save tests**
+- [x] **Step 2: Write failing contribution render/save tests**
 
 Assert v2 Plan can load contribution rules, render account allocation rows, stage a change, and call `PUT /api/plans/{plan_id}/contribution-rules`.
 
-- [ ] **Step 3: Implement timeline module**
+- [x] **Step 3: Implement timeline module**
 
 Keep timeline edits small. Use an "Edit timeline" disclosure rather than permanently open forms.
 
-- [ ] **Step 4: Implement contributions module**
+- [x] **Step 4: Implement contributions module**
 
 Render dense, operational rows. Do not make this a marketing-style card layout.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 
