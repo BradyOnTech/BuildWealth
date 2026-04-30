@@ -272,7 +272,7 @@ Implemented first slice:
 
 Product-testing follow-up:
 
-- run the feature-by-feature manual checklist after release readiness lands
+- run the feature-by-feature manual checklist now that release readiness has landed
 - fix correctness, trust, routing, and data-loss risks before adding new features
 - update the checklist with any issues found during testing so it becomes a reusable release gate
 
