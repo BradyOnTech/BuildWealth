@@ -222,8 +222,9 @@ function decisionHasOutcome(decision = {}, payload = {}, closure = {}, closureAr
 function artifactHref(planId, artifactId) {
   const params = new URLSearchParams();
   if (planId) params.set('id', planId);
+  params.set('section', 'artifacts');
   if (artifactId) params.set('artifact', artifactId);
-  return `/#plans?${params.toString()}`;
+  return `#plan?${params.toString()}`;
 }
 
 function isAcceptedStatus(status) {

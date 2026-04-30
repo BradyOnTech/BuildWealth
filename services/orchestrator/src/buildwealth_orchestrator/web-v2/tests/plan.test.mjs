@@ -7,6 +7,7 @@ import { buildPlanSettingsPatch, renderAssumptions } from '../views/plan/assumpt
 import { classifyPlanArtifact, renderArtifacts } from '../views/plan/artifacts.js';
 import { renderDecisions } from '../views/plan/decisions.js';
 import { derivePlanHealth, renderPlanHealth } from '../views/plan/health.js';
+import { buildScenarioBranchPayload, renderBranches } from '../views/plan/branches.js';
 import { buildScenarioDiffPayload, renderScenarios } from '../views/plan/scenarios.js';
 import { buildTimelinePayload, renderTimeline } from '../views/plan/timeline.js';
 import { buildContributionRulesPayload, renderContributions } from '../views/plan/contributions.js';
@@ -31,6 +32,11 @@ test('plan api exposes v2 workspace endpoints', () => {
   assert.match(apiSource, /updatePlanAssumptionSets:\s*\(id,\s*body/);
   assert.match(apiSource, /planScenarioDiff:\s*\(id,\s*body/);
   assert.match(apiSource, /\/api\/plans\/.*\/scenario-diff/);
+  assert.match(apiSource, /planBranchTemplates:\s*\(id\)/);
+  assert.match(apiSource, /\/api\/plans\/.*\/branch-templates/);
+  assert.match(apiSource, /updatePlanBranchTemplates:\s*\(id,\s*body/);
+  assert.match(apiSource, /planScenarioBranch:\s*\(id,\s*body/);
+  assert.match(apiSource, /\/api\/plans\/.*\/scenario-branch/);
   assert.match(apiSource, /refreshPlanContext:\s*\(id\)/);
   assert.match(apiSource, /\/api\/plans\/.*\/refresh-context/);
 });
@@ -86,11 +92,16 @@ test('plan view wires scenario diff workspace actions', () => {
   );
 
   assert.match(planSource, /renderScenarios/);
+  assert.match(planSource, /renderBranches/);
   assert.match(planSource, /buildScenarioDiffPayload/);
+  assert.match(planSource, /buildScenarioBranchPayload/);
   assert.match(planSource, /api\.planScenarioDiff/);
+  assert.match(planSource, /api\.planBranchTemplates/);
+  assert.match(planSource, /api\.planScenarioBranch/);
   assert.match(planSource, /data-scenario-field/);
   assert.match(planSource, /data-scenario-action="run"/);
   assert.match(planSource, /data-scenario-action="save-decision"/);
+  assert.match(planSource, /data-branch-action="run"/);
 });
 
 test('plan view wires timeline and contribution rule workspaces', () => {
@@ -132,6 +143,23 @@ test('plan look-closer links saved research artifacts into v2 research surfaces'
   assert.match(markup, /href="#research\?dossier=artifact-dossier-msft&plan=plan-1"/);
   assert.match(markup, /href="#research\?thesisReview=artifact-dossier-msft&plan=plan-1"/);
   assert.doesNotMatch(markup, /artifact-closure/);
+});
+
+test('plan look-closer keeps common plan work in v2', () => {
+  const markup = String(renderLookCloser({
+    id: 'plan-1',
+    artifacts: [],
+  }));
+
+  assert.match(markup, /href="#plan\?id=plan-1&amp;section=assumptions"/);
+  assert.match(markup, /href="#plan\?id=plan-1&amp;section=timeline"/);
+  assert.match(markup, /href="#plan\?id=plan-1&amp;section=contributions"/);
+  assert.match(markup, /href="#plan\?id=plan-1&amp;section=scenarios"/);
+  assert.match(markup, /href="#plan\?id=plan-1&amp;section=branches"/);
+  assert.match(markup, /href="#plan\?id=plan-1&amp;section=artifacts"/);
+  assert.doesNotMatch(markup, /href="\/#plans\?id=plan-1">Edit settings/);
+  assert.doesNotMatch(markup, /href="\/#plans\?id=plan-1">Advanced branch/);
+  assert.doesNotMatch(markup, /href="\/#plans\?id=plan-1">Browse artifacts/);
 });
 
 test('plan assumptions workspace renders active set, weak fields, and staged save state', () => {
@@ -291,6 +319,9 @@ test('plan artifact center renders typed routes and packet citations', () => {
   assert.match(markup, /Research bridge/);
   assert.match(markup, /Decision packet/);
   assert.match(markup, /href="#inbox\?focus=rec-contribution"/);
+  assert.match(markup, /href="#plan\?id=plan-1&amp;section=artifacts&amp;artifact=artifact-scenario"/);
+  assert.match(markup, /href="#plan\?id=plan-1&amp;section=artifacts&amp;artifact=artifact-note"/);
+  assert.doesNotMatch(markup, /href="\/#plans\?id=plan-1&amp;artifact=artifact-scenario"/);
   assert.match(markup, /Thesis revision/);
   assert.match(markup, /research-evidence:yfinance:NVDA:6mo:1d/);
   assert.match(markup, /Outcome\/closure/);
@@ -334,9 +365,9 @@ test('plan decisions render recommendation, artifact, expected outcome, and scen
   assert.match(markup, /Open in Inbox/);
   assert.match(markup, /href="#inbox\?focus=rec-contribution"/);
   assert.match(markup, /Decision packet/);
-  assert.match(markup, /href="\/#plans\?id=plan-1&amp;artifact=artifact-decision"/);
+  assert.match(markup, /href="#plan\?id=plan-1&amp;section=artifacts&amp;artifact=artifact-decision"/);
   assert.match(markup, /Closure summary/);
-  assert.match(markup, /href="\/#plans\?id=plan-1&amp;artifact=artifact-closure"/);
+  assert.match(markup, /href="#plan\?id=plan-1&amp;section=artifacts&amp;artifact=artifact-closure"/);
   assert.match(markup, /Expected outcome/);
   assert.match(markup, /\+\$1,200/);
   assert.match(markup, /contribution reviewed/);
@@ -386,6 +417,109 @@ test('plan scenario workspace builds scenario-diff payload from staged edits', (
       years: 30,
     },
   });
+});
+
+test('plan branch workspace builds branch payload from selected template and overrides', () => {
+  const template = {
+    id: 'job_loss_6_months',
+    branch_name: 'Job Loss 6 Months',
+    assumption_set_id: 'default',
+    compare_settings: { years: 25 },
+    branch_events: [
+      {
+        label: 'Temporary Job Loss',
+        event_type: 'job_change',
+        impact_type: 'income',
+        amount_usd: -7500,
+        recurring_frequency: 'monthly',
+        start_year_offset: 0,
+        duration_months: 6,
+      },
+    ],
+  };
+
+  const payload = buildScenarioBranchPayload(template, {
+    branch_name: 'Layoff stress test',
+    current_portfolio_value_usd: '500000',
+    assumption_set_id: 'policy',
+    annual_contribution_usd: '18000',
+    expected_return_baseline: '6.5',
+  });
+
+  assert.deepEqual(payload, {
+    branch_name: 'Layoff stress test',
+    branch_template_id: 'job_loss_6_months',
+    current_portfolio_value_usd: 500000,
+    assumption_set_id: 'policy',
+    compare_settings: {
+      annual_contribution_usd: 18000,
+      expected_return_baseline: 0.065,
+      years: 25,
+    },
+    branch_events: template.branch_events,
+  });
+});
+
+test('plan branch workspace renders templates, result, and review handoffs', () => {
+  const markup = String(renderBranches({
+    id: 'plan-1',
+  }, {
+    branchTemplates: {
+      default_template_id: 'job_loss_6_months',
+      templates: [
+        {
+          id: 'job_loss_6_months',
+          name: 'Job Loss (6 Months)',
+          description: 'Temporary income interruption.',
+          branch_name: 'Job Loss 6 Months',
+          branch_events: [
+            {
+              label: 'Temporary Job Loss',
+              impact_type: 'income',
+              amount_usd: -7500,
+              recurring_frequency: 'monthly',
+              duration_months: 6,
+            },
+          ],
+        },
+      ],
+    },
+    selectedTemplateId: 'job_loss_6_months',
+    draft: {},
+    result: {
+      branch_name: 'Job Loss 6 Months',
+      branch_template_name: 'Job Loss (6 Months)',
+      scenario_deltas: [
+        {
+          label: 'baseline',
+          base_future_value_usd: 1000000,
+          branch_future_value_usd: 940000,
+          candidate_future_value_usd: 940000,
+          delta_future_value_usd: -60000,
+          base_real_value_usd: 760000,
+          branch_real_value_usd: 710000,
+          candidate_real_value_usd: 710000,
+          delta_real_value_usd: -50000,
+        },
+      ],
+      monte_carlo_delta: { success_probability_delta: -0.02 },
+      simulation_delta: { status: 'captured', summary: 'Branch reduced confidence.' },
+    },
+  }, {
+    assumptionSets: {
+      active_assumption_set_id: 'default',
+      sets: [{ id: 'default', name: 'Default' }, { id: 'policy', name: 'Policy baseline' }],
+    },
+  }));
+
+  assert.match(markup, /Life event branches/);
+  assert.match(markup, /Job Loss \(6 Months\)/);
+  assert.match(markup, /Temporary Job Loss/);
+  assert.match(markup, /Run branch preview/);
+  assert.match(markup, /Branch compared/);
+  assert.match(markup, /-\$60,000/);
+  assert.match(markup, /Discuss in Copilot/);
+  assert.match(markup, /Save decision note/);
 });
 
 test('plan scenario workspace renders compact results and decision handoff', () => {

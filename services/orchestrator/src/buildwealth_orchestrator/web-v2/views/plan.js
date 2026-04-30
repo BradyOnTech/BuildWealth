@@ -5,10 +5,11 @@
 //   II.  The trajectory   — plan vs actual tracking
 //   IIA. The evidence     — typed artifacts and citations
 //   IIB. The scenarios    — scenario diff review surface
+//   IIC. The branches     — life-event what-if templates
 //   IID. The timeline     — retirement timing, drawdown posture, events
 //   IIE. The contributions — account priority and target rules
 //   III. The decisions    — decision log + append form
-// Footer — Look closer (links to advanced classic surfaces during migration).
+// Footer — Look closer (v2-first, with advanced planning fallbacks).
 
 import { api } from '../lib/api.js';
 import { state } from '../lib/state.js';
@@ -22,6 +23,7 @@ import {
 import { derivePlanHealth, renderPlanHealth } from './plan/health.js';
 import { renderTrajectory } from './plan/trajectory.js';
 import { renderArtifacts } from './plan/artifacts.js';
+import { buildScenarioBranchPayload, renderBranches } from './plan/branches.js';
 import { buildScenarioDiffPayload, renderScenarios } from './plan/scenarios.js';
 import { buildTimelinePayload, renderTimeline } from './plan/timeline.js';
 import { buildContributionRulesPayload, renderContributions } from './plan/contributions.js';
@@ -42,6 +44,7 @@ const ui = {
   health: { busy: false, recommendations: [], error: null },
   trajectory: { busy: false, tracking: null, error: null },
   scenarios: { draft: {}, dirty: false, busy: false, result: null, error: null, focusedRecommendationId: '' },
+  branches: { busy: false, branchTemplates: null, selectedTemplateId: '', draft: {}, dirty: false, result: null, error: null },
   timeline: { busy: false, timeline: null, draft: {}, dirty: false, editing: false, saving: false, error: null },
   contributions: { busy: false, contributionRules: null, draft: {}, dirty: false, editing: false, saving: false, error: null },
   decisions: { appendOpen: false, appendBusy: false, appendError: null },
@@ -69,6 +72,7 @@ export async function init(params = {}) {
   await loadPlan(ui.selectedId);
   await loadAssumptionSets(ui.selectedId);
   await loadPlanHealth(ui.selectedId);
+  await loadBranchTemplates(ui.selectedId);
   await loadTimeline(ui.selectedId);
   await loadContributionRules(ui.selectedId);
   rerenderAll();
@@ -165,6 +169,40 @@ async function loadTimeline(id) {
       dirty: false,
       editing: false,
       saving: false,
+      error: err.message,
+    };
+  }
+}
+
+async function loadBranchTemplates(id) {
+  ui.branches = {
+    busy: true,
+    branchTemplates: null,
+    selectedTemplateId: '',
+    draft: {},
+    dirty: false,
+    result: null,
+    error: null,
+  };
+  try {
+    const branchTemplates = await api.planBranchTemplates(id);
+    ui.branches = {
+      busy: false,
+      branchTemplates,
+      selectedTemplateId: String(branchTemplates?.default_template_id || ''),
+      draft: {},
+      dirty: false,
+      result: null,
+      error: null,
+    };
+  } catch (err) {
+    ui.branches = {
+      busy: false,
+      branchTemplates: null,
+      selectedTemplateId: '',
+      draft: {},
+      dirty: false,
+      result: null,
       error: err.message,
     };
   }
@@ -279,6 +317,7 @@ function rerenderBody() {
     <div id="plan-trajectory" data-plan-section="trajectory">${raw(renderTrajectory(ui.trajectory))}</div>
     <div id="plan-artifacts" data-plan-section="artifacts">${raw(renderArtifacts(ui.plan))}</div>
     <div id="plan-scenarios" data-plan-section="scenarios">${raw(renderScenarios(ui.plan, ui.scenarios, ui.assumptions))}</div>
+    <div id="plan-branches" data-plan-section="branches">${raw(renderBranches(ui.plan, ui.branches, ui.assumptions))}</div>
     <div id="plan-timeline" data-plan-section="timeline">${raw(renderTimeline(ui.plan, ui.timeline))}</div>
     <div id="plan-contributions" data-plan-section="contributions">${raw(renderContributions(ui.plan, ui.contributions))}</div>
     <div id="plan-decisions" data-plan-section="decisions">${raw(renderDecisions(ui.plan, ui.decisions))}</div>
@@ -323,6 +362,12 @@ function rerenderScenarios() {
   root.innerHTML = renderScenarios(ui.plan, ui.scenarios, ui.assumptions);
 }
 
+function rerenderBranches() {
+  const root = $('#plan-branches');
+  if (!root || !ui.plan) return;
+  root.innerHTML = renderBranches(ui.plan, ui.branches, ui.assumptions);
+}
+
 function rerenderTimelineWorkspace() {
   const root = $('#plan-timeline');
   if (!root || !ui.plan) return;
@@ -353,15 +398,15 @@ export function renderLookCloser(plan) {
     <footer class="look-closer">
       <span class="section-eyebrow">Look closer</span>
       <div class="look-closer-row">
-        <a class="link-editorial" href="/#plans?id=${id}">Edit settings</a>
+        <a class="link-editorial" href="#plan?id=${id}&amp;section=assumptions">Plan assumptions</a>
         <a class="link-editorial" href="#plan?id=${id}&amp;section=timeline">Timeline events</a>
         <a class="link-editorial" href="#plan?id=${id}&amp;section=contributions">Contribution rules</a>
         <a class="link-editorial" href="#plan?id=${id}&amp;section=scenarios">Run a scenario diff</a>
         <a class="link-editorial" href="#copilot?intent=review_plan_assumptions&amp;plan=${id}">Review with Copilot</a>
         <a class="link-editorial" href="#copilot?intent=explain_scenario_diff&amp;plan=${id}">Explain scenario</a>
-        <a class="link-editorial" href="/#plans?id=${id}">Branch on a life event</a>
-        <a class="link-editorial" href="/#plans?id=${id}">Compare withdrawal strategies</a>
-        <a class="link-editorial" href="/#plans?id=${id}">Browse artifacts</a>
+        <a class="link-editorial" href="#plan?id=${id}&amp;section=artifacts">Plan evidence</a>
+        <a class="link-editorial" href="#plan?id=${id}&amp;section=branches">Life event branch</a>
+        <a class="link-editorial" href="/#plans?id=${id}">Advanced withdrawals</a>
       </div>
       ${researchArtifacts.length ? html`
         <div class="look-closer-row">
@@ -378,7 +423,7 @@ export function renderLookCloser(plan) {
           }).join(''))}
         </div>
       ` : ''}
-      <p class="look-closer-note">The remaining settings links open the classic plan workspace while those surfaces move into v2.</p>
+      <p class="look-closer-note">Advanced tools remain available for deeper planning work.</p>
     </footer>
   `;
 }
@@ -413,12 +458,14 @@ function attachHandlers() {
     ui.assumptions = { busy: false, assumptionSets: null, draft: {}, dirty: false, saving: false, error: null };
     ui.health = { busy: false, recommendations: [], error: null };
     ui.scenarios = { draft: {}, dirty: false, busy: false, result: null, error: null, focusedRecommendationId: '' };
+    ui.branches = { busy: false, branchTemplates: null, selectedTemplateId: '', draft: {}, dirty: false, result: null, error: null };
     ui.timeline = { busy: false, timeline: null, draft: {}, dirty: false, editing: false, saving: false, error: null };
     ui.contributions = { busy: false, contributionRules: null, draft: {}, dirty: false, editing: false, saving: false, error: null };
     rerenderBody();
     await loadPlan(id);
     await loadAssumptionSets(id);
     await loadPlanHealth(id);
+    await loadBranchTemplates(id);
     await loadTimeline(id);
     await loadContributionRules(id);
     rerenderAll();
@@ -451,6 +498,10 @@ function attachHandlers() {
   delegate(page, 'click', '[data-scenario-action="run"]', () => runScenarioDiff());
   delegate(page, 'click', '[data-scenario-action="save-decision"]', () => saveScenarioDecisionNote());
 
+  delegate(page, 'change', '[data-branch-field]', (_, el) => stageBranchEdit(el));
+  delegate(page, 'click', '[data-branch-action="run"]', () => runScenarioBranch());
+  delegate(page, 'click', '[data-branch-action="save-decision"]', () => saveBranchDecisionNote());
+
   delegate(page, 'change', '[data-timeline-field]', (_, el) => stageTimelineEdit(el));
   delegate(page, 'click', '[data-timeline-action="edit"]', () => openTimelineEditor());
   delegate(page, 'click', '[data-timeline-action="cancel"]', () => resetTimelineEditor());
@@ -474,6 +525,7 @@ async function createPlan(body) {
     await loadPlan(created.id);
     await loadAssumptionSets(created.id);
     await loadPlanHealth(created.id);
+    await loadBranchTemplates(created.id);
     await loadTimeline(created.id);
     await loadContributionRules(created.id);
     rerenderAll();
@@ -514,6 +566,27 @@ function stageScenarioEdit(el) {
   rerenderScenarios();
 }
 
+function stageBranchEdit(el) {
+  const field = String(el.dataset.branchField || '').trim();
+  if (!field) return;
+  if (field === 'template_id') {
+    ui.branches.selectedTemplateId = el.value;
+    ui.branches.draft = {};
+    ui.branches.result = null;
+    ui.branches.dirty = false;
+    ui.branches.error = null;
+    rerenderBranches();
+    return;
+  }
+  ui.branches.draft = {
+    ...(ui.branches.draft || {}),
+    [field]: el.value,
+  };
+  ui.branches.dirty = true;
+  ui.branches.error = null;
+  rerenderBranches();
+}
+
 async function runScenarioDiff() {
   if (!ui.plan || ui.scenarios.busy) return;
   const payload = buildScenarioDiffPayload(ui.scenarios.draft || {});
@@ -537,6 +610,59 @@ async function runScenarioDiff() {
     ui.scenarios.busy = false;
     ui.scenarios.error = err.message;
     rerenderScenarios();
+  }
+}
+
+async function runScenarioBranch() {
+  if (!ui.plan || ui.branches.busy) return;
+  const template = selectedBranchTemplate();
+  if (!template || !Object.keys(template).length) {
+    ui.branches.error = 'Choose a branch template before running a preview.';
+    rerenderBranches();
+    return;
+  }
+  const payload = buildScenarioBranchPayload(template, ui.branches.draft || {});
+  if (!payload.branch_events.length && !Object.keys(payload.compare_settings || {}).length) {
+    ui.branches.error = 'The selected branch template needs at least one event or setting change.';
+    rerenderBranches();
+    return;
+  }
+
+  ui.branches.busy = true;
+  ui.branches.error = null;
+  rerenderBranches();
+  try {
+    ui.branches.result = await api.planScenarioBranch(ui.plan.id, payload);
+    ui.branches.busy = false;
+    ui.branches.dirty = false;
+    rerenderBranches();
+  } catch (err) {
+    ui.branches.busy = false;
+    ui.branches.error = err.message;
+    rerenderBranches();
+  }
+}
+
+async function saveBranchDecisionNote() {
+  if (!ui.plan || !ui.branches.result || ui.branches.busy) return;
+  ui.branches.busy = true;
+  ui.branches.error = null;
+  rerenderBranches();
+  try {
+    await api.appendDecision(ui.plan.id, {
+      summary: `Reviewed life-event branch: ${ui.branches.result.branch_name || 'What-if branch'}`,
+      rationale: branchDecisionRationale(ui.branches.result),
+      status: 'proposed',
+    });
+    ui.plan = await api.plan(ui.plan.id);
+    state.plan = ui.plan;
+    ui.branches.busy = false;
+    rerenderAll();
+    focusRequestedSection('branches');
+  } catch (err) {
+    ui.branches.busy = false;
+    ui.branches.error = err.message;
+    rerenderBranches();
   }
 }
 
@@ -677,6 +803,28 @@ function scenarioDecisionRationale(result = {}) {
   if (Number.isFinite(future)) parts.push(`Future-value delta: ${future}.`);
   if (Number.isFinite(real)) parts.push(`Real-value delta: ${real}.`);
   return parts.join(' ');
+}
+
+function branchDecisionRationale(result = {}) {
+  const baseline = Array.isArray(result.scenario_deltas)
+    ? result.scenario_deltas.find(row => String(row?.label || '') === 'baseline') || result.scenario_deltas[0]
+    : null;
+  const parts = [`Life-event branch reviewed in v2 Plan (${result.branch_name || 'What-if branch'}).`];
+  if (result.branch_template_name) parts.push(`Template: ${result.branch_template_name}.`);
+  if (baseline) {
+    const future = Number(baseline.delta_future_value_usd);
+    const real = Number(baseline.delta_real_value_usd);
+    if (Number.isFinite(future)) parts.push(`Future-value delta: ${future}.`);
+    if (Number.isFinite(real)) parts.push(`Real-value delta: ${real}.`);
+  }
+  return parts.join(' ');
+}
+
+function selectedBranchTemplate() {
+  const payload = ui.branches.branchTemplates || {};
+  const templates = Array.isArray(payload.templates) ? payload.templates : [];
+  const selectedId = String(ui.branches.selectedTemplateId || payload.default_template_id || '').trim();
+  return templates.find(template => String(template?.id || '').trim() === selectedId) || templates[0] || {};
 }
 
 async function saveAssumptions() {

@@ -115,7 +115,7 @@ function artifactLinks(artifact = {}, kind = 'general', planId = '') {
   }
 
   if (kind === 'research_bridge' && encodedId) {
-    links.push({ label: 'Open artifact', href: classicArtifactHref(planId, id) });
+    links.push({ label: 'Open artifact', href: planArtifactHref(planId, id) });
     const firstSymbol = firstSymbolForArtifact(artifact);
     if (firstSymbol) links.push({ label: 'Research symbol', href: `#research?packet=${encodeURIComponent(firstSymbol)}` });
     return links;
@@ -140,7 +140,7 @@ function artifactLinks(artifact = {}, kind = 'general', planId = '') {
         href: `#research?thesisReview=${encodeURIComponent(thesisTarget)}${encodedPlan ? `&plan=${encodedPlan}` : ''}`,
       });
     }
-    if (id) links.push({ label: 'Open artifact', href: classicArtifactHref(planId, id) });
+    if (id) links.push({ label: 'Open artifact', href: planArtifactHref(planId, id) });
     return links;
   }
 
@@ -152,19 +152,20 @@ function artifactLinks(artifact = {}, kind = 'general', planId = '') {
 
   if (kind === 'scenario_report') {
     if (encodedPlan) links.push({ label: 'Run scenario', href: `#plan?id=${encodedPlan}&section=scenarios` });
-    if (id) links.push({ label: 'Open artifact', href: classicArtifactHref(planId, id) });
+    if (id) links.push({ label: 'Open artifact', href: planArtifactHref(planId, id) });
     return links;
   }
 
-  if (id) links.push({ label: 'Open artifact', href: classicArtifactHref(planId, id) });
+  if (id) links.push({ label: 'Open artifact', href: planArtifactHref(planId, id) });
   return links;
 }
 
-function classicArtifactHref(planId, artifactId) {
+function planArtifactHref(planId, artifactId) {
   const params = new URLSearchParams();
   if (planId) params.set('id', planId);
+  params.set('section', 'artifacts');
   if (artifactId) params.set('artifact', artifactId);
-  return `/#plans?${params.toString()}`;
+  return `#plan?${params.toString()}`;
 }
 
 function artifactSummary(artifact = {}) {

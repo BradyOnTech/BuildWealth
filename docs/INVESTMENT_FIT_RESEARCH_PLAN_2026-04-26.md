@@ -544,6 +544,7 @@ Current progress:
 - Inbox investment/research rows now route research and compare links into v2 Research instead of the classic research route.
 - v2 Portfolio fit review and Copilot investment-fit trace cards link evidence packet ids into v2 Research.
 - Today research readiness and v2 Plan look-closer links now route saved dossier/thesis work into v2 Research rather than only broad classic artifact browsing.
+- v2 Plan now owns the normal artifact/evidence path: saved research, scenario reports, decision packets, closure artifacts, and generic artifact links stay inside v2 Plan or v2 Research, with classic Plan retained only for advanced branch/withdrawal planning.
 
 Done when:
 

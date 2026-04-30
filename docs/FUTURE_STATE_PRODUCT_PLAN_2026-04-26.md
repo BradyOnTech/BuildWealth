@@ -271,7 +271,7 @@ Future state:
 
 - v2 Plan owns the main plan experience
 - classic plan links are reduced to advanced fallback only
-- plan settings, timeline events, contribution rules, scenario diffs, branches, decisions, and artifacts are visible in the v2 vocabulary
+- plan settings, timeline events, contribution rules, scenario diffs, life-event branches, decisions, and artifacts are visible in the v2 vocabulary; withdrawal-strategy comparison remains the next advanced migration candidate
 - plan decisions and recommendation outcomes are connected
 
 High-level implementation:
@@ -460,19 +460,19 @@ Goal: make the active plan experience native to v2.
 
 High-level tasks:
 
-- migrate plan settings editing
-- migrate timeline events summary/editing
-- migrate contribution rules
-- migrate scenario diff review
-- migrate plan decisions
-- expose artifacts and research links
+- migrate plan settings editing (done: core assumptions and active assumption set are editable in v2)
+- migrate timeline events summary/editing (done)
+- migrate contribution rules (done)
+- migrate scenario diff review (done)
+- migrate plan decisions (done: decisions now link recommendations, artifacts, expected outcomes, and scenario previews)
+- expose artifacts and research links (done: typed evidence center routes dossiers/theses into v2 Research and generic artifact links back into v2 Plan evidence)
 - keep rare advanced tools in Atelier until needed
 
 Done when:
 
-- v2 Plan can support the user's normal planning workflow
-- classic Plan links are no longer required for high-frequency tasks
-- plan changes and decisions are test-covered in browser workflows
+- v2 Plan can support the user's normal planning workflow (complete for this phase)
+- classic Plan links are no longer required for high-frequency tasks (complete; only advanced branch/withdrawal fallbacks remain)
+- plan changes and decisions are test-covered in browser workflows (complete for the normal v2 Plan loop)
 
 ### Phase 6: Portfolio-Aware Research
 
@@ -553,9 +553,9 @@ Long-term:
 
 1. Continue Personal Investment Policy beyond the current slices: stronger Copilot questions for weak guardrails, and fit/recommendation rules beyond single-symbol exposure, research confidence, tax sensitivity, sector caps, symbol/sector restrictions, and preferred account-location policy. The next policy slice has started: cash floor, asset-class exposure caps, and simplicity preference are now profile-backed and affect portfolio-fit plus generated review-only research rows.
 2. Continue Research Thesis Expiration beyond the current saved-dossier/watchlist slice: add richer material-change sources beyond price. Reviewed theses now write refreshed review/expiry/reference metadata; policy material changes from cash-floor, asset-class, and simplicity guardrails now create review-only thesis refresh rows; Today research readiness routes single thesis signals directly into v2 thesis review.
-3. Continue v2 research migration with deeper Plan Workspace integration. Today and Plan now link saved dossier/thesis work into v2 Research surfaces, but plan settings, assumptions, timeline, scenario diffs, and artifacts still need first-class v2 ownership. Use `docs/superpowers/plans/2026-04-29-plan-workspace-migration.md` as the execution plan.
+3. Extend the completed v2 Plan Workspace into the remaining advanced planning tools: withdrawal-strategy comparison, focused generic artifact detail, and richer plan-to-research context. v2 Plan now owns normal assumptions, health, evidence/artifacts, decisions, scenario diffs, life-event branch previews, timeline, contribution rules, bounded Copilot review, and high-frequency links.
 4. Deepen portfolio-fit account context with account-type-specific contribution guidance and richer tax-policy preferences.
-5. Continue expanding browser coverage around Plan v2 migration as those surfaces move over.
+5. Continue browser coverage around remaining advanced Plan, Research, and investment-fit workflows.
 
 ## Documentation Governance
 

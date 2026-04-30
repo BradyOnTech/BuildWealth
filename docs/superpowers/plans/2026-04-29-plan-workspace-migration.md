@@ -29,20 +29,19 @@ The Plan migration is successful when a user can understand and adjust their pla
 
 Already present:
 
-- v2 Plan masthead, story, trajectory, decisions, and look-closer footer.
+- v2 Plan masthead, story, trajectory, decisions, and v2-first look-closer footer.
 - Existing API contracts for plan detail, settings, timeline, contribution rules, assumption sets, scenario diff, scenario branch, tracking, decisions, artifacts, and saved dossier thesis revision.
 - Recommendation application and outcome capture already write decision packets, closure artifacts, and scenario preview context.
 - v2 Research can show packet, compare, dossier, and thesis review surfaces.
-- v2 Plan now links saved research dossier artifacts into v2 Research.
+- v2 Plan owns normal assumptions, health, typed artifacts/evidence, decisions, scenario diff, timeline, contribution rules, and bounded Copilot review.
+- v2 Plan links saved research dossier and thesis artifacts into v2 Research.
 
 Current gaps:
 
-- Plan assumptions are displayed as a static ledger, not a true workspace.
-- Plan settings, assumption sets, timeline, and contribution rules still largely rely on classic routes or Copilot tools.
-- Artifacts are not typed into a dedicated v2 artifact/evidence center.
-- Decisions are visible, but not yet connected enough to recommendation closure, expected outcome, research citations, Copilot threads, or scenario previews.
-- Scenario diff exists as an API, but not as a normal v2 review surface.
-- Plan health is implicit across Today/Inbox instead of visible in Plan.
+- Rare advanced planning tools, especially withdrawal-strategy comparison, still remain in the classic workspace.
+- Life-event branch templates now have a common v2 preview surface; richer template editing can remain a later advanced slice.
+- Generic artifact detail/focus can be richer inside v2 Plan; current high-frequency links land on the v2 evidence center.
+- Broader browser coverage can continue around advanced Plan, Research, and investment-fit workflows.
 
 ## Design Principles
 
@@ -734,7 +733,7 @@ Expected: browser workflow passes. In the Codex sandbox, Chromium may need an el
   - `docs/FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md`
   - `docs/INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md`
 
-- [ ] **Step 1: Inventory remaining classic links**
+- [x] **Step 1: Inventory remaining classic links**
 
 Search:
 
@@ -742,7 +741,7 @@ Search:
 rg -n 'href="/#plans|classic plan|Browse artifacts|Look closer' services/orchestrator/src/buildwealth_orchestrator/web-v2 docs
 ```
 
-- [ ] **Step 2: Replace migrated links**
+- [x] **Step 2: Replace migrated links**
 
 Remove or demote classic links for:
 
@@ -755,14 +754,14 @@ Remove or demote classic links for:
 
 Keep advanced branch/withdrawal tools in fallback until they have v2 surfaces.
 
-- [ ] **Step 3: Update docs**
+- [x] **Step 3: Update docs**
 
 Mark migrated Plan Workspace slices complete in:
 
 - `docs/FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md`
 - `docs/INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md`
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 
@@ -792,11 +791,9 @@ Plan Workspace migration is complete enough for this phase when:
 
 ## Near-Term Recommendation
 
-Start with Tasks 1 and 2.
+Tasks 1 through 10 are complete for the normal Plan Workspace loop.
 
-That gives the app the most leverage fastest: stale assumptions, investment-fit confidence, Today readiness, scenario quality, and Copilot answers all depend on the plan assumptions being visible and editable in the v2 vocabulary.
-
-After Tasks 1 and 2 pass, do Task 3 immediately. Plan health is what turns assumptions from static settings into decision quality.
+The next Plan-specific work should be intentionally narrower: migrate withdrawal-strategy comparison, add focused generic artifact detail inside v2 Plan, deepen branch-template editing if needed, and extend browser coverage around each advanced flow as it graduates.
 
 ## Execution Checkpoints
 

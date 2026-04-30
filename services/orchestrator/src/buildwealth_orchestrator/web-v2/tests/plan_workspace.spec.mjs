@@ -35,9 +35,10 @@ async function staticResponse(pathname) {
   };
 }
 
-test('v2 Plan workspace covers assumption save, evidence route, scenario decision, and Copilot review', async ({ page }) => {
+test('v2 Plan workspace covers assumption save, evidence route, scenario decision, branch preview, and Copilot review', async ({ page }) => {
   let settingsPatch = null;
   let scenarioPayload = null;
+  let branchPayload = null;
   let decisionPayload = null;
   let planSettings = {
     annual_contribution_usd: 25000,
@@ -143,6 +144,35 @@ test('v2 Plan workspace covers assumption save, evidence route, scenario decisio
       return;
     }
 
+    if (url.pathname === '/api/plans/plan-1/branch-templates') {
+      await route.fulfill(jsonResponse({
+        schema_version: 2,
+        default_template_id: 'job_loss_6_months',
+        templates: [
+          {
+            id: 'job_loss_6_months',
+            name: 'Job Loss (6 Months)',
+            description: 'Temporary income interruption.',
+            branch_name: 'Job Loss 6 Months',
+            assumption_set_id: null,
+            compare_settings: {},
+            branch_events: [
+              {
+                label: 'Temporary Job Loss',
+                event_type: 'job_change',
+                impact_type: 'income',
+                amount_usd: -7500,
+                recurring_frequency: 'monthly',
+                start_year_offset: 0,
+                duration_months: 6,
+              },
+            ],
+          },
+        ],
+      }));
+      return;
+    }
+
     if (url.pathname === '/api/plans/plan-1/timeline') {
       await route.fulfill(jsonResponse({
         schema_version: 2,
@@ -235,6 +265,43 @@ test('v2 Plan workspace covers assumption save, evidence route, scenario decisio
       return;
     }
 
+    if (url.pathname === '/api/plans/plan-1/scenario-branch' && request.method() === 'POST') {
+      branchPayload = request.postDataJSON();
+      await route.fulfill(jsonResponse({
+        plan_id: 'plan-1',
+        branch_name: 'Job Loss 6 Months',
+        branch_template_id: 'job_loss_6_months',
+        branch_template_name: 'Job Loss (6 Months)',
+        current_portfolio_value_usd: 500000,
+        base_settings: {
+          annual_contribution_usd: 30000,
+          expected_return_baseline: 0.065,
+        },
+        branch_settings: {
+          annual_contribution_usd: 30000,
+          expected_return_baseline: 0.065,
+        },
+        branch_events: [],
+        scenario_deltas: [
+          {
+            label: 'baseline',
+            base_future_value_usd: 1000000,
+            candidate_future_value_usd: 940000,
+            delta_future_value_usd: -60000,
+            base_real_value_usd: 760000,
+            candidate_real_value_usd: 710000,
+            delta_real_value_usd: -50000,
+          },
+        ],
+        monte_carlo_delta: { success_probability_delta: -0.02 },
+        simulation_delta: {
+          status: 'captured',
+          summary: 'Branch reduced confidence.',
+        },
+      }));
+      return;
+    }
+
     if (url.pathname === '/api/plans/plan-1/decisions' && request.method() === 'POST') {
       decisionPayload = request.postDataJSON();
       decisions.push({
@@ -299,10 +366,26 @@ test('v2 Plan workspace covers assumption save, evidence route, scenario decisio
   await page.getByText('Scenario compared.').waitFor({ state: 'visible' });
   await page.getByText('+$42,000').waitFor({ state: 'visible' });
 
-  await page.getByRole('button', { name: /Save decision note/ }).click();
+  await page.locator('#plan-scenarios').getByRole('button', { name: /Save decision note/ }).click();
   assert.equal(decisionPayload.summary, 'Reviewed scenario diff');
   assert.equal(decisionPayload.status, 'proposed');
   await page.getByText('Reviewed scenario diff').waitFor({ state: 'visible' });
+
+  await page.goto('http://buildwealth-v2.test/#plan?id=plan-1&section=branches');
+  await page.getByRole('heading', { name: 'Preview a real-world change.' }).waitFor({ state: 'visible' });
+  await page.getByRole('heading', { name: 'Job Loss (6 Months)' }).waitFor({ state: 'visible' });
+  await page.getByRole('button', { name: /Run branch preview/ }).click();
+
+  assert.equal(branchPayload.branch_template_id, 'job_loss_6_months');
+  assert.equal(branchPayload.branch_name, 'Job Loss 6 Months');
+  assert.equal(branchPayload.branch_events[0].label, 'Temporary Job Loss');
+  await page.getByText('Branch compared.').waitFor({ state: 'visible' });
+  await page.getByText('-$60,000').waitFor({ state: 'visible' });
+
+  await page.locator('#plan-branches').getByRole('button', { name: /Save decision note/ }).click();
+  assert.equal(decisionPayload.summary, 'Reviewed life-event branch: Job Loss 6 Months');
+  assert.equal(decisionPayload.status, 'proposed');
+  await page.getByText('Reviewed life-event branch: Job Loss 6 Months').waitFor({ state: 'visible' });
 
   await page.getByRole('link', { name: 'Review with Copilot' }).click();
   await page.waitForURL('**/#copilot?intent=review_plan_assumptions&plan=plan-1');
