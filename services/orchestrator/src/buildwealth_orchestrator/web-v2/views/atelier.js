@@ -41,8 +41,9 @@ export async function init() {
 async function loadTrustDurability() {
   const root = $('#atelier-trust-root');
   if (!root) return;
-  const [durable, backups, protection, git, activity] = await Promise.all([
+  const [durable, readiness, backups, protection, git, activity] = await Promise.all([
     api.durableStorageStatus().catch(errorPayload),
+    api.releaseReadiness().catch(errorPayload),
     api.storageBackups().catch(errorPayload),
     api.storageProtectionStatus().catch(errorPayload),
     api.gitStatus().catch(errorPayload),
@@ -54,6 +55,7 @@ async function loadTrustDurability() {
     protection,
     git,
     activity,
+    readiness,
     actionMessage: trustUi.actionMessage,
     restorePreview: trustUi.restorePreview,
   }));
@@ -78,6 +80,7 @@ export function renderTrustDurability({
   protection = {},
   git = {},
   activity = {},
+  readiness = null,
   actionMessage = '',
   restorePreview = null,
 } = {}) {
@@ -125,7 +128,7 @@ export function renderTrustDurability({
         <a class="link-editorial" href="/#settings">Open classic storage tools</a>
         <a class="link-editorial" href="/#settings">Backup, restore, and checkpoints</a>
       </div>
-      ${raw(renderReleaseReadiness(summary, { durable, backups, protection, git, activity, restorePreview }))}
+      ${raw(renderReleaseReadiness(summary, { durable, backups, protection, git, activity, readiness, restorePreview }))}
       ${raw(renderProfileCopilotAudit(activity))}
       ${raw(renderTrustOperations({ git, actionMessage, restorePreview }))}
     </section>
@@ -168,7 +171,26 @@ function summarizeTrust({ durable, backups, protection, git, activity }) {
   };
 }
 
-function renderReleaseReadiness(summary, { durable, backups, protection, git, activity, restorePreview } = {}) {
+function renderReleaseReadiness(summary, { durable, backups, protection, git, activity, readiness, restorePreview } = {}) {
+  if (readiness && !readiness.error && Array.isArray(readiness.checks)) {
+    const checks = readiness.checks.map(check => ({
+      label: check.title || check.id || 'Readiness check',
+      status: check.status,
+      detail: check.detail || '',
+    }));
+    return html`
+      <section class="release-readiness" aria-label="Release readiness">
+        <div class="trust-operation-head">
+          <h3>Ready to rely today?</h3>
+          <p>${Number(readiness.ready_count || 0)}/${Number(readiness.total_count || checks.length)} checks ready. ${readiness.summary || 'Review readiness before treating today’s data as dependable.'}</p>
+        </div>
+        <div class="release-checklist">
+          ${raw(checks.map(renderReleaseCheck).join(''))}
+        </div>
+        ${raw(renderReleaseActions(readiness.recommended_actions))}
+      </section>
+    `;
+  }
   const restorePreviewRecorded = hasActivityEvent(activity, 'restore_preview');
   const checks = [
     {
@@ -217,6 +239,17 @@ function renderReleaseReadiness(summary, { durable, backups, protection, git, ac
         ${raw(checks.map(renderReleaseCheck).join(''))}
       </div>
     </section>
+  `;
+}
+
+function renderReleaseActions(actions = []) {
+  if (!Array.isArray(actions) || !actions.length) return '';
+  return html`
+    <div class="release-action-list">
+      ${raw(actions.slice(0, 4).map(action => html`
+        <a class="link-editorial" href="${action.href || '#atelier?section=trust'}">${action.label || action.action_kind || 'Review readiness'}</a>
+      `).join(''))}
+    </div>
   `;
 }
 
@@ -479,6 +512,7 @@ function formatMaybeDate(value, label) {
 }
 
 function normalizeTrustStatus(status) {
+  if (status === 'blocked') return 'critical';
   return status === 'critical' || status === 'warning' || status === 'ready' ? status : 'warning';
 }
 

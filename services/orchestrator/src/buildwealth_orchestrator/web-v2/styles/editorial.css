@@ -542,7 +542,8 @@
 }
 
 .release-checklist,
-.trust-audit-list {
+.trust-audit-list,
+.release-action-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--s-4);
@@ -760,14 +761,16 @@
 @media (max-width: 1180px) {
   .trust-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .release-checklist,
-  .trust-audit-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .trust-audit-list,
+  .release-action-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 760px) {
   .trust-grid { grid-template-columns: minmax(0, 1fr); }
   .trust-item { min-height: 0; }
   .release-checklist,
-  .trust-audit-list { grid-template-columns: minmax(0, 1fr); }
+  .trust-audit-list,
+  .release-action-list { grid-template-columns: minmax(0, 1fr); }
   .release-check,
   .trust-audit-item { min-height: 0; }
   .trust-restore-form { grid-template-columns: minmax(0, 1fr); }

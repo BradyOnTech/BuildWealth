@@ -9,7 +9,12 @@ from pathlib import Path
 from typing import Any
 
 
-PROTECTED_EVENT_TYPES = {"checkpoint", "restore_preview", "restore_apply"}
+PROTECTED_EVENT_TYPES = {
+    "checkpoint",
+    "product_workflow_verification",
+    "restore_preview",
+    "restore_apply",
+}
 
 
 def utc_now_iso() -> str:

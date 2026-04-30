@@ -340,6 +340,7 @@ Future state:
 - critical workflows have browser-level tests
 - storage reliability has repeatable smoke validation
 - there is a compact "ready to rely today?" checklist for backup, protection, checkpoints, audit feed, and restore-preview confidence
+- release readiness is represented as a backend/product contract, not only as UI-derived checklist copy
 
 High-level implementation:
 
@@ -347,7 +348,8 @@ High-level implementation:
 - add audit/history records for profile and Copilot-applied mutations (started: direct profile updates, Copilot profile patches, and Copilot-applied recommendations record audit events)
 - thread engine/degraded metadata into Today, Plan, Inbox, and Copilot when relevant
 - keep storage smoke tests in the default verification path
-- define release readiness checks for backup/restore and critical browser workflows (started: v2 Atelier shows a compact operational readiness checklist)
+- define release readiness checks for backup/restore and critical browser workflows (implemented: v2 Atelier shows the backend readiness checklist and the browser workflow covers safe trust actions)
+- maintain the stable release-readiness endpoint/contract that computes readiness, blocking gaps, warnings, and recommended trust actions for Today, Atelier, and product testing
 
 ## v2 and Classic Ownership Strategy
 
@@ -504,13 +506,15 @@ High-level tasks:
 - expose degraded-mode status in decision surfaces
 - expand browser workflow coverage
 - maintain storage reliability smoke validation
-- define release readiness checks (started: v2 Atelier has a "ready to rely today?" checklist)
+- define release readiness checks (implemented: v2 Atelier and Today now consume the backend "ready to rely today?" contract)
+- use persisted product workflow verification to decide whether critical workflow testing is fresh, missing, stale, or failed
 
 Done when:
 
 - critical data can be backed up, read-only restore-previewed, and checked from v2; full restore apply remains in classic guarded tools for now
 - important user-visible decisions include freshness/degraded context where relevant
 - core daily, profile, recommendation, plan, and Copilot flows have browser-level tests
+- a manual product-testing pass can use the same readiness contract and checklist to decide whether the app is dependable enough for day-to-day use
 
 ## Prioritization Rules
 
@@ -557,8 +561,8 @@ Long-term:
 3. Continue Research Thesis Expiration hardening. The saved dossier/watchlist loop now supports expiry, material price moves, policy material changes, v2 thesis review, watchlist/dossier writeback, Copilot revision writeback, and Today research-readiness routing. Remaining material-change sources should include provider/evidence quality changes, portfolio context changes, and plan-horizon changes.
 4. Use the completed v2 Plan Workspace as the durable financial thesis substrate instead of continuing broad Plan migration. v2 Plan now owns normal assumptions, health, focused evidence/artifact detail, decisions, scenario diffs, life-event branch previews, withdrawal-strategy comparison, timeline, contribution rules, bounded Copilot review, and high-frequency links. Future Plan work should be narrow: richer plan-to-research context, branch-template editing, artifact-specific actions, and browser coverage for edge workflows.
 5. Treat Decision Pre-Mortem as available in the main loop. High-impact apply now captures expected benefit, main risk, disconfirming signal, monitoring plan, and review date in `decision_closure.pre_mortem`; closure artifacts include it; outcome capture displays it; closure analytics reports pre-mortem coverage/realized coverage; and Today outcome-loop cards prioritize pending pre-mortem checks.
-6. Continue productizing trust/durability after the audit/readiness slice. v2 Atelier now surfaces durable store, latest backup, protection compliance, git checkpoint, audit-event status, safe trust actions, a Profile & Copilot changes feed, and a compact "ready to rely today?" checklist. Today also has a Trust & Durability command card and heat-map domain. Next trust work should tighten backup-age thresholds, checkpoint policy, critical workflow verification status, and any provider/degraded-mode checks that should block relying on the app for the day.
-7. Continue browser coverage around remaining advanced Plan, Research, investment-fit, contribution-routing, Today checkpoint, and Copilot explanation workflows.
+6. Treat release readiness as the product-testing gate. v2 Atelier and Today now consume a backend readiness contract with durable-store, backup-age, protection, checkpoint, audit-feed, restore-preview, provider/degraded-mode, and persisted workflow-verification checks. Product workflow verification can now be recorded through the release-readiness API; the next product step is the feature-by-feature testing pass itself.
+7. Run a feature-by-feature product-testing pass after release readiness lands. Use the product-testing checklist to manually exercise Today, Profile/Copilot profile completion, Inbox, Plan, Portfolio, Research, Copilot, and Atelier, then fix issues by severity rather than adding new product breadth.
 
 ## Documentation Governance
 

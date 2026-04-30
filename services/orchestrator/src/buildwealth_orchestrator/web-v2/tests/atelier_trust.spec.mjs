@@ -65,6 +65,69 @@ test('Atelier surfaces trust durability state in v2', async ({ page }) => {
       return;
     }
 
+    if (url.pathname === '/api/release-readiness') {
+      await route.fulfill(jsonResponse({
+        status: checkpointCreated && protectionApplied ? 'ready' : 'warning',
+        ready_count: checkpointCreated && protectionApplied ? 8 : 5,
+        total_count: 8,
+        generated_at: '2026-04-30T12:08:00Z',
+        summary: checkpointCreated && protectionApplied
+          ? 'Release readiness checks are passing.'
+          : 'Release readiness has warnings to review before relying on the app today.',
+        blocking_gaps: [],
+        warnings: checkpointCreated && protectionApplied ? [] : ['Protection and checkpoint status need review.'],
+        checks: [
+          {
+            id: 'backup',
+            title: 'Backup available',
+            status: 'ready',
+            detail: 'Latest backup is available.',
+            domain: 'storage',
+          },
+          {
+            id: 'protection',
+            title: 'Protection compliant',
+            status: protectionApplied ? 'ready' : 'warning',
+            detail: protectionApplied ? 'Protection policy is compliant.' : '3 protection item(s) need attention.',
+            domain: 'protection',
+            action_kind: 'apply_protection',
+          },
+          {
+            id: 'checkpoint',
+            title: 'Checkpoint clean',
+            status: checkpointCreated ? 'ready' : 'warning',
+            detail: checkpointCreated ? 'Versioned workspace is clean.' : '1 uncheckpointed file should be reviewed.',
+            domain: 'checkpoint',
+            action_kind: 'create_checkpoint',
+          },
+          {
+            id: 'providers',
+            title: 'Provider and engine health',
+            status: 'ready',
+            detail: 'No enabled provider or engine degradation is currently recorded.',
+            domain: 'provider',
+          },
+          {
+            id: 'restore_preview',
+            title: 'Restore preview verified',
+            status: restorePreviewRequested ? 'ready' : 'warning',
+            detail: restorePreviewRequested ? 'A recent read-only restore preview is recorded.' : 'Run a read-only restore preview when you need recovery confidence.',
+            domain: 'storage',
+            action_kind: 'preview_restore',
+          },
+        ],
+        recommended_actions: checkpointCreated && protectionApplied ? [] : [
+          {
+            action_kind: 'apply_protection',
+            label: 'Apply protection',
+            detail: 'Apply local protection policy.',
+            href: '#atelier?section=trust',
+          },
+        ],
+      }));
+      return;
+    }
+
     if (url.pathname === '/api/storage/backups') {
       if (request.method() === 'POST') {
         backupCreated = true;
@@ -216,6 +279,8 @@ test('Atelier surfaces trust durability state in v2', async ({ page }) => {
   await page.getByText('3 issues', { exact: true }).waitFor({ state: 'visible' });
   await page.getByText('1 uncheckpointed', { exact: true }).waitFor({ state: 'visible' });
   await page.getByRole('heading', { name: 'Ready to rely today?' }).waitFor({ state: 'visible' });
+  await page.getByText('5/8 checks ready').waitFor({ state: 'visible' });
+  await page.getByText('Provider and engine health').waitFor({ state: 'visible' });
   await page.getByText('Backup available').waitFor({ state: 'visible' });
   await page.getByText('Restore preview verified').waitFor({ state: 'visible' });
   await page.getByRole('heading', { name: 'Profile & Copilot changes' }).waitFor({ state: 'visible' });

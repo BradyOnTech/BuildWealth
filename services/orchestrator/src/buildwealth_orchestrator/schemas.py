@@ -2727,3 +2727,46 @@ class GitActivityCleanupResponse(BaseModel):
     include_protected: bool = False
     removable_event_ids: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+
+
+ReleaseReadinessStatus = Literal["ready", "warning", "blocked"]
+
+
+class ReleaseReadinessRecommendedAction(BaseModel):
+    action_kind: str
+    label: str
+    detail: str = ""
+    href: str | None = None
+
+
+class ReleaseReadinessCheck(BaseModel):
+    id: str
+    title: str
+    status: ReleaseReadinessStatus = "warning"
+    detail: str
+    domain: Literal["storage", "protection", "checkpoint", "audit", "provider", "workflow", "data"]
+    action_kind: str | None = None
+    href: str | None = None
+    last_verified_at: datetime | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReleaseReadinessResponse(BaseModel):
+    status: ReleaseReadinessStatus
+    ready_count: int
+    total_count: int
+    generated_at: datetime
+    summary: str
+    checks: list[ReleaseReadinessCheck] = Field(default_factory=list)
+    blocking_gaps: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    recommended_actions: list[ReleaseReadinessRecommendedAction] = Field(default_factory=list)
+
+
+class ReleaseWorkflowVerificationRequest(BaseModel):
+    workflow: str = "product_testing"
+    status: Literal["passed", "failed", "partial"] = "passed"
+    passed_count: int = Field(default=0, ge=0)
+    failed_count: int = Field(default=0, ge=0)
+    checklist_path: str | None = None
+    notes: str | None = None

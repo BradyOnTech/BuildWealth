@@ -28,6 +28,10 @@ test('atelier api exposes trust and durability endpoints', () => {
   assert.match(apiSource, /\/api\/git\/restore-preview/);
   assert.match(apiSource, /gitActivity:\s*\(/);
   assert.match(apiSource, /\/api\/git\/activity/);
+  assert.match(apiSource, /releaseReadiness:\s*\(\)/);
+  assert.match(apiSource, /\/api\/release-readiness/);
+  assert.match(apiSource, /recordReleaseWorkflowVerification:\s*\(/);
+  assert.match(apiSource, /\/api\/release-readiness\/workflow-verification/);
 });
 
 test('atelier renders trust durability visibility from existing status payloads', () => {
@@ -88,6 +92,48 @@ test('atelier renders trust durability visibility from existing status payloads'
         },
       ],
     },
+    readiness: {
+      status: 'blocked',
+      ready_count: 4,
+      total_count: 8,
+      summary: 'Release readiness is blocked by trust or provider gaps.',
+      blocking_gaps: ['No local backup archive is available.'],
+      warnings: ['3 protection item(s) need attention.'],
+      checks: [
+        {
+          id: 'backup',
+          title: 'Backup available',
+          status: 'blocked',
+          detail: 'No local backup archive is available.',
+          domain: 'storage',
+          action_kind: 'create_backup',
+        },
+        {
+          id: 'protection',
+          title: 'Protection compliant',
+          status: 'warning',
+          detail: '3 protection item(s) need attention.',
+          domain: 'protection',
+          action_kind: 'apply_protection',
+        },
+        {
+          id: 'providers',
+          title: 'Provider and engine health',
+          status: 'blocked',
+          detail: 'Provider/engine degradation is present: ignidash_scenario.',
+          domain: 'provider',
+          action_kind: 'review_provider_status',
+        },
+      ],
+      recommended_actions: [
+        {
+          action_kind: 'create_backup',
+          label: 'Create backup',
+          detail: 'Create a local backup before relying on today’s app state.',
+          href: '#atelier?section=trust',
+        },
+      ],
+    },
   }));
 
   assert.match(markup, /Trust &amp; durability/);
@@ -106,6 +152,10 @@ test('atelier renders trust durability visibility from existing status payloads'
   assert.match(markup, /data-trust-action="preview-restore"/);
   assert.match(markup, /id="trust-restore-ref"/);
   assert.match(markup, /Ready to rely today\?/);
+  assert.match(markup, /4\/8 checks ready/);
+  assert.match(markup, /Release readiness is blocked/);
+  assert.match(markup, /Provider and engine health/);
+  assert.match(markup, /Create backup/);
   assert.match(markup, /Backup available/);
   assert.match(markup, /Protection compliant/);
   assert.match(markup, /Profile &amp; Copilot changes/);

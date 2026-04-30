@@ -401,6 +401,15 @@ def test_today_trust_durability_card_surfaces_protection_backup_and_git(
                 ]
             }
 
+    class DurableService:
+        def get_status(self) -> dict:
+            return {
+                "database_exists": True,
+                "document_count": 12,
+                "latest_rollback_check_passed": True,
+                "latest_migration_at": main.utc_now(),
+            }
+
     class ProtectionService:
         def get_status(self) -> dict:
             return {
@@ -429,10 +438,16 @@ def test_today_trust_durability_card_surfaces_protection_backup_and_git(
             return {"summary": {"total_matched": 3}, "events": []}
 
     monkeypatch.setattr(main, "backup_restore_service", BackupService())
+    monkeypatch.setattr(main, "durable_storage_service", DurableService())
     monkeypatch.setattr(main, "data_protection_service", ProtectionService())
     monkeypatch.setattr(main, "_git_policy", lambda: {"enabled": True})
     monkeypatch.setattr(main, "_git_repository_service", lambda _policy: GitRepository())
     monkeypatch.setattr(main, "_git_activity_store", lambda: GitActivity())
+    monkeypatch.setattr(
+        main,
+        "_engine_status_snapshot_sync",
+        lambda: main.EngineStatusResponse(as_of=main.utc_now(), engines=[]),
+    )
 
     card = main._build_trust_durability_command_card()
     dashboard = main.TodayDashboardResponse(
@@ -447,11 +462,10 @@ def test_today_trust_durability_card_surfaces_protection_backup_and_git(
 
     assert card.id == "trust-durability"
     assert card.status == "warning"
-    assert card.metric_label == "Issues"
-    assert card.metric_value == "2"
-    assert "1 backup" in card.detail
-    assert "3 non-compliant protection item" in card.detail
-    assert "1 uncheckpointed file" in card.detail
+    assert card.metric_label == "Ready"
+    assert card.metric_value == "4/8"
+    assert "Release readiness has warnings" in card.detail
+    assert "3 protection item" in card.detail
     assert card.href == "#atelier?section=trust"
     assert domains["trust"].status == "usable_with_caveats"
     assert domains["trust"].href == "#atelier?section=trust"

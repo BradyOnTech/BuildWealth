@@ -193,6 +193,7 @@ Domains:
 - Portfolio
 - Research
 - Provider data
+- Trust/release readiness
 - Recommendations/outcomes
 
 Possible statuses:
@@ -211,7 +212,7 @@ Why it matters:
 
 Likely first slice:
 
-- compute domain statuses from existing readiness, freshness, provider, and recommendation quality data (started: Today now returns `confidence_domains` for Profile, Cash, Taxes, Plan, Portfolio, Research, Provider data, and Recommendations)
+- compute domain statuses from existing readiness, freshness, provider, trust/release-readiness, and recommendation quality data (started: Today now returns `confidence_domains` for Profile, Cash, Taxes, Plan, Portfolio, Research, Provider data, Trust, and Recommendations)
 - render as a Today command-center card or compact panel (started: v2 Today renders a compact Confidence Heat Map under the command-card grid)
 - link each weak domain to the correct review flow (started: weak domains route to Copilot profile completion, Plan, Portfolio, Research, Atelier, or Inbox as appropriate)
 
@@ -251,8 +252,29 @@ Completed/mostly completed agreed sequence:
 
 Current build order:
 
-1. Release-readiness hardening after the first audit/readiness slice. v2 Atelier now has safe trust actions, Profile & Copilot change audit rows, and a compact "ready to rely today?" checklist; next hardening should add backup-age thresholds, checkpoint policy, critical browser workflow verification status, and degraded/provider checks.
-2. Continue hardening the Confidence Heat Map only as new signal domains mature, especially release readiness and richer provider/evidence quality.
+1. Product testing pass using the release-readiness backend/product contract. v2 Atelier and Today now consume orchestrator-computed readiness with backup-age thresholds, protection/checkpoint/audit/restore-preview checks, degraded/provider blockers, and persisted product workflow verification.
+2. Product workflow verification UI polish. The backend can record product-testing pass/fail/partial evidence now; a later slice can add a small v2 Atelier affordance for recording the pass without using the API directly.
+3. Continue hardening the Confidence Heat Map only as new signal domains mature, especially release readiness and richer provider/evidence quality.
+
+### Release Readiness Backend/Product Contract Build Plan
+
+Goal: make "ready to rely on this app today?" a stable BuildWealth product signal rather than UI-only checklist rendering.
+
+Implemented first slice:
+
+- add a backend readiness response that summarizes backup recency, protection compliance, git/checkpoint state, audit-feed availability, restore-preview evidence, critical workflow verification status, and provider/degraded-mode blockers
+- include `status`, `ready_count`, `total_count`, `blocking_gaps`, `warnings`, `checks`, and `recommended_actions`
+- expose it through an API route that v2 Atelier and Today can consume
+- record product workflow verification through `POST /api/release-readiness/workflow-verification`
+- keep full restore apply out of v2; readiness can recommend read-only preview or classic guarded restore tools without applying a restore
+- update Today Trust confidence domain and v2 Atelier checklist to render from the shared contract
+- add unit/backend tests plus a browser test for "not ready", "ready with warnings", and "ready" states
+
+Product-testing follow-up:
+
+- run the feature-by-feature manual checklist after release readiness lands
+- fix correctness, trust, routing, and data-loss risks before adding new features
+- update the checklist with any issues found during testing so it becomes a reusable release gate
 
 ### Account-Type Contribution/Fit Guidance Build Plan
 

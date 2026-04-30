@@ -144,6 +144,7 @@ from buildwealth_orchestrator.schemas import (
     StorageProtectionApplyResponse,
     GitActivityCleanupRequest,
     GitActivityCleanupResponse,
+    GitActivityEvent,
     GitActivityResponse,
     GitCheckpointRequest,
     GitCheckpointResponse,
@@ -160,6 +161,10 @@ from buildwealth_orchestrator.schemas import (
     GitRestoreApplyResponse,
     GitRestorePreviewResponse,
     GitStatusResponse,
+    ReleaseReadinessCheck,
+    ReleaseReadinessRecommendedAction,
+    ReleaseReadinessResponse,
+    ReleaseWorkflowVerificationRequest,
     RuntimeTelemetryResponse,
     TodayCommandCard,
     TodayConfidenceDomain,
@@ -4527,47 +4532,571 @@ def _confidence_status_from_command_card(card: TodayCommandCard) -> str:
 
 
 def _build_trust_durability_command_card() -> TodayCommandCard:
-    snapshot = _build_trust_durability_snapshot()
-    issues = _coerce_int(snapshot.get("issue_count"), 0)
-    critical = bool(snapshot.get("critical"))
+    readiness = build_release_readiness_response()
     status: Literal["ready", "warning", "critical"] = "ready"
-    if critical:
+    if readiness.status == "blocked":
         status = "critical"
-    elif issues > 0:
+    elif readiness.status == "warning":
         status = "warning"
 
-    backup_count = _coerce_int(snapshot.get("backup_count"), 0)
-    protection_issues = _coerce_int(snapshot.get("protection_issue_count"), 0)
-    changed_files = _coerce_int(snapshot.get("git_changed_files"), 0)
-    audit_events = _coerce_int(snapshot.get("audit_event_count"), 0)
-    parts = [
-        f"{backup_count} {_plural(backup_count, 'backup')} available.",
-        (
-            f"{protection_issues} non-compliant protection {_plural(protection_issues, 'item')}."
-            if protection_issues
-            else "Protection policy is compliant."
-        ),
-        (
-            f"{changed_files} uncheckpointed {_plural(changed_files, 'file')}."
-            if changed_files
-            else "Versioned workspace has no uncheckpointed file changes."
-        ),
-        f"{audit_events} audit {_plural(audit_events, 'event')} recorded.",
-    ]
-    if backup_count == 0:
-        parts[0] = "No local backups are available."
-    if snapshot.get("error"):
-        parts.append(str(snapshot["error"]))
+    issues = readiness.blocking_gaps + readiness.warnings
+    detail_parts = [readiness.summary]
+    if issues:
+        detail_parts.extend(issues[:2])
 
     return TodayCommandCard(
         id="trust-durability",
         title="Trust & durability",
         status=status,
-        detail=" ".join(parts),
-        metric_label="Issues",
-        metric_value=str(issues),
+        detail=" ".join(detail_parts),
+        metric_label="Ready",
+        metric_value=f"{readiness.ready_count}/{readiness.total_count}",
         action_label="Review trust",
         href="#atelier?section=trust",
+    )
+
+
+RELEASE_READINESS_BACKUP_MAX_AGE_HOURS = 72
+RELEASE_READINESS_RESTORE_PREVIEW_MAX_AGE_HOURS = 168
+RELEASE_READINESS_WORKFLOW_MAX_AGE_HOURS = 168
+RELEASE_READINESS_PRODUCT_TESTING_CHECKLIST = "docs/PRODUCT_TESTING_CHECKLIST_2026-04-30.md"
+
+
+def _release_readiness_action(
+    action_kind: str,
+    label: str,
+    detail: str = "",
+    href: str | None = "#atelier?section=trust",
+) -> ReleaseReadinessRecommendedAction:
+    return ReleaseReadinessRecommendedAction(
+        action_kind=action_kind,
+        label=label,
+        detail=detail,
+        href=href,
+    )
+
+
+def _release_readiness_check(
+    *,
+    id: str,
+    title: str,
+    status: str,
+    detail: str,
+    domain: str,
+    action_kind: str | None = None,
+    href: str | None = "#atelier?section=trust",
+    last_verified_at: datetime | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> ReleaseReadinessCheck:
+    normalized_status = status if status in {"ready", "warning", "blocked"} else "warning"
+    return ReleaseReadinessCheck(
+        id=id,
+        title=title,
+        status=normalized_status,  # type: ignore[arg-type]
+        detail=detail,
+        domain=domain,  # type: ignore[arg-type]
+        action_kind=action_kind,
+        href=href,
+        last_verified_at=last_verified_at,
+        metadata=metadata or {},
+    )
+
+
+def _engine_status_snapshot_sync() -> EngineStatusResponse:
+    state = getattr(engine_status_tracker, "_state", {})
+    as_of = getattr(engine_status_tracker, "_as_of", utc_now())
+    engines = list(state.values()) if isinstance(state, dict) else []
+    return EngineStatusResponse(as_of=as_of, engines=engines)
+
+
+def _latest_activity_event(events: list[dict[str, Any]], event_type: str) -> dict[str, Any] | None:
+    cleaned_type = str(event_type or "").strip().lower()
+    for event in events:
+        if str(event.get("event_type") or "").strip().lower() == cleaned_type:
+            return event
+    return None
+
+
+def _backup_readiness_check(
+    backups_payload: dict[str, Any],
+    *,
+    now: datetime,
+) -> tuple[ReleaseReadinessCheck, ReleaseReadinessRecommendedAction | None]:
+    backups = backups_payload.get("backups") if isinstance(backups_payload, dict) else []
+    backup_list = backups if isinstance(backups, list) else []
+    if not backup_list:
+        return (
+            _release_readiness_check(
+                id="backup",
+                title="Backup available",
+                status="blocked",
+                detail="No local backup archive is available.",
+                domain="storage",
+                action_kind="create_backup",
+            ),
+            _release_readiness_action(
+                "create_backup",
+                "Create backup",
+                "Create a local backup before relying on today’s app state.",
+            ),
+        )
+
+    latest = backup_list[0] if isinstance(backup_list[0], dict) else {}
+    created_at = _parse_optional_datetime(latest.get("created_at"))
+    age_hours = ((now - created_at).total_seconds() / 3600) if created_at else None
+    backup_id = str(latest.get("backup_id") or "latest backup")
+    if age_hours is not None and age_hours > RELEASE_READINESS_BACKUP_MAX_AGE_HOURS:
+        return (
+            _release_readiness_check(
+                id="backup",
+                title="Backup available",
+                status="warning",
+                detail=f"Latest backup {backup_id} is {age_hours:.0f} hours old.",
+                domain="storage",
+                action_kind="create_backup",
+                last_verified_at=created_at,
+                metadata={"backup_id": backup_id, "age_hours": round(age_hours, 2)},
+            ),
+            _release_readiness_action(
+                "create_backup",
+                "Create fresh backup",
+                "Refresh the local backup before a broad product-testing pass.",
+            ),
+        )
+
+    return (
+        _release_readiness_check(
+            id="backup",
+            title="Backup available",
+            status="ready",
+            detail=f"Latest backup {backup_id} is available.",
+            domain="storage",
+            last_verified_at=created_at,
+            metadata={"backup_id": backup_id, "age_hours": round(age_hours, 2) if age_hours is not None else None},
+        ),
+        None,
+    )
+
+
+def _workflow_verification_readiness_check(
+    activity_events: list[dict[str, Any]],
+    *,
+    now: datetime,
+) -> tuple[ReleaseReadinessCheck, ReleaseReadinessRecommendedAction | None]:
+    event = _latest_activity_event(activity_events, "product_workflow_verification")
+    action = _release_readiness_action(
+        "run_product_testing",
+        "Run product testing",
+        "Run the feature-by-feature product testing checklist and record the result.",
+        href=f"/{RELEASE_READINESS_PRODUCT_TESTING_CHECKLIST}",
+    )
+    if not event:
+        return (
+            _release_readiness_check(
+                id="workflow_verification",
+                title="Critical workflow verification",
+                status="warning",
+                detail="No product workflow verification run is recorded.",
+                domain="workflow",
+                action_kind="run_product_testing",
+                href=f"/{RELEASE_READINESS_PRODUCT_TESTING_CHECKLIST}",
+            ),
+            action,
+        )
+
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    verified_at = _parse_optional_datetime(event.get("created_at"))
+    age_hours = ((now - verified_at).total_seconds() / 3600) if verified_at else None
+    workflow = str(metadata.get("workflow") or "product_testing").strip() or "product_testing"
+    passed_count = _coerce_int(metadata.get("passed_count"), 0)
+    failed_count = _coerce_int(metadata.get("failed_count"), 0)
+    status = str(event.get("status") or "").strip().lower()
+    checklist_path = str(
+        metadata.get("checklist_path") or RELEASE_READINESS_PRODUCT_TESTING_CHECKLIST
+    ).strip()
+    base_metadata = {
+        "workflow": workflow,
+        "passed_count": passed_count,
+        "failed_count": failed_count,
+        "checklist_path": checklist_path,
+        "age_hours": round(age_hours, 2) if age_hours is not None else None,
+    }
+
+    if status == "failed" or failed_count > 0:
+        return (
+            _release_readiness_check(
+                id="workflow_verification",
+                title="Critical workflow verification",
+                status="blocked",
+                detail=f"Latest product workflow verification found {failed_count or 1} failing item(s).",
+                domain="workflow",
+                action_kind="run_product_testing",
+                href=f"/{checklist_path}",
+                last_verified_at=verified_at,
+                metadata=base_metadata,
+            ),
+            action,
+        )
+
+    if age_hours is not None and age_hours > RELEASE_READINESS_WORKFLOW_MAX_AGE_HOURS:
+        return (
+            _release_readiness_check(
+                id="workflow_verification",
+                title="Critical workflow verification",
+                status="warning",
+                detail=f"Latest product workflow verification is {age_hours:.0f} hours old.",
+                domain="workflow",
+                action_kind="run_product_testing",
+                href=f"/{checklist_path}",
+                last_verified_at=verified_at,
+                metadata=base_metadata,
+            ),
+            action,
+        )
+
+    if status == "partial":
+        return (
+            _release_readiness_check(
+                id="workflow_verification",
+                title="Critical workflow verification",
+                status="warning",
+                detail="Latest product workflow verification was partial.",
+                domain="workflow",
+                action_kind="run_product_testing",
+                href=f"/{checklist_path}",
+                last_verified_at=verified_at,
+                metadata=base_metadata,
+            ),
+            action,
+        )
+
+    return (
+        _release_readiness_check(
+            id="workflow_verification",
+            title="Critical workflow verification",
+            status="ready",
+            detail=f"Latest product workflow verification passed with {passed_count} checked item(s).",
+            domain="workflow",
+            href=f"/{checklist_path}",
+            last_verified_at=verified_at,
+            metadata=base_metadata,
+        ),
+        None,
+    )
+
+
+def build_release_readiness_response(now: datetime | None = None) -> ReleaseReadinessResponse:
+    generated_at = now or utc_now()
+    checks: list[ReleaseReadinessCheck] = []
+    actions: list[ReleaseReadinessRecommendedAction] = []
+
+    try:
+        durable = durable_storage_service.get_status()
+        if durable.get("database_exists"):
+            checks.append(_release_readiness_check(
+                id="durable_store",
+                title="Durable store ready",
+                status="ready",
+                detail=f"Durable store is reachable with {_coerce_int(durable.get('document_count'), 0)} documents.",
+                domain="storage",
+                last_verified_at=_parse_optional_datetime(durable.get("latest_migration_at")),
+                metadata={"document_count": _coerce_int(durable.get("document_count"), 0)},
+            ))
+        else:
+            checks.append(_release_readiness_check(
+                id="durable_store",
+                title="Durable store ready",
+                status="blocked",
+                detail="Durable storage database has not been created or is unavailable.",
+                domain="storage",
+                href="#atelier",
+            ))
+    except Exception as exc:
+        checks.append(_release_readiness_check(
+            id="durable_store",
+            title="Durable store ready",
+            status="blocked",
+            detail=f"Durable storage status unavailable: {exc}",
+            domain="storage",
+            href="#atelier",
+        ))
+
+    try:
+        backup_check, backup_action = _backup_readiness_check(
+            backup_restore_service.list_backups(),
+            now=generated_at,
+        )
+        checks.append(backup_check)
+        if backup_action is not None:
+            actions.append(backup_action)
+    except Exception as exc:
+        checks.append(_release_readiness_check(
+            id="backup",
+            title="Backup available",
+            status="blocked",
+            detail=f"Backup status unavailable: {exc}",
+            domain="storage",
+            action_kind="create_backup",
+        ))
+        actions.append(_release_readiness_action("create_backup", "Create backup", "Backup status could not be verified."))
+
+    try:
+        protection = data_protection_service.get_status()
+        supported = bool(protection.get("supported", True)) if isinstance(protection, dict) else False
+        issue_count = (
+            _coerce_int(protection.get("total_non_compliant_files"), 0)
+            + _coerce_int(protection.get("total_non_compliant_directories"), 0)
+            if isinstance(protection, dict)
+            else 0
+        )
+        if not supported:
+            checks.append(_release_readiness_check(
+                id="protection",
+                title="Protection compliant",
+                status="blocked",
+                detail="Local protection checks are not supported on this system.",
+                domain="protection",
+                action_kind="review_protection",
+            ))
+        elif issue_count > 0:
+            checks.append(_release_readiness_check(
+                id="protection",
+                title="Protection compliant",
+                status="warning",
+                detail=f"{issue_count} protection item(s) need attention.",
+                domain="protection",
+                action_kind="apply_protection",
+                metadata={"issue_count": issue_count},
+            ))
+            actions.append(_release_readiness_action(
+                "apply_protection",
+                "Apply protection",
+                "Apply local protection policy to reduce filesystem exposure.",
+            ))
+        else:
+            checks.append(_release_readiness_check(
+                id="protection",
+                title="Protection compliant",
+                status="ready",
+                detail="Protection policy is compliant.",
+                domain="protection",
+                metadata={"issue_count": 0},
+            ))
+    except Exception as exc:
+        checks.append(_release_readiness_check(
+            id="protection",
+            title="Protection compliant",
+            status="blocked",
+            detail=f"Protection status unavailable: {exc}",
+            domain="protection",
+            action_kind="apply_protection",
+        ))
+        actions.append(_release_readiness_action("apply_protection", "Apply protection", "Protection status could not be verified."))
+
+    try:
+        git_status = _git_repository_service(_git_policy()).status()
+        changed_files = git_status.get("changed_files") if isinstance(git_status, dict) else []
+        changed_count = len(changed_files) if isinstance(changed_files, list) else 0
+        last_commit = git_status.get("last_commit") if isinstance(git_status, dict) else {}
+        last_commit_date = _parse_optional_datetime(last_commit.get("date")) if isinstance(last_commit, dict) else None
+        if str(git_status.get("status") or "") == "no_repo":
+            checks.append(_release_readiness_check(
+                id="checkpoint",
+                title="Checkpoint clean",
+                status="warning",
+                detail="Versioned workspace has not been initialized.",
+                domain="checkpoint",
+                action_kind="create_checkpoint",
+            ))
+            actions.append(_release_readiness_action("create_checkpoint", "Create checkpoint", "Initialize/checkpoint the versioned workspace."))
+        elif changed_count > 0:
+            checks.append(_release_readiness_check(
+                id="checkpoint",
+                title="Checkpoint clean",
+                status="warning",
+                detail=f"{changed_count} uncheckpointed file(s) should be reviewed.",
+                domain="checkpoint",
+                action_kind="create_checkpoint",
+                last_verified_at=last_commit_date,
+                metadata={"changed_files": changed_count},
+            ))
+            actions.append(_release_readiness_action(
+                "create_checkpoint",
+                "Create checkpoint",
+                "Create a checkpoint after reviewing current file changes.",
+            ))
+        else:
+            checks.append(_release_readiness_check(
+                id="checkpoint",
+                title="Checkpoint clean",
+                status="ready",
+                detail="Versioned workspace has no uncheckpointed file changes.",
+                domain="checkpoint",
+                last_verified_at=last_commit_date,
+                metadata={"changed_files": 0},
+            ))
+    except Exception as exc:
+        checks.append(_release_readiness_check(
+            id="checkpoint",
+            title="Checkpoint clean",
+            status="warning",
+            detail=f"Checkpoint status unavailable: {exc}",
+            domain="checkpoint",
+            action_kind="create_checkpoint",
+        ))
+        actions.append(_release_readiness_action("create_checkpoint", "Create checkpoint", "Checkpoint status could not be verified."))
+
+    activity_events: list[dict[str, Any]] = []
+    try:
+        activity = _git_activity_store().query(limit=50)
+        activity_events = activity.get("events") if isinstance(activity.get("events"), list) else []
+        summary = activity.get("summary") if isinstance(activity, dict) else {}
+        total_matched = _coerce_int(summary.get("total_matched"), 0) if isinstance(summary, dict) else len(activity_events)
+        if total_matched > 0:
+            checks.append(_release_readiness_check(
+                id="audit_feed",
+                title="Audit feed present",
+                status="ready",
+                detail=f"{total_matched} recent audit event(s) are available.",
+                domain="audit",
+                metadata={"event_count": total_matched},
+            ))
+        else:
+            checks.append(_release_readiness_check(
+                id="audit_feed",
+                title="Audit feed present",
+                status="warning",
+                detail="No recent audit events are available.",
+                domain="audit",
+                href="#atelier?section=trust",
+            ))
+    except Exception as exc:
+        checks.append(_release_readiness_check(
+            id="audit_feed",
+            title="Audit feed present",
+            status="warning",
+            detail=f"Audit feed unavailable: {exc}",
+            domain="audit",
+            href="#atelier?section=trust",
+        ))
+
+    restore_preview = _latest_activity_event(activity_events, "restore_preview")
+    restore_preview_at = _parse_optional_datetime(restore_preview.get("created_at")) if restore_preview else None
+    restore_age_hours = ((generated_at - restore_preview_at).total_seconds() / 3600) if restore_preview_at else None
+    if restore_preview_at and restore_age_hours is not None and restore_age_hours <= RELEASE_READINESS_RESTORE_PREVIEW_MAX_AGE_HOURS:
+        checks.append(_release_readiness_check(
+            id="restore_preview",
+            title="Restore preview verified",
+            status="ready",
+            detail="A recent read-only restore preview is recorded.",
+            domain="storage",
+            last_verified_at=restore_preview_at,
+            metadata={"age_hours": round(restore_age_hours, 2)},
+        ))
+    else:
+        checks.append(_release_readiness_check(
+            id="restore_preview",
+            title="Restore preview verified",
+            status="warning",
+            detail="Run a read-only restore preview when you need recovery confidence.",
+            domain="storage",
+            action_kind="preview_restore",
+            last_verified_at=restore_preview_at,
+            metadata={"age_hours": round(restore_age_hours, 2) if restore_age_hours is not None else None},
+        ))
+        actions.append(_release_readiness_action(
+            "preview_restore",
+            "Preview restore",
+            "Generate a read-only restore preview. No files are changed.",
+        ))
+
+    try:
+        engine_status = _engine_status_snapshot_sync()
+        degraded = [
+            engine for engine in engine_status.engines
+            if engine.enabled and (not engine.reachable or engine.contract_compatible is False or engine.degraded_count > 0)
+        ]
+        if degraded:
+            names = ", ".join(engine.name for engine in degraded[:3])
+            checks.append(_release_readiness_check(
+                id="providers",
+                title="Provider and engine health",
+                status="blocked",
+                detail=f"Provider/engine degradation is present: {names}.",
+                domain="provider",
+                action_kind="review_provider_status",
+                last_verified_at=engine_status.as_of,
+                metadata={"degraded_engines": [engine.model_dump(mode="json") for engine in degraded]},
+            ))
+            actions.append(_release_readiness_action(
+                "review_provider_status",
+                "Review provider health",
+                "Provider or engine degradation should caveat advice before product testing.",
+                href="#today",
+            ))
+        else:
+            checks.append(_release_readiness_check(
+                id="providers",
+                title="Provider and engine health",
+                status="ready",
+                detail="No enabled provider or engine degradation is currently recorded.",
+                domain="provider",
+                last_verified_at=engine_status.as_of,
+                metadata={"engine_count": len(engine_status.engines)},
+            ))
+    except Exception as exc:
+        checks.append(_release_readiness_check(
+            id="providers",
+            title="Provider and engine health",
+            status="warning",
+            detail=f"Provider/engine health unavailable: {exc}",
+            domain="provider",
+            action_kind="review_provider_status",
+            href="#today",
+        ))
+
+    try:
+        workflow_activity = _git_activity_store().query(
+            limit=1,
+            event_type="product_workflow_verification",
+        )
+        workflow_events = (
+            workflow_activity.get("events")
+            if isinstance(workflow_activity.get("events"), list)
+            else []
+        )
+    except Exception:
+        workflow_events = activity_events
+    workflow_check, workflow_action = _workflow_verification_readiness_check(
+        workflow_events,
+        now=generated_at,
+    )
+    checks.append(workflow_check)
+    if workflow_action is not None:
+        actions.append(workflow_action)
+
+    ready_count = sum(1 for check in checks if check.status == "ready")
+    blocked = [check for check in checks if check.status == "blocked"]
+    warning = [check for check in checks if check.status == "warning"]
+    status = "blocked" if blocked else "warning" if warning else "ready"
+    summary = (
+        "Release readiness is blocked by trust or provider gaps."
+        if blocked else
+        "Release readiness has warnings to review before relying on the app today."
+        if warning else
+        "Release readiness checks are passing."
+    )
+
+    return ReleaseReadinessResponse(
+        status=status,  # type: ignore[arg-type]
+        ready_count=ready_count,
+        total_count=len(checks),
+        generated_at=generated_at,
+        summary=summary,
+        checks=checks,
+        blocking_gaps=[check.detail for check in blocked],
+        warnings=[check.detail for check in warning],
+        recommended_actions=actions,
     )
 
 
@@ -14033,6 +14562,35 @@ def restore_backup(request: BackupRestoreRequest) -> BackupRestoreResponse:
 @app.get("/api/storage/protection/status", response_model=StorageProtectionStatusResponse)
 def get_storage_protection_status() -> StorageProtectionStatusResponse:
     return StorageProtectionStatusResponse.model_validate(data_protection_service.get_status())
+
+
+@app.get("/api/release-readiness", response_model=ReleaseReadinessResponse)
+def get_release_readiness() -> ReleaseReadinessResponse:
+    return build_release_readiness_response()
+
+
+@app.post("/api/release-readiness/workflow-verification", response_model=GitActivityEvent)
+def record_release_workflow_verification(
+    request: ReleaseWorkflowVerificationRequest,
+) -> GitActivityEvent:
+    workflow = str(request.workflow or "product_testing").strip() or "product_testing"
+    failed_count = int(request.failed_count or 0)
+    passed_count = int(request.passed_count or 0)
+    status = request.status
+    title_status = "passed" if status == "passed" and failed_count == 0 else status
+    event = _git_activity_store().record(
+        event_type="product_workflow_verification",
+        title=f"Product workflow verification {title_status}",
+        message=str(request.notes or "").strip(),
+        status=status,
+        metadata={
+            "workflow": workflow,
+            "passed_count": passed_count,
+            "failed_count": failed_count,
+            "checklist_path": request.checklist_path or RELEASE_READINESS_PRODUCT_TESTING_CHECKLIST,
+        },
+    )
+    return GitActivityEvent.model_validate(event)
 
 
 @app.put("/api/storage/protection/policy", response_model=StorageProtectionPolicyResponse)

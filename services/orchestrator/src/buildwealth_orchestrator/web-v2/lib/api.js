@@ -94,6 +94,8 @@ export const api = {
   telemetry:    () => fetchJson('/api/telemetry/runtime'),
   syncStatus:   () => fetchJson('/api/sync/status'),
   durableStorageStatus: () => fetchJson('/api/storage/durable/status'),
+  releaseReadiness: () => fetchJson('/api/release-readiness'),
+  recordReleaseWorkflowVerification: (body = {}) => postJson('/api/release-readiness/workflow-verification', body),
   storageBackups: () => fetchJson('/api/storage/backups'),
   createStorageBackup: (body = {}) => postJson('/api/storage/backups', body),
   storageProtectionStatus: () => fetchJson('/api/storage/protection/status'),
