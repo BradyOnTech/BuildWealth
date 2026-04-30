@@ -5,6 +5,7 @@ import pytest
 import buildwealth_orchestrator.main as main
 from buildwealth_orchestrator.services.recommendation_inbox import RecommendationInbox
 from buildwealth_orchestrator.services.plan_workspace import PlanWorkspace
+from buildwealth_orchestrator.schemas import TodayActivePlanSummary
 
 
 def test_recommendation_list_defaults_to_ranked_sort(
@@ -295,6 +296,165 @@ def test_today_command_cards_include_recommendation_loop_state(
     assert cards["cash-runway"].status == "warning"
     assert cards["cash-runway"].metric_value == "2.4 mo"
     assert cards["cash-runway"].href == "#inbox"
+
+
+def test_today_confidence_domains_summarize_decision_readiness() -> None:
+    dashboard = main.TodayDashboardResponse(
+        generated_at=main.utc_now(),
+        currency="USD",
+        state="MN",
+        sync_status=main.SyncStatusResponse(running=False, runs_total=0, runs_failed=0),
+        snapshot_age_minutes=90,
+        snapshot_points_30d=2,
+        total_value_usd=100_000,
+        top_holding_symbol="NVDA",
+        top_holding_percent=41,
+        concentration_risk="high",
+        active_plan=TodayActivePlanSummary(
+            id="plan-1",
+            title="Retire at 60",
+            settings_completion_percent=72,
+        ),
+        profile_readiness=main.ProfileReadinessSummary(
+            completion_percent=70,
+            status="incomplete",
+            next_gap_key="tax_profile",
+            next_gap_title="Tax profile",
+            next_gap_detail="Set filing status and marginal tax rate.",
+            blocking_recommendation_sources=["tax_planning"],
+            sections=[
+                main.ProfileReadinessSection(
+                    key="tax_profile",
+                    title="Tax profile",
+                    status="incomplete",
+                    detail="Set filing status and marginal tax rate.",
+                    required_for=["investment_fit"],
+                    blocking_recommendations=True,
+                )
+            ],
+        ),
+        inbox_high_priority_count=2,
+        emergency_fund_months=2.4,
+        financial_health_status="critical",
+        context_state="warning",
+        command_cards=[
+            main.TodayCommandCard(
+                id="research-readiness",
+                title="Research readiness",
+                status="warning",
+                detail="Evidence has material thesis changes.",
+                metric_label="Ready",
+                metric_value="1/3",
+                action_label="Review research",
+                href="#research-thesis-review?symbol=NVDA",
+            ),
+            main.TodayCommandCard(
+                id="outcome-loop",
+                title="Outcome loop",
+                status="warning",
+                detail="2 closed recommendations need outcome capture.",
+                metric_label="Pending",
+                metric_value="2",
+                action_label="Log outcome",
+                href="#inbox",
+            ),
+        ],
+    )
+
+    domains = {domain.id: domain for domain in main._build_today_confidence_domains(dashboard)}
+
+    assert list(domains) == [
+        "profile",
+        "cash",
+        "taxes",
+        "plan",
+        "portfolio",
+        "research",
+        "provider_data",
+        "trust",
+        "recommendations",
+    ]
+    assert domains["profile"].status == "missing_context"
+    assert domains["cash"].status == "degraded"
+    assert domains["taxes"].status == "missing_context"
+    assert domains["plan"].status == "usable_with_caveats"
+    assert domains["portfolio"].status == "degraded"
+    assert domains["research"].status == "usable_with_caveats"
+    assert domains["research"].href == "#research-thesis-review?symbol=NVDA"
+    assert domains["provider_data"].status == "usable_with_caveats"
+    assert domains["trust"].status == "missing_context"
+    assert domains["recommendations"].status == "usable_with_caveats"
+
+
+def test_today_trust_durability_card_surfaces_protection_backup_and_git(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class BackupService:
+        def list_backups(self) -> dict:
+            return {
+                "backups": [
+                    {
+                        "backup_id": "20260430T120000Z",
+                        "created_at": main.utc_now(),
+                        "size_bytes": 1024,
+                    }
+                ]
+            }
+
+    class ProtectionService:
+        def get_status(self) -> dict:
+            return {
+                "supported": True,
+                "total_non_compliant_files": 2,
+                "total_non_compliant_directories": 1,
+                "policy": {
+                    "protection_level": "standard",
+                    "last_applied_at": None,
+                },
+                "targets": [],
+            }
+
+    class GitRepository:
+        def status(self) -> dict:
+            return {
+                "status": "ok",
+                "dirty": True,
+                "changed_files": [{"path": "plans/plan.md", "status": "M"}],
+                "last_commit": None,
+                "has_remote": False,
+            }
+
+    class GitActivity:
+        def query(self, **_: object) -> dict:
+            return {"summary": {"total_matched": 3}, "events": []}
+
+    monkeypatch.setattr(main, "backup_restore_service", BackupService())
+    monkeypatch.setattr(main, "data_protection_service", ProtectionService())
+    monkeypatch.setattr(main, "_git_policy", lambda: {"enabled": True})
+    monkeypatch.setattr(main, "_git_repository_service", lambda _policy: GitRepository())
+    monkeypatch.setattr(main, "_git_activity_store", lambda: GitActivity())
+
+    card = main._build_trust_durability_command_card()
+    dashboard = main.TodayDashboardResponse(
+        generated_at=main.utc_now(),
+        currency="USD",
+        state="MN",
+        sync_status=main.SyncStatusResponse(running=False, runs_total=0, runs_failed=0),
+        context_state="ready",
+        command_cards=[card],
+    )
+    domains = {domain.id: domain for domain in main._build_today_confidence_domains(dashboard)}
+
+    assert card.id == "trust-durability"
+    assert card.status == "warning"
+    assert card.metric_label == "Issues"
+    assert card.metric_value == "2"
+    assert "1 backup" in card.detail
+    assert "3 non-compliant protection item" in card.detail
+    assert "1 uncheckpointed file" in card.detail
+    assert card.href == "#atelier?section=trust"
+    assert domains["trust"].status == "usable_with_caveats"
+    assert domains["trust"].href == "#atelier?section=trust"
 
 
 def test_today_command_cards_surface_copilot_drafted_reviews(

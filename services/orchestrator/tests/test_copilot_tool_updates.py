@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -833,6 +834,164 @@ def test_tool_draft_financial_profile_update_validates_without_saving(
     assert payload["proposed_profile"]["income_items"][0]["label"] == "Salary"
     assert payload["proposed_profile"]["expense_items"][0]["label"] == "Rent"
     assert payload["proposed_profile"]["flags"]["no_debt"] is True
+
+
+def test_tool_update_financial_profile_records_copilot_audit_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeProfileStore:
+        def __init__(self) -> None:
+            self.payload = {
+                "schema_version": 2,
+                "income_items": [],
+                "expense_items": [],
+                "debt_items": [],
+                "goal_items": [],
+                "physical_assets": [],
+                "tax_profile": {
+                    "filing_status": None,
+                    "marginal_tax_rate": None,
+                    "effective_tax_rate": None,
+                    "state_tax_rate": None,
+                    "state": None,
+                },
+                "investment_policy": {},
+                "flags": {"no_debt": False, "no_goals": False},
+                "notes": "",
+                "updated_at": "2026-04-26T12:00:00+00:00",
+            }
+
+        def load(self) -> dict[str, object]:
+            return dict(self.payload)
+
+        def get(self) -> dict[str, object]:
+            return dict(self.payload)
+
+        def save(self, payload: dict[str, object]) -> dict[str, object]:
+            self.payload = dict(payload)
+            self.payload["schema_version"] = 2
+            self.payload["updated_at"] = "2026-04-30T12:00:00+00:00"
+            return dict(self.payload)
+
+    class FakeActivityStore:
+        def __init__(self) -> None:
+            self.events = []
+
+        def record(self, **kwargs):
+            self.events.append(kwargs)
+            return kwargs
+
+    store = FakeProfileStore()
+    activity = FakeActivityStore()
+    monkeypatch.setattr(main, "financial_profile_store", store)
+    monkeypatch.setattr(main, "_git_activity_store", lambda: activity)
+
+    asyncio.run(
+        main.tool_update_financial_profile(
+            {
+                "investment_policy": {
+                    "max_single_symbol_exposure_pct": 10,
+                }
+            }
+        )
+    )
+
+    assert activity.events
+    event = activity.events[-1]
+    assert event["event_type"] == "copilot_profile_update"
+    assert event["title"] == "Copilot profile update applied"
+    assert event["metadata"]["sections"] == ["investment_policy"]
+    assert event["metadata"]["source"] == "copilot_tool"
+
+
+def test_update_financial_profile_records_profile_audit_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeProfileStore:
+        def save(self, payload: dict[str, object]) -> dict[str, object]:
+            saved = dict(payload)
+            saved["schema_version"] = 2
+            saved["updated_at"] = "2026-04-30T12:00:00+00:00"
+            return saved
+
+    class FakeActivityStore:
+        def __init__(self) -> None:
+            self.events = []
+
+        def record(self, **kwargs):
+            self.events.append(kwargs)
+            return kwargs
+
+    activity = FakeActivityStore()
+    monkeypatch.setattr(main, "financial_profile_store", FakeProfileStore())
+    monkeypatch.setattr(main, "_git_activity_store", lambda: activity)
+    monkeypatch.setattr(main, "_queue_autogit_event", lambda event_type: None)
+
+    response = main.update_financial_profile(
+        main.FinancialProfileRequest(
+            investment_policy={"max_single_symbol_exposure_pct": 12},
+            notes="Updated policy",
+        ),
+        source="profile_editor",
+    )
+
+    assert response.investment_policy.max_single_symbol_exposure_pct == 12
+    assert activity.events
+    event = activity.events[-1]
+    assert event["event_type"] == "profile_update"
+    assert event["title"] == "Financial profile updated"
+    assert event["metadata"]["sections"] == ["investment_policy", "notes"]
+    assert event["metadata"]["source"] == "profile_editor"
+
+
+def test_tool_apply_recommendation_records_copilot_audit_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResult:
+        recommendation = SimpleNamespace(id="rec-123", title="Review NVDA fit")
+        plan = SimpleNamespace(id="plan-active")
+        decision_packet_artifact = SimpleNamespace(file_name="plans/decision-packet.md")
+        decision_closure_artifact = None
+        message = "Recommendation applied."
+
+        def model_dump(self, mode: str = "json") -> dict[str, object]:
+            return {"message": self.message, "mode": mode}
+
+    class FakeActivityStore:
+        def __init__(self) -> None:
+            self.events = []
+
+        def record(self, **kwargs):
+            self.events.append(kwargs)
+            return kwargs
+
+    async def fake_apply(recommendation_id, request):
+        assert recommendation_id == "rec-123"
+        assert request.decision_status == "accepted"
+        return FakeResult()
+
+    activity = FakeActivityStore()
+    monkeypatch.setattr(main, "apply_recommendation_with_decision_packet", fake_apply)
+    monkeypatch.setattr(main, "_git_activity_store", lambda: activity)
+
+    result = asyncio.run(
+        main.tool_apply_recommendation(
+            {
+                "recommendation_id": "rec-123",
+                "decision_status": "accepted",
+            }
+        )
+    )
+
+    assert result["message"] == "Recommendation applied."
+    assert activity.events
+    event = activity.events[-1]
+    assert event["event_type"] == "copilot_recommendation_apply"
+    assert event["title"] == "Copilot applied recommendation"
+    assert event["metadata"]["recommendation_id"] == "rec-123"
+    assert event["metadata"]["plan_id"] == "plan-active"
+    assert "recommendations/inbox.json" in event["paths"]
+    assert "plans/decision-packet.md" in event["paths"]
 
 
 def test_tool_draft_financial_profile_update_generates_missing_item_ids(

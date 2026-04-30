@@ -162,6 +162,7 @@ from buildwealth_orchestrator.schemas import (
     GitStatusResponse,
     RuntimeTelemetryResponse,
     TodayCommandCard,
+    TodayConfidenceDomain,
     TodayDashboardResponse,
     TopNextAction,
     PortfolioReviewPacketListResponse,
@@ -3653,6 +3654,114 @@ def save_financial_profile_payload(request: FinancialProfileRequest) -> dict[str
     return financial_profile_store.save(payload)
 
 
+PROFILE_AUDIT_SECTION_ORDER = [
+    "income_items",
+    "expense_items",
+    "debt_items",
+    "goal_items",
+    "physical_assets",
+    "tax_profile",
+    "investment_policy",
+    "flags",
+    "notes",
+]
+
+
+def _has_meaningful_profile_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value is True
+    if isinstance(value, (int, float)):
+        return True
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list):
+        return bool(value)
+    if isinstance(value, dict):
+        return any(_has_meaningful_profile_value(item) for item in value.values())
+    if hasattr(value, "model_dump"):
+        return _has_meaningful_profile_value(value.model_dump(mode="json"))
+    return True
+
+
+def _profile_update_sections_from_payload(payload: Any) -> list[str]:
+    if hasattr(payload, "model_dump"):
+        payload = payload.model_dump(mode="json")
+    if not isinstance(payload, dict):
+        return []
+    sections: list[str] = []
+    for key in PROFILE_AUDIT_SECTION_ORDER:
+        if key in payload and _has_meaningful_profile_value(payload.get(key)):
+            sections.append(key)
+    for key in payload:
+        if key not in PROFILE_AUDIT_SECTION_ORDER and _has_meaningful_profile_value(payload.get(key)):
+            sections.append(str(key))
+    return sections
+
+
+def _record_profile_update_activity(
+    *,
+    source: str,
+    sections: list[str],
+    via_copilot: bool = False,
+) -> None:
+    cleaned_sections = [str(section).strip() for section in sections if str(section).strip()]
+    if not cleaned_sections:
+        cleaned_sections = ["financial_profile"]
+    event_type = "copilot_profile_update" if via_copilot else "profile_update"
+    title = "Copilot profile update applied" if via_copilot else "Financial profile updated"
+    section_label = ", ".join(section.replace("_", " ") for section in cleaned_sections[:5])
+    if len(cleaned_sections) > 5:
+        section_label = f"{section_label}, and {len(cleaned_sections) - 5} more"
+    try:
+        _git_activity_store().record(
+            event_type=event_type,
+            title=title,
+            message=f"Updated profile sections: {section_label}.",
+            status="applied",
+            paths=["profile/financial_profile.json"],
+            metadata={
+                "source": str(source or ("copilot_tool" if via_copilot else "profile_editor")),
+                "sections": cleaned_sections,
+                "via_copilot": via_copilot,
+            },
+        )
+    except Exception:
+        pass
+
+
+def _record_copilot_recommendation_apply_activity(result: Any, arguments: dict[str, object]) -> None:
+    try:
+        recommendation = getattr(result, "recommendation", None)
+        recommendation_id = str(getattr(recommendation, "id", "") or arguments.get("recommendation_id") or "")
+        title = str(getattr(recommendation, "title", "") or recommendation_id or "Recommendation")
+        plan = getattr(result, "plan", None)
+        plan_id = str(getattr(plan, "id", "") or arguments.get("plan_id") or "")
+        paths = ["recommendations/inbox.json"]
+        for artifact_attr in ("decision_packet_artifact", "decision_closure_artifact"):
+            artifact = getattr(result, artifact_attr, None)
+            file_name = getattr(artifact, "file_name", None)
+            if file_name:
+                paths.append(str(file_name))
+        _git_activity_store().record(
+            event_type="copilot_recommendation_apply",
+            title="Copilot applied recommendation",
+            message=str(getattr(result, "message", "") or f"Applied {title}."),
+            status="applied",
+            paths=paths,
+            metadata={
+                "source": "copilot_tool",
+                "recommendation_id": recommendation_id,
+                "recommendation_title": title,
+                "plan_id": plan_id or None,
+                "decision_status": str(arguments.get("decision_status") or "accepted"),
+            },
+        )
+    except Exception:
+        pass
+
+
 def _recommendation_list(
     *,
     limit: int = 100,
@@ -3834,6 +3943,7 @@ def _build_today_command_cards(dashboard: TodayDashboardResponse) -> list[TodayC
     if investment_policy_card is not None:
         cards.append(investment_policy_card)
     cards.append(_build_research_readiness_command_card(dashboard))
+    cards.append(_build_trust_durability_command_card())
     try:
         proposed_rows = recommendation_inbox.list(limit=500, status="proposed", sort="created_at_desc")
         closed_rows = recommendation_inbox.list(limit=500, include_archived=True, sort="created_at_desc")
@@ -4160,6 +4270,382 @@ def _today_card_metric_delta(
     previous_metric = _coerce_int(previous_card.get("metric_value"), 0)
     current_metric = _coerce_int(current_card.get("metric_value"), 0)
     return current_metric - previous_metric
+
+
+def _build_today_confidence_domains(dashboard: TodayDashboardResponse) -> list[TodayConfidenceDomain]:
+    readiness = dashboard.profile_readiness
+    profile_percent = (
+        readiness.completion_percent
+        if readiness is not None
+        else dashboard.onboarding_completion_percent
+    )
+    profile_status = "missing_context"
+    profile_detail = "Profile readiness is unavailable."
+    if readiness is not None:
+        if readiness.status == "ready":
+            profile_status = "decision_grade"
+            profile_detail = "Profile context is complete enough for daily decision support."
+        elif readiness.status == "attention" and profile_percent >= 70:
+            profile_status = "usable_with_caveats"
+            gap = readiness.next_gap_title or "remaining profile gaps"
+            profile_detail = f"Profile context is usable, but {gap} still limits advice quality."
+        else:
+            gap = readiness.next_gap_title or "profile context"
+            profile_detail = f"Complete {gap} before relying on stronger recommendations."
+
+    cash_status = "missing_context"
+    cash_detail = "Cash runway is unavailable."
+    if dashboard.emergency_fund_months is not None:
+        months = dashboard.emergency_fund_months
+        if dashboard.financial_health_status == "critical" or months < 3:
+            cash_status = "degraded"
+            cash_detail = "Cash runway is below the minimum target and should constrain advice."
+        elif dashboard.financial_health_status == "needs_attention" or months < 6:
+            cash_status = "usable_with_caveats"
+            cash_detail = "Cash runway is usable, but below the preferred target."
+        else:
+            cash_status = "decision_grade"
+            cash_detail = "Cash runway is strong enough for normal decision support."
+
+    tax_section = _profile_readiness_section(readiness, "tax_profile")
+    if tax_section is None:
+        tax_status = "missing_context"
+        tax_detail = "Tax profile is not available for fit and planning advice."
+    elif tax_section.status == "complete":
+        tax_status = "decision_grade"
+        tax_detail = "Tax profile is available for investment-fit and planning decisions."
+    else:
+        tax_status = "missing_context"
+        tax_detail = tax_section.detail or "Tax profile is incomplete."
+
+    if dashboard.active_plan is None:
+        plan_status = "missing_context"
+        plan_detail = "No active plan is available to anchor recommendations."
+        plan_metric = None
+    else:
+        completion = dashboard.active_plan.settings_completion_percent
+        if completion >= 90:
+            plan_status = "decision_grade"
+            plan_detail = "Active plan assumptions are complete enough for decision support."
+        elif completion >= 60:
+            plan_status = "usable_with_caveats"
+            plan_detail = "Active plan is usable, but some assumptions still limit confidence."
+        else:
+            plan_status = "missing_context"
+            plan_detail = "Active plan assumptions need more work before advice is reliable."
+        plan_metric = f"{round(completion)}%"
+
+    if dashboard.total_value_usd is None:
+        portfolio_status = "missing_context"
+        portfolio_detail = "Portfolio snapshot is unavailable."
+    elif dashboard.concentration_risk == "high":
+        portfolio_status = "degraded"
+        symbol = dashboard.top_holding_symbol or "top holding"
+        portfolio_detail = f"{symbol} concentration is high and should constrain fit decisions."
+    elif dashboard.concentration_risk == "medium" or dashboard.snapshot_points_30d < 5:
+        portfolio_status = "usable_with_caveats"
+        portfolio_detail = "Portfolio context is usable, with concentration or history caveats."
+    else:
+        portfolio_status = "decision_grade"
+        portfolio_detail = "Portfolio context is current enough for decision support."
+
+    research_card = _today_command_card_by_id(dashboard.command_cards, "research-readiness")
+    if research_card is None:
+        research_status = "missing_context"
+        research_detail = "Research evidence readiness has not been checked yet."
+        research_metric_label = None
+        research_metric_value = None
+        research_href = "#research"
+    else:
+        research_status = _confidence_status_from_command_card(research_card)
+        research_detail = research_card.detail
+        research_metric_label = research_card.metric_label
+        research_metric_value = research_card.metric_value
+        research_href = research_card.href
+
+    trust_card = _today_command_card_by_id(dashboard.command_cards, "trust-durability")
+    if trust_card is None:
+        trust_status = "missing_context"
+        trust_detail = "Trust and durability status has not been checked yet."
+        trust_metric_label = None
+        trust_metric_value = None
+        trust_href = "#atelier?section=trust"
+    else:
+        trust_status = _confidence_status_from_command_card(trust_card)
+        trust_detail = trust_card.detail
+        trust_metric_label = trust_card.metric_label
+        trust_metric_value = trust_card.metric_value
+        trust_href = trust_card.href
+
+    provider_status = "decision_grade"
+    provider_detail = "Provider and snapshot data are current enough for Today."
+    if dashboard.context_state == "critical":
+        provider_status = "degraded"
+        provider_detail = "Data context is degraded and should block high-confidence advice."
+    elif dashboard.snapshot_age_minutes is None or dashboard.total_value_usd is None:
+        provider_status = "missing_context"
+        provider_detail = "Snapshot/provider freshness is unavailable."
+    elif dashboard.snapshot_age_minutes > 24 * 60:
+        provider_status = "stale"
+        provider_detail = "Snapshot data is more than 24 hours old."
+    elif dashboard.context_state == "warning" or dashboard.snapshot_points_30d < 5:
+        provider_status = "usable_with_caveats"
+        provider_detail = "Data is usable, but freshness or history coverage is limited."
+
+    outcome_card = _today_command_card_by_id(dashboard.command_cards, "outcome-loop")
+    recommendation_status = "decision_grade"
+    recommendation_detail = "Recommendation loop is calibrated and clear."
+    recommendation_metric_label = "High priority"
+    recommendation_metric_value = str(dashboard.inbox_high_priority_count)
+    recommendation_href = "#inbox"
+    if outcome_card is not None and outcome_card.status != "ready":
+        recommendation_status = _confidence_status_from_command_card(outcome_card)
+        recommendation_detail = outcome_card.detail
+        recommendation_metric_label = outcome_card.metric_label
+        recommendation_metric_value = outcome_card.metric_value
+        recommendation_href = outcome_card.href
+    elif dashboard.inbox_high_priority_count > 0:
+        recommendation_status = "usable_with_caveats"
+        recommendation_detail = "High-priority recommendations are waiting for review."
+
+    return [
+        TodayConfidenceDomain(
+            id="profile",
+            label="Profile",
+            status=profile_status,
+            detail=profile_detail,
+            metric_label="Ready",
+            metric_value=f"{round(profile_percent)}%",
+            href="#copilot?intent=complete-context" if profile_status != "decision_grade" else "#copilot",
+        ),
+        TodayConfidenceDomain(
+            id="cash",
+            label="Cash",
+            status=cash_status,
+            detail=cash_detail,
+            metric_label="Runway",
+            metric_value=(
+                f"{dashboard.emergency_fund_months:.1f} mo"
+                if dashboard.emergency_fund_months is not None
+                else "Unknown"
+            ),
+            href="#inbox" if cash_status != "missing_context" else "#copilot?intent=complete-context",
+        ),
+        TodayConfidenceDomain(
+            id="taxes",
+            label="Taxes",
+            status=tax_status,
+            detail=tax_detail,
+            metric_label="Profile",
+            metric_value="Ready" if tax_status == "decision_grade" else "Missing",
+            href="#copilot?intent=complete-context",
+        ),
+        TodayConfidenceDomain(
+            id="plan",
+            label="Plan",
+            status=plan_status,
+            detail=plan_detail,
+            metric_label="Complete" if plan_metric else None,
+            metric_value=plan_metric,
+            href="#plan",
+        ),
+        TodayConfidenceDomain(
+            id="portfolio",
+            label="Portfolio",
+            status=portfolio_status,
+            detail=portfolio_detail,
+            metric_label="Top holding" if dashboard.top_holding_percent is not None else None,
+            metric_value=(
+                f"{dashboard.top_holding_percent:.0f}%"
+                if dashboard.top_holding_percent is not None
+                else None
+            ),
+            href="#portfolio",
+        ),
+        TodayConfidenceDomain(
+            id="research",
+            label="Research",
+            status=research_status,
+            detail=research_detail,
+            metric_label=research_metric_label,
+            metric_value=research_metric_value,
+            href=research_href,
+        ),
+        TodayConfidenceDomain(
+            id="provider_data",
+            label="Provider data",
+            status=provider_status,
+            detail=provider_detail,
+            metric_label="Age" if dashboard.snapshot_age_minutes is not None else None,
+            metric_value=(
+                f"{dashboard.snapshot_age_minutes}m"
+                if dashboard.snapshot_age_minutes is not None
+                else None
+            ),
+            href="#atelier",
+        ),
+        TodayConfidenceDomain(
+            id="trust",
+            label="Trust",
+            status=trust_status,
+            detail=trust_detail,
+            metric_label=trust_metric_label,
+            metric_value=trust_metric_value,
+            href=trust_href,
+        ),
+        TodayConfidenceDomain(
+            id="recommendations",
+            label="Recommendations",
+            status=recommendation_status,
+            detail=recommendation_detail,
+            metric_label=recommendation_metric_label,
+            metric_value=recommendation_metric_value,
+            href=recommendation_href,
+        ),
+    ]
+
+
+def _profile_readiness_section(
+    readiness: ProfileReadinessSummary | None,
+    key: str,
+) -> ProfileReadinessSection | None:
+    if readiness is None:
+        return None
+    return next((section for section in readiness.sections if section.key == key), None)
+
+
+def _today_command_card_by_id(cards: list[TodayCommandCard], card_id: str) -> TodayCommandCard | None:
+    return next((card for card in cards if card.id == card_id), None)
+
+
+def _confidence_status_from_command_card(card: TodayCommandCard) -> str:
+    if card.status == "critical":
+        return "degraded"
+    if card.status == "warning":
+        return "usable_with_caveats"
+    return "decision_grade"
+
+
+def _build_trust_durability_command_card() -> TodayCommandCard:
+    snapshot = _build_trust_durability_snapshot()
+    issues = _coerce_int(snapshot.get("issue_count"), 0)
+    critical = bool(snapshot.get("critical"))
+    status: Literal["ready", "warning", "critical"] = "ready"
+    if critical:
+        status = "critical"
+    elif issues > 0:
+        status = "warning"
+
+    backup_count = _coerce_int(snapshot.get("backup_count"), 0)
+    protection_issues = _coerce_int(snapshot.get("protection_issue_count"), 0)
+    changed_files = _coerce_int(snapshot.get("git_changed_files"), 0)
+    audit_events = _coerce_int(snapshot.get("audit_event_count"), 0)
+    parts = [
+        f"{backup_count} {_plural(backup_count, 'backup')} available.",
+        (
+            f"{protection_issues} non-compliant protection {_plural(protection_issues, 'item')}."
+            if protection_issues
+            else "Protection policy is compliant."
+        ),
+        (
+            f"{changed_files} uncheckpointed {_plural(changed_files, 'file')}."
+            if changed_files
+            else "Versioned workspace has no uncheckpointed file changes."
+        ),
+        f"{audit_events} audit {_plural(audit_events, 'event')} recorded.",
+    ]
+    if backup_count == 0:
+        parts[0] = "No local backups are available."
+    if snapshot.get("error"):
+        parts.append(str(snapshot["error"]))
+
+    return TodayCommandCard(
+        id="trust-durability",
+        title="Trust & durability",
+        status=status,
+        detail=" ".join(parts),
+        metric_label="Issues",
+        metric_value=str(issues),
+        action_label="Review trust",
+        href="#atelier?section=trust",
+    )
+
+
+def _build_trust_durability_snapshot() -> dict[str, Any]:
+    errors: list[str] = []
+    backup_count = 0
+    protection_issue_count = 0
+    protection_supported = True
+    git_changed_files = 0
+    audit_event_count = 0
+    critical = False
+
+    try:
+        backups_payload = backup_restore_service.list_backups()
+        backups = backups_payload.get("backups") if isinstance(backups_payload, dict) else []
+        backup_count = len(backups) if isinstance(backups, list) else 0
+        if backup_count == 0:
+            critical = True
+    except Exception as exc:
+        critical = True
+        errors.append(f"Backup status unavailable: {exc}")
+
+    try:
+        protection = data_protection_service.get_status()
+        protection_supported = bool(protection.get("supported", True)) if isinstance(protection, dict) else False
+        protection_issue_count = (
+            _coerce_int(protection.get("total_non_compliant_files"), 0)
+            + _coerce_int(protection.get("total_non_compliant_directories"), 0)
+            if isinstance(protection, dict)
+            else 0
+        )
+        if not protection_supported:
+            critical = True
+    except Exception as exc:
+        critical = True
+        errors.append(f"Protection status unavailable: {exc}")
+
+    try:
+        policy = _git_policy()
+        git_status = _git_repository_service(policy).status()
+        changed_files = git_status.get("changed_files") if isinstance(git_status, dict) else []
+        git_changed_files = len(changed_files) if isinstance(changed_files, list) else 0
+    except Exception as exc:
+        errors.append(f"Git checkpoint status unavailable: {exc}")
+
+    try:
+        activity = _git_activity_store().query(limit=1)
+        summary = activity.get("summary") if isinstance(activity, dict) else {}
+        audit_event_count = _coerce_int(summary.get("total_matched"), 0) if isinstance(summary, dict) else 0
+    except Exception as exc:
+        errors.append(f"Audit status unavailable: {exc}")
+
+    issue_count = 0
+    if backup_count == 0:
+        issue_count += 1
+    if protection_issue_count > 0 or not protection_supported:
+        issue_count += 1
+    if git_changed_files > 0:
+        issue_count += 1
+    if errors:
+        issue_count += 1
+
+    return {
+        "backup_count": backup_count,
+        "protection_issue_count": protection_issue_count,
+        "protection_supported": protection_supported,
+        "git_changed_files": git_changed_files,
+        "audit_event_count": audit_event_count,
+        "issue_count": issue_count,
+        "critical": critical,
+        "error": " ".join(errors[:2]),
+    }
+
+
+def _plural(count: int, singular: str, plural: str | None = None) -> str:
+    if count == 1:
+        return singular
+    return plural or f"{singular}s"
 
 
 def _string_list(value: Any) -> list[str]:
@@ -8349,6 +8835,7 @@ def build_today_dashboard_response() -> TodayDashboardResponse:
         ]
 
     dashboard.command_cards = _build_today_command_cards(dashboard)
+    dashboard.confidence_domains = _build_today_confidence_domains(dashboard)
 
     return dashboard
 
@@ -9867,6 +10354,11 @@ async def tool_update_financial_profile(arguments: dict[str, object]) -> dict[st
 
     validated = FinancialProfileRequest(**profile_payload)
     saved = save_financial_profile_payload(validated)
+    _record_profile_update_activity(
+        source="copilot_tool",
+        sections=_profile_update_sections_from_payload(arguments),
+        via_copilot=True,
+    )
     return FinancialProfileResponse(**saved).model_dump(mode="json")
 
 
@@ -10241,6 +10733,7 @@ async def tool_apply_recommendation(arguments: dict[str, object]) -> dict[str, o
         ),
     )
     result = await apply_recommendation_with_decision_packet(recommendation_id, payload)
+    _record_copilot_recommendation_apply_activity(result, arguments)
     return result.model_dump(mode="json")
 
 
@@ -14038,8 +14531,17 @@ def get_financial_profile() -> FinancialProfileResponse:
 
 
 @app.put("/api/financial-profile", response_model=FinancialProfileResponse)
-def update_financial_profile(request: FinancialProfileRequest) -> FinancialProfileResponse:
+def update_financial_profile(
+    request: FinancialProfileRequest,
+    source: str | None = None,
+) -> FinancialProfileResponse:
     saved = save_financial_profile_payload(request)
+    source_label = str(source or "profile_editor").strip() or "profile_editor"
+    _record_profile_update_activity(
+        source=source_label,
+        sections=_profile_update_sections_from_payload(request),
+        via_copilot=source_label.startswith("copilot"),
+    )
     _queue_autogit_event("financial_profile_updated")
     return FinancialProfileResponse(**saved)
 

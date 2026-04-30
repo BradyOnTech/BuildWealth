@@ -24,6 +24,35 @@ test('today move renders top-action quality explanation', () => {
 
 test('today command cards render decision state with actions', () => {
   const markup = String(renderCommandCards({
+    confidence_domains: [
+      {
+        id: 'profile',
+        label: 'Profile',
+        status: 'missing_context',
+        detail: 'Tax profile blocks decision-grade advice.',
+        metric_label: 'Ready',
+        metric_value: '70%',
+        href: '#copilot?intent=complete-context',
+      },
+      {
+        id: 'plan',
+        label: 'Plan',
+        status: 'usable_with_caveats',
+        detail: 'Plan assumptions are mostly complete.',
+        metric_label: 'Complete',
+        metric_value: '72%',
+        href: '#plan',
+      },
+      {
+        id: 'research',
+        label: 'Research',
+        status: 'decision_grade',
+        detail: 'Evidence packets are fresh.',
+        metric_label: 'Ready',
+        metric_value: '2/2',
+        href: '#research',
+      },
+    ],
     command_cards: [
       {
         id: 'profile-readiness',
@@ -103,6 +132,11 @@ test('today command cards render decision state with actions', () => {
   }));
 
   assert.match(markup, /Command center/);
+  assert.match(markup, /Confidence heat map/);
+  assert.match(markup, /missing context/);
+  assert.match(markup, /usable with caveats/);
+  assert.match(markup, /decision grade/);
+  assert.match(markup, /href="#plan"/);
   assert.match(markup, /Profile readiness/);
   assert.match(markup, /Complete context/);
   assert.match(markup, /href="#copilot\?intent=complete-context"/);

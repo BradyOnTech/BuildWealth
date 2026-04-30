@@ -1076,6 +1076,22 @@ class TodayCommandCard(BaseModel):
     href: str | None = None
 
 
+class TodayConfidenceDomain(BaseModel):
+    id: str
+    label: str
+    status: Literal[
+        "decision_grade",
+        "usable_with_caveats",
+        "stale",
+        "missing_context",
+        "degraded",
+    ] = "usable_with_caveats"
+    detail: str
+    metric_label: str | None = None
+    metric_value: str | None = None
+    href: str | None = None
+
+
 class TodayActivePlanSummary(BaseModel):
     id: str
     title: str
@@ -1115,6 +1131,7 @@ class TodayDashboardResponse(BaseModel):
     context_state: Literal["ready", "warning", "critical"] = "warning"
     context_notes: list[str] = Field(default_factory=list)
     command_cards: list[TodayCommandCard] = Field(default_factory=list)
+    confidence_domains: list[TodayConfidenceDomain] = Field(default_factory=list)
     top_next_actions: list[TopNextAction] = Field(default_factory=list)
     checklist: list[TodayChecklistItem] = Field(default_factory=list)
     recommendations: list[TodayRecommendation] = Field(default_factory=list)

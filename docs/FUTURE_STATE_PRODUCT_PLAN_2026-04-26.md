@@ -334,19 +334,20 @@ Purpose: make the app safe to rely on for personal financial decisions.
 
 Future state:
 
-- backup, restore, protection, and checkpoint status are visible in v2
+- backup, restore, protection, and checkpoint status are visible in v2 (started: v2 Atelier now surfaces durable store, latest backup, protection compliance, git checkpoint, audit-event status, safe trust actions, and read-only restore preview)
 - user-facing decision surfaces show degraded compute and stale context
-- profile changes and Copilot-applied changes are auditable
+- profile changes and Copilot-applied changes are auditable (started: v2 Atelier now shows recent profile/Copilot-applied audit events from the activity feed)
 - critical workflows have browser-level tests
 - storage reliability has repeatable smoke validation
+- there is a compact "ready to rely today?" checklist for backup, protection, checkpoints, audit feed, and restore-preview confidence
 
 High-level implementation:
 
-- expose existing storage/protection/git status in a v2 trust surface
-- add audit/history records for profile and Copilot-applied mutations
+- expose existing storage/protection/git status in a v2 trust surface (started: v2 Atelier reads the existing durable storage, backup, protection, git status, and git activity endpoints)
+- add audit/history records for profile and Copilot-applied mutations (started: direct profile updates, Copilot profile patches, and Copilot-applied recommendations record audit events)
 - thread engine/degraded metadata into Today, Plan, Inbox, and Copilot when relevant
 - keep storage smoke tests in the default verification path
-- define release readiness checks for backup/restore and critical browser workflows
+- define release readiness checks for backup/restore and critical browser workflows (started: v2 Atelier shows a compact operational readiness checklist)
 
 ## v2 and Classic Ownership Strategy
 
@@ -498,16 +499,16 @@ Goal: make the app reliable enough to depend on.
 
 High-level tasks:
 
-- surface backup/restore/protection in v2
-- add audit views for profile and Copilot-applied changes
+- surface backup/restore/protection in v2 (started: v2 Atelier shows backup/protection/checkpoint/audit readiness, can create a backup, apply protection, create a git checkpoint, and generate a read-only restore preview)
+- add audit views for profile and Copilot-applied changes (started: v2 Atelier has a compact Profile & Copilot changes feed backed by activity events)
 - expose degraded-mode status in decision surfaces
 - expand browser workflow coverage
 - maintain storage reliability smoke validation
-- define release readiness checks
+- define release readiness checks (started: v2 Atelier has a "ready to rely today?" checklist)
 
 Done when:
 
-- critical data can be backed up, restored, and checked from v2
+- critical data can be backed up, read-only restore-previewed, and checked from v2; full restore apply remains in classic guarded tools for now
 - important user-visible decisions include freshness/degraded context where relevant
 - core daily, profile, recommendation, plan, and Copilot flows have browser-level tests
 
@@ -551,12 +552,12 @@ Long-term:
 
 ## Current Immediate Next Work
 
-1. Continue Today command-center evolution. The first "What Changed Since Last Review" slice now stores a lightweight local daily-review checkpoint and compares portfolio value, top holding/concentration, profile readiness, active plan update time, high-priority recommendation count, cash runway/financial health, research readiness, Copilot drafts, and recommendation priority-stack changes. Next Today slice should add a compact Confidence Heat Map.
+1. Continue Today command-center evolution. The first "What Changed Since Last Review" slice now stores a lightweight local daily-review checkpoint and compares portfolio value, top holding/concentration, profile readiness, active plan update time, high-priority recommendation count, cash runway/financial health, research readiness, Copilot drafts, and recommendation priority-stack changes. The compact Confidence Heat Map now summarizes Profile, Cash, Taxes, Plan, Portfolio, Research, Provider data, Trust, and Recommendations with decision-grade/weak/stale/degraded statuses. Future Today work should enrich that map as provider-quality and release-readiness signals mature.
 2. Deepen Personal Investment Policy only where it improves real decisions. Account-type-specific contribution guidance is now operational in portfolio-fit, generated review-only Inbox rows, Portfolio fit review, Copilot explanation, and browser workflow coverage. Future policy work should focus on missing/weak guardrail prompts, richer tax-policy preferences, and account-specific contribution routing.
 3. Continue Research Thesis Expiration hardening. The saved dossier/watchlist loop now supports expiry, material price moves, policy material changes, v2 thesis review, watchlist/dossier writeback, Copilot revision writeback, and Today research-readiness routing. Remaining material-change sources should include provider/evidence quality changes, portfolio context changes, and plan-horizon changes.
 4. Use the completed v2 Plan Workspace as the durable financial thesis substrate instead of continuing broad Plan migration. v2 Plan now owns normal assumptions, health, focused evidence/artifact detail, decisions, scenario diffs, life-event branch previews, withdrawal-strategy comparison, timeline, contribution rules, bounded Copilot review, and high-frequency links. Future Plan work should be narrow: richer plan-to-research context, branch-template editing, artifact-specific actions, and browser coverage for edge workflows.
 5. Treat Decision Pre-Mortem as available in the main loop. High-impact apply now captures expected benefit, main risk, disconfirming signal, monitoring plan, and review date in `decision_closure.pre_mortem`; closure artifacts include it; outcome capture displays it; closure analytics reports pre-mortem coverage/realized coverage; and Today outcome-loop cards prioritize pending pre-mortem checks.
-6. Productize trust/durability visibility before relying on BuildWealth as a daily operating system: backup/restore/protection/audit status should become visible in v2, with degraded or unprotected states surfaced clearly.
+6. Continue productizing trust/durability after the audit/readiness slice. v2 Atelier now surfaces durable store, latest backup, protection compliance, git checkpoint, audit-event status, safe trust actions, a Profile & Copilot changes feed, and a compact "ready to rely today?" checklist. Today also has a Trust & Durability command card and heat-map domain. Next trust work should tighten backup-age thresholds, checkpoint policy, critical workflow verification status, and any provider/degraded-mode checks that should block relying on the app for the day.
 7. Continue browser coverage around remaining advanced Plan, Research, investment-fit, contribution-routing, Today checkpoint, and Copilot explanation workflows.
 
 ## Documentation Governance

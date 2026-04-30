@@ -45,6 +45,26 @@ test('Today daily review routes command cards into review flows', async ({ page 
     net_worth_usd: 300000,
     monthly_surplus_usd: 2500,
     savings_rate_pct: 25,
+    confidence_domains: [
+      {
+        id: 'profile',
+        label: 'Profile',
+        status: 'missing_context',
+        detail: 'Tax profile blocks decision-grade advice.',
+        metric_label: 'Ready',
+        metric_value: '80%',
+        href: '#copilot?intent=complete-context',
+      },
+      {
+        id: 'research',
+        label: 'Research',
+        status: 'usable_with_caveats',
+        detail: 'Research evidence needs review before stronger advice.',
+        metric_label: 'Ready',
+        metric_value: '1/2',
+        href: '#today?refresh=research',
+      },
+    ],
     command_cards: [
       {
         id: 'profile-readiness',
@@ -174,6 +194,8 @@ test('Today daily review routes command cards into review flows', async ({ page 
 
   await page.goto('http://buildwealth-v2.test/');
   await page.getByText('Command center').waitFor({ state: 'visible' });
+  await page.getByText('Confidence heat map').waitFor({ state: 'visible' });
+  await page.getByText('Tax profile blocks decision-grade advice.').waitFor({ state: 'visible' });
   await page.getByText('Engine health').waitFor({ state: 'visible' });
   await page.getByText('Cash runway is 2.5 months lower.').waitFor({ state: 'visible' });
   await page.getByText('Research readiness changed from ready to warning.').waitFor({ state: 'visible' });

@@ -161,6 +161,7 @@ export function renderCommandCards(payload, engines = null) {
       <div class="command-card-grid">
         ${raw(visibleCards.map(renderCommandCard).join(''))}
       </div>
+      ${raw(renderConfidenceHeatMap(payload))}
     </section>
   `;
 }
@@ -214,6 +215,62 @@ function renderCommandCard(card) {
 function normalizeCardStatus(status) {
   if (status === 'critical' || status === 'warning' || status === 'ready') return status;
   return 'ready';
+}
+
+function renderConfidenceHeatMap(payload) {
+  const domains = Array.isArray(payload.confidence_domains) ? payload.confidence_domains.slice(0, 10) : [];
+  if (!domains.length) return html``;
+  return html`
+    <div class="confidence-heat-map" aria-label="Confidence heat map">
+      <div class="confidence-heat-map-head">
+        <span>Confidence heat map</span>
+        <p>Decision-grade inputs versus weak, stale, or degraded context.</p>
+      </div>
+      <div class="confidence-domain-grid">
+        ${raw(domains.map(renderConfidenceDomain).join(''))}
+      </div>
+    </div>
+  `;
+}
+
+function renderConfidenceDomain(domain) {
+  const status = normalizeConfidenceStatus(domain.status);
+  const href = domain.href ? String(domain.href) : '';
+  const metric = domain.metric_value
+    ? `<span class="confidence-domain-metric">${domain.metric_label ? `${esc(domain.metric_label)} ` : ''}<b>${esc(domain.metric_value)}</b></span>`
+    : '';
+  const body = html`
+    <span class="confidence-domain-status">${confidenceStatusLabel(status)}</span>
+    <strong>${stripHtml(domain.label || 'Domain')}</strong>
+    <small>${stripHtml(domain.detail || '')}</small>
+    ${raw(metric)}
+  `;
+  if (!href) {
+    return html`<div class="confidence-domain ${status}">${raw(body)}</div>`;
+  }
+  return html`
+    <a class="confidence-domain ${status}" href="${esc(href)}" data-route>
+      ${raw(body)}
+    </a>
+  `;
+}
+
+function normalizeConfidenceStatus(status) {
+  const value = String(status || '').toLowerCase();
+  if (
+    value === 'decision_grade'
+    || value === 'usable_with_caveats'
+    || value === 'stale'
+    || value === 'missing_context'
+    || value === 'degraded'
+  ) {
+    return value;
+  }
+  return 'usable_with_caveats';
+}
+
+function confidenceStatusLabel(status) {
+  return status.replaceAll('_', ' ');
 }
 
 /* ─────────────  THE MOVE  ───────────── */

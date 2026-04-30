@@ -211,9 +211,9 @@ Why it matters:
 
 Likely first slice:
 
-- compute domain statuses from existing readiness, freshness, provider, and recommendation quality data
-- render as a Today command-center card or compact panel
-- link each weak domain to the correct review flow
+- compute domain statuses from existing readiness, freshness, provider, and recommendation quality data (started: Today now returns `confidence_domains` for Profile, Cash, Taxes, Plan, Portfolio, Research, Provider data, and Recommendations)
+- render as a Today command-center card or compact panel (started: v2 Today renders a compact Confidence Heat Map under the command-card grid)
+- link each weak domain to the correct review flow (started: weak domains route to Copilot profile completion, Plan, Portfolio, Research, Atelier, or Inbox as appropriate)
 
 ### 5. Research Thesis Expiration
 
@@ -251,8 +251,8 @@ Completed/mostly completed agreed sequence:
 
 Current build order:
 
-1. Confidence Heat Map, because it can unify readiness/freshness once account-policy, plan, research, provider, recommendation, and Today-checkpoint signals are richer.
-2. Trust/durability visibility, because backup/restore/protection/audit state needs to be visible before BuildWealth feels dependable as a daily operating system.
+1. Release-readiness hardening after the first audit/readiness slice. v2 Atelier now has safe trust actions, Profile & Copilot change audit rows, and a compact "ready to rely today?" checklist; next hardening should add backup-age thresholds, checkpoint policy, critical browser workflow verification status, and degraded/provider checks.
+2. Continue hardening the Confidence Heat Map only as new signal domains mature, especially release readiness and richer provider/evidence quality.
 
 ### Account-Type Contribution/Fit Guidance Build Plan
 

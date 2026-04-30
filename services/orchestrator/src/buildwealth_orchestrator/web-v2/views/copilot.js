@@ -619,7 +619,10 @@ async function applyProfileDraft(button) {
 
   try {
     const current = await api.profile();
-    const saved = await api.updateProfile(mergeProfileDraft(current, patch));
+    const saved = await api.updateProfile(
+      mergeProfileDraft(current, patch),
+      { source: 'copilot_profile_draft' },
+    );
     state.financialProfile = saved;
     ui.messages.push({
       role: 'assistant',

@@ -71,6 +71,21 @@ function researchDossiersUrl({ planId = '', limit = 10, includeContent = false }
   return `/api/research/dossiers?${params.toString()}`;
 }
 
+function gitRestorePreviewUrl({ ref = '', path = '', maxChars = 120000 } = {}) {
+  const params = new URLSearchParams();
+  params.set('ref', ref);
+  params.set('max_chars', String(maxChars));
+  if (path) params.set('path', path);
+  return `/api/git/restore-preview?${params.toString()}`;
+}
+
+function financialProfileUrl({ source = '' } = {}) {
+  const params = new URLSearchParams();
+  if (source) params.set('source', source);
+  const query = params.toString();
+  return query ? `/api/financial-profile?${query}` : '/api/financial-profile';
+}
+
 export const api = {
   today:        () => fetchJson('/api/dashboard/today'),
   recordTodayReview: () => postJson('/api/dashboard/today/review-checkpoint', {}),
@@ -78,6 +93,18 @@ export const api = {
   engines:      () => fetchJson('/api/engines/status'),
   telemetry:    () => fetchJson('/api/telemetry/runtime'),
   syncStatus:   () => fetchJson('/api/sync/status'),
+  durableStorageStatus: () => fetchJson('/api/storage/durable/status'),
+  storageBackups: () => fetchJson('/api/storage/backups'),
+  createStorageBackup: (body = {}) => postJson('/api/storage/backups', body),
+  storageProtectionStatus: () => fetchJson('/api/storage/protection/status'),
+  applyStorageProtection: (body = {}) => postJson('/api/storage/protection/apply', body),
+  gitStatus: () => fetchJson('/api/git/status'),
+  gitHistory: (limit = 20) => fetchJson(`/api/git/history?limit=${encodeURIComponent(limit)}`),
+  createGitCheckpoint: (body = {}) => postJson('/api/git/checkpoint', body),
+  gitRestorePreview: (opts = {}) => fetchJson(gitRestorePreviewUrl(opts)),
+  gitActivity: (opts = {}) => fetchJson(`/api/git/activity?${new URLSearchParams({
+    limit: String(opts.limit || 25),
+  }).toString()}`),
   plans:        (limit = 200) => fetchJson(`/api/plans?limit=${limit}`),
   plan:         (id) => fetchJson(`/api/plans/${encodeURIComponent(id)}`),
   planTracking: (id) => fetchJson(`/api/plans/${encodeURIComponent(id)}/tracking`),
@@ -118,7 +145,7 @@ export const api = {
   researchDossiers: (opts = {}) => fetchJson(researchDossiersUrl(opts)),
   planArtifact: (planId, artifactId) => fetchJson(`/api/plans/${encodeURIComponent(planId)}/artifacts/${encodeURIComponent(artifactId)}`),
   profile:      () => fetchJson('/api/financial-profile'),
-  updateProfile: (body) => putJson('/api/financial-profile', body),
+  updateProfile: (body, opts = {}) => putJson(financialProfileUrl(opts), body),
   onboarding:   () => fetchJson('/api/onboarding/status'),
 
   // Copilot
