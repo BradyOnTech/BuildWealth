@@ -46,6 +46,16 @@ test('today command cards render decision state with actions', () => {
         href: '#portfolio',
       },
       {
+        id: 'what-changed',
+        title: 'What changed',
+        status: 'warning',
+        detail: 'Portfolio value is $15,000 higher since last review.',
+        metric_label: 'Changes',
+        metric_value: '2',
+        action_label: 'Mark reviewed',
+        href: '#today?review=complete',
+      },
+      {
         id: 'stale-assumptions',
         title: 'Stale assumptions',
         status: 'warning',
@@ -98,6 +108,8 @@ test('today command cards render decision state with actions', () => {
   assert.match(markup, /href="#copilot\?intent=complete-context"/);
   assert.match(markup, /Portfolio risk/);
   assert.match(markup, /40%/);
+  assert.match(markup, /What changed/);
+  assert.match(markup, /href="#today\?review=complete"/);
   assert.match(markup, /Stale assumptions/);
   assert.match(markup, /href="#inbox\?focus=rec-stale"/);
   assert.match(markup, /Research readiness/);

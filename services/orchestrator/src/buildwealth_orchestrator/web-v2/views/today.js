@@ -39,8 +39,13 @@ async function load(params = {}) {
   let engines = null;
   try {
     const shouldRefreshResearch = String(params.refresh || '').toLowerCase() === 'research';
+    const shouldRecordReview = String(params.review || '').toLowerCase() === 'complete';
     [payload, engines] = await Promise.all([
-      shouldRefreshResearch ? api.refreshTodayResearch() : api.today(),
+      shouldRecordReview
+        ? api.recordTodayReview()
+        : shouldRefreshResearch
+          ? api.refreshTodayResearch()
+          : api.today(),
       api.engines().catch(() => null),
     ]);
     state.today = payload;
@@ -64,7 +69,10 @@ async function load(params = {}) {
     ${raw(renderMove(payload))}
     ${raw(renderRoom(payload, engines))}
   `);
-  if (String(params.refresh || '').toLowerCase() === 'research') {
+  if (
+    String(params.refresh || '').toLowerCase() === 'research'
+    || String(params.review || '').toLowerCase() === 'complete'
+  ) {
     history.replaceState(null, '', '#today');
   }
 }

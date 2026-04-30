@@ -36,6 +36,63 @@ async function staticResponse(pathname) {
 }
 
 test('Today daily review routes command cards into review flows', async ({ page }) => {
+  let reviewRecorded = false;
+  const todayPayload = () => ({
+    generated_at: '2026-04-26T12:00:00Z',
+    currency: 'USD',
+    state: 'MN',
+    sync_status: { running: false, runs_total: 1, runs_failed: 0 },
+    net_worth_usd: 300000,
+    monthly_surplus_usd: 2500,
+    savings_rate_pct: 25,
+    command_cards: [
+      {
+        id: 'profile-readiness',
+        title: 'Profile readiness',
+        status: 'warning',
+        detail: 'Next gap: Tax profile.',
+        metric_label: 'Complete',
+        metric_value: '80%',
+        action_label: 'Complete context',
+        href: '#copilot?intent=complete-context',
+      },
+      {
+        id: 'what-changed',
+        title: 'What changed',
+        status: reviewRecorded ? 'ready' : 'warning',
+        detail: reviewRecorded
+          ? 'No meaningful changes since the last completed daily review.'
+          : 'Cash runway is 2.5 months lower. Research readiness changed from ready to warning. 2 new Copilot-drafted review(s) are waiting.',
+        metric_label: 'Changes',
+        metric_value: reviewRecorded ? '0' : '2',
+        action_label: 'Mark reviewed',
+        href: '#today?review=complete',
+      },
+      {
+        id: 'stale-assumptions',
+        title: 'Stale assumptions',
+        status: 'warning',
+        detail: '1 assumption review is open before advice can be fully trusted.',
+        metric_label: 'Open',
+        metric_value: '1',
+        action_label: 'Review assumptions',
+        href: '#inbox?focus=rec-stale',
+      },
+    ],
+    top_next_actions: [
+      {
+        recommendation_id: 'rec-stale',
+        title: 'Review stale assumptions',
+        detail: 'Tax assumptions need review.',
+        priority: 'medium',
+        source: 'generator:stale_assumptions',
+        action_hint: 'Open Recommendation Inbox to review.',
+      },
+    ],
+    context_state: 'warning',
+    context_notes: ['Profile readiness: next gap is Tax profile.'],
+  });
+
   await page.route('**/*', async route => {
     const request = route.request();
     const url = new URL(request.url());
@@ -51,49 +108,13 @@ test('Today daily review routes command cards into review flows', async ({ page 
     }
 
     if (url.pathname === '/api/dashboard/today') {
-      await route.fulfill(jsonResponse({
-        generated_at: '2026-04-26T12:00:00Z',
-        currency: 'USD',
-        state: 'MN',
-        sync_status: { running: false, runs_total: 1, runs_failed: 0 },
-        net_worth_usd: 300000,
-        monthly_surplus_usd: 2500,
-        savings_rate_pct: 25,
-        command_cards: [
-          {
-            id: 'profile-readiness',
-            title: 'Profile readiness',
-            status: 'warning',
-            detail: 'Next gap: Tax profile.',
-            metric_label: 'Complete',
-            metric_value: '80%',
-            action_label: 'Complete context',
-            href: '#copilot?intent=complete-context',
-          },
-          {
-            id: 'stale-assumptions',
-            title: 'Stale assumptions',
-            status: 'warning',
-            detail: '1 assumption review is open before advice can be fully trusted.',
-            metric_label: 'Open',
-            metric_value: '1',
-            action_label: 'Review assumptions',
-            href: '#inbox?focus=rec-stale',
-          },
-        ],
-        top_next_actions: [
-          {
-            recommendation_id: 'rec-stale',
-            title: 'Review stale assumptions',
-            detail: 'Tax assumptions need review.',
-            priority: 'medium',
-            source: 'generator:stale_assumptions',
-            action_hint: 'Open Recommendation Inbox to review.',
-          },
-        ],
-        context_state: 'warning',
-        context_notes: ['Profile readiness: next gap is Tax profile.'],
-      }));
+      await route.fulfill(jsonResponse(todayPayload()));
+      return;
+    }
+
+    if (url.pathname === '/api/dashboard/today/review-checkpoint' && request.method() === 'POST') {
+      reviewRecorded = true;
+      await route.fulfill(jsonResponse(todayPayload()));
       return;
     }
 
@@ -154,6 +175,14 @@ test('Today daily review routes command cards into review flows', async ({ page 
   await page.goto('http://buildwealth-v2.test/');
   await page.getByText('Command center').waitFor({ state: 'visible' });
   await page.getByText('Engine health').waitFor({ state: 'visible' });
+  await page.getByText('Cash runway is 2.5 months lower.').waitFor({ state: 'visible' });
+  await page.getByText('Research readiness changed from ready to warning.').waitFor({ state: 'visible' });
+  await page.getByText('2 new Copilot-drafted review(s) are waiting.').waitFor({ state: 'visible' });
+
+  await page.getByRole('link', { name: 'Mark reviewed' }).click();
+  await page.waitForURL('**/#today');
+  await page.getByText('No meaningful changes since the last completed daily review.').waitFor({ state: 'visible' });
+  assert.equal(reviewRecorded, true);
 
   await page.getByRole('link', { name: 'Review assumptions' }).click();
   await page.waitForURL('**/#inbox?focus=rec-stale');

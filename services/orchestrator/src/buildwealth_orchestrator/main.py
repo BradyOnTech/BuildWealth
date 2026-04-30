@@ -281,6 +281,7 @@ from buildwealth_orchestrator.services.versioned_workspace import (
 )
 from buildwealth_orchestrator.services.tax_engine import estimate_federal_tax
 from buildwealth_orchestrator.services.today_dashboard import build_today_dashboard_payload
+from buildwealth_orchestrator.services.today_review_checkpoints import TodayReviewCheckpointStore
 from buildwealth_orchestrator.services.buildwealth_context import (
     DEFAULT_CONTEXT_DETAIL_LEVEL,
     DEFAULT_CONTEXT_SUMMARY_MAX_CHARS,
@@ -375,6 +376,7 @@ def parse_path_candidates(raw_value: str, fallback: tuple[str, ...]) -> tuple[st
 
 snapshot_store = SnapshotStore(settings.snapshot_dir)
 portfolio_store = PortfolioStore(settings.snapshot_dir.parent / "portfolio")
+today_review_checkpoint_store = TodayReviewCheckpointStore(settings.today_review_checkpoint_path)
 durable_storage_service = DurableStorageMigrationService.from_settings(settings)
 backup_restore_service = BackupRestoreService.from_settings(settings)
 data_protection_service = DataProtectionService.from_settings(settings)
@@ -3836,7 +3838,11 @@ def _build_today_command_cards(dashboard: TodayDashboardResponse) -> list[TodayC
         proposed_rows = recommendation_inbox.list(limit=500, status="proposed", sort="created_at_desc")
         closed_rows = recommendation_inbox.list(limit=500, include_archived=True, sort="created_at_desc")
     except Exception:
-        return cards
+        return _replace_enriched_what_changed_card(
+            dashboard,
+            cards,
+            today_review_checkpoint_store.latest(),
+        )
 
     stale_rows = [
         row for row in proposed_rows
@@ -3910,7 +3916,255 @@ def _build_today_command_cards(dashboard: TodayDashboardResponse) -> list[TodayC
     if thesis_calibration_card is not None:
         cards.append(thesis_calibration_card)
 
-    return cards
+    return _replace_enriched_what_changed_card(
+        dashboard,
+        cards,
+        today_review_checkpoint_store.latest(),
+    )
+
+
+def _replace_enriched_what_changed_card(
+    dashboard: TodayDashboardResponse,
+    cards: list[TodayCommandCard],
+    last_review_checkpoint: dict[str, Any] | None,
+) -> list[TodayCommandCard]:
+    filtered_cards = [card for card in cards if card.id != "what-changed"]
+    insert_at = min(5, len(filtered_cards))
+    filtered_cards.insert(
+        insert_at,
+        _build_enriched_what_changed_card(
+            dashboard,
+            last_review_checkpoint,
+            cards=filtered_cards,
+        ),
+    )
+    return filtered_cards
+
+
+def _build_enriched_what_changed_card(
+    dashboard: TodayDashboardResponse,
+    last_review_checkpoint: dict[str, Any] | None,
+    *,
+    cards: list[TodayCommandCard] | None = None,
+) -> TodayCommandCard:
+    if not last_review_checkpoint:
+        return TodayCommandCard(
+            id="what-changed",
+            title="What changed",
+            status="ready",
+            detail="No completed daily review checkpoint yet. Mark today reviewed to make future changes visible.",
+            metric_label="Changes",
+            metric_value="New",
+            action_label="Mark reviewed",
+            href="#today?review=complete",
+        )
+
+    changes = _today_review_change_sentences(
+        dashboard,
+        last_review_checkpoint,
+        cards=cards,
+    )
+    if not changes:
+        return TodayCommandCard(
+            id="what-changed",
+            title="What changed",
+            status="ready",
+            detail="No meaningful changes since the last completed daily review.",
+            metric_label="Changes",
+            metric_value="0",
+            action_label="Mark reviewed",
+            href="#today?review=complete",
+        )
+
+    return TodayCommandCard(
+        id="what-changed",
+        title="What changed",
+        status="warning",
+        detail=" ".join(changes[:3]),
+        metric_label="Changes",
+        metric_value=str(len(changes)),
+        action_label="Mark reviewed",
+        href="#today?review=complete",
+    )
+
+
+def _today_review_change_sentences(
+    dashboard: TodayDashboardResponse,
+    last_review_checkpoint: dict[str, Any],
+    *,
+    cards: list[TodayCommandCard] | None = None,
+) -> list[str]:
+    changes: list[str] = []
+    previous_total = _coerce_optional_float(last_review_checkpoint.get("total_value_usd"))
+    if dashboard.total_value_usd is not None and previous_total is not None:
+        delta = dashboard.total_value_usd - previous_total
+        if abs(delta) >= 1000:
+            direction = "higher" if delta > 0 else "lower"
+            changes.append(f"Portfolio value is {_format_today_usd_delta(delta)} {direction} since last review.")
+
+    previous_top_symbol = str(last_review_checkpoint.get("top_holding_symbol") or "").strip().upper()
+    current_top_symbol = str(dashboard.top_holding_symbol or "").strip().upper()
+    if previous_top_symbol and current_top_symbol and previous_top_symbol != current_top_symbol:
+        changes.append(f"Top holding changed from {previous_top_symbol} to {current_top_symbol}.")
+    else:
+        previous_top_percent = _coerce_optional_float(last_review_checkpoint.get("top_holding_percent"))
+        if dashboard.top_holding_percent is not None and previous_top_percent is not None:
+            delta_points = dashboard.top_holding_percent - previous_top_percent
+            if abs(delta_points) >= 5:
+                symbol = current_top_symbol or "Top holding"
+                direction = "higher" if delta_points > 0 else "lower"
+                changes.append(f"{symbol} concentration is {abs(delta_points):.1f} points {direction}.")
+
+    previous_runway = _coerce_optional_float(last_review_checkpoint.get("emergency_fund_months"))
+    runway_changed = False
+    if dashboard.emergency_fund_months is not None and previous_runway is not None:
+        delta_runway = dashboard.emergency_fund_months - previous_runway
+        if abs(delta_runway) >= 1:
+            direction = "higher" if delta_runway > 0 else "lower"
+            changes.append(f"Cash runway is {abs(delta_runway):.1f} months {direction}.")
+            runway_changed = True
+    previous_health = str(last_review_checkpoint.get("financial_health_status") or "").strip()
+    current_health = str(dashboard.financial_health_status or "").strip()
+    if not runway_changed and previous_health and current_health and previous_health != current_health:
+        changes.append(
+            f"Financial health changed from {previous_health.replace('_', ' ')} to {current_health.replace('_', ' ')}."
+        )
+
+    command_card_statuses = (
+        last_review_checkpoint.get("command_card_statuses")
+        if isinstance(last_review_checkpoint.get("command_card_statuses"), dict)
+        else {}
+    )
+    current_card_statuses = _today_command_card_statuses(cards if cards is not None else dashboard.command_cards)
+    research_change = _today_command_card_status_change(
+        "research-readiness",
+        "Research readiness",
+        command_card_statuses,
+        current_card_statuses,
+    )
+    if research_change:
+        changes.append(research_change)
+
+    copilot_delta = _today_card_metric_delta(
+        "copilot-drafts",
+        command_card_statuses,
+        current_card_statuses,
+    )
+    if copilot_delta is not None and copilot_delta > 0:
+        changes.append(f"{copilot_delta} new Copilot-drafted review(s) are waiting.")
+
+    previous_top_action_ids = _string_list(last_review_checkpoint.get("top_next_action_ids"))
+    current_top_action_ids = [
+        str(action.recommendation_id or action.title or "").strip()
+        for action in dashboard.top_next_actions[:3]
+        if str(action.recommendation_id or action.title or "").strip()
+    ]
+    if previous_top_action_ids and current_top_action_ids and previous_top_action_ids[:3] != current_top_action_ids[:3]:
+        title = dashboard.top_next_actions[0].title if dashboard.top_next_actions else "a new recommendation"
+        changes.append(f"Top recommendation changed to {title}.")
+
+    previous_inbox = _coerce_int(last_review_checkpoint.get("inbox_high_priority_count"), -1)
+    if previous_inbox >= 0 and dashboard.inbox_high_priority_count != previous_inbox:
+        delta_inbox = dashboard.inbox_high_priority_count - previous_inbox
+        if delta_inbox > 0:
+            changes.append(f"{delta_inbox} high-priority recommendation(s) are now open.")
+        elif dashboard.inbox_high_priority_count == 0:
+            changes.append("High-priority recommendation queue is clear.")
+        else:
+            changes.append(f"High-priority recommendation queue fell to {dashboard.inbox_high_priority_count}.")
+
+    previous_profile = _coerce_optional_float(last_review_checkpoint.get("profile_completion_percent"))
+    profile_percent = (
+        dashboard.profile_readiness.completion_percent
+        if dashboard.profile_readiness is not None
+        else dashboard.onboarding_completion_percent
+    )
+    if previous_profile is not None:
+        delta_profile = profile_percent - previous_profile
+        if abs(delta_profile) >= 5:
+            direction = "improved" if delta_profile > 0 else "fell"
+            changes.append(f"Profile readiness {direction} to {round(profile_percent)}%.")
+
+    previous_plan_id = str(last_review_checkpoint.get("active_plan_id") or "").strip()
+    current_plan_id = str(dashboard.active_plan.id if dashboard.active_plan is not None else "").strip()
+    previous_plan_updated = _parse_optional_datetime(last_review_checkpoint.get("active_plan_updated_at"))
+    current_plan_updated = dashboard.active_plan.updated_at if dashboard.active_plan is not None else None
+    if previous_plan_id and current_plan_id and previous_plan_id != current_plan_id:
+        changes.append("Active plan changed since the last review.")
+    elif previous_plan_updated is not None and current_plan_updated is not None and current_plan_updated > previous_plan_updated:
+        changes.append("Active plan changed since the last review.")
+
+    return changes
+
+
+def _format_today_usd_delta(value: float) -> str:
+    rounded = round(value)
+    prefix = "-" if rounded < 0 else ""
+    return f"{prefix}${abs(rounded):,}"
+
+
+def _today_command_card_statuses(cards: list[TodayCommandCard]) -> dict[str, dict[str, str]]:
+    tracked_ids = {"research-readiness", "copilot-drafts"}
+    statuses: dict[str, dict[str, str]] = {}
+    for card in cards:
+        if card.id not in tracked_ids:
+            continue
+        statuses[card.id] = {
+            "status": str(card.status or "ready"),
+            "metric_value": str(card.metric_value or ""),
+        }
+    return statuses
+
+
+def _today_command_card_status_change(
+    card_id: str,
+    label: str,
+    previous: dict[str, Any],
+    current: dict[str, dict[str, str]],
+) -> str | None:
+    previous_card = previous.get(card_id) if isinstance(previous.get(card_id), dict) else {}
+    current_card = current.get(card_id) if isinstance(current.get(card_id), dict) else {}
+    previous_status = str(previous_card.get("status") or "").strip()
+    current_status = str(current_card.get("status") or "").strip()
+    if previous_status and current_status and previous_status != current_status:
+        return f"{label} changed from {previous_status} to {current_status}."
+    previous_metric = str(previous_card.get("metric_value") or "").strip()
+    current_metric = str(current_card.get("metric_value") or "").strip()
+    if previous_metric and current_metric and previous_metric != current_metric:
+        return f"{label} changed from {previous_metric} to {current_metric}."
+    return None
+
+
+def _today_card_metric_delta(
+    card_id: str,
+    previous: dict[str, Any],
+    current: dict[str, dict[str, str]],
+) -> int | None:
+    previous_card = previous.get(card_id) if isinstance(previous.get(card_id), dict) else {}
+    current_card = current.get(card_id) if isinstance(current.get(card_id), dict) else {}
+    if not previous_card or not current_card:
+        return None
+    previous_metric = _coerce_int(previous_card.get("metric_value"), 0)
+    current_metric = _coerce_int(current_card.get("metric_value"), 0)
+    return current_metric - previous_metric
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _parse_optional_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
 
 
 def _build_investment_policy_command_card(dashboard: TodayDashboardResponse) -> TodayCommandCard | None:
@@ -7944,6 +8198,7 @@ def build_today_dashboard_response() -> TodayDashboardResponse:
         active_plan_detail=active_plan_detail,
     )
     inbox_open_count, inbox_high_priority_count = _build_recommendation_open_counts()
+    last_review_checkpoint = today_review_checkpoint_store.latest()
 
     dashboard = build_today_dashboard_payload(
         now=utc_now(),
@@ -7958,6 +8213,7 @@ def build_today_dashboard_response() -> TodayDashboardResponse:
         profile_readiness=onboarding_status.profile_readiness,
         inbox_open_count=inbox_open_count,
         inbox_high_priority_count=inbox_high_priority_count,
+        last_review_checkpoint=last_review_checkpoint,
     )
 
     # Enrich with financial health summary
@@ -8003,6 +8259,44 @@ def build_today_dashboard_response() -> TodayDashboardResponse:
     dashboard.command_cards = _build_today_command_cards(dashboard)
 
     return dashboard
+
+
+def _today_review_checkpoint_from_dashboard(dashboard: TodayDashboardResponse) -> dict[str, Any]:
+    profile_percent = None
+    if dashboard.profile_readiness is not None:
+        profile_percent = dashboard.profile_readiness.completion_percent
+    elif dashboard.onboarding_completion_percent is not None:
+        profile_percent = dashboard.onboarding_completion_percent
+
+    active_plan_updated_at = None
+    if dashboard.active_plan is not None and dashboard.active_plan.updated_at is not None:
+        active_plan_updated_at = dashboard.active_plan.updated_at.isoformat()
+
+    return {
+        "recorded_at": utc_now().isoformat(),
+        "dashboard_generated_at": dashboard.generated_at.isoformat(),
+        "total_value_usd": dashboard.total_value_usd,
+        "top_holding_symbol": dashboard.top_holding_symbol,
+        "top_holding_percent": dashboard.top_holding_percent,
+        "emergency_fund_months": dashboard.emergency_fund_months,
+        "financial_health_status": dashboard.financial_health_status,
+        "profile_completion_percent": profile_percent,
+        "inbox_high_priority_count": dashboard.inbox_high_priority_count,
+        "active_plan_id": dashboard.active_plan.id if dashboard.active_plan is not None else None,
+        "active_plan_updated_at": active_plan_updated_at,
+        "context_state": dashboard.context_state,
+        "command_card_statuses": _today_command_card_statuses(dashboard.command_cards),
+        "top_next_action_ids": [
+            str(action.recommendation_id or action.title or "").strip()
+            for action in dashboard.top_next_actions[:3]
+            if str(action.recommendation_id or action.title or "").strip()
+        ],
+        "top_next_action_titles": [
+            str(action.title or "").strip()
+            for action in dashboard.top_next_actions[:3]
+            if str(action.title or "").strip()
+        ],
+    }
 
 
 def _extract_numeric_field(payload: dict[str, Any], keys: tuple[str, ...]) -> float | None:
@@ -13636,6 +13930,13 @@ def today_dashboard() -> TodayDashboardResponse:
 @app.post("/api/dashboard/today/research-readiness/refresh", response_model=TodayDashboardResponse)
 def refresh_today_research_readiness() -> TodayDashboardResponse:
     today_research_evidence_cache.clear()
+    return build_today_dashboard_response()
+
+
+@app.post("/api/dashboard/today/review-checkpoint", response_model=TodayDashboardResponse)
+def record_today_review_checkpoint() -> TodayDashboardResponse:
+    dashboard = build_today_dashboard_response()
+    today_review_checkpoint_store.save(_today_review_checkpoint_from_dashboard(dashboard))
     return build_today_dashboard_response()
 
 

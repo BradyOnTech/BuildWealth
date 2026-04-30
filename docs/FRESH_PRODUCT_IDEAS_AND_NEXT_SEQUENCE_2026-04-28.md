@@ -175,9 +175,9 @@ Why it matters:
 
 Likely first slice:
 
-- store a lightweight daily review checkpoint
-- compare current Today summary against the latest checkpoint
-- surface 1-3 meaningful deltas in Today
+- store a lightweight daily review checkpoint (started: `TODAY_REVIEW_CHECKPOINT_PATH` stores the latest local Today review checkpoint)
+- compare current Today summary against the latest checkpoint (started: portfolio value, top holding/concentration, profile readiness, active plan update time, high-priority recommendation count, cash runway/financial health, research readiness, Copilot drafts, and the top recommendation stack)
+- surface 1-3 meaningful deltas in Today (started: the `What changed` command card links to `#today?review=complete`, records the checkpoint, and refreshes back to the normal Today route)
 
 ### 4. Confidence Heat Map
 
@@ -250,11 +250,9 @@ Completed/mostly completed agreed sequence:
 
 Current build order:
 
-1. Account-type-specific contribution and fit guidance, because it makes Personal Investment Policy operational inside the "does this investment fit me?" loop.
-2. What Changed Since Last Review, because it strengthens Today as the daily command center.
-3. Decision Pre-Mortem, because it improves outcome learning and calibration for high-impact decisions.
-4. Confidence Heat Map, because it can unify readiness/freshness once account-policy, plan, research, and provider signals are richer.
-5. Trust/durability visibility, because backup/restore/protection/audit state needs to be visible before BuildWealth feels dependable as a daily operating system.
+1. Decision Pre-Mortem, because it improves outcome learning and calibration for high-impact decisions.
+2. Confidence Heat Map, because it can unify readiness/freshness once account-policy, plan, research, provider, and Today-checkpoint signals are richer.
+3. Trust/durability visibility, because backup/restore/protection/audit state needs to be visible before BuildWealth feels dependable as a daily operating system.
 
 ### Account-Type Contribution/Fit Guidance Build Plan
 
@@ -262,12 +260,12 @@ Goal: make portfolio-fit explain whether a candidate or contribution route fits 
 
 First implementation slice:
 
-- derive a compact `contribution_guidance` object inside portfolio-fit when a proposed account, contribution route, or account policy is present
-- classify account treatment as taxable, tax-deferred, tax-free, cash, or unknown using existing account-type helpers
-- flag review-only conflicts for high tax sensitivity plus taxable placement, preferred account-location mismatches, concentration or asset-class caps affected by new contributions, cash-floor conflicts, and high-simplicity new-position concerns
-- expose this context in `portfolio_impact` and generated watchlist/research recommendation evidence
-- generate review-only Inbox rows such as "Review MSFT contribution account fit" when contribution/account routing is the key concern
-- route the row into Portfolio fit review and Copilot discussion, not a direct apply action
+- derive a compact `contribution_guidance` object inside portfolio-fit when a proposed account, contribution route, or account policy is present (done)
+- classify account treatment as taxable, tax-deferred, tax-free, cash, or unknown using existing account-type helpers (done)
+- flag review-only conflicts for high tax sensitivity plus taxable placement, preferred account-location mismatches, concentration or asset-class caps affected by new contributions, cash-floor conflicts, and high-simplicity new-position concerns (done)
+- expose this context in `portfolio_impact` and generated watchlist/research recommendation evidence (done)
+- generate review-only Inbox rows such as "Review MSFT contribution account fit" when contribution/account routing is the key concern (done)
+- route the row into Portfolio fit review and Copilot discussion, not a direct apply action (done)
 
 Testing plan:
 

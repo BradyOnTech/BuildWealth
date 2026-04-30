@@ -416,6 +416,251 @@ test('generated investment recommendation routes through Inbox, Portfolio, and C
   assert.match(draft, /Do not give hidden buy\/sell advice/);
 });
 
+test('generated contribution account recommendation routes through fit review and Copilot', async ({ page }) => {
+  let recommendationCreated = false;
+  let sweepCreatePayload = null;
+  let fitRequestPayload = null;
+
+  const contributionRecommendation = () => ({
+    id: 'rec-contribution-account',
+    title: 'Review VTI contribution account fit',
+    detail: 'VTI has contribution-account fit context to review under the personal investment policy (taxable). Review account placement before changing contribution routing or exposure.',
+    priority: 'medium',
+    status: 'proposed',
+    source: 'generator:watchlist_research',
+    recommendation_type: 'workflow_action',
+    created_at: '2026-04-30T12:00:00Z',
+    updated_at: '2026-04-30T12:00:00Z',
+    action_payload: {
+      generator: {
+        signal_type: 'watchlist_research',
+        signal_key: 'policy_contribution_account',
+      },
+      evidence: {
+        symbol: 'VTI',
+        provider: 'yfinance',
+        freshness_status: 'fresh',
+        confidence: 'high',
+        coverage_score: 100,
+        fit_status: 'mixed',
+        fit_score: 56,
+        fit_risks: ['Personal tax sensitivity is high; taxable contribution placement should be reviewed.'],
+        fit_blocking_gaps: ['tax:contribution_account_policy', 'tax:account_location_policy'],
+        research_evidence_packet_id: 'research-evidence:yfinance:VTI:6mo:1d',
+        contribution_guidance: {
+          status: 'review',
+          account_id: 'taxable',
+          account_type: 'taxableBrokerage',
+          tax_treatment: 'taxable',
+          policy_conflicts: ['tax:account_location_policy', 'tax:policy_review'],
+          review_reasons: [
+            'Proposed contribution account conflicts with preferred account-location policy.',
+            'Personal tax sensitivity makes this account treatment worth reviewing.',
+          ],
+          recommended_review: 'review_account_location',
+        },
+      },
+      suggested_action: {
+        kind: 'review_portfolio_fit',
+        symbol: 'VTI',
+        fit_status: 'mixed',
+        next_step: 'review_account_location',
+        policy_gap: 'tax:contribution_account_policy',
+      },
+      quality: {
+        actionability: 'review_only',
+        confidence_level: 'medium',
+        freshness_status: 'fresh',
+        reversibility: 'high',
+        impact: { level: 'medium' },
+        blocking_context: ['tax.contribution_account_policy'],
+        decision_grade: false,
+      },
+    },
+    score: {
+      total: 82,
+      rank: 1,
+      reasons: ['Account-location policy should be reviewed before changing contribution routing.'],
+    },
+  });
+
+  await page.route('**/*', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+
+    if (url.hostname !== 'buildwealth-v2.test') {
+      await route.abort();
+      return;
+    }
+
+    if (url.pathname === '/' || url.pathname.startsWith('/static-v2/')) {
+      await route.fulfill(await staticResponse(url.pathname));
+      return;
+    }
+
+    if (url.pathname === '/api/plans') {
+      await route.fulfill(jsonResponse([{ id: 'plan-1', title: 'Primary Plan', is_active: true }]));
+      return;
+    }
+
+    if (url.pathname === '/api/recommendations') {
+      const requestedStatus = url.searchParams.get('status') || 'proposed';
+      await route.fulfill(jsonResponse(recommendationCreated && requestedStatus === 'proposed' ? [contributionRecommendation()] : []));
+      return;
+    }
+
+    if (url.pathname === '/api/recommendations/closure-analytics') {
+      await route.fulfill(jsonResponse({}));
+      return;
+    }
+
+    if (url.pathname === '/api/recommendations/generate/run-all' && request.method() === 'POST') {
+      const payload = request.postDataJSON();
+      if (payload.dry_run) {
+        await route.fulfill(jsonResponse({
+          generated_count: 1,
+          skipped_count: 0,
+          factories: {
+            watchlist_research: {
+              generated_count: 1,
+              skipped_count: 0,
+              candidates: [contributionRecommendation()],
+              created: [],
+              skipped: [],
+              dry_run: true,
+            },
+          },
+          dry_run: true,
+        }));
+        return;
+      }
+      sweepCreatePayload = payload;
+      recommendationCreated = true;
+      await route.fulfill(jsonResponse({
+        generated_count: 1,
+        skipped_count: 0,
+        factories: {
+          watchlist_research: {
+            generated_count: 1,
+            skipped_count: 0,
+            candidates: [],
+            created: [contributionRecommendation()],
+            skipped: [],
+            dry_run: false,
+          },
+        },
+        dry_run: false,
+      }));
+      return;
+    }
+
+    if (url.pathname === '/api/portfolio/holdings') {
+      await route.fulfill(jsonResponse({
+        updated_at: '2026-04-30T12:00:00Z',
+        total_value: 100000,
+        total_cash: 25000,
+        holdings: {
+          'taxable:VTI': { symbol: 'VTI', name: 'Total Market', current_value: 60000, allocation_percent: 60 },
+          'roth:BND': { symbol: 'BND', name: 'Bond Market', current_value: 40000, allocation_percent: 40 },
+        },
+        risk_alerts: [],
+      }));
+      return;
+    }
+
+    if (url.pathname === '/api/portfolio/fit-assessment' && request.method() === 'POST') {
+      fitRequestPayload = request.postDataJSON();
+      assert.equal(fitRequestPayload.symbol, 'VTI');
+      await route.fulfill(jsonResponse({
+        symbol: 'VTI',
+        fit_status: 'mixed',
+        fit_score: 56,
+        fit_reasons: ['Cash runway is at or above the 6-month target.'],
+        fit_risks: ['Personal tax sensitivity is high; taxable contribution placement should be reviewed.'],
+        blocking_gaps: ['tax:contribution_account_policy', 'tax:account_location_policy'],
+        portfolio_impact: {
+          existing_position: true,
+          current_weight_pct: 60,
+          proposed_account: {
+            account_id: 'taxable',
+            account_name: 'Taxable Brokerage',
+            tax_treatment: 'taxable',
+            policy_preferred_treatments: ['tax_free'],
+          },
+          contribution_guidance: {
+            status: 'review',
+            account_id: 'taxable',
+            account_type: 'taxableBrokerage',
+            tax_treatment: 'taxable',
+            policy_conflicts: ['tax:account_location_policy', 'tax:policy_review'],
+            review_reasons: [
+              'Proposed contribution account conflicts with preferred account-location policy.',
+              'Personal tax sensitivity makes this account treatment worth reviewing.',
+            ],
+            recommended_review: 'review_account_location',
+          },
+          investment_policy: {
+            preferred_account_locations: { equity: ['tax_free'] },
+            tax_sensitivity: 'high',
+          },
+        },
+        plan_impact: { time_horizon: 'long', years: 25 },
+        evidence: {
+          freshness_status: 'fresh',
+          confidence: 'high',
+          packet_id: 'research-evidence:yfinance:VTI:6mo:1d',
+        },
+        simulation_required: false,
+        recommended_next_step: 'review_account_location',
+      }));
+      return;
+    }
+
+    if (url.pathname === '/api/copilot/conversations') {
+      await route.fulfill(jsonResponse([]));
+      return;
+    }
+
+    if (url.pathname === '/api/onboarding/status') {
+      await route.fulfill(jsonResponse({ profile_readiness: { status: 'ready', completion_percent: 100 }, steps: [] }));
+      return;
+    }
+
+    await route.fulfill(jsonResponse({}));
+  });
+
+  await page.goto('http://buildwealth-v2.test/#inbox');
+  await page.getByRole('button', { name: /Sweep for new suggestions/ }).click();
+  await page.getByText('watchlist research').waitFor({ state: 'visible' });
+  await page.getByRole('button', { name: /Create 1 suggestion/ }).click();
+
+  assert.equal(sweepCreatePayload.dry_run, false);
+  await page.getByText('Review VTI contribution account fit').waitFor({ state: 'visible' });
+  await page.getByText('Investment-fit route').waitFor({ state: 'visible' });
+  await page.getByText('symbol VTI · fresh evidence · via yfinance · mixed fit').waitFor({ state: 'visible' });
+  await page.getByText('1 blocker: tax contribution account policy').waitFor({ state: 'visible' });
+
+  await page.getByRole('link', { name: /Review fit/ }).first().click();
+  await page.waitForURL('**/#portfolio?fit=VTI&focus=rec-contribution-account');
+  await page.locator('input[name="symbol"]').waitFor({ state: 'visible' });
+  await assertInputValue(page, 'input[name="symbol"]', 'VTI');
+  await page.getByText('Contribution fit').waitFor({ state: 'visible' });
+  await page.getByText('Review · Taxable · Review Account Location · Proposed contribution account conflicts with preferred account-location policy.').waitFor({ state: 'visible' });
+  await page.getByText('Personal tax sensitivity is high; taxable contribution placement should be reviewed.').waitFor({ state: 'visible' });
+  assert.equal(fitRequestPayload.symbol, 'VTI');
+
+  await page.goto('http://buildwealth-v2.test/#inbox?focus=rec-contribution-account');
+  await page.getByText('Investment-fit route').waitFor({ state: 'visible' });
+  await page.getByRole('link', { name: 'Copilot →', exact: true }).click();
+  await page.waitForURL('**/#copilot?focus=rec-contribution-account&intent=investment-fit');
+  await page.locator('#composer-textarea').waitFor({ state: 'visible' });
+
+  const draft = await page.locator('#composer-textarea').inputValue();
+  assert.match(draft, /Review investment-fit recommendation rec-contribution-account with me\./);
+  assert.match(draft, /provider freshness/);
+  assert.match(draft, /Do not give hidden buy\/sell advice/);
+});
+
 async function assertInputValue(page, selector, expected) {
   const value = await page.locator(selector).inputValue();
   assert.equal(value, expected);

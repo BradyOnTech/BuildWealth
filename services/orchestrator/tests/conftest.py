@@ -24,6 +24,7 @@ _PATH_OVERRIDES: dict[str, Path] = {
     "GIT_INTEGRATION_SETTINGS_PATH": _TEST_DATA_ROOT / "settings" / "git_integration.json",
     "FINANCIAL_PROFILE_PATH": _TEST_DATA_ROOT / "profile" / "financial_profile.json",
     "RECOMMENDATIONS_PATH": _TEST_DATA_ROOT / "recommendations" / "inbox.json",
+    "TODAY_REVIEW_CHECKPOINT_PATH": _TEST_DATA_ROOT / "today" / "review_checkpoint.json",
 }
 
 

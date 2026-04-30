@@ -131,6 +131,80 @@ def test_today_dashboard_payload_with_active_plan() -> None:
     assert payload.recent_change_percent == 5.2
 
 
+def test_today_dashboard_payload_surfaces_changes_since_last_review() -> None:
+    payload = build_today_dashboard_payload(
+        now=datetime(2026, 1, 1, 16, 0, tzinfo=timezone.utc),
+        currency="USD",
+        state="MN",
+        sync_status=_sync_status(),
+        latest_snapshot=_snapshot(),
+        snapshot_history=_history(),
+        active_plan_detail={
+            "id": "plan-1",
+            "title": "Primary Plan",
+            "updated_at": "2026-01-01T15:05:00+00:00",
+            "settings": {
+                "annual_contribution_usd": 22000,
+                "years": 25,
+                "expected_return_baseline": 0.07,
+            },
+            "decisions": [],
+            "artifacts": [],
+        },
+        profile_readiness=ProfileReadinessSummary(
+            completion_percent=80.0,
+            status="attention",
+            next_gap_key="tax_profile",
+            next_gap_title="Tax profile",
+            next_gap_detail="Set filing status and marginal tax rate.",
+            blocking_recommendation_sources=[],
+            sections=[],
+        ),
+        inbox_high_priority_count=2,
+        last_review_checkpoint={
+            "recorded_at": "2025-12-31T16:00:00+00:00",
+            "total_value_usd": 285000,
+            "top_holding_symbol": "MSFT",
+            "top_holding_percent": 28.0,
+            "profile_completion_percent": 70.0,
+            "inbox_high_priority_count": 0,
+            "active_plan_updated_at": "2025-12-20T12:00:00+00:00",
+        },
+    )
+
+    cards = {card.id: card for card in payload.command_cards}
+    card = cards["what-changed"]
+    assert card.status == "warning"
+    assert card.title == "What changed"
+    assert card.metric_label == "Changes"
+    assert card.metric_value == "5"
+    assert "Portfolio value is $15,000 higher" in card.detail
+    assert "Top holding changed from MSFT to AAPL" in card.detail
+    assert "2 high-priority recommendation(s) are now open" in card.detail
+    assert card.action_label == "Mark reviewed"
+    assert card.href == "#today?review=complete"
+
+
+def test_today_dashboard_payload_prompts_first_review_checkpoint() -> None:
+    payload = build_today_dashboard_payload(
+        now=datetime(2026, 1, 1, 16, 0, tzinfo=timezone.utc),
+        currency="USD",
+        state="MN",
+        sync_status=_sync_status(),
+        latest_snapshot=_snapshot(),
+        snapshot_history=_history(),
+        active_plan_detail=None,
+        last_review_checkpoint=None,
+    )
+
+    cards = {card.id: card for card in payload.command_cards}
+    card = cards["what-changed"]
+    assert card.status == "ready"
+    assert card.metric_value == "New"
+    assert "No completed daily review checkpoint yet" in card.detail
+    assert card.href == "#today?review=complete"
+
+
 def test_today_dashboard_payload_without_snapshot_or_plan() -> None:
     payload = build_today_dashboard_payload(
         now=datetime(2026, 1, 1, 16, 0, tzinfo=timezone.utc),

@@ -73,6 +73,7 @@ function researchDossiersUrl({ planId = '', limit = 10, includeContent = false }
 
 export const api = {
   today:        () => fetchJson('/api/dashboard/today'),
+  recordTodayReview: () => postJson('/api/dashboard/today/review-checkpoint', {}),
   refreshTodayResearch: () => postJson('/api/dashboard/today/research-readiness/refresh', {}),
   engines:      () => fetchJson('/api/engines/status'),
   telemetry:    () => fetchJson('/api/telemetry/runtime'),

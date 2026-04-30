@@ -261,12 +261,15 @@ def _build_command_cards(
     onboarding_completion_percent: float,
     active_plan: TodayActivePlanSummary | None,
     concentration_risk: str,
+    total_value_usd: float | None,
     top_holding_symbol: str | None,
     top_holding_percent: float | None,
     snapshot_as_of: datetime | None,
     snapshot_age_minutes: int | None,
     recent_change_usd: float | None,
     recent_change_percent: float | None,
+    inbox_high_priority_count: int,
+    last_review_checkpoint: dict[str, Any] | None,
 ) -> list[TodayCommandCard]:
     profile_percent = (
         profile_readiness.completion_percent
@@ -338,7 +341,7 @@ def _build_command_cards(
             direction = "higher" if recent_change_percent > 0 else "lower"
             recent_detail = f"Portfolio value moved {direction} by {abs(recent_change_percent):.1f}% over the available history window."
 
-    return [
+    cards = [
         TodayCommandCard(
             id="profile-readiness",
             title="Profile readiness",
@@ -396,12 +399,136 @@ def _build_command_cards(
             href="#portfolio",
         ),
     ]
+    cards.insert(
+        5,
+        _build_what_changed_card(
+            total_value_usd=total_value_usd,
+            top_holding_symbol=top_holding_symbol,
+            top_holding_percent=top_holding_percent,
+            profile_completion_percent=profile_percent,
+            active_plan=active_plan,
+            inbox_high_priority_count=inbox_high_priority_count,
+            last_review_checkpoint=last_review_checkpoint,
+        ),
+    )
+    return cards
+
+
+def _change_sentence_count(sentences: list[str]) -> str:
+    return str(max(0, len(sentences)))
+
+
+def _build_what_changed_card(
+    *,
+    total_value_usd: float | None,
+    top_holding_symbol: str | None,
+    top_holding_percent: float | None,
+    profile_completion_percent: float | None,
+    active_plan: TodayActivePlanSummary | None,
+    inbox_high_priority_count: int,
+    last_review_checkpoint: dict[str, Any] | None,
+) -> TodayCommandCard:
+    if not last_review_checkpoint:
+        return TodayCommandCard(
+            id="what-changed",
+            title="What changed",
+            status="ready",
+            detail="No completed daily review checkpoint yet. Mark today reviewed to make future changes visible.",
+            metric_label="Changes",
+            metric_value="New",
+            action_label="Mark reviewed",
+            href="#today?review=complete",
+        )
+
+    changes: list[str] = []
+    previous_total = _float_or_none(last_review_checkpoint.get("total_value_usd"))
+    if total_value_usd is not None and previous_total is not None:
+        delta = total_value_usd - previous_total
+        if abs(delta) >= 1000:
+            direction = "higher" if delta > 0 else "lower"
+            changes.append(f"Portfolio value is {_format_card_usd(delta)} {direction} since last review.")
+
+    previous_top_symbol = str(last_review_checkpoint.get("top_holding_symbol") or "").strip().upper()
+    current_top_symbol = str(top_holding_symbol or "").strip().upper()
+    if previous_top_symbol and current_top_symbol and previous_top_symbol != current_top_symbol:
+        changes.append(f"Top holding changed from {previous_top_symbol} to {current_top_symbol}.")
+
+    previous_top_percent = _float_or_none(last_review_checkpoint.get("top_holding_percent"))
+    if previous_top_symbol == current_top_symbol and top_holding_percent is not None and previous_top_percent is not None:
+        delta_points = top_holding_percent - previous_top_percent
+        if abs(delta_points) >= 5:
+            symbol = current_top_symbol or "Top holding"
+            direction = "higher" if delta_points > 0 else "lower"
+            changes.append(f"{symbol} concentration is {abs(delta_points):.1f} points {direction}.")
+
+    previous_inbox = _int_or_none(last_review_checkpoint.get("inbox_high_priority_count"))
+    if previous_inbox is not None and inbox_high_priority_count != previous_inbox:
+        delta_inbox = inbox_high_priority_count - previous_inbox
+        if delta_inbox > 0:
+            changes.append(f"{delta_inbox} high-priority recommendation(s) are now open.")
+        elif inbox_high_priority_count == 0:
+            changes.append("High-priority recommendation queue is clear.")
+        else:
+            changes.append(f"High-priority recommendation queue fell to {inbox_high_priority_count}.")
+
+    previous_profile = _float_or_none(last_review_checkpoint.get("profile_completion_percent"))
+    if profile_completion_percent is not None and previous_profile is not None:
+        delta_profile = profile_completion_percent - previous_profile
+        if abs(delta_profile) >= 5:
+            direction = "improved" if delta_profile > 0 else "fell"
+            changes.append(f"Profile readiness {direction} to {round(profile_completion_percent)}%.")
+
+    previous_plan_id = str(last_review_checkpoint.get("active_plan_id") or "").strip()
+    current_plan_id = str(active_plan.id if active_plan is not None else "").strip()
+    previous_plan_updated = _as_datetime(last_review_checkpoint.get("active_plan_updated_at"))
+    current_plan_updated = active_plan.updated_at if active_plan is not None else None
+    if previous_plan_id and current_plan_id and previous_plan_id != current_plan_id:
+        changes.append("Active plan changed since the last review.")
+    elif previous_plan_updated is not None and current_plan_updated is not None and current_plan_updated > previous_plan_updated:
+        changes.append("Active plan changed since the last review.")
+
+    if not changes:
+        return TodayCommandCard(
+            id="what-changed",
+            title="What changed",
+            status="ready",
+            detail="No meaningful changes since the last completed daily review.",
+            metric_label="Changes",
+            metric_value="0",
+            action_label="Mark reviewed",
+            href="#today?review=complete",
+        )
+
+    return TodayCommandCard(
+        id="what-changed",
+        title="What changed",
+        status="warning",
+        detail=" ".join(changes[:3]),
+        metric_label="Changes",
+        metric_value=_change_sentence_count(changes),
+        action_label="Mark reviewed",
+        href="#today?review=complete",
+    )
 
 
 def _format_card_usd(value: float) -> str:
     rounded = round(value)
     prefix = "-" if rounded < 0 else ""
     return f"{prefix}${abs(rounded):,}"
+
+
+def _float_or_none(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def build_today_dashboard_payload(
@@ -418,6 +545,7 @@ def build_today_dashboard_payload(
     profile_readiness: ProfileReadinessSummary | None = None,
     inbox_open_count: int = 0,
     inbox_high_priority_count: int = 0,
+    last_review_checkpoint: dict[str, Any] | None = None,
 ) -> TodayDashboardResponse:
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
@@ -534,12 +662,15 @@ def build_today_dashboard_payload(
         onboarding_completion_percent=onboarding_completion_percent,
         active_plan=active_plan_summary,
         concentration_risk=concentration_risk,
+        total_value_usd=total_value,
         top_holding_symbol=top_holding_symbol,
         top_holding_percent=top_holding_percent,
         snapshot_as_of=snapshot_as_of,
         snapshot_age_minutes=snapshot_age_minutes,
         recent_change_usd=snapshot_history.delta_total_value_usd,
         recent_change_percent=snapshot_history.delta_total_value_percent,
+        inbox_high_priority_count=inbox_high_priority_count,
+        last_review_checkpoint=last_review_checkpoint,
     )
 
     return TodayDashboardResponse(

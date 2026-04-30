@@ -151,15 +151,15 @@ Expected: relevant v2 rendering tests pass.
 - Extend an existing investment recommendation browser spec if routing changes.
 - Prefer `services/orchestrator/src/buildwealth_orchestrator/web-v2/tests/investment_recommendation_loop.spec.mjs`.
 
-- [ ] **Step 1: Add mocked contribution/account fit row**
+- [x] **Step 1: Add mocked contribution/account fit row**
 
 Use a `generator:watchlist_research` row with `suggested_action.kind = "review_portfolio_fit"` and `policy_gap = "tax:contribution_account_policy"`.
 
-- [ ] **Step 2: Verify route loop**
+- [x] **Step 2: Verify route loop**
 
 The row should route to Portfolio fit review and keep Copilot as the explanatory next step.
 
-- [ ] **Step 3: Run browser test**
+- [x] **Step 3: Run browser test**
 
 Run the focused browser workflow. In the Codex sandbox, Chromium may need elevated permissions.
 

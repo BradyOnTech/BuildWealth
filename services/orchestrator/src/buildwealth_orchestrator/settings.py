@@ -42,6 +42,10 @@ class Settings(BaseSettings):
         default=Path("data/recommendations/inbox.json"),
         alias="RECOMMENDATIONS_PATH",
     )
+    today_review_checkpoint_path: Path = Field(
+        default=Path("data/today/review_checkpoint.json"),
+        alias="TODAY_REVIEW_CHECKPOINT_PATH",
+    )
 
     ghostfolio_sidecar_base_url: str = Field(
         default="http://localhost:8411",

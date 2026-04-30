@@ -354,6 +354,132 @@ def test_today_command_cards_surface_copilot_drafted_reviews(
     assert "review-only" in card.detail
 
 
+def test_today_what_changed_card_includes_operating_loop_deltas() -> None:
+    dashboard = main.TodayDashboardResponse(
+        generated_at=main.utc_now(),
+        currency="USD",
+        state="MN",
+        sync_status=main.SyncStatusResponse(running=False, runs_total=0, runs_failed=0),
+        total_value_usd=300000,
+        top_holding_symbol="AAPL",
+        top_holding_percent=20.0,
+        context_state="warning",
+        context_notes=[],
+        command_cards=[
+            main.TodayCommandCard(
+                id="research-readiness",
+                title="Research readiness",
+                status="warning",
+                detail="2 research symbols have partial or degraded evidence.",
+                metric_label="Ready",
+                metric_value="1/3",
+            ),
+            main.TodayCommandCard(
+                id="copilot-drafts",
+                title="Copilot prepared reviews",
+                status="warning",
+                detail="2 Copilot-drafted reviews are waiting.",
+                metric_label="Drafts",
+                metric_value="2",
+            ),
+        ],
+        top_next_actions=[
+            main.TopNextAction(
+                recommendation_id="rec-contribution",
+                title="Review contribution account fit",
+                detail="Contribution route needs review.",
+                priority="high",
+            )
+        ],
+        emergency_fund_months=3.0,
+        financial_health_status="needs_attention",
+    )
+
+    card = main._build_enriched_what_changed_card(
+        dashboard,
+        {
+            "recorded_at": "2026-04-29T12:00:00+00:00",
+            "total_value_usd": 300000,
+            "top_holding_symbol": "AAPL",
+            "top_holding_percent": 20.0,
+            "emergency_fund_months": 5.5,
+            "financial_health_status": "healthy",
+            "inbox_high_priority_count": 0,
+            "command_card_statuses": {
+                "research-readiness": {"status": "ready", "metric_value": "3/3"},
+                "copilot-drafts": {"status": "ready", "metric_value": "0"},
+            },
+            "top_next_action_ids": ["rec-old"],
+        },
+    )
+
+    assert card.status == "warning"
+    assert card.metric_label == "Changes"
+    assert card.metric_value == "4"
+    assert "Cash runway is 2.5 months lower" in card.detail
+    assert "Research readiness changed from ready to warning" in card.detail
+    assert "2 new Copilot-drafted review(s) are waiting" in card.detail
+    assert card.href == "#today?review=complete"
+
+
+def test_today_review_checkpoint_captures_operating_loop_state() -> None:
+    dashboard = main.TodayDashboardResponse(
+        generated_at=main.utc_now(),
+        currency="USD",
+        state="MN",
+        sync_status=main.SyncStatusResponse(running=False, runs_total=0, runs_failed=0),
+        context_state="warning",
+        context_notes=[],
+        command_cards=[
+            main.TodayCommandCard(
+                id="research-readiness",
+                title="Research readiness",
+                status="warning",
+                detail="Research evidence is partial.",
+                metric_label="Ready",
+                metric_value="1/2",
+            ),
+            main.TodayCommandCard(
+                id="copilot-drafts",
+                title="Copilot prepared reviews",
+                status="warning",
+                detail="1 Copilot draft is waiting.",
+                metric_label="Drafts",
+                metric_value="1",
+            ),
+            main.TodayCommandCard(
+                id="what-changed",
+                title="What changed",
+                status="warning",
+                detail="Ignore this generated card.",
+                metric_label="Changes",
+                metric_value="2",
+            ),
+        ],
+        top_next_actions=[
+            main.TopNextAction(
+                recommendation_id="rec-1",
+                title="Review policy guardrails",
+                detail="Policy is weak.",
+                priority="medium",
+            )
+        ],
+        emergency_fund_months=4.5,
+        financial_health_status="needs_attention",
+    )
+
+    checkpoint = main._today_review_checkpoint_from_dashboard(dashboard)
+
+    assert checkpoint["emergency_fund_months"] == 4.5
+    assert checkpoint["financial_health_status"] == "needs_attention"
+    assert checkpoint["top_next_action_ids"] == ["rec-1"]
+    assert checkpoint["top_next_action_titles"] == ["Review policy guardrails"]
+    assert checkpoint["command_card_statuses"] == {
+        "research-readiness": {"status": "warning", "metric_value": "1/2"},
+        "copilot-drafts": {"status": "warning", "metric_value": "1"},
+    }
+
+
 def test_today_command_cards_surface_missing_investment_policy_guardrails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
