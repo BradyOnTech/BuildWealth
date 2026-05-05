@@ -5,7 +5,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Protocol
 
 import httpx
 
@@ -143,7 +143,7 @@ class OpenAIChatToolClient:
         tools: list[dict[str, Any]],
     ) -> dict[str, Any]:
         if not self.enabled:
-            raise RuntimeError("OPENAI_API_KEY is not configured")
+            raise RuntimeError("LLM API key is not configured")
 
         payload: dict[str, Any] = {
             "model": self.model,
@@ -177,6 +177,19 @@ class OpenAIChatToolClient:
         }
 
 
+class ChatToolClient(Protocol):
+    model: str
+
+    @property
+    def enabled(self) -> bool: ...
+
+    async def complete(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> dict[str, Any]: ...
+
+
 @dataclass
 class RegisteredTool:
     name: str
@@ -189,7 +202,7 @@ class FinancialCopilot:
     def __init__(
         self,
         conversation_store: ConversationStore,
-        llm_client: OpenAIChatToolClient,
+        llm_client: ChatToolClient,
         max_history_messages: int,
         max_tool_rounds: int,
         system_prompt: str,
@@ -385,7 +398,7 @@ class FinancialCopilot:
                 )
         else:
             answer = (
-                "Copilot is running in fallback mode because OPENAI_API_KEY is not configured. "
+                "Copilot is running in fallback mode because an LLM API key is not configured. "
                 "I can still use direct endpoints for sync/import/planning, but conversational reasoning is limited."
             )
 

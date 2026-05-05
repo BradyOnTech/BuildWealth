@@ -11,6 +11,29 @@ from typing import Any
 MASKED_PLACEHOLDER = "••••••••"
 VISIBLE_SUFFIX_LEN = 4
 
+LLM_PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
+    "openai": {
+        "llm_model": "gpt-5-mini",
+        "llm_base_url": "https://api.openai.com/v1",
+    },
+    "gemini": {
+        "llm_model": "gemini-2.5-flash",
+        "llm_base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+    },
+    "anthropic": {
+        "llm_model": "claude-sonnet-4-5",
+        "llm_base_url": "https://api.anthropic.com/v1",
+    },
+    "xai": {
+        "llm_model": "grok-4.20-reasoning",
+        "llm_base_url": "https://api.x.ai/v1",
+    },
+    "custom_openai_compatible": {
+        "llm_model": "",
+        "llm_base_url": "",
+    },
+}
+
 
 def _mask(value: str | None) -> str | None:
     if not value:
@@ -34,21 +57,28 @@ class UserSettingsStore:
     API responses mask sensitive values.
     """
 
-    SENSITIVE_KEYS = {"openai_api_key"}
+    SENSITIVE_KEYS = {"openai_api_key", "llm_api_key"}
 
     DEFAULTS: dict[str, Any] = {
+        "llm_provider": "openai",
+        "llm_api_key": "",
+        "llm_model": "gpt-5-mini",
+        "llm_base_url": "https://api.openai.com/v1",
+        "llm_timeout_seconds": 60.0,
+        "llm_max_tokens": 2048,
+        "llm_parallel_tool_calls": True,
         "openai_api_key": "",
         "openai_model": "gpt-5-mini",
         "openai_base_url": "https://api.openai.com/v1",
     }
 
-    ALLOWED_KEYS = frozenset((*DEFAULTS.keys(), "updated_at"))
+    ALLOWED_KEYS = frozenset((*DEFAULTS.keys(), "updated_at", "llm_settings_saved_at"))
 
     def __init__(self, settings_path: Path):
         self.settings_path = settings_path
         self.settings_path.parent.mkdir(parents=True, exist_ok=True)
         if not self.settings_path.exists():
-            self._write({**self.DEFAULTS, "updated_at": datetime.now(timezone.utc).isoformat()})
+            self._write({"updated_at": datetime.now(timezone.utc).isoformat()})
 
     def _write(self, data: dict[str, Any]) -> None:
         self.settings_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -66,12 +96,29 @@ class UserSettingsStore:
 
     def load_raw(self) -> dict[str, Any]:
         """Load settings with real values (for internal use by services)."""
+        data = self.load_stored_raw()
+        merged = self._sanitize({**self.DEFAULTS, **data})
+        if "llm_api_key" not in data and merged.get("openai_api_key"):
+            merged["llm_api_key"] = merged["openai_api_key"]
+        if "llm_model" not in data and merged.get("openai_model"):
+            merged["llm_model"] = merged["openai_model"]
+        if "llm_base_url" not in data and merged.get("openai_base_url"):
+            merged["llm_base_url"] = merged["openai_base_url"]
+        return merged
+
+    def load_stored_raw(self) -> dict[str, Any]:
+        """Load only values actually persisted in the local settings file."""
         try:
             data = json.loads(self.settings_path.read_text(encoding="utf-8"))
         except (FileNotFoundError, json.JSONDecodeError):
             data = {}
-        merged = self._sanitize({**self.DEFAULTS, **data})
-        return merged
+        if not isinstance(data, dict):
+            data = {}
+        return {
+            key: value
+            for key, value in data.items()
+            if key in self.ALLOWED_KEYS
+        }
 
     def load_masked(self) -> dict[str, Any]:
         """Load settings with sensitive values masked (for API responses)."""
@@ -88,6 +135,20 @@ class UserSettingsStore:
         Returns the full saved settings (raw, for hot-reload).
         """
         current = self.load_raw()
+        saved_at = datetime.now(timezone.utc).isoformat()
+        requested_provider = str(updates.get("llm_provider") or current.get("llm_provider") or "openai")
+        current_provider = str(current.get("llm_provider") or "openai")
+        provider_changed = "llm_provider" in updates and requested_provider != current_provider
+
+        if provider_changed:
+            previous_defaults = LLM_PROVIDER_DEFAULTS.get(current_provider, LLM_PROVIDER_DEFAULTS["openai"])
+            next_defaults = LLM_PROVIDER_DEFAULTS.get(requested_provider, LLM_PROVIDER_DEFAULTS["openai"])
+            if "llm_model" not in updates and current.get("llm_model") in {"", previous_defaults["llm_model"]}:
+                current["llm_model"] = next_defaults["llm_model"]
+            if "llm_base_url" not in updates and current.get("llm_base_url") in {"", previous_defaults["llm_base_url"]}:
+                current["llm_base_url"] = next_defaults["llm_base_url"]
+            if "llm_api_key" not in updates or _is_masked(updates.get("llm_api_key")):
+                current["llm_api_key"] = ""
 
         for key, value in updates.items():
             if key == "updated_at":
@@ -100,7 +161,9 @@ class UserSettingsStore:
             if value is not None:
                 current[key] = value
 
-        current["updated_at"] = datetime.now(timezone.utc).isoformat()
+        if any(key.startswith("llm_") or key.startswith("openai_") for key in updates):
+            current["llm_settings_saved_at"] = saved_at
+        current["updated_at"] = saved_at
         current = self._sanitize(current)
         self._write(current)
         return current

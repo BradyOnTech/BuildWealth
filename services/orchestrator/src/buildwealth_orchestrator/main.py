@@ -181,13 +181,20 @@ from buildwealth_orchestrator.services.coordinator import Coordinator
 from buildwealth_orchestrator.services.copilot_runtime import (
     ConversationStore,
     FinancialCopilot,
-    OpenAIChatToolClient,
 )
 from buildwealth_orchestrator.services.csv_importer import (
     apply_existing_transaction_reconciliation,
     archive_import_file,
     list_csv_templates,
     parse_transaction_csv,
+)
+from buildwealth_orchestrator.services.llm_clients import (
+    DEFAULT_OPENAI_BASE_URL,
+    DEFAULT_OPENAI_MODEL,
+    LLMProviderConfig,
+    build_llm_client,
+    default_base_url_for_provider,
+    default_model_for_provider,
 )
 from buildwealth_orchestrator.services.financial_profile import FinancialProfileStore
 from buildwealth_orchestrator.services.ignidash_exporter import (
@@ -363,12 +370,62 @@ git_integration_settings_store = GitIntegrationSettingsStore(
 
 # Apply user settings over env defaults
 _user_cfg = user_settings_store.load_raw()
-if _user_cfg.get("openai_api_key"):
+_user_stored_cfg = user_settings_store.load_stored_raw()
+if "openai_api_key" in _user_stored_cfg and _user_cfg.get("openai_api_key"):
     settings.openai_api_key = _user_cfg["openai_api_key"]
-if _user_cfg.get("openai_model"):
+if "openai_model" in _user_stored_cfg and _user_cfg.get("openai_model"):
     settings.openai_model = _user_cfg["openai_model"]
-if _user_cfg.get("openai_base_url"):
+if "openai_base_url" in _user_stored_cfg and _user_cfg.get("openai_base_url"):
     settings.openai_base_url = _user_cfg["openai_base_url"]
+
+
+def _has_user_llm_intent(stored_cfg: dict[str, Any]) -> bool:
+    if stored_cfg.get("llm_settings_saved_at"):
+        return True
+    llm_defaults = user_settings_store.DEFAULTS
+    for key in (
+        "llm_provider",
+        "llm_api_key",
+        "llm_model",
+        "llm_base_url",
+        "llm_timeout_seconds",
+        "llm_max_tokens",
+        "llm_parallel_tool_calls",
+    ):
+        if key in stored_cfg and stored_cfg.get(key) != llm_defaults.get(key):
+            return True
+    for key in ("openai_api_key", "openai_model", "openai_base_url"):
+        if key in stored_cfg and stored_cfg.get(key) != llm_defaults.get(key):
+            return True
+    return False
+
+
+_user_llm_override_keys: set[str] = set()
+if _has_user_llm_intent(_user_stored_cfg):
+    _user_llm_override_keys = {
+        key
+        for key in _user_stored_cfg
+        if key.startswith("llm_") or key.startswith("openai_")
+    }
+
+if "llm_provider" in _user_llm_override_keys and _user_cfg.get("llm_provider"):
+    settings.llm_provider = _user_cfg["llm_provider"]
+if "llm_api_key" in _user_llm_override_keys and _user_cfg.get("llm_api_key"):
+    settings.llm_api_key = _user_cfg["llm_api_key"]
+if "llm_model" in _user_llm_override_keys and _user_cfg.get("llm_model"):
+    settings.llm_model = _user_cfg["llm_model"]
+if "llm_base_url" in _user_llm_override_keys and _user_cfg.get("llm_base_url"):
+    settings.llm_base_url = _user_cfg["llm_base_url"]
+if "llm_timeout_seconds" in _user_llm_override_keys and _user_cfg.get("llm_timeout_seconds"):
+    settings.llm_timeout_seconds = float(_user_cfg["llm_timeout_seconds"])
+if "llm_max_tokens" in _user_llm_override_keys and _user_cfg.get("llm_max_tokens"):
+    settings.llm_max_tokens = int(_user_cfg["llm_max_tokens"])
+if "llm_parallel_tool_calls" in _user_llm_override_keys:
+    _parallel_tool_calls = _user_cfg["llm_parallel_tool_calls"]
+    if isinstance(_parallel_tool_calls, str):
+        settings.llm_parallel_tool_calls = _parallel_tool_calls.strip().lower() in {"true", "1", "yes", "on"}
+    else:
+        settings.llm_parallel_tool_calls = bool(_parallel_tool_calls)
 
 
 def parse_path_candidates(raw_value: str, fallback: tuple[str, ...]) -> tuple[str, ...]:
@@ -596,14 +653,83 @@ workflow_runner = WorkflowRunner(
     default_years=settings.planner_years_to_retirement,
     default_hsa_delta=settings.planner_hsa_delta_default,
 )
-openai_tool_client = OpenAIChatToolClient(
-    api_key=settings.openai_api_key,
-    model=settings.openai_model,
-    base_url=settings.openai_base_url,
+
+
+def _llm_config_from_payload(
+    payload: dict[str, Any],
+    explicit_keys: set[str] | None = None,
+) -> LLMProviderConfig:
+    def coerce_bool(value: Any, default: bool) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "1", "yes", "on"}:
+                return True
+            if normalized in {"false", "0", "no", "off"}:
+                return False
+        return default
+
+    explicit = explicit_keys if explicit_keys is not None else {
+        key
+        for key, value in payload.items()
+        if value not in ("", None)
+    }
+    provider = str(payload.get("llm_provider") or settings.llm_provider or "openai")
+    legacy_api_key = payload.get("openai_api_key") or settings.openai_api_key
+    legacy_model = payload.get("openai_model") or settings.openai_model or DEFAULT_OPENAI_MODEL
+    legacy_base_url = payload.get("openai_base_url") or settings.openai_base_url or DEFAULT_OPENAI_BASE_URL
+    if "llm_model" in explicit and payload.get("llm_model"):
+        model = str(payload["llm_model"])
+    else:
+        model = str(legacy_model if provider == "openai" else default_model_for_provider(provider))
+    if "llm_base_url" in explicit and payload.get("llm_base_url"):
+        base_url = str(payload["llm_base_url"])
+    else:
+        base_url = str(legacy_base_url if provider == "openai" else default_base_url_for_provider(provider))
+    return LLMProviderConfig(
+        provider=provider,
+        api_key=str(payload.get("llm_api_key") or legacy_api_key or ""),
+        model=model,
+        base_url=base_url,
+        timeout_seconds=float(payload.get("llm_timeout_seconds") or settings.llm_timeout_seconds),
+        max_tokens=int(payload.get("llm_max_tokens") or settings.llm_max_tokens),
+        parallel_tool_calls=coerce_bool(
+            payload.get("llm_parallel_tool_calls", settings.llm_parallel_tool_calls),
+            settings.llm_parallel_tool_calls,
+        ),
+    )
+
+
+_initial_llm_payload = {
+    "llm_provider": settings.llm_provider,
+    "llm_api_key": settings.llm_api_key,
+    "llm_model": settings.llm_model,
+    "llm_base_url": settings.llm_base_url,
+    "llm_timeout_seconds": settings.llm_timeout_seconds,
+    "llm_max_tokens": settings.llm_max_tokens,
+    "llm_parallel_tool_calls": settings.llm_parallel_tool_calls,
+    "openai_api_key": settings.openai_api_key,
+    "openai_model": settings.openai_model,
+    "openai_base_url": settings.openai_base_url,
+}
+for _key in _user_llm_override_keys:
+    if _key in _user_cfg:
+        _initial_llm_payload[_key] = _user_cfg[_key]
+_initial_llm_explicit_keys = {
+    key
+    for key, value in _initial_llm_payload.items()
+    if value not in ("", None)
+} | _user_llm_override_keys
+llm_client = build_llm_client(
+    _llm_config_from_payload(
+        _initial_llm_payload,
+        explicit_keys=_initial_llm_explicit_keys,
+    )
 )
 copilot = FinancialCopilot(
     conversation_store=conversation_store,
-    llm_client=openai_tool_client,
+    llm_client=llm_client,
     max_history_messages=settings.copilot_max_history_messages,
     max_tool_rounds=settings.copilot_max_tool_rounds,
     system_prompt=(
@@ -14901,18 +15027,18 @@ def get_user_settings() -> dict[str, Any]:
 
 @app.put("/api/settings")
 def update_user_settings(request: dict[str, Any]) -> dict[str, Any]:
-    global openai_tool_client
+    global llm_client
 
     saved = user_settings_store.save(request)
 
     # Hot-reload affected services
-    if saved.get("openai_api_key"):
-        openai_tool_client = OpenAIChatToolClient(
-            api_key=saved["openai_api_key"],
-            model=saved.get("openai_model") or settings.openai_model,
-            base_url=saved.get("openai_base_url") or settings.openai_base_url,
+    llm_client = build_llm_client(
+        _llm_config_from_payload(
+            saved,
+            explicit_keys={key for key in request if key.startswith("llm_") or key.startswith("openai_")},
         )
-        copilot.llm_client = openai_tool_client
+    )
+    copilot.llm_client = llm_client
 
     return user_settings_store.load_masked()
 
