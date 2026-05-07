@@ -25,6 +25,32 @@ ACTION_READINESS_BY_MATERIALITY = {
     "critical": "Needs attention before acting",
 }
 
+AUTHORITY_SCORE = {
+    "canonical": 1.0,
+    "source_evidence": 0.9,
+    "derived": 0.65,
+    "conversation": 0.5,
+}
+MATERIALITY_SCORE = {
+    "critical": 1.0,
+    "high": 0.85,
+    "medium": 0.6,
+    "low": 0.35,
+}
+CONFIDENCE_SCORE = {
+    "high": 1.0,
+    "medium": 0.68,
+    "low": 0.35,
+    "unknown": 0.45,
+}
+FRESHNESS_SCORE = {
+    "current": 1.0,
+    "fresh": 1.0,
+    "recent": 0.85,
+    "unknown": 0.5,
+    "stale": 0.2,
+}
+
 PROFILE_HIGH_MATERIALITY_PREFIXES = (
     "tax_profile.",
     "investment_policy.",
@@ -65,6 +91,31 @@ def _json_loads_object(value: str | None) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _normalized_filter_values(values: Iterable[Any] | Any | None) -> tuple[str, ...]:
+    if values is None:
+        return ()
+    if isinstance(values, str):
+        raw_values: Iterable[Any] = values.split(",")
+    elif isinstance(values, (list, tuple, set)):
+        raw_values = values
+    else:
+        raw_values = (values,)
+    resolved = []
+    for value in raw_values:
+        token = str(value or "").strip()
+        if token:
+            resolved.append(token)
+    return tuple(dict.fromkeys(resolved))
+
+
+def _normalized_lower_values(values: Iterable[Any] | Any | None) -> tuple[str, ...]:
+    return tuple(value.lower() for value in _normalized_filter_values(values))
+
+
+def _normalized_symbol_values(values: Iterable[Any] | Any | None) -> tuple[str, ...]:
+    return tuple(value.upper() for value in _normalized_filter_values(values))
 
 
 def _compact_text(value: Any, *, limit: int = 1200) -> str:
@@ -428,6 +479,87 @@ class ContextRegistry:
             ).fetchall()
         return [_item_from_row(row) for row in rows]
 
+    def search(
+        self,
+        *,
+        query: str = "",
+        domains: Iterable[Any] | Any | None = None,
+        plan_id: str | None = None,
+        symbols: Iterable[Any] | Any | None = None,
+        entity_types: Iterable[Any] | Any | None = None,
+        recommendation_status: str | None = None,
+        field_path: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        bounded_limit = max(1, min(int(limit), 100))
+        resolved_domains = _normalized_lower_values(domains)
+        resolved_symbols = _normalized_symbol_values(symbols)
+        resolved_entity_types = _normalized_lower_values(entity_types)
+        resolved_plan_id = str(plan_id or "").strip()
+        resolved_recommendation_status = str(recommendation_status or "").strip().lower()
+        resolved_field_path = str(field_path or "").strip()
+        query_text = str(query or "").strip()
+        query_terms = _search_terms(query_text)
+        exact_filter_count = sum(
+            1
+            for value in (
+                resolved_domains,
+                resolved_plan_id,
+                resolved_symbols,
+                resolved_entity_types,
+                resolved_recommendation_status,
+                resolved_field_path,
+            )
+            if bool(value)
+        )
+
+        rows: list[dict[str, Any]] = []
+        for item in self.list_items(limit=5000):
+            if not _matches_search_filters(
+                item,
+                domains=resolved_domains,
+                plan_id=resolved_plan_id,
+                symbols=resolved_symbols,
+                entity_types=resolved_entity_types,
+                recommendation_status=resolved_recommendation_status,
+                field_path=resolved_field_path,
+            ):
+                continue
+
+            score = _score_context_item(
+                item,
+                query=query_text,
+                query_terms=query_terms,
+                exact_filter_count=exact_filter_count,
+            )
+            if query_terms and not score["matched_terms"] and exact_filter_count == 0:
+                continue
+
+            rows.append(_search_result_payload(item, score=score))
+
+        rows.sort(
+            key=lambda row: (
+                float(row["score"]),
+                MATERIALITY_SCORE.get(str(row["materiality"]), 0.0),
+                str(row.get("updated_at") or ""),
+            ),
+            reverse=True,
+        )
+        return {
+            "query": query_text,
+            "filters": {
+                "domains": list(resolved_domains),
+                "plan_id": resolved_plan_id or None,
+                "symbols": list(resolved_symbols),
+                "entity_types": list(resolved_entity_types),
+                "recommendation_status": resolved_recommendation_status or None,
+                "field_path": resolved_field_path or None,
+            },
+            "total_candidates": len(rows),
+            "count": min(len(rows), bounded_limit),
+            "items": rows[:bounded_limit],
+        }
+
 
 class ContextIndexer:
     def __init__(self, *, materiality_policy: MaterialityPolicy | None = None):
@@ -725,6 +857,71 @@ class ContextIndexer:
             )
         return items
 
+    def build_watchlist_items(self, *, portfolio_store: Any | None) -> list[ContextItem]:
+        if portfolio_store is None:
+            return []
+        try:
+            watchlist_items = portfolio_store.list_watchlist()
+        except Exception:
+            return []
+
+        items: list[ContextItem] = []
+        for row in watchlist_items:
+            if not isinstance(row, Mapping):
+                continue
+            symbol = str(row.get("symbol") or "").strip().upper()
+            if not symbol:
+                continue
+            thesis = str(row.get("thesis") or "").strip()
+            note = str(row.get("note") or "").strip()
+            tags = row.get("tags")
+            tags = tags if isinstance(tags, list) else []
+            if not thesis and not note and not tags:
+                continue
+
+            data_source = str(row.get("data_source") or "OPENBB").strip().upper() or "OPENBB"
+            updated_at = str(row.get("updated_at") or row.get("thesis_reviewed_at") or "") or utc_now_iso()
+            materiality = self.materiality_policy.classify(
+                domain="research",
+                entity_type="watchlist_thesis",
+                field_path="thesis",
+                payload=row,
+            )
+            text_parts = [f"Watchlist thesis for {symbol}."]
+            if thesis:
+                text_parts.append(f"Thesis: {_compact_text(thesis, limit=700)}")
+            if note:
+                text_parts.append(f"Note: {_compact_text(note, limit=400)}")
+            if tags:
+                text_parts.append(f"Tags: {', '.join(str(tag) for tag in tags)}.")
+            if row.get("target_price_usd") is not None:
+                text_parts.append(f"Target price: {_format_value('target_price_usd', row.get('target_price_usd'))}.")
+
+            items.append(
+                _build_context_item(
+                    id=_stable_context_id("research", "watchlist", symbol, data_source),
+                    domain="research",
+                    entity_type="watchlist_thesis",
+                    entity_id=symbol,
+                    source_ref=f"portfolio/watchlist.json#items.{symbol}.{data_source}",
+                    authority="source_evidence",
+                    text=" ".join(text_parts),
+                    structured_payload={"symbol": symbol, **dict(row)},
+                    provenance={"source": "portfolio_store.watchlist", "data_source": data_source},
+                    quality={
+                        "confidence": "medium" if thesis else "low",
+                        "freshness": "current" if row.get("thesis_reviewed_at") else "unknown",
+                        "thesis_reviewed_at": row.get("thesis_reviewed_at") or None,
+                        "thesis_expires_at": row.get("thesis_expires_at") or None,
+                    },
+                    materiality=materiality,
+                    created_at=str(row.get("created_at") or updated_at),
+                    updated_at=updated_at,
+                    source_updated_at=updated_at,
+                )
+            )
+        return items
+
     def build_all_items(
         self,
         *,
@@ -732,11 +929,13 @@ class ContextIndexer:
         profile_path: Path,
         plan_workspace: Any,
         recommendation_inbox: Any,
+        portfolio_store: Any | None = None,
     ) -> list[ContextItem]:
         items: list[ContextItem] = []
         items.extend(self.build_profile_items(profile_payload=profile_payload, profile_path=profile_path))
         items.extend(self.build_plan_items(plan_workspace=plan_workspace))
         items.extend(self.build_recommendation_items(recommendation_inbox=recommendation_inbox))
+        items.extend(self.build_watchlist_items(portfolio_store=portfolio_store))
         return items
 
 
@@ -748,12 +947,14 @@ class ContextIntelligenceService:
         financial_profile_store: Any,
         plan_workspace: Any,
         recommendation_inbox: Any,
+        portfolio_store: Any | None = None,
         indexer: ContextIndexer | None = None,
     ):
         self.registry = ContextRegistry(database_path)
         self.financial_profile_store = financial_profile_store
         self.plan_workspace = plan_workspace
         self.recommendation_inbox = recommendation_inbox
+        self.portfolio_store = portfolio_store
         self.indexer = indexer or ContextIndexer()
 
     @classmethod
@@ -764,12 +965,14 @@ class ContextIntelligenceService:
         financial_profile_store: Any,
         plan_workspace: Any,
         recommendation_inbox: Any,
+        portfolio_store: Any | None = None,
     ) -> "ContextIntelligenceService":
         return cls(
             database_path=settings.durable_storage_dir / "context_index.db",
             financial_profile_store=financial_profile_store,
             plan_workspace=plan_workspace,
             recommendation_inbox=recommendation_inbox,
+            portfolio_store=portfolio_store,
         )
 
     def rebuild_registry(self) -> dict[str, Any]:
@@ -779,6 +982,7 @@ class ContextIntelligenceService:
             profile_path=self.financial_profile_store.profile_path,
             plan_workspace=self.plan_workspace,
             recommendation_inbox=self.recommendation_inbox,
+            portfolio_store=self.portfolio_store,
         )
         report = self.registry.replace_all(items)
         return {
@@ -788,6 +992,32 @@ class ContextIntelligenceService:
 
     def get_status(self) -> dict[str, Any]:
         return self.registry.status()
+
+    def search_context(
+        self,
+        *,
+        query: str = "",
+        domains: Iterable[Any] | Any | None = None,
+        plan_id: str | None = None,
+        symbols: Iterable[Any] | Any | None = None,
+        entity_types: Iterable[Any] | Any | None = None,
+        recommendation_status: str | None = None,
+        field_path: str | None = None,
+        limit: int = 20,
+        rebuild_if_empty: bool = False,
+    ) -> dict[str, Any]:
+        if rebuild_if_empty and self.registry.status().get("item_count") == 0:
+            self.rebuild_registry()
+        return self.registry.search(
+            query=query,
+            domains=domains,
+            plan_id=plan_id,
+            symbols=symbols,
+            entity_types=entity_types,
+            recommendation_status=recommendation_status,
+            field_path=field_path,
+            limit=limit,
+        )
 
 
 def _build_context_item(
@@ -886,3 +1116,210 @@ def _item_from_row(row: sqlite3.Row) -> ContextItem:
         updated_at=str(row["updated_at"]),
         source_updated_at=str(row["source_updated_at"]) if row["source_updated_at"] is not None else None,
     )
+
+
+def _matches_search_filters(
+    item: ContextItem,
+    *,
+    domains: tuple[str, ...],
+    plan_id: str,
+    symbols: tuple[str, ...],
+    entity_types: tuple[str, ...],
+    recommendation_status: str,
+    field_path: str,
+) -> bool:
+    if domains and item.domain.lower() not in domains:
+        return False
+    if entity_types and item.entity_type.lower() not in entity_types:
+        return False
+    if plan_id and not _item_matches_plan_id(item, plan_id):
+        return False
+    if symbols and not _item_matches_symbols(item, symbols):
+        return False
+    if recommendation_status and _structured_value_lower(item, "status") != recommendation_status:
+        return False
+    if field_path and not _item_matches_field_path(item, field_path):
+        return False
+    return True
+
+
+def _item_matches_plan_id(item: ContextItem, plan_id: str) -> bool:
+    target = plan_id.strip()
+    if not target:
+        return True
+    if str(item.structured_payload.get("plan_id") or "").strip() == target:
+        return True
+    return f"/{target}/" in item.source_ref or item.source_ref.endswith(f"/{target}/metadata")
+
+
+def _item_matches_symbols(item: ContextItem, symbols: tuple[str, ...]) -> bool:
+    if not symbols:
+        return True
+    haystack = _context_search_haystack(item).upper()
+    return any(
+        re.search(rf"(?<![A-Z0-9]){re.escape(symbol)}(?![A-Z0-9])", haystack) is not None
+        for symbol in symbols
+    )
+
+
+def _item_matches_field_path(item: ContextItem, field_path: str) -> bool:
+    target = field_path.strip()
+    if not target:
+        return True
+    target_lower = target.lower()
+    payload_field = str(item.structured_payload.get("field") or "").strip().lower()
+    return (
+        payload_field == target_lower
+        or item.entity_id.lower() == target_lower
+        or item.source_ref.lower().endswith(f"#{target_lower}")
+        or item.source_ref.lower().endswith(target_lower)
+    )
+
+
+def _structured_value_lower(item: ContextItem, key: str) -> str:
+    return str(item.structured_payload.get(key) or "").strip().lower()
+
+
+def _score_context_item(
+    item: ContextItem,
+    *,
+    query: str,
+    query_terms: tuple[str, ...],
+    exact_filter_count: int,
+) -> dict[str, Any]:
+    lexical_score, matched_terms = _lexical_score(item, query=query, query_terms=query_terms)
+    exact_score = min(1.0, exact_filter_count * 0.25)
+    recency_score = _recency_score(item)
+    quality_score = _quality_score(item)
+    authority_score = AUTHORITY_SCORE.get(item.authority, 0.45)
+    materiality_score = MATERIALITY_SCORE.get(item.materiality, 0.35)
+    total_score = (
+        lexical_score * 0.4
+        + exact_score * 0.18
+        + quality_score * 0.18
+        + recency_score * 0.1
+        + authority_score * 0.08
+        + materiality_score * 0.06
+    )
+    return {
+        "score": round(total_score, 4),
+        "matched_terms": matched_terms,
+        "score_breakdown": {
+            "lexical": round(lexical_score, 4),
+            "exact_filters": round(exact_score, 4),
+            "quality": round(quality_score, 4),
+            "recency": round(recency_score, 4),
+            "authority": round(authority_score, 4),
+            "materiality": round(materiality_score, 4),
+        },
+    }
+
+
+def _lexical_score(
+    item: ContextItem,
+    *,
+    query: str,
+    query_terms: tuple[str, ...],
+) -> tuple[float, list[str]]:
+    if not query_terms:
+        return 0.0, []
+    haystack = _context_search_haystack(item).lower()
+    matched = [term for term in query_terms if term in haystack]
+    if not matched:
+        return 0.0, []
+    coverage = len(matched) / max(1, len(query_terms))
+    phrase_bonus = 0.2 if query and query.lower() in haystack else 0.0
+    entity_bonus = 0.12 if any(term in item.entity_id.lower() for term in matched) else 0.0
+    return min(1.0, coverage + phrase_bonus + entity_bonus), matched
+
+
+def _search_terms(query: str) -> tuple[str, ...]:
+    terms = []
+    for token in re.findall(r"[A-Za-z0-9_.%-]+", str(query or "").lower()):
+        token = token.strip("._-%")
+        if len(token) < 2 and not token.isdigit():
+            continue
+        terms.append(token)
+    return tuple(dict.fromkeys(terms))
+
+
+def _context_search_haystack(item: ContextItem) -> str:
+    return " ".join(
+        (
+            item.id,
+            item.domain,
+            item.entity_type,
+            item.entity_id,
+            item.source_ref,
+            item.text,
+            _json_dumps(item.structured_payload),
+            _json_dumps(item.provenance),
+            _json_dumps(item.quality),
+        )
+    )
+
+
+def _quality_score(item: ContextItem) -> float:
+    confidence = str(
+        item.quality.get("confidence") or item.quality.get("confidence_level") or "unknown"
+    ).strip().lower()
+    freshness = str(item.quality.get("freshness") or "unknown").strip().lower()
+    status = str(item.quality.get("status") or "").strip().lower()
+    confidence_score = CONFIDENCE_SCORE.get(confidence, CONFIDENCE_SCORE["unknown"])
+    freshness_score = FRESHNESS_SCORE.get(freshness, FRESHNESS_SCORE["unknown"])
+    status_bonus = 0.08 if status == "user_confirmed" else 0.0
+    status_penalty = 0.12 if status in {"copilot_drafted", "inferred", "stale"} else 0.0
+    return max(0.0, min(1.0, (confidence_score * 0.55) + (freshness_score * 0.45) + status_bonus - status_penalty))
+
+
+def _recency_score(item: ContextItem) -> float:
+    parsed = _parse_datetime(item.source_updated_at or item.updated_at or item.created_at)
+    if parsed is None:
+        return 0.5
+    age_days = max(0.0, (datetime.now(timezone.utc) - parsed).total_seconds() / 86_400)
+    if age_days <= 30:
+        return 1.0
+    if age_days <= 180:
+        return 0.75
+    if age_days <= 365:
+        return 0.55
+    return 0.35
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _search_result_payload(item: ContextItem, *, score: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": item.id,
+        "domain": item.domain,
+        "entity_type": item.entity_type,
+        "entity_id": item.entity_id,
+        "source_ref": item.source_ref,
+        "authority": item.authority,
+        "text": item.text,
+        "structured_payload": item.structured_payload,
+        "provenance": item.provenance,
+        "quality": item.quality,
+        "materiality": item.materiality,
+        "materiality_rationale": item.materiality_rationale,
+        "action_readiness": item.action_readiness,
+        "created_at": item.created_at,
+        "updated_at": item.updated_at,
+        "source_updated_at": item.source_updated_at,
+        "score": score["score"],
+        "score_breakdown": score["score_breakdown"],
+        "matched_terms": score["matched_terms"],
+    }

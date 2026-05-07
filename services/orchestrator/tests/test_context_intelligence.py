@@ -9,6 +9,7 @@ from buildwealth_orchestrator.services.context_intelligence import (
 )
 from buildwealth_orchestrator.services.financial_profile import FinancialProfileStore
 from buildwealth_orchestrator.services.plan_workspace import PlanWorkspace
+from buildwealth_orchestrator.services.portfolio_store import PortfolioStore
 from buildwealth_orchestrator.services.recommendation_inbox import RecommendationInbox
 
 
@@ -77,6 +78,7 @@ def test_context_registry_rebuild_indexes_stable_source_refs_and_domains(tmp_pat
     assert "research" in domains
     assert "recommendation" in domains
     assert "profile/financial_profile.json#investment_policy.max_single_symbol_exposure_pct" in source_refs
+    assert "portfolio/watchlist.json#items.NVDA.OPENBB" in source_refs
     assert any(ref.endswith("/decisions.jsonl#decision-fixed") for ref in source_refs)
     assert any(ref.endswith("research-dossier-nvda.md") for ref in source_refs)
     assert any(ref.startswith("recommendations/inbox.json#recommendations.") for ref in source_refs)
@@ -121,6 +123,63 @@ def test_indexed_profile_material_fields_get_action_readiness(tmp_path: Path) ->
     assert marginal_tax_rate.text.endswith("28.00%.")
 
 
+def test_context_search_retrieves_symbol_related_plan_research_and_watchlist(tmp_path: Path) -> None:
+    service = _build_service(tmp_path)
+    service.rebuild_registry()
+
+    result = service.search_context(query="NVDA investment fit", symbols=["NVDA"], limit=20)
+    source_refs = {item["source_ref"] for item in result["items"]}
+    entity_types = {item["entity_type"] for item in result["items"]}
+
+    assert result["count"] >= 4
+    assert any(ref.endswith("research-dossier-nvda.md") for ref in source_refs)
+    assert any(ref.endswith("/decisions.jsonl#decision-fixed") for ref in source_refs)
+    assert "portfolio/watchlist.json#items.NVDA.OPENBB" in source_refs
+    assert "recommendation" in entity_types
+
+
+def test_context_search_supports_plan_domain_and_recommendation_status_filters(tmp_path: Path) -> None:
+    service = _build_service(tmp_path)
+    service.rebuild_registry()
+    plan_id = str(service.plan_workspace.list_plans(limit=1)[0]["id"])
+
+    plan_result = service.search_context(plan_id=plan_id, domains=["plan", "research"], limit=50)
+    assert plan_result["count"] >= 3
+    assert all(
+        item["structured_payload"].get("plan_id") == plan_id
+        for item in plan_result["items"]
+        if item["domain"] in {"plan", "research"} and item["entity_type"] != "watchlist_thesis"
+    )
+
+    recommendation_result = service.search_context(
+        domains=["recommendation"],
+        recommendation_status="proposed",
+        limit=10,
+    )
+    assert recommendation_result["count"] == 1
+    assert recommendation_result["items"][0]["structured_payload"]["status"] == "proposed"
+
+
+def test_context_search_retrieves_profile_field_fact_and_metadata(tmp_path: Path) -> None:
+    service = _build_service(tmp_path)
+    service.rebuild_registry()
+
+    result = service.search_context(
+        query="tax rate",
+        domains=["profile"],
+        field_path="tax_profile.marginal_tax_rate",
+        limit=5,
+    )
+
+    assert result["count"] == 1
+    item = result["items"][0]
+    assert item["entity_id"] == "tax_profile.marginal_tax_rate"
+    assert item["structured_payload"]["value"] == 0.28
+    assert item["quality"]["status"] == "user_confirmed"
+    assert item["action_readiness"] == "Review before relying on this"
+    assert "tax" in item["matched_terms"]
+
+
 def _build_service(tmp_path: Path) -> ContextIntelligenceService:
     profile_store = FinancialProfileStore(tmp_path / "profile" / "financial_profile.json")
     profile_store.save(
@@ -145,7 +204,7 @@ def _build_service(tmp_path: Path) -> ContextIntelligenceService:
     plan_id = str(plan["id"])
     decision = plan_workspace.append_decision(
         plan_id,
-        summary="Avoid adding single-stock exposure until concentration is reviewed.",
+        summary="Avoid adding NVDA single-stock exposure until concentration is reviewed.",
         rationale="The profile limits single-symbol risk.",
         status="accepted",
     )
@@ -175,11 +234,21 @@ def _build_service(tmp_path: Path) -> ContextIntelligenceService:
         },
     )
 
+    portfolio_store = PortfolioStore(tmp_path / "portfolio")
+    portfolio_store.upsert_watchlist_item(
+        symbol="NVDA",
+        thesis="Growth remains attractive, but valuation and single-symbol concentration must be reviewed first.",
+        note="Use the investment policy before increasing exposure.",
+        target_price_usd=950.0,
+        tags=["semiconductors", "ai"],
+    )
+
     return ContextIntelligenceService(
         database_path=tmp_path / "storage" / "context_index.db",
         financial_profile_store=profile_store,
         plan_workspace=plan_workspace,
         recommendation_inbox=recommendation_inbox,
+        portfolio_store=portfolio_store,
     )
 
 

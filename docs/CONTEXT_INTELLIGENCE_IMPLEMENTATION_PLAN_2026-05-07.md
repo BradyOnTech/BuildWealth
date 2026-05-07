@@ -587,11 +587,11 @@ Done when:
 
 Goal: add useful retrieval before introducing embedding complexity.
 
-- [ ] Implement `search_context` with exact filters, lexical matching, recency, and quality scoring.
-- [ ] Index plan decisions, recommendation titles/details, profile policy fields, watchlist theses, and dossier metadata.
-- [ ] Add `/api/context/search`.
-- [ ] Add Copilot tool contract for `search_context`.
-- [ ] Add tests for symbol, plan id, domain, recommendation status, and profile-field retrieval.
+- [x] Implement `search_context` with exact filters, lexical matching, recency, and quality scoring.
+- [x] Index plan decisions, recommendation titles/details, profile policy fields, watchlist theses, and dossier metadata.
+- [x] Add `/api/context/search`.
+- [x] Add Copilot tool contract for `search_context`.
+- [x] Add tests for symbol, plan id, domain, recommendation status, and profile-field retrieval.
 
 Done when:
 

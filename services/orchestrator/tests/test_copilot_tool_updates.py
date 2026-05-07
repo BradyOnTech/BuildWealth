@@ -19,6 +19,7 @@ def test_copilot_registry_includes_phase_3_5_tools() -> None:
         "get_asset_allocation",
         "set_contribution_rules",
         "get_buildwealth_context",
+        "search_context",
         "pin_watchlist_research_to_plan",
         "research_compare",
         "research_dossier",
@@ -53,6 +54,65 @@ def test_get_buildwealth_context_tool_supports_detail_level_control() -> None:
     detail_field = properties.get("detail_level")
     assert isinstance(detail_field, dict)
     assert detail_field.get("enum") == ["light", "full"]
+
+
+def test_search_context_tool_contract() -> None:
+    tool = main.copilot.tools["search_context"]
+    properties = tool.parameters.get("properties", {})
+    assert "query" in properties
+    assert "domain" in properties
+    assert "domains" in properties
+    assert "plan_id" in properties
+    assert "symbol" in properties
+    assert "symbols" in properties
+    assert "recommendation_status" in properties
+    assert "field_path" in properties
+    assert "decision-grade advice" in tool.description
+
+
+def test_search_context_tool_and_endpoint_parse_filters(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakeContextIntelligenceService:
+        def search_context(self, **kwargs: object) -> dict[str, object]:
+            calls.append(kwargs)
+            return {"count": 0, "items": [], "filters": kwargs}
+
+    monkeypatch.setattr(main, "context_intelligence_service", FakeContextIntelligenceService())
+
+    tool_result = asyncio.run(
+        main.tool_search_context(
+            {
+                "query": "NVDA fit",
+                "domain": "research",
+                "symbols": ["NVDA", "MSFT"],
+                "plan_id": "plan-1",
+                "recommendation_status": "proposed",
+                "field_path": "investment_policy.max_single_symbol_exposure_pct",
+                "limit": 5,
+            }
+        )
+    )
+    endpoint_result = main.search_context_endpoint(
+        q="tax rate",
+        domain="profile",
+        symbols="NVDA, AAPL",
+        entity_type="tax_profile_field",
+        limit=3,
+        rebuild_if_empty=False,
+    )
+
+    assert tool_result["count"] == 0
+    assert endpoint_result["count"] == 0
+    assert calls[0]["query"] == "NVDA fit"
+    assert calls[0]["domains"] == ["research"]
+    assert calls[0]["symbols"] == ["NVDA", "MSFT"]
+    assert calls[0]["rebuild_if_empty"] is True
+    assert calls[1]["query"] == "tax rate"
+    assert calls[1]["domains"] == ["profile"]
+    assert calls[1]["symbols"] == ["NVDA", "AAPL"]
+    assert calls[1]["entity_types"] == ["tax_profile_field"]
+    assert calls[1]["rebuild_if_empty"] is False
 
 
 def test_assess_portfolio_fit_tool_contract() -> None:

@@ -663,6 +663,7 @@ context_intelligence_service = ContextIntelligenceService.from_settings(
     financial_profile_store=financial_profile_store,
     plan_workspace=plan_workspace,
     recommendation_inbox=recommendation_inbox,
+    portfolio_store=portfolio_store,
 )
 workflow_runner = WorkflowRunner(
     scenario_engine=scenario_engine,
@@ -1240,6 +1241,24 @@ def _coerce_bool(value: Any, fallback: bool = False) -> bool:
     if normalized in {"0", "false", "no", "n", "off"}:
         return False
     return fallback
+
+
+def _context_filter_values(*values: Any) -> list[str]:
+    resolved: list[str] = []
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str):
+            raw_values = value.split(",")
+        elif isinstance(value, (list, tuple, set)):
+            raw_values = value
+        else:
+            raw_values = (value,)
+        for raw_value in raw_values:
+            token = str(raw_value or "").strip()
+            if token and token not in resolved:
+                resolved.append(token)
+    return resolved
 
 
 HOUSEHOLD_MODE_INDIVIDUAL = "individual"
@@ -10853,6 +10872,20 @@ async def tool_get_buildwealth_context(arguments: dict[str, object]) -> dict[str
     return payload
 
 
+async def tool_search_context(arguments: dict[str, object]) -> dict[str, object]:
+    return context_intelligence_service.search_context(
+        query=str(arguments.get("query") or arguments.get("q") or ""),
+        domains=_context_filter_values(arguments.get("domains"), arguments.get("domain")),
+        plan_id=str(arguments.get("plan_id") or "").strip() or None,
+        symbols=_context_filter_values(arguments.get("symbols"), arguments.get("symbol")),
+        entity_types=_context_filter_values(arguments.get("entity_types"), arguments.get("entity_type")),
+        recommendation_status=str(arguments.get("recommendation_status") or "").strip() or None,
+        field_path=str(arguments.get("field_path") or "").strip() or None,
+        limit=max(1, min(_coerce_int(arguments.get("limit"), 20), 100)),
+        rebuild_if_empty=_coerce_bool(arguments.get("rebuild_if_empty"), True),
+    )
+
+
 async def tool_get_financial_profile(_: dict[str, object]) -> dict[str, object]:
     profile = FinancialProfileResponse(**get_financial_profile_payload())
     return profile.model_dump(mode="json")
@@ -13536,6 +13569,34 @@ def configure_copilot_tools() -> None:
         handler=tool_get_buildwealth_context,
     )
     copilot.register_tool(
+        name="search_context",
+        description=(
+            "Search the Context Intelligence registry for field-level profile facts, plan decisions, "
+            "research artifacts, watchlist theses, and recommendations. Supports exact filters for "
+            "domain, plan_id, symbol, recommendation_status, entity_type, and field_path; use before "
+            "giving decision-grade advice that depends on durable user context."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "domain": {"type": "string"},
+                "domains": {"type": "array", "items": {"type": "string"}},
+                "plan_id": {"type": "string"},
+                "symbol": {"type": "string"},
+                "symbols": {"type": "array", "items": {"type": "string"}},
+                "entity_type": {"type": "string"},
+                "entity_types": {"type": "array", "items": {"type": "string"}},
+                "recommendation_status": {"type": "string"},
+                "field_path": {"type": "string"},
+                "limit": {"type": "integer"},
+                "rebuild_if_empty": {"type": "boolean"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_search_context,
+    )
+    copilot.register_tool(
         name="get_financial_profile",
         description="Read the unified financial profile (income, expenses, debt, goals, tax settings).",
         parameters=empty_schema,
@@ -14702,6 +14763,34 @@ def get_context_registry_status() -> dict[str, Any]:
 @app.post("/api/context/registry/rebuild")
 def rebuild_context_registry() -> dict[str, Any]:
     return context_intelligence_service.rebuild_registry()
+
+
+@app.get("/api/context/search")
+def search_context_endpoint(
+    q: str = "",
+    domain: str | None = None,
+    domains: str | None = None,
+    plan_id: str | None = None,
+    symbol: str | None = None,
+    symbols: str | None = None,
+    recommendation_status: str | None = None,
+    entity_type: str | None = None,
+    entity_types: str | None = None,
+    field_path: str | None = None,
+    limit: int = 20,
+    rebuild_if_empty: bool = True,
+) -> dict[str, Any]:
+    return context_intelligence_service.search_context(
+        query=q,
+        domains=_context_filter_values(domains, domain),
+        plan_id=plan_id,
+        symbols=_context_filter_values(symbols, symbol),
+        entity_types=_context_filter_values(entity_types, entity_type),
+        recommendation_status=recommendation_status,
+        field_path=field_path,
+        limit=max(1, min(int(limit), 100)),
+        rebuild_if_empty=rebuild_if_empty,
+    )
 
 
 @app.get("/api/storage/durable/status", response_model=DurableStorageStatusResponse)
