@@ -8,6 +8,7 @@ import re
 from datetime import datetime, timezone
 from typing import TypedDict
 
+from buildwealth_orchestrator.services.financial_profile import profile_metadata_quality_warnings
 from buildwealth_orchestrator.services.value_coercion import (
     parse_optional_datetime as _parse_iso_datetime,
     safe_float_or_none as _safe_float,
@@ -474,6 +475,7 @@ def build_context_quality(
     financial_profile = financial_picture.get("financial_profile")
     if not isinstance(financial_profile, dict):
         financial_profile = {}
+    profile_metadata_warnings = profile_metadata_quality_warnings(financial_profile)
 
     active_plan = planning.get("active_plan")
     has_planning_context = isinstance(active_plan, dict) and bool(active_plan.get("id"))
@@ -485,6 +487,7 @@ def build_context_quality(
         ("snapshot_summary", bool(snapshot_summary.get("as_of")), True),
         ("today_dashboard", "note" not in today_dashboard, True),
         ("financial_profile", "note" not in financial_profile, True),
+        ("financial_profile_metadata", not profile_metadata_warnings, bool(profile_metadata_warnings)),
         ("recommendations", "note" not in recommendations, True),
         ("planning_context", has_planning_context, bool(requested_plan_id)),
         ("research_context", has_research_context, include_research),
@@ -493,6 +496,7 @@ def build_context_quality(
     expected_checks = [item for item in checks if item[2]]
     passed_checks = [item for item in expected_checks if item[1]]
     missing_sections = [name for name, passed, expected in checks if expected and not passed]
+    missing_sections.extend(profile_metadata_warnings)
     score_pct = (
         round((len(passed_checks) / len(expected_checks)) * 100.0, 1)
         if expected_checks
@@ -595,6 +599,10 @@ def shape_context_payload(
                     if isinstance(financial_profile.get("flags"), dict)
                     else {}
                 ),
+                "profile_metadata_count": len(financial_profile.get("profile_metadata", {}))
+                if isinstance(financial_profile.get("profile_metadata"), dict)
+                else 0,
+                "profile_metadata_warnings": profile_metadata_quality_warnings(financial_profile),
             }
 
         onboarding_status = financial_picture.get("onboarding_status")

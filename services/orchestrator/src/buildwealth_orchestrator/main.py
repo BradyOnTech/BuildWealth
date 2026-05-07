@@ -195,8 +195,14 @@ from buildwealth_orchestrator.services.llm_clients import (
     build_llm_client,
     default_base_url_for_provider,
     default_model_for_provider,
+    run_tool_call_probe,
 )
-from buildwealth_orchestrator.services.financial_profile import FinancialProfileStore
+from buildwealth_orchestrator.services.financial_profile import (
+    FinancialProfileStore,
+    merge_profile_metadata,
+    patch_material_profile_field_paths,
+    profile_metadata_review_field_paths,
+)
 from buildwealth_orchestrator.services.ignidash_exporter import (
     IgnidashExportStore,
 )
@@ -309,6 +315,7 @@ from buildwealth_orchestrator.services.buildwealth_context import (
     utc_now_iso as context_utc_now_iso,
 )
 from buildwealth_orchestrator.services.context_cache import ExpiringCache
+from buildwealth_orchestrator.services.context_intelligence import ContextIntelligenceService
 from buildwealth_orchestrator.services.runtime_telemetry import (
     RuntimeTelemetryTracker,
     summarize_cache_quality,
@@ -336,7 +343,11 @@ from buildwealth_orchestrator.services.recommendation_factory import (
     generate_watchlist_research_recommendations,
     research_thesis_review_metadata,
 )
-from buildwealth_orchestrator.services.user_settings import UserSettingsStore
+from buildwealth_orchestrator.services.user_settings import (
+    MASKED_PLACEHOLDER,
+    UserSettingsStore,
+    provider_default_model_ids,
+)
 from buildwealth_orchestrator.settings import get_settings
 
 settings = get_settings()
@@ -647,6 +658,12 @@ conversation_store = ConversationStore(settings.conversation_dir)
 plan_workspace = PlanWorkspace(settings.plans_dir)
 financial_profile_store = FinancialProfileStore(settings.financial_profile_path)
 recommendation_inbox = RecommendationInbox(settings.recommendations_path)
+context_intelligence_service = ContextIntelligenceService.from_settings(
+    settings,
+    financial_profile_store=financial_profile_store,
+    plan_workspace=plan_workspace,
+    recommendation_inbox=recommendation_inbox,
+)
 workflow_runner = WorkflowRunner(
     scenario_engine=scenario_engine,
     default_annual_contribution_usd=settings.planner_annual_contribution_usd,
@@ -3763,7 +3780,11 @@ def get_financial_profile_payload() -> dict[str, Any]:
     return payload
 
 
-def save_financial_profile_payload(request: FinancialProfileRequest) -> dict[str, Any]:
+def save_financial_profile_payload(
+    request: FinancialProfileRequest,
+    *,
+    source: str = "profile_editor",
+) -> dict[str, Any]:
     payload = request.model_dump(mode="json")
 
     for key in ("income_items", "expense_items", "debt_items", "goal_items", "physical_assets"):
@@ -3782,7 +3803,10 @@ def save_financial_profile_payload(request: FinancialProfileRequest) -> dict[str
         tax_profile["state"] = settings.app_state
         payload["tax_profile"] = tax_profile
 
-    return financial_profile_store.save(payload)
+    try:
+        return financial_profile_store.save(payload, metadata_source=source)
+    except TypeError:
+        return financial_profile_store.save(payload)
 
 
 PROFILE_AUDIT_SECTION_ORDER = [
@@ -9101,9 +9125,23 @@ def _build_profile_readiness_summary(
     flags: dict[str, Any],
     tax_profile: dict[str, Any],
     investment_policy: dict[str, Any],
+    profile_metadata: dict[str, Any] | None = None,
 ) -> ProfileReadinessSummary:
+    metadata_payload = {
+        "tax_profile": tax_profile,
+        "investment_policy": investment_policy,
+        "profile_metadata": profile_metadata or {},
+    }
     filing_status = str(tax_profile.get("filing_status") or "").strip()
     marginal_tax_rate = tax_profile.get("marginal_tax_rate")
+    tax_review_fields = profile_metadata_review_field_paths(
+        metadata_payload,
+        prefixes=("tax_profile.",),
+    )
+    policy_review_fields = profile_metadata_review_field_paths(
+        metadata_payload,
+        prefixes=("investment_policy.",),
+    )
     single_symbol_cap = investment_policy.get("max_single_symbol_exposure_pct")
     single_symbol_cap_value: float | None
     try:
@@ -9160,26 +9198,40 @@ def _build_profile_readiness_summary(
         ProfileReadinessSection(
             key="tax_profile",
             title="Tax profile",
-            status="complete" if filing_status and marginal_tax_rate is not None else "incomplete",
-            detail=(
-                "Filing status and marginal tax rate are configured."
+            status=(
+                "attention"
+                if filing_status and marginal_tax_rate is not None and tax_review_fields
+                else "complete"
                 if filing_status and marginal_tax_rate is not None
-                else "Set filing status and marginal tax rate."
+                else "incomplete"
+            ),
+            detail=(
+                "Review tax profile fields before relying on tax-sensitive advice."
+                if filing_status and marginal_tax_rate is not None and tax_review_fields
+                else (
+                    "Filing status and marginal tax rate are configured."
+                    if filing_status and marginal_tax_rate is not None
+                    else "Set filing status and marginal tax rate."
+                )
             ),
             required_for=["tax_planning", "investment_fit", "withdrawal_strategy"],
-            blocking_recommendations=not (filing_status and marginal_tax_rate is not None),
+            blocking_recommendations=not (filing_status and marginal_tax_rate is not None) or bool(tax_review_fields),
         ),
         ProfileReadinessSection(
             key="investment_policy",
             title="Investment policy",
-            status="complete" if policy_complete else "attention",
+            status="attention" if policy_review_fields else "complete" if policy_complete else "attention",
             detail=(
-                f"Single-symbol exposure cap is {single_symbol_cap_value:g}%."
-                if policy_complete
-                else "Set personal investment guardrails such as max single-symbol exposure."
+                "Review investment policy fields before relying on investment-fit advice."
+                if policy_review_fields
+                else (
+                    f"Single-symbol exposure cap is {single_symbol_cap_value:g}%."
+                    if policy_complete
+                    else "Set personal investment guardrails such as max single-symbol exposure."
+                )
             ),
             required_for=["investment_fit", "recommendation_ranking", "research_review"],
-            blocking_recommendations=False,
+            blocking_recommendations=bool(policy_review_fields),
         ),
         ProfileReadinessSection(
             key="physical_assets",
@@ -9207,6 +9259,8 @@ def _build_profile_readiness_summary(
     if any(section.key in {"income", "expenses", "debt"} and section.blocking_recommendations for section in sections):
         blocking_sources.append("cash_liquidity")
     if any(section.key == "goals" and section.blocking_recommendations for section in sections):
+        blocking_sources.append("investment_fit")
+    if any(section.key == "investment_policy" and section.blocking_recommendations for section in sections):
         blocking_sources.append("investment_fit")
 
     if not required_sections:
@@ -9241,6 +9295,7 @@ def build_onboarding_status_response(
         if isinstance(profile.get("investment_policy"), dict)
         else {}
     )
+    profile_metadata = profile.get("profile_metadata") if isinstance(profile.get("profile_metadata"), dict) else {}
 
     if latest_snapshot is None and load_fallbacks:
         try:
@@ -9293,6 +9348,7 @@ def build_onboarding_status_response(
         flags=flags,
         tax_profile=tax_profile,
         investment_policy=investment_policy,
+        profile_metadata=profile_metadata,
     )
 
     steps.append(
@@ -10940,8 +10996,18 @@ def _build_financial_profile_update_draft(arguments: dict[str, object]) -> dict[
         section_counts["flags"] = len(flags)
 
     validated = FinancialProfileRequest(**proposed_payload)
+    validated_payload = validated.model_dump(mode="json")
+    draft_field_paths = patch_material_profile_field_paths(patch_payload)
+    if draft_field_paths:
+        validated_payload = merge_profile_metadata(
+            validated_payload,
+            field_paths=draft_field_paths,
+            source="copilot_profile_draft",
+            status="copilot_drafted",
+            confidence="medium",
+        )
     response_payload = {
-        **validated.model_dump(mode="json"),
+        **validated_payload,
         "schema_version": int(profile_payload.get("schema_version") or 1),
         "updated_at": profile_payload.get("updated_at"),
     }
@@ -11008,7 +11074,7 @@ async def tool_update_financial_profile(arguments: dict[str, object]) -> dict[st
         profile_payload["flags"] = merged_flags
 
     validated = FinancialProfileRequest(**profile_payload)
-    saved = save_financial_profile_payload(validated)
+    saved = save_financial_profile_payload(validated, source="copilot_tool")
     _record_profile_update_activity(
         source="copilot_tool",
         sections=_profile_update_sections_from_payload(arguments),
@@ -14628,6 +14694,16 @@ def configure_copilot_tools() -> None:
 configure_copilot_tools()
 
 
+@app.get("/api/context/registry/status")
+def get_context_registry_status() -> dict[str, Any]:
+    return context_intelligence_service.get_status()
+
+
+@app.post("/api/context/registry/rebuild")
+def rebuild_context_registry() -> dict[str, Any]:
+    return context_intelligence_service.rebuild_registry()
+
+
 @app.get("/api/storage/durable/status", response_model=DurableStorageStatusResponse)
 def get_durable_storage_status() -> DurableStorageStatusResponse:
     return DurableStorageStatusResponse.model_validate(durable_storage_service.get_status())
@@ -15032,15 +15108,112 @@ def update_user_settings(request: dict[str, Any]) -> dict[str, Any]:
     saved = user_settings_store.save(request)
 
     # Hot-reload affected services
+    saved_explicit_keys = {
+        key
+        for key in user_settings_store.load_stored_raw()
+        if key.startswith("llm_") or key.startswith("openai_")
+    }
     llm_client = build_llm_client(
         _llm_config_from_payload(
             saved,
-            explicit_keys={key for key in request if key.startswith("llm_") or key.startswith("openai_")},
+            explicit_keys=saved_explicit_keys,
         )
     )
     copilot.llm_client = llm_client
 
     return user_settings_store.load_masked()
+
+
+def _settings_payload_for_probe(request: dict[str, Any]) -> tuple[dict[str, Any], set[str]]:
+    current = user_settings_store.load_raw()
+    payload = dict(current)
+    masked_sensitive_keys: set[str] = set()
+    provider_changed = False
+    provider_transition_keys: set[str] = set()
+    explicit_keys: set[str] = {
+        key
+        for key in user_settings_store.load_stored_raw()
+        if key.startswith("llm_") or key.startswith("openai_")
+    }
+    original_provider = str(current.get("llm_provider") or "openai")
+    for key, value in request.items():
+        if key not in user_settings_store.DEFAULTS:
+            continue
+        if key in user_settings_store.SENSITIVE_KEYS and isinstance(value, str) and value.startswith(MASKED_PLACEHOLDER):
+            masked_sensitive_keys.add(key)
+            continue
+        if value is not None:
+            payload[key] = value
+            if key.startswith("llm_") or key.startswith("openai_"):
+                explicit_keys.add(key)
+                provider_transition_keys.add(key)
+    requested_provider = str(request.get("llm_provider") or payload.get("llm_provider") or "openai")
+    current_provider = original_provider
+    if requested_provider != current_provider:
+        provider_changed = True
+        previous_model = default_model_for_provider(current_provider)
+        previous_base_url = default_base_url_for_provider(current_provider)
+        next_model = default_model_for_provider(requested_provider)
+        next_base_url = default_base_url_for_provider(requested_provider)
+        request_model = request.get("llm_model")
+        request_base_url = request.get("llm_base_url")
+        if (
+            "llm_model" not in request
+            or request_model in ("", previous_model)
+            or str(request_model) in provider_default_model_ids(current_provider)
+        ):
+            payload["llm_model"] = next_model
+            explicit_keys.add("llm_model")
+        if "llm_base_url" not in request or request_base_url in ("", previous_base_url):
+            payload["llm_base_url"] = next_base_url
+            explicit_keys.add("llm_base_url")
+        if "llm_api_key" not in request or "llm_api_key" in masked_sensitive_keys:
+            payload["llm_api_key"] = ""
+            explicit_keys.add("llm_api_key")
+    if provider_changed:
+        explicit_keys.update(provider_transition_keys - {"llm_model", "llm_base_url"})
+    return payload, explicit_keys
+
+
+def _llm_probe_failure_response(payload: dict[str, Any], client: Any, stage: str, detail: str) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "provider": getattr(client, "provider", payload.get("llm_provider", "unknown")),
+        "model": getattr(client, "model", payload.get("llm_model")),
+        "stage": stage,
+        "detail": detail,
+        "tool_calls": [],
+        "answer": "",
+    }
+
+
+@app.post("/api/settings/test-llm")
+async def test_llm_settings(request: dict[str, Any]) -> dict[str, Any]:
+    payload, explicit_keys = _settings_payload_for_probe(request)
+    client = build_llm_client(
+        _llm_config_from_payload(
+            payload,
+            explicit_keys=explicit_keys,
+        )
+    )
+    try:
+        result = await run_tool_call_probe(client)
+        if not result.get("ok"):
+            raise HTTPException(status_code=400, detail=result)
+        return result
+    except HTTPException:
+        raise
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text[:500] if exc.response is not None else str(exc)
+        raise HTTPException(
+            status_code=502,
+            detail=_llm_probe_failure_response(payload, client, "provider_http_error", detail),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=_llm_probe_failure_response(payload, client, "provider_error", str(exc)),
+        ) from exc
 
 
 async def on_startup() -> None:
@@ -15219,8 +15392,8 @@ def update_financial_profile(
     request: FinancialProfileRequest,
     source: str | None = None,
 ) -> FinancialProfileResponse:
-    saved = save_financial_profile_payload(request)
     source_label = str(source or "profile_editor").strip() or "profile_editor"
+    saved = save_financial_profile_payload(request, source=source_label)
     _record_profile_update_activity(
         source=source_label,
         sections=_profile_update_sections_from_payload(request),
@@ -15959,6 +16132,9 @@ def build_portfolio_fit_assessment_payload(
         flags=profile_payload.get("flags") if isinstance(profile_payload.get("flags"), dict) else {},
         tax_profile=profile_payload.get("tax_profile") if isinstance(profile_payload.get("tax_profile"), dict) else {},
         investment_policy=investment_policy,
+        profile_metadata=profile_payload.get("profile_metadata")
+        if isinstance(profile_payload.get("profile_metadata"), dict)
+        else {},
     )
 
     emergency_fund_months: float | None = None

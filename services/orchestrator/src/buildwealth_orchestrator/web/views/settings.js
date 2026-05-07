@@ -15,6 +15,7 @@ import {
   pullGitRemote,
   pushGitRemote,
   runDueGitAutoGit,
+  testLlmSettings,
   updateGitPolicy,
 } from '../lib/api.js';
 import { byId, writeLog } from '../lib/utils.js';
@@ -38,18 +39,20 @@ const FIELDS = [
     ],
   },
   { key: 'llm_api_key', label: 'Provider API Key', type: 'password', placeholder: 'Provider API key', hint: 'Required for Copilot AI conversations.' },
-  { key: 'llm_model', label: 'Model', type: 'text', placeholder: 'gpt-5-mini', hint: 'Use a model with reliable function/tool calling.' },
+  { key: 'llm_model', label: 'Model', type: 'text', placeholder: 'gpt-5.5', hint: 'Use a model with reliable function/tool calling.' },
   { key: 'llm_base_url', label: 'Base URL', type: 'text', placeholder: 'https://api.openai.com/v1', hint: 'Provider API endpoint. Presets are filled automatically.' },
   { key: 'llm_max_tokens', label: 'Max Output Tokens', type: 'number', placeholder: '2048', hint: 'Caps each model response in the Copilot tool loop.' },
 ];
 
 const PROVIDER_DEFAULTS = {
-  openai: { model: 'gpt-5-mini', baseUrl: 'https://api.openai.com/v1' },
-  gemini: { model: 'gemini-2.5-flash', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai' },
-  anthropic: { model: 'claude-sonnet-4-5', baseUrl: 'https://api.anthropic.com/v1' },
-  xai: { model: 'grok-4.20-reasoning', baseUrl: 'https://api.x.ai/v1' },
+  openai: { model: 'gpt-5.5', baseUrl: 'https://api.openai.com/v1' },
+  gemini: { model: 'gemini-3.1-flash-lite', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai' },
+  anthropic: { model: 'claude-opus-4-7', baseUrl: 'https://api.anthropic.com/v1' },
+  xai: { model: 'grok-4.20-reasoning-latest', baseUrl: 'https://api.x.ai/v1' },
   custom_openai_compatible: { model: '', baseUrl: '' },
 };
+
+let loadedLlmProvider = '';
 
 const gitUiState = {
   policy: null,
@@ -80,6 +83,10 @@ export function template() {
     <div class="settings-form">
       <h3 class="section-title">AI Copilot</h3>
       <div class="settings-grid">${FIELDS.map(fieldHtml).join('')}</div>
+      <div class="header-actions">
+        <button class="ghost small" id="test-llm-settings">Test Provider</button>
+      </div>
+      <p class="hint" id="llm-test-status"></p>
       <h3 class="section-title">Backup & Restore</h3>
       <p class="hint tight">Create local backup archives and restore a selected archive when recovery is needed.</p>
       <div class="settings-grid">
@@ -469,6 +476,7 @@ function populate(data) {
     const el = byId(`setting-${f.key}`);
     if (el) el.value = data[f.key] || '';
   }
+  loadedLlmProvider = data.llm_provider || '';
 }
 
 function applyProviderDefaults({ overwrite = false } = {}) {
@@ -476,8 +484,10 @@ function applyProviderDefaults({ overwrite = false } = {}) {
   const defaults = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.openai;
   const model = byId('setting-llm_model');
   const baseUrl = byId('setting-llm_base_url');
+  const apiKey = byId('setting-llm_api_key');
   if (model && (overwrite || !model.value.trim())) model.value = defaults.model;
   if (baseUrl && (overwrite || !baseUrl.value.trim())) baseUrl.value = defaults.baseUrl;
+  if (apiKey && loadedLlmProvider && provider !== loadedLlmProvider) apiKey.value = '';
 }
 
 function formatBackupOptionLabel(item) {
@@ -1684,8 +1694,46 @@ async function save() {
   }
 }
 
+async function testLlmProvider() {
+  const button = byId('test-llm-settings');
+  const status = byId('llm-test-status');
+  const payload = {};
+  for (const f of FIELDS) {
+    const el = byId(`setting-${f.key}`);
+    if (el && el.value) payload[f.key] = el.value;
+  }
+
+  if (button) button.disabled = true;
+  if (status) status.textContent = 'Testing provider tool calling...';
+  try {
+    const result = await testLlmSettings(payload);
+    const calls = Array.isArray(result.tool_calls) ? result.tool_calls.length : 0;
+    const summary = result.ok
+      ? `Provider test passed: ${result.provider || 'provider'} / ${result.model || 'model'} completed ${calls} tool call${calls === 1 ? '' : 's'}.`
+      : `Provider test failed at ${result.stage || 'probe'}: ${result.detail || 'Unknown error'}`;
+    if (status) {
+      status.textContent = summary;
+      status.style.color = result.ok ? '' : 'var(--danger)';
+    }
+    writeLog(summary, result, !result.ok);
+  } catch (e) {
+    const detail = e.detail && typeof e.detail === 'object' ? e.detail : null;
+    const message = detail
+      ? `Provider test failed at ${detail.stage || 'probe'}: ${detail.detail || e.message}`
+      : `Provider test failed: ${e.message}`;
+    if (status) {
+      status.textContent = message;
+      status.style.color = 'var(--danger)';
+    }
+    writeLog(message, detail, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 export function init() {
   byId('save-settings').addEventListener('click', save);
+  byId('test-llm-settings')?.addEventListener('click', testLlmProvider);
   byId('setting-llm_provider')?.addEventListener('change', () => applyProviderDefaults({ overwrite: true }));
   byId('refresh-backups').addEventListener('click', loadBackups);
   byId('create-backup').addEventListener('click', createBackup);

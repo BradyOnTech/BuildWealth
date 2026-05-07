@@ -17,6 +17,7 @@ Those documents remain useful as historical progress logs, implementation record
 
 Domain expansion plans:
 - [Investment Fit and Market Research Plan (2026-04-26)](./INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md)
+- [Context Intelligence Implementation Plan (2026-05-07)](./CONTEXT_INTELLIGENCE_IMPLEMENTATION_PLAN_2026-05-07.md)
 - [Fresh Product Ideas and Next Build Sequence (2026-04-28)](./FRESH_PRODUCT_IDEAS_AND_NEXT_SEQUENCE_2026-04-28.md)
 
 ## Product Thesis

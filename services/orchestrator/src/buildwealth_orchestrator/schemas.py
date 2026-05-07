@@ -1233,6 +1233,7 @@ class FinancialProfileRequest(BaseModel):
     investment_policy: InvestmentPolicy = Field(default_factory=InvestmentPolicy)
     flags: ProfileFlags = Field(default_factory=ProfileFlags)
     notes: str = ""
+    profile_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class FinancialProfileResponse(FinancialProfileRequest):

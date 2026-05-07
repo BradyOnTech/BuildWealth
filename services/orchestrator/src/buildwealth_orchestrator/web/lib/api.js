@@ -21,7 +21,12 @@ export async function fetchJson(url, options = {}) {
   if (!response.ok) {
     const detail = data && typeof data === 'object' ? data.detail || data.message : null;
     if (detail) {
-      throw new Error(detail);
+      const message = typeof detail === 'string'
+        ? detail
+        : detail.detail || detail.message || JSON.stringify(detail);
+      const error = new Error(message);
+      error.detail = detail;
+      throw error;
     }
     throw new Error(response.statusText || `Request failed with ${response.status}`);
   }
@@ -131,6 +136,14 @@ export function pullGitRemote(payload = {}) {
 
 export function createGitCheckpoint(payload = {}) {
   return fetchJson('/api/git/checkpoint', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function testLlmSettings(payload = {}) {
+  return fetchJson('/api/settings/test-llm', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),

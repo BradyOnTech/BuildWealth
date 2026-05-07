@@ -9,13 +9,13 @@ from typing import Any, Protocol
 import httpx
 
 
-DEFAULT_OPENAI_MODEL = "gpt-5-mini"
+DEFAULT_OPENAI_MODEL = "gpt-5.5"
 DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
 DEFAULT_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
-DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-5"
+DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-7"
 DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1"
-DEFAULT_XAI_MODEL = "grok-4.20-reasoning"
+DEFAULT_XAI_MODEL = "grok-4.20-reasoning-latest"
 DEFAULT_XAI_BASE_URL = "https://api.x.ai/v1"
 
 LLM_PROVIDER_OPENAI = "openai"
@@ -54,6 +54,163 @@ class ChatToolClient(Protocol):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
     ) -> dict[str, Any]: ...
+
+
+ECHO_PROBE_VALUE = 7
+
+
+def echo_probe_tool_definition() -> dict[str, Any]:
+    return {
+        "type": "function",
+        "function": {
+            "name": "echo_tool",
+            "description": "Echo a numeric value back to verify client-side tool calling.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "value": {
+                        "type": "number",
+                        "description": "The numeric value to echo.",
+                    }
+                },
+                "required": ["value"],
+            },
+        },
+    }
+
+
+def _parse_tool_arguments(raw_arguments: Any) -> dict[str, Any]:
+    if isinstance(raw_arguments, str):
+        try:
+            parsed = json.loads(raw_arguments)
+            return parsed if isinstance(parsed, dict) else {"value": parsed}
+        except Exception:
+            return {"_raw": raw_arguments}
+    if isinstance(raw_arguments, dict):
+        return raw_arguments
+    if raw_arguments is None:
+        return {}
+    return {"value": raw_arguments}
+
+
+def _numeric_probe_value(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+async def run_tool_call_probe(client: ChatToolClient) -> dict[str, Any]:
+    if not client.enabled:
+        return {
+            "ok": False,
+            "provider": getattr(client, "provider", "unknown"),
+            "model": getattr(client, "model", None),
+            "stage": "configuration",
+            "detail": "LLM API key is not configured.",
+            "tool_calls": [],
+            "answer": "",
+        }
+
+    tools = [echo_probe_tool_definition()]
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "system",
+            "content": (
+                "You are a provider compatibility probe. You must call echo_tool with "
+                f'value {ECHO_PROBE_VALUE}, wait for the tool result, then answer exactly '
+                f'"ECHO_VALUE={ECHO_PROBE_VALUE}".'
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"Call echo_tool with value {ECHO_PROBE_VALUE}, then report the echoed value.",
+        },
+    ]
+
+    first = await client.complete(messages=messages, tools=tools)
+    provider = first.get("provider", getattr(client, "provider", "unknown"))
+    model = first.get("model", getattr(client, "model", None))
+    assistant_message = first.get("message", {})
+    tool_calls = assistant_message.get("tool_calls") or []
+    if not tool_calls:
+        return {
+            "ok": False,
+            "provider": provider,
+            "model": model,
+            "stage": "tool_call",
+            "detail": "The model did not request the probe tool.",
+            "tool_calls": [],
+            "answer": _message_text(assistant_message.get("content")),
+        }
+
+    messages.append(
+        {
+            "role": "assistant",
+            "content": _message_text(assistant_message.get("content")),
+            "tool_calls": tool_calls,
+        }
+    )
+
+    traces: list[dict[str, Any]] = []
+    for call in tool_calls:
+        function_block = call.get("function", {}) if isinstance(call, dict) else {}
+        name = str(function_block.get("name") or "")
+        arguments = _parse_tool_arguments(function_block.get("arguments"))
+        value = arguments.get("value")
+        numeric_value = _numeric_probe_value(value)
+        ok = name == "echo_tool" and numeric_value == float(ECHO_PROBE_VALUE)
+        tool_payload = {
+            "ok": ok,
+            "result": {"echo": ECHO_PROBE_VALUE} if ok else {},
+            "error": None if ok else f"Unexpected probe tool call: {name}({arguments})",
+        }
+        traces.append(
+            {
+                "name": name,
+                "arguments": arguments,
+                "ok": ok,
+            }
+        )
+        messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": call.get("id", "") if isinstance(call, dict) else "",
+                "content": _safe_json_dumps(tool_payload),
+            }
+        )
+
+    if not all(trace["ok"] for trace in traces):
+        return {
+            "ok": False,
+            "provider": provider,
+            "model": model,
+            "stage": "tool_arguments",
+            "detail": "The model requested an unexpected tool name or argument payload.",
+            "tool_calls": traces,
+            "answer": "",
+        }
+
+    second = await client.complete(messages=messages, tools=tools)
+    final_message = second.get("message", {})
+    answer = _message_text(final_message.get("content"))
+    model = second.get("model", model)
+    ok = f"ECHO_VALUE={ECHO_PROBE_VALUE}" in answer
+    return {
+        "ok": ok,
+        "provider": second.get("provider", provider),
+        "model": model,
+        "stage": "final_answer" if not ok else "complete",
+        "detail": "Provider completed a client-side tool call loop." if ok else "Final answer did not include the expected probe value.",
+        "tool_calls": traces,
+        "answer": answer,
+    }
 
 
 def _coerce_provider(provider: str | None) -> str:

@@ -252,6 +252,48 @@ def test_build_context_quality_reports_freshness_and_coverage() -> None:
     assert summary_meta["actual_chars"] == 800
 
 
+def test_build_context_quality_reports_stale_profile_metadata() -> None:
+    payload = {
+        "generated_at": "2026-05-07T12:00:00+00:00",
+        "scope": {},
+        "financial_picture": {
+            "snapshot_summary": {
+                "as_of": "2026-05-07T11:00:00+00:00",
+            },
+            "today_dashboard": {},
+            "financial_profile": {
+                "schema_version": 2,
+                "tax_profile": {
+                    "filing_status": "single",
+                    "marginal_tax_rate": 0.28,
+                },
+                "investment_policy": {},
+                "profile_metadata": {
+                    "tax_profile.marginal_tax_rate": {
+                        "status": "user_confirmed",
+                        "source": "profile_editor",
+                        "confidence": "high",
+                        "last_confirmed_at": "2025-01-01T00:00:00+00:00",
+                        "updated_at": "2025-01-01T00:00:00+00:00",
+                        "stale_after_days": 180,
+                        "confirmed_by_user": True,
+                    }
+                },
+            },
+        },
+        "planning": {},
+        "research": {},
+        "decisions": {"recommendations": {"open_count": 0, "high_priority_count": 0}},
+        "warnings": [],
+    }
+
+    quality = build_context_quality(context_payload=payload)
+
+    assert quality["coverage"]["checks"]["financial_profile_metadata"] is False
+    assert "financial_profile_metadata" in quality["coverage"]["missing_sections"]
+    assert "financial_profile.tax_profile.marginal_tax_rate.stale" in quality["coverage"]["missing_sections"]
+
+
 def test_normalize_context_warnings_dedupes_and_caps() -> None:
     warnings = normalize_context_warnings(
         [" one ", "One", "", None, "two", "three", "two", "four"],

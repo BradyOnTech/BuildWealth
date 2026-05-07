@@ -11,6 +11,7 @@ from buildwealth_orchestrator.services.llm_clients import (
     LLMProviderConfig,
     XAIResponsesClient,
     build_llm_client,
+    run_tool_call_probe,
 )
 from buildwealth_orchestrator.services.user_settings import MASKED_PLACEHOLDER, UserSettingsStore
 
@@ -45,6 +46,44 @@ class FakeToolClient:
         return {
             "model": self.model,
             "message": {"content": "Your account summary is ready."},
+        }
+
+
+class FakeProbeClient:
+    provider = "fake"
+    model = "fake-probe-model"
+    enabled = True
+
+    def __init__(self, raw_arguments: str = '{"value": 7}'):
+        self.calls = 0
+        self.raw_arguments = raw_arguments
+
+    async def complete(self, messages: list[dict], tools: list[dict]) -> dict:
+        del tools
+        self.calls += 1
+        if self.calls == 1:
+            return {
+                "provider": self.provider,
+                "model": self.model,
+                "message": {
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "echo_tool",
+                                "arguments": self.raw_arguments,
+                            },
+                        }
+                    ],
+                },
+            }
+        assert messages[-1]["role"] == "tool"
+        return {
+            "provider": self.provider,
+            "model": self.model,
+            "message": {"content": "ECHO_VALUE=7"},
         }
 
 
@@ -142,12 +181,29 @@ def test_copilot_tool_round_trip(tmp_path: Path) -> None:
     assert loaded["messages"][-1]["metadata"]["tool_calls"][0]["name"] == "echo_tool"
 
 
+def test_tool_call_probe_runs_two_step_echo_loop() -> None:
+    result = asyncio.run(run_tool_call_probe(FakeProbeClient()))
+
+    assert result["ok"] is True
+    assert result["stage"] == "complete"
+    assert result["provider"] == "fake"
+    assert result["tool_calls"] == [{"name": "echo_tool", "arguments": {"value": 7}, "ok": True}]
+    assert result["answer"] == "ECHO_VALUE=7"
+
+
+def test_tool_call_probe_accepts_numeric_string_argument() -> None:
+    result = asyncio.run(run_tool_call_probe(FakeProbeClient(raw_arguments='{"value": "7"}')))
+
+    assert result["ok"] is True
+    assert result["stage"] == "complete"
+
+
 def test_build_llm_client_selects_provider_adapters() -> None:
     assert build_llm_client(
         LLMProviderConfig(
             provider="gemini",
             api_key="key",
-            model="gemini-2.5-flash",
+            model="gemini-3.1-flash-lite",
             base_url="https://generativelanguage.googleapis.com/v1beta/openai",
         )
     ).provider == "gemini"
@@ -156,7 +212,7 @@ def test_build_llm_client_selects_provider_adapters() -> None:
             LLMProviderConfig(
                 provider="anthropic",
                 api_key="key",
-                model="claude-sonnet-4-5",
+                model="claude-opus-4-7",
                 base_url="https://api.anthropic.com/v1",
             )
         ),
@@ -176,7 +232,7 @@ def test_build_llm_client_selects_provider_adapters() -> None:
 
 
 def test_anthropic_adapter_converts_openai_tool_loop_messages() -> None:
-    client = AnthropicMessagesClient(api_key="key", model="claude-sonnet-4-5")
+    client = AnthropicMessagesClient(api_key="key", model="claude-opus-4-7")
     messages = [
         {"role": "system", "content": "System prompt"},
         {"role": "user", "content": "Run the echo tool"},
@@ -240,11 +296,11 @@ def test_anthropic_adapter_converts_openai_tool_loop_messages() -> None:
 
 
 def test_anthropic_adapter_normalizes_tool_use_response() -> None:
-    client = AnthropicMessagesClient(api_key="key", model="claude-sonnet-4-5")
+    client = AnthropicMessagesClient(api_key="key", model="claude-opus-4-7")
 
     result = client._normalize_response(
         {
-            "model": "claude-sonnet-4-5",
+            "model": "claude-opus-4-7",
             "content": [
                 {"type": "text", "text": "Checking."},
                 {"type": "tool_use", "id": "toolu_1", "name": "echo_tool", "input": {"value": 7}},
@@ -432,6 +488,6 @@ def test_user_settings_provider_switch_applies_preset_and_clears_masked_key(tmp_
 
     assert saved["llm_provider"] == "anthropic"
     assert saved["llm_api_key"] == ""
-    assert saved["llm_model"] == "claude-sonnet-4-5"
+    assert saved["llm_model"] == "claude-opus-4-7"
     assert saved["llm_base_url"] == "https://api.anthropic.com/v1"
     assert saved["llm_settings_saved_at"]

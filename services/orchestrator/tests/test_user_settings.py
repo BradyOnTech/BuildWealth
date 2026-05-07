@@ -10,7 +10,7 @@ def test_user_settings_filters_legacy_bridge_keys(tmp_path: Path) -> None:
         (
             "{"
             '"openai_api_key":"sk-test-1234",'
-            '"openai_model":"gpt-5-mini",'
+            '"openai_model":"gpt-5.5",'
             '"openai_base_url":"https://api.openai.com/v1",'
             '"ghostfolio_api_base":"http://localhost:3333/api",'
             '"ghostfolio_security_token":"legacy-token",'

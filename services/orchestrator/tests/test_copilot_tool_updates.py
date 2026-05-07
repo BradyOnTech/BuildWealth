@@ -944,6 +944,49 @@ def test_update_financial_profile_records_profile_audit_event(
     assert event["metadata"]["source"] == "profile_editor"
 
 
+def test_profile_readiness_marks_stale_material_metadata_as_attention() -> None:
+    readiness = main._build_profile_readiness_summary(
+        income_items=[{"id": "income-1"}],
+        expense_items=[{"id": "expense-1"}],
+        debt_items=[],
+        goal_items=[{"id": "goal-1"}],
+        physical_assets=[],
+        flags={"no_debt": True, "no_goals": False},
+        tax_profile={"filing_status": "single", "marginal_tax_rate": 0.28},
+        investment_policy={"max_single_symbol_exposure_pct": 10.0},
+        profile_metadata={
+            "tax_profile.marginal_tax_rate": {
+                "status": "stale",
+                "source": "profile_editor",
+                "confidence": "high",
+                "last_confirmed_at": "2025-01-01T00:00:00+00:00",
+                "updated_at": "2025-01-01T00:00:00+00:00",
+                "stale_after_days": 180,
+                "confirmed_by_user": True,
+            },
+            "investment_policy.max_single_symbol_exposure_pct": {
+                "status": "stale",
+                "source": "profile_editor",
+                "confidence": "high",
+                "last_confirmed_at": "2025-01-01T00:00:00+00:00",
+                "updated_at": "2025-01-01T00:00:00+00:00",
+                "stale_after_days": 365,
+                "confirmed_by_user": True,
+            },
+        },
+    )
+
+    tax_section = next(section for section in readiness.sections if section.key == "tax_profile")
+    policy_section = next(section for section in readiness.sections if section.key == "investment_policy")
+
+    assert readiness.status == "attention"
+    assert tax_section.status == "attention"
+    assert tax_section.blocking_recommendations is True
+    assert policy_section.status == "attention"
+    assert policy_section.blocking_recommendations is True
+    assert "investment_fit" in readiness.blocking_recommendation_sources
+
+
 def test_tool_apply_recommendation_records_copilot_audit_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1082,6 +1125,11 @@ def test_tool_draft_financial_profile_update_supports_investment_policy(
     assert payload["section_counts"] == {"investment_policy": 3}
     assert payload["patch_payload"]["investment_policy"]["max_single_symbol_exposure_pct"] == 10.0
     assert payload["proposed_profile"]["investment_policy"]["minimum_research_confidence"] == "medium"
+    metadata = payload["proposed_profile"]["profile_metadata"]
+    single_symbol_metadata = metadata["investment_policy.max_single_symbol_exposure_pct"]
+    assert single_symbol_metadata["status"] == "copilot_drafted"
+    assert single_symbol_metadata["source"] == "copilot_profile_draft"
+    assert single_symbol_metadata["confirmed_by_user"] is False
 
 
 def test_pin_watchlist_research_tool_contract() -> None:

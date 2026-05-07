@@ -13,19 +13,19 @@ VISIBLE_SUFFIX_LEN = 4
 
 LLM_PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
     "openai": {
-        "llm_model": "gpt-5-mini",
+        "llm_model": "gpt-5.5",
         "llm_base_url": "https://api.openai.com/v1",
     },
     "gemini": {
-        "llm_model": "gemini-2.5-flash",
+        "llm_model": "gemini-3.1-flash-lite",
         "llm_base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
     },
     "anthropic": {
-        "llm_model": "claude-sonnet-4-5",
+        "llm_model": "claude-opus-4-7",
         "llm_base_url": "https://api.anthropic.com/v1",
     },
     "xai": {
-        "llm_model": "grok-4.20-reasoning",
+        "llm_model": "grok-4.20-reasoning-latest",
         "llm_base_url": "https://api.x.ai/v1",
     },
     "custom_openai_compatible": {
@@ -33,6 +33,20 @@ LLM_PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
         "llm_base_url": "",
     },
 }
+
+LEGACY_LLM_PROVIDER_DEFAULT_MODELS: dict[str, set[str]] = {
+    "openai": {"gpt-5-mini"},
+    "gemini": {"gemini-2.5-flash"},
+    "anthropic": {"claude-sonnet-4-5"},
+    "xai": {"grok-4-latest", "grok-4.20-reasoning"},
+}
+
+
+def provider_default_model_ids(provider: str) -> set[str]:
+    defaults = LLM_PROVIDER_DEFAULTS.get(provider, LLM_PROVIDER_DEFAULTS["openai"])
+    models = {str(defaults["llm_model"])}
+    models.update(LEGACY_LLM_PROVIDER_DEFAULT_MODELS.get(provider, set()))
+    return models
 
 
 def _mask(value: str | None) -> str | None:
@@ -62,13 +76,13 @@ class UserSettingsStore:
     DEFAULTS: dict[str, Any] = {
         "llm_provider": "openai",
         "llm_api_key": "",
-        "llm_model": "gpt-5-mini",
+        "llm_model": "gpt-5.5",
         "llm_base_url": "https://api.openai.com/v1",
         "llm_timeout_seconds": 60.0,
         "llm_max_tokens": 2048,
         "llm_parallel_tool_calls": True,
         "openai_api_key": "",
-        "openai_model": "gpt-5-mini",
+        "openai_model": "gpt-5.5",
         "openai_base_url": "https://api.openai.com/v1",
     }
 
@@ -143,7 +157,10 @@ class UserSettingsStore:
         if provider_changed:
             previous_defaults = LLM_PROVIDER_DEFAULTS.get(current_provider, LLM_PROVIDER_DEFAULTS["openai"])
             next_defaults = LLM_PROVIDER_DEFAULTS.get(requested_provider, LLM_PROVIDER_DEFAULTS["openai"])
-            if "llm_model" not in updates and current.get("llm_model") in {"", previous_defaults["llm_model"]}:
+            if "llm_model" not in updates and current.get("llm_model") in {
+                "",
+                *provider_default_model_ids(current_provider),
+            }:
                 current["llm_model"] = next_defaults["llm_model"]
             if "llm_base_url" not in updates and current.get("llm_base_url") in {"", previous_defaults["llm_base_url"]}:
                 current["llm_base_url"] = next_defaults["llm_base_url"]

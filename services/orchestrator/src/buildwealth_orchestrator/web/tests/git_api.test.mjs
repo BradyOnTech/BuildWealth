@@ -17,6 +17,7 @@ import {
   runDueGitAutoGit,
   pushGitRemote,
   pullGitRemote,
+  testLlmSettings,
   updateGitPolicy,
 } from '../lib/api.js';
 
@@ -52,6 +53,7 @@ test('git API helpers target the expected endpoints', async () => {
   await pushGitRemote({ remote_name: 'origin' });
   await pullGitRemote({ remote_name: 'origin' });
   await createGitCheckpoint({ event_type: 'manual_checkpoint' });
+  await testLlmSettings({ llm_provider: 'openai' });
 
   assert.deepEqual(calls, [
     { url: '/api/git/policy', method: 'GET' },
@@ -70,6 +72,7 @@ test('git API helpers target the expected endpoints', async () => {
     { url: '/api/git/push', method: 'POST' },
     { url: '/api/git/pull', method: 'POST' },
     { url: '/api/git/checkpoint', method: 'POST' },
+    { url: '/api/settings/test-llm', method: 'POST' },
   ]);
 });
 
@@ -107,4 +110,32 @@ test('git policy, checkpoint, restore-apply, and cleanup helpers send JSON bodie
     preview_token: 'git-preview-token',
   });
   await cleanupGitActivity({ dry_run: true, max_events: 100 });
+});
+
+test('LLM provider test helper preserves structured error details', async () => {
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 400,
+    statusText: 'Bad Request',
+    text: async () => JSON.stringify({
+      detail: {
+        ok: false,
+        stage: 'tool_call',
+        detail: 'The model did not request the probe tool.',
+      },
+    }),
+  });
+
+  await assert.rejects(
+    testLlmSettings({ llm_provider: 'openai' }),
+    error => {
+      assert.equal(error.message, 'The model did not request the probe tool.');
+      assert.deepEqual(error.detail, {
+        ok: false,
+        stage: 'tool_call',
+        detail: 'The model did not request the probe tool.',
+      });
+      return true;
+    },
+  );
 });
