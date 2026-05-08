@@ -45,6 +45,7 @@ const ui = {
   testResult:      null,           // { ok, stage, detail, provider, model } or null
   saveError:       null,
   loadError:       null,
+  contextSettings: null,           // read-only context/embedding state
 };
 
 export function template() {
@@ -66,12 +67,16 @@ async function load() {
   ui.loaded = false;
   ui.loadError = null;
   try {
-    const settings = await api.settings();
+    const [settings, contextSettings] = await Promise.all([
+      api.settings(),
+      api.contextSettings().catch(() => null),
+    ]);
     ui.loadedSettings = settings;
     ui.draft = toDraft(settings);
     ui.apiKeyDirty = false;
     ui.testResult = null;
     ui.saveError = null;
+    ui.contextSettings = contextSettings;
     ui.loaded = true;
   } catch (err) {
     ui.loadError = err.message || 'Could not load settings.';
@@ -102,6 +107,7 @@ function render() {
   setView(shell, html`
     ${raw(masthead())}
     ${raw(providerCard())}
+    ${raw(contextCard())}
     ${raw(handoffCard())}
   `);
 }
@@ -296,6 +302,85 @@ function testResultBlock() {
 
 function humanStage(stage) {
   return String(stage || '').replace(/_/g, ' ');
+}
+
+/* ─────────────  Context Intelligence card  ───────────── */
+
+function contextCard() {
+  const c = ui.contextSettings;
+  // Tone deliberately quiet — embeddings are optional for v1; the user
+  // shouldn't have to learn a new vocabulary to keep using Copilot.
+  return html`
+    <section class="settings-card settings-card-quiet">
+      <header class="settings-card-head">
+        <h2 class="settings-card-title">Context intelligence</h2>
+        <p class="settings-card-lede">
+          Structured profile, plan, and portfolio data are always the source of truth.
+          Optional embeddings let Copilot search older notes, research, and conversation
+          history when nothing structured is close enough.
+        </p>
+      </header>
+
+      <div class="settings-context-grid">
+        ${raw(contextRow('Context engine', 'On — always running.', 'applied'))}
+        ${raw(contextRow(
+          'Narrative search (embeddings)',
+          c ? (c.embeddings_enabled ? 'On — searching narrative context.' : 'Off — structured data only.') : '—',
+          c && c.embeddings_enabled ? 'applied' : 'archived',
+        ))}
+        ${raw(contextRow(
+          'Embedding provider',
+          c ? humanProvider(c.embedding_provider) : '—',
+          'archived',
+        ))}
+        ${raw(contextRow(
+          'Embedding model',
+          c?.embedding_model || '—',
+          'archived',
+          { mono: true },
+        ))}
+        ${raw(contextRow(
+          'Embedding endpoint',
+          c?.embedding_base_url || '—',
+          'archived',
+          { mono: true },
+        ))}
+        ${raw(contextRow(
+          'Indexed items · candidates pending review',
+          c ? `${c.registry?.item_count ?? 0} · ${c.registry?.pending_review_count ?? 0}` : '—',
+          'archived',
+          { mono: true },
+        ))}
+      </div>
+
+      <p class="settings-context-note">
+        These are read-only for now. To change them, set
+        <code>CONTEXT_EMBEDDINGS_ENABLED</code>, <code>CONTEXT_EMBEDDING_PROVIDER</code>,
+        <code>CONTEXT_EMBEDDING_MODEL</code>, or <code>CONTEXT_EMBEDDING_BASE_URL</code>
+        in the orchestrator environment and restart. User-level editing arrives
+        in a follow-up slice.
+      </p>
+    </section>
+  `;
+}
+
+function contextRow(label, value, tone, opts = {}) {
+  const valueClass = `settings-context-value${opts.mono ? ' mono' : ''}`;
+  return html`
+    <div class="settings-context-row">
+      <span class="status-pill ${tone}"><span class="dot"></span></span>
+      <span class="settings-context-label">${label}</span>
+      <span class="${valueClass}">${value}</span>
+    </div>
+  `;
+}
+
+function humanProvider(value) {
+  if (!value) return '—';
+  if (value === 'disabled') return 'Disabled';
+  if (value === 'ollama')   return 'Local Ollama';
+  if (value === 'custom_openai_compatible') return 'Custom (OpenAI-compatible)';
+  return String(value).replace(/_/g, ' ');
 }
 
 /* ─────────────  Handoff card (where the rest lives)  ───────────── */

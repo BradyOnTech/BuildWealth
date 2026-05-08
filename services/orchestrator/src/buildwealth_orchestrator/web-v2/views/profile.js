@@ -17,6 +17,8 @@ import { fmtRelative } from '../lib/format.js';
 import { renderOverview } from './profile/overview.js';
 import { renderTable, sectionForKey, TABLE_SECTIONS } from './profile/tables.js';
 import { renderTaxes, submitTaxesForm } from './profile/taxes.js';
+import { renderInvesting, submitInvestingForm, addRestricted, removeRestricted } from './profile/investing.js';
+import { renderDataQuality } from './profile/data_quality.js';
 
 export const meta = {
   id: 'profile',
@@ -32,9 +34,9 @@ const SECTIONS = [
   { id: 'debt',         label: 'Debt',         kind: 'table',   tableKey: 'debt_items' },
   { id: 'goals',        label: 'Goals',        kind: 'table',   tableKey: 'goal_items' },
   { id: 'taxes',        label: 'Taxes',        kind: 'taxes' },
-  { id: 'investing',    label: 'Investing',    kind: 'placeholder',  blurb: 'Investment guardrails arrive next slice — single-investment limit, cash cushion, tax sensitivity, restricted symbols.' },
+  { id: 'investing',    label: 'Investing',    kind: 'investing' },
   { id: 'assets',       label: 'Assets',       kind: 'table',   tableKey: 'physical_assets' },
-  { id: 'data-quality', label: 'Data quality', kind: 'placeholder',  blurb: 'Source, status, and last-confirmed metadata land in slice 5.' },
+  { id: 'data-quality', label: 'Data quality', kind: 'data-quality' },
 ];
 
 export const ui = {
@@ -221,10 +223,12 @@ function tab(section) {
 }
 
 function renderSectionBody(section) {
-  if (section.kind === 'overview')    return renderOverview(ui);
-  if (section.kind === 'taxes')       return renderTaxes(ui);
-  if (section.kind === 'table')       return renderTable(ui, sectionForKey(section.tableKey));
-  if (section.kind === 'placeholder') return renderPlaceholder(section);
+  if (section.kind === 'overview')     return renderOverview(ui);
+  if (section.kind === 'taxes')        return renderTaxes(ui);
+  if (section.kind === 'investing')    return renderInvesting(ui);
+  if (section.kind === 'data-quality') return renderDataQuality(ui);
+  if (section.kind === 'table')        return renderTable(ui, sectionForKey(section.tableKey));
+  if (section.kind === 'placeholder')  return renderPlaceholder(section);
   return '';
 }
 
@@ -272,6 +276,28 @@ function attachHandlers() {
   delegate(root, 'click', '[data-taxes-save]', (e) => {
     e.preventDefault();
     submitTaxesForm(ui);
+  });
+
+  delegate(root, 'click', '[data-investing-save]', (e) => {
+    e.preventDefault();
+    submitInvestingForm(ui);
+  });
+
+  delegate(root, 'click', '[data-investing-add]', (e, el) => {
+    e.preventDefault();
+    addRestricted(ui, el.getAttribute('data-investing-add'));
+  });
+
+  delegate(root, 'click', '[data-investing-remove]', (e, el) => {
+    e.preventDefault();
+    removeRestricted(ui, el.getAttribute('data-investing-remove'), el.getAttribute('data-value'));
+  });
+
+  delegate(root, 'keydown', '[data-investing-add-input]', (e, el) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addRestricted(ui, el.getAttribute('data-investing-add-input'));
+    }
   });
 }
 

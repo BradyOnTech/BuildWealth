@@ -10,7 +10,7 @@
     "marginal_tax_rate": null,
     "effective_tax_rate": null,
     "state_tax_rate": null,
-    "state": "MN"
+    "state": null
   },
   "investment_policy": {
     "max_single_symbol_exposure_pct": null,
@@ -29,17 +29,7 @@
     "no_debt": false,
     "no_goals": false
   },
-  "profile_metadata": {
-    "tax_profile.state": {
-      "status": "user_confirmed",
-      "source": "profile_editor",
-      "confidence": "high",
-      "updated_at": "2026-05-08T19:29:57.271661+00:00",
-      "stale_after_days": 365,
-      "last_confirmed_at": "2026-05-08T19:29:57.271661+00:00",
-      "confirmed_by_user": true
-    }
-  },
+  "profile_metadata": {},
   "notes": "",
-  "updated_at": "2026-05-08T19:29:57.271661+00:00"
+  "updated_at": "2026-05-08T19:54:25.456438+00:00"
 }

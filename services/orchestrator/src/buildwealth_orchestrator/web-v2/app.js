@@ -277,6 +277,10 @@ async function preloadGlobalState() {
 }
 
 async function boot() {
+  // Take scroll into our own hands — the browser's automatic scroll
+  // restoration races with route()'s scrollTo(0, 0) on reload and wins,
+  // leaving the user landed mid-page on a freshly-loaded view.
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
   bootShell();
   state.bootedAt = new Date();
   window.addEventListener('hashchange', route);

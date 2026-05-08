@@ -165,10 +165,6 @@
   gap: var(--s-1);
   padding: var(--s-3) 0 var(--s-4);
   border-bottom: var(--hair) solid var(--rule);
-  position: sticky;
-  top: 0;
-  background: var(--paper);
-  z-index: 1;
 }
 
 .profile-tab {
@@ -524,6 +520,216 @@
 
 .profile-row-actions { text-align: right; white-space: nowrap; }
 
+/* ───────────  Data Quality block  ─────────── */
+
+.profile-data-quality {
+  display: grid;
+  gap: var(--s-5);
+}
+
+.profile-quality-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s-3);
+}
+
+.profile-quality-item {
+  display: grid;
+  gap: 4px;
+  padding-bottom: var(--s-3);
+  border-bottom: var(--hair) dotted var(--rule);
+}
+.profile-quality-item:last-child { border-bottom: 0; padding-bottom: 0; }
+
+.profile-quality-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.profile-quality-area {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+}
+
+.profile-quality-confidence {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-quiet);
+}
+
+.profile-quality-claim {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-size: 15px;
+  color: var(--ink);
+  margin: 0;
+  text-wrap: pretty;
+  line-height: var(--lh-body);
+}
+
+.profile-quality-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-5);
+}
+
+/* ───────────  Investing block  ─────────── */
+
+.profile-investing {
+  display: grid;
+  gap: var(--s-5);
+}
+
+.profile-guardrails {
+  display: grid;
+  gap: var(--s-3);
+}
+
+.profile-guardrail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, auto);
+  align-items: start;
+  gap: var(--s-4);
+  padding: var(--s-3) 0;
+  border-bottom: var(--hair) dotted var(--rule);
+}
+.profile-guardrail:last-child { border-bottom: 0; }
+
+.profile-guardrail-text { display: grid; gap: 3px; min-width: 0; }
+
+.profile-guardrail-label {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: var(--t-body-sm);
+  color: var(--ink-strong);
+}
+
+.profile-guardrail-why {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-style: italic;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  text-wrap: pretty;
+  line-height: var(--lh-body);
+}
+
+.profile-guardrail-input {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s-2);
+}
+.profile-guardrail-input input,
+.profile-guardrail-input select {
+  width: 180px;
+}
+.profile-guardrail-unit {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+}
+
+/* ───────────  Restricted chip lists  ─────────── */
+
+.profile-chips-block {
+  display: grid;
+  gap: var(--s-2);
+  padding: var(--s-3) 0;
+  border-top: var(--hair) dotted var(--rule);
+}
+.profile-chips-block:first-of-type { border-top: 0; }
+
+.profile-chips-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+}
+
+.profile-chips-title {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+}
+
+.profile-chips-count {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-quiet);
+}
+
+.profile-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+
+.profile-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 4px 10px;
+  border-radius: var(--r-pill);
+  background: var(--paper);
+  border: var(--hair) solid var(--rule);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+
+.profile-chip-label { font-feature-settings: 'tnum'; }
+
+.profile-chip-remove {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color var(--d-fast) var(--ease-press), background var(--d-fast) var(--ease-press);
+}
+.profile-chip-remove:hover { color: var(--oxblood); background: var(--shade); }
+
+.profile-chips-empty {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.profile-chips-add {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.profile-chips-add input { flex: 1; max-width: 240px; }
+
+@media (max-width: 760px) {
+  .profile-guardrail { grid-template-columns: 1fr; }
+  .profile-guardrail-input input,
+  .profile-guardrail-input select { width: 100%; }
+}
+
 /* ───────────  Taxes block  ─────────── */
 
 .profile-taxes {
@@ -535,5 +741,4 @@
   .profile-overview { grid-template-columns: 1fr; }
   .profile-table-head { grid-template-columns: 1fr; align-items: start; }
   .profile-table-meta { text-align: left; }
-  .profile-tabs { position: static; }
 }

@@ -15458,6 +15458,33 @@ async def test_llm_settings(request: dict[str, Any]) -> dict[str, Any]:
         ) from exc
 
 
+@app.get("/api/settings/context")
+def get_context_settings() -> dict[str, Any]:
+    """Read-only summary of context-intelligence + embedding configuration.
+
+    These knobs are env-driven today (CONTEXT_EMBEDDING_*), not user-editable
+    via the user_settings store. The v2 Settings page renders this read-only
+    so users can see what's configured without needing to know the env-var
+    names. Editing is deferred until Slice 6 wires UserSettingsStore support.
+    """
+    registry_status = context_intelligence_service.get_status()
+    return {
+        "context_engine_enabled": True,
+        "embeddings_enabled": bool(settings.context_embeddings_enabled),
+        "embedding_provider": settings.context_embedding_provider,
+        "embedding_model": settings.context_embedding_model,
+        "embedding_base_url": settings.context_embedding_base_url,
+        "embedding_timeout_seconds": float(settings.context_embedding_timeout_seconds),
+        "registry": {
+            "item_count": int(registry_status.get("item_count", 0) or 0),
+            "embedded_count": int(((registry_status.get("embeddings") or {}).get("embedded_count")) or 0),
+            "candidate_count": int(((registry_status.get("candidates") or {}).get("candidate_count")) or 0),
+            "pending_review_count": int(((registry_status.get("candidates") or {}).get("pending_review_count")) or 0),
+            "latest_rebuild_at": registry_status.get("latest_rebuild_at"),
+        },
+    }
+
+
 async def on_startup() -> None:
     settings.import_inbox_dir.mkdir(parents=True, exist_ok=True)
     settings.import_archive_dir.mkdir(parents=True, exist_ok=True)

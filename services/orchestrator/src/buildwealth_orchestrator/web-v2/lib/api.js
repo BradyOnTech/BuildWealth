@@ -178,6 +178,7 @@ export const api = {
   settings:       () => fetchJson('/api/settings'),
   updateSettings: (body = {}) => putJson('/api/settings', body),
   testLlmSettings: (body = {}) => postJson('/api/settings/test-llm', body),
+  contextSettings: () => fetchJson('/api/settings/context'),
 
   // Context intelligence
   contextCandidates: (opts = {}) => fetchJson(contextCandidatesUrl(opts)),
