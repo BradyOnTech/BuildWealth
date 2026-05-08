@@ -35,7 +35,7 @@ export const meta = {
   id: 'plan',
   label: 'Plan',
   numeral: 'III',
-  group: 'daily',
+  group: 'primary',
 };
 
 const ui = {

@@ -24,10 +24,22 @@ export async function fetchJson(url, options = {}) {
 
   if (!response.ok) {
     const detail = data && typeof data === 'object' ? data.detail || data.message : null;
-    throw new Error(detail || response.statusText || `Request failed with ${response.status}`);
+    const message = typeof detail === 'string'
+      ? detail
+      : (detail ? safeJson(detail) : (response.statusText || `Request failed with ${response.status}`));
+    const error = new Error(message);
+    error.status = response.status;
+    error.detail = detail;       // structured shape if the server sent one
+    error.body = data;           // raw parsed body, if callers need more
+    throw error;
   }
 
   return data;
+}
+
+function safeJson(value) {
+  try { return JSON.stringify(value); }
+  catch { return String(value); }
 }
 
 function postJson(url, body = {}) {
@@ -161,6 +173,11 @@ export const api = {
   profile:      () => fetchJson('/api/financial-profile'),
   updateProfile: (body, opts = {}) => putJson(financialProfileUrl(opts), body),
   onboarding:   () => fetchJson('/api/onboarding/status'),
+
+  // User settings
+  settings:       () => fetchJson('/api/settings'),
+  updateSettings: (body = {}) => putJson('/api/settings', body),
+  testLlmSettings: (body = {}) => postJson('/api/settings/test-llm', body),
 
   // Context intelligence
   contextCandidates: (opts = {}) => fetchJson(contextCandidatesUrl(opts)),

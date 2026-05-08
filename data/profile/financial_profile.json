@@ -9,12 +9,37 @@
     "filing_status": null,
     "marginal_tax_rate": null,
     "effective_tax_rate": null,
-    "state": null
+    "state_tax_rate": null,
+    "state": "MN"
+  },
+  "investment_policy": {
+    "max_single_symbol_exposure_pct": null,
+    "max_sector_exposure_pct": null,
+    "minimum_research_confidence": null,
+    "minimum_cash_runway_months": null,
+    "max_asset_class_exposure_pct": {},
+    "simplicity_preference": null,
+    "tax_sensitivity": null,
+    "risk_tolerance": null,
+    "preferred_account_locations": {},
+    "restricted_symbols": [],
+    "restricted_sectors": []
   },
   "flags": {
     "no_debt": false,
     "no_goals": false
   },
+  "profile_metadata": {
+    "tax_profile.state": {
+      "status": "user_confirmed",
+      "source": "profile_editor",
+      "confidence": "high",
+      "updated_at": "2026-05-08T19:29:57.271661+00:00",
+      "stale_after_days": 365,
+      "last_confirmed_at": "2026-05-08T19:29:57.271661+00:00",
+      "confirmed_by_user": true
+    }
+  },
   "notes": "",
-  "updated_at": "2026-04-09T21:45:01.221332+00:00"
+  "updated_at": "2026-05-08T19:29:57.271661+00:00"
 }

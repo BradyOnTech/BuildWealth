@@ -8,8 +8,8 @@ import { renderMarkdown } from './copilot/markdown.js';
 export const meta = {
   id: 'research',
   label: 'Research',
-  numeral: 'V',
-  group: 'studio',
+  numeral: '·',
+  group: 'utility',
 };
 
 export function template() {

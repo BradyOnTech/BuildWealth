@@ -1,0 +1,14 @@
+{
+  "auto_checkpoint_idle_seconds": 180,
+  "auto_push_enabled": false,
+  "autogit_enabled": false,
+  "enabled": false,
+  "include_financial_profile": false,
+  "include_plans": true,
+  "include_recommendations": true,
+  "include_review_packets": true,
+  "include_snapshot_checkpoints": true,
+  "remote_name": "origin",
+  "updated_at": "2026-05-08T16:37:21.356048+00:00",
+  "workspace_dir": "data/versioned"
+}

@@ -14,8 +14,8 @@ import { renderContextCaptures } from './inbox/context-captures.js';
 export const meta = {
   id: 'inbox',
   label: 'Inbox',
-  numeral: '·',
-  group: 'hidden',
+  numeral: 'II',
+  group: 'primary',
 };
 
 const STATUSES = ['proposed', 'applied', 'rejected', 'archived'];

@@ -16,8 +16,8 @@ const MONEY_FMT = new Intl.NumberFormat('en-US', { style: 'currency', currency: 
 export const meta = {
   id: 'portfolio',
   label: 'Portfolio',
-  numeral: 'II',
-  group: 'daily',
+  numeral: 'IV',
+  group: 'primary',
 };
 
 export function template() {

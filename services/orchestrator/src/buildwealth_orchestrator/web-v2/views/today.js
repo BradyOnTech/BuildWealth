@@ -13,7 +13,7 @@ export const meta = {
   id: 'today',
   label: 'Today',
   numeral: 'I',
-  group: 'daily',
+  group: 'primary',
 };
 
 export function template() {

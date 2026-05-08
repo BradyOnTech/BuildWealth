@@ -8,9 +8,9 @@ import { fmtDateLong } from '../lib/format.js';
 
 export const meta = {
   id: 'atelier',
-  label: 'Atelier',
-  numeral: 'VI',
-  group: 'studio',
+  label: 'Data & Recovery',
+  numeral: '·',
+  group: 'utility',
 };
 
 const trustUi = {

@@ -12,8 +12,8 @@ import { fmtRelative } from '../lib/format.js';
 export const meta = {
   id: 'copilot',
   label: 'Copilot',
-  numeral: 'IV',
-  group: 'daily',
+  numeral: 'VI',
+  group: 'primary',
 };
 
 const SUGGESTIONS = [
