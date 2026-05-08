@@ -1,0 +1,1299 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BuildWealth SaaS Transition Plan</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17201b;
+      --muted: #5f6e66;
+      --quiet: #eef3ef;
+      --paper: #fbfcf9;
+      --panel: #ffffff;
+      --line: #d7e0da;
+      --green: #1f7a4f;
+      --green-soft: #dfeee6;
+      --blue: #266aa6;
+      --blue-soft: #e2eef8;
+      --gold: #9a6b16;
+      --gold-soft: #f6edda;
+      --red: #a33d38;
+      --red-soft: #f7e5e3;
+      --shadow: 0 16px 44px rgba(30, 49, 39, 0.09);
+      --radius: 8px;
+      --max: 1180px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, rgba(223, 238, 230, 0.72), rgba(251, 252, 249, 0.92) 420px),
+        var(--paper);
+      line-height: 1.55;
+    }
+
+    a {
+      color: var(--blue);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+
+    .hero {
+      padding: 56px 24px 32px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .hero-inner,
+    main,
+    .nav-inner {
+      width: min(var(--max), calc(100vw - 48px));
+      margin: 0 auto;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 30px;
+      padding: 4px 10px;
+      border: 1px solid rgba(31, 122, 79, 0.25);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--green);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      max-width: 920px;
+      margin: 18px 0 14px;
+      font-size: clamp(38px, 6vw, 72px);
+      line-height: 0.98;
+      letter-spacing: 0;
+    }
+
+    .lede {
+      max-width: 850px;
+      margin: 0;
+      color: #35443c;
+      font-size: clamp(18px, 2vw, 22px);
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 30px;
+    }
+
+    .fact {
+      min-height: 116px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.82);
+      box-shadow: 0 8px 24px rgba(30, 49, 39, 0.06);
+    }
+
+    .fact strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+      text-transform: uppercase;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+    }
+
+    .fact span {
+      display: block;
+      font-size: 18px;
+      font-weight: 800;
+      line-height: 1.25;
+    }
+
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(251, 252, 249, 0.94);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(14px);
+    }
+
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      overflow-x: auto;
+      min-height: 58px;
+      padding: 9px 0;
+    }
+
+    .nav-inner a {
+      flex: 0 0 auto;
+      padding: 7px 10px;
+      border-radius: 999px;
+      color: #26352d;
+      font-size: 13px;
+      font-weight: 750;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .nav-inner a:hover {
+      background: var(--quiet);
+    }
+
+    main {
+      padding: 34px 0 84px;
+    }
+
+    section {
+      scroll-margin-top: 78px;
+      margin-top: 26px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    section:first-child {
+      margin-top: 0;
+    }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: start;
+      margin-bottom: 22px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(25px, 3vw, 38px);
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+
+    .section-head p {
+      max-width: 780px;
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: var(--quiet);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      white-space: nowrap;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .card,
+    .decision,
+    .phase,
+    .warning,
+    .ok,
+    .question {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .card {
+      padding: 18px;
+    }
+
+    .card h3,
+    .decision h3,
+    .phase h3 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .card p,
+    .decision p,
+    .phase p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .decision {
+      display: grid;
+      grid-template-columns: 160px minmax(0, 1fr);
+      overflow: hidden;
+    }
+
+    .decision .label {
+      padding: 16px;
+      background: var(--quiet);
+      color: #31443a;
+      font-size: 13px;
+      font-weight: 850;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .decision .body {
+      padding: 16px 18px;
+    }
+
+    .diagram {
+      display: grid;
+      gap: 12px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #f7faf7;
+    }
+
+    .lane {
+      display: grid;
+      grid-template-columns: 190px repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .lane-title,
+    .node {
+      min-height: 62px;
+      display: flex;
+      align-items: center;
+      padding: 12px;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: #fff;
+      font-size: 13px;
+      font-weight: 750;
+    }
+
+    .lane-title {
+      background: #e8f1eb;
+      color: #234b35;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .node.blue {
+      background: var(--blue-soft);
+      border-color: rgba(38, 106, 166, 0.25);
+      color: #17476f;
+    }
+
+    .node.green {
+      background: var(--green-soft);
+      border-color: rgba(31, 122, 79, 0.25);
+      color: #175438;
+    }
+
+    .node.gold {
+      background: var(--gold-soft);
+      border-color: rgba(154, 107, 22, 0.22);
+      color: #684709;
+    }
+
+    .callout-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .warning,
+    .ok,
+    .question {
+      padding: 16px;
+    }
+
+    .warning {
+      background: var(--red-soft);
+      border-color: rgba(163, 61, 56, 0.22);
+    }
+
+    .ok {
+      background: var(--green-soft);
+      border-color: rgba(31, 122, 79, 0.25);
+    }
+
+    .question {
+      background: var(--blue-soft);
+      border-color: rgba(38, 106, 166, 0.22);
+    }
+
+    .warning strong,
+    .ok strong,
+    .question strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .warning p,
+    .ok p,
+    .question p {
+      margin: 0;
+      color: #34433b;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+    }
+
+    th,
+    td {
+      vertical-align: top;
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+    }
+
+    th {
+      background: #eef4f0;
+      color: #31443a;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    td:first-child {
+      font-weight: 800;
+      color: #26352d;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--quiet);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .pill.green {
+      background: var(--green-soft);
+      color: var(--green);
+    }
+
+    .pill.gold {
+      background: var(--gold-soft);
+      color: var(--gold);
+    }
+
+    .pill.red {
+      background: var(--red-soft);
+      color: var(--red);
+    }
+
+    .phase-list {
+      display: grid;
+      gap: 14px;
+    }
+
+    .phase {
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr) 270px;
+      gap: 16px;
+      padding: 18px;
+      align-items: start;
+    }
+
+    .phase-number {
+      display: grid;
+      place-items: center;
+      width: 62px;
+      height: 62px;
+      border-radius: 999px;
+      background: #25392f;
+      color: #fff;
+      font-size: 22px;
+      font-weight: 900;
+    }
+
+    ul {
+      margin: 10px 0 0;
+      padding-left: 19px;
+    }
+
+    li + li {
+      margin-top: 6px;
+    }
+
+    .checklist {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .check {
+      padding: 13px 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+      font-size: 14px;
+    }
+
+    .check strong {
+      color: var(--green);
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.94em;
+    }
+
+    .footer {
+      margin-top: 26px;
+      padding: 18px 0 0;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 980px) {
+      .hero-grid,
+      .grid-3,
+      .callout-row,
+      .checklist {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .decision,
+      .phase,
+      .lane {
+        grid-template-columns: 1fr;
+      }
+
+      .phase-number {
+        width: 48px;
+        height: 48px;
+        font-size: 18px;
+      }
+    }
+
+    @media (max-width: 680px) {
+      .hero {
+        padding: 38px 18px 24px;
+      }
+
+      .hero-inner,
+      main,
+      .nav-inner {
+        width: min(var(--max), calc(100vw - 28px));
+      }
+
+      section {
+        padding: 20px;
+      }
+
+      .section-head {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-grid,
+      .grid-2,
+      .grid-3,
+      .callout-row,
+      .checklist {
+        grid-template-columns: 1fr;
+      }
+
+      table {
+        display: block;
+        overflow-x: auto;
+        white-space: normal;
+      }
+    }
+
+    @media print {
+      nav {
+        display: none;
+      }
+
+      body {
+        background: #fff;
+      }
+
+      section {
+        break-inside: avoid;
+        box-shadow: none;
+      }
+
+      a {
+        color: #000;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="eyebrow">BuildWealth SaaS Plan</div>
+      <h1>Transition from local single-user app to privacy-first hosted SaaS.</h1>
+      <p class="lede">
+        This plan assumes a B2C-first product for normal people managing their financial life,
+        with an architecture that can later support advisors and small firms without starting over.
+        The initial target is tiny: 1 to 9 real users, no existing production obligations, and freedom
+        to reshape the system now while the blast radius is still mercifully small.
+      </p>
+      <div class="hero-grid">
+        <div class="fact">
+          <strong>Initial Market</strong>
+          <span>B2C households</span>
+        </div>
+        <div class="fact">
+          <strong>Scale Target</strong>
+          <span>1-9 hosted users first</span>
+        </div>
+        <div class="fact">
+          <strong>Data Posture</strong>
+          <span>SQLite-first, private workspaces</span>
+        </div>
+        <div class="fact">
+          <strong>Future Option</strong>
+          <span>Advisor and firm accounts later</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <nav aria-label="Plan sections">
+    <div class="nav-inner">
+      <a href="#north-star">North Star</a>
+      <a href="#target-architecture">Architecture</a>
+      <a href="#data-model">Data Model</a>
+      <a href="#security">Security</a>
+      <a href="#phases">Phases</a>
+      <a href="#codebase">Codebase Changes</a>
+      <a href="#advisor">Advisor Path</a>
+      <a href="#risk">Risks</a>
+      <a href="#questions">Questions</a>
+    </div>
+  </nav>
+
+  <main>
+    <section id="north-star">
+      <div class="section-head">
+        <div>
+          <h2>1. North Star</h2>
+          <p>
+            Do not turn BuildWealth into a generic multi-tenant dashboard. Turn it into a hosted
+            private financial workspace that feels as safe and personal as the local app, but can be
+            reached from a browser and operated by normal users.
+          </p>
+        </div>
+        <span class="tag">Strategic Choice</span>
+      </div>
+
+      <div class="grid-2">
+        <div class="decision">
+          <div class="label">Positioning</div>
+          <div class="body">
+            <h3>Use "financial operating system" language before "advisor" language.</h3>
+            <p>
+              The product can help users organize, model, review, and understand their finances.
+              Any language implying personalized investment, tax, legal, or fiduciary advice should
+              be reviewed before launch.
+            </p>
+          </div>
+        </div>
+
+        <div class="decision">
+          <div class="label">Architecture</div>
+          <div class="body">
+            <h3>Adopt a private-workspace SaaS model.</h3>
+            <p>
+              Each household or organization receives an isolated workspace. For the first 1-9 users,
+              this can be one SQLite database per workspace plus a small control-plane database for
+              login, billing, and routing.
+            </p>
+          </div>
+        </div>
+
+        <div class="decision">
+          <div class="label">Scale</div>
+          <div class="body">
+            <h3>Optimize for correctness, isolation, and iteration before raw throughput.</h3>
+            <p>
+              The first hosted version should survive real users and real sensitive data. It does not
+              need sharding, Kubernetes, or a shared relational fleet on day one.
+            </p>
+          </div>
+        </div>
+
+        <div class="decision">
+          <div class="label">Future</div>
+          <div class="body">
+            <h3>Model organizations now, even if only households use it first.</h3>
+            <p>
+              A household is just an organization with one owner and maybe family members. This keeps
+              the advisor/firm path open without burdening the first B2C release.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="target-architecture">
+      <div class="section-head">
+        <div>
+          <h2>2. Target Architecture</h2>
+          <p>
+            Keep the existing Python orchestrator as the product control plane. Replace global local
+            state with request-scoped workspace state. Keep compute sidecars stateless.
+          </p>
+        </div>
+        <span class="tag">End State</span>
+      </div>
+
+      <div class="diagram" aria-label="Target architecture diagram">
+        <div class="lane">
+          <div class="lane-title">Browser</div>
+          <div class="node blue">Hosted BuildWealth UI</div>
+          <div class="node blue">Session cookie or token</div>
+          <div class="node blue">Workspace selector</div>
+          <div class="node blue">Review and apply flows</div>
+        </div>
+        <div class="lane">
+          <div class="lane-title">Control Plane</div>
+          <div class="node green">Auth, users, orgs</div>
+          <div class="node green">Subscriptions and entitlements</div>
+          <div class="node green">Workspace registry</div>
+          <div class="node green">Audit and admin events</div>
+        </div>
+        <div class="lane">
+          <div class="lane-title">Workspace</div>
+          <div class="node gold">One SQLite DB per household or organization</div>
+          <div class="node gold">Tenant-scoped file artifacts</div>
+          <div class="node gold">Encrypted secrets</div>
+          <div class="node gold">Tenant-scoped backups</div>
+        </div>
+        <div class="lane">
+          <div class="lane-title">Compute</div>
+          <div class="node">Python financial services</div>
+          <div class="node">LLM and market-data adapters</div>
+          <div class="node">Ghostfolio/Ignidash sidecars</div>
+          <div class="node">Background jobs</div>
+        </div>
+      </div>
+
+      <div class="callout-row">
+        <div class="ok">
+          <strong>SQLite stays.</strong>
+          <p>
+            SQLite is a good fit for the first hosted form if each workspace gets its own database,
+            WAL mode is used carefully, backups are disciplined, and writes are serialized where needed.
+          </p>
+        </div>
+        <div class="question">
+          <strong>Postgres is not required for the first SaaS.</strong>
+          <p>
+            A control-plane SQLite database plus per-workspace SQLite databases can serve 1-9 users
+            while preserving a clean migration path later.
+          </p>
+        </div>
+        <div class="warning">
+          <strong>Do not use one shared global data directory.</strong>
+          <p>
+            The current <span class="mono">data/</span> model is excellent locally but unsafe for hosted SaaS
+            unless it becomes workspace-scoped and impossible to accidentally cross-read.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="data-model">
+      <div class="section-head">
+        <div>
+          <h2>3. Data Model</h2>
+          <p>
+            The most important refactor is not storage technology. It is introducing explicit identity,
+            tenancy, and workspace boundaries everywhere.
+          </p>
+        </div>
+        <span class="tag">Core Schema</span>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Object</th>
+            <th>Purpose</th>
+            <th>Where It Lives First</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>User</td>
+            <td>Login identity for a person.</td>
+            <td><span class="mono">control.db</span></td>
+            <td>Email, password hash or provider id, MFA status, status, created/last login timestamps.</td>
+          </tr>
+          <tr>
+            <td>Organization</td>
+            <td>A household now; an advisor firm later.</td>
+            <td><span class="mono">control.db</span></td>
+            <td>Use <span class="mono">org_type = household | advisor_firm</span>. Do this now even if every org starts as a household.</td>
+          </tr>
+          <tr>
+            <td>Membership</td>
+            <td>Connects users to organizations.</td>
+            <td><span class="mono">control.db</span></td>
+            <td>Roles: owner, member, advisor, admin, read_only. First release can expose only owner.</td>
+          </tr>
+          <tr>
+            <td>Workspace</td>
+            <td>The financial data boundary.</td>
+            <td><span class="mono">control.db</span> registry plus workspace SQLite file</td>
+            <td>Each workspace has a path, encryption metadata, backup policy, lifecycle status, and owning org.</td>
+          </tr>
+          <tr>
+            <td>Workspace Data</td>
+            <td>Portfolio, profile, plans, recommendations, conversations, context registry.</td>
+            <td><span class="mono">workspaces/{workspace_id}/buildwealth.db</span></td>
+            <td>Migrate current JSON stores into tables or a hybrid document-table model.</td>
+          </tr>
+          <tr>
+            <td>Secrets</td>
+            <td>LLM keys, market-data keys, aggregation tokens.</td>
+            <td>Encrypted store or KMS-backed field encryption</td>
+            <td>Never store plaintext API keys in SaaS. Current plaintext settings are acceptable only for local single-user mode.</td>
+          </tr>
+          <tr>
+            <td>Audit Event</td>
+            <td>Security, data mutation, billing, support, and advisor access trail.</td>
+            <td><span class="mono">control.db</span> and optionally workspace DB</td>
+            <td>Record actor, org, workspace, action, timestamp, IP/session, target, and outcome.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="security">
+      <div class="section-head">
+        <div>
+          <h2>4. Security And Privacy Baseline</h2>
+          <p>
+            Hosted financial software must assume users will enter sensitive household data. The SaaS
+            transition should make privacy a core product feature, not a paragraph in the footer.
+          </p>
+        </div>
+        <span class="tag">Launch Gate</span>
+      </div>
+
+      <div class="grid-3">
+        <div class="card">
+          <h3>Authentication</h3>
+          <p>
+            Add email login, secure password storage or hosted auth, session cookies, CSRF protection,
+            password reset, optional MFA, and account lockout/rate limiting.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Authorization</h3>
+          <p>
+            Every API route must resolve a <span class="mono">RequestContext</span> containing user, org,
+            role, workspace, and permissions before touching financial data.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Encryption</h3>
+          <p>
+            Use encrypted volumes at minimum. Prefer per-workspace database encryption or field-level
+            encryption for secrets and especially sensitive records.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Backups</h3>
+          <p>
+            Create tenant-scoped encrypted backups with restore tests. A backup restore must never
+            overwrite or expose another workspace.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Data Rights</h3>
+          <p>
+            Users need export, deletion, account closure, and retention controls. Build these early
+            while the storage model is still flexible.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Compliance Review</h3>
+          <p>
+            Review financial-advice positioning, privacy disclosures, customer-information safeguards,
+            and market-data licensing before inviting non-test users.
+          </p>
+        </div>
+      </div>
+
+      <div class="callout-row">
+        <div class="warning">
+          <strong>Important legal note.</strong>
+          <p>
+            This plan is not legal advice. Before public launch, have counsel review whether any
+            recommendations, portfolio guidance, compensation model, or advisor features trigger
+            investment-adviser, privacy, or financial-data obligations.
+          </p>
+        </div>
+        <div class="question">
+          <strong>Reference points to review.</strong>
+          <p>
+            Start with the SEC's investment adviser materials and the FTC Safeguards Rule guidance.
+            See the source links at the end of this document.
+          </p>
+        </div>
+        <div class="ok">
+          <strong>Product design mitigation.</strong>
+          <p>
+            Keep user review/apply boundaries, show evidence and assumptions, avoid trade instructions
+            in early B2C messaging, and make simulations visibly educational.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="phases">
+      <div class="section-head">
+        <div>
+          <h2>5. Transition Phases</h2>
+          <p>
+            This sequence takes advantage of the fact that BuildWealth is not in production yet.
+            The goal is to break the single-user assumption first, then host it, then polish the
+            business surface.
+          </p>
+        </div>
+        <span class="tag">Execution Plan</span>
+      </div>
+
+      <div class="phase-list">
+        <article class="phase">
+          <div class="phase-number">0</div>
+          <div>
+            <h3>Define the hosted product boundary</h3>
+            <p>
+              Decide what the first SaaS is allowed to do. The recommended first product is a hosted
+              private workspace for financial organization, planning, modeling, and review.
+            </p>
+            <ul>
+              <li>Write product disclaimers and user-facing advice boundaries.</li>
+              <li>Define B2C household onboarding and minimum useful profile.</li>
+              <li>Decide whether users bring their own LLM key or BuildWealth pays provider costs.</li>
+              <li>Freeze the first hosted feature set: Today, Profile, Portfolio, Plan, Inbox, Copilot, Settings.</li>
+            </ul>
+          </div>
+          <div>
+            <span class="pill green">Exit criteria</span>
+            <p>There is one crisp hosted MVP promise and a short list of things the product explicitly does not do yet.</p>
+          </div>
+        </article>
+
+        <article class="phase">
+          <div class="phase-number">1</div>
+          <div>
+            <h3>Introduce identity and request context</h3>
+            <p>
+              Add the SaaS spine while the app still runs locally. This is the refactor that makes
+              every later step possible.
+            </p>
+            <ul>
+              <li>Add <span class="mono">User</span>, <span class="mono">Organization</span>, <span class="mono">Membership</span>, and <span class="mono">Workspace</span> models.</li>
+              <li>Add auth middleware and route dependencies for <span class="mono">RequestContext</span>.</li>
+              <li>Replace module-global stores with request-scoped store factories.</li>
+              <li>Add tests proving user A cannot read, write, restore, search, or chat against user B's workspace.</li>
+            </ul>
+          </div>
+          <div>
+            <span class="pill green">Exit criteria</span>
+            <p>The app can run multiple local test workspaces with no shared financial state.</p>
+          </div>
+        </article>
+
+        <article class="phase">
+          <div class="phase-number">2</div>
+          <div>
+            <h3>Move from path-backed JSON to workspace SQLite</h3>
+            <p>
+              Keep SQLite, but make it an intentional durable store instead of a snapshot artifact.
+              For speed, use a hybrid schema first: normalized core tables plus JSON document columns
+              for evolving payloads.
+            </p>
+            <ul>
+              <li>Create <span class="mono">buildwealth.db</span> per workspace.</li>
+              <li>Migrate portfolio, profile, plans, recommendations, conversations, and context registry.</li>
+              <li>Keep import files, reports, and large artifacts in tenant-scoped object/file storage.</li>
+              <li>Add migrations with forward-only versioning and restore drills.</li>
+            </ul>
+          </div>
+          <div>
+            <span class="pill green">Exit criteria</span>
+            <p>New workspaces use SQLite as the source of truth. Legacy local JSON import remains available.</p>
+          </div>
+        </article>
+
+        <article class="phase">
+          <div class="phase-number">3</div>
+          <div>
+            <h3>Host the private beta</h3>
+            <p>
+              Deploy a single small server or VM with managed backups, HTTPS, monitoring, and a clear
+              admin runbook. Do not overbuild the platform yet.
+            </p>
+            <ul>
+              <li>Use HTTPS, secure cookies, environment secrets, and isolated workspace directories.</li>
+              <li>Add basic admin tooling: invite user, disable user, inspect workspace health, trigger backup.</li>
+              <li>Add telemetry for latency, errors, job failures, backup freshness, and storage growth.</li>
+              <li>Run with 1-3 friendly users before expanding to 9.</li>
+            </ul>
+          </div>
+          <div>
+            <span class="pill gold">Exit criteria</span>
+            <p>Real people can use it from the internet, but access is still invite-only and operationally watched.</p>
+          </div>
+        </article>
+
+        <article class="phase">
+          <div class="phase-number">4</div>
+          <div>
+            <h3>Add billing and entitlements</h3>
+            <p>
+              Billing should arrive after the private workspace model is safe. Do not let billing
+              concerns distort the data architecture too early.
+            </p>
+            <ul>
+              <li>Add subscription status, plan tier, trial end, cancellation, invoice status, and webhook processing.</li>
+              <li>Gate costly features: LLM calls, research providers, aggregation syncs, and advisor seats.</li>
+              <li>Add a usage ledger so provider costs are visible per workspace.</li>
+              <li>Keep a manual comp/free plan for early testers.</li>
+            </ul>
+          </div>
+          <div>
+            <span class="pill gold">Exit criteria</span>
+            <p>The app can charge users without manual bookkeeping and without exposing payment internals to workspace data.</p>
+          </div>
+        </article>
+
+        <article class="phase">
+          <div class="phase-number">5</div>
+          <div>
+            <h3>Improve ingestion and recurring operation</h3>
+            <p>
+              Once users rely on the product, data freshness becomes the product. Add import flows
+              and scheduled jobs with strong visibility.
+            </p>
+            <ul>
+              <li>Keep CSV/manual import, but add provider abstraction for bank and brokerage aggregation later.</li>
+              <li>Add scheduled price updates, stale-data warnings, and sync health per workspace.</li>
+              <li>Add background job records with retries, failure reasons, and user-visible status.</li>
+              <li>Add export packages so users can leave with their data.</li>
+            </ul>
+          </div>
+          <div>
+            <span class="pill green">Exit criteria</span>
+            <p>A user can trust that BuildWealth tells them when data is missing, stale, or degraded.</p>
+          </div>
+        </article>
+
+        <article class="phase">
+          <div class="phase-number">6</div>
+          <div>
+            <h3>Prepare for advisors without becoming advisor-first</h3>
+            <p>
+              Add the minimum primitives that let a financial advisor or small firm use the platform
+              later: client workspaces, role-based access, consent, and audit trails.
+            </p>
+            <ul>
+              <li>Add org type <span class="mono">advisor_firm</span> behind a feature flag.</li>
+              <li>Add client workspace ownership and advisor membership with scoped permissions.</li>
+              <li>Add client consent records and advisor access audit views.</li>
+              <li>Keep advisor features separate from consumer onboarding and pricing.</li>
+            </ul>
+          </div>
+          <div>
+            <span class="pill">Exit criteria</span>
+            <p>The data model supports advisor use, even if the public product remains B2C.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="codebase">
+      <div class="section-head">
+        <div>
+          <h2>6. Exact Codebase Change Areas</h2>
+          <p>
+            These are the specific places where the current single-user app needs to change. The
+            sequence matters: introduce boundaries before adding more features.
+          </p>
+        </div>
+        <span class="tag">Implementation Map</span>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Area</th>
+            <th>Current Shape</th>
+            <th>SaaS Change</th>
+            <th>First Acceptance Test</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="mono">main.py</span></td>
+            <td>Global stores are created from global settings paths.</td>
+            <td>Create route dependencies that resolve <span class="mono">RequestContext</span> and workspace-scoped stores.</td>
+            <td>Two authenticated users calling the same endpoint receive different portfolio/profile data.</td>
+          </tr>
+          <tr>
+            <td><span class="mono">settings.py</span></td>
+            <td>Single app settings include global data paths.</td>
+            <td>Split app config from workspace config. Add control-plane DB path and workspace root path.</td>
+            <td>Changing workspace id changes storage roots without changing process env.</td>
+          </tr>
+          <tr>
+            <td>Storage services</td>
+            <td>Read and write local JSON files under <span class="mono">data/</span>.</td>
+            <td>Add SQLite repositories per domain, with migration adapters from current JSON payloads.</td>
+            <td>Round-trip current fixtures into SQLite and back through existing API response models.</td>
+          </tr>
+          <tr>
+            <td><span class="mono">UserSettingsStore</span></td>
+            <td>Stores API keys in plaintext for local single-user mode.</td>
+            <td>Replace with encrypted workspace secrets and masked API responses.</td>
+            <td>Raw database inspection cannot reveal stored LLM API keys.</td>
+          </tr>
+          <tr>
+            <td>Backup/restore</td>
+            <td>Backs up local data roots.</td>
+            <td>Back up one workspace at a time and require authorization to restore it.</td>
+            <td>User A cannot list, restore, or infer the existence of user B backups.</td>
+          </tr>
+          <tr>
+            <td>Copilot/context</td>
+            <td>Assembles context from global app stores.</td>
+            <td>Context assembler accepts workspace repositories only. Add tenant id to traces and cache keys.</td>
+            <td>Conversation and context caches cannot cross workspace boundaries.</td>
+          </tr>
+          <tr>
+            <td>Frontend API helper</td>
+            <td>Calls relative <span class="mono">/api/...</span> endpoints with no auth concerns.</td>
+            <td>Add session handling, login/logout, workspace selection, 401/403 flows, and CSRF handling if cookie-based.</td>
+            <td>Expired session returns user to login without losing unsaved draft where practical.</td>
+          </tr>
+          <tr>
+            <td>Tests</td>
+            <td>Mostly single-user behavioral tests.</td>
+            <td>Add isolation, authorization, migration, backup, and hosted smoke tests.</td>
+            <td>A dedicated test suite fails if any route can access data without a workspace context.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="checklist">
+        <div class="check"><strong>First refactor:</strong> add <span class="mono">RequestContext</span> and store factories.</div>
+        <div class="check"><strong>Second refactor:</strong> make every route workspace-aware.</div>
+        <div class="check"><strong>Third refactor:</strong> replace plaintext settings with encrypted secrets.</div>
+        <div class="check"><strong>Fourth refactor:</strong> migrate workspace data to SQLite source-of-truth.</div>
+        <div class="check"><strong>Fifth refactor:</strong> add hosted auth and invite-only beta operations.</div>
+        <div class="check"><strong>Sixth refactor:</strong> add billing, usage ledgers, and advisor-ready roles.</div>
+      </div>
+    </section>
+
+    <section id="advisor">
+      <div class="section-head">
+        <div>
+          <h2>7. Advisor Path Without Overbuilding</h2>
+          <p>
+            The app should not become advisor software on day one. But the core model should not block
+            that future either.
+          </p>
+        </div>
+        <span class="tag">Expansion</span>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h3>Build Now</h3>
+          <ul>
+            <li>Organizations and memberships, even if hidden from the UI.</li>
+            <li>Workspace ownership separate from user identity.</li>
+            <li>Role enum that can grow beyond owner/member.</li>
+            <li>Audit events for all sensitive reads and writes.</li>
+            <li>Clear consent model for sharing a workspace.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Defer</h3>
+          <ul>
+            <li>Advisor firm dashboard.</li>
+            <li>Client CRM.</li>
+            <li>Compliance archiving and supervisory review tools.</li>
+            <li>Multi-advisor team assignment.</li>
+            <li>Advisor-specific billing and contracts.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="risk">
+      <div class="section-head">
+        <div>
+          <h2>8. Main Risks</h2>
+          <p>
+            These are the risks most likely to derail the SaaS transition if handled late.
+          </p>
+        </div>
+        <span class="tag">Watch List</span>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Risk</th>
+            <th>Why It Matters</th>
+            <th>Mitigation</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Accidental cross-tenant data access</td>
+            <td>This is the cardinal hosted-app failure for financial software.</td>
+            <td>Workspace-scoped store factories, authorization dependencies, and isolation tests for every domain.</td>
+          </tr>
+          <tr>
+            <td>Plaintext secrets</td>
+            <td>Current local settings are explicitly not SaaS-safe.</td>
+            <td>Encrypted secrets before any hosted user enters API keys or provider tokens.</td>
+          </tr>
+          <tr>
+            <td>Regulatory ambiguity</td>
+            <td>Recommendations, trade simulations, and compensation can change the legal posture.</td>
+            <td>Legal review, careful copy, review/apply UX, and product boundaries before public launch.</td>
+          </tr>
+          <tr>
+            <td>SQLite operational mistakes</td>
+            <td>SQLite is capable, but it needs disciplined connection, backup, and write handling.</td>
+            <td>Per-workspace DBs, WAL mode, serialized writes where needed, tested backups, and integrity checks.</td>
+          </tr>
+          <tr>
+            <td>Provider cost surprises</td>
+            <td>LLM, market-data, and aggregation calls can become the real unit economics.</td>
+            <td>Usage ledger, quotas, caching, plan limits, and bring-your-own-key option for early users.</td>
+          </tr>
+          <tr>
+            <td>Overbuilding for firms too early</td>
+            <td>Advisor workflows can swamp the B2C product.</td>
+            <td>Put advisor primitives in the data model, but keep advisor UI behind a later feature flag.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="questions">
+      <div class="section-head">
+        <div>
+          <h2>9. Questions To Answer Next</h2>
+          <p>
+            These are the few decisions worth making before implementation. Everything else can be
+            discovered while building the first workspace-aware slice.
+          </p>
+        </div>
+        <span class="tag">Open Items</span>
+      </div>
+
+      <div class="grid-2">
+        <div class="question">
+          <strong>Auth strategy</strong>
+          <p>Do you want self-hosted auth in FastAPI, or do you want a hosted auth provider for the first beta?</p>
+        </div>
+        <div class="question">
+          <strong>LLM cost model</strong>
+          <p>Should early users bring their own API keys, should BuildWealth pay for calls, or should both modes exist?</p>
+        </div>
+        <div class="question">
+          <strong>Encryption standard</strong>
+          <p>Is encrypted disk plus encrypted secrets enough for beta, or do you want encrypted SQLite files from the start?</p>
+        </div>
+        <div class="question">
+          <strong>Data ingestion</strong>
+          <p>Should beta users start with manual/CSV entry only, or is brokerage/bank aggregation required for the first useful version?</p>
+        </div>
+        <div class="question">
+          <strong>Advice boundary</strong>
+          <p>How conservative should the product be with investment recommendations in the public B2C version?</p>
+        </div>
+        <div class="question">
+          <strong>Deployment target</strong>
+          <p>Do you want the first 1-9 users on one small VPS, a home/private server, or a managed app host?</p>
+        </div>
+      </div>
+
+      <div class="footer">
+        <p>
+          Source review starting points:
+          <a href="https://www.sec.gov/investment" target="_blank" rel="noreferrer">SEC investment management materials</a>,
+          <a href="https://www.investor.gov/introduction-investing/getting-started/working-investment-professional/investment-advisers" target="_blank" rel="noreferrer">Investor.gov investment adviser overview</a>,
+          and
+          <a href="https://www.ftc.gov/business-guidance/resources/ftc-safeguards-rule-what-your-business-needs-know" target="_blank" rel="noreferrer">FTC Safeguards Rule guidance</a>.
+          These are not a substitute for legal review.
+        </p>
+        <p>
+          Recommended immediate next build slice: implement <span class="mono">RequestContext</span>,
+          workspace registry, tenant-scoped store factories, and a two-user isolation test around
+          profile, portfolio, recommendations, backup, and Copilot context.
+        </p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
