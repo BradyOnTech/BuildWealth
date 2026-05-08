@@ -13,7 +13,7 @@ from typing import Any, Literal
 from urllib.parse import quote as url_quote
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 import httpx
 
@@ -442,6 +442,31 @@ if "llm_parallel_tool_calls" in _user_llm_override_keys:
     else:
         settings.llm_parallel_tool_calls = bool(_parallel_tool_calls)
 
+# Context-embedding overrides — env-driven defaults are kept if the user hasn't
+# explicitly saved a value. Empty strings are treated as "use the default".
+_user_context_keys = {
+    key for key in _user_stored_cfg
+    if key.startswith("context_embedding") or key == "context_embeddings_enabled"
+}
+if "context_embeddings_enabled" in _user_context_keys:
+    _embeddings_enabled = _user_cfg.get("context_embeddings_enabled")
+    if isinstance(_embeddings_enabled, str):
+        settings.context_embeddings_enabled = _embeddings_enabled.strip().lower() in {"true", "1", "yes", "on"}
+    else:
+        settings.context_embeddings_enabled = bool(_embeddings_enabled)
+if "context_embedding_provider" in _user_context_keys and _user_cfg.get("context_embedding_provider"):
+    settings.context_embedding_provider = str(_user_cfg["context_embedding_provider"])
+if "context_embedding_model" in _user_context_keys and _user_cfg.get("context_embedding_model"):
+    settings.context_embedding_model = str(_user_cfg["context_embedding_model"])
+if "context_embedding_base_url" in _user_context_keys and _user_cfg.get("context_embedding_base_url"):
+    settings.context_embedding_base_url = str(_user_cfg["context_embedding_base_url"])
+if "context_embedding_timeout_seconds" in _user_context_keys:
+    _timeout = _user_cfg.get("context_embedding_timeout_seconds")
+    try:
+        settings.context_embedding_timeout_seconds = float(_timeout) if _timeout is not None else settings.context_embedding_timeout_seconds
+    except (TypeError, ValueError):
+        pass
+
 
 def parse_path_candidates(raw_value: str, fallback: tuple[str, ...]) -> tuple[str, ...]:
     values = tuple(
@@ -774,6 +799,8 @@ copilot = FinancialCopilot(
         "- For profile onboarding or filling out missing profile fields → call get_onboarding_status, "
         "ask one focused question at a time, then call draft_financial_profile_update before saving. "
         "Only call update_financial_profile after the user explicitly confirms the drafted changes.\n"
+        "- Do not call draft_financial_profile_update just because the user casually mentions a possible profile fact. "
+        "Treat incidental chat facts as unconfirmed; ask whether the user wants to review or update the profile first.\n"
         "- For account-level balances/cash breakdowns → call get_account_balances.\n"
         "- For allocation mix or rebalancing discussions → call get_asset_allocation.\n"
         "- For 'can I afford X?' → call assess_affordability with the monthly cost or purchase price. "
@@ -15363,7 +15390,46 @@ def update_user_settings(request: dict[str, Any]) -> dict[str, Any]:
     )
     copilot.llm_client = llm_client
 
+    # Hot-reload context-embedding settings if any embedding key changed.
+    # Apply to the running settings object first, then rebuild the embedding
+    # client so the next embed_text() call uses the new provider/model/url.
+    embedding_changed = any(
+        key.startswith("context_embedding") or key == "context_embeddings_enabled"
+        for key in request
+    )
+    if embedding_changed:
+        _apply_context_embedding_settings(saved)
+        try:
+            context_intelligence_service.embedding_client = build_embedding_client_from_settings(settings)
+        except Exception:
+            # The new client may fail to build (bad URL, missing model). Fall
+            # back to a disabled client rather than crash the request — the
+            # user can fix and resave.
+            context_intelligence_service.embedding_client = build_embedding_client_from_settings(settings, force_disabled=True) if False else context_intelligence_service.embedding_client
+
     return user_settings_store.load_masked()
+
+
+def _apply_context_embedding_settings(saved: dict[str, Any]) -> None:
+    """Push saved user-settings into the live `settings` object so the next
+    embedding-client build sees them. Called from PUT /api/settings."""
+    enabled = saved.get("context_embeddings_enabled")
+    if isinstance(enabled, bool):
+        settings.context_embeddings_enabled = enabled
+    elif isinstance(enabled, str):
+        settings.context_embeddings_enabled = enabled.strip().lower() in {"true", "1", "yes", "on"}
+    if saved.get("context_embedding_provider"):
+        settings.context_embedding_provider = str(saved["context_embedding_provider"])
+    if saved.get("context_embedding_model"):
+        settings.context_embedding_model = str(saved["context_embedding_model"])
+    if saved.get("context_embedding_base_url"):
+        settings.context_embedding_base_url = str(saved["context_embedding_base_url"])
+    timeout = saved.get("context_embedding_timeout_seconds")
+    if timeout is not None:
+        try:
+            settings.context_embedding_timeout_seconds = float(timeout)
+        except (TypeError, ValueError):
+            pass
 
 
 def _settings_payload_for_probe(request: dict[str, Any]) -> tuple[dict[str, Any], set[str]]:
@@ -15458,6 +15524,82 @@ async def test_llm_settings(request: dict[str, Any]) -> dict[str, Any]:
         ) from exc
 
 
+@app.post("/api/settings/test-embedding")
+def test_embedding_settings(request: dict[str, Any]) -> dict[str, Any]:
+    """Probe the embedding provider with the supplied (or saved) settings.
+
+    Builds a transient settings object, instantiates the embedding client,
+    and runs a small embed_text() against a fixed string. Returns the
+    provider/model used and the embedded vector length on success.
+    """
+    from copy import copy
+
+    probe_settings = copy(settings)
+    if request.get("context_embeddings_enabled") is not None:
+        val = request["context_embeddings_enabled"]
+        probe_settings.context_embeddings_enabled = (
+            val.strip().lower() in {"true", "1", "yes", "on"}
+            if isinstance(val, str) else bool(val)
+        )
+    if request.get("context_embedding_provider"):
+        probe_settings.context_embedding_provider = str(request["context_embedding_provider"])
+    if request.get("context_embedding_model"):
+        probe_settings.context_embedding_model = str(request["context_embedding_model"])
+    if request.get("context_embedding_base_url"):
+        probe_settings.context_embedding_base_url = str(request["context_embedding_base_url"])
+    if request.get("context_embedding_timeout_seconds") is not None:
+        try:
+            probe_settings.context_embedding_timeout_seconds = float(request["context_embedding_timeout_seconds"])
+        except (TypeError, ValueError):
+            pass
+
+    try:
+        client = build_embedding_client_from_settings(probe_settings)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "ok": False,
+                "stage": "build_client",
+                "detail": str(exc),
+                "provider": probe_settings.context_embedding_provider,
+                "model": probe_settings.context_embedding_model,
+            },
+        ) from exc
+
+    if not getattr(client, "enabled", False):
+        return {
+            "ok": True,
+            "enabled": False,
+            "provider": getattr(client, "provider", "disabled"),
+            "model": getattr(client, "model", ""),
+            "detail": "Embeddings are disabled — narrative search will fall back to structured data.",
+        }
+
+    try:
+        vector = client.embed_text("BuildWealth handshake probe")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "ok": False,
+                "stage": "embed_text",
+                "detail": str(exc)[:500],
+                "provider": getattr(client, "provider", probe_settings.context_embedding_provider),
+                "model": getattr(client, "model", probe_settings.context_embedding_model),
+            },
+        ) from exc
+
+    return {
+        "ok": True,
+        "enabled": True,
+        "provider": getattr(client, "provider", probe_settings.context_embedding_provider),
+        "model": getattr(client, "model", probe_settings.context_embedding_model),
+        "vector_length": len(vector) if vector is not None else 0,
+        "detail": "Embedding handshake succeeded.",
+    }
+
+
 @app.get("/api/settings/context")
 def get_context_settings() -> dict[str, Any]:
     """Read-only summary of context-intelligence + embedding configuration.
@@ -15536,12 +15678,32 @@ async def on_shutdown() -> None:
 
 @app.get("/", include_in_schema=False)
 def ui_root() -> Response:
+    """Phase 4 default: send root visitors to v2 if it's available, with a
+    fallback to classic if v2 is missing. /classic remains the explicit path
+    to the legacy surface."""
+    v2_index = web_v2_dir / "index.html"
+    if v2_index.exists():
+        return RedirectResponse(url="/v2", status_code=307)
+    classic_index = web_dir / "index.html"
+    if classic_index.exists():
+        return FileResponse(classic_index)
+    return HTMLResponse(
+        "<h1>BuildWealth UI not found</h1><p>Expected index.html in orchestrator web or web-v2 directory.</p>",
+        status_code=500,
+    )
+
+
+@app.get("/classic", include_in_schema=False)
+@app.get("/classic/", include_in_schema=False)
+def ui_root_classic() -> Response:
+    """Explicit fallback for the legacy v1 UI. Bookmarks this if you prefer
+    the classic surface; we keep it indefinitely as the safety net while
+    v2 absorbs the remaining utility pages."""
     index_file = web_dir / "index.html"
     if index_file.exists():
         return FileResponse(index_file)
-
     return HTMLResponse(
-        "<h1>BuildWealth UI not found</h1><p>Expected index.html in orchestrator web directory.</p>",
+        "<h1>BuildWealth classic UI not found</h1><p>Expected index.html in orchestrator web directory.</p>",
         status_code=500,
     )
 

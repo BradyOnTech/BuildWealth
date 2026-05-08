@@ -84,9 +84,16 @@ class UserSettingsStore:
         "openai_api_key": "",
         "openai_model": "gpt-5.5",
         "openai_base_url": "https://api.openai.com/v1",
+        # Context-intelligence / embedding provider. Optional; falls back to
+        # env defaults set on the Settings object when missing or empty.
+        "context_embeddings_enabled": False,
+        "context_embedding_provider": "disabled",
+        "context_embedding_model": "nomic-embed-text",
+        "context_embedding_base_url": "http://localhost:11434",
+        "context_embedding_timeout_seconds": 5.0,
     }
 
-    ALLOWED_KEYS = frozenset((*DEFAULTS.keys(), "updated_at", "llm_settings_saved_at"))
+    ALLOWED_KEYS = frozenset((*DEFAULTS.keys(), "updated_at", "llm_settings_saved_at", "context_settings_saved_at"))
 
     def __init__(self, settings_path: Path):
         self.settings_path = settings_path
@@ -180,6 +187,8 @@ class UserSettingsStore:
 
         if any(key.startswith("llm_") or key.startswith("openai_") for key in updates):
             current["llm_settings_saved_at"] = saved_at
+        if any(key.startswith("context_embedding") or key == "context_embeddings_enabled" for key in updates):
+            current["context_settings_saved_at"] = saved_at
         current["updated_at"] = saved_at
         current = self._sanitize(current)
         self._write(current)

@@ -440,3 +440,61 @@
   font-size: var(--t-marginalia);
   color: var(--ink-faint);
 }
+
+/* ───────────  Maintenance grid (Movement V)  ─────────── */
+
+.portfolio-maintenance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--s-3);
+}
+
+.portfolio-maintenance-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: var(--s-3);
+  row-gap: 4px;
+  padding: var(--s-3) var(--s-4);
+  border: var(--hair) solid var(--rule-soft);
+  border-radius: var(--r-md);
+  background: var(--paper-bright);
+  text-decoration: none;
+  color: var(--ink);
+  transition: border-color var(--d-fast) var(--ease-press), background var(--d-fast) var(--ease-press), transform var(--d-fast) var(--ease-press);
+}
+
+.portfolio-maintenance-card:hover {
+  border-color: var(--ink-soft);
+  transform: translateY(-1px);
+}
+
+.portfolio-maintenance-label {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: var(--t-body-sm);
+  color: var(--ink-strong);
+}
+
+.portfolio-maintenance-arrow {
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ink-faint);
+  transition: transform var(--d-fast) var(--ease-press), color var(--d-fast) var(--ease-press);
+}
+
+.portfolio-maintenance-card:hover .portfolio-maintenance-arrow {
+  color: var(--forest);
+  transform: translateX(2px);
+}
+
+.portfolio-maintenance-hint {
+  grid-column: 1 / -1;
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-style: italic;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  text-wrap: pretty;
+  line-height: var(--lh-body);
+}

@@ -57,8 +57,10 @@ const ui = {
 export function template() {
   return html`
     <section class="page" id="plan-page">
-      <div id="plan-masthead"></div>
-      <div id="plan-body"></div>
+      <div class="plan-shell" id="plan-shell">
+        <div id="plan-masthead"></div>
+        <div id="plan-body"></div>
+      </div>
     </section>
   `;
 }

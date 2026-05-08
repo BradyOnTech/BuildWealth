@@ -520,6 +520,94 @@
 
 .profile-row-actions { text-align: right; white-space: nowrap; }
 
+.profile-row-source {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.profile-row-status {
+  white-space: nowrap;
+}
+.profile-row-status .status-pill { font-size: 10px; }
+
+/* ───────────  Conflict resolution block  ─────────── */
+
+.profile-conflict-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s-4);
+}
+
+.profile-conflict-item {
+  display: grid;
+  gap: var(--s-2);
+  padding: var(--s-4) var(--s-5);
+  border-left: 2px solid var(--brass);
+  background: var(--paper-bright);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+}
+
+.profile-conflict-eyebrow {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--brass);
+  margin: 0;
+}
+
+.profile-conflict-claim {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-size: 16px;
+  line-height: var(--lh-body);
+  color: var(--ink-strong);
+  text-wrap: pretty;
+  margin: 0;
+}
+
+.profile-conflict-claim b {
+  font-weight: 600;
+  font-family: var(--mono);
+  font-size: 14px;
+  letter-spacing: 0.005em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  background: var(--paper);
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  border: var(--hair) solid var(--rule-soft);
+}
+
+.profile-conflict-rationale {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-style: italic;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.profile-conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+  margin-top: 4px;
+}
+
+.btn.btn-sm {
+  padding: 7px 14px;
+  font-size: 12px;
+  min-height: 32px;
+}
+
 /* ───────────  Data Quality block  ─────────── */
 
 .profile-data-quality {

@@ -18,7 +18,7 @@ import { renderOverview } from './profile/overview.js';
 import { renderTable, sectionForKey, TABLE_SECTIONS } from './profile/tables.js';
 import { renderTaxes, submitTaxesForm } from './profile/taxes.js';
 import { renderInvesting, submitInvestingForm, addRestricted, removeRestricted } from './profile/investing.js';
-import { renderDataQuality } from './profile/data_quality.js';
+import { renderDataQuality, resolveConflict } from './profile/data_quality.js';
 
 export const meta = {
   id: 'profile',
@@ -298,6 +298,14 @@ function attachHandlers() {
       e.preventDefault();
       addRestricted(ui, el.getAttribute('data-investing-add-input'));
     }
+  });
+
+  delegate(root, 'click', '[data-conflict-action]', (e, el) => {
+    e.preventDefault();
+    const action = el.getAttribute('data-conflict-action');
+    const id = el.getAttribute('data-candidate-id');
+    if (!action || !id) return;
+    resolveConflict(id, action);
   });
 }
 

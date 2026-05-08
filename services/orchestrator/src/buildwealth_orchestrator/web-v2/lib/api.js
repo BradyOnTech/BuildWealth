@@ -179,6 +179,17 @@ export const api = {
   updateSettings: (body = {}) => putJson('/api/settings', body),
   testLlmSettings: (body = {}) => postJson('/api/settings/test-llm', body),
   contextSettings: () => fetchJson('/api/settings/context'),
+  testEmbeddingSettings: (body = {}) => postJson('/api/settings/test-embedding', body),
+
+  // Import & sync
+  triggerSync:        () => postJson('/api/snapshot/sync', {}),
+  importFiles:        () => fetchJson('/api/import/files'),
+  csvTemplates:       () => fetchJson('/api/import/csv-templates'),
+  importCsvUpload:    (formData) => fetch('/api/import/upload-csv', { method: 'POST', body: formData }).then(r => r.json()),
+
+  // Workflows
+  workflowTemplates:  () => fetchJson('/api/workflows/templates'),
+  runWorkflow:        (body = {}) => postJson('/api/workflows/run', body),
 
   // Context intelligence
   contextCandidates: (opts = {}) => fetchJson(contextCandidatesUrl(opts)),

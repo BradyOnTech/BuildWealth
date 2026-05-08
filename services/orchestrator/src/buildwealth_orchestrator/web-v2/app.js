@@ -10,13 +10,15 @@ import * as inbox from './views/inbox.js';
 import * as research from './views/research.js';
 import * as profile from './views/profile.js';
 import * as settings from './views/settings.js';
+import * as importSync from './views/import_sync.js';
+import * as workflows from './views/workflows.js';
 
 import { state } from './lib/state.js';
 import { api } from './lib/api.js';
 import { html, raw, $ } from './lib/dom.js';
 import { fmtDateLong } from './lib/format.js';
 
-const VIEWS = [today, inbox, plan, portfolio, profile, copilot, research, atelier, settings];
+const VIEWS = [today, inbox, plan, portfolio, profile, copilot, research, atelier, settings, importSync, workflows];
 
 const VIEW_BY_ID = new Map(VIEWS.map(v => [v.meta.id, v]));
 
@@ -35,6 +37,18 @@ const TOOLS_GROUPS = [
     ],
   },
   {
+    label: 'Data',
+    items: [
+      { id: 'import-sync',  label: 'Import & Sync',       hint: 'Reconcile holdings, watch the inbox' },
+    ],
+  },
+  {
+    label: 'Automation',
+    items: [
+      { id: 'workflows',    label: 'Workflows',           hint: 'Run pre-built routines' },
+    ],
+  },
+  {
     label: 'Research',
     items: [
       { id: 'research',     label: 'Research Library',   hint: 'Dossiers, evidence, compare' },
@@ -43,7 +57,7 @@ const TOOLS_GROUPS = [
   {
     label: 'Bridges',
     items: [
-      { href: '/',                                       label: 'Classic UI',         hint: 'Full v1 surface' },
+      { href: '/classic',                                label: 'Classic UI',         hint: 'Full v1 surface' },
       { href: 'http://localhost:3333', external: true,   label: 'Ghostfolio',         hint: 'External holdings' },
       { href: 'http://localhost:3000', external: true,   label: 'Ignidash',           hint: 'External dashboards' },
     ],
@@ -150,8 +164,30 @@ function setToolsOpen(open) {
   renderToolsDrawer();
 }
 
+// Hash aliases preserve old links from the classic UI and the IA migration.
+// Each entry rewrites the fragment in place and re-fires route() so the
+// canonical hash lands in the address bar (and browser history).
+const HASH_ALIASES = {
+  'data-recovery':    'atelier',                  // future home of Backups/Protection/Git; today routes to atelier
+  'tracking':         'plan?section=trajectory',
+  'plans':            'plan',
+  'sync':             'import-sync',              // import-sync view doesn't exist yet — falls through to today below
+  'import-statement': 'import-sync?section=statement',
+  'recommendations':  'inbox',
+};
+
 function route() {
-  const fragment = location.hash.slice(1) || 'today';
+  let fragment = location.hash.slice(1) || 'today';
+  const [hashRaw] = fragment.split('?');
+  if (HASH_ALIASES[hashRaw]) {
+    // Preserve any extra query the user kept on the alias by appending it
+    // after the alias target's own query (target-wins on conflict).
+    const target = HASH_ALIASES[hashRaw];
+    const [, originalQuery] = fragment.split('?');
+    const next = originalQuery && !target.includes('?') ? `${target}?${originalQuery}` : target;
+    location.replace(`#${next}`);
+    return;
+  }
   const [hash, query] = fragment.split('?');
   const params = Object.fromEntries(new URLSearchParams(query || ''));
   const view = VIEW_BY_ID.get(hash) || VIEW_BY_ID.get('today');
@@ -185,18 +221,135 @@ function route() {
 
 function updateTopbar(view) {
   const folio = $('#topbar-folio');
-  const status = $('#topbar-status');
   if (folio) {
     const numeral = view.meta.numeral;
     const showNumeral = numeral && numeral !== '·' && view.meta.group === 'primary';
     const prefix = showNumeral ? `${numeral} · ` : '';
     folio.textContent = `${prefix}${view.meta.label} · ${fmtDateLong(new Date())}`;
   }
-  if (status) {
-    const text = state.lastError ? 'attention' : 'quiet';
-    status.className = `topbar-status ${state.lastError ? 'warn' : ''}`;
-    status.innerHTML = `<span class="dot"></span><span>${text}</span>`;
+  renderTopbarChips();
+}
+
+/* ─────────────  Top-bar status chips  ─────────────
+   Per IA strategy: a small row of chips that answer "is the system ready
+   to give me good advice right now?" Each chip is a deep-link to the page
+   that fixes it when it's not. */
+
+function renderTopbarChips() {
+  const host = $('#topbar-status');
+  if (!host) return;
+  const chips = [];
+
+  if (state.lastError) {
+    chips.push({ tone: 'warn', label: 'attention', href: null, hint: state.lastError });
   }
+  chips.push(profileChip());
+  chips.push(copilotChip());
+  chips.push(dataChip());
+  chips.push(backupChip());
+
+  host.innerHTML = chips.filter(Boolean).map(renderChip).join('');
+}
+
+function renderChip(chip) {
+  const cls = `topbar-chip ${chip.tone || 'ok'}`;
+  const inner = `<span class="dot"></span><span>${chip.label}</span>`;
+  if (!chip.href) return `<span class="${cls}" title="${chip.hint || ''}">${inner}</span>`;
+  return `<a class="${cls}" href="${chip.href}" data-route title="${chip.hint || ''}">${inner}</a>`;
+}
+
+function profileChip() {
+  const status = state.systemStatus?.profile;
+  if (!status) return { tone: 'quiet', label: 'profile · …', href: '#profile' };
+  if (status.ready) return { tone: 'ok',   label: 'profile · ready',   href: '#profile', hint: `${status.completion}% complete` };
+  if (status.completion >= 50) return { tone: 'warn', label: 'profile · review needed', href: '#profile', hint: `${status.completion}% complete` };
+  return { tone: 'attn', label: 'profile · setup', href: '#profile', hint: `${status.completion}% complete` };
+}
+
+function copilotChip() {
+  const status = state.systemStatus?.copilot;
+  if (!status) return { tone: 'quiet', label: 'copilot · …', href: '#settings' };
+  if (status.configured) return { tone: 'ok', label: 'copilot · ready', href: '#settings', hint: status.provider ? `${status.provider} · ${status.model || 'configured'}` : 'configured' };
+  return { tone: 'warn', label: 'copilot · fallback', href: '#settings', hint: 'API key missing — set in Connections & AI' };
+}
+
+function dataChip() {
+  const status = state.systemStatus?.data;
+  if (!status) return { tone: 'quiet', label: 'data · …', href: '#today' };
+  if (status.fresh) return { tone: 'ok', label: 'data · fresh', href: '#today', hint: status.lastSync ? `Synced ${status.lastSync}` : '' };
+  if (status.never) return { tone: 'warn', label: 'data · never synced', href: '#today', hint: 'No sync recorded' };
+  return { tone: 'warn', label: 'data · stale', href: '#today', hint: status.lastSync ? `Last sync ${status.lastSync}` : '' };
+}
+
+function backupChip() {
+  const status = state.systemStatus?.backup;
+  if (!status) return { tone: 'quiet', label: 'backup · …', href: '#atelier' };
+  if (status.count > 0) return { tone: 'ok', label: `backup · ${status.count}`, href: '#atelier', hint: status.latest ? `Latest ${status.latest}` : '' };
+  return { tone: 'warn', label: 'backup · none', href: '#atelier', hint: 'No backups recorded — create one in Data & Recovery' };
+}
+
+async function refreshSystemStatus() {
+  // Load all four chips in parallel, ignore individual failures so a slow
+  // endpoint never blocks the others. Each result lands on state.systemStatus
+  // and a single re-render paints the chips.
+  const next = { ...(state.systemStatus || {}) };
+
+  const [onboarding, settingsResp, sync, backups] = await Promise.allSettled([
+    api.onboarding(),
+    api.settings(),
+    api.syncStatus(),
+    api.storageBackups(),
+  ]);
+
+  if (onboarding.status === 'fulfilled') {
+    const v = onboarding.value || {};
+    next.profile = {
+      completion: Math.round(Number(v.completion_percent || 0)),
+      ready: Boolean(v.ready_for_daily_review),
+    };
+  }
+
+  if (settingsResp.status === 'fulfilled') {
+    const s = settingsResp.value || {};
+    next.copilot = {
+      configured: Boolean(s.llm_api_key),
+      provider: s.llm_provider,
+      model: s.llm_model,
+    };
+  }
+
+  if (sync.status === 'fulfilled') {
+    const s = sync.value || {};
+    const last = s.last_completed_at || s.last_started_at;
+    if (!last) {
+      next.data = { fresh: false, never: true };
+    } else {
+      const ageMs = Date.now() - new Date(last).getTime();
+      // Anything older than ~24h is considered stale; tweak as needed.
+      next.data = { fresh: ageMs < 24 * 60 * 60 * 1000, never: false, lastSync: humanRelative(last) };
+    }
+  }
+
+  if (backups.status === 'fulfilled') {
+    const list = Array.isArray(backups.value?.backups) ? backups.value.backups : (Array.isArray(backups.value) ? backups.value : []);
+    const latest = list[0]?.created_at || list[0]?.timestamp;
+    next.backup = { count: list.length, latest: latest ? humanRelative(latest) : null };
+  }
+
+  state.systemStatus = next;
+  renderTopbarChips();
+}
+
+function humanRelative(value) {
+  try {
+    const ms = Date.now() - new Date(value).getTime();
+    const m = Math.round(ms / 60000);
+    if (m < 1)  return 'moments ago';
+    if (m < 60) return `${m}m ago`;
+    const h = Math.round(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.round(h / 24)}d ago`;
+  } catch { return ''; }
 }
 
 function bootShell() {
@@ -222,9 +375,7 @@ function bootShell() {
             <span class="topbar-folio" id="topbar-folio"></span>
           </div>
           <div class="topbar-actions">
-            <span class="topbar-status" id="topbar-status">
-              <span class="dot"></span><span>quiet</span>
-            </span>
+            <div class="topbar-chips" id="topbar-status"></div>
           </div>
         </header>
         <main class="content" id="content"></main>
@@ -287,6 +438,11 @@ async function boot() {
   wireGlobalEvents();
   await preloadGlobalState();
   route();
+  // Status chips refresh in the background after the first paint and on a
+  // gentle 60s cadence — long enough not to be noisy, short enough that the
+  // user sees a fresh signal after any save.
+  refreshSystemStatus();
+  setInterval(refreshSystemStatus, 60_000);
 }
 
 if (document.readyState === 'loading') {

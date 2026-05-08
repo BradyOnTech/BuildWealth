@@ -130,9 +130,11 @@ const ui = {
 export function template() {
   return html`
     <section class="page" id="copilot-page">
-      <div id="copilot-masthead"></div>
-      <div id="copilot-body"></div>
-      <div id="copilot-composer"></div>
+      <div class="copilot-shell" id="copilot-shell">
+        <div id="copilot-masthead"></div>
+        <div id="copilot-body"></div>
+        <div id="copilot-composer"></div>
+      </div>
     </section>
   `;
 }

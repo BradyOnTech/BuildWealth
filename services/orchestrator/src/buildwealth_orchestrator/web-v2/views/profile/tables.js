@@ -63,12 +63,23 @@ function renderRows(section, items) {
       </div>
     `;
   }
-  const headers = section.columns.map(c => `<th>${esc(c.header)}</th>`).join('') + '<th aria-label="Action"></th>';
+  // Per-row Source/Status pulls from optional row-level fields the backend
+  // may grow later (item.source, item.status). Until then, rows added through
+  // the v2 editor default to "You / Confirmed" — explicit about provenance
+  // without claiming knowledge we don't have.
+  const headers = section.columns.map(c => `<th>${esc(c.header)}</th>`).join('')
+    + '<th>Source</th><th>Status</th><th aria-label="Action"></th>';
   const rows = items.map(item => {
     const cells = section.columns.map(col => `<td class="${col.numeric ? 'num' : ''}">${esc(col.format ? col.format(item[col.key], item) : item[col.key] ?? '—')}</td>`).join('');
+    const source = humanRowSource(item);
+    const status = humanRowStatus(item);
     return `
       <tr>
         ${cells}
+        <td class="profile-row-source">${esc(source.label)}</td>
+        <td class="profile-row-status">
+          <span class="status-pill ${esc(status.tone)}"><span class="dot"></span>${esc(status.label)}</span>
+        </td>
         <td class="profile-row-actions">
           <button class="link-quiet danger" type="button"
                   data-table-action="remove"
@@ -89,6 +100,26 @@ function renderRows(section, items) {
       </table>
     </div>
   `;
+}
+
+function humanRowSource(item) {
+  const raw = String(item?.source || item?.source_label || '').trim().toLowerCase();
+  if (!raw || raw === 'profile_editor' || raw === 'user' || raw === 'you') {
+    return { label: 'You' };
+  }
+  if (raw === 'copilot' || raw === 'copilot_chat') return { label: 'Copilot' };
+  if (raw.startsWith('import')) return { label: 'Import' };
+  if (raw === 'plan' || raw === 'plan_workspace') return { label: 'Plan' };
+  return { label: raw.replace(/_/g, ' ') };
+}
+
+function humanRowStatus(item) {
+  const status = String(item?.status || '').toLowerCase();
+  if (status === 'pending_review' || status === 'needs_review') return { tone: 'proposed', label: 'Review' };
+  if (status === 'stale')     return { tone: 'stale',    label: 'Possibly outdated' };
+  if (status === 'rejected')  return { tone: 'rejected', label: 'Rejected' };
+  if (status === 'draft')     return { tone: 'pending',  label: 'Draft' };
+  return { tone: 'applied', label: 'Confirmed' };
 }
 
 function renderComposer(section) {

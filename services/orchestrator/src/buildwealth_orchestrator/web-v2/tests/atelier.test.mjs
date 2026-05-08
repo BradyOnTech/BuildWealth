@@ -163,7 +163,7 @@ test('atelier renders trust durability visibility from existing status payloads'
   assert.match(markup, /Copilot profile update applied/);
   assert.match(markup, /tax profile/);
   assert.match(markup, /investment policy/);
-  assert.match(markup, /href="\/#settings"/);
+  assert.match(markup, /href="\/classic#settings"/);
 });
 
 test('atelier renders read-only restore preview details', () => {

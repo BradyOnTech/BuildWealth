@@ -409,6 +409,64 @@ def test_chat_fact_detection_drafts_material_context_candidates_for_review(tmp_p
     assert "not treated as financial truth yet" in review_rows[0]["detail"]
 
 
+def test_chat_income_claim_detection_drafts_review_only_profile_candidate(tmp_path: Path) -> None:
+    service = _build_service(tmp_path)
+
+    [candidate] = service.detect_chat_context_candidates(
+        message="I make $100,000 per year and my wife makes $60,000 per year.",
+        conversation_id="conversation-income",
+        message_index=2,
+    )
+    review_rows = [
+        row
+        for row in service.recommendation_inbox.list(limit=None, include_archived=True)
+        if row["recommendation_type"] == "context_candidate_review"
+    ]
+
+    assert candidate["source_domain"] == "conversation"
+    assert candidate["source_ref"] == "conversation/conversation-income#message.2"
+    assert candidate["target_domain"] == "profile"
+    assert candidate["target_area"] == "income_items"
+    assert candidate["target_field"] == "income_items"
+    assert candidate["target_value"]["summary"] == "My income: $8,333.33/month; Spouse income: $5,000.00/month"
+    assert candidate["target_value"]["income_items"] == [
+        {
+            "label": "My income",
+            "monthly_amount_usd": 8333.33,
+            "source_type": "salary",
+            "is_pre_tax": False,
+        },
+        {
+            "label": "Spouse income",
+            "monthly_amount_usd": 5000.0,
+            "source_type": "salary",
+            "is_pre_tax": False,
+        },
+    ]
+    assert candidate["target_value"]["requires_user_confirmation"] is True
+    assert candidate["materiality"] == "high"
+    assert candidate["lifecycle_state"] == "pending_review"
+    assert candidate["prompt_influence"] == "mention_only"
+    assert candidate["review_route"]["route"] == "profile"
+    assert len(review_rows) == 1
+    assert review_rows[0]["action_payload"]["suggested_action"]["mutation_requires_confirmation"] is True
+
+    service.rebuild_registry()
+    result = service.search_context(query="100000 wife income", domains=["profile"], limit=20)
+    assert all(item["entity_type"] != "context_candidate" for item in result["items"])
+
+
+def test_chat_income_claim_detection_ignores_hypotheticals(tmp_path: Path) -> None:
+    service = _build_service(tmp_path)
+
+    candidates = service.detect_chat_context_candidates(
+        message="What if I make $100,000 per year after switching jobs?",
+        conversation_id="conversation-income-hypothetical",
+    )
+
+    assert candidates == []
+
+
 def test_unreviewed_context_candidates_do_not_become_authoritative_prompt_context(tmp_path: Path) -> None:
     service = _build_service(tmp_path)
     [candidate] = service.detect_chat_context_candidates(

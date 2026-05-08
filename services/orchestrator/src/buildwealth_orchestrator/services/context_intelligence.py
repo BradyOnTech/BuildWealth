@@ -102,6 +102,7 @@ FRESHNESS_SCORE = {
 }
 
 PROFILE_HIGH_MATERIALITY_PREFIXES = (
+    "income_items",
     "tax_profile.",
     "investment_policy.",
 )
@@ -2714,6 +2715,66 @@ def detect_context_candidate_drafts_from_text(
 ) -> list[dict[str, Any]]:
     message = str(text or "")
     drafts: list[dict[str, Any]] = []
+    income_items: list[dict[str, Any]] = []
+    income_claims: list[str] = []
+
+    income_pattern = re.compile(
+        r"\b(?P<subject>i|my\s+(?:wife|husband|spouse|partner))\s+"
+        r"(?P<verb>make|makes|earn|earns|bring\s+in|brings\s+in)\s+"
+        r"\$?\s*(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?)\s*(?P<suffix>[kKmM])?\s*"
+        r"(?P<cadence>per\s+year|a\s+year|annually|annual|/year|yr|per\s+month|a\s+month|monthly|/mo|/month)\b",
+        re.I,
+    )
+    salary_pattern = re.compile(
+        r"\b(?P<subject>my\s+salary|my\s+household\s+income|household\s+income)\s+"
+        r"(?:is|=)\s+\$?\s*(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?)\s*(?P<suffix>[kKmM])?\s*"
+        r"(?P<cadence>per\s+year|a\s+year|annually|annual|/year|yr|per\s+month|a\s+month|monthly|/mo|/month)?\b",
+        re.I,
+    )
+
+    for pattern in (income_pattern, salary_pattern):
+        for match in pattern.finditer(message):
+            if _looks_like_hypothetical_income_claim(message, match.start()):
+                continue
+            amount = _money_candidate_value(match.group("amount"), suffix=match.group("suffix"))
+            cadence = str(match.group("cadence") or "annual").strip().lower()
+            monthly_amount = amount if _income_cadence_is_monthly(cadence) else amount / 12.0
+            subject = str(match.group("subject") or "").strip()
+            income_claims.append(match.group(0))
+            income_items.append(
+                {
+                    "label": _income_label_from_subject(subject),
+                    "monthly_amount_usd": round(monthly_amount, 2),
+                    "source_type": "salary",
+                    "is_pre_tax": False,
+                }
+            )
+
+    if income_items:
+        summary = "; ".join(
+            f"{item['label']}: ${item['monthly_amount_usd']:,.2f}/month"
+            for item in income_items
+        )
+        drafts.append(
+            _chat_candidate_draft(
+                source_ref=source_ref,
+                extracted_claim="; ".join(income_claims),
+                target_domain="profile",
+                target_area="income_items",
+                target_field="income_items",
+                target_value={
+                    "summary": summary,
+                    "income_items": income_items,
+                    "requires_user_confirmation": True,
+                },
+                confidence="medium",
+                metadata={
+                    "extraction_kind": "income_claim",
+                    "profile_patch_kind": "income_items",
+                    "review_note": "Review or edit before adding to the financial profile.",
+                },
+            )
+        )
 
     for match in re.finditer(r"\b(?:my\s+)?(?:marginal\s+)?tax\s+rate\s+(?:is|=)\s+([0-9]+(?:\.[0-9]+)?)\s*%?", message, re.I):
         value = _percent_candidate_value(match.group(1))
@@ -3334,8 +3395,39 @@ def _percent_candidate_value(value: Any) -> float:
     return numeric / 100.0 if numeric > 1 else numeric
 
 
-def _money_candidate_value(value: Any) -> float:
-    return float(str(value).replace(",", "").replace("$", ""))
+def _money_candidate_value(value: Any, *, suffix: Any = None) -> float:
+    numeric = float(str(value).replace(",", "").replace("$", ""))
+    suffix_text = str(suffix or "").strip().lower()
+    if suffix_text == "k":
+        return numeric * 1_000
+    if suffix_text == "m":
+        return numeric * 1_000_000
+    return numeric
+
+
+def _income_cadence_is_monthly(cadence: str) -> bool:
+    normalized = str(cadence or "").strip().lower()
+    return normalized in {"per month", "a month", "monthly", "/mo", "/month"}
+
+
+def _income_label_from_subject(subject: str) -> str:
+    normalized = re.sub(r"\s+", " ", str(subject or "").strip().lower())
+    if normalized in {"my wife", "my husband", "my spouse"}:
+        return "Spouse income"
+    if normalized == "my partner":
+        return "Partner income"
+    if normalized in {"my household income", "household income"}:
+        return "Household income"
+    return "My income"
+
+
+def _looks_like_hypothetical_income_claim(message: str, start: int) -> bool:
+    prefix = str(message or "")[max(0, start - 40) : start].lower()
+    return bool(
+        re.search(r"\b(?:what\s+if|if|assuming|suppose|hypothetically)\s+$", prefix)
+        or re.search(r"\b(?:would|could|might|may)\s+$", prefix)
+        or re.search(r"\b(?:want|hope|plan|expect)\s+to\s+$", prefix)
+    )
 
 
 def context_conflict_dedupe_key(

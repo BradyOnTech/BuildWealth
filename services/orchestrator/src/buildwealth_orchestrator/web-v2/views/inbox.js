@@ -46,16 +46,18 @@ const inbox = {
 export function template() {
   return html`
     <section class="page" id="inbox-page">
-      <header>
-        <span class="section-eyebrow">Movement I</span>
-        <h2 class="section-title">The list.</h2>
-        <p class="section-lede">Decisions waiting for your call. Ranked by impact, confidence, urgency, and reversibility.</p>
-      </header>
-      <div id="inbox-controls"></div>
-      <div id="inbox-context-captures"></div>
-      <div id="inbox-list">${raw(loadingPlaceholder())}</div>
-      <div id="inbox-sweep"></div>
-      <div id="inbox-quality"></div>
+      <div class="inbox-shell" id="inbox-shell">
+        <header>
+          <span class="section-eyebrow">Movement I</span>
+          <h2 class="section-title">The list.</h2>
+          <p class="section-lede">Decisions waiting for your call. Ranked by impact, confidence, urgency, and reversibility.</p>
+        </header>
+        <div id="inbox-controls"></div>
+        <div id="inbox-context-captures"></div>
+        <div id="inbox-list">${raw(loadingPlaceholder())}</div>
+        <div id="inbox-sweep"></div>
+        <div id="inbox-quality"></div>
+      </div>
     </section>
   `;
 }

@@ -21,15 +21,17 @@ const trustUi = {
 export function template() {
   return html`
     <section class="page" id="atelier-page">
-      <section class="atelier-hero">
-        <p class="hero-eyebrow">Foundation shelf</p>
-        <h1>Atelier</h1>
-        <p class="section-lede">Operations, storage, protection, checkpoints, and lower-frequency maintenance.</p>
-      </section>
-      <section id="atelier-trust-root">
-        ${raw(renderTrustSkeleton())}
-      </section>
-      ${raw(renderClassicLinks())}
+      <div class="atelier-shell" id="atelier-shell">
+        <section class="atelier-hero">
+          <p class="hero-eyebrow">Foundation shelf</p>
+          <h1>Atelier</h1>
+          <p class="section-lede">Operations, storage, protection, checkpoints, and lower-frequency maintenance.</p>
+        </section>
+        <section id="atelier-trust-root">
+          ${raw(renderTrustSkeleton())}
+        </section>
+        ${raw(renderClassicLinks())}
+      </div>
     </section>
   `;
 }
@@ -125,8 +127,8 @@ export function renderTrustDurability({
         }))}
       </div>
       <div class="entry-meta trust-actions">
-        <a class="link-editorial" href="/#settings">Open classic storage tools</a>
-        <a class="link-editorial" href="/#settings">Backup, restore, and checkpoints</a>
+        <a class="link-editorial" href="/classic#settings">Open classic storage tools</a>
+        <a class="link-editorial" href="/classic#settings">Backup, restore, and checkpoints</a>
       </div>
       ${raw(renderReleaseReadiness(summary, { durable, backups, protection, git, activity, readiness, restorePreview }))}
       ${raw(renderProfileCopilotAudit(activity))}
@@ -528,10 +530,10 @@ function renderClassicLinks() {
       </p>
       <p class="marginalia">Profile · Sync &amp; Import · Workflows · Settings</p>
       <div class="entry-meta">
-        <a class="link-editorial" href="/#profile">Profile</a>
-        <a class="link-editorial" href="/#sync">Sync &amp; Import</a>
-        <a class="link-editorial" href="/#workflows">Workflows</a>
-        <a class="link-editorial" href="/#settings">Settings</a>
+        <a class="link-editorial" href="/classic#profile">Profile</a>
+        <a class="link-editorial" href="/classic#sync">Sync &amp; Import</a>
+        <a class="link-editorial" href="/classic#workflows">Workflows</a>
+        <a class="link-editorial" href="/classic#settings">Settings</a>
       </div>
     </section>
   `;

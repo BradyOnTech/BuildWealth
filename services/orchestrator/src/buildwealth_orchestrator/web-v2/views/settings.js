@@ -45,7 +45,30 @@ const ui = {
   testResult:      null,           // { ok, stage, detail, provider, model } or null
   saveError:       null,
   loadError:       null,
-  contextSettings: null,           // read-only context/embedding state
+  contextSettings: null,           // last server snapshot of context/embedding state
+  contextDraft:    null,           // working copy of embedding settings
+  contextSaving:   false,
+  contextTesting:  false,
+  contextSaveError:null,
+  contextTestResult: null,
+};
+
+const EMBEDDING_PROVIDERS = [
+  { value: 'disabled',                 label: 'Disabled',                hint: 'Structured data only' },
+  { value: 'ollama',                   label: 'Local Ollama',            hint: 'localhost:11434' },
+  { value: 'custom_openai_compatible', label: 'Custom (OpenAI-compatible)', hint: 'Self-hosted endpoint' },
+];
+
+const EMBEDDING_DEFAULT_MODELS = {
+  ollama: 'nomic-embed-text',
+  custom_openai_compatible: 'text-embedding-3-small',
+  disabled: 'nomic-embed-text',
+};
+
+const EMBEDDING_DEFAULT_URLS = {
+  ollama: 'http://localhost:11434',
+  custom_openai_compatible: '',
+  disabled: 'http://localhost:11434',
 };
 
 export function template() {
@@ -77,6 +100,11 @@ async function load() {
     ui.testResult = null;
     ui.saveError = null;
     ui.contextSettings = contextSettings;
+    ui.contextDraft = contextDraft(contextSettings);
+    ui.contextSaving = false;
+    ui.contextTesting = false;
+    ui.contextSaveError = null;
+    ui.contextTestResult = null;
     ui.loaded = true;
   } catch (err) {
     ui.loadError = err.message || 'Could not load settings.';
@@ -308,8 +336,10 @@ function humanStage(stage) {
 
 function contextCard() {
   const c = ui.contextSettings;
-  // Tone deliberately quiet — embeddings are optional for v1; the user
-  // shouldn't have to learn a new vocabulary to keep using Copilot.
+  const d = ui.contextDraft || contextDraft(c);
+  const provider = EMBEDDING_PROVIDERS.find(p => p.value === d.context_embedding_provider) || EMBEDDING_PROVIDERS[0];
+  const isDisabled = d.context_embedding_provider === 'disabled' || !d.context_embeddings_enabled;
+
   return html`
     <section class="settings-card settings-card-quiet">
       <header class="settings-card-head">
@@ -321,45 +351,70 @@ function contextCard() {
         </p>
       </header>
 
-      <div class="settings-context-grid">
-        ${raw(contextRow('Context engine', 'On — always running.', 'applied'))}
-        ${raw(contextRow(
-          'Narrative search (embeddings)',
-          c ? (c.embeddings_enabled ? 'On — searching narrative context.' : 'Off — structured data only.') : '—',
-          c && c.embeddings_enabled ? 'applied' : 'archived',
-        ))}
-        ${raw(contextRow(
-          'Embedding provider',
-          c ? humanProvider(c.embedding_provider) : '—',
-          'archived',
-        ))}
-        ${raw(contextRow(
-          'Embedding model',
-          c?.embedding_model || '—',
-          'archived',
-          { mono: true },
-        ))}
-        ${raw(contextRow(
-          'Embedding endpoint',
-          c?.embedding_base_url || '—',
-          'archived',
-          { mono: true },
-        ))}
-        ${raw(contextRow(
-          'Indexed items · candidates pending review',
+      <div class="settings-grid">
+        <label class="settings-field span-2 settings-field-toggle">
+          <input id="context-enabled" type="checkbox" ${d.context_embeddings_enabled ? 'checked' : ''} />
+          <span>
+            <span class="settings-label">Enable narrative search</span>
+            <span class="settings-hint">When on, Copilot can pull older notes and research that aren't in your structured profile yet.</span>
+          </span>
+        </label>
+
+        <label class="settings-field span-2">
+          <span class="settings-label">Embedding provider</span>
+          <select id="context-provider" class="settings-input">
+            ${raw(EMBEDDING_PROVIDERS.map(p => `
+              <option value="${esc(p.value)}" ${p.value === d.context_embedding_provider ? 'selected' : ''}>
+                ${esc(p.label)} · ${esc(p.hint)}
+              </option>
+            `).join(''))}
+          </select>
+          <span class="settings-hint">Local Ollama is the most private; custom OpenAI-compatible covers self-hosted endpoints.</span>
+        </label>
+
+        <label class="settings-field">
+          <span class="settings-label">Model</span>
+          <input id="context-model" class="settings-input mono"
+                 type="text" autocomplete="off" spellcheck="false"
+                 placeholder="${esc(EMBEDDING_DEFAULT_MODELS[d.context_embedding_provider] || 'embedding model')}"
+                 value="${esc(d.context_embedding_model || '')}" />
+          <span class="settings-hint">${provider.value === 'ollama' ? 'nomic-embed-text is a good default for local search.' : 'Use any model that supports the provider\'s embed endpoint.'}</span>
+        </label>
+
+        <label class="settings-field">
+          <span class="settings-label">Endpoint</span>
+          <input id="context-base-url" class="settings-input mono"
+                 type="text" autocomplete="off" spellcheck="false"
+                 placeholder="${esc(EMBEDDING_DEFAULT_URLS[d.context_embedding_provider] || 'https://...')}"
+                 value="${esc(d.context_embedding_base_url || '')}" />
+          <span class="settings-hint">Where the embedding requests are sent.</span>
+        </label>
+
+        <label class="settings-field">
+          <span class="settings-label">Timeout (seconds)</span>
+          <input id="context-timeout" class="settings-input mono"
+                 type="number" min="1" max="120" step="0.5"
+                 value="${esc(String(d.context_embedding_timeout_seconds ?? 5))}" />
+          <span class="settings-hint">Drop the request if the embedding endpoint is slow.</span>
+        </label>
+
+        ${raw(contextRow('Indexed items · candidates pending review',
           c ? `${c.registry?.item_count ?? 0} · ${c.registry?.pending_review_count ?? 0}` : '—',
           'archived',
-          { mono: true },
-        ))}
+          { mono: true }))}
       </div>
 
-      <p class="settings-context-note">
-        These are read-only for now. To change them, set
-        <code>CONTEXT_EMBEDDINGS_ENABLED</code>, <code>CONTEXT_EMBEDDING_PROVIDER</code>,
-        <code>CONTEXT_EMBEDDING_MODEL</code>, or <code>CONTEXT_EMBEDDING_BASE_URL</code>
-        in the orchestrator environment and restart. User-level editing arrives
-        in a follow-up slice.
-      </p>
+      <footer class="settings-actions">
+        <button class="btn btn-primary" id="context-save" ${ui.contextSaving ? 'disabled' : ''}>
+          ${ui.contextSaving ? 'Saving…' : 'Save embedding settings'}
+        </button>
+        <button class="btn btn-ghost" id="context-test" ${ui.contextTesting || isDisabled ? 'disabled' : ''}>
+          ${ui.contextTesting ? 'Testing…' : 'Test embedding provider'}
+        </button>
+        ${ui.contextSaveError ? html`<p class="inline-warning">${ui.contextSaveError}</p>` : ''}
+      </footer>
+
+      ${raw(contextTestResultBlock())}
     </section>
   `;
 }
@@ -367,7 +422,7 @@ function contextCard() {
 function contextRow(label, value, tone, opts = {}) {
   const valueClass = `settings-context-value${opts.mono ? ' mono' : ''}`;
   return html`
-    <div class="settings-context-row">
+    <div class="settings-context-row settings-field span-2">
       <span class="status-pill ${tone}"><span class="dot"></span></span>
       <span class="settings-context-label">${label}</span>
       <span class="${valueClass}">${value}</span>
@@ -375,12 +430,45 @@ function contextRow(label, value, tone, opts = {}) {
   `;
 }
 
-function humanProvider(value) {
-  if (!value) return '—';
-  if (value === 'disabled') return 'Disabled';
-  if (value === 'ollama')   return 'Local Ollama';
-  if (value === 'custom_openai_compatible') return 'Custom (OpenAI-compatible)';
-  return String(value).replace(/_/g, ' ');
+function contextTestResultBlock() {
+  const r = ui.contextTestResult;
+  if (!r) return '';
+  if (r.ok && r.enabled) {
+    return html`
+      <div class="settings-test-block ok">
+        <p class="settings-test-headline">Embedding handshake succeeded.</p>
+        <p class="settings-test-detail">${r.provider || ''}${r.model ? ` · ${r.model}` : ''} · vector length ${r.vector_length || 0}</p>
+      </div>
+    `;
+  }
+  if (r.ok && !r.enabled) {
+    return html`
+      <div class="settings-test-block">
+        <p class="settings-test-headline">Embeddings are off — falling back to structured data.</p>
+        <p class="settings-test-detail">${r.detail || ''}</p>
+      </div>
+    `;
+  }
+  return html`
+    <div class="settings-test-block fail">
+      <p class="settings-test-headline">Embedding handshake failed.</p>
+      <p class="settings-test-detail">${r.stage ? `${humanStage(r.stage)} · ` : ''}${truncate(r.detail || 'No detail returned.', 220)}</p>
+    </div>
+  `;
+}
+
+function contextDraft(snapshot) {
+  // Snapshots come from /api/settings/context which exposes the current
+  // settings *values* (env-driven by default). The first save promotes the
+  // user-supplied values into the user_settings store.
+  const s = snapshot || {};
+  return {
+    context_embeddings_enabled:        Boolean(s.embeddings_enabled),
+    context_embedding_provider:        s.embedding_provider || 'disabled',
+    context_embedding_model:           s.embedding_model || '',
+    context_embedding_base_url:        s.embedding_base_url || '',
+    context_embedding_timeout_seconds: Number(s.embedding_timeout_seconds ?? 5),
+  };
 }
 
 /* ─────────────  Handoff card (where the rest lives)  ───────────── */
@@ -438,6 +526,33 @@ function attachHandlers() {
   delegate(root, 'click',  '#settings-test',           (e) => { e.preventDefault(); testProvider(); });
   delegate(root, 'click',  '#settings-reset-defaults', (e) => { e.preventDefault(); resetDefaults(); });
   delegate(root, 'click',  '#settings-clear-key',      (e) => { e.preventDefault(); clearSavedKey(); });
+
+  // Context Intelligence card
+  delegate(root, 'change', '#context-enabled', (_, el) => { ui.contextDraft.context_embeddings_enabled = !!el.checked; });
+  delegate(root, 'change', '#context-provider', (_, el) => {
+    const next = el.value;
+    const prev = ui.contextDraft.context_embedding_provider;
+    if (next === prev) return;
+    ui.contextDraft.context_embedding_provider = next;
+    // Auto-fill defaults if the user hasn't set values yet, so switching from
+    // Disabled → Local Ollama populates a working pair.
+    if (!ui.contextDraft.context_embedding_model || ui.contextDraft.context_embedding_model === EMBEDDING_DEFAULT_MODELS[prev]) {
+      ui.contextDraft.context_embedding_model = EMBEDDING_DEFAULT_MODELS[next] || '';
+    }
+    if (!ui.contextDraft.context_embedding_base_url || ui.contextDraft.context_embedding_base_url === EMBEDDING_DEFAULT_URLS[prev]) {
+      ui.contextDraft.context_embedding_base_url = EMBEDDING_DEFAULT_URLS[next] || '';
+    }
+    ui.contextTestResult = null;
+    render();
+  });
+  delegate(root, 'input',  '#context-model',    (_, el) => { ui.contextDraft.context_embedding_model = el.value; });
+  delegate(root, 'input',  '#context-base-url', (_, el) => { ui.contextDraft.context_embedding_base_url = el.value; });
+  delegate(root, 'input',  '#context-timeout',  (_, el) => {
+    const n = parseFloatOr(el.value, 5);
+    ui.contextDraft.context_embedding_timeout_seconds = n;
+  });
+  delegate(root, 'click',  '#context-save', (e) => { e.preventDefault(); saveContext(); });
+  delegate(root, 'click',  '#context-test', (e) => { e.preventDefault(); testEmbedding(); });
 }
 
 /* ─────────────  Actions  ───────────── */
@@ -495,6 +610,45 @@ function clearSavedKey() {
   ui.apiKeyDirty = true;
   ui.testResult = null;
   render();
+}
+
+async function saveContext() {
+  if (ui.contextSaving) return;
+  ui.contextSaving = true;
+  ui.contextSaveError = null;
+  render();
+  try {
+    // The user_settings store accepts the same keys the backend already
+    // expects (context_embeddings_enabled, context_embedding_provider, etc.),
+    // so we can ride the same /api/settings PUT endpoint.
+    await api.updateSettings(ui.contextDraft);
+    const fresh = await api.contextSettings();
+    ui.contextSettings = fresh;
+    ui.contextDraft = contextDraft(fresh);
+  } catch (err) {
+    ui.contextSaveError = err?.message || 'Could not save embedding settings.';
+  } finally {
+    ui.contextSaving = false;
+    render();
+  }
+}
+
+async function testEmbedding() {
+  if (ui.contextTesting) return;
+  ui.contextTesting = true;
+  ui.contextTestResult = null;
+  render();
+  try {
+    const result = await api.testEmbeddingSettings(ui.contextDraft);
+    ui.contextTestResult = result || { ok: true, enabled: ui.contextDraft.context_embeddings_enabled };
+  } catch (err) {
+    ui.contextTestResult = err && err.detail && typeof err.detail === 'object' && 'ok' in err.detail
+      ? err.detail
+      : { ok: false, stage: 'embed_text', detail: err?.message || 'Test failed.' };
+  } finally {
+    ui.contextTesting = false;
+    render();
+  }
 }
 
 /* ─────────────  Plumbing  ───────────── */

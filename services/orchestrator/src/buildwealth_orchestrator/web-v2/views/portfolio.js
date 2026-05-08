@@ -6,7 +6,7 @@
 
 import { api } from '../lib/api.js';
 import { state } from '../lib/state.js';
-import { html, raw, $, setView } from '../lib/dom.js';
+import { html, raw, $, esc, setView } from '../lib/dom.js';
 import { renderStanding } from './portfolio/standing.js';
 import { renderComposition } from './portfolio/composition.js';
 import { renderWatch } from './portfolio/watch.js';
@@ -23,15 +23,17 @@ export const meta = {
 export function template() {
   return html`
     <section class="page" id="portfolio-page">
-      ${raw(skeletonHero())}
-      ${raw(skeletonSection('II', 'The composition'))}
-      ${raw(skeletonSection('III', 'The watch'))}
+      <div class="portfolio-shell" id="portfolio-shell">
+        ${raw(skeletonHero())}
+        ${raw(skeletonSection('II', 'The composition'))}
+        ${raw(skeletonSection('III', 'The watch'))}
+      </div>
     </section>
   `;
 }
 
 export async function init(params = {}) {
-  const root = $('#portfolio-page');
+  const root = $('#portfolio-shell');
   if (!root) return;
   let data = null;
   try {
@@ -359,18 +361,44 @@ function labelize(value) {
 }
 
 function renderLookCloser() {
+  // Movement V — Maintenance. Lower-frequency operations that don't belong
+  // in the daily portfolio narrative but should be discoverable from here.
+  // Each card deep-links to its current classic surface; v2 will absorb
+  // these one at a time.
+  const sections = [
+    { label: 'Accounts',         href: '/classic#portfolio',         hint: 'Brokerage and account-level metadata' },
+    { label: 'Transactions',     href: '/classic#portfolio',         hint: 'Buy/sell/dividend history' },
+    { label: 'Custom assets',    href: '/classic#portfolio',         hint: 'Real estate, vehicles, collectibles' },
+    { label: 'Manual prices',    href: '/classic#portfolio',         hint: 'Override or backfill quotes' },
+    { label: 'FX rates',         href: '/classic#portfolio',         hint: 'Currency conversion rates' },
+    { label: 'Cost basis',       href: '/classic#portfolio',         hint: 'Lot-level basis adjustments' },
+    { label: 'Risk policy',      href: '#profile?section=investing', hint: 'Single-investment, cash cushion, sectors' },
+    { label: 'Lot audit',        href: '/classic#portfolio',         hint: 'Reconcile lots against statements' },
+    { label: 'Corporate actions',href: '/classic#portfolio',         hint: 'Splits, mergers, spin-offs' },
+  ];
   return html`
-    <footer class="look-closer">
-      <span class="section-eyebrow">Look closer</span>
-      <div class="look-closer-row">
-        <a class="link-editorial" href="/#portfolio">Full holdings table</a>
-        <a class="link-editorial" href="/#portfolio">Record a transaction</a>
-        <a class="link-editorial" href="/#portfolio">Backfill history</a>
-        <a class="link-editorial" href="/#portfolio">Watchlist</a>
-        <a class="link-editorial" href="/#portfolio">Risk thresholds</a>
+    <section>
+      <header class="section-head">
+        <span class="section-eyebrow">Movement V</span>
+        <h2 class="section-title">Maintenance</h2>
+        <p class="section-lede">
+          Lower-frequency tools that keep the picture honest. Each opens the
+          classic surface for now — v2 absorbs them one at a time as the
+          input shape stabilises.
+        </p>
+      </header>
+      <div class="portfolio-maintenance-grid">
+        ${raw(sections.map(s => `
+          <a class="portfolio-maintenance-card"
+             href="${esc(s.href)}"
+             ${s.href.startsWith('#') ? 'data-route' : ''}>
+            <span class="portfolio-maintenance-label">${esc(s.label)}</span>
+            <span class="portfolio-maintenance-hint">${esc(s.hint)}</span>
+            <span class="portfolio-maintenance-arrow">→</span>
+          </a>
+        `).join(''))}
       </div>
-      <p class="look-closer-note">Each opens the classic surface — these views haven't been re-set in the new vocabulary yet.</p>
-    </footer>
+    </section>
   `;
 }
 

@@ -19,10 +19,12 @@ export const meta = {
 export function template() {
   return html`
     <section class="page" id="today-page">
-      ${raw(skeletonHero())}
-      ${raw(skeletonSection('II', 'Command center'))}
-      ${raw(skeletonSection('III', 'The move'))}
-      ${raw(skeletonSection('IV', 'The room'))}
+      <div class="today-shell" id="today-shell">
+        ${raw(skeletonHero())}
+        ${raw(skeletonSection('II', 'Command center'))}
+        ${raw(skeletonSection('III', 'The move'))}
+        ${raw(skeletonSection('IV', 'The room'))}
+      </div>
     </section>
   `;
 }
@@ -32,7 +34,7 @@ export async function init(params = {}) {
 }
 
 async function load(params = {}) {
-  const root = $('#today-page');
+  const root = $('#today-shell');
   if (!root) return;
 
   let payload = null;

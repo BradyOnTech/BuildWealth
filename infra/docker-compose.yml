@@ -12,6 +12,10 @@ services:
       - "8090:8090"
     volumes:
       - ../data:/app/data
+      # Bind-mount the v2 frontend so static-file edits (HTML, CSS, JS, views/*)
+      # appear on browser refresh without a docker rebuild. Backend Python
+      # changes still need a rebuild — the wheel installs at image build time.
+      - ../services/orchestrator/src/buildwealth_orchestrator/web-v2:/usr/local/lib/python3.12/site-packages/buildwealth_orchestrator/web-v2:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
       interval: 15s

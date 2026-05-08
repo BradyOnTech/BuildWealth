@@ -15,13 +15,15 @@ export const meta = {
 export function template() {
   return html`
     <section class="page" id="research-page">
-      ${raw(renderResearchEmpty())}
+      <div class="research-shell" id="research-shell">
+        ${raw(renderResearchEmpty())}
+      </div>
     </section>
   `;
 }
 
 export async function init(params = {}) {
-  const root = $('#research-page');
+  const root = $('#research-shell');
   if (!root) return;
   const compareSymbols = normalizeCompareSymbols(params.compare || '');
   const symbol = String(params.symbol || compareSymbols[0] || '').trim().toUpperCase();

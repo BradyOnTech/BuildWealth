@@ -382,6 +382,167 @@
   .settings-context-row { grid-template-columns: 1fr; }
 }
 
+/* ───────────  Workflows  ─────────── */
+
+.workflow-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--s-5);
+}
+
+.workflow-card {
+  display: grid;
+  gap: var(--s-3);
+  padding: var(--s-5);
+  border: var(--hair) solid var(--rule-soft);
+  border-radius: var(--r-md);
+  background: var(--paper-bright);
+}
+
+.workflow-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.workflow-card-title {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 72;
+  font-weight: 600;
+  font-size: 19px;
+  letter-spacing: var(--track-tight);
+  margin: 0;
+  color: var(--ink-strong);
+}
+
+.workflow-card-id {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  background: var(--paper);
+  border: var(--hair) solid var(--rule-soft);
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+}
+
+.workflow-card-desc {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-style: italic;
+  font-size: 14.5px;
+  color: var(--ink-soft);
+  margin: 0;
+  text-wrap: pretty;
+  line-height: var(--lh-body);
+}
+
+.workflow-card-params {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--s-2) var(--s-4);
+  margin: 0;
+  padding: var(--s-2) 0;
+  border-top: var(--hair) dotted var(--rule);
+  border-bottom: var(--hair) dotted var(--rule);
+}
+
+.workflow-card-params dt {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+}
+
+.workflow-card-params dd {
+  margin: 2px 0 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.workflow-card-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  margin-top: 4px;
+}
+
+.workflow-result {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.workflow-result.ok   { color: var(--forest); }
+.workflow-result.fail { color: var(--oxblood); }
+
+/* ───────────  Import & sync · file lists  ─────────── */
+
+.import-shell {
+  display: grid;
+  gap: var(--s-6);
+}
+
+.import-file-list,
+.import-template-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s-2);
+}
+
+.import-file,
+.import-template {
+  display: grid;
+  gap: 4px;
+  padding: var(--s-2) 0;
+  border-bottom: var(--hair) dotted var(--rule);
+}
+.import-file:last-child,
+.import-template:last-child { border-bottom: 0; }
+
+.import-file-name,
+.import-template-name {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  letter-spacing: 0.005em;
+  color: var(--ink);
+}
+
+.import-file-meta {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-faint);
+}
+
+.import-template-desc {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.import-template-cols {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-quiet);
+  background: var(--paper);
+  border: var(--hair) solid var(--rule-soft);
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  display: inline-block;
+  width: fit-content;
+}
+
 /* ───────────  Handoff card  ─────────── */
 
 .settings-handoff {

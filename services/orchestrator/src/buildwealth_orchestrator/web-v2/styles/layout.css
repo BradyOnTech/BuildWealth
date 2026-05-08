@@ -400,6 +400,10 @@
   justify-content: space-between;
   padding: var(--s-5) var(--gutter) var(--s-4);
   gap: var(--s-5);
+  background: var(--paper);
+  /* Fade the bottom edge into the page so the chips don't sit on a hard line. */
+  background-image: linear-gradient(180deg, var(--paper) 0%, var(--paper) 78%, rgba(239, 233, 221, 0) 100%);
+  backdrop-filter: blur(2px);
 }
 
 .topbar-eyebrow {
@@ -416,31 +420,72 @@
   color: var(--ink-faint);
 }
 
-.topbar-status {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-2);
-  font-family: var(--mono);
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--ink-soft);
-}
-
-.topbar-status .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--forest-soft);
-  box-shadow: 0 0 0 3px rgba(45, 93, 62, 0.12);
-}
-.topbar-status.warn .dot   { background: var(--brass); box-shadow: 0 0 0 3px rgba(168, 132, 44, 0.16); }
-.topbar-status.error .dot  { background: var(--oxblood); box-shadow: 0 0 0 3px rgba(125, 46, 46, 0.16); }
-
 .topbar-actions {
   display: flex;
   align-items: center;
   gap: var(--s-3);
+}
+
+.topbar-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.topbar-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-soft);
+  text-decoration: none;
+  border: var(--hair) solid transparent;
+  transition: color var(--d-fast) var(--ease-press), border-color var(--d-fast) var(--ease-press), background var(--d-fast) var(--ease-press);
+  white-space: nowrap;
+}
+
+.topbar-chip .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-quiet);
+  flex-shrink: 0;
+}
+
+.topbar-chip.ok    .dot { background: var(--forest);  box-shadow: 0 0 0 3px rgba(45, 93, 62, 0.12); }
+.topbar-chip.warn  .dot { background: var(--brass);   box-shadow: 0 0 0 3px rgba(168, 132, 44, 0.16); }
+.topbar-chip.attn  .dot { background: var(--oxblood); box-shadow: 0 0 0 3px rgba(125, 46, 46, 0.16); }
+.topbar-chip.quiet .dot { background: var(--ink-quiet); }
+
+.topbar-chip.ok   { color: var(--ink-soft); }
+.topbar-chip.warn { color: var(--brass); }
+.topbar-chip.attn { color: var(--oxblood); }
+
+a.topbar-chip {
+  cursor: pointer;
+}
+a.topbar-chip:hover {
+  color: var(--ink-strong);
+  border-color: var(--rule);
+  background: var(--paper-bright);
+}
+a.topbar-chip.warn:hover { color: var(--brass); border-color: var(--brass-soft); }
+a.topbar-chip.attn:hover { color: var(--oxblood); border-color: var(--oxblood-soft); }
+
+@media (max-width: 760px) {
+  /* Drop the last chip first on small screens to keep the topbar from
+     wrapping into a tall stack. The order of chip rendering matches IA
+     priority: profile, copilot, data, backup. */
+  .topbar-chip:nth-child(n + 4) { display: none; }
+}
+@media (max-width: 560px) {
+  .topbar-chip:nth-child(n + 3) { display: none; }
 }
 
 /* ───────────  Content  ─────────── */
@@ -470,6 +515,22 @@
 
 @keyframes page-rise {
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* Per-view shell containers — single direct child of .page so the page-rise
+   entrance animation runs once on initial route, and re-renders inside the
+   shell don't re-fire it. Each view declares its own outer rhythm in its
+   stylesheet, but the layout-grid default keeps unstyled views tidy. */
+.today-shell,
+.portfolio-shell,
+.plan-shell,
+.inbox-shell,
+.copilot-shell,
+.atelier-shell,
+.research-shell,
+.workflows-shell {
+  display: grid;
+  gap: var(--s-7);
 }
 
 /* Editorial measure for prose */

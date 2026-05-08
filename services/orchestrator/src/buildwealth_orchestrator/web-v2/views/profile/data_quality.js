@@ -7,6 +7,8 @@
 
 import { html, raw, esc } from '../../lib/dom.js';
 import { fmtRelative } from '../../lib/format.js';
+import { api } from '../../lib/api.js';
+import { render as renderProfile } from '../profile.js';
 
 const FIELD_LABELS = {
   'tax_profile.filing_status':       'Filing status',
@@ -46,6 +48,11 @@ const SECTION_FOR_AREA = {
 
 export function renderDataQuality(ui) {
   const candidates = (ui.candidates || []).filter(isProfileTargeted);
+  const conflicts = detectConflicts(ui.profile, candidates);
+  const conflictIds = new Set(conflicts.map(c => c.candidate.id));
+  // Exclude conflicts from the plain pending list so each candidate appears
+  // in only one card — the conflict block has stronger affordances.
+  const pendingNonConflicts = candidates.filter(c => !conflictIds.has(c.id));
   const metadataEntries = profileMetadataEntries(ui.profile?.profile_metadata);
 
   return html`
@@ -61,10 +68,148 @@ export function renderDataQuality(ui) {
         </div>
       </header>
 
-      ${raw(pendingCard(candidates))}
+      ${raw(conflictsCard(conflicts))}
+      ${raw(pendingCard(pendingNonConflicts))}
       ${raw(confirmedCard(metadataEntries))}
     </div>
   `;
+}
+
+/* ─────────────  Conflicts  ───────────── */
+
+function conflictsCard(conflicts) {
+  if (!conflicts.length) return '';
+  const items = conflicts.map(({ candidate, currentValue, fieldPath }) => {
+    const fieldLabel = FIELD_LABELS[fieldPath] || humanFieldPath(fieldPath);
+    const profileLabel = fmtConflictValue(currentValue, fieldPath);
+    const candidateLabel = fmtConflictValue(candidate.target_value, fieldPath);
+    return `
+      <li class="profile-conflict-item">
+        <p class="profile-conflict-eyebrow">Conflict · ${esc(fieldLabel)}</p>
+        <p class="profile-conflict-claim">
+          Your profile says <b>${esc(profileLabel)}</b>, but ${esc(humanWord(candidate.source_domain) || 'a recent source')} suggests <b>${esc(candidateLabel)}</b>.
+        </p>
+        ${candidate.materiality_rationale
+          ? `<p class="profile-conflict-rationale">${esc(candidate.materiality_rationale)}</p>`
+          : ''}
+        <div class="profile-conflict-actions">
+          <button class="btn btn-ghost btn-sm"
+                  data-conflict-action="reject"
+                  data-candidate-id="${esc(candidate.id)}">
+            Use ${esc(profileLabel)}
+          </button>
+          <button class="btn btn-primary btn-sm"
+                  data-conflict-action="apply"
+                  data-candidate-id="${esc(candidate.id)}">
+            Use ${esc(candidateLabel)}
+          </button>
+          <a class="link-editorial muted"
+             href="#copilot?focus=${esc(candidate.id)}&intent=conflict-explain"
+             data-route>Ask Copilot to explain</a>
+          <button class="link-quiet"
+                  data-conflict-action="defer"
+                  data-candidate-id="${esc(candidate.id)}">
+            Decide later
+          </button>
+        </div>
+      </li>
+    `;
+  }).join('');
+
+  return html`
+    <article class="profile-card profile-card-attn">
+      <header class="profile-card-head">
+        <h3 class="profile-card-title">Needs your call</h3>
+        <span class="profile-card-count">${conflicts.length}</span>
+      </header>
+      <ul class="profile-conflict-list">
+        ${raw(items)}
+      </ul>
+    </article>
+  `;
+}
+
+function detectConflicts(profile, candidates) {
+  if (!profile || !Array.isArray(candidates) || !candidates.length) return [];
+  const conflicts = [];
+  for (const candidate of candidates) {
+    const fieldPath = profileFieldPath(candidate);
+    if (!fieldPath) continue;
+    const currentValue = readByPath(profile, fieldPath);
+    if (!isPresent(currentValue)) continue;          // not a conflict — just a fill
+    if (valuesMatch(currentValue, candidate.target_value)) continue;
+    conflicts.push({ candidate, currentValue, fieldPath });
+  }
+  return conflicts;
+}
+
+function profileFieldPath(candidate) {
+  const area = String(candidate?.target_area || '').trim();
+  const field = String(candidate?.target_field || '').trim();
+  if (!area || !field) return '';
+  // Normalize a few known synonyms back onto the canonical profile shape.
+  const areaMap = { investing: 'investment_policy' };
+  const realArea = areaMap[area] || area;
+  return `${realArea}.${field}`;
+}
+
+function readByPath(obj, path) {
+  return path.split('.').reduce((acc, key) => (acc == null ? acc : acc[key]), obj);
+}
+
+function isPresent(value) {
+  if (value == null) return false;
+  if (value === '') return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.keys(value).length > 0;
+  return true;
+}
+
+function valuesMatch(a, b) {
+  if (a === b) return true;
+  if (typeof a === 'number' || typeof b === 'number') {
+    const na = Number(a);
+    const nb = Number(b);
+    if (Number.isFinite(na) && Number.isFinite(nb)) return Math.abs(na - nb) < 1e-9;
+  }
+  return String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+}
+
+function fmtConflictValue(value, fieldPath) {
+  if (value == null || value === '') return '—';
+  // Tax rates store as decimals; show as percent when the field path tells us so.
+  if (/tax_rate$/.test(fieldPath) && typeof value === 'number') {
+    return `${(value * 100).toFixed(2)}%`;
+  }
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (Array.isArray(value)) return value.length === 0 ? 'none' : value.slice(0, 3).join(', ') + (value.length > 3 ? '…' : '');
+  return String(value);
+}
+
+export async function resolveConflict(candidateId, action) {
+  // action ∈ { 'apply', 'reject', 'defer' }. The Inbox is the canonical place
+  // to fully apply a candidate (server-side it touches the profile too); from
+  // here we just record the user's call so the conflict stops resurfacing.
+  const stateMap = { apply: 'applied', reject: 'rejected', defer: 'deferred' };
+  const lifecycle_state = stateMap[action];
+  if (!lifecycle_state) return;
+  try {
+    await api.updateContextCandidateLifecycle(candidateId, { lifecycle_state });
+  } catch (err) {
+    console.error('[conflict] lifecycle update failed', err);
+  }
+  // Refresh the profile candidates list so the UI reflects the new state.
+  try {
+    const refreshed = await api.contextCandidates({ lifecycleState: 'proposed' });
+    const items = Array.isArray(refreshed) ? refreshed : (refreshed?.items || []);
+    // Mutate the live ui object the profile view holds so render() picks it up.
+    const profileView = await import('../profile.js');
+    profileView.ui.candidates = items;
+    renderProfile();
+  } catch {
+    renderProfile();
+  }
 }
 
 /* ─────────────  Pending candidates  ───────────── */
