@@ -315,7 +315,10 @@ from buildwealth_orchestrator.services.buildwealth_context import (
     utc_now_iso as context_utc_now_iso,
 )
 from buildwealth_orchestrator.services.context_cache import ExpiringCache
-from buildwealth_orchestrator.services.context_intelligence import ContextIntelligenceService
+from buildwealth_orchestrator.services.context_intelligence import (
+    ContextAssembler,
+    ContextIntelligenceService,
+)
 from buildwealth_orchestrator.services.runtime_telemetry import (
     RuntimeTelemetryTracker,
     summarize_cache_quality,
@@ -665,6 +668,7 @@ context_intelligence_service = ContextIntelligenceService.from_settings(
     recommendation_inbox=recommendation_inbox,
     portfolio_store=portfolio_store,
 )
+context_assembler = ContextAssembler(context_service=context_intelligence_service)
 workflow_runner = WorkflowRunner(
     scenario_engine=scenario_engine,
     default_annual_contribution_usd=settings.planner_annual_contribution_usd,
@@ -758,6 +762,10 @@ copilot = FinancialCopilot(
         "- Do not provide legal or tax advice; provide analytical insights and scenarios.\n\n"
         "TOOL SELECTION GUIDE:\n"
         "- For a full cross-domain briefing (portfolio + plan + research + open decisions) → call get_buildwealth_context.\n"
+        "- Default chat context includes Context Intelligence `retrieved_context`, `citations`, `conflicts`, "
+        "`context_budget`, and `trace`; use those citations when explaining what you relied on.\n"
+        "- If `conflicts` are present, explain them in plain language and avoid decision-grade advice until material "
+        "items are resolved or confirmed.\n"
         "- After calling get_buildwealth_context, inspect `quality` and `warnings` fields before making recommendations. "
         "If `quality.freshness.snapshot_stale=true` or coverage is missing sections, call that out clearly and suggest refresh actions.\n"
         "- For 'how am I doing?' or 'what is my financial situation?' → call get_financial_health first.\n"
@@ -10780,6 +10788,49 @@ async def build_contextual_brief(
     return json.dumps(payload, indent=2, default=str)
 
 
+async def assemble_copilot_context_payload(
+    *,
+    question: str,
+    use_live_snapshot: bool = False,
+    plan_id: str | None = None,
+    include_research: bool = False,
+    include_plan_projection: bool = False,
+    force_refresh: bool = False,
+    research_symbols: list[str] | None = None,
+    research_period: str = "6mo",
+    research_interval: str = "1d",
+    research_symbol_limit: int = DEFAULT_RESEARCH_SYMBOL_LIMIT,
+    summary_max_chars: int = 1800,
+    detail_level: str = "light",
+) -> dict[str, Any]:
+    symbols = normalize_research_symbols(
+        research_symbols or [],
+        max_symbols=max(0, min(_coerce_int(research_symbol_limit, DEFAULT_RESEARCH_SYMBOL_LIMIT), 20)),
+    )
+    assembled = await context_assembler.assemble_context(
+        question=question,
+        plan_id=plan_id,
+        symbols=symbols,
+        intent=None,
+        structured_context_builder=build_buildwealth_context_payload,
+        builder_options={
+            "use_live_snapshot": use_live_snapshot,
+            "plan_id": plan_id,
+            "include_research": include_research,
+            "include_plan_projection": include_plan_projection,
+            "force_refresh": force_refresh,
+            "research_symbols": symbols,
+            "research_period": research_period,
+            "research_interval": research_interval,
+            "research_symbol_limit": research_symbol_limit,
+            "max_recommendations": 8,
+            "summary_max_chars": summary_max_chars,
+            "detail_level": detail_level,
+        },
+    )
+    return CopilotContextResponse(**assembled).model_dump(mode="json")
+
+
 async def resolve_snapshots_for_workflow(
     use_live_snapshot: bool,
 ) -> tuple[PortfolioSnapshot, PortfolioSnapshot | None]:
@@ -17795,7 +17846,8 @@ async def copilot_chat(request: CopilotChatRequest) -> CopilotChatResponse:
         context_options.research_symbols,
         max_symbols=context_options.research_symbol_limit,
     )
-    contextual_brief = await build_contextual_brief(
+    assembled_context = await assemble_copilot_context_payload(
+        question=request.question,
         use_live_snapshot=request.use_live_snapshot,
         plan_id=request.plan_id,
         include_research=context_options.include_research,
@@ -17808,11 +17860,13 @@ async def copilot_chat(request: CopilotChatRequest) -> CopilotChatResponse:
         research_symbol_limit=context_options.research_symbol_limit,
         summary_max_chars=context_options.summary_max_chars,
     )
+    contextual_brief = json.dumps(assembled_context, indent=2, default=str)
     try:
         result = await copilot.chat(
             question=request.question,
             conversation_id=request.conversation_id,
             contextual_brief=contextual_brief,
+            context_trace=assembled_context.get("trace") if isinstance(assembled_context, dict) else {},
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

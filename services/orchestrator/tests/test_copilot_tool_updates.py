@@ -115,6 +115,73 @@ def test_search_context_tool_and_endpoint_parse_filters(monkeypatch: pytest.Monk
     assert calls[1]["rebuild_if_empty"] is False
 
 
+def test_copilot_chat_uses_context_assembler_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    assembler_calls: list[dict[str, object]] = []
+    copilot_calls: list[dict[str, object]] = []
+    now = main.context_utc_now_iso()
+
+    class FakeAssembler:
+        async def assemble_context(self, **kwargs: object) -> dict[str, object]:
+            assembler_calls.append(kwargs)
+            return {
+                "generated_at": now,
+                "scope": {"plan_id": kwargs.get("plan_id"), "include_research": False, "detail_level": "light"},
+                "cache": {},
+                "location_state": "MN",
+                "currency": "USD",
+                "warnings": [],
+                "quality": {
+                    "freshness": {"generated_at": now, "snapshot_stale": None},
+                    "coverage": {"score_pct": 100.0, "checks": {}, "missing_sections": []},
+                    "warnings": {"count": 0, "has_warnings": False},
+                    "summary": {"max_chars": 1000, "full_chars": 20, "actual_chars": 20, "truncated": False},
+                },
+                "planning_defaults": {},
+                "financial_picture": {},
+                "planning": {},
+                "research": {},
+                "decisions": {},
+                "retrieved_context": {"count": 1, "items": [{"id": "ctx_profile"}]},
+                "citations": [{"context_item_id": "ctx_profile", "source_ref": "profile/financial_profile.json"}],
+                "context_budget": {"truncated": False, "returned_items": 1},
+                "conflicts": [],
+                "trace": {"assembler_version": "context_intelligence_assembler_v1", "intent": {"intent": "profile_question"}},
+                "summary": "assembled context",
+            }
+
+    class FakeCopilot:
+        async def chat(self, **kwargs: object) -> dict[str, object]:
+            copilot_calls.append(kwargs)
+            return {
+                "conversation_id": "conversation-1",
+                "answer": "ok",
+                "tool_calls": [],
+                "model": "fake",
+                "context_trace": kwargs.get("context_trace"),
+                "created_at": main.utc_now(),
+            }
+
+    monkeypatch.setattr(main, "context_assembler", FakeAssembler())
+    monkeypatch.setattr(main, "copilot", FakeCopilot())
+
+    response = asyncio.run(
+        main.copilot_chat(
+            main.CopilotChatRequest(
+                question="What tax rate is in my profile?",
+                plan_id="plan-1",
+            )
+        )
+    )
+
+    assert assembler_calls[0]["question"] == "What tax rate is in my profile?"
+    assert assembler_calls[0]["plan_id"] == "plan-1"
+    contextual_brief = copilot_calls[0]["contextual_brief"]
+    assert isinstance(contextual_brief, str)
+    assert '"retrieved_context"' in contextual_brief
+    assert copilot_calls[0]["context_trace"]["assembler_version"] == "context_intelligence_assembler_v1"
+    assert response.context_trace["intent"]["intent"] == "profile_question"
+
+
 def test_assess_portfolio_fit_tool_contract() -> None:
     tool = main.copilot.tools["assess_portfolio_fit"]
     properties = tool.parameters.get("properties", {})

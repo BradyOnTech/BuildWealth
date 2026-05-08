@@ -1564,6 +1564,12 @@ class CopilotContextResponse(BaseModel):
     planning: dict[str, Any] = Field(default_factory=dict)
     research: dict[str, Any] = Field(default_factory=dict)
     decisions: dict[str, Any] = Field(default_factory=dict)
+    retrieved_context: dict[str, Any] = Field(default_factory=dict)
+    citations: list[dict[str, Any]] = Field(default_factory=list)
+    context_budget: dict[str, Any] = Field(default_factory=dict)
+    conflicts: list[dict[str, Any]] = Field(default_factory=list)
+    conflict_review_items: list[dict[str, Any]] = Field(default_factory=list)
+    trace: dict[str, Any] = Field(default_factory=dict)
     summary: str = ""
 
 
@@ -1680,6 +1686,7 @@ class CopilotChatResponse(BaseModel):
     answer: str
     tool_calls: list[CopilotToolTrace] = Field(default_factory=list)
     model: str | None = None
+    context_trace: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
 
 

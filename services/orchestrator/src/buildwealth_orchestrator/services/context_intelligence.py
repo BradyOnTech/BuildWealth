@@ -9,13 +9,31 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Awaitable, Callable, Iterable, Mapping
 
 from buildwealth_orchestrator.services.financial_profile import profile_metadata_quality_for_field
 
 
 CONTEXT_REGISTRY_SCHEMA_VERSION = 1
 MATERIALITY_POLICY_VERSION = "global_v1"
+CONTEXT_ASSEMBLER_VERSION = "context_intelligence_assembler_v1"
+CONTEXT_CONFLICT_REVIEW_SCHEMA_VERSION = 1
+CONTEXT_CONFLICT_RECOMMENDATION_TYPE = "context_conflict_review"
+CONTEXT_CONFLICT_RECOMMENDATION_SOURCE = "context_intelligence"
+CONTEXT_CONFLICT_RESOLUTION_STATES = {
+    "unresolved",
+    "deferred",
+    "resolved_by_source_update",
+    "resolved_by_confirming_existing_source",
+    "resolved_by_rejecting_candidate",
+    "resolved_by_scoped_exception",
+}
+CONTEXT_CONFLICT_RELEVANCE_RESURFACE_REASONS = {
+    "copilot_answer",
+    "live_recommendation",
+    "planning_projection",
+    "investment_fit_review",
+}
 
 MATERIALITY_LEVELS = ("low", "medium", "high", "critical")
 ACTION_READINESS_BY_MATERIALITY = {
@@ -73,6 +91,30 @@ PLAN_HIGH_MATERIALITY_FIELD_TOKENS = {
     "retirement",
     "roth_conversion",
 }
+QUESTION_SYMBOL_IGNORELIST = {
+    "A",
+    "AI",
+    "AM",
+    "AND",
+    "ARE",
+    "BUY",
+    "CAN",
+    "DO",
+    "ETF",
+    "FOR",
+    "IRA",
+    "I",
+    "ME",
+    "MY",
+    "OR",
+    "ROTH",
+    "SELL",
+    "SHOULD",
+    "THE",
+    "TO",
+    "USD",
+    "WHAT",
+}
 
 
 def utc_now_iso() -> str:
@@ -116,6 +158,20 @@ def _normalized_lower_values(values: Iterable[Any] | Any | None) -> tuple[str, .
 
 def _normalized_symbol_values(values: Iterable[Any] | Any | None) -> tuple[str, ...]:
     return tuple(value.upper() for value in _normalized_filter_values(values))
+
+
+def _extract_question_symbols(question: str) -> tuple[str, ...]:
+    symbols: list[str] = []
+    for token in re.findall(r"\b[A-Z][A-Z0-9.]{0,5}\b", str(question or "")):
+        symbol = token.strip().upper()
+        if symbol in QUESTION_SYMBOL_IGNORELIST or len(symbol) > 6:
+            continue
+        symbols.append(symbol)
+    return tuple(dict.fromkeys(symbols))
+
+
+def _now_iso(now: datetime | None = None) -> str:
+    return (now or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
 
 
 def _compact_text(value: Any, *, limit: int = 1200) -> str:
@@ -1019,6 +1075,355 @@ class ContextIntelligenceService:
             limit=limit,
         )
 
+    def sync_conflict_review_items(
+        self,
+        conflicts: Iterable[Mapping[str, Any]],
+        *,
+        plan_id: str | None = None,
+        symbols: Iterable[Any] | Any | None = None,
+        relevance_reason: str = "copilot_answer",
+        now: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        synced: list[dict[str, Any]] = []
+        timestamp = _now_iso(now)
+        for conflict in conflicts:
+            if not isinstance(conflict, Mapping) or not _is_persistent_material_conflict(conflict):
+                continue
+            dedupe_key = context_conflict_dedupe_key(
+                conflict,
+                plan_id=plan_id,
+                symbols=symbols,
+            )
+            existing = self._find_conflict_review_item(dedupe_key)
+            payload = _build_conflict_review_action_payload(
+                conflict=conflict,
+                dedupe_key=dedupe_key,
+                plan_id=plan_id,
+                symbols=symbols,
+                existing=existing,
+                relevance_reason=relevance_reason,
+                now=timestamp,
+            )
+            title = _conflict_review_title(payload)
+            detail = _conflict_review_detail(payload)
+            priority = _conflict_priority(conflict)
+
+            if existing is None:
+                created = self.recommendation_inbox.create(
+                    title=title,
+                    detail=detail,
+                    priority=priority,
+                    recommendation_type=CONTEXT_CONFLICT_RECOMMENDATION_TYPE,
+                    source=CONTEXT_CONFLICT_RECOMMENDATION_SOURCE,
+                    plan_id=plan_id,
+                    action_payload=payload,
+                    status="proposed",
+                )
+                synced.append(_conflict_review_sync_result(created, created=True))
+            else:
+                updated = self.recommendation_inbox.update(
+                    str(existing.get("id")),
+                    {
+                        "title": title,
+                        "detail": detail,
+                        "priority": priority,
+                        "plan_id": plan_id,
+                        "action_payload": payload,
+                    },
+                )
+                synced.append(_conflict_review_sync_result(updated, created=False))
+        return synced
+
+    def defer_context_conflict_review_item(
+        self,
+        recommendation_id: str,
+        *,
+        deferred_until: str,
+        reason: str = "",
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        recommendation = self.recommendation_inbox.get(recommendation_id)
+        action_payload = recommendation.get("action_payload")
+        if not isinstance(action_payload, dict) or "context_conflict" not in action_payload:
+            raise ValueError("recommendation is not a context conflict review item")
+
+        payload = dict(action_payload)
+        context_conflict = dict(payload.get("context_conflict") or {})
+        context_conflict["resolution_state"] = "deferred"
+        context_conflict["blocks_decision_grade_advice"] = True
+        context_conflict["updated_at"] = _now_iso(now)
+        context_conflict["deferral"] = {
+            "deferred_until": str(deferred_until or "").strip(),
+            "reason": str(reason or "").strip(),
+            "deferred_at": _now_iso(now),
+            "relevance_triggered_resurfaced": False,
+            "resurfaced_at": None,
+        }
+        payload["context_conflict"] = context_conflict
+        payload["quality"] = _conflict_review_quality(context_conflict)
+        return self.recommendation_inbox.update(
+            recommendation_id,
+            {
+                "detail": _conflict_review_detail(payload),
+                "action_payload": payload,
+            },
+        )
+
+    def _find_conflict_review_item(self, dedupe_key: str) -> dict[str, Any] | None:
+        for row in self.recommendation_inbox.list(limit=None, include_archived=True, sort="none"):
+            if str(row.get("recommendation_type") or "").strip().lower() != CONTEXT_CONFLICT_RECOMMENDATION_TYPE:
+                continue
+            action_payload = row.get("action_payload")
+            if not isinstance(action_payload, Mapping):
+                continue
+            context_conflict = action_payload.get("context_conflict")
+            if not isinstance(context_conflict, Mapping):
+                continue
+            if str(context_conflict.get("dedupe_key") or "") == dedupe_key:
+                return dict(row)
+        return None
+
+
+def classify_context_intent(
+    question: str,
+    *,
+    symbols: Iterable[Any] | Any | None = None,
+) -> dict[str, Any]:
+    """Classify retrieval intent with deterministic keyword rules."""
+
+    question_text = str(question or "").strip()
+    lowered = question_text.lower()
+    resolved_symbols = tuple(
+        dict.fromkeys([*_normalized_symbol_values(symbols), *_extract_question_symbols(question_text)])
+    )
+
+    signals: list[str] = []
+    intent = "general"
+    domains = ["profile", "plan", "recommendation", "research"]
+    confidence = "low"
+
+    investment_terms = (
+        "buy",
+        "sell",
+        "stock",
+        "ticker",
+        "investment",
+        "invest",
+        "portfolio fit",
+        "fit",
+        "exposure",
+        "concentration",
+        "watchlist",
+        "thesis",
+        "dossier",
+    )
+    profile_terms = (
+        "profile",
+        "tax",
+        "filing",
+        "risk tolerance",
+        "investment policy",
+        "cash runway",
+        "restricted",
+    )
+    planning_terms = (
+        "plan",
+        "retire",
+        "retirement",
+        "scenario",
+        "projection",
+        "contribution",
+        "roth",
+        "drawdown",
+        "withdrawal",
+    )
+    recommendation_terms = (
+        "recommendation",
+        "should i",
+        "what should",
+        "next action",
+        "apply",
+        "reject",
+    )
+
+    if resolved_symbols or any(term in lowered for term in investment_terms):
+        intent = "investment_fit"
+        domains = ["research", "plan", "profile", "recommendation"]
+        confidence = "high" if resolved_symbols else "medium"
+        signals.append("investment_language")
+    if any(term in lowered for term in profile_terms):
+        if intent == "general":
+            intent = "profile_question"
+            domains = ["profile", "plan", "recommendation"]
+            confidence = "medium"
+        signals.append("profile_language")
+    if any(term in lowered for term in planning_terms):
+        if intent == "general":
+            intent = "planning_question"
+            domains = ["plan", "profile", "recommendation", "research"]
+            confidence = "medium"
+        signals.append("planning_language")
+    if any(term in lowered for term in recommendation_terms):
+        if intent == "general":
+            intent = "recommendation_review"
+            domains = ["recommendation", "plan", "profile", "research"]
+            confidence = "medium"
+        signals.append("recommendation_language")
+
+    if resolved_symbols:
+        signals.append("symbol_detected")
+    if not signals:
+        signals.append("general_context")
+
+    return {
+        "intent": intent,
+        "confidence": confidence,
+        "signals": list(dict.fromkeys(signals)),
+        "domains": domains,
+        "symbols": list(resolved_symbols),
+        "search_query": question_text,
+    }
+
+
+class ContextAssembler:
+    """Assemble structured context plus retrieved evidence for Copilot."""
+
+    def __init__(
+        self,
+        *,
+        context_service: ContextIntelligenceService,
+        max_retrieved_items: int = 12,
+        max_retrieved_text_chars: int = 6000,
+    ):
+        self.context_service = context_service
+        self.max_retrieved_items = max(1, min(int(max_retrieved_items), 50))
+        self.max_retrieved_text_chars = max(300, min(int(max_retrieved_text_chars), 24_000))
+
+    async def assemble_context(
+        self,
+        *,
+        question: str,
+        plan_id: str | None,
+        symbols: Iterable[Any] | Any | None,
+        intent: Mapping[str, Any] | str | None,
+        structured_context_builder: Callable[..., Awaitable[dict[str, Any]]],
+        builder_options: Mapping[str, Any] | None = None,
+        max_retrieved_items: int | None = None,
+        max_retrieved_text_chars: int | None = None,
+    ) -> dict[str, Any]:
+        started_at = utc_now_iso()
+        builder_kwargs = dict(builder_options or {})
+        resolved_intent = _resolve_intent_payload(question=question, intent=intent, symbols=symbols)
+        resolved_symbols = _merge_symbol_lists(symbols, resolved_intent.get("symbols"))
+        if resolved_symbols and not builder_kwargs.get("research_symbols"):
+            builder_kwargs["research_symbols"] = list(resolved_symbols)
+
+        structured_context = await structured_context_builder(**builder_kwargs)
+        scope = structured_context.get("scope")
+        scope = scope if isinstance(scope, Mapping) else {}
+        resolved_plan_id = str(plan_id or scope.get("plan_id") or "").strip() or None
+
+        raw_items = self._retrieve_items(
+            question=question,
+            intent_payload=resolved_intent,
+            plan_id=resolved_plan_id,
+            symbols=resolved_symbols,
+            max_items=max_retrieved_items or self.max_retrieved_items,
+        )
+        retrieved_context, citations, context_budget = _budget_retrieved_items(
+            raw_items,
+            max_items=max_retrieved_items or self.max_retrieved_items,
+            max_text_chars=max_retrieved_text_chars or self.max_retrieved_text_chars,
+        )
+        conflicts = _build_assembly_conflicts(
+            structured_context=structured_context,
+            retrieved_context=retrieved_context,
+        )
+        conflict_review_items = self.context_service.sync_conflict_review_items(
+            conflicts,
+            plan_id=resolved_plan_id,
+            symbols=resolved_symbols,
+            relevance_reason="copilot_answer",
+        )
+
+        trace = {
+            "assembler_version": CONTEXT_ASSEMBLER_VERSION,
+            "started_at": started_at,
+            "assembled_at": utc_now_iso(),
+            "intent": resolved_intent,
+            "plan_id": resolved_plan_id,
+            "symbols": list(resolved_symbols),
+            "retrieval": {
+                "candidate_count": len(raw_items),
+                "returned_count": len(retrieved_context.get("items", [])),
+                "citation_count": len(citations),
+                "truncated": bool(context_budget.get("truncated")),
+            },
+            "conflict_review_items": {
+                "count": len(conflict_review_items),
+                "ids": [
+                    str(item.get("recommendation_id") or "")
+                    for item in conflict_review_items
+                    if item.get("recommendation_id")
+                ],
+            },
+            "registry": self.context_service.get_status(),
+            "structured_context_builder": "build_buildwealth_context_payload",
+        }
+
+        return {
+            **structured_context,
+            "retrieved_context": retrieved_context,
+            "citations": citations,
+            "context_budget": context_budget,
+            "conflicts": conflicts,
+            "conflict_review_items": conflict_review_items,
+            "trace": trace,
+        }
+
+    def _retrieve_items(
+        self,
+        *,
+        question: str,
+        intent_payload: Mapping[str, Any],
+        plan_id: str | None,
+        symbols: tuple[str, ...],
+        max_items: int,
+    ) -> list[dict[str, Any]]:
+        domains = intent_payload.get("domains")
+        domains = domains if isinstance(domains, list) else None
+        raw_results: list[dict[str, Any]] = []
+
+        primary_result = self.context_service.search_context(
+            query=question,
+            domains=domains,
+            symbols=symbols,
+            limit=max_items * 2,
+            rebuild_if_empty=True,
+        )
+        raw_results.extend(_result_items(primary_result))
+
+        if plan_id:
+            plan_result = self.context_service.search_context(
+                query=question,
+                domains=["plan", "research", "recommendation"],
+                plan_id=plan_id,
+                limit=max_items,
+                rebuild_if_empty=True,
+            )
+            raw_results.extend(_result_items(plan_result))
+
+        if not raw_results:
+            fallback_result = self.context_service.search_context(
+                query=question,
+                domains=domains,
+                limit=max_items,
+                rebuild_if_empty=True,
+            )
+            raw_results.extend(_result_items(fallback_result))
+
+        return _dedupe_result_items(raw_results)
+
 
 def _build_context_item(
     *,
@@ -1323,3 +1728,593 @@ def _search_result_payload(item: ContextItem, *, score: dict[str, Any]) -> dict[
         "score_breakdown": score["score_breakdown"],
         "matched_terms": score["matched_terms"],
     }
+
+
+def context_conflict_dedupe_key(
+    conflict: Mapping[str, Any],
+    *,
+    plan_id: str | None = None,
+    symbols: Iterable[Any] | Any | None = None,
+) -> str:
+    source_refs = _source_refs_from_conflict(conflict)
+    payload = {
+        "type": str(conflict.get("type") or "context_conflict").strip().lower(),
+        "conflict_id": str(conflict.get("id") or "").strip(),
+        "source_refs": source_refs,
+        "plan_id": str(plan_id or "").strip(),
+        "symbols": list(_normalized_symbol_values(symbols)),
+    }
+    return f"context_conflict:{_hash_payload(payload, length=18)}"
+
+
+def _is_persistent_material_conflict(conflict: Mapping[str, Any]) -> bool:
+    severity = str(conflict.get("severity") or "").strip().lower()
+    return bool(conflict.get("blocks_decision_grade_advice")) or severity in {"high", "critical"}
+
+
+def _build_conflict_review_action_payload(
+    *,
+    conflict: Mapping[str, Any],
+    dedupe_key: str,
+    plan_id: str | None,
+    symbols: Iterable[Any] | Any | None,
+    existing: Mapping[str, Any] | None,
+    relevance_reason: str,
+    now: str,
+) -> dict[str, Any]:
+    existing_payload = existing.get("action_payload") if isinstance(existing, Mapping) else {}
+    existing_payload = existing_payload if isinstance(existing_payload, Mapping) else {}
+    existing_conflict = existing_payload.get("context_conflict")
+    existing_conflict = existing_conflict if isinstance(existing_conflict, Mapping) else {}
+
+    source_refs = _source_refs_from_conflict(conflict)
+    route = _context_conflict_route(conflict)
+    state = _next_conflict_resolution_state(
+        existing_conflict=existing_conflict,
+        relevance_reason=relevance_reason,
+        now=now,
+    )
+    first_seen_at = str(existing_conflict.get("first_seen_at") or now)
+    seen_count = _safe_int(existing_conflict.get("seen_count"), 0) + 1
+    deferral = _next_conflict_deferral(
+        existing_conflict=existing_conflict,
+        state=state,
+        relevance_reason=relevance_reason,
+        now=now,
+    )
+    blocks_decision_grade = not state.startswith("resolved_by_")
+
+    context_conflict = {
+        "schema_version": CONTEXT_CONFLICT_REVIEW_SCHEMA_VERSION,
+        "dedupe_key": dedupe_key,
+        "resolution_state": state,
+        "conflict_type": str(conflict.get("type") or "context_conflict"),
+        "severity": str(conflict.get("severity") or "high"),
+        "plain_language": str(conflict.get("plain_language") or "This context needs review."),
+        "source_refs": source_refs,
+        "plan_id": str(plan_id or "").strip() or None,
+        "symbols": list(_normalized_symbol_values(symbols)),
+        "route": route,
+        "review_actions": _context_conflict_review_actions(route),
+        "deferral": deferral,
+        "first_seen_at": first_seen_at,
+        "last_seen_at": now,
+        "seen_count": seen_count,
+        "relevance_reason": str(relevance_reason or "").strip() or "unknown",
+        "blocks_decision_grade_advice": blocks_decision_grade,
+        "llm_assistance": {
+            "explain_allowed": True,
+            "recommend_allowed": True,
+            "requires_user_confirmation_before_source_mutation": True,
+        },
+        "raw_conflict": dict(conflict),
+    }
+    return {
+        "schema_version": CONTEXT_CONFLICT_REVIEW_SCHEMA_VERSION,
+        "context_conflict": context_conflict,
+        "quality": _conflict_review_quality(context_conflict),
+        "suggested_action": {
+            "type": "review_context_conflict",
+            "route": route,
+            "mutation_requires_confirmation": True,
+            "summary": "Review or confirm the source context before relying on decision-grade advice.",
+        },
+    }
+
+
+def _next_conflict_resolution_state(
+    *,
+    existing_conflict: Mapping[str, Any],
+    relevance_reason: str,
+    now: str,
+) -> str:
+    state = str(existing_conflict.get("resolution_state") or "unresolved").strip().lower()
+    if state not in CONTEXT_CONFLICT_RESOLUTION_STATES:
+        state = "unresolved"
+    if state != "deferred":
+        return state
+    if _deferred_conflict_should_resurface(
+        existing_conflict=existing_conflict,
+        relevance_reason=relevance_reason,
+        now=now,
+    ):
+        return "unresolved"
+    return "deferred"
+
+
+def _next_conflict_deferral(
+    *,
+    existing_conflict: Mapping[str, Any],
+    state: str,
+    relevance_reason: str,
+    now: str,
+) -> dict[str, Any]:
+    existing_deferral = existing_conflict.get("deferral")
+    deferral = dict(existing_deferral) if isinstance(existing_deferral, Mapping) else {}
+    if state != "unresolved":
+        return {
+            "deferred_until": deferral.get("deferred_until"),
+            "reason": deferral.get("reason") or "",
+            "deferred_at": deferral.get("deferred_at"),
+            "relevance_triggered_resurfaced": bool(deferral.get("relevance_triggered_resurfaced")),
+            "resurfaced_at": deferral.get("resurfaced_at"),
+        }
+
+    if str(existing_conflict.get("resolution_state") or "").strip().lower() != "deferred":
+        return {
+            "deferred_until": deferral.get("deferred_until"),
+            "reason": deferral.get("reason") or "",
+            "deferred_at": deferral.get("deferred_at"),
+            "relevance_triggered_resurfaced": bool(deferral.get("relevance_triggered_resurfaced")),
+            "resurfaced_at": deferral.get("resurfaced_at"),
+        }
+
+    relevance_resurfaced = _relevance_reason_resurfaces(relevance_reason)
+    return {
+        "deferred_until": deferral.get("deferred_until"),
+        "reason": deferral.get("reason") or "",
+        "deferred_at": deferral.get("deferred_at"),
+        "relevance_triggered_resurfaced": relevance_resurfaced or bool(
+            deferral.get("relevance_triggered_resurfaced")
+        ),
+        "resurfaced_at": now,
+    }
+
+
+def _deferred_conflict_should_resurface(
+    *,
+    existing_conflict: Mapping[str, Any],
+    relevance_reason: str,
+    now: str,
+) -> bool:
+    if _relevance_reason_resurfaces(relevance_reason):
+        return True
+    deferral = existing_conflict.get("deferral")
+    deferral = deferral if isinstance(deferral, Mapping) else {}
+    deferred_until = _parse_datetime(deferral.get("deferred_until"))
+    now_dt = _parse_datetime(now)
+    if deferred_until is None or now_dt is None:
+        return False
+    return deferred_until <= now_dt
+
+
+def _relevance_reason_resurfaces(relevance_reason: str) -> bool:
+    reason = str(relevance_reason or "").strip().lower()
+    return reason in CONTEXT_CONFLICT_RELEVANCE_RESURFACE_REASONS
+
+
+def _context_conflict_route(conflict: Mapping[str, Any]) -> dict[str, Any]:
+    refs = _source_refs_from_conflict(conflict)
+    route = "copilot"
+    label = "Copilot-guided review"
+    target = "copilot"
+    reason = "Use Copilot to explain the context conflict and pick the right source to review."
+
+    if any(ref.startswith("profile/") for ref in refs):
+        route = "profile"
+        label = "Profile"
+        target = "financial_profile"
+        reason = "The context comes from the financial profile."
+    elif any(ref.startswith("portfolio/watchlist") or "research" in ref.lower() for ref in refs):
+        route = "research"
+        label = "Research"
+        target = "research_or_watchlist"
+        reason = "The context comes from research evidence or a watchlist thesis."
+    elif any(ref.startswith("plans/") for ref in refs):
+        route = "plan"
+        label = "Plan"
+        target = "plan_workspace"
+        reason = "The context comes from plan settings, decisions, or artifacts."
+    elif any(ref.startswith("recommendations/") for ref in refs):
+        route = "inbox"
+        label = "Inbox"
+        target = "recommendation_inbox"
+        reason = "The context comes from an existing recommendation."
+
+    return {
+        "route": route,
+        "label": label,
+        "target": target,
+        "reason": reason,
+        "source_refs": refs,
+    }
+
+
+def _context_conflict_review_actions(route: Mapping[str, Any]) -> list[dict[str, Any]]:
+    route_name = str(route.get("route") or "copilot").strip().lower()
+    route_label = str(route.get("label") or "source").strip()
+    return [
+        {
+            "action": "confirm_existing_source",
+            "label": f"Confirm the current {route_label} context",
+            "route": route_name,
+            "requires_user_confirmation": True,
+            "mutates_source": True,
+            "resolution_state": "resolved_by_confirming_existing_source",
+        },
+        {
+            "action": "update_source",
+            "label": f"Update the {route_label} context",
+            "route": route_name,
+            "requires_user_confirmation": True,
+            "mutates_source": True,
+            "resolution_state": "resolved_by_source_update",
+        },
+        {
+            "action": "reject_candidate",
+            "label": "Reject the conflicting candidate",
+            "route": route_name,
+            "requires_user_confirmation": True,
+            "mutates_source": False,
+            "resolution_state": "resolved_by_rejecting_candidate",
+        },
+        {
+            "action": "defer",
+            "label": "Defer this review but keep the caution",
+            "route": "inbox",
+            "requires_user_confirmation": True,
+            "mutates_source": False,
+            "resolution_state": "deferred",
+        },
+        {
+            "action": "explain",
+            "label": "Explain why this matters",
+            "route": "copilot",
+            "requires_user_confirmation": False,
+            "mutates_source": False,
+        },
+        {
+            "action": "recommend",
+            "label": "Recommend what to review first",
+            "route": "copilot",
+            "requires_user_confirmation": False,
+            "mutates_source": False,
+        },
+        {
+            "action": "record_scoped_exception",
+            "label": "Record a narrow exception",
+            "route": route_name,
+            "requires_user_confirmation": True,
+            "mutates_source": True,
+            "resolution_state": "resolved_by_scoped_exception",
+        },
+    ]
+
+
+def _source_refs_from_conflict(conflict: Mapping[str, Any]) -> list[str]:
+    refs = conflict.get("source_refs")
+    resolved = [str(ref).strip() for ref in refs if str(ref).strip()] if isinstance(refs, list) else []
+    if resolved:
+        return sorted(dict.fromkeys(resolved))
+
+    raw_conflict = conflict.get("raw_conflict")
+    if isinstance(raw_conflict, Mapping):
+        nested = _source_refs_from_conflict(raw_conflict)
+        if nested:
+            return nested
+
+    missing_sections = conflict.get("missing_sections")
+    if isinstance(missing_sections, list):
+        resolved.extend(_source_refs_from_missing_sections(missing_sections))
+    return sorted(dict.fromkeys(resolved))
+
+
+def _source_refs_from_missing_sections(missing_sections: Iterable[Any]) -> list[str]:
+    refs: list[str] = []
+    for item in missing_sections:
+        text = str(item or "").strip()
+        if text.startswith("financial_profile."):
+            field_path = text.removeprefix("financial_profile.")
+            field_path = re.sub(r"\.(stale|missing|needs_review)$", "", field_path)
+            refs.append(f"profile/financial_profile.json#{field_path}")
+        elif text.startswith("planning."):
+            refs.append(f"plans/context#{text.removeprefix('planning.')}")
+        elif text.startswith("research."):
+            refs.append(f"research/context#{text.removeprefix('research.')}")
+        elif text.startswith("recommendations."):
+            refs.append(f"recommendations/inbox.json#{text.removeprefix('recommendations.')}")
+    return refs
+
+
+def _conflict_review_quality(context_conflict: Mapping[str, Any]) -> dict[str, Any]:
+    blocks = bool(context_conflict.get("blocks_decision_grade_advice"))
+    severity = str(context_conflict.get("severity") or "high").strip().lower()
+    dedupe_key = str(context_conflict.get("dedupe_key") or "")
+    return {
+        "schema_version": 1,
+        "source": "context_intelligence_conflict_review",
+        "confidence_level": "high",
+        "freshness_status": "fresh",
+        "actionability": "review_only",
+        "decision_grade": False,
+        "blocking_context": [dedupe_key] if blocks and dedupe_key else [],
+        "actionability_reasons": [
+            "This is a review item. It explains the issue but does not change financial sources by itself."
+        ],
+        "impact": {
+            "level": "high" if severity in {"critical", "high"} else "medium",
+            "summary": "Context should be reviewed before using it for decision-grade advice.",
+        },
+    }
+
+
+def _conflict_review_title(payload: Mapping[str, Any]) -> str:
+    context_conflict = payload.get("context_conflict")
+    context_conflict = context_conflict if isinstance(context_conflict, Mapping) else {}
+    route = context_conflict.get("route")
+    route = route if isinstance(route, Mapping) else {}
+    route_label = str(route.get("label") or "context").strip()
+    return f"Review {route_label} context before relying on advice"
+
+
+def _conflict_review_detail(payload: Mapping[str, Any]) -> str:
+    context_conflict = payload.get("context_conflict")
+    context_conflict = context_conflict if isinstance(context_conflict, Mapping) else {}
+    plain = str(context_conflict.get("plain_language") or "Some context needs review.").strip()
+    route = context_conflict.get("route")
+    route = route if isinstance(route, Mapping) else {}
+    route_label = str(route.get("label") or "Copilot-guided review").strip()
+    state = str(context_conflict.get("resolution_state") or "unresolved").strip()
+    deferral = context_conflict.get("deferral")
+    deferral = deferral if isinstance(deferral, Mapping) else {}
+    deferred_until = str(deferral.get("deferred_until") or "").strip()
+    deferred_note = (
+        f"\n\nDeferred until: {deferred_until}. This only snoozes the review; it does not make the conflict resolved."
+        if state == "deferred" and deferred_until
+        else ""
+    )
+    return (
+        f"{plain}\n\n"
+        f"Review path: {route_label}. This item is review-only. Asking Copilot to explain or recommend a next step "
+        "can help you understand the issue, but updating profile, plan, research, or recommendation context still "
+        "requires your explicit confirmation.\n\n"
+        "Until this is resolved, decision-grade advice should carry this caution."
+        f"{deferred_note}"
+    )
+
+
+def _conflict_priority(conflict: Mapping[str, Any]) -> str:
+    severity = str(conflict.get("severity") or "high").strip().lower()
+    if severity in {"critical", "high"} or conflict.get("blocks_decision_grade_advice"):
+        return "high"
+    if severity == "low":
+        return "low"
+    return "medium"
+
+
+def _conflict_review_sync_result(row: Mapping[str, Any], *, created: bool) -> dict[str, Any]:
+    action_payload = row.get("action_payload")
+    action_payload = action_payload if isinstance(action_payload, Mapping) else {}
+    context_conflict = action_payload.get("context_conflict")
+    context_conflict = context_conflict if isinstance(context_conflict, Mapping) else {}
+    deferral = context_conflict.get("deferral")
+    deferral = deferral if isinstance(deferral, Mapping) else {}
+    route = context_conflict.get("route")
+    route = route if isinstance(route, Mapping) else {}
+    return {
+        "recommendation_id": row.get("id"),
+        "dedupe_key": context_conflict.get("dedupe_key"),
+        "created": created,
+        "resolution_state": context_conflict.get("resolution_state"),
+        "route": route.get("route"),
+        "source_refs": context_conflict.get("source_refs") or [],
+        "blocks_decision_grade_advice": bool(context_conflict.get("blocks_decision_grade_advice")),
+        "deferred_until": deferral.get("deferred_until"),
+        "relevance_triggered_resurfaced": bool(deferral.get("relevance_triggered_resurfaced")),
+    }
+
+
+def _safe_int(value: Any, fallback: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _resolve_intent_payload(
+    *,
+    question: str,
+    intent: Mapping[str, Any] | str | None,
+    symbols: Iterable[Any] | Any | None,
+) -> dict[str, Any]:
+    classified = classify_context_intent(question, symbols=symbols)
+    if intent is None:
+        return classified
+    if isinstance(intent, str):
+        if not intent.strip():
+            return classified
+        resolved = dict(classified)
+        resolved["intent"] = intent.strip()
+        resolved["confidence"] = "manual"
+        return resolved
+    resolved = dict(classified)
+    resolved.update({str(key): value for key, value in intent.items()})
+    if "symbols" in resolved:
+        resolved["symbols"] = list(_merge_symbol_lists(symbols, resolved.get("symbols")))
+    return resolved
+
+
+def _merge_symbol_lists(*symbol_groups: Any) -> tuple[str, ...]:
+    merged: list[str] = []
+    for group in symbol_groups:
+        for symbol in _normalized_symbol_values(group):
+            if symbol not in merged:
+                merged.append(symbol)
+    return tuple(merged)
+
+
+def _result_items(result: Mapping[str, Any]) -> list[dict[str, Any]]:
+    items = result.get("items")
+    if not isinstance(items, list):
+        return []
+    return [dict(item) for item in items if isinstance(item, Mapping)]
+
+
+def _dedupe_result_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in sorted(items, key=lambda row: float(row.get("score") or 0.0), reverse=True):
+        item_id = str(item.get("id") or "").strip()
+        if not item_id or item_id in seen:
+            continue
+        seen.add(item_id)
+        deduped.append(item)
+    return deduped
+
+
+def _budget_retrieved_items(
+    items: list[dict[str, Any]],
+    *,
+    max_items: int,
+    max_text_chars: int,
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
+    bounded_item_limit = max(1, min(int(max_items), 50))
+    text_budget = max(300, min(int(max_text_chars), 24_000))
+    used_chars = 0
+    returned_items: list[dict[str, Any]] = []
+    citations: list[dict[str, Any]] = []
+    text_truncated = False
+
+    for item in items[:bounded_item_limit]:
+        resolved_item = dict(item)
+        text = str(resolved_item.get("text") or "")
+        remaining = max(0, text_budget - used_chars)
+        if remaining <= 0:
+            resolved_item["text"] = ""
+            resolved_item["text_truncated"] = bool(text)
+            text_truncated = text_truncated or bool(text)
+        elif len(text) > remaining:
+            resolved_item["text"] = (
+                f"{text[: max(0, remaining - 3)].rstrip()}..."
+                if remaining > 3
+                else text[:remaining]
+            )
+            resolved_item["text_truncated"] = True
+            used_chars += len(str(resolved_item["text"]))
+            text_truncated = True
+        else:
+            resolved_item["text_truncated"] = False
+            used_chars += len(text)
+
+        returned_items.append(resolved_item)
+        citations.append(_citation_from_context_item(resolved_item))
+
+    item_truncated = len(items) > len(returned_items)
+    context_budget = {
+        "max_retrieved_items": bounded_item_limit,
+        "candidate_items": len(items),
+        "returned_items": len(returned_items),
+        "max_retrieved_text_chars": text_budget,
+        "returned_text_chars": used_chars,
+        "truncated": item_truncated or text_truncated,
+        "item_truncated": item_truncated,
+        "text_truncated": text_truncated,
+    }
+    retrieved_context = {
+        "count": len(returned_items),
+        "items": returned_items,
+        "truncated": bool(context_budget["truncated"]),
+    }
+    return retrieved_context, citations, context_budget
+
+
+def _citation_from_context_item(item: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "context_item_id": item.get("id"),
+        "source_ref": item.get("source_ref"),
+        "domain": item.get("domain"),
+        "entity_type": item.get("entity_type"),
+        "authority": item.get("authority"),
+        "materiality": item.get("materiality"),
+        "text_preview": _compact_text(item.get("text"), limit=220),
+    }
+
+
+def _build_assembly_conflicts(
+    *,
+    structured_context: Mapping[str, Any],
+    retrieved_context: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    conflicts: list[dict[str, Any]] = []
+    quality = structured_context.get("quality")
+    quality = quality if isinstance(quality, Mapping) else {}
+    coverage = quality.get("coverage")
+    coverage = coverage if isinstance(coverage, Mapping) else {}
+    missing_sections = coverage.get("missing_sections")
+    missing = [str(item) for item in missing_sections if str(item).strip()] if isinstance(missing_sections, list) else []
+    if missing:
+        source_refs = _source_refs_from_missing_sections(missing)
+        conflicts.append(
+            {
+                "id": f"context_quality:{_hash_payload(missing)}",
+                "type": "missing_or_stale_context",
+                "severity": "high",
+                "plain_language": (
+                    "Some financial context needs review before relying on decision-grade advice: "
+                    f"{', '.join(missing[:5])}."
+                ),
+                "source_refs": source_refs,
+                "missing_sections": missing,
+                "review_actions": [
+                    {"action": "review_context", "label": "Review the missing or stale context"},
+                    {"action": "explain", "label": "Explain why this matters"},
+                    {"action": "recommend", "label": "Recommend what to confirm first"},
+                ],
+                "blocks_decision_grade_advice": True,
+            }
+        )
+
+    items = retrieved_context.get("items")
+    if not isinstance(items, list):
+        return conflicts
+
+    for item in items[:8]:
+        if not isinstance(item, Mapping):
+            continue
+        quality_payload = item.get("quality")
+        quality_payload = quality_payload if isinstance(quality_payload, Mapping) else {}
+        status = str(quality_payload.get("status") or "").strip().lower()
+        freshness = str(quality_payload.get("freshness") or "").strip().lower()
+        if status not in {"stale", "copilot_drafted", "inferred"} and freshness != "stale":
+            continue
+        label = str(item.get("entity_id") or item.get("source_ref") or "this context")
+        conflicts.append(
+            {
+                "id": f"retrieved_context:{item.get('id')}",
+                "type": "retrieved_context_needs_review",
+                "severity": item.get("materiality") or "medium",
+                "plain_language": (
+                    f"{label} may need confirmation before using it for a recommendation."
+                ),
+                "source_refs": [item.get("source_ref")],
+                "review_actions": [
+                    {"action": "confirm_source", "label": "Confirm the current source"},
+                    {"action": "update_source", "label": "Update the source"},
+                    {"action": "defer", "label": "Defer and keep the caution"},
+                    {"action": "explain", "label": "Explain this caution"},
+                ],
+                "blocks_decision_grade_advice": item.get("materiality") in {"high", "critical"},
+            }
+        )
+
+    return conflicts

@@ -308,6 +308,7 @@ class FinancialCopilot:
         question: str,
         conversation_id: str | None,
         contextual_brief: str,
+        context_trace: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         conversation = self.conversation_store.get_or_create(
             conversation_id=conversation_id,
@@ -409,6 +410,7 @@ class FinancialCopilot:
             metadata={
                 "tool_calls": tool_traces,
                 "model": model_name,
+                "context_trace": context_trace or {},
             },
         )
         self.conversation_store.save(conversation)
@@ -418,5 +420,6 @@ class FinancialCopilot:
             "answer": answer,
             "tool_calls": tool_traces,
             "model": model_name,
+            "context_trace": context_trace or {},
             "created_at": utc_now(),
         }

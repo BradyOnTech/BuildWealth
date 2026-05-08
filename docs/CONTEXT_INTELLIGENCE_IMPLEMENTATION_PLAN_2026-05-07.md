@@ -602,15 +602,15 @@ Done when:
 
 Goal: make the high-fidelity Context Intelligence path the default Copilot context path while preserving current quality and warning behavior.
 
-- [ ] Build deterministic intent classification.
-- [ ] Add `assemble_context(question, plan_id, symbols, intent)` service.
-- [ ] Wrap existing `build_buildwealth_context_payload(...)` for structured context.
-- [ ] Add `retrieved_context`, `citations`, and `context_budget` sections.
-- [ ] Add `conflicts` with plain-language explanations and review actions.
-- [ ] Route Copilot chat through the assembler by default.
-- [ ] Keep the existing unified context builder as compatibility/helper code until the assembler fully replaces it.
-- [ ] Add tests proving stale/missing context is carried forward.
-- [ ] Add trace metadata from the first default-on slice.
+- [x] Build deterministic intent classification.
+- [x] Add `assemble_context(question, plan_id, symbols, intent)` service.
+- [x] Wrap existing `build_buildwealth_context_payload(...)` for structured context.
+- [x] Add `retrieved_context`, `citations`, and `context_budget` sections.
+- [x] Add `conflicts` with plain-language explanations and review actions.
+- [x] Route Copilot chat through the assembler by default.
+- [x] Keep the existing unified context builder as compatibility/helper code until the assembler fully replaces it.
+- [x] Add tests proving stale/missing context is carried forward.
+- [x] Add trace metadata from the first default-on slice.
 
 Done when:
 
@@ -622,19 +622,19 @@ Done when:
 
 Goal: route persistent material conflicts into the existing Inbox review loop.
 
-- [ ] Define conflict dedupe keys by conflict type, source refs, plan id, and symbol where relevant.
-- [ ] Add a conflict resolution state model: unresolved, deferred, resolved by source update, resolved by confirming existing source, resolved by rejecting candidate, and resolved by scoped exception.
-- [ ] Add review-only recommendation creation/update for persistent context conflicts.
-- [ ] Route conflict review items to Profile, Plan, Research, Inbox, or Copilot-guided review depending on source domain.
-- [ ] Add guided review actions: accept/update source, reject candidate, defer, explain, recommend, and record scoped exception.
-- [ ] Ensure defer only snoozes the review item and does not unblock decision-grade advice.
-- [ ] Store conflict deferral metadata, including deferred-until time, reason, and whether relevance-triggered resurfacing has occurred.
-- [ ] Resurface deferred conflicts when the snooze expires or when the conflict affects a live recommendation, Copilot answer, planning projection, or investment-fit review.
-- [ ] Ensure LLM-assisted recommendations explain the suggested resolution but require explicit user confirmation before mutating source state.
-- [ ] Ensure conflict review items block decision-grade advice until resolved.
-- [ ] Add tests for dedupe, plain-language detail, source refs, and review routing.
-- [ ] Add tests proving dismiss/defer does not mark a material conflict resolved.
-- [ ] Add tests proving deferred conflicts resurface on time expiry and relevance-triggered use.
+- [x] Define conflict dedupe keys by conflict type, source refs, plan id, and symbol where relevant.
+- [x] Add a conflict resolution state model: unresolved, deferred, resolved by source update, resolved by confirming existing source, resolved by rejecting candidate, and resolved by scoped exception.
+- [x] Add review-only recommendation creation/update for persistent context conflicts.
+- [x] Route conflict review items to Profile, Plan, Research, Inbox, or Copilot-guided review depending on source domain.
+- [x] Add guided review actions: accept/update source, reject candidate, defer, explain, recommend, and record scoped exception.
+- [x] Ensure defer only snoozes the review item and does not unblock decision-grade advice.
+- [x] Store conflict deferral metadata, including deferred-until time, reason, and whether relevance-triggered resurfacing has occurred.
+- [x] Resurface deferred conflicts when the snooze expires or when the conflict affects a live recommendation, Copilot answer, planning projection, or investment-fit review.
+- [x] Ensure LLM-assisted recommendations explain the suggested resolution but require explicit user confirmation before mutating source state.
+- [x] Ensure conflict review items block decision-grade advice until resolved.
+- [x] Add tests for dedupe, plain-language detail, source refs, and review routing.
+- [x] Add tests proving dismiss/defer does not mark a material conflict resolved.
+- [x] Add tests proving deferred conflicts resurface on time expiry and relevance-triggered use.
 
 Done when:
 

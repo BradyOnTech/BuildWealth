@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import asyncio
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from buildwealth_orchestrator.services.context_intelligence import (
     ACTION_READINESS_BY_MATERIALITY,
+    CONTEXT_ASSEMBLER_VERSION,
+    ContextAssembler,
     ContextIntelligenceService,
     MaterialityPolicy,
+    classify_context_intent,
 )
 from buildwealth_orchestrator.services.financial_profile import FinancialProfileStore
 from buildwealth_orchestrator.services.plan_workspace import PlanWorkspace
@@ -178,6 +183,196 @@ def test_context_search_retrieves_profile_field_fact_and_metadata(tmp_path: Path
     assert item["quality"]["status"] == "user_confirmed"
     assert item["action_readiness"] == "Review before relying on this"
     assert "tax" in item["matched_terms"]
+
+
+def test_context_intent_classification_is_deterministic() -> None:
+    investment = classify_context_intent("Should I buy NVDA for my portfolio?", symbols=[])
+    profile = classify_context_intent("What tax rate is in my profile?")
+
+    assert investment["intent"] == "investment_fit"
+    assert investment["symbols"] == ["NVDA"]
+    assert "research" in investment["domains"]
+    assert "symbol_detected" in investment["signals"]
+    assert profile["intent"] == "profile_question"
+    assert profile["domains"][0] == "profile"
+
+
+def test_context_assembler_adds_retrieval_citations_conflicts_and_trace(tmp_path: Path) -> None:
+    service = _build_service(tmp_path)
+    assembler = ContextAssembler(
+        context_service=service,
+        max_retrieved_items=2,
+        max_retrieved_text_chars=120,
+    )
+    plan_id = str(service.plan_workspace.list_plans(limit=1)[0]["id"])
+    now = datetime.now(timezone.utc).isoformat()
+
+    async def fake_structured_context_builder(**kwargs: object) -> dict[str, object]:
+        return {
+            "generated_at": now,
+            "scope": {"plan_id": kwargs.get("plan_id"), "include_research": False, "detail_level": "light"},
+            "cache": {},
+            "location_state": "MN",
+            "currency": "USD",
+            "warnings": ["Financial profile metadata needs review."],
+            "quality": {
+                "freshness": {"generated_at": now, "snapshot_stale": None},
+                "coverage": {
+                    "score_pct": 80.0,
+                    "checks": {"financial_profile_metadata": False},
+                    "missing_sections": ["financial_profile.tax_profile.marginal_tax_rate.stale"],
+                },
+                "warnings": {"count": 1, "has_warnings": True},
+                "summary": {"max_chars": 600, "full_chars": 700, "actual_chars": 600, "truncated": True},
+            },
+            "planning_defaults": {},
+            "financial_picture": {},
+            "planning": {},
+            "research": {},
+            "decisions": {},
+            "summary": "Structured context",
+        }
+
+    assembled = asyncio.run(
+        assembler.assemble_context(
+            question="Should I buy NVDA?",
+            plan_id=plan_id,
+            symbols=["NVDA"],
+            intent=None,
+            structured_context_builder=fake_structured_context_builder,
+            builder_options={"plan_id": plan_id},
+        )
+    )
+
+    assert assembled["retrieved_context"]["count"] == 2
+    assert assembled["citations"]
+    assert assembled["context_budget"]["truncated"] is True
+    assert assembled["conflicts"][0]["type"] == "missing_or_stale_context"
+    assert "needs review" in assembled["conflicts"][0]["plain_language"]
+    assert assembled["conflict_review_items"][0]["route"] == "profile"
+    assert assembled["trace"]["assembler_version"] == CONTEXT_ASSEMBLER_VERSION
+    assert assembled["trace"]["intent"]["intent"] == "investment_fit"
+    assert assembled["trace"]["retrieval"]["citation_count"] == len(assembled["citations"])
+
+
+def test_context_conflict_review_items_are_deduped_and_routed(tmp_path: Path) -> None:
+    service = _build_service(tmp_path)
+    conflict = {
+        "id": "context_quality:tax-stale",
+        "type": "missing_or_stale_context",
+        "severity": "high",
+        "plain_language": (
+            "Your marginal tax rate needs review before using it for tax-sensitive advice."
+        ),
+        "source_refs": ["profile/financial_profile.json#tax_profile.marginal_tax_rate"],
+        "missing_sections": ["financial_profile.tax_profile.marginal_tax_rate.stale"],
+        "blocks_decision_grade_advice": True,
+    }
+
+    first_sync = service.sync_conflict_review_items(
+        [conflict],
+        plan_id="plan-1",
+        symbols=["NVDA"],
+        relevance_reason="copilot_answer",
+    )
+    second_sync = service.sync_conflict_review_items(
+        [conflict],
+        plan_id="plan-1",
+        symbols=["NVDA"],
+        relevance_reason="copilot_answer",
+    )
+    rows = [
+        row
+        for row in service.recommendation_inbox.list(limit=None, include_archived=True)
+        if row["recommendation_type"] == "context_conflict_review"
+    ]
+
+    assert len(rows) == 1
+    assert first_sync[0]["recommendation_id"] == second_sync[0]["recommendation_id"]
+    assert first_sync[0]["created"] is True
+    assert second_sync[0]["created"] is False
+
+    item = rows[0]
+    payload = item["action_payload"]
+    context_conflict = payload["context_conflict"]
+    assert item["source"] == "context_intelligence"
+    assert item["priority"] == "high"
+    assert item["recommendation_type"] == "context_conflict_review"
+    assert "marginal tax rate needs review" in item["detail"]
+    assert "explicit confirmation" in item["detail"]
+    assert context_conflict["route"]["route"] == "profile"
+    assert context_conflict["source_refs"] == ["profile/financial_profile.json#tax_profile.marginal_tax_rate"]
+    assert context_conflict["seen_count"] == 2
+    assert context_conflict["resolution_state"] == "unresolved"
+    assert context_conflict["blocks_decision_grade_advice"] is True
+    assert payload["quality"]["actionability"] == "review_only"
+    assert payload["quality"]["blocking_context"] == [context_conflict["dedupe_key"]]
+    assert any(action["action"] == "defer" for action in context_conflict["review_actions"])
+    assert payload["suggested_action"]["mutation_requires_confirmation"] is True
+
+
+def test_deferred_context_conflict_does_not_resolve_or_unblock_and_resurfaces(tmp_path: Path) -> None:
+    service = _build_service(tmp_path)
+    conflict = {
+        "id": "context_quality:policy-stale",
+        "type": "missing_or_stale_context",
+        "severity": "high",
+        "plain_language": "Your investment policy needs review before using it for advice.",
+        "source_refs": ["profile/financial_profile.json#investment_policy.max_single_symbol_exposure_pct"],
+        "blocks_decision_grade_advice": True,
+    }
+    created = service.sync_conflict_review_items(
+        [conflict],
+        plan_id="plan-1",
+        symbols=["NVDA"],
+        relevance_reason="background_index",
+    )[0]
+    deferred_until = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+
+    deferred = service.defer_context_conflict_review_item(
+        str(created["recommendation_id"]),
+        deferred_until=deferred_until,
+        reason="Review this after plan cleanup.",
+    )
+    deferred_conflict = deferred["action_payload"]["context_conflict"]
+    assert deferred["status"] == "proposed"
+    assert deferred_conflict["resolution_state"] == "deferred"
+    assert deferred_conflict["blocks_decision_grade_advice"] is True
+    assert deferred["action_payload"]["quality"]["blocking_context"] == [deferred_conflict["dedupe_key"]]
+
+    still_deferred = service.sync_conflict_review_items(
+        [conflict],
+        plan_id="plan-1",
+        symbols=["NVDA"],
+        relevance_reason="background_index",
+        now=datetime.now(timezone.utc),
+    )[0]
+    assert still_deferred["resolution_state"] == "deferred"
+    assert still_deferred["blocks_decision_grade_advice"] is True
+
+    resurfaced_for_relevance = service.sync_conflict_review_items(
+        [conflict],
+        plan_id="plan-1",
+        symbols=["NVDA"],
+        relevance_reason="investment_fit_review",
+        now=datetime.now(timezone.utc),
+    )[0]
+    assert resurfaced_for_relevance["resolution_state"] == "unresolved"
+    assert resurfaced_for_relevance["relevance_triggered_resurfaced"] is True
+
+    service.defer_context_conflict_review_item(
+        str(created["recommendation_id"]),
+        deferred_until=deferred_until,
+        reason="Snooze again.",
+    )
+    resurfaced_for_time = service.sync_conflict_review_items(
+        [conflict],
+        plan_id="plan-1",
+        symbols=["NVDA"],
+        relevance_reason="background_index",
+        now=datetime.now(timezone.utc) + timedelta(days=8),
+    )[0]
+    assert resurfaced_for_time["resolution_state"] == "unresolved"
 
 
 def _build_service(tmp_path: Path) -> ContextIntelligenceService:
