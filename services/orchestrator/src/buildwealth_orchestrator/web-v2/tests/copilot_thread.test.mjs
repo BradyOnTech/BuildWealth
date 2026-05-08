@@ -271,6 +271,60 @@ test('copilot thread renders drafted investment recommendation tool results as r
   assert.doesNotMatch(html, /"draft_kind"/);
 });
 
+test('copilot thread renders compact context-use trace links', () => {
+  const html = String(renderThread([
+    {
+      role: 'assistant',
+      content: 'I checked your current context.',
+      created_at: '2026-05-08T12:00:00.000Z',
+      metadata: {
+        context_trace: {
+          plan_id: 'plan-1',
+          symbols: ['NVDA'],
+          retrieval: {
+            returned_count: 4,
+            citation_count: 2,
+            truncated: true,
+          },
+          conflict_review_items: {
+            count: 1,
+            ids: ['rec-conflict'],
+          },
+          context_warnings: [
+            {
+              type: 'missing_or_stale_context',
+              message: 'Tax profile needs review before decision-grade advice.',
+            },
+          ],
+          captured_context_candidates: [
+            {
+              id: 'ctx-tax',
+              target_domain: 'profile',
+              target_field: 'tax_profile.marginal_tax_rate',
+              lifecycle_state: 'pending_review',
+              prompt_influence: 'mention_only',
+              review_item: {
+                recommendation_id: 'rec-context',
+              },
+            },
+          ],
+        },
+      },
+    },
+  ]));
+
+  assert.match(html, /Context used/);
+  assert.match(html, /plan scoped · 1 symbol · 4 retrieved · 2 citations · 1 capture · 1 context issue/);
+  assert.match(html, /href="#plan\?id=plan-1"/);
+  assert.match(html, /href="#portfolio\?fit=NVDA"/);
+  assert.match(html, /href="#research\?symbol=NVDA"/);
+  assert.match(html, /href="#inbox\?focus=rec-conflict"/);
+  assert.match(html, /href="#inbox\?focus=rec-context"/);
+  assert.match(html, /Tax profile needs review before decision-grade advice\./);
+  assert.match(html, /Context was trimmed to fit\./);
+  assert.match(html, /New captures are waiting for review\./);
+});
+
 test('copilot plan review prompts request bounded context', () => {
   const prompt = buildPlanReviewPrompt('review_plan_assumptions', { planId: 'plan-abc' });
 

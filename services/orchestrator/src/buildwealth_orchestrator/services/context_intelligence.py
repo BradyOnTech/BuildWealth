@@ -1958,9 +1958,27 @@ class ContextIntelligenceService:
         return None
 
     def _sync_context_candidate_review_item(self, candidate: Mapping[str, Any]) -> dict[str, Any] | None:
-        if not _candidate_requires_review_item(candidate):
-            return None
         existing = self._find_context_candidate_review_item(str(candidate.get("id") or ""))
+        if not _candidate_requires_review_item(candidate):
+            if existing is None:
+                return None
+            updated = self.recommendation_inbox.update(
+                str(existing.get("id")),
+                {
+                    "title": _context_candidate_review_title(candidate),
+                    "detail": _context_candidate_review_detail(candidate),
+                    "priority": _candidate_review_priority(candidate),
+                    "plan_id": _candidate_plan_id(candidate),
+                    "action_payload": _context_candidate_review_action_payload(candidate),
+                },
+            )
+            status = _context_candidate_review_status(candidate)
+            closed = self.recommendation_inbox.set_status(
+                str(updated.get("id")),
+                status,
+                resolution_note=f"Context candidate {candidate.get('lifecycle_state') or 'resolved'}.",
+            )
+            return _context_candidate_review_sync_result(closed, created=False)
         title = _context_candidate_review_title(candidate)
         detail = _context_candidate_review_detail(candidate)
         payload = _context_candidate_review_action_payload(candidate)
@@ -2186,6 +2204,17 @@ class ContextAssembler:
                     if item.get("recommendation_id")
                 ],
             },
+            "context_warnings": [
+                {
+                    "type": conflict.get("type"),
+                    "severity": conflict.get("severity"),
+                    "message": conflict.get("plain_language") or conflict.get("detail") or conflict.get("title"),
+                    "source_refs": conflict.get("source_refs") or [],
+                    "blocks_decision_grade_advice": bool(conflict.get("blocks_decision_grade_advice")),
+                }
+                for conflict in conflicts[:5]
+                if isinstance(conflict, Mapping)
+            ],
             "registry": self.context_service.get_status(),
             "structured_context_builder": "build_buildwealth_context_payload",
         }
@@ -3271,6 +3300,15 @@ def _context_candidate_review_sync_result(row: Mapping[str, Any], *, created: bo
 def _candidate_review_priority(candidate: Mapping[str, Any]) -> str:
     materiality = str(candidate.get("materiality") or "").strip().lower()
     return "high" if materiality in {"critical", "high"} else "medium"
+
+
+def _context_candidate_review_status(candidate: Mapping[str, Any]) -> str:
+    state = str(candidate.get("lifecycle_state") or "").strip().lower()
+    if state == "applied":
+        return "applied"
+    if state == "rejected":
+        return "rejected"
+    return "archived"
 
 
 def _candidate_plan_id(candidate: Mapping[str, Any]) -> str | None:

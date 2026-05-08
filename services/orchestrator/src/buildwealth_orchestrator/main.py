@@ -17988,6 +17988,12 @@ async def copilot_chat(request: CopilotChatRequest) -> CopilotChatResponse:
             for candidate in captured_candidates
         ]
         result["context_trace"] = context_trace
+        conversation_id = str(result.get("conversation_id") or "").strip()
+        if conversation_id:
+            conversation_store.update_latest_assistant_metadata(
+                conversation_id,
+                {"context_trace": context_trace},
+            )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except httpx.HTTPStatusError as exc:

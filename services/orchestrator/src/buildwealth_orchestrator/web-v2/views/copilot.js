@@ -225,7 +225,11 @@ async function sendMessage(question, { useLive }) {
       role: 'assistant',
       content: res.answer || '',
       created_at: res.created_at || new Date().toISOString(),
-      metadata: { tool_calls: res.tool_calls || [], model: res.model || null },
+      metadata: {
+        tool_calls: res.tool_calls || [],
+        model: res.model || null,
+        context_trace: res.context_trace || {},
+      },
     });
     if (!ui.conversationTitle) ui.conversationTitle = derivedTitle(question);
     loadConversations().then(() => rerenderMasthead()).catch(() => {});

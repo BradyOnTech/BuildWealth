@@ -110,6 +110,31 @@ def test_conversation_store_round_trip(tmp_path: Path) -> None:
     assert "Start by reducing concentration" in summaries[0]["last_message_preview"]
 
 
+def test_conversation_store_updates_latest_assistant_metadata(tmp_path: Path) -> None:
+    store = ConversationStore(tmp_path)
+    conversation = store.get_or_create(None, "What context did you use?")
+    store.append_message(conversation, role="user", content="What context did you use?")
+    store.append_message(
+        conversation,
+        role="assistant",
+        content="I used the plan and profile.",
+        metadata={"model": "fake-model"},
+    )
+    store.save(conversation)
+
+    updated = store.update_latest_assistant_metadata(
+        conversation["id"],
+        {"context_trace": {"plan_id": "plan-1", "retrieval": {"returned_count": 3}}},
+    )
+
+    assert updated is not None
+    loaded = store.get(conversation["id"])
+    metadata = loaded["messages"][-1]["metadata"]
+    assert metadata["model"] == "fake-model"
+    assert metadata["context_trace"]["plan_id"] == "plan-1"
+    assert metadata["context_trace"]["retrieval"]["returned_count"] == 3
+
+
 def test_copilot_fallback_mode_persists_conversation(tmp_path: Path) -> None:
     store = ConversationStore(tmp_path)
     llm = OpenAIChatToolClient(api_key="", model="gpt-test", base_url="https://example.com/v1")
@@ -168,6 +193,7 @@ def test_copilot_tool_round_trip(tmp_path: Path) -> None:
             question="Run the echo tool",
             conversation_id=None,
             contextual_brief='{"snapshot_summary":"ok"}',
+            context_trace={"plan_id": "plan-1", "retrieval": {"returned_count": 2}},
         )
     )
 
@@ -179,6 +205,8 @@ def test_copilot_tool_round_trip(tmp_path: Path) -> None:
 
     loaded = store.get(result["conversation_id"])
     assert loaded["messages"][-1]["metadata"]["tool_calls"][0]["name"] == "echo_tool"
+    assert loaded["messages"][-1]["metadata"]["context_trace"]["plan_id"] == "plan-1"
+    assert loaded["messages"][-1]["metadata"]["context_trace"]["retrieval"]["returned_count"] == 2
 
 
 def test_tool_call_probe_runs_two_step_echo_loop() -> None:

@@ -25,6 +25,9 @@ function renderMessage(m) {
   const role = m.role === 'user' ? 'user' : 'assistant';
   const ts = m.created_at ? formatTime(m.created_at) : '';
   const tools = role === 'assistant' && Array.isArray(m.metadata?.tool_calls) ? m.metadata.tool_calls : [];
+  const contextTrace = role === 'assistant' && m.metadata?.context_trace && typeof m.metadata.context_trace === 'object'
+    ? m.metadata.context_trace
+    : null;
 
   const bodyHtml = role === 'user'
     ? esc(String(m.content || ''))
@@ -37,9 +40,131 @@ function renderMessage(m) {
         ${ts ? html`<span class="timestamp">${ts}</span>` : ''}
       </header>
       <div class="message-body ${role}">${bodyHtml}</div>
+      ${contextTrace ? raw(renderContextTraceSummary(contextTrace)) : ''}
       ${tools.length ? raw(renderToolTraces(tools)) : ''}
     </article>
   `;
+}
+
+function renderContextTraceSummary(trace = {}) {
+  const retrieval = trace.retrieval && typeof trace.retrieval === 'object' ? trace.retrieval : {};
+  const conflictReview = trace.conflict_review_items && typeof trace.conflict_review_items === 'object'
+    ? trace.conflict_review_items
+    : {};
+  const captured = Array.isArray(trace.captured_context_candidates)
+    ? trace.captured_context_candidates.filter(Boolean)
+    : [];
+  const returnedCount = Number(retrieval.returned_count);
+  const citationCount = Number(retrieval.citation_count);
+  const conflictCount = Number(conflictReview.count);
+  const summary = [
+    trace.plan_id ? 'plan scoped' : '',
+    Array.isArray(trace.symbols) && trace.symbols.length ? `${trace.symbols.length} symbol${trace.symbols.length === 1 ? '' : 's'}` : '',
+    Number.isFinite(returnedCount) ? `${returnedCount} retrieved` : '',
+    Number.isFinite(citationCount) ? `${citationCount} citation${citationCount === 1 ? '' : 's'}` : '',
+    captured.length ? `${captured.length} capture${captured.length === 1 ? '' : 's'}` : '',
+    Number.isFinite(conflictCount) && conflictCount > 0 ? `${conflictCount} context issue${conflictCount === 1 ? '' : 's'}` : '',
+  ].filter(Boolean);
+  const links = contextTraceLinks(trace);
+  const notes = [
+    ...contextWarningNotes(trace),
+    retrieval.truncated ? 'Context was trimmed to fit.' : '',
+    captured.some(item => String(item?.lifecycle_state || '').toLowerCase() === 'pending_review')
+      ? 'New captures are waiting for review.'
+      : '',
+  ].filter(Boolean);
+  if (!summary.length && !links.length && !notes.length) return '';
+
+  return html`
+    <details class="context-trace-summary">
+      <summary>
+        <span class="context-trace-kicker">Context used</span>
+        <span>${summary.join(' · ') || 'trace available'}</span>
+      </summary>
+      ${links.length ? html`
+        <div class="context-trace-links">
+          ${links.map(link => html`<a href="${link.href}">${link.label}</a>`)}
+        </div>
+      ` : ''}
+      ${notes.length ? html`
+        <ul class="context-trace-notes">
+          ${notes.map(note => html`<li>${note}</li>`)}
+        </ul>
+      ` : ''}
+    </details>
+  `;
+}
+
+function contextTraceLinks(trace = {}) {
+  const links = [];
+  const planId = String(trace.plan_id || '').trim();
+  if (planId) {
+    links.push({ label: 'Open Plan', href: `#plan?id=${encodeURIComponent(planId)}` });
+  }
+  const symbols = Array.isArray(trace.symbols)
+    ? trace.symbols.map(symbol => String(symbol || '').trim().toUpperCase()).filter(Boolean).slice(0, 3)
+    : [];
+  for (const symbol of symbols) {
+    links.push({ label: `${symbol} fit`, href: `#portfolio?fit=${encodeURIComponent(symbol)}` });
+    links.push({ label: `${symbol} research`, href: `#research?symbol=${encodeURIComponent(symbol)}` });
+  }
+  const conflictReview = trace.conflict_review_items && typeof trace.conflict_review_items === 'object'
+    ? trace.conflict_review_items
+    : {};
+  const conflictIds = Array.isArray(conflictReview.ids) ? conflictReview.ids : [];
+  for (const id of conflictIds.slice(0, 3)) {
+    const cleanId = String(id || '').trim();
+    if (cleanId) links.push({ label: 'Review context issue', href: `#inbox?focus=${encodeURIComponent(cleanId)}` });
+  }
+  const captured = Array.isArray(trace.captured_context_candidates)
+    ? trace.captured_context_candidates.filter(Boolean).slice(0, 3)
+    : [];
+  for (const candidate of captured) {
+    const reviewItem = candidate?.review_item && typeof candidate.review_item === 'object'
+      ? candidate.review_item
+      : {};
+    const recommendationId = String(reviewItem.recommendation_id || '').trim();
+    if (recommendationId) {
+      links.push({
+        label: `Review captured ${humanTraceLabel(candidate.target_domain || 'context')}`,
+        href: `#inbox?focus=${encodeURIComponent(recommendationId)}`,
+      });
+      continue;
+    }
+    const targetDomain = String(candidate?.target_domain || '').trim().toLowerCase();
+    if (targetDomain === 'profile') links.push({ label: 'Open Profile', href: '/#profile' });
+    else if (targetDomain === 'plan') links.push({ label: 'Open Plan', href: '#plan' });
+    else if (targetDomain === 'research') links.push({ label: 'Open Research', href: '#research' });
+    else if (targetDomain === 'recommendation') links.push({ label: 'Open Inbox', href: '#inbox' });
+  }
+  return dedupeTraceLinks(links);
+}
+
+function contextWarningNotes(trace = {}) {
+  const warnings = Array.isArray(trace.context_warnings)
+    ? trace.context_warnings.filter(Boolean).slice(0, 3)
+    : [];
+  return warnings
+    .map(warning => String(warning?.message || '').trim())
+    .filter(Boolean);
+}
+
+function dedupeTraceLinks(links) {
+  const seen = new Set();
+  const deduped = [];
+  for (const link of links) {
+    const key = `${link.label}|${link.href}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(link);
+  }
+  return deduped.slice(0, 8);
+}
+
+function humanTraceLabel(value) {
+  const text = String(value || '').replace(/[_-]+/g, ' ').trim();
+  if (!text) return 'context';
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function renderToolTraces(tools) {

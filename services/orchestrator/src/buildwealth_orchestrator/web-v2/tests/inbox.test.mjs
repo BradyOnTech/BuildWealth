@@ -5,6 +5,34 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { renderEntries } from '../views/inbox/entries.js';
 import { renderQuality } from '../views/inbox/quality.js';
+import { renderContextCaptures } from '../views/inbox/context-captures.js';
+import { api } from '../lib/api.js';
+
+test('api context candidate helpers call lifecycle review endpoints', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, options });
+    return new Response(JSON.stringify({ items: [], ok: true }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  await api.contextCandidates({ lifecycleState: 'pending_review', limit: 50 });
+  await api.updateContextCandidateLifecycle('candidate 1', {
+    lifecycle_state: 'deferred',
+    prompt_influence: 'mention_only',
+  });
+
+  assert.equal(calls[0].url, '/api/context/candidates?limit=50&lifecycle_state=pending_review');
+  assert.equal(calls[1].url, '/api/context/candidates/candidate%201/lifecycle');
+  assert.equal(calls[1].options.method, 'PATCH');
+  assert.match(calls[1].options.body, /"lifecycle_state":"deferred"/);
+});
 
 test('inbox newest sort control uses backend created_at sort value', () => {
   const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -85,6 +113,82 @@ test('inbox entries render recommendation quality metadata', () => {
   assert.match(markup, /review only/);
   assert.match(markup, /high impact/);
   assert.match(markup, /decision grade/);
+});
+
+test('context capture panel routes material profile candidates through source review', () => {
+  const markup = String(renderContextCaptures({
+    lifecycleState: 'pending_review',
+    busy: false,
+    error: null,
+    expanded: { id: 'ctx-1', mode: 'explain', busy: false, error: null },
+    actionBusyId: null,
+    items: [
+      {
+        id: 'ctx-1',
+        lifecycle_state: 'pending_review',
+        prompt_influence: 'mention_only',
+        source_domain: 'conversation',
+        source_ref: 'conversation/test#message.1',
+        extracted_claim: 'My marginal tax rate is 32%.',
+        target_domain: 'profile',
+        target_area: 'tax_profile',
+        target_field: 'tax_profile.marginal_tax_rate',
+        target_value: 0.32,
+        confidence: 'medium',
+        materiality: 'high',
+        materiality_rationale: 'Review before relying on this because it can change planning, policy, tax, risk, or recommendation fit.',
+        action_readiness: 'Review before relying on this',
+        review_route: {
+          route: 'profile',
+          label: 'Profile',
+          target: 'tax_profile',
+          reason: 'Profile candidates must use the existing profile draft and apply flow.',
+        },
+      },
+    ],
+  }));
+
+  assert.match(markup, /Context that needs a decision\./);
+  assert.match(markup, /Capture for Tax profile marginal tax rate/);
+  assert.match(markup, /My marginal tax rate is 32%\./);
+  assert.match(markup, /Tax profile marginal tax rate: 32%/);
+  assert.match(markup, /Not used as financial truth yet\./);
+  assert.match(markup, /Review Profile/);
+  assert.match(markup, /Resolve/);
+  assert.match(markup, /Why this is paused/);
+  assert.match(markup, /Profile candidates must use the existing profile draft and apply flow\./);
+  assert.doesNotMatch(markup, /Remember this/);
+  assert.doesNotMatch(markup, /high materiality/i);
+});
+
+test('context capture panel can accept conversation memories as supporting context', () => {
+  const markup = String(renderContextCaptures({
+    lifecycleState: 'pending_review',
+    busy: false,
+    error: null,
+    expanded: null,
+    actionBusyId: null,
+    items: [
+      {
+        id: 'ctx-pref',
+        lifecycle_state: 'pending_review',
+        source_domain: 'conversation',
+        source_ref: 'conversation/test#message.2',
+        extracted_claim: 'I prefer plain-language explanations before technical terms.',
+        target_domain: 'conversation',
+        target_area: 'preference',
+        target_field: 'preference.explanation_style',
+        target_value: 'plain_language_first',
+        action_readiness: 'Can review later',
+        review_route: { route: 'copilot', label: 'Copilot Review' },
+      },
+    ],
+  }));
+
+  assert.match(markup, /Remember this/);
+  assert.match(markup, /Later/);
+  assert.match(markup, /Not true/);
+  assert.match(markup, /Copilot Review/);
 });
 
 test('inbox high-impact apply form asks for a decision pre-mortem', () => {

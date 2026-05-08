@@ -86,6 +86,18 @@ function financialProfileUrl({ source = '' } = {}) {
   return query ? `/api/financial-profile?${query}` : '/api/financial-profile';
 }
 
+function contextCandidatesUrl({
+  lifecycleState = '',
+  includeArchived = false,
+  limit = 100,
+} = {}) {
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  if (lifecycleState && lifecycleState !== 'all') params.set('lifecycle_state', lifecycleState);
+  if (includeArchived) params.set('include_archived', 'true');
+  return `/api/context/candidates?${params.toString()}`;
+}
+
 export const api = {
   today:        () => fetchJson('/api/dashboard/today'),
   recordTodayReview: () => postJson('/api/dashboard/today/review-checkpoint', {}),
@@ -149,6 +161,14 @@ export const api = {
   profile:      () => fetchJson('/api/financial-profile'),
   updateProfile: (body, opts = {}) => putJson(financialProfileUrl(opts), body),
   onboarding:   () => fetchJson('/api/onboarding/status'),
+
+  // Context intelligence
+  contextCandidates: (opts = {}) => fetchJson(contextCandidatesUrl(opts)),
+  updateContextCandidateLifecycle: (id, body = {}) => patchJson(
+    `/api/context/candidates/${encodeURIComponent(id)}/lifecycle`,
+    body,
+  ),
+  contextCandidateEvents: (id) => fetchJson(`/api/context/candidates/${encodeURIComponent(id)}/events`),
 
   // Copilot
   conversations:     (limit = 25) => fetchJson(`/api/copilot/conversations?limit=${limit}`),

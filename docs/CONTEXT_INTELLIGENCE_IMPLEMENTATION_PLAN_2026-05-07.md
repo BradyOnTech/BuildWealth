@@ -683,7 +683,7 @@ Goal: turn useful conversation, import, recommendation, and research moments int
 - [x] Route profile changes through existing profile draft/apply flow.
 - [x] Route plan changes through settings/timeline/decision/artifact flows.
 - [x] Route recommendation, research, and imported candidates through their owning product surfaces.
-- [ ] Add UI for reviewing pending context captures.
+- [x] Add UI for reviewing pending context captures.
 - [x] Add audit events for applied context facts.
 - [x] Add tests proving unreviewed candidates cannot become authoritative prompt context.
 - [x] Add tests proving stale or archived candidates remain in audit history but lose normal prompt influence.
@@ -699,10 +699,10 @@ Done when:
 
 Goal: make high-fidelity context visible and debuggable.
 
-- [ ] Persist `context_trace` with assistant messages.
-- [ ] Render a compact context-used summary in v2 Copilot.
-- [ ] Link trace items to Profile, Portfolio, Plan artifacts, Research, and Inbox where possible.
-- [ ] Add browser tests for investment-fit and profile-completion traces.
+- [x] Persist `context_trace` with assistant messages.
+- [x] Render a compact context-used summary in v2 Copilot.
+- [x] Link trace items to Profile, Portfolio, Plan artifacts, Research, and Inbox where possible.
+- [x] Add browser tests for investment-fit and profile-completion traces.
 
 Done when:
 

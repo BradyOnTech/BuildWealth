@@ -9,6 +9,7 @@ import { html, raw, $, delegate } from '../lib/dom.js';
 import { renderEntries } from './inbox/entries.js';
 import { renderSweep, runPreview, runCreate } from './inbox/sweep.js';
 import { renderQuality } from './inbox/quality.js';
+import { renderContextCaptures } from './inbox/context-captures.js';
 
 export const meta = {
   id: 'inbox',
@@ -27,6 +28,14 @@ const inbox = {
   busy:   false,
   error:  null,
   expanded: null,                          // { id, mode, busy, preview, error }
+  context: {
+    lifecycleState: 'pending_review',
+    items: [],
+    busy: false,
+    error: null,
+    expanded: null,                        // { id, mode, busy, error }
+    actionBusyId: null,
+  },
   sweep:  { phase: 'idle', busy: false },  // 'idle' | 'previewing' | 'preview-ready' | 'creating' | 'done' | 'error'
   closure: null,
   counts: {},                              // { proposed: 3, applied: 7, ... }
@@ -43,6 +52,7 @@ export function template() {
         <p class="section-lede">Decisions waiting for your call. Ranked by impact, confidence, urgency, and reversibility.</p>
       </header>
       <div id="inbox-controls"></div>
+      <div id="inbox-context-captures"></div>
       <div id="inbox-list">${raw(loadingPlaceholder())}</div>
       <div id="inbox-sweep"></div>
       <div id="inbox-quality"></div>
@@ -54,7 +64,7 @@ export async function init(params = {}) {
   inbox.initialFocus = params.focus || null;
   inbox.planLookup = new Map((state.plans || []).map(p => [p.id, p.title || p.id]));
   attachHandlers();
-  await loadList();
+  await Promise.all([loadList(), loadContextCaptures()]);
   rerenderAll();
   loadClosure().then(() => rerenderQuality()).catch(() => {});
 }
@@ -92,10 +102,31 @@ async function loadClosure() {
   }
 }
 
+async function loadContextCaptures() {
+  inbox.context.busy = true;
+  inbox.context.error = null;
+  rerenderContextCaptures();
+  try {
+    const lifecycleState = inbox.context.lifecycleState;
+    const res = await api.contextCandidates({
+      lifecycleState,
+      includeArchived: lifecycleState === 'all' || lifecycleState === 'archived',
+      limit: 100,
+    });
+    inbox.context.items = Array.isArray(res) ? res : (res.items || []);
+  } catch (err) {
+    inbox.context.error = err.message;
+    inbox.context.items = [];
+  } finally {
+    inbox.context.busy = false;
+  }
+}
+
 /* ─────────────  rendering  ───────────── */
 
 function rerenderAll() {
   rerenderControls();
+  rerenderContextCaptures();
   rerenderList();
   rerenderSweep();
   rerenderQuality();
@@ -153,6 +184,12 @@ function rerenderList() {
   }
 }
 
+function rerenderContextCaptures() {
+  const root = $('#inbox-context-captures');
+  if (!root) return;
+  root.innerHTML = renderContextCaptures(inbox.context);
+}
+
 function rerenderSweep() {
   const root = $('#inbox-sweep');
   if (!root) return;
@@ -207,6 +244,25 @@ function attachHandlers() {
   });
   delegate(page, 'click', '[data-sweep]', (_, t) => {
     handleSweep(t.getAttribute('data-sweep'));
+  });
+  delegate(page, 'click', '[data-context-state]', (_, t) => {
+    setContextCaptureState(t.getAttribute('data-context-state'));
+  });
+  delegate(page, 'click', '[data-context-expand]', (_, t) => {
+    expandContextCapture(t.getAttribute('data-candidate-id'), t.getAttribute('data-context-expand'));
+  });
+  delegate(page, 'click', '[data-context-cancel]', (_, t) => {
+    const id = t.getAttribute('data-candidate-id');
+    if (inbox.context.expanded && inbox.context.expanded.id === id) closeContextCapture();
+  });
+  delegate(page, 'click', '[data-context-action]', (_, t) => {
+    handleContextCaptureAction(t.getAttribute('data-context-action'), t.getAttribute('data-candidate-id'));
+  });
+  delegate(page, 'click', '[data-context-resolution]', (_, t) => {
+    handleContextCaptureResolution(
+      t.getAttribute('data-context-resolution'),
+      t.getAttribute('data-candidate-id'),
+    );
   });
 }
 
@@ -334,6 +390,136 @@ async function handleSweep(action) {
   }
 }
 
+async function setContextCaptureState(lifecycleState) {
+  if (inbox.context.lifecycleState === lifecycleState) return;
+  inbox.context.lifecycleState = lifecycleState || 'pending_review';
+  inbox.context.expanded = null;
+  await loadContextCaptures();
+  rerenderContextCaptures();
+}
+
+function expandContextCapture(id, mode) {
+  if (!id || !mode) return;
+  if (inbox.context.expanded && inbox.context.expanded.id === id && inbox.context.expanded.mode === mode) {
+    closeContextCapture();
+    return;
+  }
+  inbox.context.expanded = { id, mode, busy: false, error: null };
+  rerenderContextCaptures();
+}
+
+function closeContextCapture() {
+  inbox.context.expanded = null;
+  rerenderContextCaptures();
+}
+
+async function handleContextCaptureAction(action, id) {
+  const body = contextActionPayload(action, id);
+  if (!body) return;
+  await updateContextCapture(id, body);
+}
+
+async function handleContextCaptureResolution(resolution, id) {
+  const note = collectContextReviewNote(id);
+  const route = contextReviewRoute(id);
+  const routeName = String(route.route || '').trim().toLowerCase();
+  const routeLabel = String(route.label || routeName || 'source').trim();
+  if (resolution === 'source_updated') {
+    await updateContextCapture(id, {
+      lifecycle_state: 'applied',
+      prompt_influence: 'authoritative',
+      metadata: {
+        review_action: 'source_updated_from_inbox_v2',
+        resolution_state: 'resolved_by_source_update',
+        source_review_route: routeName || null,
+        source_review_label: routeLabel || null,
+        review_note: note || null,
+      },
+    });
+    return;
+  }
+  if (resolution === 'current_source') {
+    await updateContextCapture(id, {
+      lifecycle_state: 'superseded',
+      prompt_influence: 'none',
+      metadata: {
+        review_action: 'current_source_kept_from_inbox_v2',
+        resolution_state: 'resolved_by_confirming_existing_source',
+        source_review_route: routeName || null,
+        source_review_label: routeLabel || null,
+        review_note: note || null,
+      },
+    });
+  }
+}
+
+function contextActionPayload(action, id) {
+  if (!id) return null;
+  if (action === 'remember') {
+    return {
+      lifecycle_state: 'applied',
+      prompt_influence: 'supporting_context',
+      metadata: {
+        review_action: 'remembered_from_inbox_v2',
+        resolution_state: 'resolved_by_user_confirmation',
+      },
+    };
+  }
+  if (action === 'defer') {
+    return {
+      lifecycle_state: 'deferred',
+      prompt_influence: 'mention_only',
+      metadata: {
+        review_action: 'deferred_from_inbox_v2',
+        resolution_state: 'deferred_for_later_review',
+      },
+    };
+  }
+  if (action === 'reject') {
+    return {
+      lifecycle_state: 'rejected',
+      prompt_influence: 'none',
+      metadata: {
+        review_action: 'rejected_from_inbox_v2',
+        resolution_state: 'resolved_by_rejecting_candidate',
+      },
+    };
+  }
+  return null;
+}
+
+async function updateContextCapture(id, body) {
+  if (!id || !body) return;
+  inbox.context.actionBusyId = id;
+  if (inbox.context.expanded?.id === id) {
+    inbox.context.expanded = { ...inbox.context.expanded, busy: true, error: null };
+  }
+  inbox.context.error = null;
+  rerenderContextCaptures();
+
+  try {
+    await api.updateContextCandidateLifecycle(id, body);
+    inbox.context.expanded = null;
+    await Promise.all([loadContextCaptures(), loadList()]);
+    rerenderControls();
+    rerenderContextCaptures();
+    rerenderList();
+  } catch (err) {
+    if (inbox.context.expanded?.id === id) {
+      inbox.context.expanded = { ...inbox.context.expanded, busy: false, error: err.message };
+    } else {
+      inbox.context.error = err.message;
+    }
+    rerenderContextCaptures();
+  } finally {
+    inbox.context.actionBusyId = null;
+    if (inbox.context.expanded?.id === id) {
+      inbox.context.expanded = { ...inbox.context.expanded, busy: false };
+    }
+    rerenderContextCaptures();
+  }
+}
+
 /* ─────────────  helpers  ───────────── */
 
 function collectFormData(formEl) {
@@ -351,6 +537,18 @@ function collectFormData(formEl) {
     data[name] = value;
   }
   return data;
+}
+
+function collectContextReviewNote(id) {
+  const formEl = document.querySelector(`[data-context-form][data-candidate-id="${cssEscape(id)}"]`);
+  const field = formEl?.querySelector('textarea[name="review_note"]');
+  return String(field?.value || '').trim();
+}
+
+function contextReviewRoute(id) {
+  const item = inbox.context.items.find(candidate => String(candidate.id || '') === String(id || ''));
+  const route = item?.review_route;
+  return route && typeof route === 'object' ? route : {};
 }
 
 function appendOutcomePreset(button) {

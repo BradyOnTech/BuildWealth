@@ -84,6 +84,28 @@ class ConversationStore:
             }
         )
 
+    def update_latest_assistant_metadata(
+        self,
+        conversation_id: str,
+        metadata_patch: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        conversation = self.get(conversation_id)
+        messages = conversation.get("messages")
+        if not isinstance(messages, list):
+            return None
+
+        for message in reversed(messages):
+            if not isinstance(message, dict) or message.get("role") != "assistant":
+                continue
+            metadata = message.get("metadata")
+            if not isinstance(metadata, dict):
+                metadata = {}
+            metadata.update(metadata_patch)
+            message["metadata"] = metadata
+            self.save(conversation)
+            return message
+        return None
+
     def list(self, limit: int = 20) -> list[dict[str, Any]]:
         docs: list[dict[str, Any]] = []
 

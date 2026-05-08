@@ -269,6 +269,8 @@ def test_context_assembler_adds_retrieval_citations_conflicts_and_trace(tmp_path
     assert assembled["trace"]["assembler_version"] == CONTEXT_ASSEMBLER_VERSION
     assert assembled["trace"]["intent"]["intent"] == "investment_fit"
     assert assembled["trace"]["retrieval"]["citation_count"] == len(assembled["citations"])
+    assert assembled["trace"]["context_warnings"][0]["type"] == "missing_or_stale_context"
+    assert "needs review" in assembled["trace"]["context_warnings"][0]["message"]
 
 
 def test_context_conflict_review_items_are_deduped_and_routed(tmp_path: Path) -> None:
@@ -469,6 +471,38 @@ def test_applied_candidates_can_be_supporting_context_but_stale_or_archived_cann
     assert archived["lifecycle_state"] == "archived"
     assert any(row["id"] == candidate["id"] for row in audit_rows)
     assert all(item["entity_type"] != "context_candidate" for item in archived_result["items"])
+
+
+def test_resolved_material_context_candidates_close_review_item(tmp_path: Path) -> None:
+    service = _build_service(tmp_path)
+    [candidate] = service.detect_chat_context_candidates(
+        message="My marginal tax rate is 32%.",
+        conversation_id="conversation-1",
+        message_index=1,
+    )
+    review_items = [
+        row
+        for row in service.recommendation_inbox.list(limit=None, include_archived=True)
+        if row["recommendation_type"] == "context_candidate_review"
+    ]
+    assert len(review_items) == 1
+    assert review_items[0]["status"] == "proposed"
+
+    service.update_context_candidate_lifecycle(
+        candidate["id"],
+        lifecycle_state="applied",
+        prompt_influence="authoritative",
+        metadata_patch={"resolution_state": "resolved_by_source_update"},
+    )
+
+    [closed] = [
+        row
+        for row in service.recommendation_inbox.list(limit=None, include_archived=True)
+        if row["recommendation_type"] == "context_candidate_review"
+    ]
+    assert closed["status"] == "applied"
+    assert closed["action_payload"]["context_candidate"]["lifecycle_state"] == "applied"
+    assert closed["action_payload"]["quality"]["blocking_context"] == []
 
 
 def test_conversation_summary_candidates_are_reviewable_registry_only_captures(tmp_path: Path) -> None:
