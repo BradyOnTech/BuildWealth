@@ -662,32 +662,32 @@ Done when:
 
 Goal: turn useful conversation, import, recommendation, and research moments into reviewed, durable context.
 
-- [ ] Summarize long conversations into registry-only conversation summaries.
-- [ ] Detect potential profile/plan facts from chat and draft them for review.
-- [ ] Allow imports, recommendation workflows, and research review to draft context candidates.
-- [ ] Require candidate metadata: source domain, source ref, extracted claim, target canonical field or plan area, confidence, materiality, materiality rationale, review route, lifecycle state, and prompt influence.
-- [ ] Add a deterministic materiality policy for candidates and conflicts.
-- [ ] Start with global versioned materiality defaults.
-- [ ] Store materiality policy version and rule ids or rationale with each classification.
-- [ ] Map raw materiality to plain-language action-readiness labels in user-facing surfaces.
-- [ ] Keep raw materiality values limited to traces, diagnostics, logs, and tests.
-- [ ] Defer profile-aware materiality overrides until the global policy is stable and tested.
-- [ ] Allow LLM-assisted materiality hints only as input to the rule-based policy or plain-language explanation.
-- [ ] Add candidate lifecycle states: pending review, deferred, stale unconfirmed, applied, rejected, superseded, and archived.
-- [ ] Add prompt influence levels: none, mention-only, supporting context, and authoritative after apply.
-- [ ] Keep candidate record retention separate from prompt influence.
-- [ ] Escalate important material candidates rather than allowing them to age out silently.
-- [ ] Create or update review items for high and critical context candidates.
-- [ ] Route medium candidates to the owning view or Copilot-guided review flow.
-- [ ] Keep low candidates in audit or context capture unless they become relevant later.
-- [ ] Route profile changes through existing profile draft/apply flow.
-- [ ] Route plan changes through settings/timeline/decision/artifact flows.
-- [ ] Route recommendation, research, and imported candidates through their owning product surfaces.
+- [x] Summarize long conversations into registry-only conversation summaries.
+- [x] Detect potential profile/plan facts from chat and draft them for review.
+- [x] Allow imports, recommendation workflows, and research review to draft context candidates.
+- [x] Require candidate metadata: source domain, source ref, extracted claim, target canonical field or plan area, confidence, materiality, materiality rationale, review route, lifecycle state, and prompt influence.
+- [x] Add a deterministic materiality policy for candidates and conflicts.
+- [x] Start with global versioned materiality defaults.
+- [x] Store materiality policy version and rule ids or rationale with each classification.
+- [x] Map raw materiality to plain-language action-readiness labels in user-facing surfaces.
+- [x] Keep raw materiality values limited to traces, diagnostics, logs, and tests.
+- [x] Defer profile-aware materiality overrides until the global policy is stable and tested.
+- [x] Allow LLM-assisted materiality hints only as input to the rule-based policy or plain-language explanation.
+- [x] Add candidate lifecycle states: pending review, deferred, stale unconfirmed, applied, rejected, superseded, and archived.
+- [x] Add prompt influence levels: none, mention-only, supporting context, and authoritative after apply.
+- [x] Keep candidate record retention separate from prompt influence.
+- [x] Escalate important material candidates rather than allowing them to age out silently.
+- [x] Create or update review items for high and critical context candidates.
+- [x] Route medium candidates to the owning view or Copilot-guided review flow.
+- [x] Keep low candidates in audit or context capture unless they become relevant later.
+- [x] Route profile changes through existing profile draft/apply flow.
+- [x] Route plan changes through settings/timeline/decision/artifact flows.
+- [x] Route recommendation, research, and imported candidates through their owning product surfaces.
 - [ ] Add UI for reviewing pending context captures.
-- [ ] Add audit events for applied context facts.
-- [ ] Add tests proving unreviewed candidates cannot become authoritative prompt context.
-- [ ] Add tests proving stale or archived candidates remain in audit history but lose normal prompt influence.
-- [ ] Add tests for materiality defaults, escalation rules, and confidence/materiality separation.
+- [x] Add audit events for applied context facts.
+- [x] Add tests proving unreviewed candidates cannot become authoritative prompt context.
+- [x] Add tests proving stale or archived candidates remain in audit history but lose normal prompt influence.
+- [x] Add tests for materiality defaults, escalation rules, and confidence/materiality separation.
 
 Done when:
 

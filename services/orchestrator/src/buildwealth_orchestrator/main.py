@@ -14851,6 +14851,101 @@ def search_context_endpoint(
     )
 
 
+@app.get("/api/context/candidates")
+def list_context_candidates(
+    lifecycle_state: str | None = None,
+    include_archived: bool = False,
+    limit: int = 100,
+) -> dict[str, Any]:
+    return {
+        "items": context_intelligence_service.list_context_candidates(
+            lifecycle_state=lifecycle_state,
+            include_archived=include_archived,
+            limit=max(1, min(int(limit), 5000)),
+        )
+    }
+
+
+@app.post("/api/context/candidates")
+def draft_context_candidate(request: dict[str, Any]) -> dict[str, Any]:
+    return context_intelligence_service.draft_context_candidate(
+        source_domain=str(request.get("source_domain") or "manual"),
+        source_ref=str(request.get("source_ref") or "manual/context_candidate"),
+        extracted_claim=str(request.get("extracted_claim") or ""),
+        target_domain=str(request.get("target_domain") or "conversation"),
+        target_area=str(request.get("target_area") or "general"),
+        target_field=(
+            str(request.get("target_field") or "").strip()
+            if request.get("target_field") is not None
+            else None
+        ),
+        target_value=request.get("target_value"),
+        confidence=str(request.get("confidence") or "medium"),
+        metadata=request.get("metadata") if isinstance(request.get("metadata"), dict) else {},
+        lifecycle_state=str(request.get("lifecycle_state") or "pending_review"),
+        prompt_influence=(
+            str(request.get("prompt_influence") or "").strip()
+            if request.get("prompt_influence") is not None
+            else None
+        ),
+    )
+
+
+@app.post("/api/context/candidates/detect-chat")
+def detect_chat_context_candidates(request: dict[str, Any]) -> dict[str, Any]:
+    items = context_intelligence_service.detect_chat_context_candidates(
+        message=str(request.get("message") or ""),
+        conversation_id=str(request.get("conversation_id") or "").strip() or None,
+        message_index=(
+            _coerce_int(request.get("message_index"), 0)
+            if request.get("message_index") is not None
+            else None
+        ),
+    )
+    return {"count": len(items), "items": items}
+
+
+@app.post("/api/context/candidates/conversation-summary")
+def summarize_conversation_context_candidate(request: dict[str, Any]) -> dict[str, Any]:
+    conversation_id = str(request.get("conversation_id") or "").strip()
+    if conversation_id:
+        try:
+            conversation = conversation_store.get(conversation_id)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    else:
+        conversation = request.get("conversation")
+        if not isinstance(conversation, dict):
+            raise HTTPException(status_code=400, detail="conversation or conversation_id is required")
+    candidate = context_intelligence_service.summarize_conversation_candidate(
+        conversation=conversation,
+        min_messages=max(1, min(_coerce_int(request.get("min_messages"), 8), 100)),
+    )
+    return {"created": candidate is not None, "candidate": candidate}
+
+
+@app.patch("/api/context/candidates/{candidate_id}/lifecycle")
+def update_context_candidate_lifecycle(candidate_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return context_intelligence_service.update_context_candidate_lifecycle(
+            candidate_id,
+            lifecycle_state=str(request.get("lifecycle_state") or "pending_review"),
+            prompt_influence=(
+                str(request.get("prompt_influence") or "").strip()
+                if request.get("prompt_influence") is not None
+                else None
+            ),
+            metadata_patch=request.get("metadata") if isinstance(request.get("metadata"), dict) else {},
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/context/candidates/{candidate_id}/events")
+def list_context_candidate_events(candidate_id: str) -> dict[str, Any]:
+    return {"items": context_intelligence_service.list_context_candidate_events(candidate_id)}
+
+
 @app.get("/api/storage/durable/status", response_model=DurableStorageStatusResponse)
 def get_durable_storage_status() -> DurableStorageStatusResponse:
     return DurableStorageStatusResponse.model_validate(durable_storage_service.get_status())
@@ -17875,6 +17970,24 @@ async def copilot_chat(request: CopilotChatRequest) -> CopilotChatResponse:
             contextual_brief=contextual_brief,
             context_trace=assembled_context.get("trace") if isinstance(assembled_context, dict) else {},
         )
+        captured_candidates = context_intelligence_service.detect_chat_context_candidates(
+            message=request.question,
+            conversation_id=str(result.get("conversation_id") or "").strip() or None,
+            message_index=None,
+        )
+        context_trace = result.get("context_trace") if isinstance(result.get("context_trace"), dict) else {}
+        context_trace["captured_context_candidates"] = [
+            {
+                "id": candidate.get("id"),
+                "target_domain": candidate.get("target_domain"),
+                "target_field": candidate.get("target_field"),
+                "lifecycle_state": candidate.get("lifecycle_state"),
+                "prompt_influence": candidate.get("prompt_influence"),
+                "review_item": candidate.get("review_item"),
+            }
+            for candidate in captured_candidates
+        ]
+        result["context_trace"] = context_trace
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except httpx.HTTPStatusError as exc:

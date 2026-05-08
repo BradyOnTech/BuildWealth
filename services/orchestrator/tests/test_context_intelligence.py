@@ -360,6 +360,139 @@ def test_context_embeddings_can_be_rebuilt_without_reindexing_registry(tmp_path:
     assert report["reused_count"] > 0
 
 
+def test_chat_fact_detection_drafts_material_context_candidates_for_review(tmp_path: Path) -> None:
+    service = _build_service(tmp_path)
+
+    candidates = service.detect_chat_context_candidates(
+        message="My tax rate is 32% and my risk tolerance is moderate.",
+        conversation_id="conversation-1",
+        message_index=3,
+    )
+    candidates_again = service.detect_chat_context_candidates(
+        message="My tax rate is 32% and my risk tolerance is moderate.",
+        conversation_id="conversation-1",
+        message_index=3,
+    )
+    review_rows = [
+        row
+        for row in service.recommendation_inbox.list(limit=None, include_archived=True)
+        if row["recommendation_type"] == "context_candidate_review"
+    ]
+
+    assert len(candidates) == 2
+    assert len(candidates_again) == 2
+    assert len(review_rows) == 2
+
+    tax_candidate = next(
+        candidate
+        for candidate in candidates
+        if candidate["target_field"] == "tax_profile.marginal_tax_rate"
+    )
+    assert tax_candidate["source_domain"] == "conversation"
+    assert tax_candidate["source_ref"] == "conversation/conversation-1#message.3"
+    assert tax_candidate["target_domain"] == "profile"
+    assert tax_candidate["target_value"] == 0.32
+    assert tax_candidate["confidence"] == "medium"
+    assert tax_candidate["materiality"] == "high"
+    assert tax_candidate["action_readiness"] == "Review before relying on this"
+    assert tax_candidate["review_route"]["route"] == "profile"
+    assert tax_candidate["lifecycle_state"] == "pending_review"
+    assert tax_candidate["prompt_influence"] == "mention_only"
+    assert tax_candidate["metadata"]["materiality_policy_version"] == "global_v1"
+    assert "profile_material_field_high" in tax_candidate["metadata"]["materiality_rule_ids"]
+
+    review_payload = review_rows[0]["action_payload"]
+    assert review_payload["quality"]["actionability"] == "review_only"
+    assert review_payload["suggested_action"]["mutation_requires_confirmation"] is True
+    assert "not treated as financial truth yet" in review_rows[0]["detail"]
+
+
+def test_unreviewed_context_candidates_do_not_become_authoritative_prompt_context(tmp_path: Path) -> None:
+    service = _build_service(tmp_path)
+    [candidate] = service.detect_chat_context_candidates(
+        message="My tax rate is 32%.",
+        conversation_id="conversation-2",
+    )
+
+    service.rebuild_registry()
+    result = service.search_context(
+        query="tax rate 32",
+        domains=["profile"],
+        limit=20,
+    )
+
+    assert candidate["lifecycle_state"] == "pending_review"
+    assert candidate["prompt_influence"] == "mention_only"
+    assert all(item["entity_type"] != "context_candidate" for item in result["items"])
+
+
+def test_applied_candidates_can_be_supporting_context_but_stale_or_archived_cannot(tmp_path: Path) -> None:
+    service = _build_service(tmp_path)
+    candidate = service.draft_context_candidate(
+        source_domain="conversation",
+        source_ref="conversation/preference#message.1",
+        extracted_claim="I prefer plain-language explanations before financial terminology.",
+        target_domain="conversation",
+        target_area="preference",
+        target_field="preference.explanation_style",
+        target_value="plain_language_first",
+        confidence="medium",
+        metadata={"note": "preference, not financial fact"},
+    )
+
+    service.update_context_candidate_lifecycle(
+        candidate["id"],
+        lifecycle_state="applied",
+        prompt_influence="supporting_context",
+    )
+    events = service.list_context_candidate_events(candidate["id"])
+    service.rebuild_registry()
+    applied_result = service.search_context(query="plain language explanations", domains=["conversation"], limit=10)
+    applied_items = [item for item in applied_result["items"] if item["entity_type"] == "context_candidate"]
+    assert applied_items
+    assert applied_items[0]["quality"]["prompt_influence"] == "supporting_context"
+    assert [event["event_type"] for event in events] == ["candidate_created", "candidate_applied"]
+
+    service.update_context_candidate_lifecycle(
+        candidate["id"],
+        lifecycle_state="stale_unconfirmed",
+        prompt_influence="none",
+    )
+    service.rebuild_registry()
+    stale_result = service.search_context(query="plain language explanations", domains=["conversation"], limit=10)
+    assert all(item["entity_type"] != "context_candidate" for item in stale_result["items"])
+
+    archived = service.update_context_candidate_lifecycle(candidate["id"], lifecycle_state="archived")
+    service.rebuild_registry()
+    archived_result = service.search_context(query="plain language explanations", domains=["conversation"], limit=10)
+    audit_rows = service.list_context_candidates(include_archived=True, limit=None)
+    assert archived["lifecycle_state"] == "archived"
+    assert any(row["id"] == candidate["id"] for row in audit_rows)
+    assert all(item["entity_type"] != "context_candidate" for item in archived_result["items"])
+
+
+def test_conversation_summary_candidates_are_reviewable_registry_only_captures(tmp_path: Path) -> None:
+    service = _build_service(tmp_path)
+    conversation = {
+        "id": "conversation-summary",
+        "messages": [
+            {"role": "user", "content": f"Question {index}: explain the plan plainly."}
+            for index in range(9)
+        ],
+    }
+
+    candidate = service.summarize_conversation_candidate(conversation=conversation, min_messages=8)
+
+    assert candidate is not None
+    assert candidate["source_ref"] == "conversation/conversation-summary#summary"
+    assert candidate["target_domain"] == "conversation"
+    assert candidate["target_area"] == "conversation_summary"
+    assert candidate["lifecycle_state"] == "pending_review"
+    assert candidate["prompt_influence"] == "mention_only"
+    assert candidate["materiality"] == "low"
+    assert "message_count" in candidate["target_value"]
+
+
 def test_deferred_context_conflict_does_not_resolve_or_unblock_and_resurfaces(tmp_path: Path) -> None:
     service = _build_service(tmp_path)
     conflict = {

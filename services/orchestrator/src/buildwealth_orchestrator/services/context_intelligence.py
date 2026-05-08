@@ -21,6 +21,10 @@ CONTEXT_ASSEMBLER_VERSION = "context_intelligence_assembler_v1"
 CONTEXT_CONFLICT_REVIEW_SCHEMA_VERSION = 1
 CONTEXT_CONFLICT_RECOMMENDATION_TYPE = "context_conflict_review"
 CONTEXT_CONFLICT_RECOMMENDATION_SOURCE = "context_intelligence"
+CONTEXT_CANDIDATE_REVIEW_RECOMMENDATION_TYPE = "context_candidate_review"
+CONTEXT_CANDIDATE_REVIEW_RECOMMENDATION_SOURCE = "context_intelligence"
+CONTEXT_CANDIDATE_SCHEMA_VERSION = 1
+CONTEXT_CANDIDATE_EVENT_SCHEMA_VERSION = 1
 CONTEXT_CONFLICT_RESOLUTION_STATES = {
     "unresolved",
     "deferred",
@@ -43,7 +47,25 @@ EMBEDDING_ELIGIBLE_ENTITY_TYPES = {
     "research_dossier_artifact",
     "watchlist_thesis",
     "recommendation",
+    "context_candidate",
 }
+CONTEXT_CANDIDATE_LIFECYCLE_STATES = {
+    "pending_review",
+    "deferred",
+    "stale_unconfirmed",
+    "applied",
+    "rejected",
+    "superseded",
+    "archived",
+}
+CONTEXT_CANDIDATE_PROMPT_INFLUENCE_LEVELS = {
+    "none",
+    "mention_only",
+    "supporting_context",
+    "authoritative",
+}
+CONTEXT_CANDIDATE_REVIEW_ITEM_MATERIALITY = {"high", "critical"}
+CONTEXT_CANDIDATE_INDEXABLE_STATES = {"applied"}
 
 MATERIALITY_LEVELS = ("low", "medium", "high", "critical")
 ACTION_READINESS_BY_MATERIALITY = {
@@ -469,6 +491,44 @@ class ContextRegistry:
                 """
             )
             connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS context_candidates (
+                    id TEXT PRIMARY KEY,
+                    dedupe_key TEXT NOT NULL UNIQUE,
+                    source_domain TEXT NOT NULL,
+                    source_ref TEXT NOT NULL,
+                    extracted_claim TEXT NOT NULL,
+                    target_domain TEXT NOT NULL,
+                    target_area TEXT NOT NULL,
+                    target_field TEXT,
+                    target_value_json TEXT NOT NULL,
+                    confidence TEXT NOT NULL,
+                    materiality TEXT NOT NULL,
+                    materiality_rationale TEXT NOT NULL,
+                    action_readiness TEXT NOT NULL,
+                    review_route TEXT NOT NULL,
+                    lifecycle_state TEXT NOT NULL,
+                    prompt_influence TEXT NOT NULL,
+                    metadata TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    applied_at TEXT,
+                    archived_at TEXT
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS context_candidate_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    candidate_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    payload TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_context_items_domain ON context_items(domain)"
             )
             connection.execute(
@@ -478,6 +538,18 @@ class ContextRegistry:
                 """
                 CREATE INDEX IF NOT EXISTS idx_context_embeddings_provider_model
                 ON context_embeddings(embedding_provider, embedding_model)
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_context_candidates_state
+                ON context_candidates(lifecycle_state, prompt_influence)
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_context_candidates_source_ref
+                ON context_candidates(source_ref)
                 """
             )
             connection.execute(
@@ -493,6 +565,13 @@ class ContextRegistry:
                 VALUES ('embedding_schema_version', ?)
                 """,
                 (str(EMBEDDING_INDEX_SCHEMA_VERSION),),
+            )
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO registry_metadata(key, value)
+                VALUES ('context_candidate_schema_version', ?)
+                """,
+                (str(CONTEXT_CANDIDATE_SCHEMA_VERSION),),
             )
 
     def replace_all(self, items: Iterable[ContextItem]) -> dict[str, Any]:
@@ -552,6 +631,13 @@ class ContextRegistry:
                     "providers": [],
                     "latest_embedded_at": None,
                 },
+                "candidates": {
+                    "schema_version": CONTEXT_CANDIDATE_SCHEMA_VERSION,
+                    "candidate_count": 0,
+                    "pending_review_count": 0,
+                    "indexable_count": 0,
+                    "counts_by_state": {},
+                },
             }
 
         self._initialize()
@@ -573,6 +659,30 @@ class ContextRegistry:
                 FROM context_embeddings
                 GROUP BY embedding_provider, embedding_model, dimensions
                 ORDER BY embedding_provider, embedding_model
+                """
+            ).fetchall()
+            candidate_count = int(connection.execute("SELECT COUNT(*) FROM context_candidates").fetchone()[0])
+            pending_review_count = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM context_candidates WHERE lifecycle_state = 'pending_review'"
+                ).fetchone()[0]
+            )
+            indexable_count = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM context_candidates
+                    WHERE lifecycle_state = 'applied'
+                      AND prompt_influence IN ('supporting_context', 'authoritative')
+                    """
+                ).fetchone()[0]
+            )
+            state_rows = connection.execute(
+                """
+                SELECT lifecycle_state, COUNT(*) AS count
+                FROM context_candidates
+                GROUP BY lifecycle_state
+                ORDER BY lifecycle_state
                 """
             ).fetchall()
 
@@ -604,6 +714,13 @@ class ContextRegistry:
                     if latest_embedding is not None and latest_embedding["latest_embedded_at"] is not None
                     else None
                 ),
+            },
+            "candidates": {
+                "schema_version": CONTEXT_CANDIDATE_SCHEMA_VERSION,
+                "candidate_count": candidate_count,
+                "pending_review_count": pending_review_count,
+                "indexable_count": indexable_count,
+                "counts_by_state": {str(row["lifecycle_state"]): int(row["count"]) for row in state_rows},
             },
         }
 
@@ -768,6 +885,234 @@ class ContextRegistry:
             if vector is not None:
                 vectors[str(row["context_item_id"])] = vector
         return vectors
+
+    def upsert_candidate(self, candidate: Mapping[str, Any]) -> dict[str, Any]:
+        self._initialize()
+        payload = _normalize_candidate_payload(candidate)
+        existing: sqlite3.Row | None
+        with self._connect() as connection:
+            existing = connection.execute(
+                "SELECT * FROM context_candidates WHERE dedupe_key = ?",
+                (payload["dedupe_key"],),
+            ).fetchone()
+            if existing is None:
+                connection.execute(
+                    """
+                    INSERT INTO context_candidates (
+                        id, dedupe_key, source_domain, source_ref, extracted_claim,
+                        target_domain, target_area, target_field, target_value_json,
+                        confidence, materiality, materiality_rationale, action_readiness,
+                        review_route, lifecycle_state, prompt_influence, metadata,
+                        created_at, updated_at, applied_at, archived_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    _candidate_row(payload),
+                )
+                self._record_candidate_event(
+                    connection,
+                    candidate_id=str(payload["id"]),
+                    event_type="candidate_created",
+                    payload=payload,
+                )
+                return payload
+
+            merged = _candidate_from_row(existing)
+            preserved_state = str(merged.get("lifecycle_state") or "pending_review")
+            if preserved_state in {"applied", "rejected", "superseded", "archived"}:
+                payload["lifecycle_state"] = preserved_state
+                payload["prompt_influence"] = merged.get("prompt_influence")
+                payload["applied_at"] = merged.get("applied_at")
+                payload["archived_at"] = merged.get("archived_at")
+            payload["id"] = merged["id"]
+            payload["created_at"] = merged["created_at"]
+            payload["updated_at"] = utc_now_iso()
+            connection.execute(
+                """
+                UPDATE context_candidates
+                SET source_domain = ?, source_ref = ?, extracted_claim = ?,
+                    target_domain = ?, target_area = ?, target_field = ?, target_value_json = ?,
+                    confidence = ?, materiality = ?, materiality_rationale = ?, action_readiness = ?,
+                    review_route = ?, lifecycle_state = ?, prompt_influence = ?, metadata = ?,
+                    updated_at = ?, applied_at = ?, archived_at = ?
+                WHERE id = ?
+                """,
+                (
+                    payload["source_domain"],
+                    payload["source_ref"],
+                    payload["extracted_claim"],
+                    payload["target_domain"],
+                    payload["target_area"],
+                    payload.get("target_field"),
+                    _json_dumps(payload.get("target_value")),
+                    payload["confidence"],
+                    payload["materiality"],
+                    payload["materiality_rationale"],
+                    payload["action_readiness"],
+                    _json_dumps(payload["review_route"]),
+                    payload["lifecycle_state"],
+                    payload["prompt_influence"],
+                    _json_dumps(payload["metadata"]),
+                    payload["updated_at"],
+                    payload.get("applied_at"),
+                    payload.get("archived_at"),
+                    payload["id"],
+                ),
+            )
+            self._record_candidate_event(
+                connection,
+                candidate_id=str(payload["id"]),
+                event_type="candidate_updated",
+                payload=payload,
+            )
+        return payload
+
+    def list_candidates(
+        self,
+        *,
+        lifecycle_state: str | None = None,
+        include_archived: bool = False,
+        limit: int | None = 100,
+    ) -> list[dict[str, Any]]:
+        if not self.database_path.exists():
+            return []
+        self._initialize()
+        where: list[str] = []
+        params: list[Any] = []
+        if lifecycle_state:
+            where.append("lifecycle_state = ?")
+            params.append(str(lifecycle_state).strip().lower())
+        elif not include_archived:
+            where.append("lifecycle_state != 'archived'")
+        where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+        limit_sql = ""
+        if limit is not None:
+            limit_sql = "LIMIT ?"
+            params.append(max(1, min(int(limit), 5000)))
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT *
+                FROM context_candidates
+                {where_sql}
+                ORDER BY updated_at DESC, created_at DESC
+                {limit_sql}
+                """,
+                params,
+            ).fetchall()
+        return [_candidate_from_row(row) for row in rows]
+
+    def update_candidate_lifecycle(
+        self,
+        candidate_id: str,
+        *,
+        lifecycle_state: str,
+        prompt_influence: str | None = None,
+        metadata_patch: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        self._initialize()
+        state = _normalize_candidate_lifecycle_state(lifecycle_state)
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM context_candidates WHERE id = ?",
+                (str(candidate_id).strip(),),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Context candidate not found: {candidate_id}")
+
+            payload = _candidate_from_row(row)
+            now = utc_now_iso()
+            payload["lifecycle_state"] = state
+            payload["prompt_influence"] = _normalize_candidate_prompt_influence(
+                prompt_influence if prompt_influence is not None else _default_prompt_influence_for_state(state)
+            )
+            metadata = dict(payload.get("metadata") or {})
+            if isinstance(metadata_patch, Mapping):
+                metadata.update(dict(metadata_patch))
+            payload["metadata"] = metadata
+            payload["updated_at"] = now
+            if state == "applied":
+                payload["applied_at"] = now
+            if state == "archived":
+                payload["archived_at"] = now
+
+            connection.execute(
+                """
+                UPDATE context_candidates
+                SET lifecycle_state = ?, prompt_influence = ?, metadata = ?,
+                    updated_at = ?, applied_at = ?, archived_at = ?
+                WHERE id = ?
+                """,
+                (
+                    payload["lifecycle_state"],
+                    payload["prompt_influence"],
+                    _json_dumps(metadata),
+                    payload["updated_at"],
+                    payload.get("applied_at"),
+                    payload.get("archived_at"),
+                    payload["id"],
+                ),
+            )
+            self._record_candidate_event(
+                connection,
+                candidate_id=str(payload["id"]),
+                event_type=f"candidate_{state}",
+                payload=payload,
+            )
+        return payload
+
+    def candidate_events(self, candidate_id: str) -> list[dict[str, Any]]:
+        if not self.database_path.exists():
+            return []
+        self._initialize()
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, candidate_id, event_type, created_at, payload
+                FROM context_candidate_events
+                WHERE candidate_id = ?
+                ORDER BY id
+                """,
+                (str(candidate_id).strip(),),
+            ).fetchall()
+        return [
+            {
+                "id": int(row["id"]),
+                "candidate_id": str(row["candidate_id"]),
+                "event_type": str(row["event_type"]),
+                "created_at": str(row["created_at"]),
+                "payload": _json_loads_object(row["payload"]),
+            }
+            for row in rows
+        ]
+
+    def candidate_context_items(self) -> list[ContextItem]:
+        items: list[ContextItem] = []
+        for candidate in self.list_candidates(include_archived=True, limit=None):
+            if not _candidate_is_indexable(candidate):
+                continue
+            items.append(_context_item_from_candidate(candidate))
+        return items
+
+    def _record_candidate_event(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        candidate_id: str,
+        event_type: str,
+        payload: Mapping[str, Any],
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO context_candidate_events(candidate_id, event_type, created_at, payload)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                candidate_id,
+                event_type,
+                utc_now_iso(),
+                _json_dumps({"schema_version": CONTEXT_CANDIDATE_EVENT_SCHEMA_VERSION, **dict(payload)}),
+            ),
+        )
 
     def search(
         self,
@@ -1348,6 +1693,7 @@ class ContextIntelligenceService:
             recommendation_inbox=self.recommendation_inbox,
             portfolio_store=self.portfolio_store,
         )
+        items.extend(self.registry.candidate_context_items())
         report = self.registry.replace_all(items)
         embedding_report = self.registry.rebuild_embeddings(
             items,
@@ -1410,6 +1756,98 @@ class ContextIntelligenceService:
             self.registry.list_items(limit=5000),
             embedding_client=self.embedding_client,
         )
+
+    def draft_context_candidate(
+        self,
+        *,
+        source_domain: str,
+        source_ref: str,
+        extracted_claim: str,
+        target_domain: str,
+        target_area: str,
+        target_field: str | None = None,
+        target_value: Any = None,
+        confidence: str = "medium",
+        metadata: Mapping[str, Any] | None = None,
+        lifecycle_state: str = "pending_review",
+        prompt_influence: str | None = None,
+    ) -> dict[str, Any]:
+        candidate = build_context_candidate_payload(
+            source_domain=source_domain,
+            source_ref=source_ref,
+            extracted_claim=extracted_claim,
+            target_domain=target_domain,
+            target_area=target_area,
+            target_field=target_field,
+            target_value=target_value,
+            confidence=confidence,
+            metadata=metadata,
+            lifecycle_state=lifecycle_state,
+            prompt_influence=prompt_influence,
+        )
+        stored = self.registry.upsert_candidate(candidate)
+        review_item = self._sync_context_candidate_review_item(stored)
+        if review_item is not None:
+            stored["review_item"] = review_item
+        return stored
+
+    def detect_chat_context_candidates(
+        self,
+        *,
+        message: str,
+        conversation_id: str | None = None,
+        message_index: int | None = None,
+    ) -> list[dict[str, Any]]:
+        source_ref = _conversation_source_ref(conversation_id=conversation_id, message_index=message_index)
+        drafts = detect_context_candidate_drafts_from_text(
+            message,
+            source_ref=source_ref,
+        )
+        return [self.draft_context_candidate(**draft) for draft in drafts]
+
+    def summarize_conversation_candidate(
+        self,
+        *,
+        conversation: Mapping[str, Any],
+        min_messages: int = 8,
+    ) -> dict[str, Any] | None:
+        draft = build_conversation_summary_candidate(conversation, min_messages=min_messages)
+        if draft is None:
+            return None
+        return self.draft_context_candidate(**draft)
+
+    def list_context_candidates(
+        self,
+        *,
+        lifecycle_state: str | None = None,
+        include_archived: bool = False,
+        limit: int | None = 100,
+    ) -> list[dict[str, Any]]:
+        return self.registry.list_candidates(
+            lifecycle_state=lifecycle_state,
+            include_archived=include_archived,
+            limit=limit,
+        )
+
+    def list_context_candidate_events(self, candidate_id: str) -> list[dict[str, Any]]:
+        return self.registry.candidate_events(candidate_id)
+
+    def update_context_candidate_lifecycle(
+        self,
+        candidate_id: str,
+        *,
+        lifecycle_state: str,
+        prompt_influence: str | None = None,
+        metadata_patch: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        updated = self.registry.update_candidate_lifecycle(
+            candidate_id,
+            lifecycle_state=lifecycle_state,
+            prompt_influence=prompt_influence,
+            metadata_patch=metadata_patch,
+        )
+        self._sync_context_candidate_review_item(updated)
+        return updated
 
     def sync_conflict_review_items(
         self,
@@ -1516,6 +1954,51 @@ class ContextIntelligenceService:
             if not isinstance(context_conflict, Mapping):
                 continue
             if str(context_conflict.get("dedupe_key") or "") == dedupe_key:
+                return dict(row)
+        return None
+
+    def _sync_context_candidate_review_item(self, candidate: Mapping[str, Any]) -> dict[str, Any] | None:
+        if not _candidate_requires_review_item(candidate):
+            return None
+        existing = self._find_context_candidate_review_item(str(candidate.get("id") or ""))
+        title = _context_candidate_review_title(candidate)
+        detail = _context_candidate_review_detail(candidate)
+        payload = _context_candidate_review_action_payload(candidate)
+        if existing is None:
+            created = self.recommendation_inbox.create(
+                title=title,
+                detail=detail,
+                priority=_candidate_review_priority(candidate),
+                recommendation_type=CONTEXT_CANDIDATE_REVIEW_RECOMMENDATION_TYPE,
+                source=CONTEXT_CANDIDATE_REVIEW_RECOMMENDATION_SOURCE,
+                plan_id=_candidate_plan_id(candidate),
+                action_payload=payload,
+                status="proposed",
+            )
+            return _context_candidate_review_sync_result(created, created=True)
+        updated = self.recommendation_inbox.update(
+            str(existing.get("id")),
+            {
+                "title": title,
+                "detail": detail,
+                "priority": _candidate_review_priority(candidate),
+                "plan_id": _candidate_plan_id(candidate),
+                "action_payload": payload,
+            },
+        )
+        return _context_candidate_review_sync_result(updated, created=False)
+
+    def _find_context_candidate_review_item(self, candidate_id: str) -> dict[str, Any] | None:
+        for row in self.recommendation_inbox.list(limit=None, include_archived=True, sort="none"):
+            if str(row.get("recommendation_type") or "").strip().lower() != CONTEXT_CANDIDATE_REVIEW_RECOMMENDATION_TYPE:
+                continue
+            action_payload = row.get("action_payload")
+            if not isinstance(action_payload, Mapping):
+                continue
+            context_candidate = action_payload.get("context_candidate")
+            if not isinstance(context_candidate, Mapping):
+                continue
+            if str(context_candidate.get("id") or "") == candidate_id:
                 return dict(row)
         return None
 
@@ -2117,6 +2600,704 @@ def _search_result_payload(item: ContextItem, *, score: dict[str, Any]) -> dict[
         "score_breakdown": score["score_breakdown"],
         "matched_terms": score["matched_terms"],
     }
+
+
+def build_context_candidate_payload(
+    *,
+    source_domain: str,
+    source_ref: str,
+    extracted_claim: str,
+    target_domain: str,
+    target_area: str,
+    target_field: str | None = None,
+    target_value: Any = None,
+    confidence: str = "medium",
+    metadata: Mapping[str, Any] | None = None,
+    lifecycle_state: str = "pending_review",
+    prompt_influence: str | None = None,
+) -> dict[str, Any]:
+    source_domain_value = _clean_candidate_domain(source_domain, default="conversation")
+    target_domain_value = _clean_candidate_domain(target_domain, default="conversation")
+    target_area_value = str(target_area or "").strip() or "general"
+    target_field_value = str(target_field or "").strip() or None
+    claim = _compact_text(extracted_claim, limit=1200)
+    metadata_payload = dict(metadata or {})
+    materiality = _classify_context_candidate_materiality(
+        target_domain=target_domain_value,
+        target_area=target_area_value,
+        target_field=target_field_value,
+        target_value=target_value,
+        metadata=metadata_payload,
+    )
+    state = _normalize_candidate_lifecycle_state(lifecycle_state)
+    influence = _normalize_candidate_prompt_influence(
+        prompt_influence
+        if prompt_influence is not None
+        else _default_prompt_influence_for_state(state, materiality=materiality.materiality)
+    )
+    dedupe_key = _context_candidate_dedupe_key(
+        source_domain=source_domain_value,
+        source_ref=source_ref,
+        extracted_claim=claim,
+        target_domain=target_domain_value,
+        target_area=target_area_value,
+        target_field=target_field_value,
+    )
+    now = utc_now_iso()
+    return {
+        "schema_version": CONTEXT_CANDIDATE_SCHEMA_VERSION,
+        "id": _stable_context_id("candidate", dedupe_key),
+        "dedupe_key": dedupe_key,
+        "source_domain": source_domain_value,
+        "source_ref": str(source_ref or "").strip() or f"{source_domain_value}/unknown",
+        "extracted_claim": claim,
+        "target_domain": target_domain_value,
+        "target_area": target_area_value,
+        "target_field": target_field_value,
+        "target_value": target_value,
+        "confidence": _normalize_candidate_confidence(confidence),
+        "materiality": materiality.materiality,
+        "materiality_rationale": materiality.rationale,
+        "action_readiness": materiality.action_readiness,
+        "review_route": _context_candidate_review_route(
+            target_domain=target_domain_value,
+            target_area=target_area_value,
+            source_domain=source_domain_value,
+        ),
+        "lifecycle_state": state,
+        "prompt_influence": influence,
+        "metadata": {
+            **metadata_payload,
+            **materiality.as_quality_fields(),
+            "llm_materiality_hint_used_as_input_only": bool(metadata_payload.get("llm_materiality_hint")),
+        },
+        "created_at": now,
+        "updated_at": now,
+        "applied_at": now if state == "applied" else None,
+        "archived_at": now if state == "archived" else None,
+    }
+
+
+def detect_context_candidate_drafts_from_text(
+    text: str,
+    *,
+    source_ref: str,
+) -> list[dict[str, Any]]:
+    message = str(text or "")
+    drafts: list[dict[str, Any]] = []
+
+    for match in re.finditer(r"\b(?:my\s+)?(?:marginal\s+)?tax\s+rate\s+(?:is|=)\s+([0-9]+(?:\.[0-9]+)?)\s*%?", message, re.I):
+        value = _percent_candidate_value(match.group(1))
+        drafts.append(
+            _chat_candidate_draft(
+                source_ref=source_ref,
+                extracted_claim=match.group(0),
+                target_domain="profile",
+                target_area="tax_profile",
+                target_field="tax_profile.marginal_tax_rate",
+                target_value=value,
+                confidence="medium",
+            )
+        )
+
+    filing_match = re.search(
+        r"\b(?:my\s+)?filing\s+status\s+(?:is|=)\s+([a-zA-Z_\s-]+?)(?:[.!?]|$)",
+        message,
+        re.I,
+    )
+    if filing_match:
+        drafts.append(
+            _chat_candidate_draft(
+                source_ref=source_ref,
+                extracted_claim=filing_match.group(0),
+                target_domain="profile",
+                target_area="tax_profile",
+                target_field="tax_profile.filing_status",
+                target_value=_clean_token(filing_match.group(1), fallback="unknown"),
+                confidence="medium",
+            )
+        )
+
+    risk_match = re.search(
+        r"\b(?:my\s+)?risk\s+tolerance\s+(?:is|=)\s+(conservative|moderate|aggressive)\b",
+        message,
+        re.I,
+    )
+    if risk_match:
+        drafts.append(
+            _chat_candidate_draft(
+                source_ref=source_ref,
+                extracted_claim=risk_match.group(0),
+                target_domain="profile",
+                target_area="investment_policy",
+                target_field="investment_policy.risk_tolerance",
+                target_value=risk_match.group(1).lower(),
+                confidence="medium",
+            )
+        )
+
+    max_single_match = re.search(
+        r"\bmax(?:imum)?\s+single[-\s]?(?:symbol|stock|holding)\s+(?:exposure|limit)\s+(?:is|=)\s+([0-9]+(?:\.[0-9]+)?)\s*%?",
+        message,
+        re.I,
+    )
+    if max_single_match:
+        drafts.append(
+            _chat_candidate_draft(
+                source_ref=source_ref,
+                extracted_claim=max_single_match.group(0),
+                target_domain="profile",
+                target_area="investment_policy",
+                target_field="investment_policy.max_single_symbol_exposure_pct",
+                target_value=float(max_single_match.group(1)),
+                confidence="medium",
+            )
+        )
+
+    contribution_match = re.search(
+        r"\bannual\s+contribution\s+(?:is|=)\s+\$?\s*([0-9][0-9,]*(?:\.[0-9]+)?)",
+        message,
+        re.I,
+    )
+    if contribution_match:
+        drafts.append(
+            _chat_candidate_draft(
+                source_ref=source_ref,
+                extracted_claim=contribution_match.group(0),
+                target_domain="plan",
+                target_area="settings",
+                target_field="settings.annual_contribution_usd",
+                target_value=_money_candidate_value(contribution_match.group(1)),
+                confidence="medium",
+            )
+        )
+
+    retirement_match = re.search(
+        r"\b(?:retire|retirement)\s+(?:at|age)\s+([0-9]{2})\b",
+        message,
+        re.I,
+    )
+    if retirement_match:
+        drafts.append(
+            _chat_candidate_draft(
+                source_ref=source_ref,
+                extracted_claim=retirement_match.group(0),
+                target_domain="plan",
+                target_area="timeline",
+                target_field="timeline.retirement.target_retirement_age",
+                target_value=int(retirement_match.group(1)),
+                confidence="medium",
+            )
+        )
+
+    return _dedupe_candidate_drafts(drafts)
+
+
+def build_conversation_summary_candidate(
+    conversation: Mapping[str, Any],
+    *,
+    min_messages: int = 8,
+) -> dict[str, Any] | None:
+    messages = conversation.get("messages")
+    if not isinstance(messages, list) or len(messages) < max(1, int(min_messages)):
+        return None
+    snippets: list[str] = []
+    for message in messages[-12:]:
+        if not isinstance(message, Mapping):
+            continue
+        role = str(message.get("role") or "").strip()
+        content = _compact_text(message.get("content"), limit=220)
+        if role and content:
+            snippets.append(f"{role}: {content}")
+    if not snippets:
+        return None
+    conversation_id = str(conversation.get("id") or "conversation").strip()
+    summary = _compact_text(" | ".join(snippets), limit=1500)
+    return {
+        "source_domain": "conversation",
+        "source_ref": f"conversation/{conversation_id}#summary",
+        "extracted_claim": f"Conversation summary: {summary}",
+        "target_domain": "conversation",
+        "target_area": "conversation_summary",
+        "target_field": None,
+        "target_value": {"summary": summary, "message_count": len(messages)},
+        "confidence": "medium",
+        "metadata": {"conversation_id": conversation_id, "summary_kind": "deterministic_recent_messages"},
+        "lifecycle_state": "pending_review",
+        "prompt_influence": "mention_only",
+    }
+
+
+def _chat_candidate_draft(**kwargs: Any) -> dict[str, Any]:
+    return {
+        "source_domain": "conversation",
+        "metadata": {"detector": "deterministic_chat_fact_v1"},
+        "lifecycle_state": "pending_review",
+        "prompt_influence": None,
+        **kwargs,
+    }
+
+
+def _dedupe_candidate_drafts(drafts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for draft in drafts:
+        key = _context_candidate_dedupe_key(
+            source_domain=str(draft.get("source_domain") or ""),
+            source_ref=str(draft.get("source_ref") or ""),
+            extracted_claim=str(draft.get("extracted_claim") or ""),
+            target_domain=str(draft.get("target_domain") or ""),
+            target_area=str(draft.get("target_area") or ""),
+            target_field=str(draft.get("target_field") or ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(draft)
+    return deduped
+
+
+def _normalize_candidate_payload(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    payload = dict(candidate)
+    if not payload.get("dedupe_key"):
+        payload["dedupe_key"] = _context_candidate_dedupe_key(
+            source_domain=str(payload.get("source_domain") or ""),
+            source_ref=str(payload.get("source_ref") or ""),
+            extracted_claim=str(payload.get("extracted_claim") or ""),
+            target_domain=str(payload.get("target_domain") or ""),
+            target_area=str(payload.get("target_area") or ""),
+            target_field=str(payload.get("target_field") or ""),
+        )
+    payload["id"] = str(payload.get("id") or _stable_context_id("candidate", payload["dedupe_key"]))
+    payload["source_domain"] = _clean_candidate_domain(payload.get("source_domain"), default="conversation")
+    payload["source_ref"] = str(payload.get("source_ref") or f"{payload['source_domain']}/unknown").strip()
+    payload["extracted_claim"] = _compact_text(payload.get("extracted_claim"), limit=1200)
+    payload["target_domain"] = _clean_candidate_domain(payload.get("target_domain"), default="conversation")
+    payload["target_area"] = str(payload.get("target_area") or "general").strip()
+    payload["target_field"] = str(payload.get("target_field") or "").strip() or None
+    payload["confidence"] = _normalize_candidate_confidence(payload.get("confidence"))
+    payload["materiality"] = _normalize_materiality(payload.get("materiality"), default="low")
+    payload["materiality_rationale"] = str(payload.get("materiality_rationale") or "").strip()
+    payload["action_readiness"] = str(
+        payload.get("action_readiness") or ACTION_READINESS_BY_MATERIALITY[payload["materiality"]]
+    )
+    review_route = payload.get("review_route")
+    payload["review_route"] = dict(review_route) if isinstance(review_route, Mapping) else _context_candidate_review_route(
+        target_domain=payload["target_domain"],
+        target_area=payload["target_area"],
+        source_domain=payload["source_domain"],
+    )
+    payload["lifecycle_state"] = _normalize_candidate_lifecycle_state(payload.get("lifecycle_state"))
+    payload["prompt_influence"] = _normalize_candidate_prompt_influence(payload.get("prompt_influence"))
+    metadata = payload.get("metadata")
+    payload["metadata"] = dict(metadata) if isinstance(metadata, Mapping) else {}
+    now = utc_now_iso()
+    payload["created_at"] = str(payload.get("created_at") or now)
+    payload["updated_at"] = str(payload.get("updated_at") or now)
+    payload["applied_at"] = payload.get("applied_at")
+    payload["archived_at"] = payload.get("archived_at")
+    return payload
+
+
+def _candidate_row(payload: Mapping[str, Any]) -> tuple[Any, ...]:
+    return (
+        payload["id"],
+        payload["dedupe_key"],
+        payload["source_domain"],
+        payload["source_ref"],
+        payload["extracted_claim"],
+        payload["target_domain"],
+        payload["target_area"],
+        payload.get("target_field"),
+        _json_dumps(payload.get("target_value")),
+        payload["confidence"],
+        payload["materiality"],
+        payload["materiality_rationale"],
+        payload["action_readiness"],
+        _json_dumps(payload["review_route"]),
+        payload["lifecycle_state"],
+        payload["prompt_influence"],
+        _json_dumps(payload["metadata"]),
+        payload["created_at"],
+        payload["updated_at"],
+        payload.get("applied_at"),
+        payload.get("archived_at"),
+    )
+
+
+def _candidate_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    payload = {
+        "schema_version": CONTEXT_CANDIDATE_SCHEMA_VERSION,
+        "id": str(row["id"]),
+        "dedupe_key": str(row["dedupe_key"]),
+        "source_domain": str(row["source_domain"]),
+        "source_ref": str(row["source_ref"]),
+        "extracted_claim": str(row["extracted_claim"]),
+        "target_domain": str(row["target_domain"]),
+        "target_area": str(row["target_area"]),
+        "target_field": str(row["target_field"]) if row["target_field"] else None,
+        "target_value": _json_loads_any(row["target_value_json"]),
+        "confidence": str(row["confidence"]),
+        "materiality": str(row["materiality"]),
+        "materiality_rationale": str(row["materiality_rationale"]),
+        "action_readiness": str(row["action_readiness"]),
+        "review_route": _json_loads_object(row["review_route"]),
+        "lifecycle_state": str(row["lifecycle_state"]),
+        "prompt_influence": str(row["prompt_influence"]),
+        "metadata": _json_loads_object(row["metadata"]),
+        "created_at": str(row["created_at"]),
+        "updated_at": str(row["updated_at"]),
+        "applied_at": str(row["applied_at"]) if row["applied_at"] else None,
+        "archived_at": str(row["archived_at"]) if row["archived_at"] else None,
+    }
+    return payload
+
+
+def _json_loads_any(value: str | None) -> Any:
+    if not value:
+        return None
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return None
+
+
+def _context_candidate_dedupe_key(
+    *,
+    source_domain: str,
+    source_ref: str,
+    extracted_claim: str,
+    target_domain: str,
+    target_area: str,
+    target_field: str | None,
+) -> str:
+    payload = {
+        "source_domain": _clean_candidate_domain(source_domain, default="conversation"),
+        "source_ref": str(source_ref or "").strip(),
+        "claim": _compact_text(extracted_claim, limit=500).lower(),
+        "target_domain": _clean_candidate_domain(target_domain, default="conversation"),
+        "target_area": str(target_area or "").strip().lower(),
+        "target_field": str(target_field or "").strip().lower(),
+    }
+    return f"context_candidate:{_hash_payload(payload, length=18)}"
+
+
+def _classify_context_candidate_materiality(
+    *,
+    target_domain: str,
+    target_area: str,
+    target_field: str | None,
+    target_value: Any,
+    metadata: Mapping[str, Any],
+) -> MaterialityDecision:
+    policy = MaterialityPolicy()
+    domain = _clean_candidate_domain(target_domain, default="conversation")
+    field_path = str(target_field or target_area or "").strip()
+    entity_type = "context_candidate"
+    if domain == "profile":
+        if field_path.startswith("tax_profile."):
+            entity_type = "tax_profile_field"
+        elif field_path.startswith("investment_policy."):
+            entity_type = "investment_policy_field"
+    elif domain == "plan":
+        entity_type = "plan_setting_field" if field_path.startswith("settings.") else "plan_decision"
+    decision = policy.classify(
+        domain=domain,
+        entity_type=entity_type,
+        field_path=field_path,
+        payload={"value": target_value, **dict(metadata)},
+    )
+    hint = _normalize_materiality(metadata.get("llm_materiality_hint"), default="")
+    if hint and hint in {"high", "critical"}:
+        decision = policy.classify(
+            domain=domain,
+            entity_type=entity_type,
+            field_path=field_path,
+            payload={"value": target_value, **dict(metadata)},
+            affects_live_advice=(hint == "critical"),
+            conflicts_material_context=False,
+        )
+    return decision
+
+
+def _context_candidate_review_route(
+    *,
+    target_domain: str,
+    target_area: str,
+    source_domain: str,
+) -> dict[str, Any]:
+    domain = _clean_candidate_domain(target_domain, default="conversation")
+    if domain == "profile":
+        return {
+            "route": "profile",
+            "label": "Profile",
+            "target": target_area or "financial_profile",
+            "reason": "Profile candidates must use the existing profile draft and apply flow.",
+        }
+    if domain == "plan":
+        return {
+            "route": "plan",
+            "label": "Plan",
+            "target": target_area or "plan_workspace",
+            "reason": "Plan candidates must be reviewed through settings, timeline, decisions, or artifacts.",
+        }
+    if domain == "research":
+        return {
+            "route": "research",
+            "label": "Research",
+            "target": target_area or "research",
+            "reason": "Research candidates belong in research or watchlist review.",
+        }
+    if domain == "recommendation":
+        return {
+            "route": "inbox",
+            "label": "Inbox",
+            "target": target_area or "recommendation_inbox",
+            "reason": "Recommendation candidates belong in the Inbox review loop.",
+        }
+    if _clean_candidate_domain(source_domain, default="conversation") == "import":
+        return {
+            "route": "import",
+            "label": "Import Review",
+            "target": target_area or "import",
+            "reason": "Imported candidates should be reviewed from the import surface.",
+        }
+    return {
+        "route": "copilot",
+        "label": "Copilot Review",
+        "target": target_area or "context_capture",
+        "reason": "Copilot can explain this capture before the user accepts or rejects it.",
+    }
+
+
+def _candidate_is_indexable(candidate: Mapping[str, Any]) -> bool:
+    return (
+        str(candidate.get("lifecycle_state") or "").strip().lower() in CONTEXT_CANDIDATE_INDEXABLE_STATES
+        and str(candidate.get("prompt_influence") or "").strip().lower()
+        in {"supporting_context", "authoritative"}
+    )
+
+
+def _context_item_from_candidate(candidate: Mapping[str, Any]) -> ContextItem:
+    target_domain = _clean_candidate_domain(candidate.get("target_domain"), default="conversation")
+    influence = str(candidate.get("prompt_influence") or "supporting_context").strip().lower()
+    authority = "source_evidence" if influence != "authoritative" else "derived"
+    updated_at = str(candidate.get("updated_at") or utc_now_iso())
+    field_path = str(candidate.get("target_field") or candidate.get("target_area") or "context_candidate")
+    materiality = MaterialityDecision(
+        materiality=_normalize_materiality(candidate.get("materiality")),
+        action_readiness=str(candidate.get("action_readiness") or "Can review later"),
+        policy_version=str(
+            (candidate.get("metadata") if isinstance(candidate.get("metadata"), Mapping) else {}).get(
+                "materiality_policy_version",
+                MATERIALITY_POLICY_VERSION,
+            )
+        ),
+        rule_ids=tuple(
+            (candidate.get("metadata") if isinstance(candidate.get("metadata"), Mapping) else {}).get(
+                "materiality_rule_ids",
+                [],
+            )
+        ),
+        rationale=str(candidate.get("materiality_rationale") or ""),
+    )
+    return _build_context_item(
+        id=_stable_context_id("candidate_context", candidate.get("id")),
+        domain=target_domain,
+        entity_type="context_candidate",
+        entity_id=str(candidate.get("id") or ""),
+        source_ref=str(candidate.get("source_ref") or ""),
+        authority=authority,
+        text=(
+            f"Reviewed context capture for {field_path}: "
+            f"{_compact_text(candidate.get('extracted_claim'), limit=900)}"
+        ),
+        structured_payload=dict(candidate),
+        provenance={
+            "source": "context_candidate",
+            "source_domain": candidate.get("source_domain"),
+            "prompt_influence": influence,
+        },
+        quality={
+            "confidence": candidate.get("confidence"),
+            "freshness": "current",
+            "status": candidate.get("lifecycle_state"),
+            "prompt_influence": influence,
+        },
+        materiality=materiality,
+        created_at=str(candidate.get("created_at") or updated_at),
+        updated_at=updated_at,
+        source_updated_at=updated_at,
+    )
+
+
+def _clean_candidate_domain(value: Any, *, default: str) -> str:
+    cleaned = _clean_token(value, fallback=default)
+    return cleaned.replace("_", "-") if cleaned in {"follow-up"} else cleaned
+
+
+def _normalize_candidate_confidence(value: Any) -> str:
+    confidence = str(value or "").strip().lower()
+    return confidence if confidence in {"low", "medium", "high"} else "medium"
+
+
+def _normalize_candidate_lifecycle_state(value: Any) -> str:
+    state = str(value or "").strip().lower()
+    return state if state in CONTEXT_CANDIDATE_LIFECYCLE_STATES else "pending_review"
+
+
+def _normalize_candidate_prompt_influence(value: Any) -> str:
+    influence = str(value or "").strip().lower()
+    return influence if influence in CONTEXT_CANDIDATE_PROMPT_INFLUENCE_LEVELS else "none"
+
+
+def _default_prompt_influence_for_state(state: str, *, materiality: str = "low") -> str:
+    if state == "applied":
+        return "authoritative"
+    if state in {"rejected", "superseded", "archived", "stale_unconfirmed"}:
+        return "none"
+    if state == "deferred":
+        return "mention_only"
+    return "none" if materiality == "low" else "mention_only"
+
+
+def _candidate_requires_review_item(candidate: Mapping[str, Any]) -> bool:
+    state = str(candidate.get("lifecycle_state") or "").strip().lower()
+    if state in {"applied", "rejected", "superseded", "archived"}:
+        return False
+    materiality = str(candidate.get("materiality") or "").strip().lower()
+    return materiality in CONTEXT_CANDIDATE_REVIEW_ITEM_MATERIALITY
+
+
+def _context_candidate_review_title(candidate: Mapping[str, Any]) -> str:
+    route = candidate.get("review_route")
+    route = route if isinstance(route, Mapping) else {}
+    label = str(route.get("label") or "Context").strip()
+    return f"Review captured {label} context"
+
+
+def _context_candidate_review_detail(candidate: Mapping[str, Any]) -> str:
+    route = candidate.get("review_route")
+    route = route if isinstance(route, Mapping) else {}
+    route_label = str(route.get("label") or "the owning view").strip()
+    claim = _compact_text(candidate.get("extracted_claim"), limit=500)
+    target = str(candidate.get("target_field") or candidate.get("target_area") or "context").strip()
+    return (
+        f"Captured context needs review: {claim}\n\n"
+        f"Where it would apply: {target}. Review path: {route_label}.\n\n"
+        "This is not treated as financial truth yet. Accepting it should route through the owning source "
+        "flow, such as Profile draft/apply, Plan settings or decisions, Research review, Import review, "
+        "or Inbox review. Rejecting or deferring it keeps it out of authoritative Copilot context."
+    )
+
+
+def _context_candidate_review_action_payload(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    route = candidate.get("review_route")
+    route = route if isinstance(route, Mapping) else {}
+    return {
+        "schema_version": CONTEXT_CANDIDATE_SCHEMA_VERSION,
+        "context_candidate": dict(candidate),
+        "quality": {
+            "schema_version": 1,
+            "source": "context_candidate_capture",
+            "confidence_level": candidate.get("confidence") or "medium",
+            "freshness_status": "fresh",
+            "actionability": "review_only",
+            "decision_grade": False,
+            "blocking_context": [candidate.get("id")] if _candidate_requires_review_item(candidate) else [],
+            "impact": {
+                "level": candidate.get("materiality") or "medium",
+                "summary": candidate.get("action_readiness") or "Review before relying on this.",
+            },
+        },
+        "suggested_action": {
+            "type": "review_context_candidate",
+            "route": route.get("route") or "copilot",
+            "target": route.get("target"),
+            "requires_user_confirmation": True,
+            "mutation_requires_confirmation": True,
+            "summary": "Review the captured context before it can influence authoritative answers.",
+        },
+        "review_actions": [
+            {
+                "action": "accept_update_source",
+                "label": "Accept and update the owning source",
+                "route": route.get("route") or "copilot",
+                "requires_user_confirmation": True,
+                "mutates_source": True,
+                "resulting_lifecycle_state": "applied",
+            },
+            {
+                "action": "reject",
+                "label": "Reject this captured context",
+                "requires_user_confirmation": True,
+                "mutates_source": False,
+                "resulting_lifecycle_state": "rejected",
+            },
+            {
+                "action": "defer",
+                "label": "Defer this review",
+                "requires_user_confirmation": True,
+                "mutates_source": False,
+                "resulting_lifecycle_state": "deferred",
+            },
+            {
+                "action": "explain",
+                "label": "Explain why this matters",
+                "requires_user_confirmation": False,
+                "mutates_source": False,
+            },
+        ],
+    }
+
+
+def _context_candidate_review_sync_result(row: Mapping[str, Any], *, created: bool) -> dict[str, Any]:
+    action_payload = row.get("action_payload")
+    action_payload = action_payload if isinstance(action_payload, Mapping) else {}
+    candidate = action_payload.get("context_candidate")
+    candidate = candidate if isinstance(candidate, Mapping) else {}
+    route = candidate.get("review_route")
+    route = route if isinstance(route, Mapping) else {}
+    return {
+        "recommendation_id": row.get("id"),
+        "candidate_id": candidate.get("id"),
+        "created": created,
+        "route": route.get("route"),
+        "materiality": candidate.get("materiality"),
+        "lifecycle_state": candidate.get("lifecycle_state"),
+    }
+
+
+def _candidate_review_priority(candidate: Mapping[str, Any]) -> str:
+    materiality = str(candidate.get("materiality") or "").strip().lower()
+    return "high" if materiality in {"critical", "high"} else "medium"
+
+
+def _candidate_plan_id(candidate: Mapping[str, Any]) -> str | None:
+    metadata = candidate.get("metadata")
+    metadata = metadata if isinstance(metadata, Mapping) else {}
+    plan_id = str(metadata.get("plan_id") or "").strip()
+    return plan_id or None
+
+
+def _conversation_source_ref(
+    *,
+    conversation_id: str | None,
+    message_index: int | None,
+) -> str:
+    conversation = str(conversation_id or "conversation").strip() or "conversation"
+    if message_index is None:
+        return f"conversation/{conversation}"
+    return f"conversation/{conversation}#message.{message_index}"
+
+
+def _percent_candidate_value(value: Any) -> float:
+    numeric = float(str(value).replace(",", ""))
+    return numeric / 100.0 if numeric > 1 else numeric
+
+
+def _money_candidate_value(value: Any) -> float:
+    return float(str(value).replace(",", "").replace("$", ""))
 
 
 def context_conflict_dedupe_key(
