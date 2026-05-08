@@ -18,6 +18,20 @@ from buildwealth_orchestrator.services.portfolio_store import PortfolioStore
 from buildwealth_orchestrator.services.recommendation_inbox import RecommendationInbox
 
 
+class FakeEmbeddingClient:
+    provider = "fake"
+    model = "semantic-test"
+    enabled = True
+
+    def embed_text(self, text: str) -> list[float] | None:
+        lowered = str(text or "").lower()
+        if any(term in lowered for term in ("college", "education", "tuition", "school", "student")):
+            return [1.0, 0.0, 0.0]
+        if "nvda" in lowered:
+            return [0.0, 1.0, 0.0]
+        return [0.0, 0.0, 1.0]
+
+
 def test_materiality_policy_is_rules_first_and_separates_confidence() -> None:
     policy = MaterialityPolicy()
 
@@ -87,6 +101,7 @@ def test_context_registry_rebuild_indexes_stable_source_refs_and_domains(tmp_pat
     assert any(ref.endswith("/decisions.jsonl#decision-fixed") for ref in source_refs)
     assert any(ref.endswith("research-dossier-nvda.md") for ref in source_refs)
     assert any(ref.startswith("recommendations/inbox.json#recommendations.") for ref in source_refs)
+    assert first_report["embeddings"]["enabled"] is False
 
 
 def test_context_registry_status_tracks_counts_without_using_durable_snapshot_db(tmp_path: Path) -> None:
@@ -137,6 +152,7 @@ def test_context_search_retrieves_symbol_related_plan_research_and_watchlist(tmp
     entity_types = {item["entity_type"] for item in result["items"]}
 
     assert result["count"] >= 4
+    assert result["semantic"]["enabled"] is False
     assert any(ref.endswith("research-dossier-nvda.md") for ref in source_refs)
     assert any(ref.endswith("/decisions.jsonl#decision-fixed") for ref in source_refs)
     assert "portfolio/watchlist.json#items.NVDA.OPENBB" in source_refs
@@ -311,6 +327,39 @@ def test_context_conflict_review_items_are_deduped_and_routed(tmp_path: Path) ->
     assert payload["suggested_action"]["mutation_requires_confirmation"] is True
 
 
+def test_context_embeddings_store_only_eligible_rows_and_enable_semantic_search(tmp_path: Path) -> None:
+    service = _build_service(tmp_path, embedding_client=FakeEmbeddingClient())
+
+    rebuild_report = service.rebuild_registry()
+    status = service.get_status()
+    vectors = service.registry.embedding_vectors(provider="fake", model="semantic-test")
+    result = service.search_context(query="school expenses", domains=["plan"], limit=5)
+    top_item = result["items"][0]
+
+    assert rebuild_report["embeddings"]["enabled"] is True
+    assert rebuild_report["embeddings"]["eligible_count"] > 0
+    assert status["embeddings"]["embedded_count"] == len(vectors)
+    assert not any(item_id.startswith("ctx_profile") for item_id in vectors)
+
+    assert result["semantic"]["enabled"] is True
+    assert result["semantic"]["provider"] == "fake"
+    assert "family-college-funding" in top_item["source_ref"]
+    assert top_item["score_breakdown"]["semantic"] == 1.0
+    assert top_item["matched_terms"] == []
+
+
+def test_context_embeddings_can_be_rebuilt_without_reindexing_registry(tmp_path: Path) -> None:
+    service = _build_service(tmp_path, embedding_client=FakeEmbeddingClient())
+    service.rebuild_registry()
+
+    report = service.rebuild_embeddings()
+
+    assert report["enabled"] is True
+    assert report["provider"] == "fake"
+    assert report["eligible_count"] > 0
+    assert report["reused_count"] > 0
+
+
 def test_deferred_context_conflict_does_not_resolve_or_unblock_and_resurfaces(tmp_path: Path) -> None:
     service = _build_service(tmp_path)
     conflict = {
@@ -375,7 +424,11 @@ def test_deferred_context_conflict_does_not_resolve_or_unblock_and_resurfaces(tm
     assert resurfaced_for_time["resolution_state"] == "unresolved"
 
 
-def _build_service(tmp_path: Path) -> ContextIntelligenceService:
+def _build_service(
+    tmp_path: Path,
+    *,
+    embedding_client: object | None = None,
+) -> ContextIntelligenceService:
     profile_store = FinancialProfileStore(tmp_path / "profile" / "financial_profile.json")
     profile_store.save(
         {
@@ -409,6 +462,15 @@ def _build_service(tmp_path: Path) -> ContextIntelligenceService:
         title="Research Dossier: NVDA",
         markdown="# Research Dossier: NVDA\n\n## Thesis\n\nReview valuation before adding exposure.\n",
         kind="research-dossier",
+    )
+    plan_workspace.write_artifact(
+        plan_id=plan_id,
+        title="Family College Funding",
+        markdown=(
+            "# Family College Funding\n\n"
+            "Build a college tuition bridge before increasing taxable brokerage risk.\n"
+        ),
+        kind="planning-note",
     )
 
     recommendation_inbox = RecommendationInbox(tmp_path / "recommendations" / "inbox.json")
@@ -444,6 +506,7 @@ def _build_service(tmp_path: Path) -> ContextIntelligenceService:
         plan_workspace=plan_workspace,
         recommendation_inbox=recommendation_inbox,
         portfolio_store=portfolio_store,
+        embedding_client=embedding_client,
     )
 
 

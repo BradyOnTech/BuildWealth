@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Iterable, Mapping
 
+from buildwealth_orchestrator.services.embedding_clients import DisabledEmbeddingClient, EmbeddingClient
 from buildwealth_orchestrator.services.financial_profile import profile_metadata_quality_for_field
 
 
@@ -33,6 +34,15 @@ CONTEXT_CONFLICT_RELEVANCE_RESURFACE_REASONS = {
     "live_recommendation",
     "planning_projection",
     "investment_fit_review",
+}
+EMBEDDING_INDEX_SCHEMA_VERSION = 1
+EMBEDDING_ELIGIBLE_ENTITY_TYPES = {
+    "plan_context_section",
+    "plan_decision",
+    "plan_artifact",
+    "research_dossier_artifact",
+    "watchlist_thesis",
+    "recommendation",
 }
 
 MATERIALITY_LEVELS = ("low", "medium", "high", "critical")
@@ -133,6 +143,30 @@ def _json_loads_object(value: str | None) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _json_loads_list(value: str | None) -> list[Any]:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def _normalize_vector(values: Iterable[Any] | None) -> list[float] | None:
+    if values is None:
+        return None
+    vector: list[float] = []
+    for value in values:
+        try:
+            vector.append(float(value))
+        except (TypeError, ValueError):
+            return None
+    if not vector or all(value == 0.0 for value in vector):
+        return None
+    return vector
 
 
 def _normalized_filter_values(values: Iterable[Any] | Any | None) -> tuple[str, ...]:
@@ -422,6 +456,19 @@ class ContextRegistry:
                 """
             )
             connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS context_embeddings (
+                    context_item_id TEXT PRIMARY KEY,
+                    embedding_provider TEXT NOT NULL,
+                    embedding_model TEXT NOT NULL,
+                    dimensions INTEGER NOT NULL,
+                    text_hash TEXT NOT NULL,
+                    vector_json TEXT NOT NULL,
+                    embedded_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_context_items_domain ON context_items(domain)"
             )
             connection.execute(
@@ -429,10 +476,23 @@ class ContextRegistry:
             )
             connection.execute(
                 """
+                CREATE INDEX IF NOT EXISTS idx_context_embeddings_provider_model
+                ON context_embeddings(embedding_provider, embedding_model)
+                """
+            )
+            connection.execute(
+                """
                 INSERT OR REPLACE INTO registry_metadata(key, value)
                 VALUES ('schema_version', ?)
                 """,
                 (str(CONTEXT_REGISTRY_SCHEMA_VERSION),),
+            )
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO registry_metadata(key, value)
+                VALUES ('embedding_schema_version', ?)
+                """,
+                (str(EMBEDDING_INDEX_SCHEMA_VERSION),),
             )
 
     def replace_all(self, items: Iterable[ContextItem]) -> dict[str, Any]:
@@ -485,6 +545,13 @@ class ContextRegistry:
                 "item_count": 0,
                 "counts_by_domain": {},
                 "latest_rebuild_at": None,
+                "embeddings": {
+                    "schema_version": EMBEDDING_INDEX_SCHEMA_VERSION,
+                    "embedded_count": 0,
+                    "eligible_count": 0,
+                    "providers": [],
+                    "latest_embedded_at": None,
+                },
             }
 
         self._initialize()
@@ -496,6 +563,21 @@ class ContextRegistry:
             latest = connection.execute(
                 "SELECT value FROM registry_metadata WHERE key = 'latest_rebuild_at'"
             ).fetchone()
+            embedding_count = int(connection.execute("SELECT COUNT(*) FROM context_embeddings").fetchone()[0])
+            latest_embedding = connection.execute(
+                "SELECT MAX(embedded_at) AS latest_embedded_at FROM context_embeddings"
+            ).fetchone()
+            provider_rows = connection.execute(
+                """
+                SELECT embedding_provider, embedding_model, dimensions, COUNT(*) AS count
+                FROM context_embeddings
+                GROUP BY embedding_provider, embedding_model, dimensions
+                ORDER BY embedding_provider, embedding_model
+                """
+            ).fetchall()
+
+        items = self.list_items(limit=5000)
+        eligible_count = sum(1 for item in items if _embedding_item_is_eligible(item))
 
         return {
             "schema_version": CONTEXT_REGISTRY_SCHEMA_VERSION,
@@ -504,6 +586,25 @@ class ContextRegistry:
             "item_count": item_count,
             "counts_by_domain": {str(row["domain"]): int(row["count"]) for row in rows},
             "latest_rebuild_at": str(latest["value"]) if latest is not None else None,
+            "embeddings": {
+                "schema_version": EMBEDDING_INDEX_SCHEMA_VERSION,
+                "embedded_count": embedding_count,
+                "eligible_count": eligible_count,
+                "providers": [
+                    {
+                        "provider": str(row["embedding_provider"]),
+                        "model": str(row["embedding_model"]),
+                        "dimensions": int(row["dimensions"]),
+                        "count": int(row["count"]),
+                    }
+                    for row in provider_rows
+                ],
+                "latest_embedded_at": (
+                    str(latest_embedding["latest_embedded_at"])
+                    if latest_embedding is not None and latest_embedding["latest_embedded_at"] is not None
+                    else None
+                ),
+            },
         }
 
     def list_items(
@@ -535,6 +636,139 @@ class ContextRegistry:
             ).fetchall()
         return [_item_from_row(row) for row in rows]
 
+    def rebuild_embeddings(
+        self,
+        items: Iterable[ContextItem],
+        *,
+        embedding_client: EmbeddingClient,
+    ) -> dict[str, Any]:
+        self._initialize()
+        resolved_items = list(items)
+        eligible_items = [item for item in resolved_items if _embedding_item_is_eligible(item)]
+        provider = str(getattr(embedding_client, "provider", "disabled") or "disabled")
+        model = str(getattr(embedding_client, "model", "disabled") or "disabled")
+
+        self._prune_embeddings_for_items(resolved_items)
+        if not getattr(embedding_client, "enabled", False):
+            return {
+                "enabled": False,
+                "provider": provider,
+                "model": model,
+                "eligible_count": len(eligible_items),
+                "embedded_count": 0,
+                "reused_count": 0,
+                "skipped_count": len(eligible_items),
+                "failed_count": 0,
+            }
+
+        embedded_count = 0
+        reused_count = 0
+        failed_count = 0
+        embedded_at = utc_now_iso()
+        with self._connect() as connection:
+            for item in eligible_items:
+                text = _embedding_text_for_item(item)
+                text_hash = _hash_payload({"text": text}, length=32)
+                existing = connection.execute(
+                    """
+                    SELECT text_hash
+                    FROM context_embeddings
+                    WHERE context_item_id = ?
+                      AND embedding_provider = ?
+                      AND embedding_model = ?
+                    """,
+                    (item.id, provider, model),
+                ).fetchone()
+                if existing is not None and str(existing["text_hash"]) == text_hash:
+                    reused_count += 1
+                    continue
+
+                try:
+                    vector = embedding_client.embed_text(text)
+                    vector = _normalize_vector(vector)
+                except Exception:
+                    vector = None
+                if vector is None:
+                    failed_count += 1
+                    continue
+
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO context_embeddings (
+                        context_item_id, embedding_provider, embedding_model, dimensions,
+                        text_hash, vector_json, embedded_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        item.id,
+                        provider,
+                        model,
+                        len(vector),
+                        text_hash,
+                        _json_dumps(vector),
+                        embedded_at,
+                    ),
+                )
+                embedded_count += 1
+
+        return {
+            "enabled": True,
+            "provider": provider,
+            "model": model,
+            "eligible_count": len(eligible_items),
+            "embedded_count": embedded_count,
+            "reused_count": reused_count,
+            "skipped_count": max(0, len(eligible_items) - embedded_count - reused_count - failed_count),
+            "failed_count": failed_count,
+        }
+
+    def _prune_embeddings_for_items(self, items: Iterable[ContextItem]) -> None:
+        item_ids = [item.id for item in items]
+        with self._connect() as connection:
+            if not item_ids:
+                connection.execute("DELETE FROM context_embeddings")
+                return
+            placeholders = ",".join("?" for _ in item_ids)
+            connection.execute(
+                f"DELETE FROM context_embeddings WHERE context_item_id NOT IN ({placeholders})",
+                item_ids,
+            )
+
+    def embedding_vectors(
+        self,
+        *,
+        provider: str,
+        model: str,
+        item_ids: Iterable[str] | None = None,
+    ) -> dict[str, list[float]]:
+        if not self.database_path.exists():
+            return {}
+        self._initialize()
+        params: list[Any] = [provider, model]
+        item_ids_list = [str(item_id) for item_id in item_ids or [] if str(item_id).strip()]
+        item_filter = ""
+        if item_ids_list:
+            placeholders = ",".join("?" for _ in item_ids_list)
+            item_filter = f"AND context_item_id IN ({placeholders})"
+            params.extend(item_ids_list)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT context_item_id, vector_json
+                FROM context_embeddings
+                WHERE embedding_provider = ?
+                  AND embedding_model = ?
+                  {item_filter}
+                """,
+                params,
+            ).fetchall()
+        vectors: dict[str, list[float]] = {}
+        for row in rows:
+            vector = _normalize_vector(_json_loads_list(row["vector_json"]))
+            if vector is not None:
+                vectors[str(row["context_item_id"])] = vector
+        return vectors
+
     def search(
         self,
         *,
@@ -546,6 +780,9 @@ class ContextRegistry:
         recommendation_status: str | None = None,
         field_path: str | None = None,
         limit: int = 20,
+        query_embedding: list[float] | None = None,
+        embedding_provider: str | None = None,
+        embedding_model: str | None = None,
     ) -> dict[str, Any]:
         bounded_limit = max(1, min(int(limit), 100))
         resolved_domains = _normalized_lower_values(domains)
@@ -569,7 +806,7 @@ class ContextRegistry:
             if bool(value)
         )
 
-        rows: list[dict[str, Any]] = []
+        candidate_items: list[ContextItem] = []
         for item in self.list_items(limit=5000):
             if not _matches_search_filters(
                 item,
@@ -581,14 +818,31 @@ class ContextRegistry:
                 field_path=resolved_field_path,
             ):
                 continue
+            candidate_items.append(item)
 
+        semantic_scores = self._semantic_scores(
+            query_embedding=query_embedding,
+            embedding_provider=embedding_provider,
+            embedding_model=embedding_model,
+            item_ids=[item.id for item in candidate_items],
+        )
+
+        rows: list[dict[str, Any]] = []
+        for item in candidate_items:
             score = _score_context_item(
                 item,
                 query=query_text,
                 query_terms=query_terms,
                 exact_filter_count=exact_filter_count,
+                semantic_score=semantic_scores.get(item.id, 0.0),
+                semantic_enabled=bool(semantic_scores),
             )
-            if query_terms and not score["matched_terms"] and exact_filter_count == 0:
+            if (
+                query_terms
+                and not score["matched_terms"]
+                and exact_filter_count == 0
+                and float(score["score_breakdown"].get("semantic") or 0.0) <= 0.0
+            ):
                 continue
 
             rows.append(_search_result_payload(item, score=score))
@@ -611,10 +865,38 @@ class ContextRegistry:
                 "recommendation_status": resolved_recommendation_status or None,
                 "field_path": resolved_field_path or None,
             },
+            "semantic": {
+                "enabled": bool(semantic_scores),
+                "provider": embedding_provider,
+                "model": embedding_model,
+                "matched_count": len([score for score in semantic_scores.values() if score > 0]),
+            },
             "total_candidates": len(rows),
             "count": min(len(rows), bounded_limit),
             "items": rows[:bounded_limit],
         }
+
+    def _semantic_scores(
+        self,
+        *,
+        query_embedding: list[float] | None,
+        embedding_provider: str | None,
+        embedding_model: str | None,
+        item_ids: Iterable[str],
+    ) -> dict[str, float]:
+        query_vector = _normalize_vector(query_embedding)
+        if query_vector is None or not embedding_provider or not embedding_model:
+            return {}
+        item_vectors = self.embedding_vectors(
+            provider=embedding_provider,
+            model=embedding_model,
+            item_ids=item_ids,
+        )
+        scores: dict[str, float] = {}
+        for item_id, vector in item_vectors.items():
+            score = _cosine_similarity(query_vector, vector)
+            scores[item_id] = max(0.0, min(1.0, score))
+        return scores
 
 
 class ContextIndexer:
@@ -689,7 +971,13 @@ class ContextIndexer:
                 detail = plan_workspace.get_plan(plan_id)
             except Exception:
                 continue
-            items.extend(self._build_single_plan_items(plan_summary=plan_summary, plan_detail=detail))
+            items.extend(
+                self._build_single_plan_items(
+                    plan_summary=plan_summary,
+                    plan_detail=detail,
+                    plan_workspace=plan_workspace,
+                )
+            )
         return items
 
     def _build_single_plan_items(
@@ -697,6 +985,7 @@ class ContextIndexer:
         *,
         plan_summary: Mapping[str, Any],
         plan_detail: Mapping[str, Any],
+        plan_workspace: Any | None = None,
     ) -> list[ContextItem]:
         plan_id = str(plan_summary.get("id") or plan_detail.get("id") or "").strip()
         if not plan_id:
@@ -836,6 +1125,14 @@ class ContextIndexer:
                     continue
                 title_text = str(artifact.get("title") or artifact_id).strip()
                 file_name = str(artifact.get("file_name") or f"{artifact_id}.md").strip()
+                artifact_content = ""
+                if plan_workspace is not None:
+                    try:
+                        full_artifact = plan_workspace.read_artifact(plan_id=plan_id, artifact_id=artifact_id)
+                    except Exception:
+                        full_artifact = {}
+                    if isinstance(full_artifact, Mapping):
+                        artifact_content = str(full_artifact.get("content") or "").strip()
                 lowered = f"{title_text} {file_name}".lower()
                 is_research = "research" in lowered or "dossier" in lowered or "thesis" in lowered
                 domain = "research" if is_research else "plan"
@@ -854,8 +1151,15 @@ class ContextIndexer:
                         entity_id=f"{plan_id}:{artifact_id}",
                         source_ref=f"plans/{plan_id}/artifacts/{file_name}",
                         authority="source_evidence",
-                        text=f"{'Research' if is_research else 'Plan'} artifact for {title}: {title_text}.",
-                        structured_payload={"plan_id": plan_id, **dict(artifact)},
+                        text=(
+                            f"{'Research' if is_research else 'Plan'} artifact for {title}: "
+                            f"{title_text}. {_compact_text(artifact_content, limit=1100)}"
+                        ),
+                        structured_payload={
+                            "plan_id": plan_id,
+                            **dict(artifact),
+                            "content": _compact_text(artifact_content, limit=3000),
+                        },
                         provenance={"source": "plan_workspace.artifacts"},
                         quality={"confidence": "medium", "freshness": "current"},
                         materiality=materiality,
@@ -1004,6 +1308,7 @@ class ContextIntelligenceService:
         plan_workspace: Any,
         recommendation_inbox: Any,
         portfolio_store: Any | None = None,
+        embedding_client: EmbeddingClient | None = None,
         indexer: ContextIndexer | None = None,
     ):
         self.registry = ContextRegistry(database_path)
@@ -1011,6 +1316,7 @@ class ContextIntelligenceService:
         self.plan_workspace = plan_workspace
         self.recommendation_inbox = recommendation_inbox
         self.portfolio_store = portfolio_store
+        self.embedding_client = embedding_client or DisabledEmbeddingClient()
         self.indexer = indexer or ContextIndexer()
 
     @classmethod
@@ -1022,6 +1328,7 @@ class ContextIntelligenceService:
         plan_workspace: Any,
         recommendation_inbox: Any,
         portfolio_store: Any | None = None,
+        embedding_client: EmbeddingClient | None = None,
     ) -> "ContextIntelligenceService":
         return cls(
             database_path=settings.durable_storage_dir / "context_index.db",
@@ -1029,6 +1336,7 @@ class ContextIntelligenceService:
             plan_workspace=plan_workspace,
             recommendation_inbox=recommendation_inbox,
             portfolio_store=portfolio_store,
+            embedding_client=embedding_client,
         )
 
     def rebuild_registry(self) -> dict[str, Any]:
@@ -1041,8 +1349,13 @@ class ContextIntelligenceService:
             portfolio_store=self.portfolio_store,
         )
         report = self.registry.replace_all(items)
+        embedding_report = self.registry.rebuild_embeddings(
+            items,
+            embedding_client=self.embedding_client,
+        )
         return {
             **report,
+            "embeddings": embedding_report,
             "status": self.registry.status(),
         }
 
@@ -1064,6 +1377,12 @@ class ContextIntelligenceService:
     ) -> dict[str, Any]:
         if rebuild_if_empty and self.registry.status().get("item_count") == 0:
             self.rebuild_registry()
+        query_embedding: list[float] | None = None
+        if getattr(self.embedding_client, "enabled", False) and str(query or "").strip():
+            try:
+                query_embedding = self.embedding_client.embed_text(str(query))
+            except Exception:
+                query_embedding = None
         return self.registry.search(
             query=query,
             domains=domains,
@@ -1073,6 +1392,23 @@ class ContextIntelligenceService:
             recommendation_status=recommendation_status,
             field_path=field_path,
             limit=limit,
+            query_embedding=query_embedding,
+            embedding_provider=(
+                str(self.embedding_client.provider)
+                if getattr(self.embedding_client, "enabled", False) and query_embedding is not None
+                else None
+            ),
+            embedding_model=(
+                str(self.embedding_client.model)
+                if getattr(self.embedding_client, "enabled", False) and query_embedding is not None
+                else None
+            ),
+        )
+
+    def rebuild_embeddings(self) -> dict[str, Any]:
+        return self.registry.rebuild_embeddings(
+            self.registry.list_items(limit=5000),
+            embedding_client=self.embedding_client,
         )
 
     def sync_conflict_review_items(
@@ -1591,26 +1927,41 @@ def _score_context_item(
     query: str,
     query_terms: tuple[str, ...],
     exact_filter_count: int,
+    semantic_score: float = 0.0,
+    semantic_enabled: bool = False,
 ) -> dict[str, Any]:
     lexical_score, matched_terms = _lexical_score(item, query=query, query_terms=query_terms)
     exact_score = min(1.0, exact_filter_count * 0.25)
+    resolved_semantic_score = max(0.0, min(float(semantic_score or 0.0), 1.0))
     recency_score = _recency_score(item)
     quality_score = _quality_score(item)
     authority_score = AUTHORITY_SCORE.get(item.authority, 0.45)
     materiality_score = MATERIALITY_SCORE.get(item.materiality, 0.35)
-    total_score = (
-        lexical_score * 0.4
-        + exact_score * 0.18
-        + quality_score * 0.18
-        + recency_score * 0.1
-        + authority_score * 0.08
-        + materiality_score * 0.06
-    )
+    if semantic_enabled:
+        total_score = (
+            lexical_score * 0.32
+            + resolved_semantic_score * 0.24
+            + exact_score * 0.16
+            + quality_score * 0.12
+            + recency_score * 0.07
+            + authority_score * 0.05
+            + materiality_score * 0.04
+        )
+    else:
+        total_score = (
+            lexical_score * 0.4
+            + exact_score * 0.18
+            + quality_score * 0.18
+            + recency_score * 0.1
+            + authority_score * 0.08
+            + materiality_score * 0.06
+        )
     return {
         "score": round(total_score, 4),
         "matched_terms": matched_terms,
         "score_breakdown": {
             "lexical": round(lexical_score, 4),
+            "semantic": round(resolved_semantic_score, 4),
             "exact_filters": round(exact_score, 4),
             "quality": round(quality_score, 4),
             "recency": round(recency_score, 4),
@@ -1689,6 +2040,44 @@ def _recency_score(item: ContextItem) -> float:
     if age_days <= 365:
         return 0.55
     return 0.35
+
+
+def _embedding_item_is_eligible(item: ContextItem) -> bool:
+    if item.entity_type not in EMBEDDING_ELIGIBLE_ENTITY_TYPES:
+        return False
+    text = _embedding_text_for_item(item)
+    if not text:
+        return False
+    if item.authority == "canonical" and item.domain in {"profile", "portfolio"}:
+        return False
+    return True
+
+
+def _embedding_text_for_item(item: ContextItem) -> str:
+    payload = item.structured_payload if isinstance(item.structured_payload, dict) else {}
+    parts = [
+        item.domain,
+        item.entity_type,
+        item.entity_id,
+        item.source_ref,
+        item.text,
+    ]
+    for key in ("title", "summary", "rationale", "detail", "content", "thesis", "note", "description"):
+        value = payload.get(key)
+        if _present(value):
+            parts.append(str(value))
+    return _compact_text(" ".join(parts), limit=4000)
+
+
+def _cosine_similarity(left: list[float], right: list[float]) -> float:
+    if not left or not right or len(left) != len(right):
+        return 0.0
+    dot = sum(left_value * right_value for left_value, right_value in zip(left, right, strict=True))
+    left_norm = sum(value * value for value in left) ** 0.5
+    right_norm = sum(value * value for value in right) ** 0.5
+    if left_norm <= 0 or right_norm <= 0:
+        return 0.0
+    return dot / (left_norm * right_norm)
 
 
 def _parse_datetime(value: Any) -> datetime | None:

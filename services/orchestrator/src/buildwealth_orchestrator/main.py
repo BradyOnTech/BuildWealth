@@ -319,6 +319,7 @@ from buildwealth_orchestrator.services.context_intelligence import (
     ContextAssembler,
     ContextIntelligenceService,
 )
+from buildwealth_orchestrator.services.embedding_clients import build_embedding_client_from_settings
 from buildwealth_orchestrator.services.runtime_telemetry import (
     RuntimeTelemetryTracker,
     summarize_cache_quality,
@@ -667,6 +668,7 @@ context_intelligence_service = ContextIntelligenceService.from_settings(
     plan_workspace=plan_workspace,
     recommendation_inbox=recommendation_inbox,
     portfolio_store=portfolio_store,
+    embedding_client=build_embedding_client_from_settings(settings),
 )
 context_assembler = ContextAssembler(context_service=context_intelligence_service)
 workflow_runner = WorkflowRunner(
@@ -14814,6 +14816,11 @@ def get_context_registry_status() -> dict[str, Any]:
 @app.post("/api/context/registry/rebuild")
 def rebuild_context_registry() -> dict[str, Any]:
     return context_intelligence_service.rebuild_registry()
+
+
+@app.post("/api/context/embeddings/rebuild")
+def rebuild_context_embeddings() -> dict[str, Any]:
+    return context_intelligence_service.rebuild_embeddings()
 
 
 @app.get("/api/context/search")

@@ -646,12 +646,12 @@ Done when:
 
 Goal: add semantic retrieval for long-form narrative evidence.
 
-- [ ] Add embedding client interface and disabled fallback.
-- [ ] Store embeddings for eligible registry rows only.
-- [ ] Add local-first vector storage strategy.
-- [ ] Add hybrid scoring that combines exact filters, lexical score, semantic score, freshness, confidence, and authority.
-- [ ] Add backfill/rebuild path for embeddings.
-- [ ] Add tests with deterministic fake embeddings.
+- [x] Add embedding client interface and disabled fallback.
+- [x] Store embeddings for eligible registry rows only.
+- [x] Add local-first vector storage strategy.
+- [x] Add hybrid scoring that combines exact filters, lexical score, semantic score, freshness, confidence, and authority.
+- [x] Add backfill/rebuild path for embeddings.
+- [x] Add tests with deterministic fake embeddings.
 
 Done when:
 

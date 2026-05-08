@@ -148,6 +148,14 @@ class Settings(BaseSettings):
         default=86400.0,
         alias="COPILOT_CONTEXT_SNAPSHOT_STALE_AFTER_SECONDS",
     )
+    context_embeddings_enabled: bool = Field(default=False, alias="CONTEXT_EMBEDDINGS_ENABLED")
+    context_embedding_provider: str = Field(default="disabled", alias="CONTEXT_EMBEDDING_PROVIDER")
+    context_embedding_model: str = Field(default="nomic-embed-text", alias="CONTEXT_EMBEDDING_MODEL")
+    context_embedding_base_url: str = Field(
+        default="http://localhost:11434",
+        alias="CONTEXT_EMBEDDING_BASE_URL",
+    )
+    context_embedding_timeout_seconds: float = Field(default=5.0, alias="CONTEXT_EMBEDDING_TIMEOUT_SECONDS")
 
     openbb_provider: str = Field(default="yfinance", alias="OPENBB_PROVIDER")
 
