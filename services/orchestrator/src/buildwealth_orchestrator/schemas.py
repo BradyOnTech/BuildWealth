@@ -964,6 +964,41 @@ class AssetMetadataUpdateRequest(BaseModel):
     valuation_method: str | None = None
 
 
+class PortfolioAuditFinding(BaseModel):
+    id: str
+    category: str
+    title: str
+    detail: str
+    severity: Literal["high", "medium", "low"] = "medium"
+    status: Literal["open", "clear"] = "clear"
+    count: int = 0
+    href: str = ""
+    action_label: str = "Review"
+    evidence: list[str] = Field(default_factory=list)
+
+
+class PortfolioAuditReportSummary(BaseModel):
+    report_id: str
+    created_at: str = ""
+    source_file_name: str = ""
+    imported_activities: int = 0
+    accepted_count: int = 0
+    rejected_count: int = 0
+    duplicate_count: int = 0
+    unresolved_count: int = 0
+    account_review_count: int = 0
+    href: str = ""
+
+
+class PortfolioAuditResponse(BaseModel):
+    generated_at: datetime
+    status: Literal["clear", "review", "attention"] = "clear"
+    summary: dict[str, int] = Field(default_factory=dict)
+    findings: list[PortfolioAuditFinding] = Field(default_factory=list)
+    recent_reports: list[PortfolioAuditReportSummary] = Field(default_factory=list)
+    links: dict[str, str] = Field(default_factory=dict)
+
+
 class PortfolioFitAssessmentRequest(BaseModel):
     symbol: str
     amount_usd: float | None = Field(default=None, gt=0)

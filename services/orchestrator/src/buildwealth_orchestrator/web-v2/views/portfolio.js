@@ -374,6 +374,7 @@ function labelize(value) {
 
 export function renderLookCloser(activeSection = '', maintenance = null) {
   const sections = [
+    { id: 'audit', label: 'Portfolio Audit', hint: 'Import checks, review items, and follow-through' },
     { id: 'accounts', label: 'Accounts', hint: 'Brokerage and account-level metadata' },
     { id: 'transactions', label: 'Transactions', hint: 'Buy/sell/dividend history' },
     { id: 'assets', label: 'Investments & Assets', hint: 'Searchable registry, metadata, and review status' },
@@ -413,6 +414,9 @@ function normalizeMaintenanceSection(section) {
   const aliases = {
     account: 'accounts',
     accounts: 'accounts',
+    audit: 'audit',
+    reconciliation: 'audit',
+    review: 'audit',
     transaction: 'transactions',
     transactions: 'transactions',
     asset: 'assets',
@@ -431,6 +435,7 @@ function normalizeMaintenanceSection(section) {
 
 async function loadMaintenanceSection(section, params = {}) {
   try {
+    if (section === 'audit') return { section, payload: await api.portfolioAudit(25) };
     if (section === 'accounts') return { section, rows: await api.portfolioAccounts() };
     if (section === 'transactions') return { section, rows: await api.portfolioTransactions(100) };
     if (section === 'assets') {
@@ -456,7 +461,9 @@ function renderMaintenanceDetail(section, maintenance) {
     `;
   }
 
-  const title = section === 'assets' ? 'Investments & Assets' : labelize(section);
+  const title = section === 'assets'
+    ? 'Investments & Assets'
+    : (section === 'audit' ? 'Portfolio Audit' : labelize(section));
   const rows = maintenanceRows(section, maintenance);
   return html`
     <article class="portfolio-maintenance-detail" data-portfolio-maintenance-detail>
@@ -465,9 +472,80 @@ function renderMaintenanceDetail(section, maintenance) {
         <h3 class="section-title">${title}</h3>
         <p class="section-lede">${maintenanceCopy(section)}</p>
       </header>
+      ${section === 'audit' ? raw(renderPortfolioAudit(maintenance?.payload || {})) : ''}
       ${section === 'assets' ? raw(renderAssetRegistryTools(maintenance)) : ''}
-      ${rows.length ? raw(renderMaintenanceRows(section, rows)) : html`<p class="fit-empty">Nothing recorded here yet.</p>`}
+      ${section === 'audit'
+        ? ''
+        : (rows.length ? raw(renderMaintenanceRows(section, rows)) : html`<p class="fit-empty">Nothing recorded here yet.</p>`)}
     </article>
+  `;
+}
+
+function renderPortfolioAudit(audit = {}) {
+  const summary = audit.summary || {};
+  const findings = Array.isArray(audit.findings) ? audit.findings : [];
+  const reports = Array.isArray(audit.recent_reports) ? audit.recent_reports : [];
+  const status = audit.status === 'clear' ? 'Clear' : audit.status === 'attention' ? 'Needs attention' : 'Needs review';
+  return html`
+    <div class="portfolio-audit-summary">
+      ${raw(renderAuditMetric('Status', status))}
+      ${raw(renderAuditMetric('Open items', summary.open_findings ?? 0))}
+      ${raw(renderAuditMetric('Import reports', summary.import_reports ?? 0))}
+      ${raw(renderAuditMetric('Pending Inbox', summary.pending_inbox_items ?? 0))}
+    </div>
+    <div class="portfolio-audit-findings">
+      ${raw(findings.map(renderAuditFinding).join(''))}
+    </div>
+    ${reports.length ? html`
+      <div class="portfolio-audit-reports">
+        <h4>Recent import reports</h4>
+        ${raw(renderAuditReports(reports))}
+      </div>
+    ` : html`<p class="fit-empty">No import reports recorded yet.</p>`}
+  `;
+}
+
+function renderAuditMetric(label, value) {
+  return html`
+    <div class="portfolio-audit-metric">
+      <span>${label}</span>
+      <strong>${esc(String(value))}</strong>
+    </div>
+  `;
+}
+
+function renderAuditFinding(finding = {}) {
+  const status = String(finding.status || 'clear');
+  const severity = String(finding.severity || 'medium');
+  const count = Number(finding.count || 0);
+  return html`
+    <article class="portfolio-audit-finding ${status} ${severity}">
+      <div>
+        <span class="portfolio-audit-kicker">${esc(finding.category || 'Audit')} · ${esc(labelize(severity))}</span>
+        <h4>${esc(finding.title || 'Audit finding')}</h4>
+        <p>${esc(finding.detail || '')}</p>
+      </div>
+      <div class="portfolio-audit-action">
+        <strong>${count.toLocaleString('en-US')}</strong>
+        ${finding.href ? html`<a class="action-link muted" href="${esc(finding.href)}">${esc(finding.action_label || 'Review')} <span class="arrow">→</span></a>` : ''}
+      </div>
+    </article>
+  `;
+}
+
+function renderAuditReports(reports = []) {
+  const columns = ['created_at', 'source_file_name', 'imported_activities', 'unresolved_count', 'duplicate_count'];
+  return html`
+    <div class="portfolio-maintenance-table" role="table" style="--maintenance-columns: ${columns.length};">
+      <div class="portfolio-maintenance-row head" role="row">
+        ${raw(columns.map(col => `<span role="columnheader">${esc(maintenanceColumnLabel(col))}</span>`).join(''))}
+      </div>
+      ${raw(reports.slice(0, 10).map(report => `
+        <div class="portfolio-maintenance-row" role="row">
+          ${columns.map(col => `<span role="cell">${esc(formatMaintenanceValue(report?.[col]))}</span>`).join('')}
+        </div>
+      `).join(''))}
+    </div>
   `;
 }
 
@@ -573,11 +651,17 @@ function maintenanceColumnLabel(column) {
     unit_price: 'Price',
     updated_at: 'Updated',
     base_currency: 'Base',
+    created_at: 'Created',
+    source_file_name: 'File',
+    imported_activities: 'Imported',
+    unresolved_count: 'Needs Review',
+    duplicate_count: 'Duplicates',
   })[column] || labelize(column);
 }
 
 function maintenanceCopy(section) {
   return ({
+    audit: 'A plain-English audit of recent imports, review items, asset readiness, prices, and cost basis follow-through.',
     accounts: 'Accounts created by imports or manual setup. Imported account names should land here before future review.',
     transactions: 'Recent portfolio activity created from applied imports and manual entries.',
     assets: 'A single searchable registry for holdings, watchlist names, custom assets, price overrides, and imported metadata.',

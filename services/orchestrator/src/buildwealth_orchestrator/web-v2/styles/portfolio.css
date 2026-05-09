@@ -509,6 +509,93 @@
   background: var(--paper-bright);
 }
 
+.portfolio-audit-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--s-3);
+}
+
+.portfolio-audit-metric {
+  display: grid;
+  gap: 6px;
+  padding: var(--s-3);
+  border: var(--hair) solid var(--rule-soft);
+  border-radius: var(--r-md);
+  background: var(--paper);
+}
+
+.portfolio-audit-metric span,
+.portfolio-audit-kicker,
+.portfolio-registry-count {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+}
+
+.portfolio-audit-metric strong {
+  font-family: var(--sans);
+  font-size: var(--t-body);
+  color: var(--ink-strong);
+}
+
+.portfolio-audit-findings {
+  display: grid;
+  gap: var(--s-3);
+}
+
+.portfolio-audit-finding {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--s-4);
+  align-items: center;
+  padding: var(--s-4);
+  border: var(--hair) solid var(--rule-soft);
+  border-radius: var(--r-md);
+  background: var(--paper);
+}
+
+.portfolio-audit-finding.open.high {
+  border-color: color-mix(in srgb, var(--oxblood) 45%, var(--rule));
+}
+
+.portfolio-audit-finding.open.medium {
+  border-color: color-mix(in srgb, var(--brass) 45%, var(--rule));
+}
+
+.portfolio-audit-finding h4,
+.portfolio-audit-reports h4 {
+  margin: 4px 0;
+  font-family: var(--sans);
+  font-size: var(--t-body);
+  color: var(--ink-strong);
+}
+
+.portfolio-audit-finding p {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: var(--lh-body);
+}
+
+.portfolio-audit-action {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+  min-width: 120px;
+}
+
+.portfolio-audit-action strong {
+  font-family: var(--mono);
+  font-size: 18px;
+  color: var(--ink-strong);
+}
+
+.portfolio-audit-reports {
+  display: grid;
+  gap: var(--s-3);
+}
+
 .portfolio-registry-tools {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) auto auto;
@@ -522,11 +609,6 @@
   align-self: center;
   justify-self: end;
   margin: 0;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--ink-faint);
-  text-transform: uppercase;
-  letter-spacing: var(--track-eyebrow);
 }
 
 .portfolio-maintenance-table {
@@ -570,6 +652,14 @@
 @media (max-width: 760px) {
   .portfolio-registry-tools {
     grid-template-columns: 1fr;
+  }
+
+  .portfolio-audit-finding {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-audit-action {
+    justify-items: start;
   }
 
   .portfolio-registry-count {

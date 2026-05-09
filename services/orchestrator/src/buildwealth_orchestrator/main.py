@@ -52,6 +52,7 @@ from buildwealth_orchestrator.schemas import (
     AssetMetadataUpdateRequest,
     AssetRegistryItem,
     AssetRegistrySearchResponse,
+    PortfolioAuditResponse,
     PlanArtifactSummary,
     PlanArtifactResponse,
     PlanCreateRequest,
@@ -198,6 +199,7 @@ from buildwealth_orchestrator.services.csv_importer import (
 )
 from buildwealth_orchestrator.services.import_workbench import ImportWorkbenchStore
 from buildwealth_orchestrator.services.asset_registry import AssetRegistry
+from buildwealth_orchestrator.services.portfolio_audit import build_portfolio_audit_payload
 from buildwealth_orchestrator.services.llm_clients import (
     DEFAULT_OPENAI_BASE_URL,
     DEFAULT_OPENAI_MODEL,
@@ -16073,6 +16075,25 @@ async def get_portfolio_attribution(top_n: int = 5) -> PortfolioAttributionRespo
 @app.get("/api/portfolio/accounts")
 def get_portfolio_accounts() -> list[dict[str, Any]]:
     return portfolio_store.get_accounts()
+
+
+@app.get("/api/portfolio/audit", response_model=PortfolioAuditResponse)
+def get_portfolio_audit(limit: int = 25) -> PortfolioAuditResponse:
+    bounded_limit = max(1, min(int(limit), 100))
+    payload = build_portfolio_audit_payload(
+        import_reports=import_workbench_store.list_reports(limit=bounded_limit),
+        asset_registry_payload=asset_registry.search(limit=500),
+        accounts=portfolio_store.get_accounts(),
+        transactions=portfolio_store.list_transactions(limit=500),
+        manual_prices_payload=portfolio_store.get_manual_prices(),
+        cost_basis_payload=portfolio_store.get_cost_basis_methods(),
+        recommendations=recommendation_inbox.list(
+            limit=500,
+            include_archived=False,
+            sort="created_at_desc",
+        ),
+    )
+    return PortfolioAuditResponse(**payload)
 
 
 @app.get("/api/portfolio/assets/search", response_model=AssetRegistrySearchResponse)

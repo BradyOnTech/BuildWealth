@@ -167,6 +167,7 @@ export const api = {
   holdings:     () => fetchJson('/api/portfolio/holdings'),
   portfolioTransactions: (limit = 100) => fetchJson(`/api/portfolio/transactions?limit=${encodeURIComponent(limit)}`),
   portfolioAccounts: () => fetchJson('/api/portfolio/accounts'),
+  portfolioAudit: (limit = 25) => fetchJson(`/api/portfolio/audit?limit=${encodeURIComponent(limit)}`),
   portfolioAssetSearch: (opts = {}) => fetchJson(portfolioAssetSearchUrl(opts)),
   portfolioAsset: (symbol) => fetchJson(`/api/portfolio/assets/${encodeURIComponent(symbol)}`),
   updatePortfolioAssetMetadata: (symbol, body = {}) => putJson(

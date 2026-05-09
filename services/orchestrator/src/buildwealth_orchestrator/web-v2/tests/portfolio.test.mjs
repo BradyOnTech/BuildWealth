@@ -148,3 +148,46 @@ test('portfolio asset registry renders native review status', () => {
   assert.match(markup, /Custom/);
   assert.doesNotMatch(markup, /classic/i);
 });
+
+test('portfolio audit renders import and follow-through findings', () => {
+  const markup = String(renderLookCloser('audit', {
+    section: 'audit',
+    payload: {
+      status: 'attention',
+      summary: {
+        open_findings: 2,
+        import_reports: 1,
+        pending_inbox_items: 1,
+      },
+      findings: [
+        {
+          id: 'import_rows_need_review',
+          category: 'Imports',
+          title: 'Imported rows need review',
+          detail: 'Some rows from recent imports were not safe to rely on automatically.',
+          severity: 'high',
+          status: 'open',
+          count: 1,
+          href: '#import-sync',
+          action_label: 'Open import reports',
+        },
+      ],
+      recent_reports: [
+        {
+          created_at: '2026-05-09T12:00:00+00:00',
+          source_file_name: 'broker.csv',
+          imported_activities: 2,
+          unresolved_count: 1,
+          duplicate_count: 0,
+        },
+      ],
+    },
+  }));
+
+  assert.match(markup, /Portfolio Audit/);
+  assert.match(markup, /Open items/);
+  assert.match(markup, /Imported rows need review/);
+  assert.match(markup, /Recent import reports/);
+  assert.match(markup, /broker\.csv/);
+  assert.doesNotMatch(markup, /classic/i);
+});
