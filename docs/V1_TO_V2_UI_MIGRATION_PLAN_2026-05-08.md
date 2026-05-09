@@ -4,15 +4,17 @@
 2026-05-08
 
 ## Status
-Planning document for phasing away from the classic v1 UI without removing user functionality.
+Active planning document for replacing classic v1 workflows with the v2 Product Surface.
+
+This document follows [ADR 0004](./adr/0004-v2-is-the-only-future-product-surface.md): v2 is the only future BuildWealth product surface, and classic/v1 is temporary migration scaffolding.
 
 ## Why This Exists
 
 The v2 UI is the right product direction, but the classic v1 UI still carries important user-facing capability. We should phase away from v1 deliberately, not by hiding or dropping features before v2 has a clear replacement path.
 
-The migration rule should be:
+The migration rule should be Workflow Replacement:
 
-> No classic surface is removed until every user job it supports has a v2 home, a deliberate v2 replacement, or an explicit "advanced classic fallback" during the transition.
+> No classic surface is removed until every user job it supports has a v2 home, a deliberate v2 replacement, or explicit product-owner approval to remove the old workflow.
 
 The screenshot of the v1 Settings page highlights the mismatch. v1 Settings is not just AI provider setup. It also includes backup and restore, data protection, local version history, AutoGit, remote sync, restore preview, Git activity, retention, and cleanup. Treating v2 Settings as "API keys only" would strand real functionality.
 
@@ -37,10 +39,9 @@ v1 imports and exposes these internal pages:
 - Sync & Import: `sync`
 - Settings: `settings`
 
-It also links externally to:
+It also currently links externally to historical upstream/reference apps.
 
-- Ghostfolio
-- Ignidash
+Those external links are not part of the future product surface and should be removed as native BuildWealth workflows replace the jobs they represented.
 
 ### v2 App Shell
 
@@ -232,7 +233,7 @@ v2 Plan has a stronger trajectory section and likely replaces Tracking, but Work
 | Portfolio | maintain accounts, transactions, prices, watchlist, risk settings | partially replaced by v2 Portfolio | keep classic fallback until advanced maintenance exists |
 | Sync & Import | CSV import, upload, sync status | missing | add v2 Data Ingestion |
 | Settings | AI, backup, protection, Git, restore, activity | partially split between v2 Atelier and missing Settings | split into v2 Settings and v2 Data & Recovery |
-| Ghostfolio/Ignidash links | legacy reference apps | footer links exist | keep as secondary external links while useful |
+| External upstream app links | historical reference apps | footer links exist | remove; do not preserve as v2 destinations |
 
 ## Recommended v2 Information Architecture
 
@@ -293,7 +294,7 @@ Compatibility redirects or aliases:
 - `#recommendations` -> `#inbox`
 - `#atelier` -> `#data-recovery` after rename
 
-Classic fallback links should remain available until the migration is complete:
+Classic fallback links may remain available until the migration is complete, but each fallback needs a v2 replacement path:
 
 - `/#profile`
 - `/#sync`
@@ -329,7 +330,7 @@ Operations
   XI    Settings
 
 Footer
-  Classic UI
+  Classic UI [temporary migration scaffolding]
 ```
 
 ### Phase 2: Native v2 Sidebar
@@ -499,16 +500,17 @@ Do not remove or hide classic UI links until these gates pass.
 - portfolio transaction/account maintenance has a v2 home
 - workflow templates have a v2 home
 
-### Gate 4: Classic Deprecation Readiness
+### Gate 4: Classic Removal Readiness
 
 - telemetry or audit logs show classic routes are no longer needed for routine tasks
 - v2 browser tests cover each migrated user job
 - docs point users to v2 routes
 - classic UI is still accessible only as an advanced fallback
+- product owner explicitly confirms v2 covers the needed workflow outcomes
 
 ### Gate 5: Classic Removal
 
-Only after Gate 4:
+Only after Gate 4 and explicit product-owner approval:
 
 - remove classic from primary footer
 - keep a hidden emergency route for one release cycle

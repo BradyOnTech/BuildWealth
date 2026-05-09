@@ -12,6 +12,116 @@ _Avoid_: Memory, chatbot memory, AI memory
 The authoritative BuildWealth data stored in Profile, Portfolio, Plan, Recommendations, Research artifacts, and related system-owned stores.
 _Avoid_: Memory, vector store, prompt context
 
+**BuildWealth-Native Capability**:
+A capability whose data, calculations, UI, UX, Copilot access, review flow, and audit trail are owned and expressed as part of BuildWealth.
+_Avoid_: Ghostfolio feature, Ignidash feature, sidecar feature, external app parity
+
+**v2 Product Surface**:
+The canonical BuildWealth user interface for all current and future user workflows.
+_Avoid_: Classic UI, v1 fallback, old dashboard
+
+**Outcome Parity**:
+The standard that BuildWealth matches or exceeds the user result of a reference capability without copying its screens, terminology, or internal workflow.
+_Avoid_: Feature parity, screen parity, clone
+
+**Workflow Replacement**:
+The v2 migration standard that replaces user jobs and outcomes rather than cloning every v1 feature or screen.
+_Avoid_: Feature migration, screen migration, parity checklist
+
+**Classic Removal Gate**:
+The workflow coverage and approval threshold that must be met before v1/classic UI is removed.
+_Avoid_: Automatic cleanup, incidental deletion, old UI deprecation
+
+**Portfolio Analytics Engine**:
+The BuildWealth-native capability that explains portfolio performance, benchmarks, attribution, allocation, risk, and trade impact.
+_Avoid_: Ghostfolio sidecar, benchmark sidecar, attribution sidecar
+
+**Portfolio Audit**:
+The BuildWealth-native evidence trail that explains changes to, or interpretation of, portfolio financial state.
+_Avoid_: System log, app activity feed, git history
+
+**Import Workbench**:
+The BuildWealth-native capability that previews, reconciles, applies, and audits imported financial data before it becomes portfolio state.
+_Avoid_: Ghostfolio import, external import flow, CSV uploader
+
+**Import Report**:
+A durable source-evidence record that explains how one import preview and apply operation affected Canonical State.
+_Avoid_: Import state, transaction ledger, CSV result
+
+**Asset Registry**:
+The BuildWealth-native capability that resolves, classifies, enriches, prices, and audits investable assets used by Portfolio, Plan, Research, and Copilot.
+_Avoid_: Symbol metadata sidecar, Ghostfolio symbol search, ticker cache
+
+**Asset Review Item**:
+A review item for an unresolved, ambiguous, weakly classified, or manually overridden asset that could affect portfolio interpretation or plan quality.
+_Avoid_: Broken ticker, bad symbol, metadata warning
+
+**Plan Simulation Engine**:
+The BuildWealth-native capability that runs projections, scenario comparisons, Monte Carlo simulations, historical backtests, and failure-mode analysis for financial plans.
+_Avoid_: Ignidash sidecar, planning sidecar, scenario sidecar
+
+**Scenario**:
+A named set of assumptions used to compare possible financial outcomes.
+_Avoid_: Simulation, plan, branch
+
+**Branch**:
+A scenario created from a life event, what-if template, or focused change to the active plan.
+_Avoid_: Simulation, active plan, recommendation
+
+**Simulation Run**:
+A tracked execution of a plan projection, scenario comparison, Monte Carlo simulation, or historical backtest.
+_Avoid_: Calculation response, transient chart data, hidden Copilot math
+
+**Simulation Artifact**:
+A durable source-evidence record of a Simulation Run that was saved because it materially supported a review, recommendation, Copilot answer, or Plan Decision.
+_Avoid_: Temporary run, chart cache, raw output dump
+
+**Saved Simulation**:
+The user-facing name for a durable Simulation Artifact.
+_Avoid_: Artifact, evidence object, stored run
+
+**Plan Resilience**:
+The user-facing assessment of how reliably a plan funds required expenses, goals, liabilities, and reserve needs across modeled futures.
+_Avoid_: Success probability, safe retirement number, guarantee
+
+**Plan Strength**:
+The preferred plain-language UI label for Plan Resilience.
+_Avoid_: Success probability, guarantee, safe-to-retire score
+
+**Plan Resilience Label**:
+The rule-derived user-facing state that summarizes Plan Resilience before showing supporting metrics.
+Allowed values: `Strong`, `Workable`, `Fragile`, `Not Ready To Rely On`
+_Avoid_: Probability label, AI confidence, guarantee
+
+**Plan Strategy Lab**:
+The BuildWealth-native capability that compares contribution ordering, withdrawal strategies, retirement tax controls, and other plan-improvement levers.
+_Avoid_: Ignidash strategy flow, tax sidecar, withdrawal sidecar
+
+**Plan Lever**:
+A reviewable change that can be simulated against the active plan before the user decides whether to adopt it.
+_Avoid_: Recommendation, suggestion, optimization, automatic fix
+
+**Plan Lever Impact Level**:
+The deterministic review level assigned to a Plan Lever based on its financial magnitude, resilience effect, strategy class, reversibility, and constraint risk.
+Allowed values: `low`, `medium`, `high`, `critical`
+_Avoid_: Importance, vibes, riskiness
+
+**Plan Lever Impact Policy**:
+A versioned, testable ruleset that assigns Plan Lever Impact Level from plan-resilience delta, cash-flow change, one-time money movement, tax impact, retirement timing, strategy class, reversibility, and constraint conflicts.
+_Avoid_: Manual judgment, hidden AI decision, generic severity
+
+**Pre-Simulation Impact Level**:
+The Plan Lever Impact Level assigned from the proposed change before running a projection or simulation.
+_Avoid_: Initial guess, AI estimate, rough severity
+
+**Post-Simulation Impact Level**:
+The Plan Lever Impact Level assigned from simulation evidence after comparing the proposed change against the active plan.
+_Avoid_: Result score, probability change, final vibes
+
+**Plan Decision**:
+A durable source-evidence record of a reviewed choice that changes, rejects, or preserves the active plan.
+_Avoid_: Setting change, accepted recommendation, hidden plan mutation
+
 **Material Financial Fact**:
 A user-specific fact that can change financial advice quality, recommendation ranking, planning projections, or investment fit.
 _Avoid_: Memory, note, chat fact
@@ -135,6 +245,48 @@ _Avoid_: Context Registry, live index
 ## Relationships
 
 - **Context Intelligence** retrieves from **Canonical State**.
+- A **BuildWealth-Native Capability** may be inspired by external products, but the user should experience it only through BuildWealth language, BuildWealth workflows, and BuildWealth-owned state.
+- The **v2 Product Surface** is the only future user interface; v1/classic UI is temporary migration scaffolding and should be removed after native v2 workflow coverage exists.
+- **Outcome Parity** is the replacement standard for external-app parity; exact feature or screen matching is required only when it improves the user's financial decision result.
+- **Workflow Replacement** is the migration standard from v1/classic to the **v2 Product Surface**; old controls move only when they support a current user job or better outcome.
+- The **Classic Removal Gate** requires v2 end-to-end coverage for import/review, portfolio maintenance, portfolio review, portfolio history, plan workspace, Inbox, Profile, Data & Recovery, and Copilot workflows.
+- Passing the **Classic Removal Gate** requires explicit product-owner approval; v1/classic should not be removed only because implementation tasks appear complete.
+- The **Portfolio Analytics Engine**, **Import Workbench**, and **Asset Registry** belong to the Portfolio and Data & Tools workflows.
+- The **Import Workbench** owns ingestion, mapping, reconciliation, duplicate review, account matching, unknown asset resolution, apply preview, and import reports; Portfolio owns the resulting transactions, accounts, assets, holdings, performance, risk, and audit interpretation after apply.
+- An **Import Report** is **Source Evidence** for an import operation, while the resulting transactions, accounts, assets, and holdings belong in **Canonical State**.
+- An unresolved import asset may become a limited asset record only with visible uncertainty; if the uncertainty could affect portfolio interpretation or planning quality, BuildWealth creates or updates an **Asset Review Item**.
+- The **Portfolio Analytics Engine** may value a limited asset when price and quantity are usable, but allocation, concentration, sector, region, risk, and plan outputs must show **Needs Review** where missing classification changes interpretation.
+- **Portfolio Audit** contains events that change or explain portfolio financial state; Data & Recovery contains system operations needed to trust, restore, or operate the app.
+- **Portfolio Audit** includes import reports, transaction changes, account changes, asset resolutions, manual price changes, FX overrides, cost-basis method changes, lot rebuilds, corporate actions, review packets, and saved trade simulations.
+- **Portfolio Audit** excludes ordinary view loads, generic sync status, git checkpoints, provider settings, and health checks unless they directly changed or explain portfolio state.
+- The **Plan Simulation Engine** and **Plan Strategy Lab** belong to the Plan workflow and may create evidence for Inbox recommendations and Plan decisions.
+- A plan is the user's working financial thesis; a **Scenario** defines comparable assumptions; a **Branch** is a scenario created from a life event, template, or focused what-if change; a simulation tests a plan, scenario, or branch; a **Saved Simulation** preserves the result; a **Plan Decision** decides whether anything changes in the real plan.
+- A **Simulation Run** should have a stable run id and lifecycle status even when the first implementation completes synchronously.
+- **Simulation Run** statuses are `queued`, `running`, `completed`, `failed`, and `cancelled`.
+- Copilot may discuss simulation results only when it can cite a **Simulation Run** or **Saved Simulation**.
+- A **Simulation Artifact** is durable **Source Evidence**; exploratory **Simulation Runs** may expire unless saved, used by a recommendation, cited by a material Copilot answer, or attached to a **Plan Decision**.
+- User-facing copy should prefer plain terms such as "saved simulation" or "saved plan review" instead of **Simulation Artifact**.
+- The active plan should track the last decision-grade **Simulation Artifact**, not merely the last **Simulation Run**.
+- User-facing simulation language should preserve the boundary between a real plan and an experiment: a plan is the user's working financial thesis, while a simulation is a what-if experiment against that plan.
+- Use **Saved Simulation** in the UI for durable simulation evidence.
+- A **Saved Simulation** is immutable evidence; changing one creates a new simulation based on the saved one rather than mutating the original.
+- **Plan Resilience** is the preferred user-facing simulation concept; raw probability of success is an internal or supporting metric, not the main product promise.
+- Use **Plan Strength** as the primary UI label for **Plan Resilience**, with supporting copy explaining resilience across simulations.
+- **Plan Resilience Label** leads the simulation UI, while funded-trial percentage, percentile balances, fragile years, liquidity gap risk, goal funding risk, and input-quality warnings support the label.
+- A **Plan Resilience Label** is rule-derived: `Strong` means high funding reliability with no near-term liquidity gap or critical input gap; `Workable` means acceptable funding reliability with reviewable weak points; `Fragile` means material failure modes or major sensitivity; `Not Ready To Rely On` means critical missing/conflicting inputs or modeled failure in action-sensitive years.
+- A modeled future weakens **Plan Resilience** when required expenses cannot be funded, reserve floors are breached during action-sensitive periods, account depletion violates active plan assumptions, or required goals and liabilities cannot be funded when due.
+- A modeled future does not automatically fail just because investment assets reach zero late in life if guaranteed income covers required expenses and the user's confirmed goals do not require remaining assets.
+- A **Plan Lever** may change contributions, spending, income timing, retirement age, Social Security claiming, Roth conversions, withdrawal strategy, tax assumptions, asset allocation assumptions, goal timing, debt payoff, or major life events.
+- A **Plan Lever** is simulated and compared before apply; a recommendation is the review prompt that explains why the user should consider a lever.
+- A **Plan Lever Impact Policy** assigns the highest **Plan Lever Impact Level** triggered by any rule dimension and escalates when a lever affects an active recommendation, open decision, tax-sensitive event, liquidity floor, confirmed user constraint, or required goal.
+- A **Plan Lever** receives a **Pre-Simulation Impact Level** before compute and a **Post-Simulation Impact Level** after evidence is available; the final **Plan Lever Impact Level** is the higher of the two.
+- **Pre-Simulation Impact Level** determines the minimum review path before expensive compute; **Post-Simulation Impact Level** can escalate review requirements when evidence shows a material resilience, tax, goal, liquidity, or failure-mode effect.
+- A single backend **Plan Lever Impact Policy** service should classify impact for Plan UI, Recommendation Factory, and Copilot so review paths do not drift across surfaces.
+- Low-impact **Plan Levers** may use direct review/apply; medium-impact levers require preview and confirmation; high-impact levers require saved simulation evidence, proposed patch, and **Plan Decision**; critical levers must start as branch or decision draft and cannot be directly applied by Copilot.
+- Initial **Plan Lever Impact Policy** dimensions are plan-resilience delta, recurring cash-flow change, one-time money movement, tax impact, retirement timing, strategy class, reversibility, and constraint conflict.
+- Accepting a **Plan Lever** saves supporting evidence, presents an explicit active-plan patch, updates **Canonical State** only after user confirmation, and records a **Plan Decision** linking the lever, evidence, patch, risks, review date, and any originating recommendation.
+- High-impact **Plan Levers** should default to a branch or decision draft before active-plan mutation.
+- Copilot may operate a **BuildWealth-Native Capability** only through the same reviewed BuildWealth API and review/apply boundaries as the UI.
 - **Context Intelligence** may index or summarize **Canonical State**, but it does not replace it.
 - A **Material Financial Fact** must live in **Canonical State** before BuildWealth treats it as authoritative.
 - **Context Materiality** is separate from confidence; a low-confidence candidate can still be high materiality if it would change important advice.
@@ -212,3 +364,13 @@ _Avoid_: Context Registry, live index
 - "feature flag" implied a parallel context mode. Resolved: **Context Intelligence** should become the **Default Context Path** once implemented.
 - "context conflict" could be transient or persistent. Resolved: persistent material conflicts create **Conflict Review Items** in Inbox.
 - "dismiss conflict" would degrade future advice by hiding uncertainty. Resolved: **Conflict Resolution** requires source-level confirmation, source update, candidate rejection, or a scoped intentional exception. Deferral is allowed but does not unblock **Decision-Grade Advice**.
+- "sidecar" was used to describe both temporary implementation scaffolding and long-term product architecture. Resolved: the product goal is **BuildWealth-Native Capability**; external app names should not appear in user workflows, product labels, default runtime paths, or future module boundaries.
+- "classic UI" was used as an acceptable place for unfinished workflows. Resolved: use **v2 Product Surface** as the canonical UI target; classic/v1 is migration scaffolding only.
+- "v2 migration" could imply copying v1 screens. Resolved: use **Workflow Replacement**, where v2 replaces user jobs and outcomes rather than cloning every old feature.
+- External app names were used as shorthand for product areas. Resolved: use **Portfolio Analytics Engine**, **Import Workbench**, **Asset Registry**, **Plan Simulation Engine**, and **Plan Strategy Lab** as canonical BuildWealth terms.
+- "same or better" could mean cloning features, screens, or workflows. Resolved: use **Outcome Parity** as the standard, with feature-level parity only when it directly improves decision quality.
+- "unknown ticker" could mean an import error, an asset metadata gap, or a planning blocker. Resolved: use **Asset Review Item** when unresolved or weak asset identity/classification could affect interpretation.
+- "success probability" was too narrow for retirement planning. Resolved: use **Plan Resilience** for user-facing simulation quality, with funding reliability, fragile years, liquidity gaps, account depletion, and goal funding risk as supporting signals.
+- "plan review" blurred the line between the real plan and an experiment. Resolved: use "simulation" in the UI for what-if experiments and reserve "plan" for the user's working financial thesis.
+- "scenario", "branch", and "simulation" were easy to collapse into one concept. Resolved: scenarios and branches define assumptions; simulations test them; saved simulations preserve results.
+- "high-impact" was too vague for plan changes. Resolved: use **Plan Lever Impact Level** assigned by a versioned **Plan Lever Impact Policy**.

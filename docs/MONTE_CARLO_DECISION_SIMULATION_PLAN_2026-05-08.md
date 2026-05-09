@@ -4,7 +4,7 @@
 2026-05-08
 
 ## Status
-Active feature planning and implementation guide for making BuildWealth's simulation quality match or exceed Ignidash-style Monte Carlo planning while preserving BuildWealth's decision-system positioning.
+Active feature planning and implementation guide for making BuildWealth's simulations decision-grade while preserving BuildWealth's decision-system positioning.
 
 This document expands the Plan, Inbox, Copilot, and recommendation-quality pillars in:
 - [BuildWealth Future State Product Plan](./FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
@@ -18,20 +18,20 @@ The target product position is:
 
 > BuildWealth uses Monte Carlo simulation to show where a financial plan is resilient, where it can fail, and which reviewable action is most likely to improve the user's future.
 
-Ignidash's public product strength is clear: retirement/FIRE planning with Monte Carlo simulations, historical backtests, tax estimation, and AI explanations. BuildWealth can match that simulation quality because the local scenario engine already has fixed, stochastic, historical, and Monte Carlo modes, plus tax/account timelines, withdrawal strategy hooks, RMDs, Social Security, Roth conversion fields, and plan decision artifacts.
+Dedicated retirement planners make Monte Carlo simulations, historical backtests, tax estimation, and explanations feel approachable. BuildWealth can match or exceed that outcome because the local scenario engine already has fixed, stochastic, historical, and Monte Carlo modes, plus tax/account timelines, withdrawal strategy hooks, RMDs, Social Security, Roth conversion fields, and plan decision evidence.
 
-The BuildWealth opportunity is to make Monte Carlo more valuable than a probability number. The simulation should feed a decision loop:
+The BuildWealth opportunity is to make Monte Carlo more valuable than a single probability number. The simulation should feed a decision loop:
 
 1. Run the plan through many possible futures.
 2. Identify the failure modes and fragile years.
 3. Explain the drivers in plain language.
-4. Suggest specific reviewable levers.
-5. Let the user compare those levers before changing the active plan.
+4. Suggest specific reviewable what-if changes.
+5. Let the user compare those changes before changing the active plan.
 6. Save the result as evidence behind a plan decision or recommendation.
 
 Example target experience:
 
-> Your plan has an 82% probability of staying funded, but the weak point is 2034-2039 because taxable assets deplete before Social Security starts. The highest-value reviews are delaying retirement by one year, reducing spending by $8k/year, or changing withdrawal order. Simulate those now?
+> Your Plan Strength is Workable, but the weak point is 2034-2039 because taxable assets deplete before Social Security starts. The highest-value reviews are delaying retirement by one year, reducing spending by $8k/year, or changing withdrawal order. Simulate those now?
 
 ## Quality Bar
 
@@ -60,14 +60,14 @@ Existing foundation:
 - Current outputs include p10, p50, and p90 terminal values.
 - Historical return data exists through the local scenario engine.
 - Scenario runs already support accounts, income, expenses, debt, timeline events, contributions, Social Security, RMDs, filing status, state tax rate, IRMAA toggle, Roth conversions, drawdown order, and withdrawal strategy.
-- Plan workspace supports assumption sets, scenario diffs, branch templates, decisions, artifacts, and simulation settings.
-- v2 Plan has homes for trajectory, scenarios, branches, withdrawals, assumptions, contributions, decisions, and artifacts.
+- Plan workspace supports assumption sets, scenario diffs, branch templates, decisions, evidence records, and simulation settings.
+- v2 Plan should organize these into Overview, Simulations, What-ifs, Strategies, Assumptions, Timeline, and Decisions.
 
 Current gaps:
 
 - The current Monte Carlo helper is terminal-value oriented.
 - Monte Carlo does not yet run the full annual account/tax/cash-flow engine per trial.
-- Outputs do not yet include full percentile timelines, probability of success, failure-year distribution, or failure-mode summaries.
+- Outputs do not yet include full percentile timelines, Plan Strength, funded-trial rate, failure-year distribution, or failure-mode summaries.
 - Return models are not exposed as a clear simulation-provider interface.
 - Historical backtests and Monte Carlo are not yet visually unified in Plan.
 - Recommendation and Inbox flows do not yet routinely use simulation failure modes as evidence.
@@ -83,14 +83,14 @@ BuildWealth should not:
 - hide weak assumptions behind a polished probability
 - automatically mutate the active plan
 - produce unreviewed financial, investment, tax, or legal advice
-- make a probability-of-success number look more precise than the data supports
+- make a funded-trial percentage look more precise than the data supports
 
 Allowed product language:
 
-- "This plan appears resilient under..."
+- "This plan appears workable under..."
 - "The most common failure mode is..."
 - "This assumption has high impact..."
-- "Review these levers before acting..."
+- "Review these what-if changes before acting..."
 - "This result needs review because..."
 
 Avoid:
@@ -104,11 +104,12 @@ Avoid:
 
 ### Workflow 1: Run The Active Plan
 
-The user opens Plan -> Trajectory or Plan -> Scenarios and runs the active plan through Monte Carlo.
+The user opens Plan -> Simulations and runs the active plan through Monte Carlo.
 
 The result should show:
 
-- probability of success
+- Plan Strength
+- funded-trial rate
 - median ending value
 - p10, p25, p50, p75, and p90 ending values
 - fan chart over time
@@ -138,12 +139,13 @@ The user chooses a lever such as:
 
 BuildWealth runs a side-by-side comparison against the active plan and explains:
 
-- change in probability of success
+- change in Plan Strength
+- change in funded-trial rate
 - change in median ending value
 - change in p10 outcome
 - change in failure years
 - tradeoffs and new risks
-- whether the result is strong enough to save as a decision artifact
+- whether the result is strong enough to save as a Saved Simulation
 
 ### Workflow 3: Generate A Simulation-Backed Recommendation
 
@@ -162,16 +164,16 @@ The recommendation should include:
 - reversibility
 - downside
 - review route
-- simulation artifact link
+- Saved Simulation link
 - outcome capture prompt
 
 ### Workflow 4: Ask Copilot What Changed
 
 The user asks:
 
-> Why did my probability of success fall?
+> Why did my Plan Strength fall?
 
-Copilot should retrieve the latest saved simulation artifact, current plan assumptions, profile freshness, portfolio changes, and recommendation history.
+Copilot should retrieve the latest Saved Simulation, current plan assumptions, profile freshness, portfolio changes, and recommendation history.
 
 Copilot should explain:
 
@@ -230,7 +232,7 @@ Add an analyzer module:
 
 Purpose:
 
-- extract probability of success
+- extract Plan Strength and funded-trial rate
 - calculate failure-year distribution
 - identify fragile years
 - summarize account depletion sequences
@@ -240,11 +242,11 @@ Purpose:
 
 The analyzer should not mutate plan state. It should turn raw simulation outputs into decision-ready evidence.
 
-### Module: Simulation Artifacts
+### Module: Saved Simulations
 
-Use the existing Plan artifact pattern, then add a dedicated store only if artifact volume or lookup needs outgrow `PlanWorkspace`.
+Use the existing Plan evidence pattern, then add a dedicated store only if Saved Simulation volume or lookup needs outgrow `PlanWorkspace`.
 
-Saved simulation artifacts should include:
+Saved Simulations should include:
 
 - plan id
 - assumption set id
@@ -283,7 +285,7 @@ Core fields:
 - `cash_reserve_floor_months`
 - `failure_definition`
 - `candidate_plan_updates`
-- `save_artifact`
+- `save_simulation`
 
 Suggested response model:
 
@@ -304,12 +306,13 @@ Core fields:
 - `account_analysis`
 - `tax_analysis`
 - `warnings`
-- `recommended_levers`
-- `artifact_id`
+- `recommended_plan_levers`
+- `saved_simulation_id`
 
 Suggested summary fields:
 
-- `probability_of_success_pct`
+- `plan_strength_label`
+- `funded_trial_rate_pct`
 - `median_ending_balance_usd`
 - `p10_ending_balance_usd`
 - `p90_ending_balance_usd`
@@ -326,9 +329,9 @@ Suggested routes:
 
 - `POST /api/plans/{plan_id}/simulation/run`
 - `POST /api/plans/{plan_id}/simulation/compare`
-- `GET /api/plans/{plan_id}/simulation/artifacts`
-- `GET /api/plans/{plan_id}/simulation/artifacts/{artifact_id}`
-- `POST /api/plans/{plan_id}/simulation/artifacts/{artifact_id}/decision`
+- `GET /api/plans/{plan_id}/simulations/saved`
+- `GET /api/plans/{plan_id}/simulations/saved/{saved_simulation_id}`
+- `POST /api/plans/{plan_id}/simulations/saved/{saved_simulation_id}/decision`
 
 Keep existing routes stable:
 
@@ -341,34 +344,34 @@ Existing routes can call the richer simulation engine later, but the first slice
 
 ## v2 UI Plan
 
-### Plan -> Trajectory
+### Plan -> Simulations
 
 Add the primary simulation view here.
 
 It should show:
 
-- plan resilience headline
-- probability of success
+- Plan Strength headline
+- funded-trial rate
 - fan chart
 - ending-balance percentile cards
 - fragile years
 - input-quality warnings
 - "Run fresh simulation" action
-- "Save as artifact" action
+- "Save simulation" action
 
-### Plan -> Scenarios
+### Plan -> Simulations
 
 Add comparison flows here.
 
 It should show:
 
-- baseline vs candidate probability
+- baseline vs candidate Plan Strength
 - p10/p50/p90 deltas
 - failure-year delta
 - driver explanation
 - decision handoff
 
-### Plan -> Branches
+### Plan -> What-ifs
 
 Add template-to-simulation flow here.
 
@@ -386,7 +389,7 @@ The branch result should be previewed before it touches the active plan.
 
 ### Plan -> Decisions
 
-Saved simulation results should become decision evidence.
+Saved Simulations should become decision evidence.
 
 A decision record should show:
 
@@ -400,7 +403,7 @@ A decision record should show:
 
 ### Inbox
 
-Simulation-backed recommendations should route directly to the relevant Plan section with the artifact in focus.
+Simulation-backed recommendations should route directly to the relevant Plan section with the Saved Simulation in focus.
 
 ### Today
 
@@ -408,7 +411,7 @@ Today should summarize simulation readiness, not the full simulation.
 
 Possible card:
 
-> Plan resilience needs review. Last simulation is 53 days old and profile expenses changed materially. Run a fresh simulation before relying on retirement confidence.
+> Plan Strength needs review. Last simulation is 53 days old and profile expenses changed materially. Run a fresh simulation before relying on retirement confidence.
 
 ## Copilot Behavior
 
@@ -416,7 +419,7 @@ Copilot should use simulation as a tool, not as a parallel calculator.
 
 Copilot can:
 
-- explain saved simulation artifacts
+- explain Saved Simulations
 - run a fresh simulation through the official API
 - compare proposed changes
 - draft a recommendation from a simulation result
@@ -425,7 +428,7 @@ Copilot can:
 
 Copilot should not:
 
-- invent probability-of-success numbers
+- invent Plan Strength or funded-trial numbers
 - silently change plan assumptions
 - treat stale simulations as current
 - override weak or missing input warnings
@@ -433,7 +436,7 @@ Copilot should not:
 Every Copilot simulation answer should be able to expose:
 
 - plan id
-- simulation artifact id or run id
+- Saved Simulation id or Simulation Run id
 - seed
 - run count
 - return provider
@@ -446,7 +449,7 @@ Add simulation-backed recommendation generators after the first full simulation 
 
 Initial generators:
 
-- `generator:plan_resilience_review`
+- `generator:plan_strength_review`
 - `generator:fragile_year_review`
 - `generator:withdrawal_order_review`
 - `generator:spending_flexibility_review`
@@ -501,14 +504,14 @@ Simulation credibility needs tests beyond ordinary unit coverage.
 
 ### UX Contract Tests
 
-- Plan renders probability, fan chart data, warnings, and recommended levers
+- Plan renders Plan Strength, fan chart data, warnings, and recommended what-if changes
 - scenario compare renders baseline/candidate deltas
-- saved artifacts route to Decisions and Inbox
-- Copilot links to simulation run or artifact instead of uncited numbers
+- Saved Simulations route to Decisions and Inbox
+- Copilot links to Simulation Run or Saved Simulation instead of uncited numbers
 
-### Parity Tests
+### Outcome Tests
 
-Create fixture scenarios inspired by Ignidash-style public behavior, but implemented against BuildWealth contracts:
+Create fixture scenarios that prove the same or better user outcomes through BuildWealth contracts:
 
 - accumulation-only FIRE plan
 - retirement drawdown plan
@@ -532,7 +535,8 @@ Build:
 - `return_providers.py`
 - `plan_simulation_engine.py`
 - p10/p25/p50/p75/p90 percentile timelines
-- probability of success
+- Plan Strength
+- funded-trial rate
 - failure-year distribution
 - deterministic seed behavior
 - backend tests for core engine behavior
@@ -556,14 +560,14 @@ Build:
 - `PlanSimulationRunResponse`
 - `/api/plans/{plan_id}/simulation/run`
 - `/api/plans/{plan_id}/simulation/compare`
-- artifact save/read behavior
+- Saved Simulation save/read behavior
 - service and route tests
 
 Acceptance:
 
-- a run explains success probability, fragile years, and recommended levers
+- a run explains Plan Strength, fragile years, and recommended what-if changes
 - compare response explains what improved or worsened
-- saved artifacts can be retrieved by Plan and Copilot
+- Saved Simulations can be retrieved by Plan and Copilot
 
 ### Phase 3: v2 Plan Experience
 
@@ -573,13 +577,13 @@ Make simulation understandable without Copilot.
 
 Build:
 
-- Plan -> Trajectory simulation panel
+- Plan -> Simulations panel
 - fan chart data rendering
 - percentile cards
 - fragile-year list
-- recommended levers
-- save artifact action
-- Plan -> Scenarios comparison panel
+- recommended what-if changes
+- save simulation action
+- Plan -> Simulations comparison panel
 - browser tests for run, compare, save, and focus routes
 
 Acceptance:
@@ -619,24 +623,24 @@ Build:
 
 - Copilot simulation run tool
 - Copilot simulation compare tool
-- artifact explanation prompts
+- Saved Simulation explanation prompts
 - missing-context handling
 - tool trace display
-- tests proving Copilot cites run/artifact ids
+- tests proving Copilot cites Simulation Run or Saved Simulation ids
 
 Acceptance:
 
-- Copilot can answer "why did my probability change?" from saved artifacts and current context
+- Copilot can answer "why did my Plan Strength change?" from Saved Simulations and current context
 - Copilot can run a fresh simulation only through official APIs
 - Copilot can draft, but not silently apply, plan changes
 
 ## Consumer Value Opportunities
 
-BuildWealth can exceed Ignidash if it owns these moments:
+BuildWealth can exceed ordinary retirement calculators if it owns these moments:
 
 **From probability to action**
 
-Do not stop at "82% probability of success." Show what could improve the plan and how much.
+Do not stop at a funded-trial percentage. Show what could improve the plan and how much.
 
 **From generic model to personal reality**
 
@@ -648,7 +652,7 @@ Warn when the last simulation is stale because income, expenses, portfolio, tax 
 
 **From AI explanation to evidence trail**
 
-Every important explanation should point to a saved run, artifact, recommendation, or decision.
+Every important explanation should point to a Simulation Run, Saved Simulation, recommendation, or decision.
 
 **From hidden complexity to confidence**
 
@@ -659,9 +663,9 @@ Show the user what is decision-grade, what is weak, and what needs review before
 This feature is ready when:
 
 - BuildWealth can run full annual Monte Carlo paths over account, tax, income, expense, contribution, withdrawal, RMD, Social Security, and Roth conversion mechanics.
-- The Plan UI shows probability of success, percentile timelines, failure modes, and recommended levers.
+- The Plan UI shows Plan Strength, funded-trial rate, percentile timelines, failure modes, and recommended what-if changes.
 - Historical backtests and Monte Carlo outputs are explainable in the same Plan workspace.
-- Simulation artifacts can be saved and linked to decisions and recommendations.
+- Saved Simulations can be linked to decisions and recommendations.
 - Copilot can explain and operate simulation runs without becoming a separate source of truth.
 - Tests cover deterministic behavior, percentile ordering, historical sequences, cash-flow sensitivity, tax/account behavior, API contracts, and primary v2 UI flows.
 - User-facing language avoids certainty and frames outputs as decision support.
@@ -673,7 +677,7 @@ The recommended first slice is:
 - [ ] Add `return_providers.py` with fixed, normal, historical sequence, and historical bootstrap providers.
 - [ ] Add `plan_simulation_engine.py` that runs full annual paths using existing account/tax/cash-flow helpers where possible.
 - [ ] Return p10/p25/p50/p75/p90 timelines and terminal values.
-- [ ] Return probability of success and first-failure-year distribution.
+- [ ] Return Plan Strength, funded-trial rate, and first-failure-year distribution.
 - [ ] Add backend tests for determinism, percentile ordering, historical sequence selection, and contribution/spending sensitivity.
 - [ ] Keep existing `ScenarioEngine.run(...)` and `/api/planning/scenarios` compatible.
 

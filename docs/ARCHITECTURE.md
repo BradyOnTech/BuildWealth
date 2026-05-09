@@ -1,55 +1,77 @@
 # Architecture
 
-## Overview
-BuildWealth runs as a standalone local application with Python as the control plane and data owner.
-Selected high-complexity calculations are delegated to optional, contract-bound sidecars adapted from Ghostfolio and Ignidash.
+**Status**
 
-## Core Principles
-1. Single source of truth: orchestrator owns persistence, schema upgrades, and API contracts.
-2. Contract-first engine reuse: sidecars communicate only via versioned `/v{n}/...` payload contracts.
-3. Safe degraded mode: sidecar failures or contract mismatches never take down core orchestrator flows.
-4. Single user entrypoint: BuildWealth UI/API is the product surface, not external upstream UIs.
+Active architecture summary. This document supersedes earlier sidecar-first architecture language.
 
-## Runtime Components
+**Overview**
 
-### 1) BuildWealth Orchestrator (`localhost:8090`)
-- FastAPI app + web UI
-- Local JSON stores for portfolio, plans, profile, recommendations, and conversations
-- Migration/normalization on read and write
+BuildWealth runs as a standalone local-first application with the Python orchestrator as the control plane, data owner, calculation owner, API owner, and Copilot tool boundary.
+
+The long-term architecture is BuildWealth-native capability ownership. Portfolio analytics, import/review, asset registry, plan simulations, strategy comparisons, recommendations, audit trails, and Copilot workflows should live inside BuildWealth and use BuildWealth language.
+
+**Core Principles**
+
+1. Single source of truth: the orchestrator owns persistence, schema upgrades, API contracts, and durable financial state.
+2. BuildWealth-native capabilities: user workflows should not depend on external app surfaces, labels, settings, or runtime paths.
+3. v2 product surface: all current and future user workflows target v2; classic/v1 is temporary migration scaffolding.
+4. Reviewed mutation: Copilot, recommendations, imports, simulations, and strategy comparisons may draft changes, but material changes use review/apply flows.
+5. Plain-language decision support: user-facing copy should describe what is safe to do next, not expose internal model or engine jargon.
+
+**Runtime Components**
+
+### 1. BuildWealth Orchestrator
+
+- FastAPI app and local web UI host
+- Local stores for Profile, Portfolio, Plan, Recommendations, Research artifacts, Copilot context, and system state
+- Schema migration and normalization on read/write paths
+- Portfolio, planning, recommendation, research, import, audit, and storage services
 - Copilot orchestration, tool routing, and context packaging
 
-### 2) Ghostfolio Compute Sidecar (`localhost:8411`, optional)
-- Benchmark comparison calculations
-- Attribution calculations
-- Stateless HTTP compute only; no direct persistence access
+### 2. v2 Product Surface
 
-### 3) Ignidash Compute Sidecar (`localhost:8412`, optional)
-- Scenario simulation and planning compute paths
-- Stateless HTTP compute only; no direct persistence access
+- Primary user interface for Today, Inbox, Plan, Portfolio, Profile, Copilot, and Data & Tools
+- Canonical home for all new user workflows
+- Replacement target for classic/v1 workflows through Workflow Replacement, not screen cloning
 
-### 4) OpenBB/LLM Providers (optional external APIs)
-- Market/research enrichment and model inference
-- Accessed through orchestrator-owned adapter/services
+### 3. BuildWealth-Native Capability Modules
 
-## Data and Control Flow
-1. User/API writes update local orchestrator stores only.
-2. Orchestrator computes local outputs and can call sidecars for selected domains.
-3. Sidecar request/response payloads are contract-validated.
-4. Engine status probes track `reachable`, `contract_version`, and `contract_compatible`.
-5. If sidecar is unavailable or mismatched, orchestrator emits explicit degraded metadata and uses local fallback where available.
+- **Import Workbench:** import preview, mapping, reconciliation, duplicate review, account matching, unknown asset resolution, apply, and Import Reports
+- **Asset Registry:** asset resolution, classification, metadata quality, manual overrides, price/FX support, and Asset Review Items
+- **Portfolio Analytics Engine:** portfolio performance, benchmark, attribution, allocation, risk, fit review, and trade impact
+- **Portfolio Audit:** import reports, transaction changes, account changes, asset resolutions, manual price/FX overrides, lot/cost-basis changes, corporate actions, review packets, and saved trade simulations
+- **Plan Simulation Engine:** scenarios, branches, simulations, Saved Simulations, Plan Strength, failure-mode analysis, and historical/Monte Carlo paths
+- **Plan Strategy Lab:** contribution ordering, withdrawal strategy comparison, retirement tax controls, and Plan Lever comparison
+- **Context Intelligence:** governed context capture, retrieval, conflict review, and context traces for Copilot and recommendations
 
-## Contract Governance
-- Engine contracts live under `contracts/engine/v1`.
-- Major contract changes require a new version folder and adapter wiring.
-- Adapter paths must be versioned (`/v1/...` etc.).
-- Contract compatibility checks gate sidecar usage at runtime.
+### 4. Optional Providers
 
-## Local Operations Modes
-1. **Default:** orchestrator-only standalone mode.
-2. **Optional:** orchestrator + sidecar engines.
-3. **Optional reference profile:** full Ghostfolio/Ignidash app containers for parity checks and reference workflows only, not the runtime path.
+- Market/research providers such as OpenBB
+- LLM providers
+- Local storage, backup, protection, and git tooling
+
+Providers enrich or operate BuildWealth-owned workflows. They do not own user-facing product surfaces or Canonical State.
+
+**Data And Control Flow**
+
+1. User/API writes update BuildWealth Canonical State through orchestrator-owned routes.
+2. Imports produce Import Reports as Source Evidence and update Portfolio state only after review/apply.
+3. Portfolio analytics read Portfolio state and produce reviewable metrics, risk signals, and evidence.
+4. Plan simulations test Plans, Scenarios, and Branches without mutating the active Plan.
+5. Saved Simulations and Plan Decisions become Source Evidence.
+6. Recommendations route users to the relevant v2 workflow and preserve outcomes.
+7. Copilot operates through the same BuildWealth APIs and review boundaries as the UI.
+
+**Legacy And Migration Notes**
+
+Earlier architecture used Ghostfolio/Ignidash sidecar language for targeted reuse. That direction is superseded by ADR 0003. External app references are historical scaffolding and should be removed from runtime paths, UI labels, module names, recommendation text, Copilot answers, and default operations.
+
+Classic/v1 UI remains temporary migration scaffolding. It should be removed only after the Classic Removal Gate passes and the product owner explicitly approves removal.
 
 See:
-- [`docs/OPERATIONS_STANDALONE.md`](./OPERATIONS_STANDALONE.md)
-- [`docs/MIGRATION_AND_COMPATIBILITY.md`](./MIGRATION_AND_COMPATIBILITY.md)
-- [`docs/SIDECAR_ADAPTER_ARCHITECTURE.md`](./SIDECAR_ADAPTER_ARCHITECTURE.md)
+
+- [ADR 0003: BuildWealth-native capabilities replace upstream sidecars](./adr/0003-buildwealth-native-capabilities-replace-upstream-sidecars.md)
+- [ADR 0004: v2 is the only future product surface](./adr/0004-v2-is-the-only-future-product-surface.md)
+- [BuildWealth Upstream App Exit Strategy](./UPSTREAM_APP_EXIT_STRATEGY_2026-05-08.md)
+- [Native Portfolio and Plan Modules Implementation Guide](./NATIVE_PORTFOLIO_PLAN_MODULES_IMPLEMENTATION_GUIDE_2026-05-08.md)
+- [Monte Carlo Decision Simulation Plan](./MONTE_CARLO_DECISION_SIMULATION_PLAN_2026-05-08.md)

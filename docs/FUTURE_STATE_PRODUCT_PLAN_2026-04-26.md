@@ -22,6 +22,7 @@ Domain expansion plans:
 - [Upstream App Exit Strategy (2026-05-08)](./UPSTREAM_APP_EXIT_STRATEGY_2026-05-08.md)
 - [Native Portfolio and Plan Modules Implementation Guide (2026-05-08)](./NATIVE_PORTFOLIO_PLAN_MODULES_IMPLEMENTATION_GUIDE_2026-05-08.md)
 - [Monte Carlo Decision Simulation Plan (2026-05-08)](./MONTE_CARLO_DECISION_SIMULATION_PLAN_2026-05-08.md)
+- [Native Capability Source-of-Truth Cleanup (2026-05-09)](./NATIVE_CAPABILITY_SOURCE_OF_TRUTH_CLEANUP_2026-05-09.md)
 
 ## Product Thesis
 

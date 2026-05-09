@@ -20,10 +20,8 @@ BuildWealth uses file-backed local stores with schema-versioned payloads. Migrat
 - Financial profile payload: `schema_version = 2`
 - Plan workspace payloads (index/settings/timeline/contribution rules/assumption sets/branch templates): `schema_version = 2`
 
-### Sidecar Contracts
-- Ghostfolio benchmark contract: `v1`
-- Ghostfolio attribution contract: `v1`
-- Ignidash scenario contract: `v1`
+### Retired Engine Contracts
+Earlier builds included versioned sidecar contracts for benchmark, attribution, and scenario calculations. Those contracts are migration scaffolding under the BuildWealth-native capability direction and should not be expanded for new work.
 
 ## Migration Behavior
 
@@ -54,11 +52,13 @@ Key upgrade behaviors:
 - Ensures timeline payload includes retirement block defaults.
 - Ensures contribution rules / assumption sets / branch templates files use current payload envelopes and defaults.
 
-### 4) Sidecar Compatibility
-Engine probes and adapter guards enforce runtime contract compatibility:
-- Sidecars must expose versioned endpoints and compatible contract major version.
-- On mismatch/unverified version, orchestrator avoids unsafe sidecar calls and degrades safely.
-- This contract compatibility applies only to the versioned sidecar runtime; reference-only upstream app containers are not part of the BuildWealth runtime path.
+### 4) Native Capability Migration
+BuildWealth is moving away from sidecar runtime compatibility and toward native orchestrator-owned capabilities.
+
+Migration behavior:
+- existing sidecar-related settings, probes, and contract files may remain until the native replacement workflow is complete
+- new implementation should target native services such as Import Workbench, Asset Registry, Portfolio Analytics Engine, Plan Simulation Engine, and Plan Strategy Lab
+- removal should happen after tests prove no active v2 workflow depends on the old adapter path
 
 ### 5) Durable Storage Upgrade Path (Phase 6.0 Slice 1)
 BuildWealth now includes a migration service to stage file-backed stores into a SQLite durable snapshot:
@@ -116,9 +116,9 @@ Behavior:
 2. Backward compatibility
 - Downgrade compatibility is not guaranteed after migration writes current schema versions.
 
-3. Contract compatibility
-- Sidecar contract compatibility is major-version based.
-- Breaking sidecar changes require new contract version folders and adapter updates.
+3. Retired engine compatibility
+- Sidecar contract compatibility is historical migration scaffolding.
+- New calculation behavior should use native BuildWealth service contracts and typed API schemas.
 
 ## Operational Guidance
 
@@ -131,5 +131,4 @@ Before upgrading BuildWealth:
    - `PUT /api/storage/protection/policy`
    - `POST /api/storage/protection/apply`
 5. Trigger a read path (for example `/api/snapshot/latest`, `/api/financial-profile`, plan APIs) so schema migrations run.
-6. Validate engine compatibility via `/api/engines/status` when sidecars are enabled.
-7. Validate runtime telemetry via `/api/telemetry/runtime` and ensure latency/freshness/cache signals are present.
+6. Validate runtime telemetry via `/api/telemetry/runtime` and ensure latency/freshness/cache signals are present.

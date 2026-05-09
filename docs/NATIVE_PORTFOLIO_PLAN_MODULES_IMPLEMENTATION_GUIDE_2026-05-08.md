@@ -6,7 +6,9 @@
 
 **Status**
 
-Active implementation guide for replacing Ghostfolio/Ignidash runtime value with BuildWealth-native Portfolio, Plan, and Data & Tools workflows.
+Active implementation guide for BuildWealth-native Portfolio, Plan, and Data & Tools workflows.
+
+This guide follows [ADR 0003](./adr/0003-buildwealth-native-capabilities-replace-upstream-sidecars.md) and [ADR 0004](./adr/0004-v2-is-the-only-future-product-surface.md). Do not use external app names, sidecar labels, or classic/v1 fallback language for new product surfaces.
 
 **Guiding Idea**
 
@@ -42,6 +44,27 @@ Each replacement should be a BuildWealth Module with:
 
 Do not create new top-level sidebar entries unless the user would return to that surface weekly. Import, audit, asset maintenance, and settings belong in Data & Tools or contextual Portfolio/Plan sections. Portfolio analytics belong in Portfolio. Scenario templates and simulation explainers belong in Plan.
 
+**Settled Product Language**
+
+| Domain concept | User-facing language |
+| --- | --- |
+| Import Workbench | Import & Review |
+| Import Report | Import report |
+| Asset Registry | Investments & Assets |
+| Asset Review Item | Asset needs review |
+| Portfolio Analytics Engine | Portfolio Analysis |
+| Portfolio Audit | Portfolio History |
+| Plan Simulation Engine | Simulations |
+| Simulation Run | Simulation |
+| Simulation Artifact | Saved Simulation |
+| Plan Resilience | Plan Strength |
+| Plan Lever | What-if change |
+| Plan Lever Impact Level | Review level |
+| Plan Strategy Lab | Strategy Comparison |
+| Plan Decision | Plan decision |
+
+Use "simulation" intentionally in the UI. A plan is the user's real working financial thesis; a simulation is an experiment against it.
+
 **Current Code Homes**
 
 Use existing locality before creating new directories.
@@ -64,6 +87,8 @@ Use existing locality before creating new directories.
 The user starts in Today and sees a stale-data warning, or opens Data & Tools -> Import & Sync directly. They drop a broker CSV or statement into the inbox, preview what BuildWealth recognized, fix mappings, choose accounts, resolve duplicates, apply the import, and receive a durable import report.
 
 **Module:** Import Workbench.
+
+**User-facing label:** Import & Review.
 
 **Backend home:**
 
@@ -104,6 +129,8 @@ The user imports an unknown ticker, reviews a watchlist candidate, or researches
 
 **Module:** Asset Registry.
 
+**User-facing label:** Investments & Assets.
+
 **Backend home:**
 
 - Add `asset_registry.py` as the Interface over seeded metadata, `portfolio_store.py`, `asset_metadata_seed.py`, `price_updater.py`, custom assets, manual prices, and research lookup.
@@ -137,7 +164,9 @@ The user imports an unknown ticker, reviews a watchlist candidate, or researches
 
 The user opens Portfolio from Today or Inbox after a performance, risk, or recommendation alert. They need to know what happened, why it happened, whether it matters, and what action is available.
 
-**Module:** Portfolio Analytics.
+**Module:** Portfolio Analytics Engine.
+
+**User-facing label:** Portfolio Analysis.
 
 **Backend home:**
 
@@ -177,6 +206,8 @@ The user wants to trust the numbers. They need to inspect how imports changed tr
 
 **Module:** Portfolio Audit.
 
+**User-facing label:** Portfolio History.
+
 **Backend home:**
 
 - Keep `portfolio_review_packets.py` for review packet generation.
@@ -204,24 +235,24 @@ The user wants to trust the numbers. They need to inspect how imports changed tr
 
 The user does not want to build every scenario from scratch. They want to ask "what if I retire early?" or "what if I buy a house?" and get a branch they can inspect before it touches the active plan.
 
-**Module:** Plan Template and Snapshot.
+**Module:** Plan Template and Saved Simulation.
 
 **Backend home:**
 
-- Extend `plan_workspace.py` where templates and snapshots belong to a plan.
+- Extend `plan_workspace.py` where templates and Saved Simulation references belong to a plan.
 - Add `plan_templates.py` if template generation, validation, and defaults become complex.
-- Add `plan_snapshots.py` for immutable scenario result snapshots and comparisons.
+- Add `plan_saved_simulations.py` if Saved Simulation volume or lookup needs outgrow the existing Plan evidence pattern.
 - Reuse `timeline_defaults.py`, `timeline_projection.py`, `income_projection.py`, `expense_projection.py`, and `debt_projection.py` for template payloads.
 
 **API shape:**
 
 - Keep existing branch routes: `/api/plans/{plan_id}/branch-templates`, `/api/plans/{plan_id}/scenario-branch`, `/api/plans/{plan_id}/scenario-diff`.
-- Add snapshot routes: `/api/plans/{plan_id}/snapshots`, `/api/plans/{plan_id}/snapshots/{snapshot_id}`, `/api/plans/{plan_id}/snapshots/{snapshot_id}/compare`.
+- Add Saved Simulation routes aligned with the simulation plan: `/api/plans/{plan_id}/simulations/saved`, `/api/plans/{plan_id}/simulations/saved/{saved_simulation_id}`, and `/api/plans/{plan_id}/simulations/saved/{saved_simulation_id}/decision`.
 
 **UI/UX home:**
 
-- Plan -> Branches for template gallery and branch previews.
-- Plan -> Scenarios for saved comparisons.
+- Plan -> What-ifs for template gallery and branch previews.
+- Plan -> Simulations for saved comparisons and Saved Simulations.
 - Plan -> Decisions for the final "why we chose this" record.
 - Inbox may deep-link into a specific branch template when a recommendation needs plan simulation.
 
@@ -229,24 +260,28 @@ The user does not want to build every scenario from scratch. They want to ask "w
 
 - Show templates as user jobs, not technical presets: early retirement, job change, home purchase, one-income household, Roth conversion ladder, market stress, high-tax retirement.
 - Preview assumptions before running.
-- Save scenario outputs as immutable snapshots.
-- Let the user compare snapshot vs active plan and attach the result to a decision.
+- Save scenario outputs as immutable Saved Simulations.
+- Let the user compare Saved Simulation vs active plan and attach the result to a decision.
 
 **Tests:**
 
-- backend tests for template validation, branch payload construction, snapshot immutability, and comparison deltas
-- v2 tests for template selection, branch preview, snapshot save, and decision attachment
+- backend tests for template validation, branch payload construction, Saved Simulation immutability, and comparison deltas
+- v2 tests for template selection, branch preview, Saved Simulation save, and decision attachment
 
 **User Workflow 6: Understanding Simulation Results**
 
 The user runs a scenario and sees a projection. They need to understand what drove the result, what changed compared with the active plan, and which assumptions matter most.
 
-**Module:** Plan Simulation Explainer.
+**Module:** Plan Simulation Engine.
+
+**User-facing label:** Simulations.
 
 **Backend home:**
 
-- Keep `scenario_engine.py`, `planning_sidecar.py` while it exists, `tax_engine.py`, `contribution_rules.py`, `rmd_projection.py`, `social_security_projection.py`, and projection services.
+- Keep `scenario_engine.py`, `tax_engine.py`, `contribution_rules.py`, `rmd_projection.py`, `social_security_projection.py`, and projection services.
+- Treat `planning_sidecar.py` as migration scaffolding while native simulation coverage is built.
 - Add `plan_simulation_analyzer.py` to extract chart-ready metrics, phase summaries, drivers, warnings, and explanation payloads from raw simulation results.
+- Add `plan_lever_impact.py` for two-stage Plan Lever Impact Policy classification.
 - Use existing `test_simulation_delta.py` patterns for comparison behavior.
 
 **API shape:**
@@ -256,18 +291,19 @@ The user runs a scenario and sees a projection. They need to understand what dro
 
 **UI/UX home:**
 
-- Plan -> Trajectory for the active plan.
-- Plan -> Scenarios for scenario deltas.
+- Plan -> Overview for active Plan Strength.
+- Plan -> Simulations for simulation runs, comparison output, and Saved Simulations.
 - Plan -> Withdrawals for drawdown strategy comparison.
 - Plan -> Assumptions for driver review.
 
 **UX requirements:**
 
-- Show percentile bands when stochastic or Monte Carlo runs are active.
+- Show percentile bands when stochastic or Monte Carlo simulations are active.
 - Show year-by-year cash flow, taxes, contributions, withdrawals, account balances, and RMD effects.
 - Explain deltas in plain language: "this scenario improves the median ending value because expenses fall in 2031 and taxable withdrawals start later."
 - Distinguish model weakness from bad outcome. Missing tax data, stale profile fields, and low simulation confidence should be visible.
 - Make every recommendation trace back to the simulation inputs that produced it.
+- Saved Simulations are immutable; changing one creates a new simulation based on the saved one.
 
 **Tests:**
 
@@ -280,6 +316,8 @@ The user runs a scenario and sees a projection. They need to understand what dro
 The user wants to know where the next dollar should go before retirement and how retirement withdrawals should happen later.
 
 **Module:** Plan Strategy Lab.
+
+**User-facing label:** Strategy Comparison.
 
 **Backend home:**
 
@@ -304,6 +342,7 @@ The user wants to know where the next dollar should go before retirement and how
 - Explain shared limits, employer match, HSA eligibility, IRA income restrictions, taxable overflow, and mega-backdoor assumptions.
 - Compare withdrawal strategies by taxes, ending value, depletion risk, cash-flow stability, and account exhaustion order.
 - Let the user save the chosen strategy as a plan decision.
+- Classify every what-if change with the two-stage Plan Lever Impact Policy before apply.
 
 **Cross-Cutting Copilot Guidelines**
 
@@ -318,9 +357,9 @@ Copilot should help the user reach these workflows, not replace them.
 **Build Order**
 
 1. **Native framing and cleanup.** Remove external app links once replacement links exist, rename user-facing sidecar labels, and update stale license/provenance docs.
-2. **Import Workbench.** This unlocks trustworthy data and removes one of the strongest reasons to keep Ghostfolio reachable.
-3. **Portfolio Analytics and Asset Registry.** This turns Portfolio into the complete capital workspace and removes another major Ghostfolio reason.
-4. **Plan Templates and Snapshots.** This gives users a fast way into meaningful what-if work and removes a major Ignidash reason.
+2. **Import Workbench.** This unlocks trustworthy data and removes one of the strongest reasons old external portfolio workflows remained reachable.
+3. **Portfolio Analytics and Asset Registry.** This turns Portfolio into the complete capital workspace and removes another major old external portfolio workflow.
+4. **Plan Templates and Saved Simulations.** This gives users a fast way into meaningful what-if work and removes another major old external planning workflow.
 5. **Simulation Explainer and Strategy Lab.** This makes advanced planning legible enough for real decisions.
 6. **Audit, export, and final deletion.** Once native workflows cover the daily jobs, remove dead bridge code, default infrastructure references, and legacy app navigation.
 
