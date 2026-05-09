@@ -449,6 +449,118 @@
   gap: var(--s-3);
 }
 
+/* ───────────  Performance analytics  ─────────── */
+
+.portfolio-analytics {
+  display: grid;
+  gap: var(--s-4);
+}
+
+.analytics-grid,
+.attribution-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--s-4);
+}
+
+.analytics-panel {
+  display: grid;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  border: var(--hair) solid var(--rule-soft);
+  border-radius: var(--r-md);
+  background: var(--paper-bright);
+}
+
+.analytics-panel.wide {
+  grid-column: 1 / -1;
+}
+
+.analytics-kicker {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+}
+
+.analytics-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--s-3);
+  margin: 0;
+}
+
+.analytics-metrics.compact {
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+}
+
+.analytics-metrics div {
+  display: grid;
+  gap: 4px;
+}
+
+.analytics-metrics dt,
+.attribution-row em,
+.benchmark-row span,
+.analytics-warnings {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.analytics-metrics dd {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: var(--t-body);
+  color: var(--ink-strong);
+}
+
+.benchmark-rows,
+.attribution-list {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.benchmark-row,
+.attribution-row {
+  display: grid;
+  grid-template-columns: minmax(72px, 1fr) auto auto;
+  gap: var(--s-3);
+  align-items: center;
+  padding: var(--s-2) 0;
+  border-top: var(--hair) dotted var(--rule-soft);
+}
+
+.benchmark-row strong,
+.attribution-row strong {
+  color: var(--ink-strong);
+}
+
+.attribution-list h4 {
+  margin: 0 0 var(--s-2);
+  font-size: var(--t-body);
+  color: var(--ink-strong);
+}
+
+.attribution-row span:first-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.analytics-warnings {
+  display: grid;
+  gap: 4px;
+  padding: var(--s-3);
+  border-left: 2px solid var(--brass);
+  background: var(--shade);
+}
+
+.analytics-warnings p {
+  margin: 0;
+}
+
 .portfolio-maintenance-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

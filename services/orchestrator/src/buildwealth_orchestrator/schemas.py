@@ -158,6 +158,15 @@ class PortfolioAttributionResponse(_EngineContractResponseBase):
     positions: list[PortfolioAttributionPosition] = Field(default_factory=list)
 
 
+class PortfolioAnalyticsResponse(BaseModel):
+    generated_at: datetime
+    status: Literal["ready", "partial", "unavailable"] = "unavailable"
+    performance: dict[str, Any] = Field(default_factory=dict)
+    benchmark: dict[str, Any] = Field(default_factory=dict)
+    attribution: dict[str, Any] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class ScenarioRequest(BaseModel):
     current_portfolio_value_usd: float | None = None
     annual_contribution_usd: float | None = None

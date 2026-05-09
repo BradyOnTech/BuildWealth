@@ -1,7 +1,8 @@
 // PORTFOLIO — three movements.
 //   I.   The standing       — total value + performance
 //   II.  The composition    — allocation strata + top holdings
-//   III. The watch          — risk alerts or all-clear
+//   III. Performance        — returns, benchmark comparison, attribution
+//   IV.  The watch          — risk alerts or all-clear
 // Footer — Look closer (native maintenance records and audit follow-through).
 
 import { api } from '../lib/api.js';
@@ -9,6 +10,7 @@ import { state } from '../lib/state.js';
 import { html, raw, $, esc, setView } from '../lib/dom.js';
 import { renderStanding } from './portfolio/standing.js';
 import { renderComposition } from './portfolio/composition.js';
+import { renderAnalytics } from './portfolio/analytics.js';
 import { renderWatch } from './portfolio/watch.js';
 
 const MONEY_FMT = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -38,12 +40,18 @@ export async function init(params = {}) {
   let data = null;
   const maintenanceSection = normalizeMaintenanceSection(params.section || '');
   let maintenance = null;
+  let analytics = null;
   try {
-    const [holdingsData, maintenanceData] = await Promise.all([
+    const [holdingsData, analyticsData, maintenanceData] = await Promise.all([
       api.holdings(),
+      api.portfolioAnalytics({ limit: 180, topN: 5 }).catch((err) => ({
+        status: 'unavailable',
+        warnings: [err?.message || 'Performance analytics are unavailable.'],
+      })),
       maintenanceSection ? loadMaintenanceSection(maintenanceSection, params) : Promise.resolve(null),
     ]);
     data = holdingsData;
+    analytics = analyticsData;
     maintenance = maintenanceData;
     state.portfolio = data;
   } catch (err) {
@@ -57,6 +65,7 @@ export async function init(params = {}) {
   setView(root, html`
     ${raw(renderStanding(data))}
     ${raw(renderComposition(data))}
+    ${raw(renderAnalytics(analytics))}
     ${raw(renderWatch(data))}
     ${raw(renderFitReview(null, { initialSymbol: params.fit || '' }))}
     ${raw(renderLookCloser(maintenanceSection, maintenance))}
@@ -82,7 +91,7 @@ export function renderFitReview(result = null, { loading = false, error = '', in
   return html`
     <section class="fit-review" aria-labelledby="portfolio-fit-title">
       <header class="section-head">
-        <span class="section-eyebrow">Movement IV</span>
+      <span class="section-eyebrow">Movement V</span>
         <h2 class="section-title" id="portfolio-fit-title">${title}</h2>
       </header>
       <form class="fit-review-form" data-fit-review-form>
@@ -386,7 +395,7 @@ export function renderLookCloser(activeSection = '', maintenance = null) {
   return html`
     <section>
       <header class="section-head">
-        <span class="section-eyebrow">Movement V</span>
+        <span class="section-eyebrow">Movement VI</span>
         <h2 class="section-title">Maintenance</h2>
         <p class="section-lede">
           Lower-frequency tools that keep the picture honest. Import reports,

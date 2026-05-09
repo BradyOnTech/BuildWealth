@@ -53,6 +53,7 @@ from buildwealth_orchestrator.schemas import (
     AssetRegistryItem,
     AssetRegistrySearchResponse,
     PortfolioAuditResponse,
+    PortfolioAnalyticsResponse,
     PlanArtifactSummary,
     PlanArtifactResponse,
     PlanCreateRequest,
@@ -200,6 +201,7 @@ from buildwealth_orchestrator.services.csv_importer import (
 from buildwealth_orchestrator.services.import_workbench import ImportWorkbenchStore
 from buildwealth_orchestrator.services.asset_registry import AssetRegistry
 from buildwealth_orchestrator.services.portfolio_audit import build_portfolio_audit_payload
+from buildwealth_orchestrator.services.portfolio_analytics import build_portfolio_analytics_payload
 from buildwealth_orchestrator.services.llm_clients import (
     DEFAULT_OPENAI_BASE_URL,
     DEFAULT_OPENAI_MODEL,
@@ -16070,6 +16072,51 @@ async def get_portfolio_attribution(top_n: int = 5) -> PortfolioAttributionRespo
         return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/portfolio/analytics", response_model=PortfolioAnalyticsResponse)
+async def get_portfolio_analytics(
+    symbols: str | None = None,
+    limit: int = 180,
+    top_n: int = 5,
+) -> PortfolioAnalyticsResponse:
+    holdings_payload = portfolio_store.get_holdings()
+    benchmark_response: PortfolioBenchmarkResponse | None = None
+    benchmark_error = ""
+    attribution_response: PortfolioAttributionResponse | None = None
+    attribution_error = ""
+
+    resolved_symbols = parse_benchmark_symbols(
+        symbols,
+        default_symbols=settings.portfolio_benchmark_default_symbols,
+    )
+    if resolved_symbols:
+        try:
+            benchmark_response = await benchmark_service.compare(
+                benchmark_symbols=resolved_symbols,
+                limit=max(2, min(int(limit), 3650)),
+                sidecar_guard_reason="BuildWealth native analytics uses local benchmark calculations.",
+            )
+        except ValueError as exc:
+            benchmark_error = str(exc)
+
+    try:
+        attribution_response = await attribution_service.analyze(
+            top_n=max(1, min(int(top_n), 50)),
+            sidecar_guard_reason="BuildWealth native analytics uses local return attribution.",
+        )
+    except ValueError as exc:
+        attribution_error = str(exc)
+
+    return PortfolioAnalyticsResponse(
+        **build_portfolio_analytics_payload(
+            holdings_payload=holdings_payload,
+            benchmark_response=benchmark_response,
+            benchmark_error=benchmark_error,
+            attribution_response=attribution_response,
+            attribution_error=attribution_error,
+        )
+    )
 
 
 @app.get("/api/portfolio/accounts")

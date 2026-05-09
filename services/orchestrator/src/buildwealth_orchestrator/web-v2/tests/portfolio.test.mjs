@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { api } from '../lib/api.js';
+import { renderAnalytics } from '../views/portfolio/analytics.js';
 import { renderFitResult, renderFitReview, renderLookCloser } from '../views/portfolio.js';
 
 test('portfolio fit review renders safe empty state', () => {
@@ -190,4 +192,62 @@ test('portfolio audit renders import and follow-through findings', () => {
   assert.match(markup, /Recent import reports/);
   assert.match(markup, /broker\.csv/);
   assert.doesNotMatch(markup, /classic/i);
+});
+
+test('portfolio analytics renders performance benchmarks and contributors', () => {
+  const markup = String(renderAnalytics({
+    status: 'ready',
+    performance: {
+      total_return_usd: 1250,
+      price_return_usd: 1000,
+      income_return_usd: 250,
+      twr_annualized_return_pct: 12.4,
+      xirr_annualized_return_pct: 10.2,
+      net_contributions: 5000,
+    },
+    benchmark: {
+      status: 'ready',
+      portfolio_return_pct: 12.4,
+      max_drawdown_pct: -3.1,
+      rows: [{ symbol: 'SPY', benchmark_return_pct: 8.2, alpha_pct: 4.2 }],
+    },
+    attribution: {
+      status: 'ready',
+      contributors: [{ symbol: 'VTI', name: 'Total Market', total_return: 1250, contribution_pct: 100 }],
+      detractors: [],
+    },
+    warnings: ['Benchmark service disabled; using local fallback'],
+  }));
+
+  assert.match(markup, /Performance/);
+  assert.match(markup, /Total return/);
+  assert.match(markup, /Benchmarks/);
+  assert.match(markup, /SPY/);
+  assert.match(markup, /alpha/);
+  assert.match(markup, /Return contributors/);
+  assert.match(markup, /VTI/);
+  assert.doesNotMatch(markup, /Ghostfolio/);
+  assert.doesNotMatch(markup, /sidecar/);
+});
+
+test('api portfolio analytics helper calls native analytics endpoint', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    calls.push(url);
+    return new Response(JSON.stringify({ status: 'ready' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  await api.portfolioAnalytics({ symbols: 'SPY,VTI', limit: 10, topN: 3 });
+
+  assert.match(calls[0], /\/api\/portfolio\/analytics\?/);
+  assert.match(calls[0], /symbols=SPY%2CVTI/);
+  assert.match(calls[0], /limit=10/);
+  assert.match(calls[0], /top_n=3/);
 });

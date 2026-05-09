@@ -14,7 +14,7 @@ export function renderWatch(data) {
 
   return html`
     <section>
-      ${raw(sectionHead('III', 'The watch.', null))}
+      ${raw(sectionHead('IV', 'The watch.', null))}
       ${raw(alerts.length ? renderAlerts(alerts, breachCount, watchCount) : renderAllClear(metrics))}
     </section>
   `;
