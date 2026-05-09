@@ -52,7 +52,9 @@ export async function init(params = {}) {
     ]);
     data = holdingsData;
     analytics = analyticsData;
-    maintenance = maintenanceData;
+    maintenance = maintenanceSection === 'risk-policy' && maintenanceData
+      ? { ...maintenanceData, riskAlerts: holdingsData?.risk_alerts || null }
+      : maintenanceData;
     state.portfolio = data;
   } catch (err) {
     setView(root, html`
@@ -390,7 +392,7 @@ export function renderLookCloser(activeSection = '', maintenance = null) {
     { id: 'prices', label: 'Manual prices', hint: 'Override or backfill quotes' },
     { id: 'fx', label: 'FX rates', hint: 'Currency conversion rates' },
     { id: 'cost-basis', label: 'Cost basis', hint: 'Lot-level basis adjustments' },
-    { id: 'risk-policy', label: 'Risk policy', href: '#profile?section=investing', hint: 'Single-investment, cash cushion, sectors' },
+    { id: 'risk-policy', label: 'Guardrails', hint: 'Plain limits for concentration, accounts, sectors, and spread' },
   ];
   return html`
     <section>
@@ -438,6 +440,12 @@ function normalizeMaintenanceSection(section) {
     'fx-rates': 'fx',
     'cost-basis': 'cost-basis',
     cost_basis: 'cost-basis',
+    guardrails: 'risk-policy',
+    guardrail: 'risk-policy',
+    risk: 'risk-policy',
+    'risk-policy': 'risk-policy',
+    risk_policy: 'risk-policy',
+    allocation: 'risk-policy',
   };
   return aliases[value] || '';
 }
@@ -454,6 +462,7 @@ async function loadMaintenanceSection(section, params = {}) {
     if (section === 'prices') return { section, payload: await api.portfolioManualPrices() };
     if (section === 'fx') return { section, payload: await api.portfolioFxRates() };
     if (section === 'cost-basis') return { section, payload: await api.portfolioCostBasisMethods() };
+    if (section === 'risk-policy') return { section, payload: await api.portfolioRiskPolicy() };
   } catch (err) {
     return { section, error: err?.message || 'Could not load this portfolio section.' };
   }
@@ -472,7 +481,7 @@ function renderMaintenanceDetail(section, maintenance) {
 
   const title = section === 'assets'
     ? 'Investments & Assets'
-    : (section === 'audit' ? 'Portfolio Audit' : labelize(section));
+    : (section === 'audit' ? 'Portfolio Audit' : (section === 'risk-policy' ? 'Portfolio Guardrails' : labelize(section)));
   const rows = maintenanceRows(section, maintenance);
   return html`
     <article class="portfolio-maintenance-detail" data-portfolio-maintenance-detail>
@@ -483,11 +492,205 @@ function renderMaintenanceDetail(section, maintenance) {
       </header>
       ${section === 'audit' ? raw(renderPortfolioAudit(maintenance?.payload || {})) : ''}
       ${section === 'assets' ? raw(renderAssetRegistryTools(maintenance)) : ''}
-      ${section === 'audit'
+      ${section === 'risk-policy' ? raw(renderRiskGuardrails(maintenance)) : ''}
+      ${section === 'audit' || section === 'risk-policy'
         ? ''
         : (rows.length ? raw(renderMaintenanceRows(section, rows)) : html`<p class="fit-empty">Nothing recorded here yet.</p>`)}
     </article>
   `;
+}
+
+const RISK_GUARDRAIL_FIELDS = [
+  {
+    key: 'single_holding_max_pct',
+    label: 'One investment max',
+    unit: '%',
+    min: 0,
+    max: 100,
+    step: '0.5',
+    help: 'Warn when one holding takes up too much of the portfolio.',
+  },
+  {
+    key: 'top3_holdings_max_pct',
+    label: 'Top 3 investments max',
+    unit: '%',
+    min: 0,
+    max: 100,
+    step: '0.5',
+    help: 'Warn when the three biggest holdings carry too much of the portfolio.',
+  },
+  {
+    key: 'account_max_pct',
+    label: 'One account max',
+    unit: '%',
+    min: 0,
+    max: 100,
+    step: '0.5',
+    help: 'Warn when too much value sits in one account.',
+  },
+  {
+    key: 'asset_class_max_pct',
+    label: 'One investment type max',
+    unit: '%',
+    min: 0,
+    max: 100,
+    step: '0.5',
+    help: 'Warn when one broad type, like stocks or bonds, dominates.',
+  },
+  {
+    key: 'sector_max_pct',
+    label: 'One sector max',
+    unit: '%',
+    min: 0,
+    max: 100,
+    step: '0.5',
+    help: 'Warn when one business sector gets too large.',
+  },
+  {
+    key: 'region_max_pct',
+    label: 'One region max',
+    unit: '%',
+    min: 0,
+    max: 100,
+    step: '0.5',
+    help: 'Warn when one country or region carries too much exposure.',
+  },
+  {
+    key: 'hhi_max',
+    label: 'Concentration score max',
+    unit: '',
+    min: 0.01,
+    max: 1,
+    step: '0.01',
+    help: 'A smaller score means the portfolio is more spread out.',
+  },
+  {
+    key: 'effective_positions_min',
+    label: 'Minimum spread',
+    unit: '',
+    min: 1,
+    max: 100,
+    step: '1',
+    help: 'The minimum number of meaningfully different positions.',
+  },
+];
+
+function renderRiskGuardrails(maintenance = {}) {
+  const policy = maintenance?.payload || {};
+  const thresholds = policy.thresholds || {};
+  const alerts = maintenance?.riskAlerts || {};
+  const alertItems = Array.isArray(alerts.alerts) ? alerts.alerts : [];
+  return html`
+    <div class="portfolio-guardrails">
+      <div class="portfolio-guardrails-explainer">
+        <div>
+          <h4>How BuildWealth reads this</h4>
+          <p>
+            Watch means close to a limit. Low, medium, and high mean how far a current holding,
+            account, sector, region, or concentration score has moved past the limit.
+          </p>
+        </div>
+        <dl>
+          <div><dt>High</dt><dd>Far past the limit and worth reviewing first.</dd></div>
+          <div><dt>Medium</dt><dd>Past the limit enough to plan a fix.</dd></div>
+          <div><dt>Low</dt><dd>Slightly past the limit or close enough to watch.</dd></div>
+        </dl>
+      </div>
+      <form class="portfolio-guardrails-form" data-risk-policy-form>
+        <div class="portfolio-guardrails-grid">
+          ${raw(RISK_GUARDRAIL_FIELDS.map(field => renderRiskGuardrailField(field, thresholds[field.key])).join(''))}
+        </div>
+        <div class="portfolio-guardrails-actions">
+          <button class="fit-review-button" type="submit">Save guardrails</button>
+          <p class="portfolio-guardrails-status" data-risk-policy-status>
+            Saving refreshes the current guardrail check.
+          </p>
+        </div>
+      </form>
+      ${raw(renderRiskAlertSummary(alertItems, alerts))}
+    </div>
+  `;
+}
+
+function renderRiskGuardrailField(field, value) {
+  const displayValue = Number.isFinite(Number(value)) ? Number(value) : '';
+  return html`
+    <label class="portfolio-guardrail-field">
+      <span class="portfolio-guardrail-label">
+        ${field.label}
+        ${field.unit ? raw(`<em>${esc(field.unit)}</em>`) : ''}
+      </span>
+      <input
+        name="${field.key}"
+        type="number"
+        min="${String(field.min)}"
+        max="${String(field.max)}"
+        step="${field.step}"
+        value="${String(displayValue)}"
+        required
+      >
+      <span class="portfolio-guardrail-help">${field.help}</span>
+    </label>
+  `;
+}
+
+function renderRiskAlertSummary(alerts = [], meta = {}) {
+  const visible = alerts.slice(0, 6);
+  const status = String(meta.status || 'ok');
+  const breachCount = Number(meta.breach_count || 0);
+  const watchCount = Number(meta.watch_count || 0);
+  return html`
+    <div class="portfolio-guardrails-alerts">
+      <div class="portfolio-guardrails-alert-head">
+        <div>
+          <h4>Current guardrail check</h4>
+          <p>${breachCount} over limit · ${watchCount} close to a limit · ${labelize(status)}</p>
+        </div>
+        <span class="portfolio-guardrails-pill ${classToken(status)}">${labelize(status)}</span>
+      </div>
+      ${visible.length ? html`
+        <div class="portfolio-guardrails-alert-list">
+          ${raw(visible.map(renderRiskAlertItem).join(''))}
+        </div>
+      ` : html`<p class="fit-empty">No active guardrail alerts. The current portfolio is inside these limits.</p>`}
+    </div>
+  `;
+}
+
+function renderRiskAlertItem(alert = {}) {
+  const detail = formatRiskAlertDetail(alert);
+  const severity = String(alert.severity || 'low');
+  const state = String(alert.state || 'watch');
+  return html`
+    <article class="portfolio-guardrail-alert ${classToken(severity)}">
+      <div>
+        <span>${labelize(state)} · ${labelize(severity)}</span>
+        <h5>${alert.label || 'Guardrail alert'}</h5>
+        <p>${detail || alert.message || ''}</p>
+      </div>
+      <p>${alert.recommendation || 'Review this before making the next portfolio change.'}</p>
+    </article>
+  `;
+}
+
+function classToken(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '');
+}
+
+function formatRiskAlertDetail(alert = {}) {
+  const observed = formatRiskMetric(alert, alert.observed);
+  const threshold = formatRiskMetric(alert, alert.threshold);
+  if (!observed || !threshold) return alert.message || '';
+  const direction = alert.direction === 'min' ? 'minimum' : 'limit';
+  return `${observed} now · ${threshold} ${direction}`;
+}
+
+function formatRiskMetric(alert = {}, value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '';
+  if (alert.unit === 'pct') return `${number.toLocaleString('en-US', { maximumFractionDigits: 1 })}%`;
+  if (alert.unit === 'ratio') return number.toLocaleString('en-US', { maximumFractionDigits: 3 });
+  return number.toLocaleString('en-US', { maximumFractionDigits: 1 });
 }
 
 function renderPortfolioAudit(audit = {}) {
@@ -574,16 +777,56 @@ function renderAssetRegistryTools(maintenance = {}) {
 }
 
 function bindMaintenanceTools(root) {
-  const form = root.querySelector('[data-asset-registry-search]');
-  if (!form) return;
-  form.addEventListener('submit', (event) => {
+  const registryForm = root.querySelector('[data-asset-registry-search]');
+  if (registryForm) registryForm.addEventListener('submit', (event) => {
     event.preventDefault();
-    const data = new FormData(form);
+    const data = new FormData(registryForm);
     const query = String(data.get('q') || '').trim();
     const params = new URLSearchParams({ section: 'assets' });
     if (query) params.set('q', query);
     location.hash = `portfolio?${params.toString()}`;
   });
+
+  const riskForm = root.querySelector('[data-risk-policy-form]');
+  if (riskForm) riskForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    await saveRiskGuardrails(riskForm);
+  });
+}
+
+async function saveRiskGuardrails(form) {
+  const statusEl = form.querySelector('[data-risk-policy-status]');
+  const button = form.querySelector('button[type="submit"]');
+  const data = new FormData(form);
+  const body = {};
+  for (const field of RISK_GUARDRAIL_FIELDS) {
+    const rawValue = String(data.get(field.key) || '').trim();
+    if (rawValue === '') continue;
+    body[field.key] = Number(rawValue);
+  }
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Saving';
+  }
+  if (statusEl) {
+    statusEl.textContent = 'Saving guardrails...';
+    statusEl.classList.remove('error');
+  }
+  try {
+    await api.updatePortfolioRiskPolicy(body);
+    if (statusEl) statusEl.textContent = 'Saved. Refreshing current portfolio alerts...';
+    await init({ section: 'risk-policy' });
+  } catch (err) {
+    if (statusEl) {
+      statusEl.textContent = err?.message || 'Could not save guardrails.';
+      statusEl.classList.add('error');
+    }
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = 'Save guardrails';
+    }
+  }
 }
 
 function maintenanceRows(section, maintenance = {}) {
@@ -677,6 +920,7 @@ function maintenanceCopy(section) {
     prices: 'Manual quote overrides for assets that need local pricing evidence.',
     fx: 'Currency conversion rates used to keep portfolio values comparable.',
     'cost-basis': 'Lot accounting defaults used when imported transactions do not specify a method.',
+    'risk-policy': 'Plain-language portfolio limits for concentration, account size, sector exposure, region exposure, and diversification depth.',
   })[section] || 'Portfolio maintenance records.';
 }
 

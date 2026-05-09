@@ -183,6 +183,8 @@ export const api = {
   portfolioManualPrices: () => fetchJson('/api/portfolio/manual-prices'),
   portfolioFxRates: () => fetchJson('/api/portfolio/fx-rates'),
   portfolioCostBasisMethods: () => fetchJson('/api/portfolio/cost-basis-methods'),
+  portfolioRiskPolicy: () => fetchJson('/api/portfolio/risk-policy'),
+  updatePortfolioRiskPolicy: (body = {}) => putJson('/api/portfolio/risk-policy', body),
   watchlist:    (opts = {}) => fetchJson(`/api/portfolio/watchlist?${new URLSearchParams({
     limit: String(opts.limit || 200),
     sort: opts.sort || 'symbol',

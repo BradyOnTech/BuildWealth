@@ -8,9 +8,9 @@ from buildwealth_orchestrator.services.value_coercion import safe_float, utc_now
 
 RISK_ALERTS_SCHEMA_VERSION = 1
 
-# Rule defaults adapted from Ghostfolio x-ray patterns (MIT):
+# Rule defaults are conservative portfolio-review starting points:
 # - account concentration max around 50%
-# - equity cluster guardrail around 82%
+# - asset-class cluster guardrail around 82%
 # - regional cluster guardrail around 69%
 DEFAULT_RISK_THRESHOLDS: dict[str, float] = {
     "single_holding_max_pct": 25.0,

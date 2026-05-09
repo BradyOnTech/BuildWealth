@@ -194,6 +194,58 @@ test('portfolio audit renders import and follow-through findings', () => {
   assert.doesNotMatch(markup, /classic/i);
 });
 
+test('portfolio guardrails render editable plain-language risk limits', () => {
+  const markup = String(renderLookCloser('risk-policy', {
+    section: 'risk-policy',
+    payload: {
+      thresholds: {
+        single_holding_max_pct: 25,
+        top3_holdings_max_pct: 60,
+        account_max_pct: 50,
+        asset_class_max_pct: 82,
+        sector_max_pct: 35,
+        region_max_pct: 69,
+        hhi_max: 0.2,
+        effective_positions_min: 5,
+      },
+    },
+    riskAlerts: {
+      status: 'warning',
+      breach_count: 1,
+      watch_count: 1,
+      alerts: [
+        {
+          state: 'breach',
+          severity: 'medium',
+          label: 'Largest sector concentration',
+          unit: 'pct',
+          direction: 'max',
+          observed: 40,
+          threshold: 35,
+          recommendation: 'Use new purchases to broaden sector exposure.',
+        },
+      ],
+    },
+  }));
+
+  assert.match(markup, /Portfolio Guardrails/);
+  assert.match(markup, /How BuildWealth reads this/);
+  assert.match(markup, /One investment max/);
+  assert.match(markup, /Top 3 investments max/);
+  assert.match(markup, /One investment type max/);
+  assert.match(markup, /Concentration score max/);
+  assert.match(markup, /Minimum spread/);
+  assert.match(markup, /Save guardrails/);
+  assert.match(markup, /High/);
+  assert.match(markup, /Far past the limit/);
+  assert.match(markup, /Largest sector concentration/);
+  assert.match(markup, /40% now · 35% limit/);
+  assert.doesNotMatch(markup, /Ghostfolio/);
+  assert.doesNotMatch(markup, /Ignidash/);
+  assert.doesNotMatch(markup, /sidecar/);
+  assert.doesNotMatch(markup, /classic/i);
+});
+
 test('portfolio analytics renders performance benchmarks and contributors', () => {
   const markup = String(renderAnalytics({
     status: 'ready',
@@ -228,6 +280,29 @@ test('portfolio analytics renders performance benchmarks and contributors', () =
   assert.match(markup, /VTI/);
   assert.doesNotMatch(markup, /Ghostfolio/);
   assert.doesNotMatch(markup, /sidecar/);
+});
+
+test('api portfolio risk policy helpers call native guardrail endpoint', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, options });
+    return new Response(JSON.stringify({ thresholds: {} }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  await api.portfolioRiskPolicy();
+  await api.updatePortfolioRiskPolicy({ single_holding_max_pct: 30 });
+
+  assert.equal(calls[0].url, '/api/portfolio/risk-policy');
+  assert.equal(calls[1].url, '/api/portfolio/risk-policy');
+  assert.equal(calls[1].options.method, 'PUT');
+  assert.equal(JSON.parse(calls[1].options.body).single_holding_max_pct, 30);
 });
 
 test('api portfolio analytics helper calls native analytics endpoint', async (t) => {

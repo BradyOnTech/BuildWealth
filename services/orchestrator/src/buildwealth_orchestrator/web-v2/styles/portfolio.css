@@ -723,6 +723,191 @@
   margin: 0;
 }
 
+.portfolio-guardrails {
+  display: grid;
+  gap: var(--s-4);
+}
+
+.portfolio-guardrails-explainer,
+.portfolio-guardrails-form,
+.portfolio-guardrails-alerts {
+  border: var(--hair) solid var(--rule-soft);
+  border-radius: var(--r-md);
+  background: var(--paper);
+}
+
+.portfolio-guardrails-explainer {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+  gap: var(--s-4);
+  padding: var(--s-4);
+}
+
+.portfolio-guardrails-explainer h4,
+.portfolio-guardrails-alert-head h4,
+.portfolio-guardrail-alert h5 {
+  margin: 0;
+  font-family: var(--sans);
+  color: var(--ink-strong);
+}
+
+.portfolio-guardrails-explainer p,
+.portfolio-guardrails-alert-head p,
+.portfolio-guardrail-alert p,
+.portfolio-guardrails-status {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: var(--lh-body);
+}
+
+.portfolio-guardrails-explainer dl {
+  display: grid;
+  gap: var(--s-2);
+  margin: 0;
+}
+
+.portfolio-guardrails-explainer dl div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: var(--s-3);
+  padding-bottom: var(--s-2);
+  border-bottom: var(--hair) dotted var(--rule-soft);
+}
+
+.portfolio-guardrails-explainer dl div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.portfolio-guardrails-explainer dt,
+.portfolio-guardrails-alert-head span,
+.portfolio-guardrail-alert span,
+.portfolio-guardrail-label,
+.portfolio-guardrails-status {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--ink-faint);
+}
+
+.portfolio-guardrails-explainer dd {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.portfolio-guardrails-form {
+  display: grid;
+  gap: var(--s-4);
+  padding: var(--s-4);
+}
+
+.portfolio-guardrails-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--s-3);
+}
+
+.portfolio-guardrail-field {
+  display: grid;
+  gap: 8px;
+}
+
+.portfolio-guardrail-label {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-2);
+  color: var(--ink-soft);
+}
+
+.portfolio-guardrail-label em {
+  font-style: normal;
+  color: var(--ink-faint);
+}
+
+.portfolio-guardrail-field input {
+  width: 100%;
+  min-height: 40px;
+  border: var(--hair) solid var(--rule);
+  border-radius: var(--r-sm);
+  background: var(--paper-bright);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 14px;
+  padding: 0 var(--s-3);
+}
+
+.portfolio-guardrail-help {
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  line-height: var(--lh-body);
+}
+
+.portfolio-guardrails-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  justify-content: space-between;
+}
+
+.portfolio-guardrails-status.error {
+  color: var(--oxblood);
+}
+
+.portfolio-guardrails-alerts {
+  display: grid;
+  gap: var(--s-3);
+  padding: var(--s-4);
+}
+
+.portfolio-guardrails-alert-head {
+  display: flex;
+  gap: var(--s-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.portfolio-guardrails-pill {
+  padding: 5px 8px;
+  border: var(--hair) solid var(--rule);
+  border-radius: var(--r-sm);
+  background: var(--shade);
+  white-space: nowrap;
+}
+
+.portfolio-guardrails-pill.warning {
+  color: var(--brass);
+  border-color: color-mix(in srgb, var(--brass) 45%, var(--rule));
+}
+
+.portfolio-guardrails-pill.critical {
+  color: var(--oxblood);
+  border-color: color-mix(in srgb, var(--oxblood) 45%, var(--rule));
+}
+
+.portfolio-guardrails-alert-list {
+  display: grid;
+  gap: var(--s-3);
+}
+
+.portfolio-guardrail-alert {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 0.55fr);
+  gap: var(--s-4);
+  padding: var(--s-3);
+  border: var(--hair) solid var(--rule-soft);
+  border-radius: var(--r-md);
+  background: var(--paper-bright);
+}
+
+.portfolio-guardrail-alert.high {
+  border-color: color-mix(in srgb, var(--oxblood) 45%, var(--rule));
+}
+
+.portfolio-guardrail-alert.medium {
+  border-color: color-mix(in srgb, var(--brass) 45%, var(--rule));
+}
+
 .portfolio-maintenance-table {
   display: grid;
   gap: 0;
@@ -764,6 +949,17 @@
 @media (max-width: 760px) {
   .portfolio-registry-tools {
     grid-template-columns: 1fr;
+  }
+
+  .portfolio-guardrails-explainer,
+  .portfolio-guardrail-alert {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-guardrails-actions,
+  .portfolio-guardrails-alert-head {
+    align-items: start;
+    flex-direction: column;
   }
 
   .portfolio-audit-finding {
