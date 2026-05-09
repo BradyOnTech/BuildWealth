@@ -286,7 +286,7 @@ test('Atelier surfaces trust durability state in v2', async ({ page }) => {
   await page.getByRole('heading', { name: 'Profile & Copilot changes' }).waitFor({ state: 'visible' });
   await page.getByText('Financial profile updated').waitFor({ state: 'visible' });
   await page.getByText('Copilot applied recommendation').waitFor({ state: 'visible' });
-  await page.getByRole('link', { name: 'Open classic storage tools' }).waitFor({ state: 'visible' });
+  await page.getByRole('button', { name: 'Create backup' }).waitFor({ state: 'visible' });
 
   await page.getByRole('button', { name: 'Create backup' }).click();
   await page.getByText('Backup backup-new created.').waitFor({ state: 'visible' });

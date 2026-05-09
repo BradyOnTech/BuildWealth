@@ -70,7 +70,7 @@ Avoid these as product/module/runtime terms:
 
 Remove or rename references after native workflows cover the related user job:
 
-- [ ] Remove external app links from v2 Data & Tools.
+- [x] Remove external app links from v2 Data & Tools.
 - [ ] Remove external app links from classic/v1 where possible before full v1 deletion.
 - [ ] Remove default env variables for retired sidecar paths.
 - [ ] Remove or quarantine legacy upstream Docker profiles.

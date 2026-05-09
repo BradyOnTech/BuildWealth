@@ -29,6 +29,11 @@ from buildwealth_orchestrator.schemas import (
     CsvImportRequest,
     CsvImportResponse,
     CsvTemplateOption,
+    ImportReportListResponse,
+    ImportReportResponse,
+    ImportWorkbenchApplyRequest,
+    ImportWorkbenchApplyResponse,
+    ImportWorkbenchPreviewResponse,
     FinancialProfileRequest,
     FinancialProfileResponse,
     OnboardingStatusResponse,
@@ -188,6 +193,7 @@ from buildwealth_orchestrator.services.csv_importer import (
     list_csv_templates,
     parse_transaction_csv,
 )
+from buildwealth_orchestrator.services.import_workbench import ImportWorkbenchStore
 from buildwealth_orchestrator.services.llm_clients import (
     DEFAULT_OPENAI_BASE_URL,
     DEFAULT_OPENAI_MODEL,
@@ -485,6 +491,10 @@ backup_restore_service = BackupRestoreService.from_settings(settings)
 data_protection_service = DataProtectionService.from_settings(settings)
 ignidash_export_store = IgnidashExportStore(settings.ignidash_export_dir)
 portfolio_review_packet_store = PortfolioReviewPacketStore(settings.portfolio_review_packet_dir)
+import_workbench_store = ImportWorkbenchStore(
+    workbench_dir=settings.import_workbench_dir,
+    reports_dir=settings.import_reports_dir,
+)
 
 
 def _git_policy() -> dict[str, Any]:
@@ -15630,6 +15640,8 @@ def get_context_settings() -> dict[str, Any]:
 async def on_startup() -> None:
     settings.import_inbox_dir.mkdir(parents=True, exist_ok=True)
     settings.import_archive_dir.mkdir(parents=True, exist_ok=True)
+    settings.import_workbench_dir.mkdir(parents=True, exist_ok=True)
+    settings.import_reports_dir.mkdir(parents=True, exist_ok=True)
     settings.durable_storage_dir.mkdir(parents=True, exist_ok=True)
     settings.backup_archive_dir.mkdir(parents=True, exist_ok=True)
     settings.protection_policy_path.parent.mkdir(parents=True, exist_ok=True)
@@ -18304,6 +18316,133 @@ async def import_uploaded_csv(
     )
 
     return await execute_csv_import(file_path=destination, request=request)
+
+
+@app.post("/api/import/workbench/preview", response_model=ImportWorkbenchPreviewResponse)
+async def preview_import_workbench(
+    file: UploadFile = File(...),
+    delimiter: str = Form(","),
+    broker_template: str = Form("auto"),
+    default_data_source: str | None = Form(None),
+    default_currency: str | None = Form(None),
+) -> ImportWorkbenchPreviewResponse:
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file name provided")
+
+    inbox_name = normalize_upload_filename(file.filename)
+    destination = unique_inbox_path(inbox_name)
+
+    try:
+        content = await file.read()
+        destination.write_bytes(content)
+    finally:
+        await file.close()
+
+    request = CsvImportRequest(
+        path=str(destination),
+        dry_run=True,
+        delimiter=delimiter,
+        broker_template=broker_template,
+        default_data_source=default_data_source,
+        default_currency=default_currency,
+        archive_after_success=False,
+    )
+    preview = await execute_csv_import(file_path=destination, request=request)
+    session = import_workbench_store.create_session(
+        file_path=destination,
+        original_file_name=file.filename,
+        options=request.model_dump(mode="json"),
+        preview_response=preview,
+    )
+    return ImportWorkbenchPreviewResponse.model_validate(session)
+
+
+def _create_import_review_items(report: dict[str, Any]) -> list[dict[str, Any]]:
+    created: list[dict[str, Any]] = []
+    draft_items = report.get("review_items") if isinstance(report.get("review_items"), list) else []
+    for draft in draft_items:
+        if not isinstance(draft, dict):
+            continue
+        try:
+            created.append(
+                recommendation_inbox.create(
+                    title=str(draft.get("title") or "Asset needs review"),
+                    detail=str(draft.get("detail") or "Review this imported row before relying on it."),
+                    priority=str(draft.get("priority") or "medium"),
+                    recommendation_type=str(draft.get("recommendation_type") or "asset_review_item"),
+                    source=str(draft.get("source") or "import_workbench"),
+                    action_payload=draft.get("action_payload") if isinstance(draft.get("action_payload"), dict) else {},
+                )
+            )
+        except ValueError:
+            continue
+    return created
+
+
+@app.post("/api/import/workbench/{session_id}/apply", response_model=ImportWorkbenchApplyResponse)
+async def apply_import_workbench_session(
+    session_id: str,
+    request: ImportWorkbenchApplyRequest | None = None,
+) -> ImportWorkbenchApplyResponse:
+    apply_request = request or ImportWorkbenchApplyRequest()
+    try:
+        session = import_workbench_store.load_session(session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    if session.get("status") == "applied" and session.get("report_id"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Import workbench session has already been applied: {session.get('report_id')}",
+        )
+
+    source_file = session.get("source_file") if isinstance(session.get("source_file"), dict) else {}
+    file_path = Path(str(source_file.get("path") or ""))
+    options = session.get("options") if isinstance(session.get("options"), dict) else {}
+    import_request = CsvImportRequest(
+        path=str(file_path),
+        dry_run=False,
+        delimiter=str(options.get("delimiter") or ","),
+        broker_template=str(options.get("broker_template") or "auto"),
+        default_data_source=options.get("default_data_source"),
+        default_currency=options.get("default_currency"),
+        archive_after_success=bool(apply_request.archive_after_success),
+    )
+    response = await execute_csv_import(file_path=file_path, request=import_request)
+    report = import_workbench_store.create_report(
+        session=session,
+        apply_response=response,
+        operator=apply_request.operator,
+    )
+    _create_import_review_items(report)
+    updated_session = import_workbench_store.update_session_after_apply(
+        session_id,
+        apply_response=response,
+        report=report,
+    )
+    _queue_autogit_event("import_workbench_applied")
+    return ImportWorkbenchApplyResponse(
+        session=ImportWorkbenchPreviewResponse.model_validate(updated_session),
+        report=ImportReportResponse.model_validate(report),
+    )
+
+
+@app.get("/api/import/reports", response_model=ImportReportListResponse)
+def list_import_reports(limit: int = 50) -> ImportReportListResponse:
+    reports = [
+        ImportReportResponse.model_validate(report)
+        for report in import_workbench_store.list_reports(limit=limit)
+    ]
+    return ImportReportListResponse(reports=reports)
+
+
+@app.get("/api/import/reports/{report_id}", response_model=ImportReportResponse)
+def get_import_report(report_id: str) -> ImportReportResponse:
+    try:
+        report = import_workbench_store.load_report(report_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return ImportReportResponse.model_validate(report)
 
 
 @app.post("/api/planning/scenarios", response_model=PlanningResponse)

@@ -2,7 +2,7 @@
 //   I.   The standing       — total value + performance
 //   II.  The composition    — allocation strata + top holdings
 //   III. The watch          — risk alerts or all-clear
-// Footer — Look closer (links to classic surfaces for actions not yet rebuilt).
+// Footer — Look closer (native maintenance records and audit follow-through).
 
 import { api } from '../lib/api.js';
 import { state } from '../lib/state.js';
@@ -36,8 +36,15 @@ export async function init(params = {}) {
   const root = $('#portfolio-shell');
   if (!root) return;
   let data = null;
+  const maintenanceSection = normalizeMaintenanceSection(params.section || '');
+  let maintenance = null;
   try {
-    data = await api.holdings();
+    const [holdingsData, maintenanceData] = await Promise.all([
+      api.holdings(),
+      maintenanceSection ? loadMaintenanceSection(maintenanceSection) : Promise.resolve(null),
+    ]);
+    data = holdingsData;
+    maintenance = maintenanceData;
     state.portfolio = data;
   } catch (err) {
     setView(root, html`
@@ -52,13 +59,17 @@ export async function init(params = {}) {
     ${raw(renderComposition(data))}
     ${raw(renderWatch(data))}
     ${raw(renderFitReview(null, { initialSymbol: params.fit || '' }))}
-    ${raw(renderLookCloser())}
+    ${raw(renderLookCloser(maintenanceSection, maintenance))}
   `);
   bindFitReview(root);
   if (params.fit) {
     const fitSection = root.querySelector('.fit-review');
     if (fitSection) fitSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     runFitReview(root);
+  }
+  if (maintenanceSection) {
+    const maintenanceEl = root.querySelector('[data-portfolio-maintenance-detail]');
+    if (maintenanceEl) maintenanceEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 }
 
@@ -360,21 +371,15 @@ function labelize(value) {
     .replace(/\b\w/g, (ch) => ch.toUpperCase()) || 'Unknown';
 }
 
-function renderLookCloser() {
-  // Movement V — Maintenance. Lower-frequency operations that don't belong
-  // in the daily portfolio narrative but should be discoverable from here.
-  // Each card deep-links to its current classic surface; v2 will absorb
-  // these one at a time.
+export function renderLookCloser(activeSection = '', maintenance = null) {
   const sections = [
-    { label: 'Accounts',         href: '/classic#portfolio',         hint: 'Brokerage and account-level metadata' },
-    { label: 'Transactions',     href: '/classic#portfolio',         hint: 'Buy/sell/dividend history' },
-    { label: 'Custom assets',    href: '/classic#portfolio',         hint: 'Real estate, vehicles, collectibles' },
-    { label: 'Manual prices',    href: '/classic#portfolio',         hint: 'Override or backfill quotes' },
-    { label: 'FX rates',         href: '/classic#portfolio',         hint: 'Currency conversion rates' },
-    { label: 'Cost basis',       href: '/classic#portfolio',         hint: 'Lot-level basis adjustments' },
-    { label: 'Risk policy',      href: '#profile?section=investing', hint: 'Single-investment, cash cushion, sectors' },
-    { label: 'Lot audit',        href: '/classic#portfolio',         hint: 'Reconcile lots against statements' },
-    { label: 'Corporate actions',href: '/classic#portfolio',         hint: 'Splits, mergers, spin-offs' },
+    { id: 'accounts', label: 'Accounts', hint: 'Brokerage and account-level metadata' },
+    { id: 'transactions', label: 'Transactions', hint: 'Buy/sell/dividend history' },
+    { id: 'assets', label: 'Custom assets', hint: 'Real estate, vehicles, collectibles' },
+    { id: 'prices', label: 'Manual prices', hint: 'Override or backfill quotes' },
+    { id: 'fx', label: 'FX rates', hint: 'Currency conversion rates' },
+    { id: 'cost-basis', label: 'Cost basis', hint: 'Lot-level basis adjustments' },
+    { id: 'risk-policy', label: 'Risk policy', href: '#profile?section=investing', hint: 'Single-investment, cash cushion, sectors' },
   ];
   return html`
     <section>
@@ -382,24 +387,169 @@ function renderLookCloser() {
         <span class="section-eyebrow">Movement V</span>
         <h2 class="section-title">Maintenance</h2>
         <p class="section-lede">
-          Lower-frequency tools that keep the picture honest. Each opens the
-          classic surface for now — v2 absorbs them one at a time as the
-          input shape stabilises.
+          Lower-frequency tools that keep the picture honest. Import reports,
+          account review, and source evidence resolve here inside BuildWealth.
         </p>
       </header>
       <div class="portfolio-maintenance-grid">
         ${raw(sections.map(s => `
           <a class="portfolio-maintenance-card"
-             href="${esc(s.href)}"
-             ${s.href.startsWith('#') ? 'data-route' : ''}>
+             href="${esc(s.href || `#portfolio?section=${s.id}`)}"
+             data-route>
             <span class="portfolio-maintenance-label">${esc(s.label)}</span>
             <span class="portfolio-maintenance-hint">${esc(s.hint)}</span>
             <span class="portfolio-maintenance-arrow">→</span>
           </a>
         `).join(''))}
       </div>
+      ${raw(renderMaintenanceDetail(activeSection, maintenance))}
     </section>
   `;
+}
+
+function normalizeMaintenanceSection(section) {
+  const value = String(section || '').trim().toLowerCase();
+  const aliases = {
+    account: 'accounts',
+    accounts: 'accounts',
+    transaction: 'transactions',
+    transactions: 'transactions',
+    asset: 'assets',
+    assets: 'assets',
+    'custom-assets': 'assets',
+    prices: 'prices',
+    price: 'prices',
+    'manual-prices': 'prices',
+    fx: 'fx',
+    'fx-rates': 'fx',
+    'cost-basis': 'cost-basis',
+    cost_basis: 'cost-basis',
+  };
+  return aliases[value] || '';
+}
+
+async function loadMaintenanceSection(section) {
+  try {
+    if (section === 'accounts') return { section, rows: await api.portfolioAccounts() };
+    if (section === 'transactions') return { section, rows: await api.portfolioTransactions(100) };
+    if (section === 'assets') return { section, rows: await api.portfolioCustomAssets() };
+    if (section === 'prices') return { section, payload: await api.portfolioManualPrices() };
+    if (section === 'fx') return { section, payload: await api.portfolioFxRates() };
+    if (section === 'cost-basis') return { section, payload: await api.portfolioCostBasisMethods() };
+  } catch (err) {
+    return { section, error: err?.message || 'Could not load this portfolio section.' };
+  }
+  return null;
+}
+
+function renderMaintenanceDetail(section, maintenance) {
+  if (!section) return '';
+  if (maintenance?.error) {
+    return html`
+      <article class="portfolio-maintenance-detail" data-portfolio-maintenance-detail>
+        <p class="error-banner">${maintenance.error}</p>
+      </article>
+    `;
+  }
+
+  const title = labelize(section);
+  const rows = maintenanceRows(section, maintenance);
+  return html`
+    <article class="portfolio-maintenance-detail" data-portfolio-maintenance-detail>
+      <header class="section-head compact">
+        <span class="section-eyebrow">Portfolio maintenance</span>
+        <h3 class="section-title">${title}</h3>
+        <p class="section-lede">${maintenanceCopy(section)}</p>
+      </header>
+      ${rows.length ? raw(renderMaintenanceRows(section, rows)) : html`<p class="fit-empty">Nothing recorded here yet.</p>`}
+    </article>
+  `;
+}
+
+function maintenanceRows(section, maintenance = {}) {
+  if (Array.isArray(maintenance.rows)) return maintenance.rows.slice(0, 100);
+  const payload = maintenance.payload && typeof maintenance.payload === 'object' ? maintenance.payload : {};
+  if (section === 'prices') {
+    const prices = payload.prices || payload.manual_prices || payload;
+    return objectRows(prices, (symbol, item) => ({
+      symbol,
+      price: item?.price ?? item,
+      note: item?.note || '',
+      updated_at: item?.updated_at || item?.date || '',
+    }));
+  }
+  if (section === 'fx') {
+    const rates = payload.rates || payload.fx_rates || payload;
+    return objectRows(rates, (currency, item) => ({
+      currency,
+      rate: item?.rate ?? item,
+      base_currency: item?.base_currency || payload.base_currency || 'USD',
+      updated_at: item?.updated_at || '',
+    }));
+  }
+  if (section === 'cost-basis') {
+    const methods = payload.methods || payload.cost_basis_methods || payload;
+    return objectRows(methods, (scope, item) => ({
+      scope,
+      method: item?.method ?? item,
+      account: item?.account || '',
+      symbol: item?.symbol || '',
+    }));
+  }
+  return [];
+}
+
+function objectRows(obj, mapRow) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return [];
+  return Object.entries(obj)
+    .filter(([, value]) => value != null && typeof value !== 'function')
+    .map(([key, value]) => mapRow(key, value));
+}
+
+function renderMaintenanceRows(section, rows) {
+  const columnsBySection = {
+    accounts: ['name', 'type', 'currency', 'id'],
+    transactions: ['date', 'symbol', 'action', 'quantity', 'unit_price', 'account'],
+    assets: ['name', 'symbol', 'asset_type', 'asset_class', 'value', 'account'],
+    prices: ['symbol', 'price', 'note', 'updated_at'],
+    fx: ['currency', 'rate', 'base_currency', 'updated_at'],
+    'cost-basis': ['scope', 'method', 'account', 'symbol'],
+  };
+  const columns = columnsBySection[section] || Object.keys(rows[0] || {}).slice(0, 6);
+  return html`
+    <div class="portfolio-maintenance-table" role="table">
+      <div class="portfolio-maintenance-row head" role="row">
+        ${raw(columns.map(col => `<span role="columnheader">${esc(labelize(col))}</span>`).join(''))}
+      </div>
+      ${raw(rows.slice(0, 25).map(row => `
+        <div class="portfolio-maintenance-row" role="row">
+          ${columns.map(col => `<span role="cell">${esc(formatMaintenanceValue(row?.[col]))}</span>`).join('')}
+        </div>
+      `).join(''))}
+    </div>
+  `;
+}
+
+function maintenanceCopy(section) {
+  return ({
+    accounts: 'Accounts created by imports or manual setup. Imported account names should land here before future review.',
+    transactions: 'Recent portfolio activity created from applied imports and manual entries.',
+    assets: 'Non-security assets and metadata that contribute to net worth and planning context.',
+    prices: 'Manual quote overrides for assets that need local pricing evidence.',
+    fx: 'Currency conversion rates used to keep portfolio values comparable.',
+    'cost-basis': 'Lot accounting defaults used when imported transactions do not specify a method.',
+  })[section] || 'Portfolio maintenance records.';
+}
+
+function formatMaintenanceValue(value) {
+  if (value == null || value === '') return '-';
+  if (typeof value === 'number') {
+    return Number.isFinite(value)
+      ? value.toLocaleString('en-US', { maximumFractionDigits: 4 })
+      : '-';
+  }
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
 }
 
 function skeletonHero() {

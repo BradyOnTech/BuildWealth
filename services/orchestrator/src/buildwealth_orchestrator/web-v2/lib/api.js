@@ -50,6 +50,13 @@ function postJson(url, body = {}) {
   });
 }
 
+function postForm(url, formData) {
+  return fetchJson(url, {
+    method: 'POST',
+    body: formData,
+  });
+}
+
 function putJson(url, body = {}) {
   return fetchJson(url, {
     method: 'PUT',
@@ -151,6 +158,12 @@ export const api = {
   appendDecision: (id, body) => postJson(`/api/plans/${encodeURIComponent(id)}/decisions`, body),
   setActivePlan: (id) => postJson(`/api/plans/${encodeURIComponent(id)}/activate`, {}),
   holdings:     () => fetchJson('/api/portfolio/holdings'),
+  portfolioTransactions: (limit = 100) => fetchJson(`/api/portfolio/transactions?limit=${encodeURIComponent(limit)}`),
+  portfolioAccounts: () => fetchJson('/api/portfolio/accounts'),
+  portfolioCustomAssets: () => fetchJson('/api/portfolio/custom-assets'),
+  portfolioManualPrices: () => fetchJson('/api/portfolio/manual-prices'),
+  portfolioFxRates: () => fetchJson('/api/portfolio/fx-rates'),
+  portfolioCostBasisMethods: () => fetchJson('/api/portfolio/cost-basis-methods'),
   watchlist:    (opts = {}) => fetchJson(`/api/portfolio/watchlist?${new URLSearchParams({
     limit: String(opts.limit || 200),
     sort: opts.sort || 'symbol',
@@ -185,7 +198,14 @@ export const api = {
   triggerSync:        () => postJson('/api/snapshot/sync', {}),
   importFiles:        () => fetchJson('/api/import/files'),
   csvTemplates:       () => fetchJson('/api/import/csv-templates'),
-  importCsvUpload:    (formData) => fetch('/api/import/upload-csv', { method: 'POST', body: formData }).then(r => r.json()),
+  importCsvUpload:    (formData) => postForm('/api/import/upload-csv', formData),
+  importWorkbenchPreview: (formData) => postForm('/api/import/workbench/preview', formData),
+  applyImportWorkbench: (sessionId, body = {}) => postJson(
+    `/api/import/workbench/${encodeURIComponent(sessionId)}/apply`,
+    body,
+  ),
+  importReports:      (limit = 20) => fetchJson(`/api/import/reports?limit=${encodeURIComponent(limit)}`),
+  importReport:       (reportId) => fetchJson(`/api/import/reports/${encodeURIComponent(reportId)}`),
 
   // Workflows
   workflowTemplates:  () => fetchJson('/api/workflows/templates'),

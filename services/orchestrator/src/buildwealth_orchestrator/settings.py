@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     )
     import_inbox_dir: Path = Field(default=Path("data/imports/inbox"), alias="IMPORT_INBOX_DIR")
     import_archive_dir: Path = Field(default=Path("data/imports/archive"), alias="IMPORT_ARCHIVE_DIR")
+    import_workbench_dir: Path = Field(default=Path("data/imports/workbench"), alias="IMPORT_WORKBENCH_DIR")
+    import_reports_dir: Path = Field(default=Path("data/imports/reports"), alias="IMPORT_REPORTS_DIR")
     conversation_dir: Path = Field(default=Path("data/conversations"), alias="CONVERSATION_DIR")
     plans_dir: Path = Field(default=Path("data/plans"), alias="PLANS_DIR")
     versioned_workspace_dir: Path = Field(default=Path("data/versioned"), alias="VERSIONED_WORKSPACE_DIR")

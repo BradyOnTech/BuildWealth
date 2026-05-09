@@ -59,6 +59,18 @@ def test_web_v2_smoke() -> None:
         / "web-v2"
         / "tests"
         / "inbox.test.mjs",
+        project_root
+        / "src"
+        / "buildwealth_orchestrator"
+        / "web-v2"
+        / "tests"
+        / "import_sync.test.mjs",
+        project_root
+        / "src"
+        / "buildwealth_orchestrator"
+        / "web-v2"
+        / "tests"
+        / "workflows.test.mjs",
     ]
     result = subprocess.run(
         [node_bin, "--experimental-default-type=module", "--test", *map(str, test_paths)],

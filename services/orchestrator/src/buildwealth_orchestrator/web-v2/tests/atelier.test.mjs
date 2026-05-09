@@ -120,7 +120,7 @@ test('atelier renders trust durability visibility from existing status payloads'
           id: 'providers',
           title: 'Provider and engine health',
           status: 'blocked',
-          detail: 'Provider/engine degradation is present: ignidash_scenario.',
+          detail: 'Provider health needs review.',
           domain: 'provider',
           action_kind: 'review_provider_status',
         },
@@ -163,7 +163,7 @@ test('atelier renders trust durability visibility from existing status payloads'
   assert.match(markup, /Copilot profile update applied/);
   assert.match(markup, /tax profile/);
   assert.match(markup, /investment policy/);
-  assert.match(markup, /href="\/classic#settings"/);
+  assert.doesNotMatch(markup, /\/classic/);
 });
 
 test('atelier renders read-only restore preview details', () => {

@@ -498,3 +498,51 @@
   text-wrap: pretty;
   line-height: var(--lh-body);
 }
+
+.portfolio-maintenance-detail {
+  display: grid;
+  gap: var(--s-4);
+  margin-top: var(--s-5);
+  padding: var(--s-5);
+  border: var(--hair) solid var(--rule-soft);
+  border-radius: var(--r-lg);
+  background: var(--paper-bright);
+}
+
+.portfolio-maintenance-table {
+  display: grid;
+  gap: 0;
+  overflow-x: auto;
+  border: var(--hair) solid var(--rule-soft);
+  border-radius: var(--r-md);
+  background: var(--paper);
+}
+
+.portfolio-maintenance-row {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  gap: var(--s-3);
+  min-width: 760px;
+  padding: var(--s-3);
+  border-bottom: var(--hair) dotted var(--rule);
+}
+
+.portfolio-maintenance-row:last-child { border-bottom: 0; }
+
+.portfolio-maintenance-row.head {
+  background: var(--shade);
+}
+
+.portfolio-maintenance-row span {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.portfolio-maintenance-row.head span {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+}

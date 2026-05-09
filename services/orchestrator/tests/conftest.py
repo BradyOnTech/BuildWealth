@@ -18,6 +18,8 @@ _PATH_OVERRIDES: dict[str, Path] = {
     "PORTFOLIO_REVIEW_PACKET_DIR": _TEST_DATA_ROOT / "reports" / "portfolio_review_packets",
     "IMPORT_INBOX_DIR": _TEST_DATA_ROOT / "imports" / "inbox",
     "IMPORT_ARCHIVE_DIR": _TEST_DATA_ROOT / "imports" / "archive",
+    "IMPORT_WORKBENCH_DIR": _TEST_DATA_ROOT / "imports" / "workbench",
+    "IMPORT_REPORTS_DIR": _TEST_DATA_ROOT / "imports" / "reports",
     "CONVERSATION_DIR": _TEST_DATA_ROOT / "conversations",
     "PLANS_DIR": _TEST_DATA_ROOT / "plans",
     "VERSIONED_WORKSPACE_DIR": _TEST_DATA_ROOT / "versioned",

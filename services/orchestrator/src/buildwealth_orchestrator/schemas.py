@@ -1020,6 +1020,73 @@ class CsvImportResponse(BaseModel):
     ghostfolio_response: dict[str, Any] | None = None
 
 
+class ImportWorkbenchSummary(BaseModel):
+    parsed_rows: int = 0
+    accepted_count: int = 0
+    normalized_count: int = 0
+    rejected_count: int = 0
+    duplicate_count: int = 0
+    unresolved_count: int = 0
+    account_review_count: int = 0
+    parser_confidence_flag: Literal["high", "medium", "low"] = "low"
+    parser_confidence_score: float = 0.0
+    warnings_count: int = 0
+    errors_count: int = 0
+
+
+class ImportWorkbenchSourceFile(BaseModel):
+    path: str
+    name: str
+    stored_name: str
+    size_bytes: int = 0
+
+
+class ImportWorkbenchPreviewResponse(BaseModel):
+    schema_version: int = 1
+    session_id: str
+    created_at: datetime
+    updated_at: datetime
+    status: Literal["previewed", "applied", "abandoned"] = "previewed"
+    source_file: ImportWorkbenchSourceFile
+    options: dict[str, Any] = Field(default_factory=dict)
+    summary: ImportWorkbenchSummary
+    preview_response: CsvImportResponse
+    report_id: str | None = None
+
+
+class ImportWorkbenchApplyRequest(BaseModel):
+    archive_after_success: bool = False
+    operator: str = "user"
+
+
+class ImportReportResponse(BaseModel):
+    schema_version: int = 1
+    report_id: str
+    session_id: str | None = None
+    created_at: datetime
+    operator: str = "user"
+    source_file: ImportWorkbenchSourceFile
+    options: dict[str, Any] = Field(default_factory=dict)
+    summary: ImportWorkbenchSummary
+    imported_activities: int = 0
+    selected_template: str | None = None
+    detected_template: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    reconciliation_report: CsvImportReconciliationReport = Field(default_factory=CsvImportReconciliationReport)
+    affected_links: dict[str, str] = Field(default_factory=dict)
+    review_items: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ImportWorkbenchApplyResponse(BaseModel):
+    session: ImportWorkbenchPreviewResponse
+    report: ImportReportResponse
+
+
+class ImportReportListResponse(BaseModel):
+    reports: list[ImportReportResponse] = Field(default_factory=list)
+
+
 class SyncStatusResponse(BaseModel):
     running: bool
     runs_total: int

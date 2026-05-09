@@ -30,7 +30,6 @@ export function template() {
         <section id="atelier-trust-root">
           ${raw(renderTrustSkeleton())}
         </section>
-        ${raw(renderClassicLinks())}
       </div>
     </section>
   `;
@@ -125,10 +124,6 @@ export function renderTrustDurability({
           detail: auditDetail(activity),
           metric: String(summary.auditCount),
         }))}
-      </div>
-      <div class="entry-meta trust-actions">
-        <a class="link-editorial" href="/classic#settings">Open classic storage tools</a>
-        <a class="link-editorial" href="/classic#settings">Backup, restore, and checkpoints</a>
       </div>
       ${raw(renderReleaseReadiness(summary, { durable, backups, protection, git, activity, readiness, restorePreview }))}
       ${raw(renderProfileCopilotAudit(activity))}
@@ -516,25 +511,4 @@ function formatMaybeDate(value, label) {
 function normalizeTrustStatus(status) {
   if (status === 'blocked') return 'critical';
   return status === 'critical' || status === 'warning' || status === 'ready' ? status : 'warning';
-}
-
-function renderClassicLinks() {
-  return html`
-    <section class="placeholder atelier-links">
-      <span class="glyph">⁂</span>
-      <h2>Classic tools remain available.</h2>
-      <p>
-        Profile, sync, imports, workflow templates, full restore flows, and
-        settings still live in classic surfaces while the high-frequency v2
-        surfaces stay focused.
-      </p>
-      <p class="marginalia">Profile · Sync &amp; Import · Workflows · Settings</p>
-      <div class="entry-meta">
-        <a class="link-editorial" href="/classic#profile">Profile</a>
-        <a class="link-editorial" href="/classic#sync">Sync &amp; Import</a>
-        <a class="link-editorial" href="/classic#workflows">Workflows</a>
-        <a class="link-editorial" href="/classic#settings">Settings</a>
-      </div>
-    </section>
-  `;
 }

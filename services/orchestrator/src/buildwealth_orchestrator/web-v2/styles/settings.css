@@ -275,7 +275,8 @@
   border-radius: 0 var(--r-md) var(--r-md) 0;
   animation: inline-rise var(--d-mid) var(--ease-page);
 }
-.settings-test-block.ok   { border-left-color: var(--forest); }
+.settings-test-block.ok,
+.settings-test-block.pass { border-left-color: var(--forest); }
 .settings-test-block.fail { border-left-color: var(--oxblood); }
 
 .settings-test-headline {
@@ -392,7 +393,7 @@
 
 .workflow-card {
   display: grid;
-  gap: var(--s-3);
+  gap: var(--s-4);
   padding: var(--s-5);
   border: var(--hair) solid var(--rule-soft);
   border-radius: var(--r-md);
@@ -464,12 +465,33 @@
   font-variant-numeric: tabular-nums;
 }
 
+.workflow-run-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--s-4);
+  align-items: start;
+}
+
+.workflow-param,
+.workflow-option,
+.workflow-plan-field {
+  min-width: 0;
+}
+
+.workflow-option {
+  padding: var(--s-3);
+  border: var(--hair) solid var(--rule-soft);
+  border-radius: var(--r-md);
+  background: var(--paper);
+}
+
 .workflow-card-foot {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--s-3);
   margin-top: 4px;
+  grid-column: 1 / -1;
 }
 
 .workflow-result {
@@ -483,11 +505,326 @@
 .workflow-result.ok   { color: var(--forest); }
 .workflow-result.fail { color: var(--oxblood); }
 
-/* ───────────  Import & sync · file lists  ─────────── */
+.workflow-result-preview {
+  display: grid;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border: var(--hair) solid var(--rule-soft);
+  border-radius: var(--r-md);
+  background: var(--paper);
+}
+
+.workflow-result-preview pre {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+/* ───────────  Import & Review  ─────────── */
 
 .import-shell {
   display: grid;
   gap: var(--s-6);
+}
+
+.import-workbench-card {
+  gap: var(--s-6);
+}
+
+.import-workbench-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--s-5) var(--s-6);
+}
+
+.import-workbench-form .span-2,
+.import-workbench-form .settings-actions.span-2 {
+  grid-column: span 2;
+}
+
+.import-secondary-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--s-5);
+}
+
+.import-preview-empty {
+  border-top: var(--hair) solid var(--rule-soft);
+  padding-top: var(--s-4);
+}
+
+.import-preview-panel {
+  display: grid;
+  gap: var(--s-5);
+  border-top: var(--hair) solid var(--rule-soft);
+  padding-top: var(--s-5);
+}
+
+.import-preview-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--s-4);
+}
+
+.import-preview-title {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 72;
+  font-weight: 600;
+  font-size: 22px;
+  letter-spacing: var(--track-tight);
+  color: var(--ink-strong);
+  margin: 2px 0 var(--s-1);
+  overflow-wrap: anywhere;
+}
+
+.import-metric-grid,
+.import-report-mini {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--s-3);
+}
+
+.import-metric-tile {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px var(--s-2);
+  align-items: center;
+  min-width: 0;
+  padding: var(--s-3);
+  border: var(--hair) solid var(--rule-soft);
+  border-radius: var(--r-md);
+  background: var(--paper-bright);
+}
+
+.import-metric-tile .status-pill {
+  grid-row: span 2;
+  font-size: 0;
+  padding: 0;
+  width: 10px;
+}
+
+.import-metric-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+}
+
+.import-metric-tile strong {
+  font-family: var(--sans);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ink-strong);
+  overflow-wrap: anywhere;
+}
+
+.import-message-list {
+  display: grid;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border: var(--hair) solid var(--rule-soft);
+  border-radius: var(--r-md);
+  background: var(--shade);
+}
+
+.import-message-list ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.import-message-list li {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.import-row-section {
+  display: grid;
+  gap: var(--s-3);
+}
+
+.import-row-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+  border-bottom: var(--hair) solid var(--rule-soft);
+  padding-bottom: var(--s-2);
+}
+
+.import-row-section-head h4 {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 72;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink-strong);
+  margin: 0;
+}
+
+.import-row-section-head span {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.import-row-table {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.import-row {
+  display: grid;
+  grid-template-columns: 74px 150px minmax(0, 1.4fr) minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border: var(--hair) solid var(--rule-soft);
+  border-radius: var(--r-md);
+  background: var(--paper-bright);
+}
+
+.import-row-number,
+.import-row-summary,
+.import-row-reasons {
+  overflow-wrap: anywhere;
+}
+
+.import-row-number {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.import-row-summary {
+  font-family: var(--sans);
+  font-size: var(--t-body-sm);
+  color: var(--ink);
+}
+
+.import-row-reasons {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.import-apply-option {
+  flex: 1 1 320px;
+  max-width: 520px;
+}
+
+.import-apply-result {
+  margin-top: var(--s-2);
+}
+
+.import-report-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s-2);
+}
+
+.import-report-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 2px var(--s-3);
+  align-items: baseline;
+  padding: var(--s-3) 0;
+  border-bottom: var(--hair) dotted var(--rule);
+}
+
+.import-report-item:last-child { border-bottom: 0; }
+
+.import-report-name {
+  font-family: var(--sans);
+  font-size: var(--t-body-sm);
+  font-weight: 500;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.import-report-meta {
+  grid-column: 1;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-faint);
+}
+
+.import-report-item code {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  background: var(--paper-bright);
+  border: var(--hair) solid var(--rule-soft);
+  border-radius: var(--r-sm);
+  padding: 3px 6px;
+}
+
+.import-report-item .btn {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+
+.import-report-detail {
+  display: grid;
+  gap: var(--s-5);
+  border-top: var(--hair) solid var(--rule-soft);
+  padding-top: var(--s-5);
+}
+
+.import-report-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-4);
+  padding-top: var(--s-3);
+  border-top: var(--hair) solid var(--rule-soft);
+}
+
+.import-review-item-list {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.import-review-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px var(--s-3);
+  align-items: baseline;
+  padding: var(--s-3);
+  border: var(--hair) solid var(--rule-soft);
+  border-radius: var(--r-md);
+  background: var(--paper-bright);
+}
+
+.import-review-item strong {
+  font-family: var(--sans);
+  font-size: var(--t-body-sm);
+  color: var(--ink-strong);
+}
+
+.import-review-item p {
+  grid-column: 2;
+  margin: 0;
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--ink-soft);
+  text-wrap: pretty;
 }
 
 .import-file-list,
@@ -541,6 +878,51 @@
   border-radius: var(--r-sm);
   display: inline-block;
   width: fit-content;
+}
+
+@media (max-width: 920px) {
+  .import-secondary-grid,
+  .import-workbench-form {
+    grid-template-columns: 1fr;
+  }
+
+  .import-workbench-form .span-2,
+  .import-workbench-form .settings-actions.span-2 {
+    grid-column: auto;
+  }
+
+  .import-preview-head,
+  .import-report-item {
+    grid-template-columns: 1fr;
+  }
+
+  .import-preview-head {
+    display: grid;
+  }
+
+  .import-row {
+    grid-template-columns: 1fr;
+  }
+
+  .import-report-item code {
+    grid-column: 1;
+    grid-row: auto;
+    width: fit-content;
+  }
+
+  .import-report-item .btn {
+    grid-column: 1;
+    grid-row: auto;
+    width: fit-content;
+  }
+
+  .import-review-item {
+    grid-template-columns: 1fr;
+  }
+
+  .import-review-item p {
+    grid-column: 1;
+  }
 }
 
 /* ───────────  Handoff card  ─────────── */

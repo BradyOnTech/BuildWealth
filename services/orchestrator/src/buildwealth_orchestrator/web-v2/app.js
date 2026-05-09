@@ -39,7 +39,7 @@ const TOOLS_GROUPS = [
   {
     label: 'Data',
     items: [
-      { id: 'import-sync',  label: 'Import & Sync',       hint: 'Reconcile holdings, watch the inbox' },
+      { id: 'import-sync',  label: 'Import & Review',     hint: 'Preview, reconcile, and apply statement activity' },
     ],
   },
   {
@@ -52,14 +52,6 @@ const TOOLS_GROUPS = [
     label: 'Research',
     items: [
       { id: 'research',     label: 'Research Library',   hint: 'Dossiers, evidence, compare' },
-    ],
-  },
-  {
-    label: 'Bridges',
-    items: [
-      { href: '/classic',                                label: 'Classic UI',         hint: 'Full v1 surface' },
-      { href: 'http://localhost:3333', external: true,   label: 'Ghostfolio',         hint: 'External holdings' },
-      { href: 'http://localhost:3000', external: true,   label: 'Ignidash',           hint: 'External dashboards' },
     ],
   },
 ];
@@ -171,7 +163,7 @@ const HASH_ALIASES = {
   'data-recovery':    'atelier',                  // future home of Backups/Protection/Git; today routes to atelier
   'tracking':         'plan?section=trajectory',
   'plans':            'plan',
-  'sync':             'import-sync',              // import-sync view doesn't exist yet — falls through to today below
+  'sync':             'import-sync',
   'import-statement': 'import-sync?section=statement',
   'recommendations':  'inbox',
 };

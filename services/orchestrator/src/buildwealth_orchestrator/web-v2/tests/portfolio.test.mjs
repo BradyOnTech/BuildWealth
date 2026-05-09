@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderFitResult, renderFitReview } from '../views/portfolio.js';
+import { renderFitResult, renderFitReview, renderLookCloser } from '../views/portfolio.js';
 
 test('portfolio fit review renders safe empty state', () => {
   const markup = String(renderFitReview());
@@ -98,4 +98,26 @@ test('portfolio fit result renders plan horizon and research evidence', () => {
   assert.match(markup, /href="#research\?symbol=VTI&amp;packet=research-evidence%3Ayfinance%3AVTI%3A6mo%3A1d"/);
   assert.match(markup, /Active plan horizon is long \(25 years\)\./);
   assert.match(markup, /research:partial/);
+});
+
+test('portfolio maintenance links stay inside native v2 sections', () => {
+  const markup = String(renderLookCloser('transactions', {
+    section: 'transactions',
+    rows: [
+      {
+        date: '2026-01-02',
+        symbol: 'VTI',
+        action: 'BUY',
+        quantity: 2,
+        unit_price: 250,
+        account: 'Taxable',
+      },
+    ],
+  }));
+
+  assert.match(markup, /#portfolio\?section=transactions/);
+  assert.match(markup, /Portfolio maintenance/);
+  assert.match(markup, /Recent portfolio activity/);
+  assert.match(markup, /VTI/);
+  assert.doesNotMatch(markup, /classic/i);
 });
