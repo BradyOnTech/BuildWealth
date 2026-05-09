@@ -502,8 +502,8 @@ function parseRatio(value) {
   if (value === '' || value == null) return null;
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
-  // The classic profile stores rates as decimal fractions (0.05 == 5%). The
-  // composer takes percent input; convert here.
+  // Stored profile rates use decimal fractions (0.05 == 5%). The composer
+  // takes percent input; convert here.
   return n / 100;
 }
 

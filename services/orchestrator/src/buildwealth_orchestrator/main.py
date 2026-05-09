@@ -49,6 +49,9 @@ from buildwealth_orchestrator.schemas import (
     ResearchEvidencePacket,
     ResearchEvidencePacketRequest,
     WatchlistRankResponse,
+    AssetMetadataUpdateRequest,
+    AssetRegistryItem,
+    AssetRegistrySearchResponse,
     PlanArtifactSummary,
     PlanArtifactResponse,
     PlanCreateRequest,
@@ -194,6 +197,7 @@ from buildwealth_orchestrator.services.csv_importer import (
     parse_transaction_csv,
 )
 from buildwealth_orchestrator.services.import_workbench import ImportWorkbenchStore
+from buildwealth_orchestrator.services.asset_registry import AssetRegistry
 from buildwealth_orchestrator.services.llm_clients import (
     DEFAULT_OPENAI_BASE_URL,
     DEFAULT_OPENAI_MODEL,
@@ -485,6 +489,7 @@ def parse_path_candidates(raw_value: str, fallback: tuple[str, ...]) -> tuple[st
 
 snapshot_store = SnapshotStore(settings.snapshot_dir)
 portfolio_store = PortfolioStore(settings.snapshot_dir.parent / "portfolio")
+asset_registry = AssetRegistry(portfolio_store)
 today_review_checkpoint_store = TodayReviewCheckpointStore(settings.today_review_checkpoint_path)
 durable_storage_service = DurableStorageMigrationService.from_settings(settings)
 backup_restore_service = BackupRestoreService.from_settings(settings)
@@ -16070,6 +16075,33 @@ def get_portfolio_accounts() -> list[dict[str, Any]]:
     return portfolio_store.get_accounts()
 
 
+@app.get("/api/portfolio/assets/search", response_model=AssetRegistrySearchResponse)
+def search_portfolio_assets(q: str = "", limit: int = 100) -> AssetRegistrySearchResponse:
+    payload = asset_registry.search(query=q, limit=limit)
+    return AssetRegistrySearchResponse(**payload)
+
+
+@app.get("/api/portfolio/assets/{symbol}", response_model=AssetRegistryItem)
+def get_portfolio_asset(symbol: str) -> AssetRegistryItem:
+    item = asset_registry.detail(symbol)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Asset not found.")
+    return AssetRegistryItem(**item)
+
+
+@app.put("/api/portfolio/assets/{symbol}/metadata", response_model=AssetRegistryItem)
+def update_portfolio_asset_metadata(
+    symbol: str,
+    request: AssetMetadataUpdateRequest,
+) -> AssetRegistryItem:
+    updates = request.model_dump(exclude_unset=True)
+    try:
+        item = asset_registry.update_metadata(symbol, updates)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return AssetRegistryItem(**item)
+
+
 @app.post("/api/portfolio/accounts")
 def add_portfolio_account(request: dict[str, Any]) -> dict[str, Any]:
     name = str(request.get("name") or "").strip()
@@ -18369,7 +18401,7 @@ def _create_import_review_items(report: dict[str, Any]) -> list[dict[str, Any]]:
                     title=str(draft.get("title") or "Asset needs review"),
                     detail=str(draft.get("detail") or "Review this imported row before relying on it."),
                     priority=str(draft.get("priority") or "medium"),
-                    recommendation_type=str(draft.get("recommendation_type") or "asset_review_item"),
+                    recommendation_type="general",
                     source=str(draft.get("source") or "import_workbench"),
                     action_payload=draft.get("action_payload") if isinstance(draft.get("action_payload"), dict) else {},
                 )

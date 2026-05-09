@@ -124,5 +124,9 @@ def test_import_workbench_session_apply_report_lifecycle(tmp_path: Path) -> None
     assert review_types == {"asset_review_item", "portfolio_account_review_item"}
     asset_review = next(item for item in report["review_items"] if item["recommendation_type"] == "asset_review_item")
     assert asset_review["action_payload"]["row_number"] == 4
+    account_review = next(
+        item for item in report["review_items"] if item["recommendation_type"] == "portfolio_account_review_item"
+    )
+    assert account_review["action_payload"]["review_route"]["target"] == "accounts"
     assert store.load_report(report["report_id"])["session_id"] == loaded["session_id"]
     assert [item["report_id"] for item in store.list_reports()] == [report["report_id"]]

@@ -105,6 +105,13 @@ function financialProfileUrl({ source = '' } = {}) {
   return query ? `/api/financial-profile?${query}` : '/api/financial-profile';
 }
 
+function portfolioAssetSearchUrl({ q = '', limit = 100 } = {}) {
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  if (q) params.set('q', q);
+  return `/api/portfolio/assets/search?${params.toString()}`;
+}
+
 function contextCandidatesUrl({
   lifecycleState = '',
   includeArchived = false,
@@ -160,6 +167,12 @@ export const api = {
   holdings:     () => fetchJson('/api/portfolio/holdings'),
   portfolioTransactions: (limit = 100) => fetchJson(`/api/portfolio/transactions?limit=${encodeURIComponent(limit)}`),
   portfolioAccounts: () => fetchJson('/api/portfolio/accounts'),
+  portfolioAssetSearch: (opts = {}) => fetchJson(portfolioAssetSearchUrl(opts)),
+  portfolioAsset: (symbol) => fetchJson(`/api/portfolio/assets/${encodeURIComponent(symbol)}`),
+  updatePortfolioAssetMetadata: (symbol, body = {}) => putJson(
+    `/api/portfolio/assets/${encodeURIComponent(symbol)}/metadata`,
+    body,
+  ),
   portfolioCustomAssets: () => fetchJson('/api/portfolio/custom-assets'),
   portfolioManualPrices: () => fetchJson('/api/portfolio/manual-prices'),
   portfolioFxRates: () => fetchJson('/api/portfolio/fx-rates'),

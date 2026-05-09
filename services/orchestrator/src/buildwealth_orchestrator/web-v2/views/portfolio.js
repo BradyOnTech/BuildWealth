@@ -41,7 +41,7 @@ export async function init(params = {}) {
   try {
     const [holdingsData, maintenanceData] = await Promise.all([
       api.holdings(),
-      maintenanceSection ? loadMaintenanceSection(maintenanceSection) : Promise.resolve(null),
+      maintenanceSection ? loadMaintenanceSection(maintenanceSection, params) : Promise.resolve(null),
     ]);
     data = holdingsData;
     maintenance = maintenanceData;
@@ -62,6 +62,7 @@ export async function init(params = {}) {
     ${raw(renderLookCloser(maintenanceSection, maintenance))}
   `);
   bindFitReview(root);
+  bindMaintenanceTools(root);
   if (params.fit) {
     const fitSection = root.querySelector('.fit-review');
     if (fitSection) fitSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -375,7 +376,7 @@ export function renderLookCloser(activeSection = '', maintenance = null) {
   const sections = [
     { id: 'accounts', label: 'Accounts', hint: 'Brokerage and account-level metadata' },
     { id: 'transactions', label: 'Transactions', hint: 'Buy/sell/dividend history' },
-    { id: 'assets', label: 'Custom assets', hint: 'Real estate, vehicles, collectibles' },
+    { id: 'assets', label: 'Investments & Assets', hint: 'Searchable registry, metadata, and review status' },
     { id: 'prices', label: 'Manual prices', hint: 'Override or backfill quotes' },
     { id: 'fx', label: 'FX rates', hint: 'Currency conversion rates' },
     { id: 'cost-basis', label: 'Cost basis', hint: 'Lot-level basis adjustments' },
@@ -428,11 +429,14 @@ function normalizeMaintenanceSection(section) {
   return aliases[value] || '';
 }
 
-async function loadMaintenanceSection(section) {
+async function loadMaintenanceSection(section, params = {}) {
   try {
     if (section === 'accounts') return { section, rows: await api.portfolioAccounts() };
     if (section === 'transactions') return { section, rows: await api.portfolioTransactions(100) };
-    if (section === 'assets') return { section, rows: await api.portfolioCustomAssets() };
+    if (section === 'assets') {
+      const payload = await api.portfolioAssetSearch({ q: params.q || '', limit: 200 });
+      return { section, rows: payload.items || [], payload };
+    }
     if (section === 'prices') return { section, payload: await api.portfolioManualPrices() };
     if (section === 'fx') return { section, payload: await api.portfolioFxRates() };
     if (section === 'cost-basis') return { section, payload: await api.portfolioCostBasisMethods() };
@@ -452,7 +456,7 @@ function renderMaintenanceDetail(section, maintenance) {
     `;
   }
 
-  const title = labelize(section);
+  const title = section === 'assets' ? 'Investments & Assets' : labelize(section);
   const rows = maintenanceRows(section, maintenance);
   return html`
     <article class="portfolio-maintenance-detail" data-portfolio-maintenance-detail>
@@ -461,9 +465,38 @@ function renderMaintenanceDetail(section, maintenance) {
         <h3 class="section-title">${title}</h3>
         <p class="section-lede">${maintenanceCopy(section)}</p>
       </header>
+      ${section === 'assets' ? raw(renderAssetRegistryTools(maintenance)) : ''}
       ${rows.length ? raw(renderMaintenanceRows(section, rows)) : html`<p class="fit-empty">Nothing recorded here yet.</p>`}
     </article>
   `;
+}
+
+function renderAssetRegistryTools(maintenance = {}) {
+  const query = String(maintenance?.payload?.query || '').trim();
+  const count = Number(maintenance?.payload?.count || 0);
+  return html`
+    <form class="portfolio-registry-tools" data-asset-registry-search>
+      <label class="fit-field">
+        <span>Search assets</span>
+        <input name="q" type="search" autocomplete="off" placeholder="Symbol, name, class, sector" value="${esc(query)}">
+      </label>
+      <button class="fit-review-button" type="submit">Search</button>
+      <p class="portfolio-registry-count">${count.toLocaleString('en-US')} assets</p>
+    </form>
+  `;
+}
+
+function bindMaintenanceTools(root) {
+  const form = root.querySelector('[data-asset-registry-search]');
+  if (!form) return;
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const data = new FormData(form);
+    const query = String(data.get('q') || '').trim();
+    const params = new URLSearchParams({ section: 'assets' });
+    if (query) params.set('q', query);
+    location.hash = `portfolio?${params.toString()}`;
+  });
 }
 
 function maintenanceRows(section, maintenance = {}) {
@@ -510,16 +543,16 @@ function renderMaintenanceRows(section, rows) {
   const columnsBySection = {
     accounts: ['name', 'type', 'currency', 'id'],
     transactions: ['date', 'symbol', 'action', 'quantity', 'unit_price', 'account'],
-    assets: ['name', 'symbol', 'asset_type', 'asset_class', 'value', 'account'],
+    assets: ['quality_label', 'symbol', 'name', 'asset_class', 'asset_type', 'current_value', 'current_price', 'tags'],
     prices: ['symbol', 'price', 'note', 'updated_at'],
     fx: ['currency', 'rate', 'base_currency', 'updated_at'],
     'cost-basis': ['scope', 'method', 'account', 'symbol'],
   };
   const columns = columnsBySection[section] || Object.keys(rows[0] || {}).slice(0, 6);
   return html`
-    <div class="portfolio-maintenance-table" role="table">
+    <div class="portfolio-maintenance-table" role="table" style="--maintenance-columns: ${columns.length};">
       <div class="portfolio-maintenance-row head" role="row">
-        ${raw(columns.map(col => `<span role="columnheader">${esc(labelize(col))}</span>`).join(''))}
+        ${raw(columns.map(col => `<span role="columnheader">${esc(maintenanceColumnLabel(col))}</span>`).join(''))}
       </div>
       ${raw(rows.slice(0, 25).map(row => `
         <div class="portfolio-maintenance-row" role="row">
@@ -530,11 +563,24 @@ function renderMaintenanceRows(section, rows) {
   `;
 }
 
+function maintenanceColumnLabel(column) {
+  return ({
+    quality_label: 'Status',
+    asset_class: 'Class',
+    asset_type: 'Type',
+    current_value: 'Value',
+    current_price: 'Price',
+    unit_price: 'Price',
+    updated_at: 'Updated',
+    base_currency: 'Base',
+  })[column] || labelize(column);
+}
+
 function maintenanceCopy(section) {
   return ({
     accounts: 'Accounts created by imports or manual setup. Imported account names should land here before future review.',
     transactions: 'Recent portfolio activity created from applied imports and manual entries.',
-    assets: 'Non-security assets and metadata that contribute to net worth and planning context.',
+    assets: 'A single searchable registry for holdings, watchlist names, custom assets, price overrides, and imported metadata.',
     prices: 'Manual quote overrides for assets that need local pricing evidence.',
     fx: 'Currency conversion rates used to keep portfolio values comparable.',
     'cost-basis': 'Lot accounting defaults used when imported transactions do not specify a method.',
@@ -543,6 +589,7 @@ function maintenanceCopy(section) {
 
 function formatMaintenanceValue(value) {
   if (value == null || value === '') return '-';
+  if (Array.isArray(value)) return value.join(', ') || '-';
   if (typeof value === 'number') {
     return Number.isFinite(value)
       ? value.toLocaleString('en-US', { maximumFractionDigits: 4 })

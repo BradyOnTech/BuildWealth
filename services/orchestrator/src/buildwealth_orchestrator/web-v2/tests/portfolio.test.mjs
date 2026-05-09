@@ -121,3 +121,30 @@ test('portfolio maintenance links stay inside native v2 sections', () => {
   assert.match(markup, /VTI/);
   assert.doesNotMatch(markup, /classic/i);
 });
+
+test('portfolio asset registry renders native review status', () => {
+  const markup = String(renderLookCloser('assets', {
+    section: 'assets',
+    rows: [
+      {
+        quality_label: 'Needs review',
+        symbol: 'ODD1',
+        name: 'Odd Asset',
+        asset_class: '',
+        asset_type: '',
+        current_value: null,
+        current_price: null,
+        tags: ['Custom'],
+      },
+    ],
+  }));
+
+  assert.match(markup, /Investments &amp; Assets/);
+  assert.match(markup, /single searchable registry/);
+  assert.match(markup, /Search assets/);
+  assert.match(markup, /Status/);
+  assert.match(markup, /Needs review/);
+  assert.match(markup, /ODD1/);
+  assert.match(markup, /Custom/);
+  assert.doesNotMatch(markup, /classic/i);
+});

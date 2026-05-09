@@ -916,6 +916,54 @@ class WatchlistRankResponse(BaseModel):
     updated_at: datetime
 
 
+class AssetRegistryItem(BaseModel):
+    symbol: str
+    name: str
+    asset_type: str | None = None
+    asset_class: str | None = None
+    sector: str | None = None
+    region: str | None = None
+    data_source: str | None = None
+    metadata_source: str | None = None
+    expense_ratio: float | None = None
+    held: bool = False
+    watchlisted: bool = False
+    custom: bool = False
+    manual_price: bool = False
+    quantity: float | None = None
+    current_price: float | None = None
+    current_value: float | None = None
+    cost_basis: float | None = None
+    accounts: list[str] = Field(default_factory=list)
+    price_source: str | None = None
+    valuation_method: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    quality_status: Literal["ready", "needs_review", "unpriced"] = "ready"
+    quality_label: str = "Ready"
+    review_reasons: list[str] = Field(default_factory=list)
+    watchlist_note: str | None = None
+    thesis: str | None = None
+
+
+class AssetRegistrySearchResponse(BaseModel):
+    query: str = ""
+    count: int = 0
+    items: list[AssetRegistryItem] = Field(default_factory=list)
+
+
+class AssetMetadataUpdateRequest(BaseModel):
+    name: str | None = None
+    asset_type: str | None = None
+    asset_class: str | None = None
+    sector: str | None = None
+    region: str | None = None
+    data_source: str | None = None
+    metadata_source: str | None = None
+    expense_ratio: float | None = None
+    is_custom_asset: bool | None = None
+    valuation_method: str | None = None
+
+
 class PortfolioFitAssessmentRequest(BaseModel):
     symbol: str
     amount_usd: float | None = Field(default=None, gt=0)

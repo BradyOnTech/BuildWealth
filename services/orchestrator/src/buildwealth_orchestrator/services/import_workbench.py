@@ -171,11 +171,15 @@ def build_import_review_item_drafts(report: dict[str, Any]) -> list[dict[str, An
             title = f"Account needs review: {account_name or row_label}"
             recommendation_type = "portfolio_account_review_item"
             kind = "portfolio_account_review_item"
+            review_label = "Portfolio Accounts"
+            review_target = "accounts"
         else:
             title_subject = symbol if symbol else f"row {row_number or '?'}"
             title = f"Asset needs review: {title_subject}"
             recommendation_type = "asset_review_item"
             kind = "asset_review_item"
+            review_label = "Portfolio Assets"
+            review_target = "assets"
         drafts.append(
             {
                 "title": title,
@@ -195,8 +199,8 @@ def build_import_review_item_drafts(report: dict[str, Any]) -> list[dict[str, An
                     "normalized_row": row.get("normalized_row") if isinstance(row.get("normalized_row"), dict) else {},
                     "review_route": {
                         "route": "portfolio",
-                        "label": "Portfolio Assets",
-                        "target": "assets",
+                        "label": review_label,
+                        "target": review_target,
                         "reason": "Resolve the asset or account mapping before relying on this import row.",
                     },
                 },

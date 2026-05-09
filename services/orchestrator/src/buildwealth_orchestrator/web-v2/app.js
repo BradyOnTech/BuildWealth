@@ -156,7 +156,7 @@ function setToolsOpen(open) {
   renderToolsDrawer();
 }
 
-// Hash aliases preserve old links from the classic UI and the IA migration.
+// Hash aliases preserve earlier navigation links from the IA migration.
 // Each entry rewrites the fragment in place and re-fires route() so the
 // canonical hash lands in the address bar (and browser history).
 const HASH_ALIASES = {
