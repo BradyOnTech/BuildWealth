@@ -70,7 +70,7 @@ export function renderAssumptions(plan = {}, state = {}) {
       <header class="section-head compact">
         <span class="section-eyebrow">Assumptions</span>
         <h2 class="section-title">Plan assumptions</h2>
-        <p class="section-lede">These are the durable inputs behind Plan, Today, Copilot, scenario diffs, and fit checks.</p>
+        <p class="section-lede">These are the durable inputs behind Plan, Today, Copilot, simulations, and fit checks.</p>
       </header>
 
       <div class="assumption-summary">

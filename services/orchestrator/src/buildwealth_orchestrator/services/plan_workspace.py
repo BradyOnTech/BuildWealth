@@ -94,6 +94,9 @@ class PlanWorkspace:
     def _branch_templates_path(self, plan_id: str) -> Path:
         return self._plan_dir(plan_id) / "branch_templates.json"
 
+    def _saved_simulations_path(self, plan_id: str) -> Path:
+        return self._plan_dir(plan_id) / "saved_simulations.json"
+
     @staticmethod
     def _slug(value: str, default: str = "artifact") -> str:
         cleaned = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
@@ -332,46 +335,87 @@ class PlanWorkspace:
 
     @staticmethod
     def _default_branch_templates() -> dict[str, Any]:
-        # Preset catalog shape aligns with Ignidash template-listing conventions
-        # (named, reusable planning templates) while using BuildWealth branch-event schema.
         return {
             "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
-            "default_template_id": "job_loss_6_months",
+            "default_template_id": "early_retirement",
             "templates": [
                 {
-                    "id": "job_loss_6_months",
-                    "name": "Job Loss (6 Months)",
-                    "description": "Temporary income interruption for six months.",
-                    "branch_name": "Job Loss 6 Months",
+                    "id": "early_retirement",
+                    "name": "Early retirement",
+                    "description": "Test retiring five years sooner with a shorter saving runway.",
+                    "branch_name": "Early Retirement",
                     "assumption_set_id": None,
-                    "compare_settings": {},
+                    "compare_settings": {"years": 20},
                     "branch_events": [
                         {
-                            "label": "Temporary Job Loss",
-                            "event_type": "job_change",
-                            "impact_type": "income",
-                            "amount_usd": -7500.0,
-                            "recurring_frequency": "monthly",
-                            "start_year_offset": 0,
-                            "duration_months": 6,
+                            "label": "Retire Early",
+                            "event_type": "retirement",
+                            "impact_type": "contribution",
+                            "amount_usd": -25000.0,
+                            "recurring_frequency": "yearly",
+                            "start_year_offset": 20,
+                            "duration_months": None,
                             "account_id": None,
-                            "notes": "Modeled as gross monthly income loss.",
+                            "notes": "Models a shorter contribution runway before retirement.",
                         }
                     ],
                 },
                 {
-                    "id": "raise_20_percent",
-                    "name": "Raise (20%)",
-                    "description": "Ongoing promotion raise scenario.",
-                    "branch_name": "Raise 20 Percent",
+                    "id": "home_purchase",
+                    "name": "Home purchase",
+                    "description": "Down payment and ongoing home cost increase.",
+                    "branch_name": "Home Purchase",
                     "assumption_set_id": None,
                     "compare_settings": {},
                     "branch_events": [
                         {
-                            "label": "Promotion Raise",
+                            "label": "Down Payment",
+                            "event_type": "purchase",
+                            "impact_type": "expense",
+                            "amount_usd": 80000.0,
+                            "recurring_frequency": "one_time",
+                            "start_year_offset": 2,
+                            "duration_months": None,
+                            "account_id": None,
+                            "notes": "One-time home purchase cash need.",
+                        },
+                        {
+                            "label": "Higher Housing Costs",
+                            "event_type": "purchase",
+                            "impact_type": "expense",
+                            "amount_usd": 900.0,
+                            "recurring_frequency": "monthly",
+                            "start_year_offset": 2,
+                            "duration_months": 360,
+                            "account_id": None,
+                            "notes": "Estimated monthly increase after buying.",
+                        },
+                    ],
+                },
+                {
+                    "id": "job_change",
+                    "name": "Job change",
+                    "description": "Income change with a short transition gap.",
+                    "branch_name": "Job Change",
+                    "assumption_set_id": None,
+                    "compare_settings": {},
+                    "branch_events": [
+                        {
+                            "label": "Transition Gap",
                             "event_type": "job_change",
                             "impact_type": "income",
-                            "amount_usd": 18000.0,
+                            "amount_usd": -6000.0,
+                            "recurring_frequency": "monthly",
+                            "start_year_offset": 0,
+                            "duration_months": 3,
+                            "account_id": None,
+                            "notes": "Three-month income interruption.",
+                        },
+                        {
+                            "label": "New Compensation",
+                            "event_type": "job_change",
+                            "impact_type": "income",
+                            "amount_usd": 15000.0,
                             "recurring_frequency": "yearly",
                             "start_year_offset": 0,
                             "duration_months": None,
@@ -381,38 +425,85 @@ class PlanWorkspace:
                     ],
                 },
                 {
-                    "id": "new_child_costs",
-                    "name": "New Child Costs",
-                    "description": "One-time setup plus long-duration monthly childcare costs.",
-                    "branch_name": "Have a Kid",
+                    "id": "one_income_household",
+                    "name": "One-income household",
+                    "description": "Model losing one income while reducing annual contributions.",
+                    "branch_name": "One-Income Household",
                     "assumption_set_id": None,
-                    "compare_settings": {},
+                    "compare_settings": {"annual_contribution_usd": 12000.0},
                     "branch_events": [
                         {
-                            "label": "Childcare Setup Costs",
-                            "event_type": "purchase",
-                            "impact_type": "expense",
-                            "amount_usd": 15000.0,
-                            "recurring_frequency": "one_time",
+                            "label": "Partner Income Pause",
+                            "event_type": "job_change",
+                            "impact_type": "income",
+                            "amount_usd": -55000.0,
+                            "recurring_frequency": "yearly",
                             "start_year_offset": 0,
-                            "duration_months": None,
+                            "duration_months": 60,
                             "account_id": None,
-                            "notes": "",
-                        },
+                            "notes": "Five years with one household income.",
+                        }
+                    ],
+                },
+                {
+                    "id": "roth_conversion_ladder",
+                    "name": "Roth conversion ladder",
+                    "description": "Test annual Roth conversions during the conversion window.",
+                    "branch_name": "Roth Conversion Ladder",
+                    "assumption_set_id": None,
+                    "compare_settings": {
+                        "roth_conversion_annual_amount_usd": 25000.0,
+                        "roth_conversion_start_age": 60,
+                        "roth_conversion_end_age": 72,
+                    },
+                    "branch_events": [],
+                },
+                {
+                    "id": "market_stress",
+                    "name": "Market stress",
+                    "description": "Lower returns and higher inflation for a stress test.",
+                    "branch_name": "Market Stress",
+                    "assumption_set_id": "stagflation",
+                    "compare_settings": {
+                        "expected_return_baseline": 0.04,
+                        "expected_return_optimistic": 0.05,
+                        "expected_return_conservative": 0.02,
+                        "inflation_rate": 0.05,
+                    },
+                    "branch_events": [],
+                },
+                {
+                    "id": "high_tax_retirement",
+                    "name": "High-tax retirement",
+                    "description": "Higher marginal and state tax assumptions during retirement.",
+                    "branch_name": "High-Tax Retirement",
+                    "assumption_set_id": None,
+                    "compare_settings": {
+                        "marginal_tax_rate": 0.32,
+                        "state_tax_rate": 0.08,
+                    },
+                    "branch_events": [
                         {
-                            "label": "Ongoing Childcare Costs",
+                            "label": "Retirement Tax Drag",
                             "event_type": "milestone",
                             "impact_type": "expense",
-                            "amount_usd": 1200.0,
-                            "recurring_frequency": "monthly",
-                            "start_year_offset": 0,
-                            "duration_months": 216,
+                            "amount_usd": 6000.0,
+                            "recurring_frequency": "yearly",
+                            "start_year_offset": 20,
+                            "duration_months": None,
                             "account_id": None,
-                            "notes": "",
+                            "notes": "Additional annual tax drag estimate.",
                         },
                     ],
                 },
             ],
+        }
+
+    @staticmethod
+    def _default_saved_simulations() -> dict[str, Any]:
+        return {
+            "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
+            "items": [],
         }
 
     @staticmethod
@@ -1460,6 +1551,10 @@ class PlanWorkspace:
             json.dumps(self._default_branch_templates(), indent=2),
             encoding="utf-8",
         )
+        self._saved_simulations_path(plan_id).write_text(
+            json.dumps(self._default_saved_simulations(), indent=2),
+            encoding="utf-8",
+        )
 
         now = utc_now_iso()
         metadata = {
@@ -1612,6 +1707,93 @@ class PlanWorkspace:
             "created_at": datetime.fromtimestamp(artifact_path.stat().st_mtime, tz=timezone.utc).isoformat(),
         }
 
+    def _read_saved_simulations_payload(self, plan_id: str) -> dict[str, Any]:
+        plan_dir = self._plan_dir(plan_id)
+        if not plan_dir.exists():
+            raise PlanNotFoundError(f"Plan not found: {plan_id}")
+
+        payload = self._read_or_initialize_json(
+            self._saved_simulations_path(plan_id),
+            self._default_saved_simulations(),
+        )
+        items_raw = payload.get("items")
+        items = [item for item in items_raw if isinstance(item, dict)] if isinstance(items_raw, list) else []
+        sanitized = {
+            "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
+            "items": items,
+        }
+        self._saved_simulations_path(plan_id).write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
+        return sanitized
+
+    def list_saved_simulations(self, plan_id: str, limit: int = 50) -> dict[str, Any]:
+        payload = self._read_saved_simulations_payload(plan_id)
+        items = list(payload.get("items", []))
+        items.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+        return {
+            "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
+            "plan_id": plan_id,
+            "simulations": items[: max(1, limit)],
+        }
+
+    def get_saved_simulation(self, plan_id: str, saved_simulation_id: str) -> dict[str, Any]:
+        payload = self._read_saved_simulations_payload(plan_id)
+        requested_id = str(saved_simulation_id or "").strip()
+        for item in payload.get("items", []):
+            if str(item.get("id") or "").strip() == requested_id:
+                return item
+        raise PlanNotFoundError(f"Saved simulation not found: {saved_simulation_id}")
+
+    def save_simulation(
+        self,
+        plan_id: str,
+        simulation_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        plan_dir = self._plan_dir(plan_id)
+        if not plan_dir.exists():
+            raise PlanNotFoundError(f"Plan not found: {plan_id}")
+
+        payload = simulation_payload if isinstance(simulation_payload, dict) else {}
+        title = str(payload.get("title") or "").strip() or "Saved Simulation"
+        source = str(payload.get("source") or "simulation").strip().lower().replace("-", "_").replace(" ", "_")
+        if source not in {"simulation", "scenario_diff", "scenario_branch", "withdrawal_strategy"}:
+            raise ValueError("source must be one of: simulation, scenario_diff, scenario_branch, withdrawal_strategy")
+
+        input_payload = payload.get("input_payload")
+        result_payload = payload.get("result_payload")
+        if not isinstance(input_payload, dict):
+            input_payload = {}
+        if not isinstance(result_payload, dict):
+            raise ValueError("result_payload must be an object")
+
+        summary = str(payload.get("summary") or "").strip()
+        notes = str(payload.get("notes") or "").strip()
+        created_at = utc_now_iso()
+        saved = {
+            "id": f"saved-simulation-{uuid.uuid4().hex[:10]}",
+            "created_at": created_at,
+            "title": title,
+            "source": source,
+            "summary": summary,
+            "notes": notes,
+            "immutable": True,
+            "input_payload": input_payload,
+            "result_payload": result_payload,
+        }
+
+        stored = self._read_saved_simulations_payload(plan_id)
+        items = [item for item in stored.get("items", []) if isinstance(item, dict)]
+        items.insert(0, saved)
+        next_payload = {
+            "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
+            "items": items,
+        }
+        self._saved_simulations_path(plan_id).write_text(json.dumps(next_payload, indent=2), encoding="utf-8")
+
+        index_payload = self._load_index()
+        self._touch_plan(index_payload, plan_id)
+        self._save_index(index_payload)
+        return saved
+
     def get_plan(self, plan_id: str) -> dict[str, Any]:
         index_payload = self._load_index()
         metadata = self._find_plan_metadata(index_payload, plan_id)
@@ -1663,10 +1845,15 @@ class PlanWorkspace:
                     ),
                     indent=2,
                 ),
+                "saved_simulations_json": json.dumps(
+                    self._read_saved_simulations_payload(plan_id),
+                    indent=2,
+                ),
             },
             "settings": self._read_settings(plan_id),
             "decisions": self._load_decisions(plan_id),
             "artifacts": self._list_artifacts(plan_id),
+            "saved_simulations": self.list_saved_simulations(plan_id, limit=10).get("simulations", []),
         }
 
     def set_active_plan(self, plan_id: str) -> dict[str, Any]:

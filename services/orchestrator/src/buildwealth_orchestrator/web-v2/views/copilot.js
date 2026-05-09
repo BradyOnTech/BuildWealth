@@ -88,12 +88,12 @@ export function buildPlanReviewPrompt(intent, { planId = '' } = {}) {
     id
       ? `First call get_plan_review_context with plan_id="${id}" and max_health_signals=5.`
       : 'First call get_plan_review_context with max_health_signals=5.',
-    'Use the active assumption set summary, top 5 health signals, selected artifact ids and citations, and selected scenario diff result summary when present.',
+    'Use the active assumption set summary, top 5 health signals, selected artifact ids and citations, and selected simulation result summary when present.',
     'Do not request full artifact contents. Do not request long decision history unless I explicitly open a specific artifact or decision.',
   ];
   if (normalizedIntent === 'explain_scenario_diff' || normalizedIntent === 'plan-scenario') {
     return [
-      `Explain the scenario diff for ${planPhrase}.`,
+      `Explain the simulation for ${planPhrase}.`,
       ...base.slice(1),
       'Focus on what changed, why it matters, confidence gaps, and the next review step. Do not apply plan settings automatically.',
     ].join(' ');

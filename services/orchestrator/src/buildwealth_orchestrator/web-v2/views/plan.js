@@ -4,7 +4,7 @@
 //   IB.  The health       — confidence and review gaps
 //   II.  The trajectory   — plan vs actual tracking
 //   IIA. The evidence     — typed artifacts and citations
-//   IIB. The scenarios    — scenario diff review surface
+//   IIB. The scenarios    — simulation review surface
 //   IIC. The branches     — life-event what-if templates
 //   IID. The withdrawals  — retirement drawdown strategy comparison
 //   IIE. The timeline     — retirement timing, drawdown posture, events
@@ -46,8 +46,9 @@ const ui = {
   health: { busy: false, recommendations: [], error: null },
   trajectory: { busy: false, tracking: null, error: null },
   artifacts: { focusedArtifactId: '', focusedArtifact: null, busy: false, error: null },
-  scenarios: { draft: {}, dirty: false, busy: false, result: null, error: null, focusedRecommendationId: '' },
-  branches: { busy: false, branchTemplates: null, selectedTemplateId: '', draft: {}, dirty: false, result: null, error: null },
+  scenarios: { draft: {}, dirty: false, busy: false, saveBusy: false, result: null, lastPayload: null, error: null, focusedRecommendationId: '' },
+  branches: { busy: false, saveBusy: false, branchTemplates: null, selectedTemplateId: '', draft: {}, dirty: false, result: null, lastPayload: null, error: null },
+  savedSimulations: { busy: false, payload: null, error: null },
   withdrawals: { busy: false, selectedStrategies: ['four_percent_rule', 'dynamic_guardrails', 'bucket_strategy'], draft: {}, dirty: false, result: null, error: null },
   timeline: { busy: false, timeline: null, draft: {}, dirty: false, editing: false, saving: false, error: null },
   contributions: { busy: false, contributionRules: null, draft: {}, dirty: false, editing: false, saving: false, error: null },
@@ -81,6 +82,7 @@ export async function init(params = {}) {
   await loadPlanHealth(ui.selectedId);
   await loadFocusedArtifact(ui.selectedId, params.artifact);
   await loadBranchTemplates(ui.selectedId);
+  await loadSavedSimulations(ui.selectedId);
   await loadTimeline(ui.selectedId);
   await loadContributionRules(ui.selectedId);
   rerenderAll();
@@ -243,6 +245,19 @@ async function loadBranchTemplates(id) {
   }
 }
 
+async function loadSavedSimulations(id) {
+  ui.savedSimulations = { busy: true, payload: null, error: null };
+  try {
+    ui.savedSimulations = {
+      busy: false,
+      payload: await api.planSavedSimulations(id, 25),
+      error: null,
+    };
+  } catch (err) {
+    ui.savedSimulations = { busy: false, payload: null, error: err.message };
+  }
+}
+
 async function loadContributionRules(id) {
   ui.contributions = {
     busy: true,
@@ -351,7 +366,7 @@ function rerenderBody() {
     <div id="plan-health" data-plan-section="health">${raw(renderPlanHealth(ui.plan, currentPlanHealth()))}</div>
     <div id="plan-trajectory" data-plan-section="trajectory">${raw(renderTrajectory(ui.trajectory))}</div>
     <div id="plan-artifacts" data-plan-section="artifacts">${raw(renderArtifacts(ui.plan, ui.artifacts))}</div>
-    <div id="plan-scenarios" data-plan-section="scenarios">${raw(renderScenarios(ui.plan, ui.scenarios, ui.assumptions))}</div>
+    <div id="plan-scenarios" data-plan-section="scenarios">${raw(renderScenarios(ui.plan, { ...ui.scenarios, savedSimulations: ui.savedSimulations }, ui.assumptions))}</div>
     <div id="plan-branches" data-plan-section="branches">${raw(renderBranches(ui.plan, ui.branches, ui.assumptions))}</div>
     <div id="plan-withdrawals" data-plan-section="withdrawals">${raw(renderWithdrawals(ui.plan, ui.withdrawals, ui.assumptions))}</div>
     <div id="plan-timeline" data-plan-section="timeline">${raw(renderTimeline(ui.plan, ui.timeline))}</div>
@@ -395,7 +410,7 @@ function rerenderDecisions() {
 function rerenderScenarios() {
   const root = $('#plan-scenarios');
   if (!root || !ui.plan) return;
-  root.innerHTML = renderScenarios(ui.plan, ui.scenarios, ui.assumptions);
+  root.innerHTML = renderScenarios(ui.plan, { ...ui.scenarios, savedSimulations: ui.savedSimulations }, ui.assumptions);
 }
 
 function rerenderBranches() {
@@ -443,11 +458,11 @@ export function renderLookCloser(plan) {
         <a class="link-editorial" href="#plan?id=${id}&amp;section=assumptions">Plan assumptions</a>
         <a class="link-editorial" href="#plan?id=${id}&amp;section=timeline">Timeline events</a>
         <a class="link-editorial" href="#plan?id=${id}&amp;section=contributions">Contribution rules</a>
-        <a class="link-editorial" href="#plan?id=${id}&amp;section=scenarios">Run a scenario diff</a>
+        <a class="link-editorial" href="#plan?id=${id}&amp;section=scenarios">Run a simulation</a>
         <a class="link-editorial" href="#copilot?intent=review_plan_assumptions&amp;plan=${id}">Review with Copilot</a>
-        <a class="link-editorial" href="#copilot?intent=explain_scenario_diff&amp;plan=${id}">Explain scenario</a>
+        <a class="link-editorial" href="#copilot?intent=explain_scenario_diff&amp;plan=${id}">Explain simulation</a>
         <a class="link-editorial" href="#plan?id=${id}&amp;section=artifacts">Plan evidence</a>
-        <a class="link-editorial" href="#plan?id=${id}&amp;section=branches">Life event branch</a>
+        <a class="link-editorial" href="#plan?id=${id}&amp;section=branches">What-if templates</a>
         <a class="link-editorial" href="#plan?id=${id}&amp;section=withdrawals">Withdrawal comparison</a>
       </div>
       ${researchArtifacts.length ? html`
@@ -500,8 +515,9 @@ function attachHandlers() {
     ui.assumptions = { busy: false, assumptionSets: null, draft: {}, dirty: false, saving: false, error: null };
     ui.health = { busy: false, recommendations: [], error: null };
     ui.artifacts = { focusedArtifactId: '', focusedArtifact: null, busy: false, error: null };
-    ui.scenarios = { draft: {}, dirty: false, busy: false, result: null, error: null, focusedRecommendationId: '' };
-    ui.branches = { busy: false, branchTemplates: null, selectedTemplateId: '', draft: {}, dirty: false, result: null, error: null };
+    ui.scenarios = { draft: {}, dirty: false, busy: false, saveBusy: false, result: null, lastPayload: null, error: null, focusedRecommendationId: '' };
+    ui.branches = { busy: false, saveBusy: false, branchTemplates: null, selectedTemplateId: '', draft: {}, dirty: false, result: null, lastPayload: null, error: null };
+    ui.savedSimulations = { busy: false, payload: null, error: null };
     ui.withdrawals = { busy: false, selectedStrategies: ['four_percent_rule', 'dynamic_guardrails', 'bucket_strategy'], draft: {}, dirty: false, result: null, error: null };
     ui.timeline = { busy: false, timeline: null, draft: {}, dirty: false, editing: false, saving: false, error: null };
     ui.contributions = { busy: false, contributionRules: null, draft: {}, dirty: false, editing: false, saving: false, error: null };
@@ -511,6 +527,7 @@ function attachHandlers() {
     await loadPlanHealth(id);
     await loadFocusedArtifact(id, '');
     await loadBranchTemplates(id);
+    await loadSavedSimulations(id);
     await loadTimeline(id);
     await loadContributionRules(id);
     rerenderAll();
@@ -541,11 +558,14 @@ function attachHandlers() {
 
   delegate(page, 'change', '[data-scenario-field]', (_, el) => stageScenarioEdit(el));
   delegate(page, 'click', '[data-scenario-action="run"]', () => runScenarioDiff());
+  delegate(page, 'click', '[data-scenario-action="save-simulation"]', () => saveScenarioSimulation());
   delegate(page, 'click', '[data-scenario-action="save-decision"]', () => saveScenarioDecisionNote());
 
   delegate(page, 'change', '[data-branch-field]', (_, el) => stageBranchEdit(el));
   delegate(page, 'click', '[data-branch-action="run"]', () => runScenarioBranch());
+  delegate(page, 'click', '[data-branch-action="save-simulation"]', () => saveBranchSimulation());
   delegate(page, 'click', '[data-branch-action="save-decision"]', () => saveBranchDecisionNote());
+  delegate(page, 'click', '[data-saved-simulation-action="decision"]', (_, el) => attachSavedSimulationDecision(el));
 
   delegate(page, 'change', '[data-withdrawal-field]', (_, el) => stageWithdrawalEdit(el));
   delegate(page, 'change', '[data-withdrawal-strategy]', (_, el) => toggleWithdrawalStrategy(el));
@@ -577,6 +597,7 @@ async function createPlan(body) {
     await loadPlanHealth(created.id);
     await loadFocusedArtifact(created.id, '');
     await loadBranchTemplates(created.id);
+    await loadSavedSimulations(created.id);
     await loadTimeline(created.id);
     await loadContributionRules(created.id);
     rerenderAll();
@@ -679,6 +700,7 @@ async function runScenarioDiff() {
   rerenderScenarios();
   try {
     ui.scenarios.result = await api.planScenarioDiff(ui.plan.id, payload);
+    ui.scenarios.lastPayload = payload;
     ui.scenarios.busy = false;
     ui.scenarios.dirty = false;
     rerenderScenarios();
@@ -759,6 +781,7 @@ async function runScenarioBranch() {
   rerenderBranches();
   try {
     ui.branches.result = await api.planScenarioBranch(ui.plan.id, payload);
+    ui.branches.lastPayload = payload;
     ui.branches.busy = false;
     ui.branches.dirty = false;
     rerenderBranches();
@@ -769,6 +792,29 @@ async function runScenarioBranch() {
   }
 }
 
+async function saveScenarioSimulation() {
+  if (!ui.plan || !ui.scenarios.result || ui.scenarios.saveBusy) return;
+  ui.scenarios.saveBusy = true;
+  ui.scenarios.error = null;
+  rerenderScenarios();
+  try {
+    await api.savePlanSimulation(ui.plan.id, {
+      title: 'Simulation comparison',
+      source: 'scenario_diff',
+      summary: scenarioDecisionRationale(ui.scenarios.result),
+      input_payload: ui.scenarios.lastPayload || {},
+      result_payload: ui.scenarios.result,
+    });
+    await loadSavedSimulations(ui.plan.id);
+    ui.scenarios.saveBusy = false;
+    rerenderScenarios();
+  } catch (err) {
+    ui.scenarios.saveBusy = false;
+    ui.scenarios.error = err.message;
+    rerenderScenarios();
+  }
+}
+
 async function saveBranchDecisionNote() {
   if (!ui.plan || !ui.branches.result || ui.branches.busy) return;
   ui.branches.busy = true;
@@ -776,7 +822,7 @@ async function saveBranchDecisionNote() {
   rerenderBranches();
   try {
     await api.appendDecision(ui.plan.id, {
-      summary: `Reviewed life-event branch: ${ui.branches.result.branch_name || 'What-if branch'}`,
+      summary: `Reviewed what-if simulation: ${ui.branches.result.branch_name || 'What-if simulation'}`,
       rationale: branchDecisionRationale(ui.branches.result),
       status: 'proposed',
     });
@@ -792,6 +838,52 @@ async function saveBranchDecisionNote() {
   }
 }
 
+async function saveBranchSimulation() {
+  if (!ui.plan || !ui.branches.result || ui.branches.saveBusy) return;
+  ui.branches.saveBusy = true;
+  ui.branches.error = null;
+  rerenderBranches();
+  try {
+    await api.savePlanSimulation(ui.plan.id, {
+      title: ui.branches.result.branch_name || 'What-if simulation',
+      source: 'scenario_branch',
+      summary: branchDecisionRationale(ui.branches.result),
+      input_payload: ui.branches.lastPayload || {},
+      result_payload: ui.branches.result,
+    });
+    await loadSavedSimulations(ui.plan.id);
+    ui.branches.saveBusy = false;
+    rerenderScenarios();
+    rerenderBranches();
+  } catch (err) {
+    ui.branches.saveBusy = false;
+    ui.branches.error = err.message;
+    rerenderBranches();
+  }
+}
+
+async function attachSavedSimulationDecision(el) {
+  if (!ui.plan) return;
+  const savedSimulationId = String(el.dataset.savedSimulationId || '').trim();
+  if (!savedSimulationId) return;
+  ui.savedSimulations.busy = true;
+  rerenderScenarios();
+  try {
+    await api.attachPlanSavedSimulationDecision(ui.plan.id, savedSimulationId, {
+      status: 'proposed',
+    });
+    ui.plan = await api.plan(ui.plan.id);
+    state.plan = ui.plan;
+    await loadSavedSimulations(ui.plan.id);
+    ui.savedSimulations.busy = false;
+    rerenderAll();
+    focusRequestedSection('scenarios');
+  } catch (err) {
+    ui.savedSimulations = { ...ui.savedSimulations, busy: false, error: err.message };
+    rerenderScenarios();
+  }
+}
+
 async function saveScenarioDecisionNote() {
   if (!ui.plan || !ui.scenarios.result || ui.scenarios.busy) return;
   ui.scenarios.busy = true;
@@ -799,7 +891,7 @@ async function saveScenarioDecisionNote() {
   rerenderScenarios();
   try {
     await api.appendDecision(ui.plan.id, {
-      summary: 'Reviewed scenario diff',
+      summary: 'Reviewed simulation',
       rationale: scenarioDecisionRationale(ui.scenarios.result),
       status: 'proposed',
     });
@@ -922,10 +1014,10 @@ function scenarioDecisionRationale(result = {}) {
   const baseline = Array.isArray(result.scenario_deltas)
     ? result.scenario_deltas.find(row => String(row?.label || '') === 'baseline') || result.scenario_deltas[0]
     : null;
-  if (!baseline) return 'Scenario diff reviewed in v2 Plan.';
+  if (!baseline) return 'Simulation comparison reviewed in v2 Plan.';
   const future = Number(baseline.delta_future_value_usd);
   const real = Number(baseline.delta_real_value_usd);
-  const parts = ['Scenario diff reviewed in v2 Plan.'];
+  const parts = ['Simulation comparison reviewed in v2 Plan.'];
   if (Number.isFinite(future)) parts.push(`Future-value delta: ${future}.`);
   if (Number.isFinite(real)) parts.push(`Real-value delta: ${real}.`);
   return parts.join(' ');
@@ -935,7 +1027,7 @@ function branchDecisionRationale(result = {}) {
   const baseline = Array.isArray(result.scenario_deltas)
     ? result.scenario_deltas.find(row => String(row?.label || '') === 'baseline') || result.scenario_deltas[0]
     : null;
-  const parts = [`Life-event branch reviewed in v2 Plan (${result.branch_name || 'What-if branch'}).`];
+  const parts = [`What-if simulation reviewed in v2 Plan (${result.branch_name || 'What-if simulation'}).`];
   if (result.branch_template_name) parts.push(`Template: ${result.branch_template_name}.`);
   if (baseline) {
     const future = Number(baseline.delta_future_value_usd);

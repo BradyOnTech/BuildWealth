@@ -1,5 +1,5 @@
 // Movement IIA — Plan evidence.
-// Typed artifact center for durable research, decision, closure, and scenario memory.
+// Typed artifact center for durable research, decision, closure, and simulation memory.
 
 import { html, raw, esc } from '../../lib/dom.js';
 import { fmtDateLong } from '../../lib/format.js';
@@ -10,7 +10,7 @@ const TYPE_LABELS = {
   decision_packet: 'Decision packet',
   thesis_revision: 'Thesis revision',
   closure_summary: 'Outcome/closure',
-  scenario_report: 'Scenario report',
+  scenario_report: 'Simulation report',
   general: 'General artifact',
 };
 
@@ -41,7 +41,7 @@ export function classifyPlanArtifact(artifact = {}) {
   ) {
     return { kind: 'closure_summary', label: TYPE_LABELS.closure_summary };
   }
-  if (kind === 'scenario_report' || title.includes('scenario') || fileName.includes('scenario')) {
+  if (kind === 'scenario_report' || title.includes('scenario') || title.includes('simulation') || fileName.includes('scenario') || fileName.includes('simulation')) {
     return { kind: 'scenario_report', label: TYPE_LABELS.scenario_report };
   }
   return { kind: 'general', label: TYPE_LABELS.general };
@@ -56,7 +56,7 @@ export function renderArtifacts(plan = {}, state = {}) {
       <header class="section-head compact">
         <span class="section-eyebrow">Plan evidence</span>
         <h2 class="section-title">Artifacts and evidence.</h2>
-        <p class="section-lede">Saved research, decision packets, closure summaries, and scenario reports that explain how this plan learned.</p>
+        <p class="section-lede">Saved research, decision packets, closure summaries, and simulation reports that explain how this plan learned.</p>
       </header>
       ${raw(renderFocusedArtifact(planId, state))}
       ${artifacts.length ? html`
@@ -205,7 +205,7 @@ function artifactLinks(artifact = {}, kind = 'general', planId = '') {
   }
 
   if (kind === 'scenario_report') {
-    if (encodedPlan) links.push({ label: 'Run scenario', href: `#plan?id=${encodedPlan}&section=scenarios` });
+    if (encodedPlan) links.push({ label: 'Run simulation', href: `#plan?id=${encodedPlan}&section=scenarios` });
     if (id) links.push({ label: 'Open artifact', href: planArtifactHref(planId, id) });
     return links;
   }

@@ -35,7 +35,7 @@ export function derivePlanHealth(plan = {}, state = {}) {
       id: 'return-assumptions',
       severity: 'review',
       title: 'Expected return assumption needs review',
-      detail: 'Expected return is missing, so scenario diffs and long-horizon projections need more context.',
+      detail: 'Expected return is missing, so simulations and long-horizon projections need more context.',
       href: planAssumptionsHref(plan),
     });
   }

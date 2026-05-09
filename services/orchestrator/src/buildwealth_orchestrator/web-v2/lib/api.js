@@ -159,6 +159,15 @@ export const api = {
   planBranchTemplates: (id) => fetchJson(`/api/plans/${encodeURIComponent(id)}/branch-templates`),
   updatePlanBranchTemplates: (id, body = {}) => putJson(`/api/plans/${encodeURIComponent(id)}/branch-templates`, body),
   planScenarioBranch: (id, body = {}) => postJson(`/api/plans/${encodeURIComponent(id)}/scenario-branch`, body),
+  planSavedSimulations: (id, limit = 50) => fetchJson(`/api/plans/${encodeURIComponent(id)}/simulations/saved?limit=${encodeURIComponent(limit)}`),
+  savePlanSimulation: (id, body = {}) => postJson(`/api/plans/${encodeURIComponent(id)}/simulations/saved`, body),
+  planSavedSimulation: (id, savedSimulationId) => fetchJson(
+    `/api/plans/${encodeURIComponent(id)}/simulations/saved/${encodeURIComponent(savedSimulationId)}`,
+  ),
+  attachPlanSavedSimulationDecision: (id, savedSimulationId, body = {}) => postJson(
+    `/api/plans/${encodeURIComponent(id)}/simulations/saved/${encodeURIComponent(savedSimulationId)}/decision`,
+    body,
+  ),
   planWithdrawalStrategyCompare: (id, body = {}) => postJson(`/api/plans/${encodeURIComponent(id)}/withdrawal-strategy-compare`, body),
   refreshPlanContext: (id) => postJson(`/api/plans/${encodeURIComponent(id)}/refresh-context`, {}),
   createPlan:   (body) => postJson('/api/plans', body),

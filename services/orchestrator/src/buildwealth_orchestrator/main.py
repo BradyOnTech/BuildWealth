@@ -75,6 +75,11 @@ from buildwealth_orchestrator.schemas import (
     PlanAssumptionSetsUpdateRequest,
     PlanScenarioBranchTemplatesResponse,
     PlanScenarioBranchTemplatesUpdateRequest,
+    PlanSavedSimulation,
+    PlanSavedSimulationCreateRequest,
+    PlanSavedSimulationDecisionRequest,
+    PlanSavedSimulationDecisionResponse,
+    PlanSavedSimulationsResponse,
     PlanResearchBridgeRequest,
     PlanResearchBridgeResponse,
     PlanResearchBridgePinnedItem,
@@ -17544,6 +17549,87 @@ def update_plan_branch_templates(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return PlanScenarioBranchTemplatesResponse(**payload)
+
+
+@app.get("/api/plans/{plan_id}/simulations/saved", response_model=PlanSavedSimulationsResponse)
+def list_plan_saved_simulations(plan_id: str, limit: int = 50) -> PlanSavedSimulationsResponse:
+    try:
+        payload = plan_workspace.list_saved_simulations(plan_id=plan_id, limit=limit)
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return PlanSavedSimulationsResponse(**payload)
+
+
+@app.post("/api/plans/{plan_id}/simulations/saved", response_model=PlanSavedSimulation)
+def create_plan_saved_simulation(
+    plan_id: str,
+    request: PlanSavedSimulationCreateRequest,
+) -> PlanSavedSimulation:
+    try:
+        payload = plan_workspace.save_simulation(
+            plan_id=plan_id,
+            simulation_payload=request.model_dump(mode="json"),
+        )
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _queue_autogit_event("plan_saved_simulation_created")
+    return PlanSavedSimulation(**payload)
+
+
+@app.get("/api/plans/{plan_id}/simulations/saved/{saved_simulation_id}", response_model=PlanSavedSimulation)
+def get_plan_saved_simulation(plan_id: str, saved_simulation_id: str) -> PlanSavedSimulation:
+    try:
+        payload = plan_workspace.get_saved_simulation(
+            plan_id=plan_id,
+            saved_simulation_id=saved_simulation_id,
+        )
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return PlanSavedSimulation(**payload)
+
+
+@app.post(
+    "/api/plans/{plan_id}/simulations/saved/{saved_simulation_id}/decision",
+    response_model=PlanSavedSimulationDecisionResponse,
+)
+def create_plan_saved_simulation_decision(
+    plan_id: str,
+    saved_simulation_id: str,
+    request: PlanSavedSimulationDecisionRequest,
+) -> PlanSavedSimulationDecisionResponse:
+    try:
+        simulation = plan_workspace.get_saved_simulation(
+            plan_id=plan_id,
+            saved_simulation_id=saved_simulation_id,
+        )
+        summary = (
+            str(request.summary or "").strip()
+            or f"Reviewed saved simulation: {simulation.get('title') or saved_simulation_id}"
+        )
+        rationale = (
+            str(request.rationale or "").strip()
+            or str(simulation.get("summary") or "").strip()
+            or "Saved simulation reviewed before changing the active plan."
+        )
+        decision = plan_workspace.append_decision(
+            plan_id=plan_id,
+            summary=summary,
+            rationale=f"{rationale} Saved simulation id: {saved_simulation_id}.",
+            status=request.status,
+        )
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _queue_autogit_event("plan_saved_simulation_decision_added")
+    return PlanSavedSimulationDecisionResponse(
+        plan_id=plan_id,
+        saved_simulation_id=saved_simulation_id,
+        simulation=PlanSavedSimulation(**simulation),
+        decision=decision,
+    )
 
 
 def pin_watchlist_research_bridge(

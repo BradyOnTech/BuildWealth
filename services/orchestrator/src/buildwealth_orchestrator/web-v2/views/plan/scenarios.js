@@ -1,4 +1,4 @@
-// Movement IIB — Scenario diff.
+// Movement IIB — Simulations.
 // Bounded comparison surface for reviewing plan-setting changes before decisions.
 
 import { html, raw, esc } from '../../lib/dom.js';
@@ -45,6 +45,7 @@ export function renderScenarios(plan = {}, state = {}, assumptionState = {}) {
   const draft = objectValue(state.draft);
   const result = objectValue(state.result);
   const assumptionSets = normalizeAssumptionSets(assumptionState.assumptionSets);
+  const savedState = state.savedSimulations || {};
   const hasResult = Boolean(Object.keys(result).length);
   const focusId = clean(state.focusedRecommendationId);
   const planId = clean(plan.id);
@@ -52,9 +53,9 @@ export function renderScenarios(plan = {}, state = {}, assumptionState = {}) {
   return html`
     <section class="plan-scenarios" data-plan-section="scenarios">
       <header class="section-head compact">
-        <span class="section-eyebrow">Scenario diff</span>
-        <h2 class="section-title">Compare before deciding.</h2>
-        <p class="section-lede">Test a bounded assumption change against the current plan. This does not apply settings.</p>
+        <span class="section-eyebrow">Simulations</span>
+        <h2 class="section-title">Experiment before deciding.</h2>
+        <p class="section-lede">Test a bounded assumption change against the current plan. Saving a result creates an immutable Saved Simulation.</p>
       </header>
 
       ${state.error ? html`<p class="error-banner">${esc(state.error)}</p>` : ''}
@@ -67,12 +68,13 @@ export function renderScenarios(plan = {}, state = {}, assumptionState = {}) {
 
       <div class="scenario-actions">
         <button class="btn btn-primary" data-scenario-action="run" ${state.busy ? 'disabled' : ''}>
-          ${state.busy ? 'Running...' : 'Run scenario diff'}
+          ${state.busy ? 'Running...' : 'Run simulation'}
         </button>
-        ${state.dirty ? html`<span class="marginalia">Scenario edits are staged for review.</span>` : html`<span class="marginalia">Stage an override to compare.</span>`}
+        ${state.dirty ? html`<span class="marginalia">Simulation inputs are staged for review.</span>` : html`<span class="marginalia">Stage an override to compare.</span>`}
       </div>
 
       ${hasResult ? raw(renderScenarioResult(plan, result, { focusId, planId })) : ''}
+      ${raw(renderSavedSimulations(planId, savedState))}
     </section>
   `;
 }
@@ -125,8 +127,8 @@ function renderScenarioResult(plan, result, { focusId = '', planId = '' } = {}) 
   return html`
     <div class="scenario-result">
       <header class="section-head compact">
-        <span class="section-eyebrow">Diff result</span>
-        <h3 class="section-title">Scenario compared.</h3>
+        <span class="section-eyebrow">Simulation result</span>
+        <h3 class="section-title">Simulation compared.</h3>
       </header>
 
       ${changedSettings.length ? html`
@@ -151,11 +153,79 @@ function renderScenarioResult(plan, result, { focusId = '', planId = '' } = {}) 
 
       <div class="scenario-handoff">
         <a class="link-editorial" href="#copilot?intent=plan-scenario&amp;plan=${encodeURIComponent(planId || clean(plan.id))}">Discuss in Copilot</a>
+        <button class="action-link" data-scenario-action="save-simulation">Save simulation <span class="arrow">›</span></button>
         <button class="action-link" data-scenario-action="save-decision">Save decision note <span class="arrow">›</span></button>
         ${focusId ? html`<a class="link-editorial" href="#inbox?focus=${encodeURIComponent(focusId)}">Open related Inbox recommendation</a>` : ''}
       </div>
     </div>
   `;
+}
+
+function renderSavedSimulations(planId = '', state = {}) {
+  const payload = objectValue(state.payload);
+  const simulations = Array.isArray(payload.simulations) ? payload.simulations.slice(0, 8) : [];
+  return html`
+    <div class="saved-simulations">
+      <header class="section-head compact">
+        <span class="section-eyebrow">Saved Simulations</span>
+        <h3 class="section-title">Experiments you can return to.</h3>
+        <p class="section-lede">Saved results do not change when plan assumptions change later.</p>
+      </header>
+      ${state.error ? html`<p class="error-banner">${esc(state.error)}</p>` : ''}
+      ${state.busy ? html`<p class="marginalia">Loading saved simulations...</p>` : ''}
+      ${simulations.length ? html`
+        <div class="saved-simulation-list">
+          ${raw(simulations.map(item => renderSavedSimulation(planId, item)).join(''))}
+        </div>
+      ` : html`<p class="marginalia">No Saved Simulations yet. Run a simulation, then save the result.</p>`}
+    </div>
+  `;
+}
+
+function renderSavedSimulation(planId = '', item = {}) {
+  const id = clean(item.id);
+  const source = simulationSourceLabel(item.source || 'simulation');
+  const title = clean(item.title) || 'Saved Simulation';
+  const summary = clean(item.summary) || 'Saved simulation output.';
+  const delta = savedSimulationDeltaText(item);
+  return html`
+    <article class="saved-simulation-card">
+      <div>
+        <span class="story-block-eyebrow">${esc(source)}</span>
+        <h4>${esc(title)}</h4>
+        <p>${esc(summary)}</p>
+        ${delta ? html`<p class="saved-simulation-delta">${delta}</p>` : ''}
+        <span class="marginalia">${esc(formatDate(item.created_at))} · immutable</span>
+      </div>
+      <div class="scenario-handoff">
+        <a class="link-editorial" href="#copilot?intent=plan-scenario&amp;plan=${encodeURIComponent(planId)}">Discuss</a>
+        <button class="action-link" data-saved-simulation-action="decision" data-saved-simulation-id="${esc(id)}">
+          Attach decision <span class="arrow">›</span>
+        </button>
+      </div>
+    </article>
+  `;
+}
+
+function simulationSourceLabel(source = '') {
+  const normalized = clean(source).toLowerCase();
+  if (normalized === 'scenario_diff') return 'Simulation';
+  if (normalized === 'scenario_branch') return 'What-if simulation';
+  if (normalized === 'withdrawal_strategy') return 'Strategy comparison';
+  return 'Simulation';
+}
+
+function savedSimulationDeltaText(item = {}) {
+  const result = objectValue(item.result_payload);
+  const deltas = Array.isArray(result.scenario_deltas) ? result.scenario_deltas : [];
+  const baseline = deltas.find(row => clean(row?.label) === 'baseline') || deltas[0];
+  if (!baseline) return '';
+  const future = Number(baseline.delta_future_value_usd);
+  const real = Number(baseline.delta_real_value_usd);
+  const parts = [];
+  if (Number.isFinite(future)) parts.push(`Future ${fmtUsdSigned(future)}`);
+  if (Number.isFinite(real)) parts.push(`Real ${fmtUsdSigned(real)}`);
+  return parts.join(' · ');
 }
 
 function renderDeltaRow(row = {}) {
@@ -282,6 +352,12 @@ function humanText(value) {
 function titleText(value) {
   const text = humanText(value);
   return text ? text[0].toUpperCase() + text.slice(1) : '';
+}
+
+function formatDate(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return 'Saved';
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function objectValue(value) {

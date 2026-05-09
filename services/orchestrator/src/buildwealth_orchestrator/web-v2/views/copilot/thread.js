@@ -336,7 +336,7 @@ function renderPlanScenarioDiffCard(result = {}) {
     <article class="investment-fit-card plan-review-card">
       <div class="investment-fit-head">
         <div>
-          <p class="profile-draft-eyebrow">Plan scenario diff</p>
+          <p class="profile-draft-eyebrow">Plan simulation</p>
           <p class="investment-fit-title">Scenario compared</p>
         </div>
         ${Object.keys(monte).length ? html`<p class="investment-fit-score">Monte Carlo</p>` : ''}

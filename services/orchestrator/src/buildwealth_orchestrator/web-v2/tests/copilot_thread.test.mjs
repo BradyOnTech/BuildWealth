@@ -417,7 +417,7 @@ test('copilot thread renders bounded plan review trace cards', () => {
   assert.doesNotMatch(html, /"health_signals"/);
 });
 
-test('copilot thread renders plan scenario diff trace cards', () => {
+test('copilot thread renders plan simulation trace cards', () => {
   const html = String(renderThread([
     {
       role: 'assistant',
@@ -448,7 +448,7 @@ test('copilot thread renders plan scenario diff trace cards', () => {
     },
   ]));
 
-  assert.match(html, /Plan scenario diff/);
+  assert.match(html, /Plan simulation/);
   assert.match(html, /Baseline/);
   assert.match(html, /\+\$42,000/);
   assert.match(html, /\+4%/);

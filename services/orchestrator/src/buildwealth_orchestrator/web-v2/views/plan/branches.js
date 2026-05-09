@@ -47,9 +47,9 @@ export function renderBranches(plan = {}, state = {}, assumptionState = {}) {
   return html`
     <section class="plan-branches" data-plan-section="branches">
       <header class="section-head compact">
-        <span class="section-eyebrow">Life event branches</span>
+        <span class="section-eyebrow">What-ifs</span>
         <h2 class="section-title">Preview a real-world change.</h2>
-        <p class="section-lede">Run a saved branch template as a what-if. This does not apply plan settings.</p>
+        <p class="section-lede">Start from a common life event, preview the assumptions, then run it as a simulation before touching the active plan.</p>
       </header>
 
       ${state.error ? html`<p class="error-banner">${esc(state.error)}</p>` : ''}
@@ -84,9 +84,9 @@ export function renderBranches(plan = {}, state = {}, assumptionState = {}) {
 
         <div class="scenario-actions">
           <button class="btn btn-primary" data-branch-action="run" ${state.busy ? 'disabled' : ''}>
-            ${state.busy ? 'Running...' : 'Run branch preview'}
+            ${state.busy ? 'Running...' : 'Run what-if simulation'}
           </button>
-          ${state.dirty ? html`<span class="marginalia">Branch edits are staged for review.</span>` : html`<span class="marginalia">Choose a template or stage an override.</span>`}
+          ${state.dirty ? html`<span class="marginalia">What-if inputs are staged for review.</span>` : html`<span class="marginalia">Choose a template or stage an override.</span>`}
         </div>
       ` : html`
         <div class="empty-block">
@@ -198,8 +198,8 @@ function renderBranchResult(planId = '', result = {}) {
   return html`
     <div class="scenario-result">
       <header class="section-head compact">
-        <span class="section-eyebrow">Branch result</span>
-        <h3 class="section-title">Branch compared.</h3>
+        <span class="section-eyebrow">What-if result</span>
+        <h3 class="section-title">Simulation compared.</h3>
         <p class="section-lede">${esc(name)}</p>
       </header>
 
@@ -214,6 +214,7 @@ function renderBranchResult(planId = '', result = {}) {
 
       <div class="scenario-handoff">
         <a class="link-editorial" href="#copilot?intent=plan-branch&amp;plan=${encodeURIComponent(planId)}">Discuss in Copilot</a>
+        <button class="action-link" data-branch-action="save-simulation">Save simulation <span class="arrow">›</span></button>
         <button class="action-link" data-branch-action="save-decision">Save decision note <span class="arrow">›</span></button>
       </div>
     </div>

@@ -2037,6 +2037,47 @@ class PlanFiles(BaseModel):
     contribution_rules_json: str = ""
     assumption_sets_json: str = ""
     branch_templates_json: str = ""
+    saved_simulations_json: str = ""
+
+
+class PlanSavedSimulation(BaseModel):
+    id: str
+    created_at: datetime
+    title: str
+    source: Literal["simulation", "scenario_diff", "scenario_branch", "withdrawal_strategy"] = "simulation"
+    summary: str = ""
+    notes: str = ""
+    immutable: bool = True
+    input_payload: dict[str, Any] = Field(default_factory=dict)
+    result_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class PlanSavedSimulationCreateRequest(BaseModel):
+    title: str = "Saved Simulation"
+    source: Literal["simulation", "scenario_diff", "scenario_branch", "withdrawal_strategy"] = "simulation"
+    summary: str = ""
+    notes: str = ""
+    input_payload: dict[str, Any] = Field(default_factory=dict)
+    result_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class PlanSavedSimulationsResponse(BaseModel):
+    schema_version: int = 2
+    plan_id: str
+    simulations: list[PlanSavedSimulation] = Field(default_factory=list)
+
+
+class PlanSavedSimulationDecisionRequest(BaseModel):
+    summary: str | None = None
+    rationale: str | None = None
+    status: str = "proposed"
+
+
+class PlanSavedSimulationDecisionResponse(BaseModel):
+    plan_id: str
+    saved_simulation_id: str
+    simulation: PlanSavedSimulation
+    decision: PlanDecision
 
 
 # Internal shared plan-settings payload.
@@ -2245,6 +2286,7 @@ class PlanDetailResponse(BaseModel):
     settings: PlanSettings
     decisions: list[PlanDecision] = Field(default_factory=list)
     artifacts: list[PlanArtifactSummary] = Field(default_factory=list)
+    saved_simulations: list[PlanSavedSimulation] = Field(default_factory=list)
     top_next_actions: list[TopNextAction] = Field(default_factory=list)
 
 

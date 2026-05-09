@@ -23,6 +23,8 @@ def test_plan_workspace_create_and_get_context(tmp_path: Path) -> None:
     assert '"events": []' in detail["files"]["timeline_json"]
     assert '"rules": []' in detail["files"]["contribution_rules_json"]
     assert '"templates": [' in detail["files"]["branch_templates_json"]
+    assert '"items": []' in detail["files"]["saved_simulations_json"]
+    assert detail["saved_simulations"] == []
     assert detail["settings"]["annual_contribution_usd"] is None
     assert detail["settings"]["schema_version"] == 2
 
@@ -301,6 +303,39 @@ def test_plan_workspace_migrates_legacy_index_and_settings(tmp_path: Path) -> No
     assert '"events": []' in detail["files"]["timeline_json"]
     assert '"rules": []' in detail["files"]["contribution_rules_json"]
     assert '"templates": [' in detail["files"]["branch_templates_json"]
+    assert '"items": []' in detail["files"]["saved_simulations_json"]
+
+
+def test_plan_workspace_saved_simulations_are_immutable_records(tmp_path: Path) -> None:
+    workspace = PlanWorkspace(tmp_path)
+    detail = workspace.create_plan(title="Saved Simulation Plan")
+
+    saved = workspace.save_simulation(
+        plan_id=detail["id"],
+        simulation_payload={
+            "title": "Early retirement",
+            "source": "scenario_branch",
+            "summary": "Early retirement reduced the median ending value.",
+            "input_payload": {"branch_template_id": "early_retirement"},
+            "result_payload": {"scenario_deltas": [{"label": "baseline"}]},
+        },
+    )
+
+    assert saved["id"].startswith("saved-simulation-")
+    assert saved["immutable"] is True
+    assert saved["source"] == "scenario_branch"
+
+    listed = workspace.list_saved_simulations(detail["id"])
+    assert listed["plan_id"] == detail["id"]
+    assert listed["simulations"][0]["id"] == saved["id"]
+
+    read_back = workspace.get_saved_simulation(detail["id"], saved["id"])
+    assert read_back["summary"] == "Early retirement reduced the median ending value."
+
+    refreshed = workspace.get_plan(detail["id"])
+    assert refreshed["saved_simulations"][0]["id"] == saved["id"]
+    saved_json = json.loads(refreshed["files"]["saved_simulations_json"])
+    assert saved_json["items"][0]["input_payload"]["branch_template_id"] == "early_retirement"
 
 
 def test_plan_workspace_updates_timeline(tmp_path: Path) -> None:
@@ -624,9 +659,17 @@ def test_plan_workspace_branch_templates_round_trip(tmp_path: Path) -> None:
     detail = workspace.create_plan(title="Branch Templates Plan")
 
     defaults = workspace.get_plan_branch_templates(detail["id"])
-    assert defaults["default_template_id"] == "job_loss_6_months"
+    assert defaults["default_template_id"] == "early_retirement"
     default_ids = {item["id"] for item in defaults["templates"]}
-    assert {"job_loss_6_months", "raise_20_percent", "new_child_costs"} <= default_ids
+    assert {
+        "early_retirement",
+        "home_purchase",
+        "job_change",
+        "one_income_household",
+        "roth_conversion_ladder",
+        "market_stress",
+        "high_tax_retirement",
+    } <= default_ids
 
     updated = workspace.update_plan_branch_templates(
         plan_id=detail["id"],
