@@ -3,6 +3,7 @@
 
 import { html, raw, esc } from '../../lib/dom.js';
 import { fmtPctSigned, fmtUsd, fmtUsdSigned } from '../../lib/format.js';
+import { renderSimulationExplanation } from './scenarios.js';
 
 const BRANCH_COMPARE_FIELDS = [
   { key: 'annual_contribution_usd', label: 'Annual contribution', type: 'money' },
@@ -95,7 +96,7 @@ export function renderBranches(plan = {}, state = {}, assumptionState = {}) {
         </div>
       `}
 
-      ${hasResult ? raw(renderBranchResult(planId, result)) : ''}
+      ${hasResult ? raw(renderBranchResult(planId, result, state.explanation)) : ''}
     </section>
   `;
 }
@@ -189,7 +190,7 @@ function renderTemplateSummary(template = {}) {
   `;
 }
 
-function renderBranchResult(planId = '', result = {}) {
+function renderBranchResult(planId = '', result = {}, explanation = null) {
   const deltas = Array.isArray(result.scenario_deltas) ? result.scenario_deltas : [];
   const monte = objectValue(result.monte_carlo_delta);
   const simulation = objectValue(result.simulation_delta);
@@ -211,6 +212,7 @@ function renderBranchResult(planId = '', result = {}) {
 
       ${Object.keys(monte).length ? raw(renderMetricBlock('Monte Carlo', monte)) : ''}
       ${Object.keys(simulation).length ? raw(renderMetricBlock('Simulation', simulation)) : ''}
+      ${raw(renderSimulationExplanation(explanation))}
 
       <div class="scenario-handoff">
         <a class="link-editorial" href="#copilot?intent=plan-branch&amp;plan=${encodeURIComponent(planId)}">Discuss in Copilot</a>

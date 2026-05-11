@@ -156,6 +156,7 @@ export const api = {
   planAssumptionSets: (id) => fetchJson(`/api/plans/${encodeURIComponent(id)}/assumption-sets`),
   updatePlanAssumptionSets: (id, body = {}) => putJson(`/api/plans/${encodeURIComponent(id)}/assumption-sets`, body),
   planScenarioDiff: (id, body = {}) => postJson(`/api/plans/${encodeURIComponent(id)}/scenario-diff`, body),
+  explainPlanSimulation: (id, body = {}) => postJson(`/api/plans/${encodeURIComponent(id)}/simulation-explain`, body),
   planBranchTemplates: (id) => fetchJson(`/api/plans/${encodeURIComponent(id)}/branch-templates`),
   updatePlanBranchTemplates: (id, body = {}) => putJson(`/api/plans/${encodeURIComponent(id)}/branch-templates`, body),
   planScenarioBranch: (id, body = {}) => postJson(`/api/plans/${encodeURIComponent(id)}/scenario-branch`, body),

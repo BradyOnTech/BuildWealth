@@ -109,6 +109,7 @@ test('plan view wires simulation workspace actions', () => {
   assert.match(planSource, /buildScenarioBranchPayload/);
   assert.match(planSource, /buildWithdrawalComparePayload/);
   assert.match(planSource, /api\.planScenarioDiff/);
+  assert.match(planSource, /api\.explainPlanSimulation/);
   assert.match(planSource, /api\.planBranchTemplates/);
   assert.match(planSource, /api\.planScenarioBranch/);
   assert.match(planSource, /api\.planSavedSimulations/);
@@ -564,6 +565,20 @@ test('plan branch workspace renders templates, result, and review handoffs', () 
       monte_carlo_delta: { success_probability_delta: -0.02 },
       simulation_delta: { status: 'captured', summary: 'Branch reduced confidence.' },
     },
+    explanation: {
+      payload: {
+        outcome_label: 'worse',
+        confidence_level: 'medium',
+        summary: 'This simulation weakens the active plan.',
+        drivers: [
+          { label: 'Future value', direction: 'negative', detail: 'The candidate result is -$60,000 versus the active plan.' },
+        ],
+        assumption_traces: [
+          { explanation: 'Expected return changed from 6.0% to 4.0%.' },
+        ],
+        confidence_reasons: ['The result includes comparable active-plan and candidate deltas.'],
+      },
+    },
   }, {
     assumptionSets: {
       active_assumption_set_id: 'default',
@@ -577,6 +592,9 @@ test('plan branch workspace renders templates, result, and review handoffs', () 
   assert.match(markup, /Run what-if simulation/);
   assert.match(markup, /Simulation compared/);
   assert.match(markup, /-\$60,000/);
+  assert.match(markup, /What this means/);
+  assert.match(markup, /Looks weaker than the active plan/);
+  assert.match(markup, /Medium confidence/);
   assert.match(markup, /Discuss in Copilot/);
   assert.match(markup, /Save simulation/);
   assert.match(markup, /Save decision note/);
@@ -704,6 +722,21 @@ test('plan scenario workspace renders compact results and decision handoff', () 
         summary: 'Monte Carlo confidence improved.',
       },
     },
+    explanation: {
+      payload: {
+        outcome_label: 'better',
+        confidence_level: 'high',
+        summary: 'This simulation improves the active plan. Future value changes by +$42,000.',
+        drivers: [
+          { label: 'Future value', direction: 'positive', detail: 'The candidate result is +$42,000 versus the active plan.' },
+          { label: 'Annual contribution', direction: 'neutral', detail: 'Annual contribution changed from $25,000 to $30,000.' },
+        ],
+        assumption_traces: [
+          { explanation: 'Annual contribution changed from $25,000 to $30,000.' },
+        ],
+        confidence_reasons: ['Changed assumptions are visible and traceable.'],
+      },
+    },
   }, {
     assumptionSets: {
       active_assumption_set_id: 'default',
@@ -720,6 +753,10 @@ test('plan scenario workspace renders compact results and decision handoff', () 
   assert.match(markup, /Monte Carlo/);
   assert.match(markup, /\+4%/);
   assert.match(markup, /Monte Carlo confidence improved\./);
+  assert.match(markup, /What this means/);
+  assert.match(markup, /Looks better than the active plan/);
+  assert.match(markup, /High confidence/);
+  assert.match(markup, /Annual contribution changed from \$25,000 to \$30,000/);
   assert.match(markup, /Discuss in Copilot/);
   assert.match(markup, /Save simulation/);
   assert.match(markup, /Save decision note/);

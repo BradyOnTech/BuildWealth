@@ -46,8 +46,8 @@ const ui = {
   health: { busy: false, recommendations: [], error: null },
   trajectory: { busy: false, tracking: null, error: null },
   artifacts: { focusedArtifactId: '', focusedArtifact: null, busy: false, error: null },
-  scenarios: { draft: {}, dirty: false, busy: false, saveBusy: false, result: null, lastPayload: null, error: null, focusedRecommendationId: '' },
-  branches: { busy: false, saveBusy: false, branchTemplates: null, selectedTemplateId: '', draft: {}, dirty: false, result: null, lastPayload: null, error: null },
+  scenarios: { draft: {}, dirty: false, busy: false, saveBusy: false, result: null, explanation: null, lastPayload: null, error: null, focusedRecommendationId: '' },
+  branches: { busy: false, saveBusy: false, branchTemplates: null, selectedTemplateId: '', draft: {}, dirty: false, result: null, explanation: null, lastPayload: null, error: null },
   savedSimulations: { busy: false, payload: null, error: null },
   withdrawals: { busy: false, selectedStrategies: ['four_percent_rule', 'dynamic_guardrails', 'bucket_strategy'], draft: {}, dirty: false, result: null, error: null },
   timeline: { busy: false, timeline: null, draft: {}, dirty: false, editing: false, saving: false, error: null },
@@ -515,8 +515,8 @@ function attachHandlers() {
     ui.assumptions = { busy: false, assumptionSets: null, draft: {}, dirty: false, saving: false, error: null };
     ui.health = { busy: false, recommendations: [], error: null };
     ui.artifacts = { focusedArtifactId: '', focusedArtifact: null, busy: false, error: null };
-    ui.scenarios = { draft: {}, dirty: false, busy: false, saveBusy: false, result: null, lastPayload: null, error: null, focusedRecommendationId: '' };
-    ui.branches = { busy: false, saveBusy: false, branchTemplates: null, selectedTemplateId: '', draft: {}, dirty: false, result: null, lastPayload: null, error: null };
+    ui.scenarios = { draft: {}, dirty: false, busy: false, saveBusy: false, result: null, explanation: null, lastPayload: null, error: null, focusedRecommendationId: '' };
+    ui.branches = { busy: false, saveBusy: false, branchTemplates: null, selectedTemplateId: '', draft: {}, dirty: false, result: null, explanation: null, lastPayload: null, error: null };
     ui.savedSimulations = { busy: false, payload: null, error: null };
     ui.withdrawals = { busy: false, selectedStrategies: ['four_percent_rule', 'dynamic_guardrails', 'bucket_strategy'], draft: {}, dirty: false, result: null, error: null };
     ui.timeline = { busy: false, timeline: null, draft: {}, dirty: false, editing: false, saving: false, error: null };
@@ -557,11 +557,13 @@ function attachHandlers() {
   delegate(page, 'click', '[data-assumption-action="save"]', () => saveAssumptions());
 
   delegate(page, 'change', '[data-scenario-field]', (_, el) => stageScenarioEdit(el));
+  delegate(page, 'input', '[data-scenario-field]', (_, el) => stageScenarioEdit(el));
   delegate(page, 'click', '[data-scenario-action="run"]', () => runScenarioDiff());
   delegate(page, 'click', '[data-scenario-action="save-simulation"]', () => saveScenarioSimulation());
   delegate(page, 'click', '[data-scenario-action="save-decision"]', () => saveScenarioDecisionNote());
 
   delegate(page, 'change', '[data-branch-field]', (_, el) => stageBranchEdit(el));
+  delegate(page, 'input', '[data-branch-field]', (_, el) => stageBranchEdit(el));
   delegate(page, 'click', '[data-branch-action="run"]', () => runScenarioBranch());
   delegate(page, 'click', '[data-branch-action="save-simulation"]', () => saveBranchSimulation());
   delegate(page, 'click', '[data-branch-action="save-decision"]', () => saveBranchDecisionNote());
@@ -699,10 +701,14 @@ async function runScenarioDiff() {
   ui.scenarios.error = null;
   rerenderScenarios();
   try {
-    ui.scenarios.result = await api.planScenarioDiff(ui.plan.id, payload);
+    const result = await api.planScenarioDiff(ui.plan.id, payload);
+    ui.scenarios.result = result;
     ui.scenarios.lastPayload = payload;
+    ui.scenarios.explanation = { busy: true, payload: null, error: null };
     ui.scenarios.busy = false;
     ui.scenarios.dirty = false;
+    rerenderScenarios();
+    ui.scenarios.explanation = await explainSimulationResult('scenario_diff', payload, result);
     rerenderScenarios();
   } catch (err) {
     ui.scenarios.busy = false;
@@ -780,15 +786,35 @@ async function runScenarioBranch() {
   ui.branches.error = null;
   rerenderBranches();
   try {
-    ui.branches.result = await api.planScenarioBranch(ui.plan.id, payload);
+    const result = await api.planScenarioBranch(ui.plan.id, payload);
+    ui.branches.result = result;
     ui.branches.lastPayload = payload;
+    ui.branches.explanation = { busy: true, payload: null, error: null };
     ui.branches.busy = false;
     ui.branches.dirty = false;
+    rerenderBranches();
+    ui.branches.explanation = await explainSimulationResult('scenario_branch', payload, result);
     rerenderBranches();
   } catch (err) {
     ui.branches.busy = false;
     ui.branches.error = err.message;
     rerenderBranches();
+  }
+}
+
+async function explainSimulationResult(source, inputPayload, resultPayload) {
+  try {
+    return {
+      busy: false,
+      payload: await api.explainPlanSimulation(ui.plan.id, {
+        source,
+        input_payload: inputPayload,
+        result_payload: resultPayload,
+      }),
+      error: null,
+    };
+  } catch (err) {
+    return { busy: false, payload: null, error: err.message };
   }
 }
 

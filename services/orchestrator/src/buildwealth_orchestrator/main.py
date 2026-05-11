@@ -65,6 +65,8 @@ from buildwealth_orchestrator.schemas import (
     PlanWithdrawalStrategyCompareResponse,
     PlanScenarioBranchRequest,
     PlanScenarioBranchResponse,
+    PlanSimulationExplainRequest,
+    PlanSimulationExplainResponse,
     PlanSettings,
     PlanSettingsUpdateRequest,
     PlanTimelineResponse,
@@ -348,6 +350,7 @@ from buildwealth_orchestrator.services.plan_workspace import (
     PlanNotFoundError,
     PlanWorkspace,
 )
+from buildwealth_orchestrator.services.plan_simulation_analyzer import explain_plan_simulation
 from buildwealth_orchestrator.services.recommendation_inbox import (
     RecommendationInbox,
     RecommendationNotFoundError,
@@ -17549,6 +17552,24 @@ def update_plan_branch_templates(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return PlanScenarioBranchTemplatesResponse(**payload)
+
+
+@app.post("/api/plans/{plan_id}/simulation-explain", response_model=PlanSimulationExplainResponse)
+def explain_plan_simulation_result(
+    plan_id: str,
+    request: PlanSimulationExplainRequest,
+) -> PlanSimulationExplainResponse:
+    try:
+        plan_workspace.get_plan(plan_id)
+        payload = explain_plan_simulation(
+            plan_id=plan_id,
+            source=request.source,
+            input_payload=request.input_payload,
+            result_payload=request.result_payload,
+        )
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return PlanSimulationExplainResponse(**payload)
 
 
 @app.get("/api/plans/{plan_id}/simulations/saved", response_model=PlanSavedSimulationsResponse)

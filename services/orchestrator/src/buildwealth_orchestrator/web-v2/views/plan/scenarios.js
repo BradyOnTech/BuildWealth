@@ -73,7 +73,7 @@ export function renderScenarios(plan = {}, state = {}, assumptionState = {}) {
         ${state.dirty ? html`<span class="marginalia">Simulation inputs are staged for review.</span>` : html`<span class="marginalia">Stage an override to compare.</span>`}
       </div>
 
-      ${hasResult ? raw(renderScenarioResult(plan, result, { focusId, planId })) : ''}
+      ${hasResult ? raw(renderScenarioResult(plan, result, { focusId, planId, explanation: state.explanation })) : ''}
       ${raw(renderSavedSimulations(planId, savedState))}
     </section>
   `;
@@ -118,7 +118,7 @@ function renderAssumptionPicker(key, label, assumptionSets, draft = {}) {
   `;
 }
 
-function renderScenarioResult(plan, result, { focusId = '', planId = '' } = {}) {
+function renderScenarioResult(plan, result, { focusId = '', planId = '', explanation = null } = {}) {
   const deltas = Array.isArray(result.scenario_deltas) ? result.scenario_deltas : [];
   const monte = objectValue(result.monte_carlo_delta);
   const simulation = objectValue(result.simulation_delta);
@@ -150,6 +150,7 @@ function renderScenarioResult(plan, result, { focusId = '', planId = '' } = {}) 
 
       ${Object.keys(monte).length ? raw(renderMetricBlock('Monte Carlo', monte)) : ''}
       ${Object.keys(simulation).length ? raw(renderMetricBlock('Simulation', simulation)) : ''}
+      ${raw(renderSimulationExplanation(explanation))}
 
       <div class="scenario-handoff">
         <a class="link-editorial" href="#copilot?intent=plan-scenario&amp;plan=${encodeURIComponent(planId || clean(plan.id))}">Discuss in Copilot</a>
@@ -158,6 +159,70 @@ function renderScenarioResult(plan, result, { focusId = '', planId = '' } = {}) 
         ${focusId ? html`<a class="link-editorial" href="#inbox?focus=${encodeURIComponent(focusId)}">Open related Inbox recommendation</a>` : ''}
       </div>
     </div>
+  `;
+}
+
+export function renderSimulationExplanation(state = {}) {
+  state = objectValue(state);
+  const payload = objectValue(state.payload || state);
+  const drivers = Array.isArray(payload.drivers) ? payload.drivers : [];
+  const assumptions = Array.isArray(payload.assumption_traces) ? payload.assumption_traces : [];
+  const warnings = Array.isArray(payload.warnings) ? payload.warnings.filter(Boolean) : [];
+  const reasons = Array.isArray(payload.confidence_reasons) ? payload.confidence_reasons : [];
+  if (state.busy) {
+    return html`
+      <article class="simulation-explainer">
+        <span class="story-block-eyebrow">What this means</span>
+        <p class="marginalia">Explaining the simulation...</p>
+      </article>
+    `;
+  }
+  if (state.error) {
+    return html`
+      <article class="simulation-explainer">
+        <span class="story-block-eyebrow">What this means</span>
+        <p class="error-banner">${esc(state.error)}</p>
+      </article>
+    `;
+  }
+  if (!Object.keys(payload).length) return '';
+  return html`
+    <article class="simulation-explainer">
+      <header>
+        <div>
+          <span class="story-block-eyebrow">What this means</span>
+          <h4>${esc(outcomeTitle(payload.outcome_label))}</h4>
+        </div>
+        <span class="simulation-confidence ${esc(clean(payload.confidence_level) || 'low')}">${esc(confidenceLabel(payload.confidence_level))}</span>
+      </header>
+      <p>${esc(payload.summary || 'Simulation explanation unavailable.')}</p>
+      ${drivers.length ? html`
+        <div class="simulation-explainer-grid">
+          ${raw(drivers.slice(0, 4).map(driver => html`
+            <div class="simulation-driver ${esc(clean(driver.direction) || 'neutral')}">
+              <span>${esc(clean(driver.label) || 'Driver')}</span>
+              <p>${esc(clean(driver.detail))}</p>
+            </div>
+          `).join(''))}
+        </div>
+      ` : ''}
+      ${assumptions.length ? html`
+        <details class="simulation-trace">
+          <summary>Inputs used</summary>
+          <ul>
+            ${raw(assumptions.slice(0, 6).map(item => html`<li>${esc(item.explanation)}</li>`).join(''))}
+          </ul>
+        </details>
+      ` : ''}
+      ${warnings.length || reasons.length ? html`
+        <details class="simulation-trace">
+          <summary>Confidence notes</summary>
+          <ul>
+            ${raw([...reasons, ...warnings].slice(0, 8).map(item => html`<li>${esc(item)}</li>`).join(''))}
+          </ul>
+        </details>
+      ` : ''}
+    </article>
   `;
 }
 
@@ -358,6 +423,21 @@ function formatDate(value) {
   const date = value ? new Date(value) : null;
   if (!date || Number.isNaN(date.getTime())) return 'Saved';
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function outcomeTitle(value = '') {
+  const normalized = clean(value).toLowerCase();
+  if (normalized === 'better') return 'Looks better than the active plan.';
+  if (normalized === 'worse') return 'Looks weaker than the active plan.';
+  if (normalized === 'mixed') return 'Shows trade-offs.';
+  return 'Needs more context.';
+}
+
+function confidenceLabel(value = '') {
+  const normalized = clean(value).toLowerCase();
+  if (normalized === 'high') return 'High confidence';
+  if (normalized === 'medium') return 'Medium confidence';
+  return 'Low confidence';
 }
 
 function objectValue(value) {

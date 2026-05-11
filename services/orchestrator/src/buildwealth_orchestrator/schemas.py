@@ -2243,6 +2243,42 @@ class PlanScenarioBranchResponse(BaseModel):
     simulation_delta: dict[str, Any] = Field(default_factory=dict)
 
 
+class PlanSimulationExplainRequest(BaseModel):
+    source: Literal["simulation", "scenario_diff", "scenario_branch", "withdrawal_strategy"] = "simulation"
+    input_payload: dict[str, Any] = Field(default_factory=dict)
+    result_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class PlanSimulationExplanationDriver(BaseModel):
+    label: str
+    direction: Literal["positive", "negative", "neutral"] = "neutral"
+    detail: str
+    amount_usd: float | None = None
+
+
+class PlanSimulationAssumptionTrace(BaseModel):
+    field: str
+    label: str
+    base_value: str
+    candidate_value: str
+    explanation: str
+
+
+class PlanSimulationExplainResponse(BaseModel):
+    plan_id: str
+    generated_at: datetime
+    source: str = "Simulation"
+    outcome_label: Literal["better", "worse", "mixed", "unclear"] = "unclear"
+    summary: str = ""
+    drivers: list[PlanSimulationExplanationDriver] = Field(default_factory=list)
+    assumption_traces: list[PlanSimulationAssumptionTrace] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    confidence_level: Literal["high", "medium", "low"] = "low"
+    confidence_reasons: list[str] = Field(default_factory=list)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    trace: dict[str, Any] = Field(default_factory=dict)
+
+
 class PlanArtifactSummary(BaseModel):
     id: str
     file_name: str
