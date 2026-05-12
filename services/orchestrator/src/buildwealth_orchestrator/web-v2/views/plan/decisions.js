@@ -106,10 +106,23 @@ function decisionMeta(decision = {}, planId = '') {
     payload.scenario_diff_preview,
     closure.scenario_diff_preview,
   );
+  const savedSimulationId = clean(
+    decision.saved_simulation_id
+      || payload.saved_simulation_id
+      || payload.simulation_id
+      || objectValue(payload.saved_simulation).id
+      || savedSimulationIdFromText(decision.rationale),
+  );
 
   return {
     status: String(decision.status || '').toLowerCase(),
     planId: clean(decision.plan_id || payload.plan_id || packet.plan_id || closureArtifact.plan_id || planId),
+    savedSimulationId,
+    savedSimulationTitle: clean(
+      decision.saved_simulation_title
+        || payload.saved_simulation_title
+        || objectValue(payload.saved_simulation).title,
+    ),
     recommendationId: clean(
       decision.recommendation_id
         || decision.source_recommendation_id
@@ -156,6 +169,12 @@ function decisionLinks(meta) {
       href: artifactHref(meta.planId, meta.closureArtifactId),
     });
   }
+  if (meta.savedSimulationId) {
+    links.push({
+      label: 'Saved Simulation',
+      href: savedSimulationHref(meta.planId, meta.savedSimulationId),
+    });
+  }
   return links;
 }
 
@@ -165,6 +184,12 @@ function decisionDetails(meta) {
   const scenario = scenarioPreviewText(meta.scenarioPreview);
   if (expected) details.push({ label: 'Expected outcome', value: expected });
   if (scenario) details.push({ label: 'Scenario preview', value: scenario });
+  if (meta.savedSimulationId) {
+    details.push({
+      label: 'Saved Simulation',
+      value: meta.savedSimulationTitle || meta.savedSimulationId,
+    });
+  }
   if (meta.outcomeCaptured) {
     details.push({ label: 'Outcome', value: 'Outcome captured' });
   } else if (isAcceptedStatus(meta.status)) {
@@ -227,6 +252,14 @@ function artifactHref(planId, artifactId) {
   return `#plan?${params.toString()}`;
 }
 
+function savedSimulationHref(planId, savedSimulationId) {
+  const params = new URLSearchParams();
+  if (planId) params.set('id', planId);
+  params.set('section', 'scenarios');
+  if (savedSimulationId) params.set('saved', savedSimulationId);
+  return `#plan?${params.toString()}`;
+}
+
 function isAcceptedStatus(status) {
   return ['accepted', 'approved', 'applied', 'done'].includes(String(status || '').toLowerCase());
 }
@@ -245,6 +278,11 @@ function firstObject(...values) {
 
 function clean(value) {
   return String(value ?? '').trim();
+}
+
+function savedSimulationIdFromText(value) {
+  const match = String(value || '').match(/Saved simulation id:\s*([A-Za-z0-9_-]+)/i);
+  return match ? match[1] : '';
 }
 
 function renderEmpty() {

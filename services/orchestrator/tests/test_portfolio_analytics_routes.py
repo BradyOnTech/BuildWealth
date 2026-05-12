@@ -18,7 +18,10 @@ class FakePortfolioStore:
 
 
 class FakeBenchmarkService:
+    last_kwargs: dict = {}
+
     async def compare(self, **kwargs) -> dict:
+        self.last_kwargs = kwargs
         return {
             "benchmark_symbols": kwargs["benchmark_symbols"],
             "start_date": "2026-01-01",
@@ -29,7 +32,7 @@ class FakeBenchmarkService:
                 "alpha_pct_by_symbol": {"SPY": 10},
             },
             "series": [],
-            "warnings": ["Ghostfolio benchmark sidecar disabled; using local fallback"],
+            "warnings": ["Portfolio benchmark sidecar disabled; using local fallback"],
         }
 
 
@@ -51,16 +54,19 @@ class FakeAttributionService:
 
 
 def test_portfolio_analytics_route(monkeypatch) -> None:
+    benchmark = FakeBenchmarkService()
     monkeypatch.setattr(main, "portfolio_store", FakePortfolioStore())
-    monkeypatch.setattr(main, "benchmark_service", FakeBenchmarkService())
+    monkeypatch.setattr(main, "benchmark_service", benchmark)
     monkeypatch.setattr(main, "attribution_service", FakeAttributionService())
 
     with TestClient(main.app) as client:
-        response = client.get("/api/portfolio/analytics?symbols=SPY&limit=10&top_n=3")
+        response = client.get("/api/portfolio/analytics?symbols=SPY&period=mtd&limit=10&top_n=3")
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ready"
+    assert payload["period"]["id"] == "mtd"
+    assert benchmark.last_kwargs["limit"] == 31
     assert payload["benchmark"]["rows"][0]["symbol"] == "SPY"
     assert payload["attribution"]["contributors"][0]["symbol"] == "VTI"
     assert "Ghostfolio" not in " ".join(payload["warnings"])

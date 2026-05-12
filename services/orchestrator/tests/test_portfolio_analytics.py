@@ -13,9 +13,41 @@ def test_portfolio_analytics_payload_sanitizes_internal_engine_labels() -> None:
                 "total_return_usd": 200,
                 "price_return_usd": 180,
                 "income_return_usd": 20,
+                "fees_paid_usd": 3.5,
                 "twr_annualized_return_pct": 12.5,
                 "xirr_annualized_return_pct": 11.2,
                 "net_contributions": 1000,
+            },
+            "allocation_breakdowns": {
+                "asset_class": [{"key": "Equity", "allocation_pct": 80, "value": 960}],
+                "sector": [{"key": "Technology", "allocation_pct": 40, "value": 480}],
+                "region": [{"key": "US", "allocation_pct": 90, "value": 1080}],
+            },
+            "risk_alerts": {
+                "status": "warning",
+                "breach_count": 1,
+                "watch_count": 0,
+                "metrics": {
+                    "top_holding_symbol": "VTI",
+                    "top_holding_pct": 40,
+                    "largest_account_id": "taxable",
+                    "largest_account_pct": 70,
+                    "largest_asset_class": "Equity",
+                    "largest_asset_class_pct": 80,
+                    "largest_sector": "Technology",
+                    "largest_sector_pct": 40,
+                    "largest_region": "US",
+                    "largest_region_pct": 90,
+                    "effective_positions": 3.4,
+                },
+                "alerts": [
+                    {
+                        "metric": "sector",
+                        "label": "Largest sector concentration",
+                        "message": "Technology is above the limit.",
+                        "recommendation": "Broaden sector exposure.",
+                    }
+                ],
             },
         },
         benchmark_response={
@@ -29,7 +61,7 @@ def test_portfolio_analytics_payload_sanitizes_internal_engine_labels() -> None:
                 "max_drawdown_pct": -2,
             },
             "series": [],
-            "warnings": ["Ghostfolio benchmark sidecar disabled; using local fallback"],
+            "warnings": ["Portfolio benchmark sidecar disabled; using local fallback"],
         },
         attribution_response={
             "summary": {
@@ -51,15 +83,21 @@ def test_portfolio_analytics_payload_sanitizes_internal_engine_labels() -> None:
                 }
             ],
             "detractors": [],
-            "warnings": ["Ghostfolio attribution sidecar disabled; using local fallback"],
+            "warnings": ["Portfolio attribution sidecar disabled; using local fallback"],
         },
+        period="mtd",
+        snapshot_limit=31,
         generated_at="2026-05-09T12:00:00+00:00",
     )
 
     assert payload["status"] == "ready"
+    assert payload["period"]["id"] == "mtd"
     assert payload["performance"]["total_return_usd"] == 200
+    assert payload["performance"]["fees_paid_usd"] == 3.5
     assert payload["benchmark"]["rows"][0]["alpha_pct"] == 10
     assert payload["attribution"]["contributors"][0]["symbol"] == "VTI"
+    assert payload["risk_explanations"]["rows"][0]["label"] == "Largest holding"
+    assert payload["risk_explanations"]["alerts"][0]["metric"] == "sector"
     assert "Ghostfolio" not in " ".join(payload["warnings"])
     assert "sidecar" not in " ".join(payload["warnings"])
 

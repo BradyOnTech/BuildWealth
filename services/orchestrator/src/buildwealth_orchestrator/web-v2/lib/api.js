@@ -186,11 +186,13 @@ export const api = {
   portfolioAnalytics: (opts = {}) => fetchJson(`/api/portfolio/analytics?${new URLSearchParams({
     limit: String(opts.limit || 180),
     top_n: String(opts.topN || opts.top_n || 5),
+    period: opts.period || '1y',
     ...(opts.symbols ? { symbols: opts.symbols } : {}),
   }).toString()}`),
   portfolioTransactions: (limit = 100) => fetchJson(`/api/portfolio/transactions?limit=${encodeURIComponent(limit)}`),
   portfolioAccounts: () => fetchJson('/api/portfolio/accounts'),
   portfolioAudit: (limit = 25) => fetchJson(`/api/portfolio/audit?limit=${encodeURIComponent(limit)}`),
+  portfolioExportBundle: (limit = 10000) => fetchJson(`/api/portfolio/export-bundle?limit=${encodeURIComponent(limit)}`),
   portfolioAssetSearch: (opts = {}) => fetchJson(portfolioAssetSearchUrl(opts)),
   portfolioAsset: (symbol) => fetchJson(`/api/portfolio/assets/${encodeURIComponent(symbol)}`),
   updatePortfolioAssetMetadata: (symbol, body = {}) => putJson(
@@ -198,8 +200,19 @@ export const api = {
     body,
   ),
   portfolioCustomAssets: () => fetchJson('/api/portfolio/custom-assets'),
+  createPortfolioCustomAsset: (body = {}) => postJson('/api/portfolio/custom-assets', body),
   portfolioManualPrices: () => fetchJson('/api/portfolio/manual-prices'),
+  setPortfolioManualPrice: (body = {}) => putJson('/api/portfolio/manual-prices', body),
+  clearPortfolioManualPrice: (symbol) => fetchJson(
+    `/api/portfolio/manual-prices/${encodeURIComponent(symbol)}`,
+    { method: 'DELETE' },
+  ),
   portfolioFxRates: () => fetchJson('/api/portfolio/fx-rates'),
+  setPortfolioFxRate: (body = {}) => putJson('/api/portfolio/fx-rates', body),
+  clearPortfolioFxRate: (currency) => fetchJson(
+    `/api/portfolio/fx-rates/${encodeURIComponent(currency)}`,
+    { method: 'DELETE' },
+  ),
   portfolioCostBasisMethods: () => fetchJson('/api/portfolio/cost-basis-methods'),
   portfolioRiskPolicy: () => fetchJson('/api/portfolio/risk-policy'),
   updatePortfolioRiskPolicy: (body = {}) => putJson('/api/portfolio/risk-policy', body),

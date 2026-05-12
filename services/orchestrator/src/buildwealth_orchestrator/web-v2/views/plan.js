@@ -71,6 +71,7 @@ export async function init(params = {}) {
   ui.section = String(params.section || '').trim().toLowerCase();
   ui.artifacts.focusedArtifactId = String(params.artifact || '').trim();
   ui.scenarios.focusedRecommendationId = String(params.focus || params.recommendation || '').trim();
+  ui.savedSimulations.focusedSimulationId = String(params.saved || '').trim();
   attachHandlers();
 
   if (!ui.selectedId) {
@@ -83,6 +84,9 @@ export async function init(params = {}) {
   await loadFocusedArtifact(ui.selectedId, params.artifact);
   await loadBranchTemplates(ui.selectedId);
   await loadSavedSimulations(ui.selectedId);
+  if (ui.savedSimulations.focusedSimulationId) {
+    await compareSavedSimulationCurrentById(ui.savedSimulations.focusedSimulationId, { render: false });
+  }
   await loadTimeline(ui.selectedId);
   await loadContributionRules(ui.selectedId);
   rerenderAll();
@@ -519,7 +523,7 @@ function attachHandlers() {
     ui.artifacts = { focusedArtifactId: '', focusedArtifact: null, busy: false, error: null };
     ui.scenarios = { draft: {}, dirty: false, busy: false, saveBusy: false, result: null, explanation: null, lastPayload: null, error: null, focusedRecommendationId: '' };
     ui.branches = { busy: false, saveBusy: false, branchTemplates: null, selectedTemplateId: '', draft: {}, dirty: false, result: null, explanation: null, lastPayload: null, error: null };
-    ui.savedSimulations = { busy: false, payload: null, error: null };
+    ui.savedSimulations = { busy: false, payload: null, error: null, focusedComparison: null, rerun: null, focusedSimulationId: '' };
     ui.withdrawals = { busy: false, selectedStrategies: ['four_percent_rule', 'dynamic_guardrails', 'bucket_strategy'], draft: {}, dirty: false, result: null, error: null };
     ui.timeline = { busy: false, timeline: null, draft: {}, dirty: false, editing: false, saving: false, error: null };
     ui.contributions = { busy: false, contributionRules: null, draft: {}, dirty: false, editing: false, saving: false, error: null };
@@ -765,6 +769,16 @@ async function saveWithdrawalDecisionNote() {
       summary: 'Reviewed withdrawal strategy comparison',
       rationale: withdrawalDecisionRationale(ui.withdrawals.result),
       status: 'proposed',
+      action_payload: {
+        plan_id: ui.plan.id,
+        source: 'withdrawal_strategy_comparison',
+        recommended_strategy: ui.withdrawals.result?.explanation?.recommended_strategy || '',
+        review_level: ui.withdrawals.result?.explanation?.review_level || {},
+        compared_strategies: Array.isArray(ui.withdrawals.result?.strategies)
+          ? ui.withdrawals.result.strategies
+          : [],
+        best_strategy_by_metric: ui.withdrawals.result?.best_strategy_by_metric || {},
+      },
     });
     ui.plan = await api.plan(ui.plan.id);
     state.plan = ui.plan;
@@ -949,30 +963,38 @@ async function compareSavedSimulationCurrent(el) {
   if (!ui.plan) return;
   const savedSimulationId = String(el.dataset.savedSimulationId || '').trim();
   if (!savedSimulationId) return;
+  await compareSavedSimulationCurrentById(savedSimulationId);
+}
+
+async function compareSavedSimulationCurrentById(savedSimulationId, { render = true } = {}) {
+  if (!ui.plan) return;
   ui.savedSimulations = {
     ...ui.savedSimulations,
     busy: true,
     error: null,
+    focusedSimulationId: savedSimulationId,
     focusedComparison: { busy: true, saved_simulation_id: savedSimulationId },
   };
-  rerenderScenarios();
+  if (render) rerenderScenarios();
   try {
     const comparison = await api.comparePlanSavedSimulationCurrent(ui.plan.id, savedSimulationId);
     ui.savedSimulations = {
       ...ui.savedSimulations,
       busy: false,
+      focusedSimulationId: savedSimulationId,
       focusedComparison: comparison,
       error: null,
     };
-    rerenderScenarios();
+    if (render) rerenderScenarios();
   } catch (err) {
     ui.savedSimulations = {
       ...ui.savedSimulations,
       busy: false,
+      focusedSimulationId: savedSimulationId,
       focusedComparison: null,
       error: err.message,
     };
-    rerenderScenarios();
+    if (render) rerenderScenarios();
   }
 }
 

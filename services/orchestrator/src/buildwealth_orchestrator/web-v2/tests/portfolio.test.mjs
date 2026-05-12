@@ -127,6 +127,27 @@ test('portfolio maintenance links stay inside native v2 sections', () => {
 test('portfolio asset registry renders native review status', () => {
   const markup = String(renderLookCloser('assets', {
     section: 'assets',
+    payload: {
+      count: 1,
+      selectedAsset: {
+        symbol: 'ODD1',
+        name: 'Odd Asset',
+        asset_class: 'Alternatives',
+        asset_type: 'Collectible',
+        sector: 'Other',
+        region: 'US',
+        quality_label: 'Needs review',
+        current_price: 125,
+        current_value: 125,
+        price_source: 'MANUAL',
+        accounts: ['Taxable'],
+        manual_price_detail: { price: 125, note: 'Local appraisal', updated_at: '2026-05-12T12:00:00Z' },
+        provenance: [
+          { source: 'seeded', label: 'BuildWealth seed', detail: 'Matched from seed metadata.' },
+          { source: 'manual_price', label: 'Manual price', detail: 'Local appraisal' },
+        ],
+      },
+    },
     rows: [
       {
         quality_label: 'Needs review',
@@ -148,7 +169,40 @@ test('portfolio asset registry renders native review status', () => {
   assert.match(markup, /Needs review/);
   assert.match(markup, /ODD1/);
   assert.match(markup, /Custom/);
+  assert.match(markup, /BuildWealth seed/);
+  assert.match(markup, /Manual price override is active/);
+  assert.match(markup, /Save asset metadata/);
+  assert.match(markup, /Add custom asset/);
+  assert.match(markup, /#portfolio\?section=assets&symbol=ODD1/);
   assert.doesNotMatch(markup, /classic/i);
+});
+
+test('portfolio manual price and FX maintenance render reversible native controls', () => {
+  const priceMarkup = String(renderLookCloser('prices', {
+    section: 'prices',
+    payload: {
+      by_symbol: {
+        ODD1: { price: 125, note: 'Local appraisal', updated_at: '2026-05-12T12:00:00Z' },
+      },
+    },
+  }));
+  const fxMarkup = String(renderLookCloser('fx', {
+    section: 'fx',
+    payload: {
+      base_currency: 'USD',
+      rates: {
+        USD: { rate: 1, base_currency: 'USD' },
+        EUR: { rate: 1.08, base_currency: 'USD' },
+      },
+    },
+  }));
+
+  assert.match(priceMarkup, /Save manual price/);
+  assert.match(priceMarkup, /data-clear-manual-price="ODD1"/);
+  assert.match(priceMarkup, /Manual prices are local overrides/);
+  assert.match(fxMarkup, /Save FX rate/);
+  assert.match(fxMarkup, /data-clear-fx-rate="EUR"/);
+  assert.doesNotMatch(fxMarkup, /data-clear-fx-rate="USD"/);
 });
 
 test('portfolio audit renders import and follow-through findings', () => {
@@ -176,11 +230,27 @@ test('portfolio audit renders import and follow-through findings', () => {
       ],
       recent_reports: [
         {
+          report_id: 'ir-1',
           created_at: '2026-05-09T12:00:00+00:00',
           source_file_name: 'broker.csv',
           imported_activities: 2,
           unresolved_count: 1,
           duplicate_count: 0,
+          href: '#import-sync?report=ir-1',
+          portfolio_history_href: '#portfolio?section=transactions&import_report=ir-1',
+        },
+      ],
+      audit_events: [
+        {
+          id: 'audit:import_rows_need_review',
+          kind: 'finding',
+          title: 'Imported rows need review',
+          detail: 'Some rows from recent imports were not safe to rely on automatically.',
+          severity: 'high',
+          status: 'open',
+          href: '#import-sync?report=ir-1',
+          action_label: 'Open report',
+          recovery_note: 'Use the saved import report to trace exactly what changed.',
         },
       ],
     },
@@ -190,8 +260,38 @@ test('portfolio audit renders import and follow-through findings', () => {
   assert.match(markup, /Open items/);
   assert.match(markup, /Imported rows need review/);
   assert.match(markup, /Recent import reports/);
+  assert.match(markup, /Audit event detail/);
+  assert.match(markup, /Use the saved import report/);
   assert.match(markup, /broker\.csv/);
+  assert.match(markup, /#import-sync\?report=ir-1/);
+  assert.match(markup, /#portfolio\?section=transactions&amp;import_report=ir-1/);
   assert.doesNotMatch(markup, /classic/i);
+});
+
+test('portfolio export bundle renders counts and recovery posture', () => {
+  const markup = String(renderLookCloser('export', {
+    section: 'export',
+    payload: {
+      summary: {
+        transactions: 12,
+        holdings: 4,
+        lots: 3,
+        import_reports: 2,
+        audit_events: 5,
+      },
+      recovery_posture: {
+        manual_changes: 'Manual metadata and prices can be edited or cleared.',
+        imports: 'Import reports trace source rows.',
+        destructive_changes: 'Create a checkpoint before cleanup.',
+      },
+    },
+  }));
+
+  assert.match(markup, /Export &amp; Recovery/);
+  assert.match(markup, /Bundle export is ready/);
+  assert.match(markup, /Open JSON export bundle/);
+  assert.match(markup, /Manual Changes/);
+  assert.match(markup, /Create a checkpoint before cleanup/);
 });
 
 test('portfolio guardrails render editable plain-language risk limits', () => {
@@ -249,10 +349,19 @@ test('portfolio guardrails render editable plain-language risk limits', () => {
 test('portfolio analytics renders performance benchmarks and contributors', () => {
   const markup = String(renderAnalytics({
     status: 'ready',
+    period: {
+      id: 'mtd',
+      options: [
+        { id: 'today', label: 'Today' },
+        { id: 'mtd', label: 'MTD' },
+        { id: '1y', label: '1Y' },
+      ],
+    },
     performance: {
       total_return_usd: 1250,
       price_return_usd: 1000,
       income_return_usd: 250,
+      fees_paid_usd: 15,
       twr_annualized_return_pct: 12.4,
       xirr_annualized_return_pct: 10.2,
       net_contributions: 5000,
@@ -268,16 +377,37 @@ test('portfolio analytics renders performance benchmarks and contributors', () =
       contributors: [{ symbol: 'VTI', name: 'Total Market', total_return: 1250, contribution_pct: 100 }],
       detractors: [],
     },
+    risk_explanations: {
+      rows: [
+        { key: 'sector', label: 'Largest sector', value: 40, context: 'Technology', plain: 'One business sector is carrying this share.' },
+        { key: 'spread', label: 'Portfolio spread', value: 3.4, context: 'effective positions', plain: 'A higher number means risk is spread across more meaningful positions.' },
+      ],
+      alerts: [
+        {
+          label: 'Largest sector concentration',
+          message: 'Technology is above the limit.',
+          recommendation: 'Broaden sector exposure.',
+        },
+      ],
+    },
     warnings: ['Benchmark service disabled; using local fallback'],
   }));
 
   assert.match(markup, /Performance/);
+  assert.match(markup, /Today/);
+  assert.match(markup, /MTD/);
   assert.match(markup, /Total return/);
+  assert.match(markup, /Return parts/);
+  assert.match(markup, /Cash-flow effects/);
+  assert.match(markup, /Fees/);
   assert.match(markup, /Benchmarks/);
   assert.match(markup, /SPY/);
   assert.match(markup, /alpha/);
   assert.match(markup, /Return contributors/);
   assert.match(markup, /VTI/);
+  assert.match(markup, /Risk explained plainly/);
+  assert.match(markup, /Technology · 40/);
+  assert.match(markup, /Broaden sector exposure/);
   assert.doesNotMatch(markup, /Ghostfolio/);
   assert.doesNotMatch(markup, /sidecar/);
 });
@@ -320,9 +450,45 @@ test('api portfolio analytics helper calls native analytics endpoint', async (t)
   });
 
   await api.portfolioAnalytics({ symbols: 'SPY,VTI', limit: 10, topN: 3 });
+  await api.portfolioAnalytics({ period: 'mtd' });
 
   assert.match(calls[0], /\/api\/portfolio\/analytics\?/);
   assert.match(calls[0], /symbols=SPY%2CVTI/);
   assert.match(calls[0], /limit=10/);
   assert.match(calls[0], /top_n=3/);
+  assert.match(calls[1], /period=mtd/);
+});
+
+test('api portfolio maintenance helpers call native asset price and FX endpoints', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, options });
+    return new Response(JSON.stringify({ ok: true, symbol: 'ODD1' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  await api.createPortfolioCustomAsset({ name: 'Odd Asset', value: 125 });
+  await api.setPortfolioManualPrice({ symbol: 'ODD1', price: 125 });
+  await api.clearPortfolioManualPrice('ODD1');
+  await api.setPortfolioFxRate({ currency: 'EUR', rate: 1.08 });
+  await api.clearPortfolioFxRate('EUR');
+  await api.portfolioExportBundle(25);
+
+  assert.equal(calls[0].url, '/api/portfolio/custom-assets');
+  assert.equal(calls[0].options.method, 'POST');
+  assert.equal(calls[1].url, '/api/portfolio/manual-prices');
+  assert.equal(calls[1].options.method, 'PUT');
+  assert.equal(calls[2].url, '/api/portfolio/manual-prices/ODD1');
+  assert.equal(calls[2].options.method, 'DELETE');
+  assert.equal(calls[3].url, '/api/portfolio/fx-rates');
+  assert.equal(calls[3].options.method, 'PUT');
+  assert.equal(calls[4].url, '/api/portfolio/fx-rates/EUR');
+  assert.equal(calls[4].options.method, 'DELETE');
+  assert.equal(calls[5].url, '/api/portfolio/export-bundle?limit=25');
 });

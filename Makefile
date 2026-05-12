@@ -2,16 +2,13 @@ SHELL := /bin/zsh
 
 COMPOSE := docker compose -f infra/docker-compose.yml
 
-.PHONY: init-env up up-legacy down restart ps logs sync sync-status engine-status telemetry-runtime backup backup-list backup-restore protection-status protection-apply reliability-smoke-storage import-csv test
+.PHONY: init-env up down restart ps logs sync sync-status engine-status telemetry-runtime backup backup-list backup-restore protection-status protection-apply reliability-smoke-storage import-csv test
 
 init-env:
 	./scripts/init-env.sh
 
 up:
 	$(COMPOSE) up -d orchestrator
-
-up-legacy:
-	$(COMPOSE) --profile legacy-upstream up -d
 
 down:
 	$(COMPOSE) down

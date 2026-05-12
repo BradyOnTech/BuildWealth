@@ -424,6 +424,8 @@ test('plan decisions render recommendation, artifact, expected outcome, and scen
               summary: 'Raises projected final net worth.',
             },
           },
+          saved_simulation_id: 'saved-simulation-1',
+          saved_simulation_title: 'Contribution increase simulation',
         },
       },
     ],
@@ -435,12 +437,33 @@ test('plan decisions render recommendation, artifact, expected outcome, and scen
   assert.match(markup, /href="#plan\?id=plan-1&amp;section=artifacts&amp;artifact=artifact-decision"/);
   assert.match(markup, /Closure summary/);
   assert.match(markup, /href="#plan\?id=plan-1&amp;section=artifacts&amp;artifact=artifact-closure"/);
+  assert.match(markup, /Saved Simulation/);
+  assert.match(markup, /href="#plan\?id=plan-1&amp;section=scenarios&amp;saved=saved-simulation-1"/);
+  assert.match(markup, /Contribution increase simulation/);
   assert.match(markup, /Expected outcome/);
   assert.match(markup, /\+\$1,200/);
   assert.match(markup, /contribution reviewed/);
   assert.match(markup, /Scenario preview/);
   assert.match(markup, /Raises projected final net worth\./);
   assert.match(markup, /Outcome captured/);
+});
+
+test('plan decisions link legacy saved simulation rationale ids', () => {
+  const markup = String(renderDecisions({
+    id: 'plan-1',
+    decisions: [
+      {
+        id: 'decision-legacy',
+        status: 'proposed',
+        summary: 'Reviewed older saved run',
+        rationale: 'User wants to revisit this. Saved simulation id: saved-legacy-1.',
+        created_at: '2026-04-02T12:00:00Z',
+      },
+    ],
+  }, { appendOpen: false }));
+
+  assert.match(markup, /Saved Simulation/);
+  assert.match(markup, /href="#plan\?id=plan-1&amp;section=scenarios&amp;saved=saved-legacy-1"/);
 });
 
 test('plan decisions flag accepted decisions without closure outcome', () => {
@@ -584,6 +607,40 @@ test('plan branch workspace renders templates, result, and review handoffs', () 
           { explanation: 'Expected return changed from 6.0% to 4.0%.' },
         ],
         confidence_reasons: ['The result includes comparable active-plan and candidate deltas.'],
+        yearly_metrics: [
+          { year: 2026, age: 45, ending_balance_usd: 560000, net_cash_flow_usd: 20000 },
+          { year: 2046, age: 65, ending_balance_usd: 1520000, net_cash_flow_usd: 0 },
+        ],
+        phase_summaries: [
+          {
+            label: 'Accumulation',
+            start_year: 2026,
+            end_year: 2045,
+            ending_balance_usd: 1400000,
+            total_taxes_usd: 420000,
+            total_withdrawals_usd: 0,
+          },
+          {
+            label: 'Transition',
+            start_year: 2046,
+            end_year: 2050,
+            ending_balance_usd: 1520000,
+            total_taxes_usd: 110000,
+            total_withdrawals_usd: 280000,
+          },
+        ],
+        percentile_bands: [
+          { percentile: 'P10', future_value_usd: 850000 },
+          { percentile: 'P50', future_value_usd: 1080000 },
+          { percentile: 'P90', future_value_usd: 1300000 },
+        ],
+        field_review_links: [
+          {
+            label: 'Expected return',
+            href: '#plan?id=plan-1&section=assumptions&field=expected_return_baseline',
+            reason: 'Review this assumption before using the simulation for a decision.',
+          },
+        ],
       },
     },
     reviewLevel: {
@@ -621,6 +678,14 @@ test('plan branch workspace renders templates, result, and review handoffs', () 
   assert.match(markup, /What this means/);
   assert.match(markup, /Looks weaker than the active plan/);
   assert.match(markup, /Medium confidence/);
+  assert.match(markup, /Yearly metrics/);
+  assert.match(markup, /2026 to 2046/);
+  assert.match(markup, /Life phases/);
+  assert.match(markup, /Accumulation \(2026-2045\)/);
+  assert.match(markup, /Monte Carlo range/);
+  assert.match(markup, /P50: future value \$1,080,000/);
+  assert.match(markup, /Fields to review/);
+  assert.match(markup, /href="#plan\?id=plan-1&amp;section=assumptions&amp;field=expected_return_baseline"/);
   assert.match(markup, /Review level/);
   assert.match(markup, /High review/);
   assert.match(markup, /Slow down before applying this/);
@@ -671,6 +736,28 @@ test('plan withdrawal workspace renders strategy comparison rows and review hand
           },
         ],
         tradeoffs: ['Dynamic Guardrails has the highest ending value, but 4% Rule projects $20,000 less in taxes.'],
+        diagnostics: [
+          {
+            key: 'tax_drag',
+            label: 'Tax drag',
+            summary: 'Projected taxes range from $120,000 to $140,000.',
+            level: 'medium',
+          },
+          {
+            key: 'depletion_risk',
+            label: 'Downside risk',
+            summary: 'The lower-end simulation range bottoms at $760,000.',
+            level: 'medium',
+          },
+        ],
+        contribution_ordering: [
+          'Before choosing a drawdown strategy, keep contributions ordered around free employer match, tax-advantaged room, and needed cash reserves.',
+        ],
+        review_level: {
+          level: 'low',
+          summary: 'Normal review is enough before saving this as a decision note.',
+          reasons: ['No depletion, warning, or high-spread diagnostic was found.'],
+        },
       },
       comparisons: [
         {
@@ -719,7 +806,13 @@ test('plan withdrawal workspace renders strategy comparison rows and review hand
   assert.match(markup, /What this means/);
   assert.match(markup, /Dynamic Guardrails stands out/);
   assert.match(markup, /4% Rule has the lowest projected taxes/);
+  assert.match(markup, /Diagnostics/);
+  assert.match(markup, /Tax drag: Projected taxes range from \$120,000 to \$140,000/);
+  assert.match(markup, /Contribution ordering/);
+  assert.match(markup, /free employer match/);
   assert.match(markup, /Trade-offs/);
+  assert.match(markup, /Review level/);
+  assert.match(markup, /Normal review is enough/);
   assert.match(markup, /Provider fallback used\./);
   assert.match(markup, /Discuss in Copilot/);
   assert.match(markup, /Save decision note/);
@@ -761,8 +854,12 @@ test('plan scenario workspace renders compact results and decision handoff', () 
       ],
       monte_carlo_delta: {
         success_probability_delta: 0.04,
+        base_p50_future_value_usd: 1200000,
       },
       simulation_delta: {
+        base: { future_value_usd: 1000000 },
+        candidate: { future_value_usd: 1042000 },
+        changed: true,
         status: 'captured',
         summary: 'Monte Carlo confidence improved.',
       },
@@ -816,6 +913,10 @@ test('plan scenario workspace renders compact results and decision handoff', () 
   assert.match(markup, /\+\$30,000/);
   assert.match(markup, /Monte Carlo/);
   assert.match(markup, /\+4%/);
+  assert.match(markup, /\$1,200,000/);
+  assert.match(markup, /Changed/);
+  assert.match(markup, /Yes/);
+  assert.doesNotMatch(markup, /\[object Object\]/);
   assert.match(markup, /Monte Carlo confidence improved\./);
   assert.match(markup, /What this means/);
   assert.match(markup, /Looks better than the active plan/);

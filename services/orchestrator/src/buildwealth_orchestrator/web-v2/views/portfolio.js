@@ -44,7 +44,7 @@ export async function init(params = {}) {
   try {
     const [holdingsData, analyticsData, maintenanceData] = await Promise.all([
       api.holdings(),
-      api.portfolioAnalytics({ limit: 180, topN: 5 }).catch((err) => ({
+      api.portfolioAnalytics({ limit: 180, topN: 5, period: params.period || '1y' }).catch((err) => ({
         status: 'unavailable',
         warnings: [err?.message || 'Performance analytics are unavailable.'],
       })),
@@ -393,6 +393,7 @@ export function renderLookCloser(activeSection = '', maintenance = null) {
     { id: 'fx', label: 'FX rates', hint: 'Currency conversion rates' },
     { id: 'cost-basis', label: 'Cost basis', hint: 'Lot-level basis adjustments' },
     { id: 'risk-policy', label: 'Guardrails', hint: 'Plain limits for concentration, accounts, sectors, and spread' },
+    { id: 'export', label: 'Export & Recovery', hint: 'Portfolio bundle and reversal posture' },
   ];
   return html`
     <section>
@@ -446,6 +447,9 @@ function normalizeMaintenanceSection(section) {
     'risk-policy': 'risk-policy',
     risk_policy: 'risk-policy',
     allocation: 'risk-policy',
+    export: 'export',
+    recovery: 'export',
+    bundle: 'export',
   };
   return aliases[value] || '';
 }
@@ -456,13 +460,17 @@ async function loadMaintenanceSection(section, params = {}) {
     if (section === 'accounts') return { section, rows: await api.portfolioAccounts() };
     if (section === 'transactions') return { section, rows: await api.portfolioTransactions(100) };
     if (section === 'assets') {
-      const payload = await api.portfolioAssetSearch({ q: params.q || '', limit: 200 });
-      return { section, rows: payload.items || [], payload };
+      const [payload, selectedAsset] = await Promise.all([
+        api.portfolioAssetSearch({ q: params.q || '', limit: 200 }),
+        params.symbol ? api.portfolioAsset(params.symbol).catch((err) => ({ error: err?.message || 'Could not load this asset.' })) : Promise.resolve(null),
+      ]);
+      return { section, rows: payload.items || [], payload: { ...payload, selectedAsset } };
     }
     if (section === 'prices') return { section, payload: await api.portfolioManualPrices() };
     if (section === 'fx') return { section, payload: await api.portfolioFxRates() };
     if (section === 'cost-basis') return { section, payload: await api.portfolioCostBasisMethods() };
     if (section === 'risk-policy') return { section, payload: await api.portfolioRiskPolicy() };
+    if (section === 'export') return { section, payload: await api.portfolioExportBundle(10_000) };
   } catch (err) {
     return { section, error: err?.message || 'Could not load this portfolio section.' };
   }
@@ -481,7 +489,7 @@ function renderMaintenanceDetail(section, maintenance) {
 
   const title = section === 'assets'
     ? 'Investments & Assets'
-    : (section === 'audit' ? 'Portfolio Audit' : (section === 'risk-policy' ? 'Portfolio Guardrails' : labelize(section)));
+    : (section === 'audit' ? 'Portfolio Audit' : (section === 'risk-policy' ? 'Portfolio Guardrails' : (section === 'export' ? 'Export & Recovery' : labelize(section))));
   const rows = maintenanceRows(section, maintenance);
   return html`
     <article class="portfolio-maintenance-detail" data-portfolio-maintenance-detail>
@@ -492,8 +500,13 @@ function renderMaintenanceDetail(section, maintenance) {
       </header>
       ${section === 'audit' ? raw(renderPortfolioAudit(maintenance?.payload || {})) : ''}
       ${section === 'assets' ? raw(renderAssetRegistryTools(maintenance)) : ''}
+      ${section === 'assets' ? raw(renderAssetDetail(maintenance?.payload?.selectedAsset)) : ''}
+      ${section === 'assets' ? raw(renderCustomAssetTools()) : ''}
+      ${section === 'prices' ? raw(renderManualPriceTools()) : ''}
+      ${section === 'fx' ? raw(renderFxRateTools(maintenance?.payload || {})) : ''}
       ${section === 'risk-policy' ? raw(renderRiskGuardrails(maintenance)) : ''}
-      ${section === 'audit' || section === 'risk-policy'
+      ${section === 'export' ? raw(renderExportBundle(maintenance?.payload || {})) : ''}
+      ${section === 'audit' || section === 'risk-policy' || section === 'export'
         ? ''
         : (rows.length ? raw(renderMaintenanceRows(section, rows)) : html`<p class="fit-empty">Nothing recorded here yet.</p>`)}
     </article>
@@ -708,12 +721,71 @@ function renderPortfolioAudit(audit = {}) {
     <div class="portfolio-audit-findings">
       ${raw(findings.map(renderAuditFinding).join(''))}
     </div>
+    ${raw(renderAuditEvents(audit.audit_events || []))}
     ${reports.length ? html`
       <div class="portfolio-audit-reports">
         <h4>Recent import reports</h4>
         ${raw(renderAuditReports(reports))}
       </div>
     ` : html`<p class="fit-empty">No import reports recorded yet.</p>`}
+  `;
+}
+
+function renderAuditEvents(events = []) {
+  const rows = Array.isArray(events) ? events.slice(0, 8) : [];
+  if (!rows.length) return '';
+  return html`
+    <div class="portfolio-audit-reports">
+      <h4>Audit event detail</h4>
+      <div class="portfolio-audit-findings">
+        ${raw(rows.map(event => `
+          <article class="portfolio-audit-finding ${esc(event.status || 'clear')} ${esc(event.severity || 'low')}">
+            <div>
+              <span class="portfolio-audit-kicker">${esc(labelize(event.kind || 'event'))} · ${esc(labelize(event.severity || 'low'))}</span>
+              <h4>${esc(event.title || 'Audit event')}</h4>
+              <p>${esc(event.detail || '')}</p>
+              ${event.recovery_note ? `<p>${esc(event.recovery_note)}</p>` : ''}
+            </div>
+            <div class="portfolio-audit-action">
+              ${event.href ? `<a class="action-link muted" href="${esc(event.href)}">${esc(event.action_label || 'Review')} <span class="arrow">→</span></a>` : ''}
+            </div>
+          </article>
+        `).join(''))}
+      </div>
+    </div>
+  `;
+}
+
+function renderExportBundle(bundle = {}) {
+  const summary = bundle.summary || {};
+  const posture = bundle.recovery_posture || {};
+  return html`
+    <div class="portfolio-audit-summary">
+      ${raw(renderAuditMetric('Transactions', summary.transactions ?? 0))}
+      ${raw(renderAuditMetric('Holdings', summary.holdings ?? 0))}
+      ${raw(renderAuditMetric('Lots', summary.lots ?? 0))}
+      ${raw(renderAuditMetric('Import reports', summary.import_reports ?? 0))}
+      ${raw(renderAuditMetric('Audit events', summary.audit_events ?? 0))}
+    </div>
+    <div class="settings-test-block pass">
+      <p class="settings-test-headline">Bundle export is ready</p>
+      <p class="settings-test-detail">
+        Includes transactions, holdings, lots, asset metadata, manual prices, FX rates,
+        cost-basis rules, import reports, and the latest portfolio audit report.
+      </p>
+      <a class="link-editorial" href="/api/portfolio/export-bundle" target="_blank" rel="noopener">Open JSON export bundle</a>
+    </div>
+    <div class="portfolio-audit-findings">
+      ${raw(Object.entries(posture).map(([label, detail]) => `
+        <article class="portfolio-audit-finding clear low">
+          <div>
+            <span class="portfolio-audit-kicker">Recovery</span>
+            <h4>${esc(labelize(label))}</h4>
+            <p>${esc(detail)}</p>
+          </div>
+        </article>
+      `).join(''))}
+    </div>
   `;
 }
 
@@ -746,7 +818,7 @@ function renderAuditFinding(finding = {}) {
 }
 
 function renderAuditReports(reports = []) {
-  const columns = ['created_at', 'source_file_name', 'imported_activities', 'unresolved_count', 'duplicate_count'];
+  const columns = ['created_at', 'source_file_name', 'imported_activities', 'unresolved_count', 'duplicate_count', 'report'];
   return html`
     <div class="portfolio-maintenance-table" role="table" style="--maintenance-columns: ${columns.length};">
       <div class="portfolio-maintenance-row head" role="row">
@@ -754,7 +826,11 @@ function renderAuditReports(reports = []) {
       </div>
       ${raw(reports.slice(0, 10).map(report => `
         <div class="portfolio-maintenance-row" role="row">
-          ${columns.map(col => `<span role="cell">${esc(formatMaintenanceValue(report?.[col]))}</span>`).join('')}
+          ${columns.slice(0, -1).map(col => `<span role="cell">${esc(formatMaintenanceValue(report?.[col]))}</span>`).join('')}
+          <span role="cell" class="portfolio-audit-report-links">
+            ${report?.href ? `<a class="action-link muted" href="${esc(report.href)}">Open report</a>` : ''}
+            ${report?.portfolio_history_href ? `<a class="action-link muted" href="${esc(report.portfolio_history_href)}">History</a>` : ''}
+          </span>
         </div>
       `).join(''))}
     </div>
@@ -776,6 +852,122 @@ function renderAssetRegistryTools(maintenance = {}) {
   `;
 }
 
+function renderAssetDetail(asset) {
+  if (!asset) return '';
+  if (asset.error) {
+    return html`<p class="inline-warning">${esc(asset.error)}</p>`;
+  }
+  const provenance = Array.isArray(asset.provenance) ? asset.provenance : [];
+  const manual = asset.manual_price_detail && typeof asset.manual_price_detail === 'object' ? asset.manual_price_detail : {};
+  return html`
+    <section class="portfolio-asset-detail">
+      <header class="portfolio-asset-detail-head">
+        <div>
+          <span class="portfolio-audit-kicker">${esc(asset.quality_label || 'Asset detail')}</span>
+          <h4>${esc(asset.symbol || '')} · ${esc(asset.name || 'Unnamed asset')}</h4>
+          <p>
+            ${esc([asset.asset_class, asset.asset_type, asset.sector, asset.region].filter(Boolean).join(' · ') || 'Metadata needs review.')}
+          </p>
+        </div>
+        <a class="action-link muted" href="#research?symbol=${encodeURIComponent(asset.symbol || '')}">Open research</a>
+      </header>
+      <div class="portfolio-audit-summary">
+        ${raw(renderAuditMetric('Value', formatMaintenanceValue(asset.current_value)))}
+        ${raw(renderAuditMetric('Price', formatMaintenanceValue(asset.current_price)))}
+        ${raw(renderAuditMetric('Source', asset.price_source || 'Not set'))}
+        ${raw(renderAuditMetric('Accounts', Array.isArray(asset.accounts) ? asset.accounts.length : 0))}
+      </div>
+      ${provenance.length ? html`
+        <div class="portfolio-provenance-list">
+          ${raw(provenance.map(item => `
+            <article>
+              <strong>${esc(item.label || labelize(item.source))}</strong>
+              <span>${esc(item.detail || '')}</span>
+              ${item.updated_at ? `<code>${esc(item.updated_at)}</code>` : ''}
+            </article>
+          `).join(''))}
+        </div>
+      ` : html`<p class="fit-empty">No source history is recorded for this asset yet.</p>`}
+      ${manual.price ? html`
+        <div class="settings-test-block pass">
+          <p class="settings-test-headline">Manual price override is active</p>
+          <p class="settings-test-detail">
+            ${esc(asset.symbol)} is using ${esc(formatMaintenanceValue(manual.price))}
+            ${manual.note ? ` · ${esc(manual.note)}` : ''}. Clear it from Manual prices when live or imported pricing is ready.
+          </p>
+        </div>
+      ` : ''}
+      <form class="portfolio-asset-metadata-form" data-asset-metadata-form data-symbol="${esc(asset.symbol || '')}">
+        ${raw(assetMetadataField('name', 'Name', asset.name))}
+        ${raw(assetMetadataField('asset_class', 'Class', asset.asset_class))}
+        ${raw(assetMetadataField('asset_type', 'Type', asset.asset_type))}
+        ${raw(assetMetadataField('sector', 'Sector', asset.sector))}
+        ${raw(assetMetadataField('region', 'Region', asset.region))}
+        ${raw(assetMetadataField('metadata_source', 'Source note', asset.metadata_source || 'manual_review'))}
+        <button class="fit-review-button" type="submit">Save asset metadata</button>
+        <p class="portfolio-guardrails-status" data-asset-metadata-status>
+          This updates the local BuildWealth asset record.
+        </p>
+      </form>
+    </section>
+  `;
+}
+
+function assetMetadataField(name, label, value) {
+  return html`
+    <label class="fit-field">
+      <span>${esc(label)}</span>
+      <input name="${esc(name)}" type="text" value="${esc(value || '')}">
+    </label>
+  `;
+}
+
+function renderCustomAssetTools() {
+  return html`
+    <form class="portfolio-custom-asset-form" data-custom-asset-form>
+      <label class="fit-field"><span>Custom asset name</span><input name="name" type="text" placeholder="Private fund, property, collectible"></label>
+      <label class="fit-field"><span>Value</span><input name="value" type="number" step="0.01" min="0.01" placeholder="25000"></label>
+      <label class="fit-field"><span>Symbol</span><input name="symbol" type="text" placeholder="Optional"></label>
+      <label class="fit-field"><span>Class</span><input name="asset_class" type="text" placeholder="Alternatives"></label>
+      <label class="fit-field"><span>Type</span><input name="asset_type" type="text" placeholder="custom_asset"></label>
+      <label class="fit-field"><span>Account</span><input name="account" type="text" placeholder="default"></label>
+      <button class="fit-review-button" type="submit">Add custom asset</button>
+      <p class="portfolio-guardrails-status" data-custom-asset-status>
+        Adds a local asset, a portfolio history entry, and a manual price.
+      </p>
+    </form>
+  `;
+}
+
+function renderManualPriceTools() {
+  return html`
+    <form class="portfolio-manual-price-form" data-manual-price-form>
+      <label class="fit-field"><span>Symbol</span><input name="symbol" type="text" placeholder="VTI"></label>
+      <label class="fit-field"><span>Price</span><input name="price" type="number" step="0.0001" min="0.0001" placeholder="250.00"></label>
+      <label class="fit-field span-2"><span>Note</span><input name="note" type="text" placeholder="Source or reason for this override"></label>
+      <button class="fit-review-button" type="submit">Save manual price</button>
+      <p class="portfolio-guardrails-status" data-manual-price-status>
+        Manual prices are local overrides and can be cleared from the table below.
+      </p>
+    </form>
+  `;
+}
+
+function renderFxRateTools(payload = {}) {
+  const base = payload.base_currency || 'USD';
+  return html`
+    <form class="portfolio-fx-rate-form" data-fx-rate-form>
+      <label class="fit-field"><span>Currency</span><input name="currency" type="text" maxlength="8" placeholder="EUR"></label>
+      <label class="fit-field"><span>Rate to ${esc(base)}</span><input name="rate" type="number" step="0.00000001" min="0.00000001" placeholder="1.08"></label>
+      <input name="base_currency" type="hidden" value="${esc(base)}">
+      <button class="fit-review-button" type="submit">Save FX rate</button>
+      <p class="portfolio-guardrails-status" data-fx-rate-status>
+        Non-base rates can be cleared; the base currency stays fixed.
+      </p>
+    </form>
+  `;
+}
+
 function bindMaintenanceTools(root) {
   const registryForm = root.querySelector('[data-asset-registry-search]');
   if (registryForm) registryForm.addEventListener('submit', (event) => {
@@ -792,6 +984,161 @@ function bindMaintenanceTools(root) {
     event.preventDefault();
     await saveRiskGuardrails(riskForm);
   });
+
+  const metadataForm = root.querySelector('[data-asset-metadata-form]');
+  if (metadataForm) metadataForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    await saveAssetMetadata(metadataForm);
+  });
+
+  const customAssetForm = root.querySelector('[data-custom-asset-form]');
+  if (customAssetForm) customAssetForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    await saveCustomAsset(customAssetForm);
+  });
+
+  const manualPriceForm = root.querySelector('[data-manual-price-form]');
+  if (manualPriceForm) manualPriceForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    await saveManualPrice(manualPriceForm);
+  });
+
+  const fxRateForm = root.querySelector('[data-fx-rate-form]');
+  if (fxRateForm) fxRateForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    await saveFxRate(fxRateForm);
+  });
+
+  root.querySelectorAll('[data-clear-manual-price]').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.preventDefault();
+      const symbol = button.getAttribute('data-clear-manual-price');
+      if (!symbol) return;
+      button.disabled = true;
+      button.textContent = 'Clearing';
+      await api.clearPortfolioManualPrice(symbol);
+      await init({ section: 'prices' });
+    });
+  });
+
+  root.querySelectorAll('[data-clear-fx-rate]').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.preventDefault();
+      const currency = button.getAttribute('data-clear-fx-rate');
+      if (!currency) return;
+      button.disabled = true;
+      button.textContent = 'Clearing';
+      await api.clearPortfolioFxRate(currency);
+      await init({ section: 'fx' });
+    });
+  });
+}
+
+async function saveAssetMetadata(form) {
+  const symbol = String(form.getAttribute('data-symbol') || '').trim().toUpperCase();
+  const statusEl = form.querySelector('[data-asset-metadata-status]');
+  const button = form.querySelector('button[type="submit"]');
+  const data = new FormData(form);
+  const body = {};
+  for (const key of ['name', 'asset_class', 'asset_type', 'sector', 'region', 'metadata_source']) {
+    const value = String(data.get(key) || '').trim();
+    if (value) body[key] = value;
+  }
+  await submitMaintenanceForm({
+    statusEl,
+    button,
+    savingText: 'Saving',
+    savedText: 'Saved. Reloading asset detail...',
+    defaultButtonText: 'Save asset metadata',
+    action: () => api.updatePortfolioAssetMetadata(symbol, body),
+    refresh: () => init({ section: 'assets', symbol }),
+  });
+}
+
+async function saveCustomAsset(form) {
+  const statusEl = form.querySelector('[data-custom-asset-status]');
+  const button = form.querySelector('button[type="submit"]');
+  const data = new FormData(form);
+  const body = {};
+  for (const key of ['name', 'symbol', 'asset_class', 'asset_type', 'account']) {
+    const value = String(data.get(key) || '').trim();
+    if (value) body[key] = value;
+  }
+  body.value = Number(data.get('value'));
+  await submitMaintenanceForm({
+    statusEl,
+    button,
+    savingText: 'Adding',
+    savedText: 'Custom asset added. Reloading registry...',
+    defaultButtonText: 'Add custom asset',
+    action: () => api.createPortfolioCustomAsset(body),
+    refresh: (result) => init({ section: 'assets', symbol: result?.symbol || body.symbol || '' }),
+  });
+}
+
+async function saveManualPrice(form) {
+  const statusEl = form.querySelector('[data-manual-price-status]');
+  const button = form.querySelector('button[type="submit"]');
+  const data = new FormData(form);
+  const symbol = String(data.get('symbol') || '').trim().toUpperCase();
+  await submitMaintenanceForm({
+    statusEl,
+    button,
+    savingText: 'Saving',
+    savedText: 'Manual price saved. Reloading prices...',
+    defaultButtonText: 'Save manual price',
+    action: () => api.setPortfolioManualPrice({
+      symbol,
+      price: Number(data.get('price')),
+      note: String(data.get('note') || '').trim(),
+    }),
+    refresh: () => init({ section: 'prices' }),
+  });
+}
+
+async function saveFxRate(form) {
+  const statusEl = form.querySelector('[data-fx-rate-status]');
+  const button = form.querySelector('button[type="submit"]');
+  const data = new FormData(form);
+  await submitMaintenanceForm({
+    statusEl,
+    button,
+    savingText: 'Saving',
+    savedText: 'FX rate saved. Reloading rates...',
+    defaultButtonText: 'Save FX rate',
+    action: () => api.setPortfolioFxRate({
+      currency: String(data.get('currency') || '').trim().toUpperCase(),
+      rate: Number(data.get('rate')),
+      base_currency: String(data.get('base_currency') || '').trim().toUpperCase(),
+    }),
+    refresh: () => init({ section: 'fx' }),
+  });
+}
+
+async function submitMaintenanceForm({ statusEl, button, savingText, savedText, defaultButtonText, action, refresh }) {
+  if (button) {
+    button.disabled = true;
+    button.textContent = savingText;
+  }
+  if (statusEl) {
+    statusEl.textContent = `${savingText}...`;
+    statusEl.classList.remove('error');
+  }
+  try {
+    const result = await action();
+    if (statusEl) statusEl.textContent = savedText;
+    await refresh(result);
+  } catch (err) {
+    if (statusEl) {
+      statusEl.textContent = err?.message || 'Could not save this change.';
+      statusEl.classList.add('error');
+    }
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = defaultButtonText;
+    }
+  }
 }
 
 async function saveRiskGuardrails(form) {
@@ -833,7 +1180,7 @@ function maintenanceRows(section, maintenance = {}) {
   if (Array.isArray(maintenance.rows)) return maintenance.rows.slice(0, 100);
   const payload = maintenance.payload && typeof maintenance.payload === 'object' ? maintenance.payload : {};
   if (section === 'prices') {
-    const prices = payload.prices || payload.manual_prices || payload;
+    const prices = payload.by_symbol || payload.prices || payload.manual_prices || payload;
     return objectRows(prices, (symbol, item) => ({
       symbol,
       price: item?.price ?? item,
@@ -873,9 +1220,9 @@ function renderMaintenanceRows(section, rows) {
   const columnsBySection = {
     accounts: ['name', 'type', 'currency', 'id'],
     transactions: ['date', 'symbol', 'action', 'quantity', 'unit_price', 'account'],
-    assets: ['quality_label', 'symbol', 'name', 'asset_class', 'asset_type', 'current_value', 'current_price', 'tags'],
-    prices: ['symbol', 'price', 'note', 'updated_at'],
-    fx: ['currency', 'rate', 'base_currency', 'updated_at'],
+    assets: ['quality_label', 'symbol', 'name', 'asset_class', 'asset_type', 'current_value', 'current_price', 'tags', 'detail'],
+    prices: ['symbol', 'price', 'note', 'updated_at', 'actions'],
+    fx: ['currency', 'rate', 'base_currency', 'updated_at', 'actions'],
     'cost-basis': ['scope', 'method', 'account', 'symbol'],
   };
   const columns = columnsBySection[section] || Object.keys(rows[0] || {}).slice(0, 6);
@@ -886,11 +1233,40 @@ function renderMaintenanceRows(section, rows) {
       </div>
       ${raw(rows.slice(0, 25).map(row => `
         <div class="portfolio-maintenance-row" role="row">
-          ${columns.map(col => `<span role="cell">${esc(formatMaintenanceValue(row?.[col]))}</span>`).join('')}
+          ${columns.map(col => `<span role="cell">${raw(formatMaintenanceCell(section, col, row))}</span>`).join('')}
         </div>
       `).join(''))}
     </div>
   `;
+}
+
+function formatMaintenanceCell(section, column, row = {}) {
+  if (section === 'assets' && column === 'symbol') {
+    const symbol = String(row?.symbol || '').trim().toUpperCase();
+    return symbol
+      ? `<a class="action-link muted" href="#portfolio?section=assets&symbol=${encodeURIComponent(symbol)}">${esc(symbol)}</a>`
+      : '-';
+  }
+  if (section === 'assets' && column === 'detail') {
+    const symbol = String(row?.symbol || '').trim().toUpperCase();
+    return symbol
+      ? `<a class="action-link muted" href="#portfolio?section=assets&symbol=${encodeURIComponent(symbol)}">Details</a>`
+      : '-';
+  }
+  if (section === 'prices' && column === 'actions') {
+    const symbol = String(row?.symbol || '').trim().toUpperCase();
+    return symbol
+      ? `<button class="action-link muted" type="button" data-clear-manual-price="${esc(symbol)}">Clear</button>`
+      : '-';
+  }
+  if (section === 'fx' && column === 'actions') {
+    const currency = String(row?.currency || '').trim().toUpperCase();
+    const base = String(row?.base_currency || '').trim().toUpperCase();
+    return currency && currency !== base
+      ? `<button class="action-link muted" type="button" data-clear-fx-rate="${esc(currency)}">Clear</button>`
+      : '-';
+  }
+  return esc(formatMaintenanceValue(row?.[column]));
 }
 
 function maintenanceColumnLabel(column) {
@@ -908,6 +1284,8 @@ function maintenanceColumnLabel(column) {
     imported_activities: 'Imported',
     unresolved_count: 'Needs Review',
     duplicate_count: 'Duplicates',
+    detail: 'Detail',
+    actions: 'Actions',
   })[column] || labelize(column);
 }
 
@@ -921,6 +1299,7 @@ function maintenanceCopy(section) {
     fx: 'Currency conversion rates used to keep portfolio values comparable.',
     'cost-basis': 'Lot accounting defaults used when imported transactions do not specify a method.',
     'risk-policy': 'Plain-language portfolio limits for concentration, account size, sector exposure, region exposure, and diversification depth.',
+    export: 'Export a complete portfolio evidence bundle and review how manual, imported, and destructive changes can be recovered.',
   })[section] || 'Portfolio maintenance records.';
 }
 

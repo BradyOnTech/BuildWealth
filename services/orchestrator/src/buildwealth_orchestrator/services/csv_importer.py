@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-# Import reconciliation and duplicate-signal behavior is informed by Ghostfolio
-# import-service workflows:
-# apps/api/src/app/import/import.service.ts
-
 import csv
 import hashlib
 import json
@@ -408,8 +404,8 @@ TEMPLATE_FIELD_ALIASES: dict[str, dict[str, set[str]]] = {
     },
 }
 
-# Header signatures are based on Ghostfolio import fixture patterns and
-# common broker export schemas. They are used only for lightweight matching.
+# Header signatures are based on common broker export schemas. They are used
+# only for lightweight matching.
 TEMPLATE_HEADER_SIGNATURES: dict[str, set[str]] = {
     "schwab": {"date", "action", "symbol", "quantity", "price", "feescomm", "amount"},
     "fidelity": {"date", "action", "symbol", "quantity", "price", "amount", "accruedinterest"},
@@ -436,12 +432,43 @@ class CsvParseOutput:
     detected_template: str = "generic"
 
 
-def list_csv_templates() -> list[dict[str, str]]:
-    templates: list[dict[str, str]] = []
+REQUIRED_TEMPLATE_FIELDS = ("date", "action", "symbol", "quantity", "unit_price")
+
+
+def _template_columns(template_id: str, *, required: bool) -> list[str]:
+    aliases = TEMPLATE_FIELD_ALIASES.get(template_id, {})
+    fields = REQUIRED_TEMPLATE_FIELDS if required else tuple(
+        field for field in aliases if field not in REQUIRED_TEMPLATE_FIELDS
+    )
+    columns: list[str] = []
+    for field in fields:
+        values = aliases.get(field, set())
+        if values:
+            columns.append(next(iter(sorted(values))))
+    return columns
+
+
+def _template_mapping_confidence(template_id: str) -> str:
+    if template_id == "auto":
+        return "auto"
+    if template_id == "generic":
+        return "flexible"
+    return "known"
+
+
+def list_csv_templates() -> list[dict[str, Any]]:
+    templates: list[dict[str, Any]] = []
     for template_id in TEMPLATE_ORDER:
         descriptor = SUPPORTED_CSV_TEMPLATES.get(template_id)
         if descriptor:
-            templates.append(descriptor)
+            templates.append(
+                {
+                    **descriptor,
+                    "required_columns": _template_columns(template_id, required=True),
+                    "optional_columns": _template_columns(template_id, required=False),
+                    "mapping_confidence": _template_mapping_confidence(template_id),
+                }
+            )
     return templates
 
 

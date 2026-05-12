@@ -21,7 +21,7 @@ def test_engine_status_probe_uses_fallback_health_path_and_parses_version() -> N
     tracker = EngineStatusTracker(
         configs=[
             EngineProbeConfig(
-                name="ghostfolio_benchmark",
+                name="portfolio_benchmark",
                 base_url="http://localhost:8411",
                 enabled=True,
                 health_paths=("/health", "/api/v1/health"),
@@ -37,7 +37,7 @@ def test_engine_status_probe_uses_fallback_health_path_and_parses_version() -> N
     snapshot = asyncio.run(tracker.snapshot())
     item = snapshot.engines[0]
 
-    assert item.name == "ghostfolio_benchmark"
+    assert item.name == "portfolio_benchmark"
     assert item.enabled is True
     assert item.reachable is True
     assert item.contract_version == 1
@@ -55,7 +55,7 @@ def test_engine_status_probe_marks_unreachable_when_all_paths_fail() -> None:
     tracker = EngineStatusTracker(
         configs=[
             EngineProbeConfig(
-                name="ignidash_scenario",
+                name="plan_simulation",
                 base_url="http://localhost:8412",
                 enabled=True,
                 health_paths=("/health", "/api/health"),
@@ -71,7 +71,7 @@ def test_engine_status_probe_marks_unreachable_when_all_paths_fail() -> None:
     snapshot = asyncio.run(tracker.snapshot())
     item = snapshot.engines[0]
 
-    assert item.name == "ignidash_scenario"
+    assert item.name == "plan_simulation"
     assert item.reachable is False
     assert item.contract_version is None
     assert item.expected_contract_version == 1
@@ -84,7 +84,7 @@ def test_engine_status_tracker_increments_degraded_count() -> None:
     tracker = EngineStatusTracker(
         configs=[
             EngineProbeConfig(
-                name="ignidash_scenario",
+                name="plan_simulation",
                 base_url="http://localhost:8412",
                 enabled=False,
                 health_paths=("/health",),
@@ -94,8 +94,8 @@ def test_engine_status_tracker_increments_degraded_count() -> None:
         timeout_seconds=1,
     )
 
-    asyncio.run(tracker.increment_degraded("ignidash_scenario", reason="fallback active"))
-    asyncio.run(tracker.increment_degraded("ignidash_scenario"))
+    asyncio.run(tracker.increment_degraded("plan_simulation", reason="fallback active"))
+    asyncio.run(tracker.increment_degraded("plan_simulation"))
 
     snapshot = asyncio.run(tracker.snapshot())
     item = snapshot.engines[0]
@@ -115,7 +115,7 @@ def test_engine_status_probe_marks_contract_mismatch_and_guard_reason() -> None:
     tracker = EngineStatusTracker(
         configs=[
             EngineProbeConfig(
-                name="ghostfolio_benchmark",
+                name="portfolio_benchmark",
                 base_url="http://localhost:8411",
                 enabled=True,
                 health_paths=("/api/v1/health",),
@@ -137,5 +137,5 @@ def test_engine_status_probe_marks_contract_mismatch_and_guard_reason() -> None:
     assert item.contract_compatible is False
     assert item.last_error == "Contract version mismatch (expected v1, got v2)"
 
-    guard_reason = asyncio.run(tracker.sidecar_guard_reason("ghostfolio_benchmark"))
+    guard_reason = asyncio.run(tracker.sidecar_guard_reason("portfolio_benchmark"))
     assert guard_reason == "Sidecar contract version mismatch (expected v1, got v2)"

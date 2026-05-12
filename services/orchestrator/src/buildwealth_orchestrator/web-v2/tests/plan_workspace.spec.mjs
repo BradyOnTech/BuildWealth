@@ -429,7 +429,7 @@ test('v2 Plan workspace covers assumption save, evidence route, simulation decis
   assert.doesNotMatch(artifactContentHtml, /<script>alert/);
 
   await page.goto('http://buildwealth-v2.test/#plan?id=plan-1&section=scenarios');
-  await page.getByRole('heading', { name: 'Compare before deciding.' }).waitFor({ state: 'visible' });
+  await page.getByRole('heading', { name: 'Experiment before deciding.' }).waitFor({ state: 'visible' });
   const scenarioContributionInput = page.locator('[data-scenario-field="annual_contribution_usd"]');
   await scenarioContributionInput.fill('36000');
   await scenarioContributionInput.blur();
@@ -438,7 +438,7 @@ test('v2 Plan workspace covers assumption save, evidence route, simulation decis
   assert.deepEqual(scenarioPayload, {
     compare_settings: { annual_contribution_usd: 36000 },
   });
-  await page.getByText('Scenario compared.').waitFor({ state: 'visible' });
+  await page.locator('#plan-scenarios').getByText('Simulation compared.').waitFor({ state: 'visible' });
   await page.getByText('+$42,000').waitFor({ state: 'visible' });
 
   await page.locator('#plan-scenarios').getByRole('button', { name: /Save decision note/ }).click();
@@ -447,20 +447,20 @@ test('v2 Plan workspace covers assumption save, evidence route, simulation decis
   await page.getByText('Reviewed simulation').waitFor({ state: 'visible' });
 
   await page.goto('http://buildwealth-v2.test/#plan?id=plan-1&section=branches');
-  await page.getByRole('heading', { name: 'Preview before changing the plan.' }).waitFor({ state: 'visible' });
+  await page.getByRole('heading', { name: 'Preview a real-world change.' }).waitFor({ state: 'visible' });
   await page.getByRole('heading', { name: 'Job Loss (6 Months)' }).waitFor({ state: 'visible' });
   await page.getByRole('button', { name: /Run what-if simulation/ }).click();
 
   assert.equal(branchPayload.branch_template_id, 'job_loss_6_months');
   assert.equal(branchPayload.branch_name, 'Job Loss 6 Months');
   assert.equal(branchPayload.branch_events[0].label, 'Temporary Job Loss');
-  await page.getByText('Simulation compared.').waitFor({ state: 'visible' });
+  await page.locator('#plan-branches').getByText('Simulation compared.').waitFor({ state: 'visible' });
   await page.getByText('-$60,000').waitFor({ state: 'visible' });
 
   await page.locator('#plan-branches').getByRole('button', { name: /Save decision note/ }).click();
-  assert.equal(decisionPayload.summary, 'Reviewed life-event branch: Job Loss 6 Months');
+  assert.equal(decisionPayload.summary, 'Reviewed what-if simulation: Job Loss 6 Months');
   assert.equal(decisionPayload.status, 'proposed');
-  await page.getByText('Reviewed life-event branch: Job Loss 6 Months').waitFor({ state: 'visible' });
+  await page.getByText('Reviewed what-if simulation: Job Loss 6 Months').waitFor({ state: 'visible' });
 
   await page.goto('http://buildwealth-v2.test/#plan?id=plan-1&section=withdrawals');
   await page.getByRole('heading', { name: 'Compare retirement drawdown paths.' }).waitFor({ state: 'visible' });

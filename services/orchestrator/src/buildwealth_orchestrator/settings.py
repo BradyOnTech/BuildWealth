@@ -20,7 +20,6 @@ class Settings(BaseSettings):
         default=Path("data/security/protection_policy.json"),
         alias="PROTECTION_POLICY_PATH",
     )
-    ignidash_export_dir: Path = Field(default=Path("data/ignidash"), alias="IGNIDASH_EXPORT_DIR")
     portfolio_review_packet_dir: Path = Field(
         default=Path("data/reports/portfolio_review_packets"),
         alias="PORTFOLIO_REVIEW_PACKET_DIR",
@@ -49,68 +48,68 @@ class Settings(BaseSettings):
         alias="TODAY_REVIEW_CHECKPOINT_PATH",
     )
 
-    ghostfolio_sidecar_base_url: str = Field(
+    portfolio_remote_engine_base_url: str = Field(
         default="http://localhost:8411",
-        alias="GHOSTFOLIO_SIDECAR_BASE_URL",
+        alias="PORTFOLIO_REMOTE_ENGINE_BASE_URL",
     )
-    ghostfolio_benchmark_sidecar_path: str = Field(
+    portfolio_benchmark_remote_engine_path: str = Field(
         default="/v1/benchmark/compare",
-        alias="GHOSTFOLIO_BENCHMARK_SIDECAR_PATH",
+        alias="PORTFOLIO_BENCHMARK_REMOTE_ENGINE_PATH",
     )
-    ghostfolio_attribution_sidecar_path: str = Field(
+    portfolio_attribution_remote_engine_path: str = Field(
         default="/v1/attribution/compute",
-        alias="GHOSTFOLIO_ATTRIBUTION_SIDECAR_PATH",
+        alias="PORTFOLIO_ATTRIBUTION_REMOTE_ENGINE_PATH",
     )
-    enable_ghostfolio_benchmark_sidecar: bool = Field(
+    enable_portfolio_benchmark_remote_engine: bool = Field(
         default=False,
-        alias="ENABLE_GHOSTFOLIO_BENCHMARK_SIDECAR",
+        alias="ENABLE_PORTFOLIO_BENCHMARK_REMOTE_ENGINE",
     )
-    enable_ghostfolio_attribution_sidecar: bool = Field(
+    enable_portfolio_attribution_remote_engine: bool = Field(
         default=False,
-        alias="ENABLE_GHOSTFOLIO_ATTRIBUTION_SIDECAR",
+        alias="ENABLE_PORTFOLIO_ATTRIBUTION_REMOTE_ENGINE",
     )
-    engine_sidecar_timeout_seconds: float = Field(default=3.0, alias="ENGINE_SIDECAR_TIMEOUT_SECONDS")
-    engine_sidecar_retry_count: int = Field(default=1, alias="ENGINE_SIDECAR_RETRY_COUNT")
+    engine_remote_timeout_seconds: float = Field(default=3.0, alias="ENGINE_REMOTE_TIMEOUT_SECONDS")
+    engine_remote_retry_count: int = Field(default=1, alias="ENGINE_REMOTE_RETRY_COUNT")
     engine_health_probe_interval_seconds: float = Field(
         default=60.0,
         alias="ENGINE_HEALTH_PROBE_INTERVAL_SECONDS",
     )
-    engine_sidecar_version_paths: str = Field(
+    engine_remote_version_paths: str = Field(
         default="/version",
-        alias="ENGINE_SIDECAR_VERSION_PATHS",
+        alias="ENGINE_REMOTE_VERSION_PATHS",
     )
-    ghostfolio_sidecar_health_paths: str = Field(
+    portfolio_remote_engine_health_paths: str = Field(
         default="/health,/api/v1/health",
-        alias="GHOSTFOLIO_SIDECAR_HEALTH_PATHS",
+        alias="PORTFOLIO_REMOTE_ENGINE_HEALTH_PATHS",
     )
-    ignidash_sidecar_health_paths: str = Field(
+    plan_remote_engine_health_paths: str = Field(
         default="/health,/api/health",
-        alias="IGNIDASH_SIDECAR_HEALTH_PATHS",
+        alias="PLAN_REMOTE_ENGINE_HEALTH_PATHS",
     )
-    ghostfolio_sidecar_contract_version: int = Field(
+    portfolio_remote_engine_contract_version: int = Field(
         default=1,
-        alias="GHOSTFOLIO_SIDECAR_CONTRACT_VERSION",
+        alias="PORTFOLIO_REMOTE_ENGINE_CONTRACT_VERSION",
     )
-    ignidash_sidecar_contract_version: int = Field(
+    plan_remote_engine_contract_version: int = Field(
         default=1,
-        alias="IGNIDASH_SIDECAR_CONTRACT_VERSION",
+        alias="PLAN_REMOTE_ENGINE_CONTRACT_VERSION",
     )
     portfolio_benchmark_default_symbols: str = Field(
         default="SPY",
         alias="PORTFOLIO_BENCHMARK_DEFAULT_SYMBOLS",
     )
 
-    ignidash_sidecar_base_url: str = Field(
+    plan_remote_engine_base_url: str = Field(
         default="http://localhost:8412",
-        alias="IGNIDASH_SIDECAR_BASE_URL",
+        alias="PLAN_REMOTE_ENGINE_BASE_URL",
     )
-    ignidash_scenario_sidecar_path: str = Field(
+    plan_simulation_remote_engine_path: str = Field(
         default="/v1/scenario/simulate",
-        alias="IGNIDASH_SCENARIO_SIDECAR_PATH",
+        alias="PLAN_SIMULATION_REMOTE_ENGINE_PATH",
     )
-    enable_ignidash_scenario_sidecar: bool = Field(
+    enable_plan_simulation_remote_engine: bool = Field(
         default=False,
-        alias="ENABLE_IGNIDASH_SCENARIO_SIDECAR",
+        alias="ENABLE_PLAN_SIMULATION_REMOTE_ENGINE",
     )
 
     planner_years_to_retirement: int = Field(default=30, alias="PLANNER_YEARS_TO_RETIREMENT")

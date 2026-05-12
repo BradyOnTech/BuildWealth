@@ -16,16 +16,36 @@ export function renderAnalytics(analytics = null) {
   const performance = analytics.performance || {};
   const benchmark = analytics.benchmark || {};
   const attribution = analytics.attribution || {};
+  const risk = analytics.risk_explanations || {};
   return html`
     <section class="portfolio-analytics">
       ${raw(sectionHead('III', 'Performance.', 'Returns, benchmarks, and what moved the portfolio.'))}
+      ${raw(renderPeriodSwitch(analytics.period || {}))}
       <div class="analytics-grid">
         ${raw(renderPerformancePanel(performance))}
         ${raw(renderBenchmarkPanel(benchmark))}
       </div>
+      ${raw(renderReturnPartsPanel(performance))}
       ${raw(renderAttributionPanel(attribution))}
+      ${raw(renderRiskExplanationPanel(risk))}
       ${raw(renderAnalyticsWarnings(analytics.warnings))}
     </section>
+  `;
+}
+
+function renderPeriodSwitch(period = {}) {
+  const options = Array.isArray(period.options) ? period.options : [];
+  if (!options.length) return '';
+  const current = period.id || '1y';
+  return html`
+    <nav class="analytics-period-switch" aria-label="Performance period">
+      ${raw(options.map(option => `
+        <a class="portfolio-guardrails-pill ${option.id === current ? 'active' : ''}"
+           href="#portfolio?period=${encodeURIComponent(option.id)}">
+          ${esc(option.label || option.id)}
+        </a>
+      `).join(''))}
+    </nav>
   `;
 }
 
@@ -41,6 +61,29 @@ function renderPerformancePanel(performance = {}) {
         ${raw(metric('XIRR', pct(performance.xirr_annualized_return_pct)))}
         ${raw(metric('Net contributions', fmtUsd(numberOr(performance.net_contributions, 0))))}
       </dl>
+    </article>
+  `;
+}
+
+function renderReturnPartsPanel(performance = {}) {
+  const rows = [
+    ['Price return', performance.price_return_usd, 'Market price movement from held investments.'],
+    ['Income return', performance.income_return_usd ?? performance.income_received_usd, 'Dividends and interest captured in portfolio history.'],
+    ['Cash-flow effects', performance.net_contributions, 'Money added or removed from the portfolio.'],
+    ['Fees', performance.fees_paid_usd, 'Recorded commissions, service fees, and advisory fees.'],
+  ];
+  return html`
+    <article class="analytics-panel wide">
+      <span class="analytics-kicker">Return parts</span>
+      <div class="benchmark-rows">
+        ${raw(rows.map(([label, value, detail]) => `
+          <div class="benchmark-row">
+            <strong>${esc(label)}</strong>
+            <span>${esc(label === 'Fees' ? fmtUsd(numberOr(value, 0)) : fmtUsdSigned(numberOr(value, 0)))}</span>
+            <span>${esc(detail)}</span>
+          </div>
+        `).join(''))}
+      </div>
     </article>
   `;
 }
@@ -98,6 +141,42 @@ function renderAttributionPanel(attribution = {}) {
   `;
 }
 
+function renderRiskExplanationPanel(risk = {}) {
+  const rows = Array.isArray(risk.rows) ? risk.rows : [];
+  if (!rows.length) return '';
+  return html`
+    <article class="analytics-panel wide">
+      <span class="analytics-kicker">Risk explained plainly</span>
+      <div class="benchmark-rows">
+        ${raw(rows.slice(0, 8).map(row => `
+          <div class="benchmark-row">
+            <strong>${esc(row.label || '')}</strong>
+            <span>${esc(formatRiskValue(row))}</span>
+            <span>${esc(row.plain || '')}</span>
+          </div>
+        `).join(''))}
+      </div>
+      ${raw(renderRiskAlerts(risk.alerts || []))}
+    </article>
+  `;
+}
+
+function renderRiskAlerts(alerts = []) {
+  const visible = Array.isArray(alerts) ? alerts.slice(0, 4) : [];
+  if (!visible.length) return html`<p class="fit-empty">No active concentration or allocation alerts for this period.</p>`;
+  return html`
+    <div class="attribution-grid">
+      ${raw(visible.map(alert => `
+        <div class="attribution-list">
+          <h4>${esc(labelize(alert.label || alert.metric || 'Risk alert'))}</h4>
+          <p>${esc(alert.message || '')}</p>
+          <p>${esc(alert.recommendation || '')}</p>
+        </div>
+      `).join(''))}
+    </div>
+  `;
+}
+
 function positionList(label, rows, direction) {
   if (!rows.length) {
     return html`
@@ -151,6 +230,22 @@ function pct(value) {
 function numberOr(value, fallback) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function formatRiskValue(row = {}) {
+  const value = Number(row.value);
+  if (!Number.isFinite(value)) return row.context || '-';
+  const pctKeys = new Set(['concentration', 'account', 'allocation', 'sector', 'region']);
+  const formatted = pctKeys.has(row.key)
+    ? `${value.toLocaleString('en-US', { maximumFractionDigits: 1 })}%`
+    : value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  return row.context ? `${row.context} · ${formatted}` : formatted;
+}
+
+function labelize(value) {
+  return String(value || '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (ch) => ch.toUpperCase()) || 'Unknown';
 }
 
 function sectionHead(numeral, title, lede) {

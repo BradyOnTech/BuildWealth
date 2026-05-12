@@ -48,6 +48,7 @@ function renderEntry(item, index, ctx) {
         ${raw(detailMarkup(item.detail))}
         ${raw(renderQualitySummary(item.action_payload?.quality))}
         ${raw(renderInvestmentRoutePanel(item))}
+        ${raw(renderSavedSimulationRoutePanel(item))}
         ${reasons.length ? raw(`
           <p class="marginalia">
             <span class="glyph">›</span> ${reasons.map(esc).join(' · ')}
@@ -131,6 +132,15 @@ function renderActions(item, status, expanded) {
 function actionSemantics(item) {
   const quality = item?.action_payload?.quality;
   const investment = investmentContext(item);
+  const savedSimulation = savedSimulationContext(item);
+  if (savedSimulation) {
+    return {
+      primaryAction: 'route',
+      primaryLabel: 'Open simulation',
+      href: savedSimulation.href,
+      intent: 'saved-simulation',
+    };
+  }
   if (investment) {
     const suggestedKind = String(investment.suggestedAction?.kind || '').toLowerCase();
     if (suggestedKind === 'refresh_research_evidence' || suggestedKind === 'research_more' || suggestedKind === 'create_dossier') {
@@ -230,6 +240,28 @@ function renderInvestmentRoutePanel(item) {
   `;
 }
 
+function renderSavedSimulationRoutePanel(item) {
+  const savedSimulation = savedSimulationContext(item);
+  if (!savedSimulation) return '';
+  const meta = [
+    savedSimulation.title,
+    savedSimulation.source ? humanText(savedSimulation.source) : '',
+    savedSimulation.planId ? 'plan linked' : '',
+  ].filter(Boolean);
+  return html`
+    <div class="investment-route-panel">
+      <div>
+        <span class="investment-route-kicker">Saved Simulation route</span>
+        <p>${meta.join(' · ') || 'Saved experiment ready for review'}</p>
+      </div>
+      <div class="investment-route-actions">
+        <a class="action-link" href="${savedSimulation.href}">Open simulation <span class="arrow">→</span></a>
+        <a class="action-link muted" href="${savedSimulation.copilotHref}">Discuss in Copilot <span class="arrow">→</span></a>
+      </div>
+    </div>
+  `;
+}
+
 function investmentContext(item) {
   const payload = item?.action_payload;
   if (!payload || typeof payload !== 'object') return null;
@@ -275,6 +307,54 @@ function investmentContext(item) {
     researchHref: symbol ? `#research?symbol=${encodedSymbol}${packetQuery}` : '#research',
     compareHref: symbol ? `#research?compare=${encodedSymbol}${packetQuery}` : '#research',
     copilotHref: `#copilot?focus=${encodedId}&intent=investment-fit`,
+  };
+}
+
+function savedSimulationContext(item) {
+  const payload = item?.action_payload;
+  if (!payload || typeof payload !== 'object') return null;
+  const saved = payload.saved_simulation && typeof payload.saved_simulation === 'object'
+    ? payload.saved_simulation
+    : {};
+  const simulation = payload.simulation && typeof payload.simulation === 'object'
+    ? payload.simulation
+    : {};
+  const closure = payload.decision_closure && typeof payload.decision_closure === 'object'
+    ? payload.decision_closure
+    : {};
+  const savedSimulationId = String(
+    payload.saved_simulation_id
+      || saved.id
+      || simulation.saved_simulation_id
+      || simulation.id
+      || closure.saved_simulation_id
+      || '',
+  ).trim();
+  if (!savedSimulationId) return null;
+  const planId = String(
+    payload.plan_id
+      || saved.plan_id
+      || simulation.plan_id
+      || closure.plan_id
+      || item?.plan_id
+      || '',
+  ).trim();
+  const params = new URLSearchParams();
+  if (planId) params.set('id', planId);
+  params.set('section', 'scenarios');
+  params.set('saved', savedSimulationId);
+  const copilotParams = new URLSearchParams();
+  if (item?.id) copilotParams.set('focus', item.id);
+  copilotParams.set('intent', 'saved-simulation');
+  if (planId) copilotParams.set('plan', planId);
+  copilotParams.set('saved', savedSimulationId);
+  return {
+    id: savedSimulationId,
+    planId,
+    title: String(payload.saved_simulation_title || saved.title || simulation.title || '').trim(),
+    source: String(payload.source || saved.source || simulation.source || '').trim(),
+    href: `#plan?${params.toString()}`,
+    copilotHref: `#copilot?${copilotParams.toString()}`,
   };
 }
 

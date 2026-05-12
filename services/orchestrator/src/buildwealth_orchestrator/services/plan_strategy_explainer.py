@@ -53,18 +53,25 @@ def explain_withdrawal_strategy_comparison(payload: dict[str, Any]) -> dict[str,
         highest_withdrawals=highest_withdrawals,
     )
     tradeoffs = _tradeoffs(rows, best_future, lowest_tax)
+    diagnostics = _diagnostics(rows)
+    contribution_ordering = _contribution_ordering_notes(rows)
+    review_level = _review_level(warnings, tradeoffs, diagnostics)
 
     return {
         "summary": summary,
         "recommended_strategy": recommended,
         "drivers": drivers,
         "tradeoffs": tradeoffs,
+        "diagnostics": diagnostics,
+        "contribution_ordering": contribution_ordering,
+        "review_level": review_level,
         "warnings": warnings,
         "trace": {
             "comparison_count": len(rows),
             "strategy_order": [_strategy(row) for row in rows],
             "best_future_value": _strategy(best_future),
             "lowest_tax": _strategy(lowest_tax),
+            "diagnostic_count": len(diagnostics),
         },
     }
 
@@ -160,6 +167,127 @@ def _tradeoffs(
         notes.append(f"{', '.join(degraded)} used a lower-confidence model result.")
 
     return notes
+
+
+def _diagnostics(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    diagnostics: list[dict[str, Any]] = []
+    tax_values = [_number(row.get("total_taxes_usd")) for row in rows]
+    tax_values = [value for value in tax_values if value is not None]
+    withdrawal_values = [_number(row.get("total_withdrawals_usd")) for row in rows]
+    withdrawal_values = [value for value in withdrawal_values if value is not None]
+    terminal_values = [_number(row.get("terminal_balance_usd")) for row in rows]
+    terminal_values = [value for value in terminal_values if value is not None]
+    p10_values = [_number(row.get("monte_carlo_p10_future_value_usd")) for row in rows]
+    p10_values = [value for value in p10_values if value is not None]
+
+    if tax_values:
+        diagnostics.append(
+            {
+                "key": "tax_drag",
+                "label": "Tax drag",
+                "summary": f"Projected taxes range from {_money(min(tax_values))} to {_money(max(tax_values))}.",
+                "level": _spread_level(tax_values),
+            }
+        )
+    if terminal_values:
+        diagnostics.append(
+            {
+                "key": "ending_value",
+                "label": "Ending value",
+                "summary": f"Ending balances range from {_money(min(terminal_values))} to {_money(max(terminal_values))}.",
+                "level": "high" if min(terminal_values) <= 0 else _spread_level(terminal_values),
+            }
+        )
+    if p10_values:
+        diagnostics.append(
+            {
+                "key": "depletion_risk",
+                "label": "Downside risk",
+                "summary": f"The lower-end simulation range bottoms at {_money(min(p10_values))}.",
+                "level": "high" if min(p10_values) <= 0 else "medium",
+            }
+        )
+    if withdrawal_values:
+        diagnostics.append(
+            {
+                "key": "cash_flow_stability",
+                "label": "Cash-flow stability",
+                "summary": f"Total planned withdrawals range from {_money(min(withdrawal_values))} to {_money(max(withdrawal_values))}.",
+                "level": _spread_level(withdrawal_values),
+            }
+        )
+
+    exhausted = [
+        _label(_strategy(row))
+        for row in rows
+        if (_number(row.get("terminal_balance_usd")) or 0.0) <= 0
+    ]
+    if exhausted:
+        diagnostics.append(
+            {
+                "key": "account_exhaustion",
+                "label": "Account exhaustion",
+                "summary": f"{', '.join(exhausted)} reaches a zero ending balance in this projection.",
+                "level": "high",
+            }
+        )
+    return diagnostics
+
+
+def _contribution_ordering_notes(rows: list[dict[str, Any]]) -> list[str]:
+    if not rows:
+        return []
+    notes = [
+        "Before choosing a drawdown strategy, keep contributions ordered around free employer match, tax-advantaged room, and needed cash reserves.",
+        "If a strategy relies on large taxable withdrawals later, review whether more pre-retirement taxable savings would make the plan easier to fund.",
+    ]
+    if any((_number(row.get("total_rmds_usd")) or 0.0) > 0 for row in rows):
+        notes.append("RMDs show up in this comparison, so tax-deferred contribution priority should be checked against future forced withdrawals.")
+    if any((_number(row.get("total_roth_conversions_usd")) or 0.0) > 0 for row in rows):
+        notes.append("Roth conversions are part of at least one result, so Roth contribution and conversion ordering should be reviewed together.")
+    return notes
+
+
+def _review_level(
+    warnings: list[str],
+    tradeoffs: list[str],
+    diagnostics: list[dict[str, Any]],
+) -> dict[str, Any]:
+    high_reasons = [
+        item["summary"]
+        for item in diagnostics
+        if item.get("level") == "high"
+    ]
+    if warnings:
+        high_reasons.append("Warnings need review before this supports a plan decision.")
+    if any("runs out of money" in item.lower() for item in tradeoffs):
+        high_reasons.append("At least one strategy runs out of money.")
+    if high_reasons:
+        return {
+            "level": "high",
+            "summary": "High review: read the diagnostics and save a rationale before changing the active withdrawal strategy.",
+            "reasons": _dedupe(high_reasons)[:5],
+        }
+    return {
+        "level": "low",
+        "summary": "Normal review is enough before saving this as a decision note.",
+        "reasons": ["No depletion, warning, or high-spread diagnostic was found."],
+    }
+
+
+def _spread_level(values: list[float]) -> str:
+    if len(values) < 2:
+        return "low"
+    low = min(values)
+    high = max(values)
+    if high <= 0:
+        return "low"
+    spread = (high - low) / high
+    if spread >= 0.25:
+        return "high"
+    if spread >= 0.1:
+        return "medium"
+    return "low"
 
 
 def _recommended_strategy(strategies: list[str | None]) -> str | None:

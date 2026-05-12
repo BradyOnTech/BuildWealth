@@ -229,9 +229,6 @@ from buildwealth_orchestrator.services.financial_profile import (
     patch_material_profile_field_paths,
     profile_metadata_review_field_paths,
 )
-from buildwealth_orchestrator.services.ignidash_exporter import (
-    IgnidashExportStore,
-)
 from buildwealth_orchestrator.services.research import OpenBBResearchService
 from buildwealth_orchestrator.services.scenario_engine import (
     DEFAULT_SIMULATION_SEED,
@@ -285,15 +282,15 @@ from buildwealth_orchestrator.services.price_updater import (
 from buildwealth_orchestrator.services.engine_adapter import SidecarAdapter
 from buildwealth_orchestrator.services.portfolio_benchmark import (
     GHOSTFOLIO_BENCHMARK_CONTRACT_VERSION,
-    GhostfolioBenchmarkService,
+    BuildWealthBenchmarkService,
 )
 from buildwealth_orchestrator.services.portfolio_attribution import (
     GHOSTFOLIO_ATTRIBUTION_CONTRACT_VERSION,
-    GhostfolioAttributionService,
+    BuildWealthAttributionService,
 )
 from buildwealth_orchestrator.services.planning_sidecar import (
     IGNIDASH_SCENARIO_CONTRACT_VERSION,
-    IgnidashScenarioService,
+    BuildWealthScenarioService,
 )
 from buildwealth_orchestrator.services.engine_status import EngineProbeConfig, EngineStatusTracker
 from buildwealth_orchestrator.services.durable_storage import (
@@ -518,7 +515,6 @@ today_review_checkpoint_store = TodayReviewCheckpointStore(settings.today_review
 durable_storage_service = DurableStorageMigrationService.from_settings(settings)
 backup_restore_service = BackupRestoreService.from_settings(settings)
 data_protection_service = DataProtectionService.from_settings(settings)
-ignidash_export_store = IgnidashExportStore(settings.ignidash_export_dir)
 portfolio_review_packet_store = PortfolioReviewPacketStore(settings.portfolio_review_packet_dir)
 import_workbench_store = ImportWorkbenchStore(
     workbench_dir=settings.import_workbench_dir,
@@ -629,97 +625,97 @@ scenario_engine = ScenarioEngine(
     marginal_tax_rate=settings.planner_marginal_tax_rate,
 )
 research_service = OpenBBResearchService(provider=settings.openbb_provider)
-ghostfolio_sidecar_adapter = SidecarAdapter(
-    base_url=settings.ghostfolio_sidecar_base_url,
-    timeout_seconds=settings.engine_sidecar_timeout_seconds,
-    max_retries=settings.engine_sidecar_retry_count,
+portfolio_remote_engine_adapter = SidecarAdapter(
+    base_url=settings.portfolio_remote_engine_base_url,
+    timeout_seconds=settings.engine_remote_timeout_seconds,
+    max_retries=settings.engine_remote_retry_count,
 )
-benchmark_service = GhostfolioBenchmarkService(
+benchmark_service = BuildWealthBenchmarkService(
     snapshot_store=snapshot_store,
     research_service=research_service,
-    sidecar_adapter=ghostfolio_sidecar_adapter,
-    sidecar_enabled=settings.enable_ghostfolio_benchmark_sidecar,
-    sidecar_path=settings.ghostfolio_benchmark_sidecar_path,
+    sidecar_adapter=portfolio_remote_engine_adapter,
+    sidecar_enabled=settings.enable_portfolio_benchmark_remote_engine,
+    sidecar_path=settings.portfolio_benchmark_remote_engine_path,
     base_currency=settings.app_currency,
 )
-attribution_service = GhostfolioAttributionService(
+attribution_service = BuildWealthAttributionService(
     portfolio_store=portfolio_store,
-    sidecar_adapter=ghostfolio_sidecar_adapter,
-    sidecar_enabled=settings.enable_ghostfolio_attribution_sidecar,
-    sidecar_path=settings.ghostfolio_attribution_sidecar_path,
+    sidecar_adapter=portfolio_remote_engine_adapter,
+    sidecar_enabled=settings.enable_portfolio_attribution_remote_engine,
+    sidecar_path=settings.portfolio_attribution_remote_engine_path,
     base_currency=settings.app_currency,
 )
-ignidash_sidecar_adapter = SidecarAdapter(
-    base_url=settings.ignidash_sidecar_base_url,
-    timeout_seconds=settings.engine_sidecar_timeout_seconds,
-    max_retries=settings.engine_sidecar_retry_count,
+plan_remote_engine_adapter = SidecarAdapter(
+    base_url=settings.plan_remote_engine_base_url,
+    timeout_seconds=settings.engine_remote_timeout_seconds,
+    max_retries=settings.engine_remote_retry_count,
 )
-ignidash_scenario_service = IgnidashScenarioService(
+plan_simulation_service = BuildWealthScenarioService(
     scenario_engine=scenario_engine,
-    sidecar_adapter=ignidash_sidecar_adapter,
-    sidecar_enabled=settings.enable_ignidash_scenario_sidecar,
-    sidecar_path=settings.ignidash_scenario_sidecar_path,
+    sidecar_adapter=plan_remote_engine_adapter,
+    sidecar_enabled=settings.enable_plan_simulation_remote_engine,
+    sidecar_path=settings.plan_simulation_remote_engine_path,
     currency=settings.app_currency,
     default_tax_rate=settings.planner_marginal_tax_rate,
 )
 engine_status_tracker = EngineStatusTracker(
     configs=[
         EngineProbeConfig(
-            name="ghostfolio_benchmark",
-            base_url=settings.ghostfolio_sidecar_base_url,
-            enabled=settings.enable_ghostfolio_benchmark_sidecar,
+            name="portfolio_benchmark",
+            base_url=settings.portfolio_remote_engine_base_url,
+            enabled=settings.enable_portfolio_benchmark_remote_engine,
             health_paths=parse_path_candidates(
-                settings.ghostfolio_sidecar_health_paths,
+                settings.portfolio_remote_engine_health_paths,
                 fallback=("/health", "/api/v1/health"),
             ),
             version_paths=parse_path_candidates(
-                settings.engine_sidecar_version_paths,
+                settings.engine_remote_version_paths,
                 fallback=("/version",),
             ),
             expected_contract_version=(
-                settings.ghostfolio_sidecar_contract_version
-                if settings.ghostfolio_sidecar_contract_version > 0
+                settings.portfolio_remote_engine_contract_version
+                if settings.portfolio_remote_engine_contract_version > 0
                 else GHOSTFOLIO_BENCHMARK_CONTRACT_VERSION
             ),
         ),
         EngineProbeConfig(
-            name="ghostfolio_attribution",
-            base_url=settings.ghostfolio_sidecar_base_url,
-            enabled=settings.enable_ghostfolio_attribution_sidecar,
+            name="portfolio_attribution",
+            base_url=settings.portfolio_remote_engine_base_url,
+            enabled=settings.enable_portfolio_attribution_remote_engine,
             health_paths=parse_path_candidates(
-                settings.ghostfolio_sidecar_health_paths,
+                settings.portfolio_remote_engine_health_paths,
                 fallback=("/health", "/api/v1/health"),
             ),
             version_paths=parse_path_candidates(
-                settings.engine_sidecar_version_paths,
+                settings.engine_remote_version_paths,
                 fallback=("/version",),
             ),
             expected_contract_version=(
-                settings.ghostfolio_sidecar_contract_version
-                if settings.ghostfolio_sidecar_contract_version > 0
+                settings.portfolio_remote_engine_contract_version
+                if settings.portfolio_remote_engine_contract_version > 0
                 else GHOSTFOLIO_ATTRIBUTION_CONTRACT_VERSION
             ),
         ),
         EngineProbeConfig(
-            name="ignidash_scenario",
-            base_url=settings.ignidash_sidecar_base_url,
-            enabled=settings.enable_ignidash_scenario_sidecar,
+            name="plan_simulation",
+            base_url=settings.plan_remote_engine_base_url,
+            enabled=settings.enable_plan_simulation_remote_engine,
             health_paths=parse_path_candidates(
-                settings.ignidash_sidecar_health_paths,
+                settings.plan_remote_engine_health_paths,
                 fallback=("/health", "/api/health"),
             ),
             version_paths=parse_path_candidates(
-                settings.engine_sidecar_version_paths,
+                settings.engine_remote_version_paths,
                 fallback=("/version",),
             ),
             expected_contract_version=(
-                settings.ignidash_sidecar_contract_version
-                if settings.ignidash_sidecar_contract_version > 0
+                settings.plan_remote_engine_contract_version
+                if settings.plan_remote_engine_contract_version > 0
                 else IGNIDASH_SCENARIO_CONTRACT_VERSION
             ),
         ),
     ],
-    timeout_seconds=settings.engine_sidecar_timeout_seconds,
+    timeout_seconds=settings.engine_remote_timeout_seconds,
 )
 coordinator = Coordinator()
 conversation_store = ConversationStore(settings.conversation_dir)
@@ -877,6 +873,7 @@ copilot = FinancialCopilot(
         "- To revise a saved research dossier thesis, call draft_dossier_thesis_revision for user review without saving. "
         "Only save dossier thesis revisions after explicit user confirmation.\n"
         "- For 'what if I buy/sell X?' → call simulate_trade to show allocation and concentration impact.\n"
+        "- For Import & Review evidence → call list_import_reports or get_import_report and cite the Import Report ID.\n"
         "- For daily reviews → call get_financial_health, get_plan_tracking, and get_today_dashboard.\n\n"
         "RESPONSE GUIDELINES:\n"
         "- Explicitly caveat recommendations when context quality is degraded (stale snapshot, missing coverage sections, or warning-heavy payloads).\n"
@@ -887,6 +884,8 @@ copilot = FinancialCopilot(
         "$200/month would add ~$X to your projected retirement value').\n"
         "- For research-backed recommendations, include dossier artifact citations in recommendation evidence "
         "(symbols + artifact references).\n"
+        "- Cite native evidence IDs when they matter: Simulation Run IDs, Saved Simulation IDs, Portfolio History transaction/import links, and Import Report IDs.\n"
+        "- Keep Copilot as a draft and review helper. Do not present a mutation as complete unless a reviewed tool/API call actually completed.\n"
         "- Proactively flag risks you discover (high concentration, low emergency fund, negative cash flow)."
     ),
 )
@@ -908,7 +907,7 @@ sync_state: dict[str, object] = {
     "last_completed_at": None,
     "last_error": None,
     "last_snapshot_path": None,
-    "last_ignidash_payload_path": None,
+    "last_plan_export_path": None,
 }
 
 
@@ -1122,7 +1121,6 @@ async def execute_csv_import(file_path: Path, request: CsvImportRequest) -> CsvI
         warnings=parsed.warnings,
         errors=parsed.errors,
         reconciliation_report=parsed.reconciliation_report,
-        ghostfolio_response=None,
     )
 
 
@@ -1274,7 +1272,7 @@ def build_scenario_engine_for_plan_settings(plan_settings: dict[str, Any]) -> Sc
     )
 
 
-def build_ignidash_service_for_plan_settings(plan_settings: dict[str, Any]) -> IgnidashScenarioService:
+def build_plan_simulation_service_for_plan_settings(plan_settings: dict[str, Any]) -> BuildWealthScenarioService:
     engine = build_scenario_engine_for_plan_settings(plan_settings)
     marginal_tax_rate = _coerce_float(
         plan_settings.get("marginal_tax_rate"),
@@ -1282,11 +1280,11 @@ def build_ignidash_service_for_plan_settings(plan_settings: dict[str, Any]) -> I
     )
     state_tax_rate = _coerce_float(plan_settings.get("state_tax_rate"), 0.0)
     blended_effective_tax_rate = max(0.0, min(1.0, marginal_tax_rate + state_tax_rate))
-    return IgnidashScenarioService(
+    return BuildWealthScenarioService(
         scenario_engine=engine,
-        sidecar_adapter=ignidash_sidecar_adapter,
-        sidecar_enabled=settings.enable_ignidash_scenario_sidecar,
-        sidecar_path=settings.ignidash_scenario_sidecar_path,
+        sidecar_adapter=plan_remote_engine_adapter,
+        sidecar_enabled=settings.enable_plan_simulation_remote_engine,
+        sidecar_path=settings.plan_simulation_remote_engine_path,
         currency=settings.app_currency,
         default_tax_rate=blended_effective_tax_rate,
     )
@@ -3204,7 +3202,7 @@ async def run_scenarios_for_plan_settings(
     household_source: str = "plan_settings",
 ) -> PlanningResponse:
     validate_plan_return_relationships(plan_settings)
-    service = build_ignidash_service_for_plan_settings(plan_settings)
+    service = build_plan_simulation_service_for_plan_settings(plan_settings)
     annual_contribution = plan_settings.get("annual_contribution_usd")
     years = plan_settings.get("years")
     hsa_extra = plan_settings.get("hsa_extra_contribution_usd")
@@ -3335,7 +3333,7 @@ async def run_scenarios_for_plan_settings(
     drawdown_order = str(plan_settings.get("drawdown_order") or "").strip() or None
     if not drawdown_order:
         drawdown_order = str(timeline_drawdown_order or "").strip() or None
-    scenario_guard_reason = await sidecar_contract_guard_reason("ignidash_scenario")
+    scenario_guard_reason = await sidecar_contract_guard_reason("plan_simulation")
 
     result = await service.run(
         current_portfolio_value_usd=resolved_portfolio_value,
@@ -3381,7 +3379,7 @@ async def run_scenarios_for_plan_settings(
     )
     if result.engine_status == "degraded":
         await engine_status_tracker.increment_degraded(
-            "ignidash_scenario",
+            "plan_simulation",
             reason=result.warnings[0] if result.warnings else None,
         )
     household_context = _build_household_response_context(
@@ -10941,6 +10939,35 @@ async def tool_get_snapshot_history(arguments: dict[str, object]) -> dict[str, o
     return build_snapshot_history_payload(limit=limit).model_dump(mode="json")
 
 
+async def tool_list_import_reports(arguments: dict[str, object]) -> dict[str, object]:
+    limit_value = arguments.get("limit", 10)
+    try:
+        limit = max(1, min(int(limit_value), 50))
+    except Exception:
+        limit = 10
+    reports = import_workbench_store.list_reports(limit=limit)
+    return {
+        "reports": [
+            {
+                "report_id": report.get("report_id"),
+                "created_at": report.get("created_at"),
+                "source_file": report.get("source_file"),
+                "summary": report.get("summary"),
+                "imported_activities": report.get("imported_activities"),
+                "affected_links": report.get("affected_links"),
+            }
+            for report in reports
+        ]
+    }
+
+
+async def tool_get_import_report(arguments: dict[str, object]) -> dict[str, object]:
+    report_id = str(arguments.get("report_id") or "").strip()
+    if not report_id:
+        raise ValueError("report_id is required.")
+    return import_workbench_store.load_report(report_id)
+
+
 async def tool_get_today_dashboard(_: dict[str, object]) -> dict[str, object]:
     return build_today_dashboard_response().model_dump(mode="json")
 
@@ -13513,11 +13540,55 @@ async def tool_run_plan_scenario_branch(arguments: dict[str, object]) -> dict[st
     )
 
 
+async def tool_list_plan_saved_simulations(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+    limit_raw = arguments.get("limit")
+    limit = int(limit_raw) if limit_raw is not None else 10
+    return plan_workspace.list_saved_simulations(plan_id=plan_id, limit=limit)
+
+
+async def tool_get_plan_saved_simulation_context(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+    saved_simulation_id = str(arguments.get("saved_simulation_id") or "").strip()
+    if not saved_simulation_id:
+        raise ValueError("saved_simulation_id is required.")
+    saved_simulation = plan_workspace.get_saved_simulation(
+        plan_id=plan_id,
+        saved_simulation_id=saved_simulation_id,
+    )
+    return {
+        "plan_id": plan_id,
+        "saved_simulation_id": saved_simulation_id,
+        "saved_simulation": saved_simulation,
+    }
+
+
+async def tool_compare_plan_saved_simulation_current(arguments: dict[str, object]) -> dict[str, object]:
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"))
+    saved_simulation_id = str(arguments.get("saved_simulation_id") or "").strip()
+    if not saved_simulation_id:
+        raise ValueError("saved_simulation_id is required.")
+    detail = plan_workspace.get_plan(plan_id)
+    saved_simulation = plan_workspace.get_saved_simulation(
+        plan_id=plan_id,
+        saved_simulation_id=saved_simulation_id,
+    )
+    current_settings = detail.get("settings") if isinstance(detail.get("settings"), dict) else {}
+    return compare_saved_simulation_to_current_plan(
+        plan_id=plan_id,
+        saved_simulation=saved_simulation,
+        current_settings=current_settings,
+    )
+
+
 async def tool_append_plan_decision(arguments: dict[str, object]) -> dict[str, object]:
     plan_id = str(arguments.get("plan_id") or "").strip()
     summary = str(arguments.get("summary") or "").strip()
     rationale = str(arguments.get("rationale") or "").strip()
     status = str(arguments.get("status") or "proposed").strip().lower()
+    action_payload = arguments.get("action_payload")
+    if not isinstance(action_payload, dict):
+        action_payload = None
 
     if not plan_id:
         active_payload = plan_workspace.get_context_payload()
@@ -13531,6 +13602,7 @@ async def tool_append_plan_decision(arguments: dict[str, object]) -> dict[str, o
         summary=summary,
         rationale=rationale,
         status=status or "proposed",
+        action_payload=action_payload,
     )
     return {"plan_id": plan_id, "decision": decision}
 
@@ -13637,19 +13709,40 @@ def configure_copilot_tools() -> None:
     )
     copilot.register_tool(
         name="get_live_snapshot",
-        description="Fetch a live portfolio snapshot from Ghostfolio and summarize it.",
+        description="Refresh market data, build a live BuildWealth portfolio snapshot, and summarize it.",
         parameters=empty_schema,
         handler=tool_get_live_snapshot,
     )
     copilot.register_tool(
         name="get_snapshot_history",
-        description="Read historical local snapshots and summarize trend deltas across a time window.",
+        description="Read Portfolio History snapshots and summarize trend deltas across a time window.",
         parameters={
             "type": "object",
             "properties": {"limit": {"type": "integer"}},
             "additionalProperties": False,
         },
         handler=tool_get_snapshot_history,
+    )
+    copilot.register_tool(
+        name="list_import_reports",
+        description="List recent BuildWealth Import Reports with IDs, summaries, and native Portfolio History links.",
+        parameters={
+            "type": "object",
+            "properties": {"limit": {"type": "integer"}},
+            "additionalProperties": False,
+        },
+        handler=tool_list_import_reports,
+    )
+    copilot.register_tool(
+        name="get_import_report",
+        description="Read one BuildWealth Import Report by report_id for audit, reconciliation, and review evidence.",
+        parameters={
+            "type": "object",
+            "properties": {"report_id": {"type": "string"}},
+            "required": ["report_id"],
+            "additionalProperties": False,
+        },
+        handler=tool_get_import_report,
     )
     copilot.register_tool(
         name="get_today_dashboard",
@@ -14448,7 +14541,7 @@ def configure_copilot_tools() -> None:
     )
     copilot.register_tool(
         name="list_accounts",
-        description="List known Ghostfolio accounts with balances and metadata.",
+        description="List known BuildWealth portfolio accounts with balances and metadata.",
         parameters=empty_schema,
         handler=tool_list_accounts,
     )
@@ -14824,10 +14917,57 @@ def configure_copilot_tools() -> None:
         handler=tool_run_plan_scenario_branch,
     )
     copilot.register_tool(
+        name="list_plan_saved_simulations",
+        description=(
+            "List Saved Simulations for a plan so prior experiments can be reviewed, compared, "
+            "or reopened from the Plan scenarios workspace."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                "limit": {"type": "integer"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_list_plan_saved_simulations,
+    )
+    copilot.register_tool(
+        name="get_plan_saved_simulation",
+        description="Read one Saved Simulation by id with its saved inputs and results.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                "saved_simulation_id": {"type": "string"},
+            },
+            "required": ["saved_simulation_id"],
+            "additionalProperties": False,
+        },
+        handler=tool_get_plan_saved_simulation_context,
+    )
+    copilot.register_tool(
+        name="compare_plan_saved_simulation_current",
+        description=(
+            "Compare a Saved Simulation against the current active plan assumptions before relying on it "
+            "for a decision."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                "saved_simulation_id": {"type": "string"},
+            },
+            "required": ["saved_simulation_id"],
+            "additionalProperties": False,
+        },
+        handler=tool_compare_plan_saved_simulation_current,
+    )
+    copilot.register_tool(
         name="append_plan_decision",
         description=(
-            "Append a decision entry to plan history. "
-            "Fields: summary (required), optional plan_id, rationale, status."
+            "Append a decision entry to plan history. Fields: summary (required), optional plan_id, "
+            "rationale, status, and action_payload for structured links such as saved_simulation_id."
         ),
         parameters={
             "type": "object",
@@ -14836,6 +14976,7 @@ def configure_copilot_tools() -> None:
                 "summary": {"type": "string"},
                 "rationale": {"type": "string"},
                 "status": {"type": "string"},
+                "action_payload": {"type": "object"},
             },
             "required": ["summary"],
             "additionalProperties": False,
@@ -16060,7 +16201,7 @@ async def get_portfolio_benchmark(symbols: str | None = None, limit: int = 180) 
 
     bounded_limit = max(2, min(int(limit), 3650))
     try:
-        guard_reason = await sidecar_contract_guard_reason("ghostfolio_benchmark")
+        guard_reason = await sidecar_contract_guard_reason("portfolio_benchmark")
         result = await benchmark_service.compare(
             benchmark_symbols=resolved_symbols,
             limit=bounded_limit,
@@ -16068,7 +16209,7 @@ async def get_portfolio_benchmark(symbols: str | None = None, limit: int = 180) 
         )
         if result.engine_status == "degraded":
             await engine_status_tracker.increment_degraded(
-                "ghostfolio_benchmark",
+                "portfolio_benchmark",
                 reason=result.warnings[0] if result.warnings else None,
             )
         return result
@@ -16080,14 +16221,14 @@ async def get_portfolio_benchmark(symbols: str | None = None, limit: int = 180) 
 async def get_portfolio_attribution(top_n: int = 5) -> PortfolioAttributionResponse:
     bounded_top_n = max(1, min(int(top_n), 50))
     try:
-        guard_reason = await sidecar_contract_guard_reason("ghostfolio_attribution")
+        guard_reason = await sidecar_contract_guard_reason("portfolio_attribution")
         result = await attribution_service.analyze(
             top_n=bounded_top_n,
             sidecar_guard_reason=guard_reason,
         )
         if result.engine_status == "degraded":
             await engine_status_tracker.increment_degraded(
-                "ghostfolio_attribution",
+                "portfolio_attribution",
                 reason=result.warnings[0] if result.warnings else None,
             )
         return result
@@ -16100,6 +16241,7 @@ async def get_portfolio_analytics(
     symbols: str | None = None,
     limit: int = 180,
     top_n: int = 5,
+    period: str = "1y",
 ) -> PortfolioAnalyticsResponse:
     holdings_payload = portfolio_store.get_holdings()
     benchmark_response: PortfolioBenchmarkResponse | None = None
@@ -16111,11 +16253,22 @@ async def get_portfolio_analytics(
         symbols,
         default_symbols=settings.portfolio_benchmark_default_symbols,
     )
+    period_limits = {
+        "today": 2,
+        "wtd": 7,
+        "mtd": 31,
+        "ytd": 370,
+        "1y": 370,
+        "5y": 1826,
+        "max": 3650,
+    }
+    normalized_period = str(period or "1y").strip().lower()
+    benchmark_limit = period_limits.get(normalized_period, max(2, min(int(limit), 3650)))
     if resolved_symbols:
         try:
             benchmark_response = await benchmark_service.compare(
                 benchmark_symbols=resolved_symbols,
-                limit=max(2, min(int(limit), 3650)),
+                limit=max(2, min(benchmark_limit, 3650)),
                 sidecar_guard_reason="BuildWealth native analytics uses local benchmark calculations.",
             )
         except ValueError as exc:
@@ -16136,6 +16289,8 @@ async def get_portfolio_analytics(
             benchmark_error=benchmark_error,
             attribution_response=attribution_response,
             attribution_error=attribution_error,
+            period=normalized_period,
+            snapshot_limit=benchmark_limit,
         )
     )
 
@@ -16162,6 +16317,64 @@ def get_portfolio_audit(limit: int = 25) -> PortfolioAuditResponse:
         ),
     )
     return PortfolioAuditResponse(**payload)
+
+
+@app.get("/api/portfolio/export-bundle")
+def get_portfolio_export_bundle(limit: int = 10_000) -> dict[str, Any]:
+    bounded_limit = max(1, min(int(limit), 50_000))
+    transactions = portfolio_store.list_transactions(limit=bounded_limit)
+    holdings_payload = portfolio_store.get_holdings()
+    import_reports = import_workbench_store.list_reports(limit=200)
+    audit_report = build_portfolio_audit_payload(
+        import_reports=import_reports,
+        asset_registry_payload=asset_registry.search(limit=500),
+        accounts=portfolio_store.get_accounts(),
+        transactions=transactions,
+        manual_prices_payload=portfolio_store.get_manual_prices(),
+        cost_basis_payload=portfolio_store.get_cost_basis_methods(),
+        recommendations=recommendation_inbox.list(
+            limit=500,
+            include_archived=False,
+            sort="created_at_desc",
+        ),
+    )
+    holdings_by_symbol = holdings_payload.get("holdings_by_symbol") if isinstance(holdings_payload.get("holdings_by_symbol"), dict) else {}
+    lots = [
+        {
+            "symbol": symbol,
+            **lot,
+        }
+        for symbol, holding in holdings_by_symbol.items()
+        if isinstance(holding, dict)
+        for lot in (holding.get("lots") if isinstance(holding.get("lots"), list) else [])
+        if isinstance(lot, dict)
+    ]
+    return {
+        "schema_version": 1,
+        "generated_at": utc_now().isoformat(),
+        "summary": {
+            "transactions": len(transactions),
+            "holdings": len(holdings_by_symbol),
+            "lots": len(lots),
+            "import_reports": len(import_reports),
+            "audit_events": len(audit_report.get("audit_events", [])),
+        },
+        "transactions": transactions,
+        "holdings": holdings_payload,
+        "lots": lots,
+        "asset_metadata": portfolio_store.get_asset_metadata_map(),
+        "manual_prices": portfolio_store.get_manual_prices(),
+        "fx_rates": portfolio_store.get_fx_rates(),
+        "fx_rate_history": portfolio_store.get_fx_rates_history(),
+        "cost_basis_methods": portfolio_store.get_cost_basis_methods(),
+        "import_reports": import_reports,
+        "audit_report": audit_report,
+        "recovery_posture": {
+            "manual_changes": "Manual metadata, price, FX, and cost-basis changes are local records that can be edited or cleared in Portfolio maintenance.",
+            "imports": "Applied import rows are preserved with an Import Report ID so Portfolio History can be traced back to the source file.",
+            "destructive_changes": "Before cleanup or removal work, export this bundle and create a Data & Recovery checkpoint.",
+        },
+    }
 
 
 @app.get("/api/portfolio/assets/search", response_model=AssetRegistrySearchResponse)
@@ -17789,6 +18002,12 @@ def create_plan_saved_simulation_decision(
             summary=summary,
             rationale=f"{rationale} Saved simulation id: {saved_simulation_id}.",
             status=request.status,
+            action_payload={
+                "plan_id": plan_id,
+                "saved_simulation_id": saved_simulation_id,
+                "saved_simulation_title": simulation.get("title"),
+                "source": "saved_simulation_decision",
+            },
         )
     except PlanNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -18239,6 +18458,7 @@ def append_plan_decision(plan_id: str, request: PlanDecisionCreateRequest) -> Pl
             summary=request.summary,
             rationale=request.rationale,
             status=request.status,
+            action_payload=request.action_payload,
         )
         detail = plan_workspace.get_plan(plan_id)
     except PlanNotFoundError as exc:
@@ -18726,7 +18946,7 @@ def _create_import_review_items(report: dict[str, Any]) -> list[dict[str, Any]]:
                     title=str(draft.get("title") or "Asset needs review"),
                     detail=str(draft.get("detail") or "Review this imported row before relying on it."),
                     priority=str(draft.get("priority") or "medium"),
-                    recommendation_type="general",
+                    recommendation_type=str(draft.get("recommendation_type") or "general"),
                     source=str(draft.get("source") or "import_workbench"),
                     action_payload=draft.get("action_payload") if isinstance(draft.get("action_payload"), dict) else {},
                 )
@@ -18876,7 +19096,7 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
         )
     )
     active_assumption_set: dict[str, Any] | None = None
-    service = ignidash_scenario_service
+    service = plan_simulation_service
     timeline_projection: TimelineImpactProjectionResponse | None = None
     active_timeline_payload: dict[str, Any] | None = None
     active_withdrawal_strategy: str | None = None
@@ -18904,7 +19124,7 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
                 assumption_sets_payload=assumption_sets_payload,
                 assumption_set_id=None,
             )
-            service = build_ignidash_service_for_plan_settings(planning_settings_for_run)
+            service = build_plan_simulation_service_for_plan_settings(planning_settings_for_run)
             if not active_withdrawal_strategy:
                 active_withdrawal_strategy = timeline_strategy
             if not active_drawdown_order:
@@ -19059,7 +19279,7 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
     if requested_drawdown_order is not None:
         active_drawdown_order = requested_drawdown_order
 
-    scenario_guard_reason = await sidecar_contract_guard_reason("ignidash_scenario")
+    scenario_guard_reason = await sidecar_contract_guard_reason("plan_simulation")
     result = await service.run(
         current_portfolio_value_usd=resolved_current_value,
         annual_contribution_usd=resolved_annual_contribution,
@@ -19124,7 +19344,7 @@ async def plan_scenarios(request: ScenarioRequest) -> PlanningResponse:
     )
     if result.engine_status == "degraded":
         await engine_status_tracker.increment_degraded(
-            "ignidash_scenario",
+            "plan_simulation",
             reason=result.warnings[0] if result.warnings else None,
         )
     if request_household_overrides_provided:

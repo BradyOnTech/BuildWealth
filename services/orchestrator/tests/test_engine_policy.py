@@ -11,7 +11,7 @@ from buildwealth_orchestrator.services.engine_policy import (
 
 def test_resolve_engine_call_disposition_guarded() -> None:
     disposition = resolve_engine_call_disposition(
-        engine_label="Ghostfolio benchmark",
+        engine_label="Portfolio benchmark",
         sidecar_enabled=True,
         sidecar_adapter=object(),
         sidecar_guard_reason="Sidecar contract version mismatch (expected v1, got v2)",
@@ -27,7 +27,7 @@ def test_resolve_engine_call_disposition_guarded() -> None:
 
 def test_resolve_engine_call_disposition_disabled_modes() -> None:
     degraded = resolve_engine_call_disposition(
-        engine_label="Ghostfolio attribution",
+        engine_label="Portfolio attribution",
         sidecar_enabled=False,
         sidecar_adapter=None,
         disabled_behavior="degraded_fallback",
@@ -38,7 +38,7 @@ def test_resolve_engine_call_disposition_disabled_modes() -> None:
     assert degraded.fallback_method == FALLBACK_METHOD_SIDECAR_DISABLED
 
     local_ok = resolve_engine_call_disposition(
-        engine_label="Ignidash scenario",
+        engine_label="Plan simulation",
         sidecar_enabled=False,
         sidecar_adapter=None,
         disabled_behavior="local_ok",
@@ -51,7 +51,7 @@ def test_resolve_engine_call_disposition_disabled_modes() -> None:
 
 def test_resolve_engine_call_disposition_adapter_missing_modes() -> None:
     degraded = resolve_engine_call_disposition(
-        engine_label="Ghostfolio benchmark",
+        engine_label="Portfolio benchmark",
         sidecar_enabled=True,
         sidecar_adapter=None,
         disabled_behavior="degraded_fallback",
@@ -63,7 +63,7 @@ def test_resolve_engine_call_disposition_adapter_missing_modes() -> None:
     assert degraded.fallback_method == FALLBACK_METHOD_SIDECAR_DISABLED
 
     local_ok = resolve_engine_call_disposition(
-        engine_label="Ignidash scenario",
+        engine_label="Plan simulation",
         sidecar_enabled=True,
         sidecar_adapter=None,
         disabled_behavior="local_ok",
@@ -77,7 +77,7 @@ def test_resolve_engine_call_disposition_adapter_missing_modes() -> None:
 
 def test_resolve_engine_call_disposition_use_sidecar() -> None:
     disposition = resolve_engine_call_disposition(
-        engine_label="Ghostfolio benchmark",
+        engine_label="Portfolio benchmark",
         sidecar_enabled=True,
         sidecar_adapter=object(),
         disabled_behavior="degraded_fallback",

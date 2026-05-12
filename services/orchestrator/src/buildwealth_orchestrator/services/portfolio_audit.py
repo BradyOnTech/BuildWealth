@@ -190,10 +190,43 @@ def build_portfolio_audit_payload(
             "duplicate_count": _safe_int(report.get("summary", {}).get("duplicate_count")),
             "unresolved_count": _safe_int(report.get("summary", {}).get("unresolved_count")),
             "account_review_count": _safe_int(report.get("summary", {}).get("account_review_count")),
-            "href": "#import-sync",
+            "href": f"#import-sync?report={report.get('report_id')}",
+            "portfolio_history_href": f"#portfolio?section=transactions&import_report={report.get('report_id')}",
         }
         for report in reports[:10]
     ]
+    audit_events: list[dict[str, Any]] = []
+    for finding in findings:
+        audit_events.append(
+            {
+                "id": f"audit:{finding['id']}",
+                "kind": "finding",
+                "title": finding["title"],
+                "detail": finding["detail"],
+                "severity": finding["severity"],
+                "status": finding["status"],
+                "action_label": finding.get("action_label"),
+                "href": finding.get("href"),
+                "recovery_note": "Review and resolve this item in the linked BuildWealth workflow.",
+            }
+        )
+    for report in recent_reports:
+        report_id = report.get("report_id")
+        audit_events.append(
+            {
+                "id": f"import_report:{report_id}",
+                "kind": "import_report",
+                "title": f"Import report: {report.get('source_file_name') or report_id}",
+                "detail": (
+                    f"{report.get('imported_activities', 0)} rows applied; "
+                    f"{report.get('unresolved_count', 0)} rows still need review."
+                ),
+                "severity": "medium" if report.get("unresolved_count") else "low",
+                "status": "open" if report.get("unresolved_count") else "clear",
+                "href": report.get("href"),
+                "recovery_note": "Use the saved import report to trace exactly what changed and which rows were skipped.",
+            }
+        )
 
     return {
         "generated_at": generated_at or _utc_now_iso(),
@@ -219,8 +252,10 @@ def build_portfolio_audit_payload(
         },
         "findings": findings,
         "recent_reports": recent_reports,
+        "audit_events": audit_events[:25],
         "links": {
             "import_reports": "#import-sync",
+            "portfolio_history": "#portfolio?section=transactions",
             "accounts": "#portfolio?section=accounts",
             "assets": "#portfolio?section=assets",
             "prices": "#portfolio?section=prices",

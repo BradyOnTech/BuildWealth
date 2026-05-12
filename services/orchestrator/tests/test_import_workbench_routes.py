@@ -79,6 +79,10 @@ def test_import_workbench_preview_apply_and_report_routes(monkeypatch) -> None:
         assert preview["source_file"]["name"] == "broker.csv"
         assert preview["summary"]["accepted_count"] == 1
         assert preview["summary"]["unresolved_count"] == 1
+        assert preview["summary"]["asset_review_count"] == 1
+        assert preview["summary"]["review_item_count"] == 1
+        assert len(preview["review_items"]) == 1
+        assert preview["review_items"][0]["action_payload"]["review_route"]["target"] == "assets"
 
         apply_response = client.post(
             f"/api/import/workbench/{preview['session_id']}/apply",
@@ -90,7 +94,10 @@ def test_import_workbench_preview_apply_and_report_routes(monkeypatch) -> None:
         assert applied["report"]["imported_activities"] == 1
         assert applied["report"]["operator"] == "route-test"
         assert applied["report"]["affected_links"]["portfolio_transactions"] == "#portfolio?section=transactions"
+        assert applied["report"]["affected_links"]["portfolio_history"].startswith("#portfolio?section=transactions&import_report=")
+        assert applied["report"]["affected_links"]["import_report"].startswith("#import-sync?report=")
         assert len(applied["report"]["review_items"]) == 1
+        assert applied["session"]["review_items"][0]["action_payload"]["report_id"] == applied["report"]["report_id"]
 
         report_id = applied["report"]["report_id"]
         review_items = [
@@ -100,7 +107,7 @@ def test_import_workbench_preview_apply_and_report_routes(monkeypatch) -> None:
             and item.get("action_payload", {}).get("report_id") == report_id
         ]
         assert len(review_items) == 1
-        assert review_items[0]["recommendation_type"] == "general"
+        assert review_items[0]["recommendation_type"] == "asset_review_item"
         assert review_items[0]["action_payload"]["kind"] == "asset_review_item"
         assert review_items[0]["action_payload"]["review_route"]["route"] == "portfolio"
 

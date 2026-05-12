@@ -75,6 +75,12 @@ def build_import_workbench_summary(import_response: Any) -> dict[str, Any]:
 
     duplicate_count = _count_rows_with_reason(rejected_rows, "duplicate_existing_transaction")
     account_review_count = _count_rows_with_flag(normalized_rows + accepted_rows, "account_missing_mapping")
+    asset_review_count = sum(
+        1
+        for row in rejected_rows
+        if _row_review_reason(row)
+        and "account_missing_mapping" not in {str(item) for item in row.get("normalization_flags", [])}
+    )
     unresolved_count = max(0, int(report_payload.get("rejected_count") or 0) - duplicate_count)
 
     warnings = getattr(import_response, "warnings", response_payload.get("warnings", [])) or []
@@ -88,7 +94,9 @@ def build_import_workbench_summary(import_response: Any) -> dict[str, Any]:
         "rejected_count": int(report_payload.get("rejected_count") or 0),
         "duplicate_count": duplicate_count,
         "unresolved_count": unresolved_count,
+        "asset_review_count": asset_review_count,
         "account_review_count": account_review_count,
+        "review_item_count": asset_review_count + account_review_count,
         "parser_confidence_flag": str(report_payload.get("parser_confidence_flag") or "low"),
         "parser_confidence_score": float(report_payload.get("parser_confidence_score") or 0.0),
         "warnings_count": len(warnings),
@@ -209,6 +217,15 @@ def build_import_review_item_drafts(report: dict[str, Any]) -> list[dict[str, An
     return drafts
 
 
+def _report_like_payload_for_session(payload: dict[str, Any]) -> dict[str, Any]:
+    preview = payload.get("preview_response") if isinstance(payload.get("preview_response"), dict) else {}
+    return {
+        "report_id": payload.get("report_id"),
+        "session_id": payload.get("session_id"),
+        "reconciliation_report": preview.get("reconciliation_report") if isinstance(preview, dict) else {},
+    }
+
+
 @dataclass
 class ImportWorkbenchStore:
     workbench_dir: Path
@@ -249,6 +266,7 @@ class ImportWorkbenchStore:
             ),
             "report_id": None,
         }
+        payload["review_items"] = build_import_review_item_drafts(_report_like_payload_for_session(payload))
         _write_json(self._session_path(session_id), payload)
         return payload
 
@@ -270,6 +288,7 @@ class ImportWorkbenchStore:
             else apply_response
         )
         payload["report_id"] = report.get("report_id")
+        payload["review_items"] = report.get("review_items") if isinstance(report.get("review_items"), list) else []
         _write_json(self._session_path(session_id), payload)
         return payload
 
@@ -304,9 +323,11 @@ class ImportWorkbenchStore:
             "reconciliation_report": response_payload.get("reconciliation_report", {}),
             "affected_links": {
                 "portfolio_transactions": "#portfolio?section=transactions",
+                "portfolio_history": f"#portfolio?section=transactions&import_report={report_id}",
                 "portfolio_accounts": "#portfolio?section=accounts",
                 "portfolio_assets": "#portfolio?section=assets",
                 "import_reports": "#import-sync",
+                "import_report": f"#import-sync?report={report_id}",
             },
         }
         payload["review_items"] = build_import_review_item_drafts(payload)

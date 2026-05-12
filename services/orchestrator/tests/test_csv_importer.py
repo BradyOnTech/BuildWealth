@@ -377,7 +377,8 @@ def test_parse_transaction_csv_auto_detects_wealthfront(tmp_path: Path) -> None:
 
 
 def test_list_csv_templates_includes_required_brokers() -> None:
-    template_ids = {item["id"] for item in list_csv_templates()}
+    templates = list_csv_templates()
+    template_ids = {item["id"] for item in templates}
 
     assert "auto" in template_ids
     assert "generic" in template_ids
@@ -390,6 +391,10 @@ def test_list_csv_templates_includes_required_brokers() -> None:
     assert "ally" in template_ids
     assert "m1" in template_ids
     assert "wealthfront" in template_ids
+    schwab = next(item for item in templates if item["id"] == "schwab")
+    assert schwab["mapping_confidence"] == "known"
+    assert "date" in schwab["required_columns"]
+    assert "amount" in schwab["optional_columns"]
 
 
 def test_parse_transaction_csv_emits_reconciliation_report_with_confidence_flags(tmp_path: Path) -> None:

@@ -21,7 +21,7 @@ def _sync_status() -> SyncStatusResponse:
         last_completed_at=datetime(2026, 1, 1, 15, 1, tzinfo=timezone.utc),
         last_error=None,
         last_snapshot_path=None,
-        last_ignidash_payload_path=None,
+        last_plan_export_path=None,
     )
 
 

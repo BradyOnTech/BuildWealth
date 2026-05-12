@@ -161,9 +161,11 @@ class PortfolioAttributionResponse(_EngineContractResponseBase):
 class PortfolioAnalyticsResponse(BaseModel):
     generated_at: datetime
     status: Literal["ready", "partial", "unavailable"] = "unavailable"
+    period: dict[str, Any] = Field(default_factory=dict)
     performance: dict[str, Any] = Field(default_factory=dict)
     benchmark: dict[str, Any] = Field(default_factory=dict)
     attribution: dict[str, Any] = Field(default_factory=dict)
+    risk_explanations: dict[str, Any] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -946,6 +948,8 @@ class AssetRegistryItem(BaseModel):
     accounts: list[str] = Field(default_factory=list)
     price_source: str | None = None
     valuation_method: str | None = None
+    manual_price_detail: dict[str, Any] = Field(default_factory=dict)
+    provenance: list[dict[str, Any]] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     quality_status: Literal["ready", "needs_review", "unpriced"] = "ready"
     quality_label: str = "Ready"
@@ -997,6 +1001,19 @@ class PortfolioAuditReportSummary(BaseModel):
     unresolved_count: int = 0
     account_review_count: int = 0
     href: str = ""
+    portfolio_history_href: str = ""
+
+
+class PortfolioAuditEvent(BaseModel):
+    id: str
+    kind: str = "finding"
+    title: str
+    detail: str = ""
+    severity: Literal["high", "medium", "low"] = "medium"
+    status: Literal["open", "clear"] = "clear"
+    href: str = ""
+    action_label: str = "Review"
+    recovery_note: str = ""
 
 
 class PortfolioAuditResponse(BaseModel):
@@ -1005,6 +1022,7 @@ class PortfolioAuditResponse(BaseModel):
     summary: dict[str, int] = Field(default_factory=dict)
     findings: list[PortfolioAuditFinding] = Field(default_factory=list)
     recent_reports: list[PortfolioAuditReportSummary] = Field(default_factory=list)
+    audit_events: list[PortfolioAuditEvent] = Field(default_factory=list)
     links: dict[str, str] = Field(default_factory=dict)
 
 
@@ -1057,6 +1075,9 @@ class CsvTemplateOption(BaseModel):
     id: str
     name: str
     description: str
+    required_columns: list[str] = Field(default_factory=list)
+    optional_columns: list[str] = Field(default_factory=list)
+    mapping_confidence: Literal["auto", "known", "flexible"] = "known"
 
 
 class CsvImportRequest(BaseModel):
@@ -1109,7 +1130,6 @@ class CsvImportResponse(BaseModel):
     reconciliation_report: CsvImportReconciliationReport = Field(
         default_factory=CsvImportReconciliationReport
     )
-    ghostfolio_response: dict[str, Any] | None = None
 
 
 class ImportWorkbenchSummary(BaseModel):
@@ -1119,7 +1139,9 @@ class ImportWorkbenchSummary(BaseModel):
     rejected_count: int = 0
     duplicate_count: int = 0
     unresolved_count: int = 0
+    asset_review_count: int = 0
     account_review_count: int = 0
+    review_item_count: int = 0
     parser_confidence_flag: Literal["high", "medium", "low"] = "low"
     parser_confidence_score: float = 0.0
     warnings_count: int = 0
@@ -1144,6 +1166,7 @@ class ImportWorkbenchPreviewResponse(BaseModel):
     summary: ImportWorkbenchSummary
     preview_response: CsvImportResponse
     report_id: str | None = None
+    review_items: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ImportWorkbenchApplyRequest(BaseModel):
@@ -1188,7 +1211,7 @@ class SyncStatusResponse(BaseModel):
     last_completed_at: datetime | None = None
     last_error: str | None = None
     last_snapshot_path: str | None = None
-    last_ignidash_payload_path: str | None = None
+    last_plan_export_path: str | None = None
 
 
 class TodayChecklistItem(BaseModel):
@@ -1211,7 +1234,13 @@ class TopNextAction(BaseModel):
     title: str
     detail: str
     priority: Literal["high", "medium", "low"] = "medium"
-    recommendation_type: Literal["plan_settings_update", "workflow_action", "general"] = "general"
+    recommendation_type: Literal[
+        "plan_settings_update",
+        "workflow_action",
+        "asset_review_item",
+        "portfolio_account_review_item",
+        "general",
+    ] = "general"
     source: str = "manual"
     plan_id: str | None = None
     score_total: float | None = None
@@ -1435,7 +1464,13 @@ class OnboardingStatusResponse(BaseModel):
 
 RecommendationStatus = Literal["proposed", "applied", "rejected", "archived"]
 RecommendationPriority = Literal["high", "medium", "low"]
-RecommendationType = Literal["plan_settings_update", "workflow_action", "general"]
+RecommendationType = Literal[
+    "plan_settings_update",
+    "workflow_action",
+    "asset_review_item",
+    "portfolio_account_review_item",
+    "general",
+]
 
 
 class RecommendationScore(BaseModel):
@@ -2026,6 +2061,7 @@ class PlanDecision(BaseModel):
     summary: str
     rationale: str = ""
     status: str = "proposed"
+    action_payload: dict[str, Any] = Field(default_factory=dict)
 
 
 class PlanFiles(BaseModel):
@@ -2406,6 +2442,7 @@ class PlanDecisionCreateRequest(BaseModel):
     summary: str
     rationale: str = ""
     status: str = "proposed"
+    action_payload: dict[str, Any] = Field(default_factory=dict)
 
 
 class WorkflowTemplateResponse(BaseModel):

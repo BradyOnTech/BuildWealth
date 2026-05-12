@@ -54,11 +54,14 @@ def test_plan_workspace_updates_and_decisions(tmp_path: Path) -> None:
         summary="Increase HSA contribution by $1,000",
         rationale="Tax-efficient additional savings.",
         status="approved",
+        action_payload={"saved_simulation_id": "saved-simulation-1"},
     )
     assert decision["status"] == "approved"
+    assert decision["action_payload"]["saved_simulation_id"] == "saved-simulation-1"
 
     detail = workspace.get_plan(second["id"])
     assert detail["decisions"][0]["summary"] == "Increase HSA contribution by $1,000"
+    assert detail["decisions"][0]["action_payload"]["saved_simulation_id"] == "saved-simulation-1"
     assert detail["artifacts"] == []
 
     artifact = workspace.write_artifact(

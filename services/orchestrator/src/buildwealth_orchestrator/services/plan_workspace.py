@@ -1902,6 +1902,7 @@ class PlanWorkspace:
         summary: str,
         rationale: str | None = None,
         status: str = "proposed",
+        action_payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         cleaned_summary = summary.strip()
         if not cleaned_summary:
@@ -1918,6 +1919,8 @@ class PlanWorkspace:
             "rationale": (rationale or "").strip(),
             "status": (status or "proposed").strip().lower(),
         }
+        if isinstance(action_payload, dict) and action_payload:
+            decision["action_payload"] = action_payload
 
         decisions_path = plan_dir / "decisions.jsonl"
         with decisions_path.open("a", encoding="utf-8") as handle:

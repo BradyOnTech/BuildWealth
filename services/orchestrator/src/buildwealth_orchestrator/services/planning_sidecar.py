@@ -26,7 +26,7 @@ from buildwealth_orchestrator.services.engine_policy import (
 from buildwealth_orchestrator.services.scenario_engine import ScenarioEngine
 
 IGNIDASH_SCENARIO_CONTRACT_VERSION = 1
-IGNIDASH_SCENARIO_ENGINE_LABEL = "Ignidash scenario"
+IGNIDASH_SCENARIO_ENGINE_LABEL = "Plan simulation"
 
 
 @dataclass(frozen=True)
@@ -148,7 +148,7 @@ class IgnidashScenarioResponseV1(BaseModel):
     generated_at: datetime | None = None
 
 
-class IgnidashScenarioService:
+class BuildWealthScenarioService:
     def __init__(
         self,
         *,

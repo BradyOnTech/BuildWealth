@@ -170,6 +170,10 @@ export function renderSimulationExplanation(state = {}) {
   const assumptions = Array.isArray(payload.assumption_traces) ? payload.assumption_traces : [];
   const warnings = Array.isArray(payload.warnings) ? payload.warnings.filter(Boolean) : [];
   const reasons = Array.isArray(payload.confidence_reasons) ? payload.confidence_reasons : [];
+  const yearly = Array.isArray(payload.yearly_metrics) ? payload.yearly_metrics : [];
+  const phases = Array.isArray(payload.phase_summaries) ? payload.phase_summaries : [];
+  const bands = Array.isArray(payload.percentile_bands) ? payload.percentile_bands : [];
+  const reviewLinks = Array.isArray(payload.field_review_links) ? payload.field_review_links : [];
   if (state.busy) {
     return html`
       <article class="simulation-explainer">
@@ -207,6 +211,7 @@ export function renderSimulationExplanation(state = {}) {
           `).join(''))}
         </div>
       ` : ''}
+      ${raw(renderSimulationDepth({ yearly, phases, bands, reviewLinks }))}
       ${assumptions.length ? html`
         <details class="simulation-trace">
           <summary>Inputs used</summary>
@@ -224,6 +229,65 @@ export function renderSimulationExplanation(state = {}) {
         </details>
       ` : ''}
     </article>
+  `;
+}
+
+function renderSimulationDepth({ yearly = [], phases = [], bands = [], reviewLinks = [] } = {}) {
+  if (!yearly.length && !phases.length && !bands.length && !reviewLinks.length) return '';
+  const first = yearly[0] || {};
+  const last = yearly[yearly.length - 1] || {};
+  return html`
+    <div class="simulation-depth">
+      ${yearly.length ? html`
+        <dl class="scenario-change-list">
+          <div>
+            <dt>Yearly metrics</dt>
+            <dd>${yearly.length} year${yearly.length === 1 ? '' : 's'} · ${esc(first.year || '')} to ${esc(last.year || '')}</dd>
+          </div>
+          <div>
+            <dt>Ending balance</dt>
+            <dd>${fmtUsd(last.ending_balance_usd)}</dd>
+          </div>
+          <div>
+            <dt>Net cash flow</dt>
+            <dd>${fmtUsdSigned(sumMetric(yearly, 'net_cash_flow_usd'))}</dd>
+          </div>
+        </dl>
+      ` : ''}
+      ${phases.length ? html`
+        <details class="simulation-trace" open>
+          <summary>Life phases</summary>
+          <ul>
+            ${raw(phases.map(phase => html`
+              <li>
+                ${esc(phase.label)} (${esc(phase.start_year)}-${esc(phase.end_year)}):
+                ending balance ${fmtUsd(phase.ending_balance_usd)},
+                taxes ${fmtUsd(phase.total_taxes_usd)},
+                withdrawals ${fmtUsd(phase.total_withdrawals_usd)}
+              </li>
+            `).join(''))}
+          </ul>
+        </details>
+      ` : ''}
+      ${bands.length ? html`
+        <details class="simulation-trace">
+          <summary>Monte Carlo range</summary>
+          <ul>
+            ${raw(bands.map(row => html`
+              <li>${esc(row.percentile)}: future value ${fmtUsd(row.future_value_usd)}${row.real_value_usd != null ? html`, real value ${fmtUsd(row.real_value_usd)}` : ''}</li>
+            `).join(''))}
+          </ul>
+        </details>
+      ` : ''}
+      ${reviewLinks.length ? html`
+        <details class="simulation-trace">
+          <summary>Fields to review</summary>
+          <ul>
+            ${raw(reviewLinks.map(link => html`<li><a href="${link.href}">${esc(link.label)}</a> - ${esc(link.reason)}</li>`).join(''))}
+          </ul>
+        </details>
+      ` : ''}
+    </div>
   `;
 }
 
@@ -455,7 +519,7 @@ function renderDeltaRow(row = {}) {
 
 function renderMetricBlock(title, metrics = {}) {
   const rows = Object.entries(metrics)
-    .filter(([, value]) => value != null && value !== '')
+    .filter(([, value]) => isDisplayableMetricValue(value))
     .slice(0, 6);
   if (!rows.length) return '';
   return html`
@@ -526,14 +590,34 @@ function displayValue(field, value) {
 }
 
 function formatMetricValue(key, value) {
-  if (typeof value === 'number' && key.toLowerCase().includes('probability')) {
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'string') return value.replace(/_/g, ' ');
+  const lowerKey = String(key || '').toLowerCase();
+  if (typeof value === 'number' && lowerKey.includes('probability')) {
     return fmtPctSigned(value, { fromFraction: true });
   }
-  if (typeof value === 'number' && key.toLowerCase().includes('delta')) {
+  if (typeof value === 'number' && lowerKey.includes('delta')) {
     return fmtUsdSigned(value);
+  }
+  if (typeof value === 'number' && (lowerKey.includes('usd') || lowerKey.includes('value'))) {
+    return fmtUsd(value);
   }
   if (typeof value === 'number') return String(Number(value.toFixed(3)));
   return String(value);
+}
+
+function isDisplayableMetricValue(value) {
+  if (value == null || value === '') return false;
+  if (Array.isArray(value)) return false;
+  if (typeof value === 'object') return false;
+  return true;
+}
+
+function sumMetric(rows = [], key = '') {
+  return rows.reduce((total, row) => {
+    const value = Number(row?.[key]);
+    return total + (Number.isFinite(value) ? value : 0);
+  }, 0);
 }
 
 function normalizeAssumptionSets(assumptionSets = {}) {

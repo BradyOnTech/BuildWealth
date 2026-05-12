@@ -165,7 +165,7 @@ def _ready_engine_status() -> main.EngineStatusResponse:
         as_of=main.utc_now(),
         engines=[
             {
-                "name": "ignidash_scenario",
+                "name": "plan_simulation",
                 "enabled": True,
                 "reachable": True,
                 "contract_compatible": True,
@@ -179,7 +179,7 @@ def _degraded_engine_status() -> main.EngineStatusResponse:
         as_of=main.utc_now(),
         engines=[
             {
-                "name": "ignidash_scenario",
+                "name": "plan_simulation",
                 "enabled": True,
                 "reachable": False,
                 "contract_compatible": False,

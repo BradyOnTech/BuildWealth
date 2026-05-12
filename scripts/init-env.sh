@@ -32,30 +32,10 @@ replace_token() {
 
 mkdir -p "$ENV_DIR"
 
-cp_if_missing "$ENV_DIR/ghostfolio.env.example" "$ENV_DIR/ghostfolio.env"
-cp_if_missing "$ENV_DIR/ignidash.env.example" "$ENV_DIR/ignidash.env"
 cp_if_missing "$ENV_DIR/orchestrator.env.example" "$ENV_DIR/orchestrator.env"
-
-GF_DB_PASSWORD="$(rand)"
-GF_REDIS_PASSWORD="$(rand)"
-GF_JWT="$(rand)"
-GF_ACCESS_SALT="$(rand)"
-IGNI_ADMIN_KEY="$(rand)"
-IGNI_AUTH_SECRET="$(rand)"
-IGNI_API_SECRET="$(rand)"
-
-replace_token "$ENV_DIR/ghostfolio.env" "__GF_ACCESS_TOKEN_SALT__" "$GF_ACCESS_SALT"
-replace_token "$ENV_DIR/ghostfolio.env" "__GF_JWT_SECRET_KEY__" "$GF_JWT"
-replace_token "$ENV_DIR/ghostfolio.env" "__GF_POSTGRES_PASSWORD__" "$GF_DB_PASSWORD"
-replace_token "$ENV_DIR/ghostfolio.env" "__GF_REDIS_PASSWORD__" "$GF_REDIS_PASSWORD"
-
-replace_token "$ENV_DIR/ignidash.env" "__IGNI_CONVEX_ADMIN_KEY__" "$IGNI_ADMIN_KEY"
-replace_token "$ENV_DIR/ignidash.env" "__IGNI_BETTER_AUTH_SECRET__" "$IGNI_AUTH_SECRET"
-replace_token "$ENV_DIR/ignidash.env" "__IGNI_CONVEX_API_SECRET__" "$IGNI_API_SECRET"
 
 echo ""
 echo "Environment files are ready."
 echo "Next:"
-echo "  1) Open $ENV_DIR/orchestrator.env and confirm sidecar/OpenAI/OpenBB settings"
+echo "  1) Open $ENV_DIR/orchestrator.env and confirm OpenAI/OpenBB settings"
 echo "  2) Start standalone mode: docker compose -f infra/docker-compose.yml up -d orchestrator"
-echo "  3) Optional legacy upstream apps: docker compose -f infra/docker-compose.yml --profile legacy-upstream up -d"

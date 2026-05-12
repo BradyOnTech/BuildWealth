@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi.testclient import TestClient
 
 from buildwealth_orchestrator import main
@@ -40,7 +42,11 @@ def test_plan_saved_simulation_routes(monkeypatch, tmp_path) -> None:
             json={"status": "proposed"},
         )
         assert decision_response.status_code == 200
-        assert decision_response.json()["decision"]["summary"].startswith("Reviewed saved simulation")
+        decision = decision_response.json()["decision"]
+        assert decision["summary"].startswith("Reviewed saved simulation")
+        assert decision["action_payload"]["plan_id"] == plan["id"]
+        assert decision["action_payload"]["saved_simulation_id"] == saved["id"]
+        assert decision["action_payload"]["saved_simulation_title"] == "Market stress"
 
         explain_response = client.post(
             f"/api/plans/{plan['id']}/simulation-explain",
@@ -93,6 +99,51 @@ def test_plan_saved_simulation_routes(monkeypatch, tmp_path) -> None:
         assert review["review_level"] == "high"
         assert review["stage_one"]["name"] == "Change size"
         assert review["stage_two"]["name"] == "Result trust"
+
+
+def test_plan_saved_simulation_copilot_tools(monkeypatch, tmp_path) -> None:
+    workspace = PlanWorkspace(tmp_path)
+    plan = workspace.create_plan(
+        title="Saved Simulation Tool Plan",
+    )
+    workspace.update_plan_settings(
+        plan_id=plan["id"],
+        updates={"annual_contribution_usd": 24_000},
+        log_decision=False,
+    )
+    saved = workspace.save_simulation(
+        plan_id=plan["id"],
+        simulation_payload={
+            "title": "Contribution lift",
+            "source": "scenario_diff",
+            "summary": "Contribution lift increased the projection.",
+            "input_payload": {"annual_contribution_usd": 30_000},
+            "result_payload": {
+                "base_settings": {"annual_contribution_usd": 20_000},
+                "candidate_settings": {"annual_contribution_usd": 30_000},
+                "scenario_deltas": [{"label": "baseline", "delta_future_value_usd": 40_000}],
+            },
+        },
+    )
+    monkeypatch.setattr(main, "plan_workspace", workspace)
+
+    listed = asyncio.run(main.tool_list_plan_saved_simulations({"plan_id": plan["id"], "limit": 5}))
+    assert listed["simulations"][0]["id"] == saved["id"]
+
+    detail = asyncio.run(
+        main.tool_get_plan_saved_simulation_context(
+            {"plan_id": plan["id"], "saved_simulation_id": saved["id"]}
+        )
+    )
+    assert detail["saved_simulation"]["title"] == "Contribution lift"
+
+    comparison = asyncio.run(
+        main.tool_compare_plan_saved_simulation_current(
+            {"plan_id": plan["id"], "saved_simulation_id": saved["id"]}
+        )
+    )
+    assert comparison["changed_since_saved"] is True
+    assert comparison["setting_differences"][0]["field"] == "annual_contribution_usd"
 
 
 def test_plan_saved_simulation_compare_and_rerun_routes(monkeypatch, tmp_path) -> None:

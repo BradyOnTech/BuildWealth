@@ -35,6 +35,8 @@ def test_copilot_registry_includes_phase_3_5_tools() -> None:
         "get_plan_review_context",
         "preview_recommendation",
         "draft_financial_profile_update",
+        "list_import_reports",
+        "get_import_report",
     }
     assert required_tools <= set(main.copilot.tools.keys())
 
@@ -46,6 +48,34 @@ def test_copilot_prompt_includes_context_quality_guidance() -> None:
     assert "draft_watchlist_thesis_revision" in prompt
     assert "draft_dossier_thesis_revision" in prompt
     assert "user review without saving" in prompt
+    assert "Import Report ID" in prompt
+    assert "Saved Simulation IDs" in prompt
+    assert "draft and review helper" in prompt
+
+
+def test_copilot_native_boundary_tool_descriptions() -> None:
+    descriptions = "\n".join(str(tool.description) for tool in main.copilot.tools.values())
+    assert "Fetch a live portfolio snapshot from Ghostfolio" not in descriptions
+    assert "List known Ghostfolio accounts" not in descriptions
+    assert "Import Reports" in descriptions
+    assert "BuildWealth portfolio accounts" in descriptions
+
+
+def test_import_report_copilot_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeImportWorkbenchStore:
+        def list_reports(self, limit: int = 10):
+            return [{"report_id": "ir_1", "summary": {"accepted_count": 2}, "imported_activities": 2}]
+
+        def load_report(self, report_id: str):
+            return {"report_id": report_id, "summary": {"accepted_count": 2}}
+
+    monkeypatch.setattr(main, "import_workbench_store", FakeImportWorkbenchStore())
+
+    listed = asyncio.run(main.tool_list_import_reports({"limit": 5}))
+    detail = asyncio.run(main.tool_get_import_report({"report_id": "ir_1"}))
+
+    assert listed["reports"][0]["report_id"] == "ir_1"
+    assert detail["report_id"] == "ir_1"
 
 
 def test_get_buildwealth_context_tool_supports_detail_level_control() -> None:
@@ -161,8 +191,13 @@ def test_copilot_chat_uses_context_assembler_by_default(monkeypatch: pytest.Monk
                 "created_at": main.utc_now(),
             }
 
+    class FakeConversationStore:
+        def update_latest_assistant_metadata(self, conversation_id: str, metadata: dict[str, object]) -> None:
+            return None
+
     monkeypatch.setattr(main, "context_assembler", FakeAssembler())
     monkeypatch.setattr(main, "copilot", FakeCopilot())
+    monkeypatch.setattr(main, "conversation_store", FakeConversationStore())
 
     response = asyncio.run(
         main.copilot_chat(

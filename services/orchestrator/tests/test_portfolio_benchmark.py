@@ -7,7 +7,7 @@ import httpx
 
 from buildwealth_orchestrator.schemas import PortfolioSnapshot
 from buildwealth_orchestrator.services.engine_adapter import SidecarAdapter
-from buildwealth_orchestrator.services.portfolio_benchmark import GhostfolioBenchmarkService
+from buildwealth_orchestrator.services.portfolio_benchmark import BuildWealthBenchmarkService
 from buildwealth_orchestrator.services.snapshot_store import SnapshotStore
 
 
@@ -60,7 +60,7 @@ def test_benchmark_service_uses_local_fallback_when_sidecar_disabled(tmp_path: P
         }
     )
 
-    service = GhostfolioBenchmarkService(
+    service = BuildWealthBenchmarkService(
         snapshot_store=snapshot_store,
         research_service=research,
         sidecar_adapter=None,
@@ -91,7 +91,7 @@ def test_benchmark_service_uses_degraded_fallback_when_adapter_missing(tmp_path:
         }
     )
 
-    service = GhostfolioBenchmarkService(
+    service = BuildWealthBenchmarkService(
         snapshot_store=snapshot_store,
         research_service=research,
         sidecar_adapter=None,
@@ -154,7 +154,7 @@ def test_benchmark_service_uses_sidecar_response_when_enabled(tmp_path: Path) ->
         transport=httpx.MockTransport(handler),
     )
 
-    service = GhostfolioBenchmarkService(
+    service = BuildWealthBenchmarkService(
         snapshot_store=snapshot_store,
         research_service=research,
         sidecar_adapter=adapter,
@@ -184,7 +184,7 @@ def test_benchmark_service_falls_back_when_sidecar_call_fails(tmp_path: Path) ->
         transport=httpx.MockTransport(handler),
     )
 
-    service = GhostfolioBenchmarkService(
+    service = BuildWealthBenchmarkService(
         snapshot_store=snapshot_store,
         research_service=research,
         sidecar_adapter=adapter,
@@ -223,7 +223,7 @@ def test_benchmark_service_skips_sidecar_when_contract_guarded(tmp_path: Path) -
         max_retries=0,
         transport=httpx.MockTransport(handler),
     )
-    service = GhostfolioBenchmarkService(
+    service = BuildWealthBenchmarkService(
         snapshot_store=snapshot_store,
         research_service=research,
         sidecar_adapter=adapter,

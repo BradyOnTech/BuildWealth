@@ -5,7 +5,7 @@ from pathlib import Path
 import httpx
 
 from buildwealth_orchestrator.services.engine_adapter import SidecarAdapter
-from buildwealth_orchestrator.services.portfolio_attribution import GhostfolioAttributionService
+from buildwealth_orchestrator.services.portfolio_attribution import BuildWealthAttributionService
 from buildwealth_orchestrator.services.portfolio_store import PortfolioStore
 
 
@@ -48,7 +48,7 @@ def test_attribution_service_uses_local_fallback_when_sidecar_disabled(tmp_path:
     store = PortfolioStore(tmp_path / "portfolio")
     _seed_store(store)
 
-    service = GhostfolioAttributionService(
+    service = BuildWealthAttributionService(
         portfolio_store=store,
         sidecar_adapter=None,
         sidecar_enabled=False,
@@ -71,7 +71,7 @@ def test_attribution_service_uses_degraded_fallback_when_adapter_missing(tmp_pat
     store = PortfolioStore(tmp_path / "portfolio")
     _seed_store(store)
 
-    service = GhostfolioAttributionService(
+    service = BuildWealthAttributionService(
         portfolio_store=store,
         sidecar_adapter=None,
         sidecar_enabled=True,
@@ -151,7 +151,7 @@ def test_attribution_service_uses_sidecar_response_when_enabled(tmp_path: Path) 
         max_retries=0,
         transport=httpx.MockTransport(handler),
     )
-    service = GhostfolioAttributionService(
+    service = BuildWealthAttributionService(
         portfolio_store=store,
         sidecar_adapter=adapter,
         sidecar_enabled=True,
@@ -180,7 +180,7 @@ def test_attribution_service_falls_back_when_sidecar_call_fails(tmp_path: Path) 
         max_retries=0,
         transport=httpx.MockTransport(handler),
     )
-    service = GhostfolioAttributionService(
+    service = BuildWealthAttributionService(
         portfolio_store=store,
         sidecar_adapter=adapter,
         sidecar_enabled=True,
@@ -209,7 +209,7 @@ def test_attribution_service_skips_sidecar_when_contract_guarded(tmp_path: Path)
         max_retries=0,
         transport=httpx.MockTransport(handler),
     )
-    service = GhostfolioAttributionService(
+    service = BuildWealthAttributionService(
         portfolio_store=store,
         sidecar_adapter=adapter,
         sidecar_enabled=True,

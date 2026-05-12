@@ -54,11 +54,13 @@ function renderContextTraceSummary(trace = {}) {
   const captured = Array.isArray(trace.captured_context_candidates)
     ? trace.captured_context_candidates.filter(Boolean)
     : [];
+  const savedSimulations = savedSimulationsFromTrace(trace);
   const returnedCount = Number(retrieval.returned_count);
   const citationCount = Number(retrieval.citation_count);
   const conflictCount = Number(conflictReview.count);
   const summary = [
     trace.plan_id ? 'plan scoped' : '',
+    savedSimulations.length ? `${savedSimulations.length} saved simulation${savedSimulations.length === 1 ? '' : 's'}` : '',
     Array.isArray(trace.symbols) && trace.symbols.length ? `${trace.symbols.length} symbol${trace.symbols.length === 1 ? '' : 's'}` : '',
     Number.isFinite(returnedCount) ? `${returnedCount} retrieved` : '',
     Number.isFinite(citationCount) ? `${citationCount} citation${citationCount === 1 ? '' : 's'}` : '',
@@ -107,6 +109,12 @@ function contextTraceLinks(trace = {}) {
   for (const symbol of symbols) {
     links.push({ label: `${symbol} fit`, href: `#portfolio?fit=${encodeURIComponent(symbol)}` });
     links.push({ label: `${symbol} research`, href: `#research?symbol=${encodeURIComponent(symbol)}` });
+  }
+  for (const savedSimulation of savedSimulationsFromTrace(trace)) {
+    links.push({
+      label: savedSimulation.title || 'Saved Simulation',
+      href: savedSimulationHref(savedSimulation.planId || planId, savedSimulation.id),
+    });
   }
   const conflictReview = trace.conflict_review_items && typeof trace.conflict_review_items === 'object'
     ? trace.conflict_review_items
@@ -161,6 +169,37 @@ function dedupeTraceLinks(links) {
   return deduped.slice(0, 8);
 }
 
+function savedSimulationsFromTrace(trace = {}) {
+  const planId = String(trace.plan_id || '').trim();
+  const items = [];
+  const singleId = String(trace.saved_simulation_id || '').trim();
+  if (singleId) {
+    items.push({ id: singleId, planId, title: String(trace.saved_simulation_title || '').trim() });
+  }
+  const ids = Array.isArray(trace.saved_simulation_ids) ? trace.saved_simulation_ids : [];
+  for (const id of ids) {
+    const cleanId = String(id || '').trim();
+    if (cleanId) items.push({ id: cleanId, planId, title: '' });
+  }
+  const simulations = Array.isArray(trace.saved_simulations) ? trace.saved_simulations : [];
+  for (const simulation of simulations) {
+    const cleanId = String(simulation?.id || simulation?.saved_simulation_id || '').trim();
+    if (!cleanId) continue;
+    items.push({
+      id: cleanId,
+      planId: String(simulation?.plan_id || planId).trim(),
+      title: String(simulation?.title || '').trim(),
+    });
+  }
+  const seen = new Set();
+  return items.filter(item => {
+    const key = `${item.planId}|${item.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 3);
+}
+
 function humanTraceLabel(value) {
   const text = String(value || '').replace(/[_-]+/g, ' ').trim();
   if (!text) return 'context';
@@ -193,6 +232,9 @@ function renderToolTrace(t) {
   }
   if (isPlanScenarioDiffTrace(t)) {
     return renderPlanScenarioDiffCard(t.result);
+  }
+  if (isSavedSimulationTrace(t)) {
+    return renderSavedSimulationTraceCard(t.result, t.name);
   }
   return html`
     <details class="tool-trace">
@@ -239,6 +281,76 @@ function isPlanScenarioDiffTrace(trace) {
   return trace?.name === 'run_plan_scenario_diff'
     && trace?.result?.plan_id
     && Array.isArray(trace?.result?.scenario_deltas);
+}
+
+function isSavedSimulationTrace(trace) {
+  return [
+    'list_plan_saved_simulations',
+    'get_plan_saved_simulation',
+    'compare_plan_saved_simulation_current',
+  ].includes(trace?.name)
+    && trace?.result;
+}
+
+function renderSavedSimulationTraceCard(result = {}, traceName = '') {
+  const simulations = Array.isArray(result.simulations)
+    ? result.simulations.slice(0, 4)
+    : [];
+  const saved = result.saved_simulation && typeof result.saved_simulation === 'object'
+    ? result.saved_simulation
+    : {};
+  const savedSimulationId = String(result.saved_simulation_id || saved.id || '').trim();
+  const planId = String(result.plan_id || saved.plan_id || '').trim();
+  const differences = Array.isArray(result.setting_differences)
+    ? result.setting_differences.slice(0, 3)
+    : [];
+  const title = String(saved.title || result.title || savedSimulationId || 'Saved Simulation').trim();
+  const summary = String(result.summary || saved.summary || '').trim();
+  return html`
+    <article class="investment-fit-card plan-review-card">
+      <div class="investment-fit-head">
+        <div>
+          <p class="profile-draft-eyebrow">${traceName === 'list_plan_saved_simulations' ? 'Saved simulations' : 'Saved Simulation'}</p>
+          <p class="investment-fit-title">${simulations.length ? 'Saved experiments' : title}</p>
+        </div>
+        ${result.changed_since_saved === true ? html`<p class="investment-fit-score">Needs rerun</p>` : ''}
+      </div>
+      ${summary ? html`<p class="profile-draft-summary">${summary}</p>` : ''}
+      ${simulations.length ? html`
+        <div class="profile-draft-section investment-fit-section">
+          <p class="profile-draft-section-title">Recent saved simulations</p>
+          <ul>
+            ${simulations.map(simulation => {
+              const id = String(simulation?.id || '').trim();
+              return html`
+                <li>
+                  <a href="${savedSimulationHref(planId || simulation?.plan_id, id)}">${simulation?.title || id || 'Saved Simulation'}</a>
+                  ${simulation?.summary ? html`<span> - ${simulation.summary}</span>` : ''}
+                </li>
+              `;
+            })}
+          </ul>
+        </div>
+      ` : ''}
+      ${differences.length ? html`
+        <div class="profile-draft-section investment-fit-section">
+          <p class="profile-draft-section-title">What changed</p>
+          <ul>
+            ${differences.map(diff => html`
+              <li>${diff?.label || diff?.field || 'Setting'} moved from ${diff?.saved_value ?? 'saved value'} to ${diff?.current_value ?? 'current value'}</li>
+            `)}
+          </ul>
+        </div>
+      ` : ''}
+      ${savedSimulationId ? html`
+        <div class="entry-actions">
+          <a class="action-link" href="${savedSimulationHref(planId, savedSimulationId)}">
+            Open Saved Simulation <span class="arrow">→</span>
+          </a>
+        </div>
+      ` : ''}
+    </article>
+  `;
 }
 
 function renderPlanReviewCard(result = {}) {
@@ -904,6 +1016,16 @@ function planSectionHref(planId, section) {
   return id
     ? `#plan?id=${encodeURIComponent(id)}&section=${safeSection}`
     : `#plan?section=${safeSection}`;
+}
+
+function savedSimulationHref(planId, savedSimulationId) {
+  const params = new URLSearchParams();
+  const id = String(planId || '').trim();
+  const savedId = String(savedSimulationId || '').trim();
+  if (id) params.set('id', id);
+  params.set('section', 'scenarios');
+  if (savedId) params.set('saved', savedId);
+  return `#plan?${params.toString()}`;
 }
 
 function formatScenarioDelta(delta = {}) {

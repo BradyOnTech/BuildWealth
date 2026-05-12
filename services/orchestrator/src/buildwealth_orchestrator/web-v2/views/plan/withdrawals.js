@@ -174,6 +174,11 @@ function renderStrategyExplanation(explanation = {}) {
   const payload = objectValue(explanation);
   const drivers = Array.isArray(payload.drivers) ? payload.drivers : [];
   const tradeoffs = Array.isArray(payload.tradeoffs) ? payload.tradeoffs.filter(Boolean) : [];
+  const diagnostics = Array.isArray(payload.diagnostics) ? payload.diagnostics : [];
+  const contributionOrdering = Array.isArray(payload.contribution_ordering)
+    ? payload.contribution_ordering.filter(Boolean)
+    : [];
+  const reviewLevel = objectValue(payload.review_level);
   if (!Object.keys(payload).length) return '';
   return html`
     <article class="simulation-explainer">
@@ -194,12 +199,41 @@ function renderStrategyExplanation(explanation = {}) {
           `).join(''))}
         </div>
       ` : ''}
+      ${diagnostics.length ? html`
+        <details class="simulation-trace" open>
+          <summary>Diagnostics</summary>
+          <ul>
+            ${raw(diagnostics.slice(0, 6).map(item => html`
+              <li>${esc(item.label)}: ${esc(item.summary)}${item.level ? html` (${esc(item.level)} review)` : ''}</li>
+            `).join(''))}
+          </ul>
+        </details>
+      ` : ''}
+      ${contributionOrdering.length ? html`
+        <details class="simulation-trace">
+          <summary>Contribution ordering</summary>
+          <ul>
+            ${raw(contributionOrdering.slice(0, 4).map(item => html`<li>${esc(item)}</li>`).join(''))}
+          </ul>
+        </details>
+      ` : ''}
       ${tradeoffs.length ? html`
         <details class="simulation-trace">
           <summary>Trade-offs</summary>
           <ul>
             ${raw(tradeoffs.slice(0, 5).map(item => html`<li>${esc(item)}</li>`).join(''))}
           </ul>
+        </details>
+      ` : ''}
+      ${Object.keys(reviewLevel).length ? html`
+        <details class="simulation-trace">
+          <summary>Review level</summary>
+          <p>${esc(reviewLevel.summary || 'Review this before changing the active strategy.')}</p>
+          ${Array.isArray(reviewLevel.reasons) && reviewLevel.reasons.length ? html`
+            <ul>
+              ${raw(reviewLevel.reasons.slice(0, 5).map(item => html`<li>${esc(item)}</li>`).join(''))}
+            </ul>
+          ` : ''}
         </details>
       ` : ''}
     </article>

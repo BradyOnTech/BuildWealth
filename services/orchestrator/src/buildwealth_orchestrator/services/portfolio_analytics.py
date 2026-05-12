@@ -29,10 +29,10 @@ def _sanitize_warning(value: Any) -> str:
     if "BuildWealth native analytics uses local" in text:
         return ""
     replacements = {
-        "Ghostfolio benchmark sidecar": "Benchmark service",
-        "Ghostfolio attribution sidecar": "Attribution service",
-        "Ghostfolio benchmark": "Benchmark service",
-        "Ghostfolio attribution": "Attribution service",
+        "Portfolio benchmark sidecar": "Benchmark service",
+        "Portfolio attribution sidecar": "Attribution service",
+        "Portfolio benchmark": "Benchmark service",
+        "Portfolio attribution": "Attribution service",
         "ghostfolio": "analytics",
         "sidecar": "adapter",
     }
@@ -59,10 +59,34 @@ def _performance_payload(holdings_payload: dict[str, Any]) -> dict[str, Any]:
         "gross_contributions": _safe_float(performance.get("gross_contributions")),
         "price_return_usd": _safe_float(performance.get("price_return_usd")),
         "income_return_usd": _safe_float(performance.get("income_return_usd")),
+        "realized_gains_usd": _safe_float(performance.get("realized_gains_usd")),
+        "income_received_usd": _safe_float(performance.get("income_received_usd")),
+        "fees_paid_usd": _safe_float(performance.get("fees_paid_usd")),
         "total_return_usd": _safe_float(performance.get("total_return_usd")),
         "twr_return_pct": _safe_float(performance.get("twr_return_pct")),
         "twr_annualized_return_pct": _safe_float(performance.get("twr_annualized_return_pct")),
         "xirr_annualized_return_pct": _safe_float(performance.get("xirr_annualized_return_pct")),
+    }
+
+
+def _period_payload(period: str, limit: int) -> dict[str, Any]:
+    labels = {
+        "today": "Today",
+        "wtd": "WTD",
+        "mtd": "MTD",
+        "ytd": "YTD",
+        "1y": "1Y",
+        "5y": "5Y",
+        "max": "Max",
+    }
+    normalized = str(period or "1y").strip().lower()
+    if normalized not in labels:
+        normalized = "1y"
+    return {
+        "id": normalized,
+        "label": labels[normalized],
+        "snapshot_limit": int(limit),
+        "options": [{"id": key, "label": value} for key, value in labels.items()],
     }
 
 
@@ -168,6 +192,88 @@ def _position_rows(raw_rows: Any) -> list[dict[str, Any]]:
     return normalized
 
 
+def _risk_explanations(holdings_payload: dict[str, Any]) -> dict[str, Any]:
+    risk = holdings_payload.get("risk_alerts") if isinstance(holdings_payload.get("risk_alerts"), dict) else {}
+    metrics = risk.get("metrics") if isinstance(risk.get("metrics"), dict) else {}
+    alerts = risk.get("alerts") if isinstance(risk.get("alerts"), list) else []
+    breakdowns = holdings_payload.get("allocation_breakdowns") if isinstance(holdings_payload.get("allocation_breakdowns"), dict) else {}
+
+    rows = [
+        _risk_row(
+            key="concentration",
+            label="Largest holding",
+            value=metrics.get("top_holding_pct"),
+            context=metrics.get("top_holding_symbol"),
+            plain="One investment is taking up this share of the portfolio.",
+        ),
+        _risk_row(
+            key="account",
+            label="Largest account",
+            value=metrics.get("largest_account_pct"),
+            context=metrics.get("largest_account_id"),
+            plain="One account holds this share of total account value.",
+        ),
+        _risk_row(
+            key="allocation",
+            label="Largest investment type",
+            value=metrics.get("largest_asset_class_pct"),
+            context=metrics.get("largest_asset_class"),
+            plain="One broad investment type is carrying this share.",
+        ),
+        _risk_row(
+            key="sector",
+            label="Largest sector",
+            value=metrics.get("largest_sector_pct"),
+            context=metrics.get("largest_sector"),
+            plain="One business sector is carrying this share.",
+        ),
+        _risk_row(
+            key="region",
+            label="Largest region",
+            value=metrics.get("largest_region_pct"),
+            context=metrics.get("largest_region"),
+            plain="One country or region is carrying this share.",
+        ),
+        {
+            "key": "spread",
+            "label": "Portfolio spread",
+            "value": _safe_float(metrics.get("effective_positions")),
+            "context": "effective positions",
+            "plain": "A higher number means risk is spread across more meaningful positions.",
+            "state": _alert_state(alerts, "effective_positions"),
+        },
+    ]
+    return {
+        "status": risk.get("status") or "unknown",
+        "breach_count": int(risk.get("breach_count") or 0),
+        "watch_count": int(risk.get("watch_count") or 0),
+        "rows": [row for row in rows if row.get("value") is not None],
+        "alerts": alerts[:8],
+        "breakdowns": {
+            key: value[:6] if isinstance(value, list) else []
+            for key, value in breakdowns.items()
+            if key in {"asset_class", "sector", "region"}
+        },
+    }
+
+
+def _risk_row(*, key: str, label: str, value: Any, context: Any, plain: str) -> dict[str, Any]:
+    return {
+        "key": key,
+        "label": label,
+        "value": _safe_float(value),
+        "context": str(context or "").strip(),
+        "plain": plain,
+    }
+
+
+def _alert_state(alerts: list[Any], metric: str) -> str:
+    for alert in alerts:
+        if isinstance(alert, dict) and alert.get("metric") == metric:
+            return str(alert.get("state") or "")
+    return ""
+
+
 def build_portfolio_analytics_payload(
     *,
     holdings_payload: dict[str, Any],
@@ -175,6 +281,8 @@ def build_portfolio_analytics_payload(
     benchmark_error: str = "",
     attribution_response: Any = None,
     attribution_error: str = "",
+    period: str = "1y",
+    snapshot_limit: int = 180,
     generated_at: str | None = None,
 ) -> dict[str, Any]:
     benchmark = _benchmark_payload(benchmark_response, benchmark_error)
@@ -188,8 +296,10 @@ def build_portfolio_analytics_payload(
     return {
         "generated_at": generated_at or _utc_now_iso(),
         "status": status,
+        "period": _period_payload(period, snapshot_limit),
         "performance": _performance_payload(holdings_payload),
         "benchmark": benchmark,
         "attribution": attribution,
+        "risk_explanations": _risk_explanations(holdings_payload),
         "warnings": warnings,
     }

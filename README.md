@@ -7,22 +7,14 @@ BuildWealth is a local-first financial command center that combines:
 - Copilot workflows grounded in your own data
 
 The Python orchestrator (`services/orchestrator`) is the system of record.
-Ghostfolio/Ignidash logic is reused through optional, contract-bound sidecars for high-complexity compute domains.
+Portfolio analytics, import review, asset maintenance, and plan simulation run through BuildWealth-owned services and the v2 product surface.
 
-## Standalone Runtime Modes
+## Runtime Mode
 
-1. **Orchestrator only (default)**
+1. **BuildWealth app**
 - Runs BuildWealth as a single local app entrypoint.
 - Uses local calculations and local JSON stores.
-- Does not require Ghostfolio/Ignidash app containers.
-
-2. **Orchestrator + sidecars (optional)**
-- Enables benchmark/attribution/planning sidecar calls through versioned `/v{n}/...` contracts.
-- Sidecars are stateless compute engines; orchestrator still owns all persistence.
-
-3. **Legacy upstream app stack (optional profile)**
-- For upstream reference/debug workflows only.
-- Not required for normal BuildWealth standalone operation.
+- Does not require external financial app containers.
 
 ## Quick Start (Standalone Default)
 
@@ -49,31 +41,11 @@ docker compose -f infra/docker-compose.yml up -d orchestrator
 curl -s -X POST http://localhost:8090/api/snapshot/sync | jq
 ```
 
-## Optional Sidecar Mode
+## Engine Status
 
-1. Start your Ghostfolio/Ignidash sidecar services so they expose:
-- health endpoint(s): `/health` (or configured alternates)
-- version endpoint: `/version` returning `contract_version`
-- versioned API paths: `/v1/...`
-
-2. Set `infra/env/orchestrator.env`:
-- `ENABLE_GHOSTFOLIO_BENCHMARK_SIDECAR=true`
-- `ENABLE_GHOSTFOLIO_ATTRIBUTION_SIDECAR=true`
-- `ENABLE_IGNIDASH_SCENARIO_SIDECAR=true`
-- Ensure base URLs and sidecar paths are correct.
-
-3. Restart orchestrator and verify engine state:
+BuildWealth runs standalone by default. Engine status is available for native runtime checks:
 ```bash
 curl -s http://localhost:8090/api/engines/status | jq
-```
-
-Look for `reachable=true` and `contract_compatible=true` for enabled engines.
-
-## Optional Legacy Upstream App Profile
-
-Start the full Ghostfolio/Ignidash app containers only when needed:
-```bash
-docker compose -f infra/docker-compose.yml --profile legacy-upstream up -d
 ```
 
 ## Key API Endpoints
@@ -136,7 +108,6 @@ pytest -q
 ```bash
 make init-env
 make up
-make up-legacy
 make ps
 make logs
 make sync

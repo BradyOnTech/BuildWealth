@@ -37,6 +37,9 @@ def test_withdrawal_strategy_explainer_recommends_consistent_winner() -> None:
     assert "Dynamic Guardrails has the strongest overall result" in explanation["summary"]
     assert any(driver["label"] == "Highest ending value" for driver in explanation["drivers"])
     assert any("4% Rule projects $20,000 less in taxes" in item for item in explanation["tradeoffs"])
+    assert any(item["key"] == "tax_drag" for item in explanation["diagnostics"])
+    assert explanation["contribution_ordering"][0].startswith("Before choosing a drawdown strategy")
+    assert explanation["review_level"]["level"] == "low"
 
 
 def test_withdrawal_strategy_explainer_surfaces_warnings_and_depletion() -> None:
@@ -65,3 +68,5 @@ def test_withdrawal_strategy_explainer_surfaces_warnings_and_depletion() -> None
     assert "Provider fallback used." in explanation["warnings"]
     assert any("runs out of money" in item for item in explanation["tradeoffs"])
     assert any("lower-confidence model" in item for item in explanation["tradeoffs"])
+    assert any(item["key"] == "account_exhaustion" for item in explanation["diagnostics"])
+    assert explanation["review_level"]["level"] == "high"

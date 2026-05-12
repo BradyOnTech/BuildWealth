@@ -136,7 +136,7 @@ class GhostfolioAttributionResponseV1(BaseModel):
     generated_at: datetime | None = None
 
 
-class GhostfolioAttributionService:
+class BuildWealthAttributionService:
     def __init__(
         self,
         *,
@@ -161,7 +161,7 @@ class GhostfolioAttributionService:
         request_payload = self._build_request_payload(top_n=top_n)
 
         disposition = resolve_engine_call_disposition(
-            engine_label="Ghostfolio attribution",
+            engine_label="Portfolio attribution",
             sidecar_enabled=self.sidecar_enabled,
             sidecar_adapter=self.sidecar_adapter,
             sidecar_guard_reason=sidecar_guard_reason,
@@ -172,7 +172,7 @@ class GhostfolioAttributionService:
             fallback = self._compute_local_fallback(
                 request_payload,
                 fallback_method=disposition.fallback_method or FALLBACK_METHOD_SIDECAR_DISABLED,
-                warning=disposition.warning or "Ghostfolio attribution sidecar disabled; using local fallback",
+                warning=disposition.warning or "Portfolio attribution sidecar disabled; using local fallback",
             )
             return self._to_api_response(request_payload, fallback)
 
@@ -190,7 +190,7 @@ class GhostfolioAttributionService:
                     request_payload,
                     fallback_method="local_attribution_fallback",
                     warning=sidecar_unavailable_warning(
-                        engine_label="Ghostfolio attribution",
+                        engine_label="Portfolio attribution",
                         error=exc,
                     ),
                 )
@@ -199,7 +199,7 @@ class GhostfolioAttributionService:
         fallback = self._compute_local_fallback(
             request_payload,
             fallback_method=FALLBACK_METHOD_SIDECAR_DISABLED,
-            warning="Ghostfolio attribution sidecar adapter unavailable; using local fallback",
+            warning="Portfolio attribution sidecar adapter unavailable; using local fallback",
         )
         return self._to_api_response(request_payload, fallback)
 

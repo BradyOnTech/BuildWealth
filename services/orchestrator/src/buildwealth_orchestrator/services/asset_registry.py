@@ -134,6 +134,14 @@ class AssetRegistry:
         held = bool(holding)
         watchlisted = bool(watchlist_item)
         custom = bool(merged.get("is_custom_asset")) or str(merged.get("data_source") or "").upper() == "MANUAL"
+        provenance = self._provenance(
+            inferred=inferred,
+            metadata=metadata,
+            holding=holding,
+            manual_price=manual_price,
+            watchlist_item=watchlist_item,
+            custom=custom,
+        )
         tags = [
             label
             for label, enabled in (
@@ -165,6 +173,8 @@ class AssetRegistry:
             "accounts": holding.get("accounts") if isinstance(holding.get("accounts"), list) else [],
             "price_source": _clean_text(holding.get("price_source")) or ("MANUAL" if manual_price else None),
             "valuation_method": _clean_text(merged.get("valuation_method")) or None,
+            "manual_price_detail": dict(manual_price) if manual_price else {},
+            "provenance": provenance,
             "tags": tags,
             "quality_status": quality["status"],
             "quality_label": quality["label"],
@@ -218,6 +228,61 @@ class AssetRegistry:
             status = "ready"
             label = "Ready"
         return {"status": status, "label": label, "reasons": reasons}
+
+    @staticmethod
+    def _provenance(
+        *,
+        inferred: dict[str, Any],
+        metadata: dict[str, Any],
+        holding: dict[str, Any],
+        manual_price: dict[str, Any],
+        watchlist_item: dict[str, Any],
+        custom: bool,
+    ) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        if inferred:
+            items.append(
+                {
+                    "source": "seeded",
+                    "label": "BuildWealth seed",
+                    "detail": "Matched from the built-in asset metadata seed.",
+                }
+            )
+        if metadata:
+            source = str(metadata.get("metadata_source") or metadata.get("data_source") or "").upper()
+            items.append(
+                {
+                    "source": "manual" if custom or source in {"MANUAL", "USER"} else "metadata",
+                    "label": "Manual metadata" if custom or source in {"MANUAL", "USER"} else "Saved metadata",
+                    "detail": "Saved in the local asset registry.",
+                }
+            )
+        if holding:
+            items.append(
+                {
+                    "source": "portfolio",
+                    "label": "Portfolio holding",
+                    "detail": "Present in current holdings or imported portfolio history.",
+                }
+            )
+        if manual_price:
+            items.append(
+                {
+                    "source": "manual_price",
+                    "label": "Manual price",
+                    "detail": str(manual_price.get("note") or "Local price override is active."),
+                    "updated_at": manual_price.get("updated_at"),
+                }
+            )
+        if watchlist_item:
+            items.append(
+                {
+                    "source": "watchlist",
+                    "label": "Research watchlist",
+                    "detail": str(watchlist_item.get("note") or watchlist_item.get("thesis") or "Saved on the watchlist."),
+                }
+            )
+        return items
 
     @staticmethod
     def _matches(item: dict[str, Any], query: str) -> bool:

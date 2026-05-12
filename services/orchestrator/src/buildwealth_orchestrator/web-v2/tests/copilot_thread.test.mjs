@@ -280,6 +280,8 @@ test('copilot thread renders compact context-use trace links', () => {
       metadata: {
         context_trace: {
           plan_id: 'plan-1',
+          saved_simulation_id: 'saved-simulation-1',
+          saved_simulation_title: 'Early retirement simulation',
           symbols: ['NVDA'],
           retrieval: {
             returned_count: 4,
@@ -314,8 +316,10 @@ test('copilot thread renders compact context-use trace links', () => {
   ]));
 
   assert.match(html, /Context used/);
-  assert.match(html, /plan scoped · 1 symbol · 4 retrieved · 2 citations · 1 capture · 1 context issue/);
+  assert.match(html, /plan scoped · 1 saved simulation · 1 symbol · 4 retrieved · 2 citations · 1 capture · 1 context issue/);
   assert.match(html, /href="#plan\?id=plan-1"/);
+  assert.match(html, /href="#plan\?id=plan-1&amp;section=scenarios&amp;saved=saved-simulation-1"/);
+  assert.match(html, /Early retirement simulation/);
   assert.match(html, /href="#portfolio\?fit=NVDA"/);
   assert.match(html, /href="#research\?symbol=NVDA"/);
   assert.match(html, /href="#inbox\?focus=rec-conflict"/);
@@ -455,6 +459,50 @@ test('copilot thread renders plan simulation trace cards', () => {
   assert.match(html, /Contribution rule coverage is partial\./);
   assert.match(html, /href="#plan\?id=plan-1&amp;section=scenarios"/);
   assert.doesNotMatch(html, /"scenario_deltas"/);
+});
+
+test('copilot thread renders saved simulation trace cards', () => {
+  const html = String(renderThread([
+    {
+      role: 'assistant',
+      content: 'I checked that saved simulation.',
+      created_at: '2026-04-26T12:00:00.000Z',
+      metadata: {
+        tool_calls: [
+          {
+            name: 'compare_plan_saved_simulation_current',
+            arguments: { plan_id: 'plan-1', saved_simulation_id: 'saved-simulation-1' },
+            result: {
+              plan_id: 'plan-1',
+              saved_simulation_id: 'saved-simulation-1',
+              summary: 'This saved simulation was run against older assumptions.',
+              changed_since_saved: true,
+              setting_differences: [
+                {
+                  field: 'annual_contribution_usd',
+                  label: 'Annual contribution',
+                  saved_value: '$20,000',
+                  current_value: '$24,000',
+                },
+              ],
+              saved_simulation: {
+                id: 'saved-simulation-1',
+                title: 'Early retirement',
+              },
+            },
+          },
+        ],
+      },
+    },
+  ]));
+
+  assert.match(html, /Saved Simulation/);
+  assert.match(html, /Early retirement/);
+  assert.match(html, /Needs rerun/);
+  assert.match(html, /This saved simulation was run against older assumptions\./);
+  assert.match(html, /Annual contribution moved from \$20,000 to \$24,000/);
+  assert.match(html, /href="#plan\?id=plan-1&amp;section=scenarios&amp;saved=saved-simulation-1"/);
+  assert.doesNotMatch(html, /"setting_differences"/);
 });
 
 test('copilot thread renders watchlist thesis revision draft cards', () => {

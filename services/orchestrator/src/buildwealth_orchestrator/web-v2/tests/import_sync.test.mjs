@@ -16,6 +16,11 @@ test('import review page is native v2 copy without fallback handoff language', (
   assert.match(source, /Import reports/);
   assert.match(source, /Inbox review/);
   assert.match(source, /Sent to Inbox/);
+  assert.match(source, /Resolve before apply/);
+  assert.match(source, /Review in Investments & Assets/);
+  assert.match(source, /Mapping confidence/);
+  assert.match(source, /focusReportId/);
+  assert.match(source, /Open saved import report/);
   assert.doesNotMatch(source, /classic/i);
   assert.doesNotMatch(source, /handoff/i);
 });

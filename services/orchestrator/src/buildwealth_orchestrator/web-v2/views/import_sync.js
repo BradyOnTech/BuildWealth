@@ -32,6 +32,7 @@ const ui = {
   selectedReport: null,
   reportLoading:  false,
   reportError:    null,
+  focusReportId:  null,
 };
 
 export function template() {
@@ -44,9 +45,11 @@ export function template() {
   `;
 }
 
-export async function init() {
+export async function init(params = {}) {
+  ui.focusReportId = String(params.report || '').trim() || null;
   attachHandlers();
   await load();
+  if (ui.focusReportId) await openReport(ui.focusReportId);
 }
 
 async function load() {
@@ -184,7 +187,9 @@ function previewPanel(preview) {
           <p class="settings-eyebrow">Preview ready</p>
           <h3 class="import-preview-title">${esc(preview.source_file?.name || 'Uploaded file')}</h3>
           <p class="settings-card-lede">
-            Parser confidence is ${esc(confidenceLabel(summary.parser_confidence_flag))}.
+            Parser confidence is ${esc(confidenceLabel(summary.parser_confidence_flag))}
+            (${esc(confidencePercent(summary.parser_confidence_score))}).
+            Template: ${esc(templateLabel(response.selected_template, response.detected_template))}.
             Review unresolved rows before relying on the import.
           </p>
         </div>
@@ -199,11 +204,13 @@ function previewPanel(preview) {
         ${raw(metricTile('Changed while reading', summary.normalized_count, summary.normalized_count ? 'proposed' : 'archived'))}
         ${raw(metricTile('Duplicates', summary.duplicate_count, summary.duplicate_count ? 'archived' : 'applied'))}
         ${raw(metricTile('Need review', summary.unresolved_count, summary.unresolved_count ? 'rejected' : 'applied'))}
+        ${raw(metricTile('Asset review', summary.asset_review_count, summary.asset_review_count ? 'rejected' : 'applied'))}
         ${raw(metricTile('Account review', summary.account_review_count, summary.account_review_count ? 'proposed' : 'applied'))}
       </div>
 
       ${raw(messageList('Warnings', response.warnings || []))}
       ${raw(messageList('Errors', response.errors || []))}
+      ${raw(previewReviewRoutes(preview))}
       ${raw(rowTable('Rows ready to apply', report.accepted_rows || [], 'No rows are ready yet.'))}
       ${raw(rowTable('Rows BuildWealth adjusted', report.normalized_rows || [], 'No rows needed normalization.'))}
       ${raw(rowTable('Rows that need review', report.rejected_rows || [], 'No unresolved rows found.'))}
@@ -243,6 +250,9 @@ function applyResultPanel(result) {
         ${raw(metricTile('Inbox review', reviewItemCount, reviewItemCount ? 'proposed' : 'applied'))}
         ${raw(metricTile('Report', report.report_id || 'Saved', 'archived'))}
       </div>
+      ${report?.affected_links?.import_report ? html`
+        <a class="link-editorial" href="${esc(report.affected_links.import_report)}">Open saved import report</a>
+      ` : ''}
     </div>
   `;
 }
@@ -285,9 +295,9 @@ function reportListItem(report) {
         ${created ? ` · ${esc(created)}` : ''}
       </span>
       <code>${esc(report.report_id || '')}</code>
-      <button class="btn btn-quiet" type="button" data-import-report-id="${esc(report.report_id || '')}">
+      <a class="action-link muted" href="#import-sync?report=${encodeURIComponent(report.report_id || '')}">
         Open report
-      </button>
+      </a>
     </li>
   `;
 }
@@ -306,6 +316,7 @@ function reportDetailPanel(report) {
           <p class="settings-card-lede">
             Applied ${Number(report.imported_activities || 0).toLocaleString('en-US')} activities.
             Kept ${Number(summary.unresolved_count || 0).toLocaleString('en-US')} rows visible for review.
+            Template: ${esc(templateLabel(report.selected_template, report.detected_template))}.
           </p>
         </div>
         <button class="btn btn-quiet" type="button" id="import-report-close">Close</button>
@@ -318,6 +329,7 @@ function reportDetailPanel(report) {
         ${raw(metricTile('Account review', summary.account_review_count, summary.account_review_count ? 'proposed' : 'applied'))}
         ${raw(metricTile('Inbox review', reviewItemCount, reviewItemCount ? 'proposed' : 'applied'))}
         ${raw(metricTile('Confidence', confidenceLabel(summary.parser_confidence_flag), toneForConfidence(summary.parser_confidence_flag)))}
+        ${raw(metricTile('Confidence score', confidencePercent(summary.parser_confidence_score), toneForConfidence(summary.parser_confidence_flag)))}
       </div>
       ${raw(messageList('Warnings', report.warnings || []))}
       ${raw(messageList('Errors', report.errors || []))}
@@ -344,6 +356,33 @@ function reviewItemsList(items) {
             <span class="status-pill proposed"><span class="dot"></span>Review</span>
             <strong>${esc(item.title || 'Import review item')}</strong>
             <p>${esc(item.detail || '')}</p>
+            ${reviewItemHref(item) ? `<a class="action-link muted" href="${esc(reviewItemHref(item))}">${esc(reviewItemLabel(item))}</a>` : ''}
+          </article>
+        `).join(''))}
+      </div>
+    </section>
+  `;
+}
+
+function previewReviewRoutes(preview) {
+  const items = Array.isArray(preview?.review_items) ? preview.review_items : [];
+  if (!items.length) return '';
+  return html`
+    <section class="import-row-section import-review-before-apply">
+      <div class="import-row-section-head">
+        <h4>Resolve before apply</h4>
+        <span>${items.length.toLocaleString('en-US')}</span>
+      </div>
+      <p class="settings-card-lede">
+        BuildWealth keeps these rows out of Portfolio History until the investment or account is clear.
+      </p>
+      <div class="import-review-item-list">
+        ${raw(items.slice(0, 8).map(item => `
+          <article class="import-review-item">
+            <span class="status-pill ${reviewItemTone(item)}"><span class="dot"></span>${esc(reviewItemKindLabel(item))}</span>
+            <strong>${esc(item.title || 'Import row needs review')}</strong>
+            <p>${esc(item.detail || '')}</p>
+            ${reviewItemHref(item) ? `<a class="action-link muted" href="${esc(reviewItemHref(item))}">${esc(reviewItemLabel(item))}</a>` : ''}
           </article>
         `).join(''))}
       </div>
@@ -451,8 +490,12 @@ function templatesCard() {
               <li class="import-template">
                 <span class="import-template-name">${esc(t.name || t.id || 'template')}</span>
                 ${t.description ? `<span class="import-template-desc">${esc(t.description)}</span>` : ''}
-                ${Array.isArray(t.columns)
-                  ? `<code class="import-template-cols">${esc(t.columns.join(', '))}</code>`
+                <span class="status-pill archived"><span class="dot"></span>Mapping confidence: ${esc(templateConfidenceLabel(t.mapping_confidence))}</span>
+                ${Array.isArray(t.required_columns) && t.required_columns.length
+                  ? `<code class="import-template-cols">Needs ${esc(t.required_columns.join(', '))}</code>`
+                  : ''}
+                ${Array.isArray(t.optional_columns) && t.optional_columns.length
+                  ? `<code class="import-template-cols">Can use ${esc(t.optional_columns.slice(0, 5).join(', '))}</code>`
                   : ''}
               </li>
             `).join(''))}
@@ -666,6 +709,60 @@ function confidenceLabel(value) {
   if (v === 'high') return 'High confidence';
   if (v === 'medium') return 'Medium confidence';
   return 'Low confidence';
+}
+
+function confidencePercent(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return '0%';
+  return `${Math.round(Math.min(1, Math.max(0, n)) * 100)}%`;
+}
+
+function templateLabel(selected, detected) {
+  const chosen = humanText(selected || 'auto');
+  const found = humanText(detected || selected || 'generic');
+  if (!selected || selected === detected) return found || 'Generic';
+  return `${chosen} selected, ${found} detected`;
+}
+
+function templateConfidenceLabel(value) {
+  const v = String(value || '').toLowerCase();
+  if (v === 'auto') return 'Auto detect';
+  if (v === 'flexible') return 'Flexible';
+  return 'Known template';
+}
+
+function reviewItemPayload(item) {
+  return item && typeof item.action_payload === 'object' ? item.action_payload : {};
+}
+
+function reviewItemHref(item) {
+  const payload = reviewItemPayload(item);
+  const route = payload.review_route && typeof payload.review_route === 'object' ? payload.review_route : {};
+  if (route.route !== 'portfolio') return '';
+  const params = new URLSearchParams();
+  params.set('section', route.target || 'assets');
+  if (payload.report_id) params.set('import_report', payload.report_id);
+  if (payload.session_id) params.set('import_session', payload.session_id);
+  if (payload.symbol) params.set('symbol', payload.symbol);
+  if (payload.account_name) params.set('account', payload.account_name);
+  return `#portfolio?${params.toString()}`;
+}
+
+function reviewItemLabel(item) {
+  const payload = reviewItemPayload(item);
+  const route = payload.review_route && typeof payload.review_route === 'object' ? payload.review_route : {};
+  if (route.target === 'accounts') return 'Review in Portfolio Accounts';
+  return 'Review in Investments & Assets';
+}
+
+function reviewItemKindLabel(item) {
+  const payload = reviewItemPayload(item);
+  return payload.kind === 'portfolio_account_review_item' ? 'Account review' : 'Asset review';
+}
+
+function reviewItemTone(item) {
+  const payload = reviewItemPayload(item);
+  return payload.kind === 'portfolio_account_review_item' ? 'proposed' : 'rejected';
 }
 
 function toneForConfidence(value) {

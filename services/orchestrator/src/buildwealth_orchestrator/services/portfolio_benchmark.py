@@ -97,7 +97,7 @@ class GhostfolioBenchmarkResponseV1(BaseModel):
     generated_at: datetime | None = None
 
 
-class GhostfolioBenchmarkService:
+class BuildWealthBenchmarkService:
     def __init__(
         self,
         *,
@@ -128,7 +128,7 @@ class GhostfolioBenchmarkService:
         )
 
         disposition = resolve_engine_call_disposition(
-            engine_label="Ghostfolio benchmark",
+            engine_label="Portfolio benchmark",
             sidecar_enabled=self.sidecar_enabled,
             sidecar_adapter=self.sidecar_adapter,
             sidecar_guard_reason=sidecar_guard_reason,
@@ -139,7 +139,7 @@ class GhostfolioBenchmarkService:
             fallback = self._compute_local_fallback(
                 request_payload,
                 fallback_method=disposition.fallback_method or FALLBACK_METHOD_SIDECAR_DISABLED,
-                warning=disposition.warning or "Ghostfolio benchmark sidecar disabled; using local fallback",
+                warning=disposition.warning or "Portfolio benchmark sidecar disabled; using local fallback",
             )
             return self._to_api_response(request_payload, fallback)
 
@@ -157,7 +157,7 @@ class GhostfolioBenchmarkService:
                     request_payload,
                     fallback_method="local_benchmark_fallback",
                     warning=sidecar_unavailable_warning(
-                        engine_label="Ghostfolio benchmark",
+                        engine_label="Portfolio benchmark",
                         error=exc,
                     ),
                 )
@@ -166,7 +166,7 @@ class GhostfolioBenchmarkService:
         fallback = self._compute_local_fallback(
             request_payload,
             fallback_method=FALLBACK_METHOD_SIDECAR_DISABLED,
-            warning="Ghostfolio benchmark sidecar adapter unavailable; using local fallback",
+            warning="Portfolio benchmark sidecar adapter unavailable; using local fallback",
         )
         return self._to_api_response(request_payload, fallback)
 

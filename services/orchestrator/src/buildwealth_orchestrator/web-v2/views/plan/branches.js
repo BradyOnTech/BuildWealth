@@ -247,7 +247,7 @@ function renderDeltaRow(row = {}) {
 
 function renderMetricBlock(title, metrics = {}) {
   const rows = Object.entries(metrics)
-    .filter(([, value]) => value != null && value !== '')
+    .filter(([, value]) => isDisplayableMetricValue(value))
     .slice(0, 6);
   if (!rows.length) return '';
   return html`
@@ -303,6 +303,8 @@ function formatCompareValue(field, value) {
 }
 
 function formatMetricValue(key, value) {
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'string') return value.replace(/_/g, ' ');
   const numeric = Number(value);
   if (Number.isFinite(numeric)) {
     if (String(key).includes('probability') || String(key).includes('rate')) {
@@ -312,8 +314,14 @@ function formatMetricValue(key, value) {
       return fmtUsdSigned(numeric);
     }
   }
-  if (typeof value === 'string') return value.replace(/_/g, ' ');
   return String(value);
+}
+
+function isDisplayableMetricValue(value) {
+  if (value == null || value === '') return false;
+  if (Array.isArray(value)) return false;
+  if (typeof value === 'object') return false;
+  return true;
 }
 
 function draftValue(key, draft = {}, fallback = '') {

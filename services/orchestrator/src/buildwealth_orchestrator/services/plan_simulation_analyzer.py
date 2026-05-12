@@ -40,6 +40,10 @@ def explain_plan_simulation(
     assumption_traces = _assumption_traces(result, inputs)
     drivers = _drivers(result, baseline, assumption_traces)
     metrics = _metrics(result, baseline)
+    yearly_metrics = _yearly_metrics(result)
+    phase_summaries = _phase_summaries(yearly_metrics, inputs, result)
+    percentile_bands = _percentile_bands(result)
+    field_review_links = _field_review_links(plan_id, assumption_traces, warnings)
     outcome_label = _outcome_label(metrics)
     confidence_level, confidence_reasons = _confidence(
         baseline=baseline,
@@ -60,11 +64,17 @@ def explain_plan_simulation(
         "confidence_level": confidence_level,
         "confidence_reasons": confidence_reasons,
         "metrics": metrics,
+        "yearly_metrics": yearly_metrics,
+        "phase_summaries": phase_summaries,
+        "percentile_bands": percentile_bands,
+        "field_review_links": field_review_links,
         "trace": {
             "source_code": str(source or "simulation"),
             "input_keys": sorted(inputs.keys()),
             "result_sections": sorted(result.keys()),
             "assumption_fields": [row["field"] for row in assumption_traces],
+            "yearly_metric_count": len(yearly_metrics),
+            "phase_count": len(phase_summaries),
         },
     }
 
@@ -101,6 +111,188 @@ def _metrics(result: dict[str, Any], baseline: dict[str, Any] | None) -> dict[st
     if success_delta is not None:
         metrics["success_probability_delta"] = success_delta
     return metrics
+
+
+def _yearly_metrics(result: dict[str, Any]) -> list[dict[str, Any]]:
+    points = _candidate_timeline_points(result)
+    rows: list[dict[str, Any]] = []
+    for point in points:
+        income = _number(point.get("income_usd")) or 0.0
+        social_security = _number(point.get("social_security_income_usd")) or 0.0
+        expenses = _number(point.get("expenses_usd")) or 0.0
+        taxes = _number(point.get("taxes_usd")) or 0.0
+        contributions = _number(point.get("contributions_usd")) or 0.0
+        withdrawals = _number(point.get("withdrawals_usd")) or 0.0
+        rows.append(
+            {
+                "year": int(_number(point.get("year")) or 0),
+                "age": int(_number(point.get("age")) or 0),
+                "starting_balance_usd": _number(point.get("starting_balance_usd")) or 0.0,
+                "ending_balance_usd": _number(point.get("ending_balance_usd")) or 0.0,
+                "ending_balance_real_usd": _number(point.get("ending_balance_real_usd")),
+                "contributions_usd": contributions,
+                "income_usd": income,
+                "social_security_income_usd": social_security,
+                "expenses_usd": expenses,
+                "taxes_usd": taxes,
+                "federal_taxes_usd": _number(point.get("federal_taxes_usd")) or 0.0,
+                "state_taxes_usd": _number(point.get("state_taxes_usd")) or 0.0,
+                "withdrawals_usd": withdrawals,
+                "rmds_usd": _number(point.get("rmds_usd")) or 0.0,
+                "roth_conversions_usd": _number(point.get("roth_conversions_usd")) or 0.0,
+                "growth_usd": _number(point.get("growth_usd")) or 0.0,
+                "net_cash_flow_usd": income + social_security + withdrawals - expenses - taxes - contributions,
+            }
+        )
+    return [row for row in rows if row["year"] > 0]
+
+
+def _candidate_timeline_points(result: dict[str, Any]) -> list[dict[str, Any]]:
+    for section_name in ("candidate_result", "branch_result", "result"):
+        section = _object(result.get(section_name))
+        points = _timeline_points_from_planning_result(section)
+        if points:
+            return points
+    return _timeline_points_from_planning_result(result)
+
+
+def _timeline_points_from_planning_result(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    scenarios = payload.get("scenarios")
+    if not isinstance(scenarios, list):
+        return []
+    scenario_items = [item for item in scenarios if isinstance(item, dict)]
+    if not scenario_items:
+        return []
+    scenario = next(
+        (item for item in scenario_items if str(item.get("label") or "").lower() == "baseline"),
+        scenario_items[0],
+    )
+    points = scenario.get("timeline_points")
+    return [point for point in points if isinstance(point, dict)] if isinstance(points, list) else []
+
+
+def _phase_summaries(
+    yearly_metrics: list[dict[str, Any]],
+    inputs: dict[str, Any],
+    result: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if not yearly_metrics:
+        return []
+    retirement_age = _number(
+        inputs.get("retirement_age")
+        or _object(inputs.get("timeline")).get("target_retirement_age")
+        or _object(result.get("timeline")).get("target_retirement_age")
+        or _infer_retirement_age(yearly_metrics)
+    )
+    phases = [
+        ("accumulation", "Accumulation", lambda row: retirement_age is None or row["age"] < retirement_age),
+        (
+            "transition",
+            "Transition",
+            lambda row: retirement_age is not None and retirement_age <= row["age"] < retirement_age + 5,
+        ),
+        ("retirement", "Retirement", lambda row: retirement_age is not None and row["age"] >= retirement_age + 5),
+    ]
+    summaries: list[dict[str, Any]] = []
+    used: set[int] = set()
+    for key, label, predicate in phases:
+        selected = [
+            (index, row)
+            for index, row in enumerate(yearly_metrics)
+            if index not in used and predicate(row)
+        ]
+        rows = [row for _, row in selected]
+        if not rows:
+            continue
+        for index, _ in selected:
+            used.add(index)
+        summaries.append(_summarize_phase(key, label, rows))
+    remaining = [row for index, row in enumerate(yearly_metrics) if index not in used]
+    if remaining:
+        summaries.append(_summarize_phase("projection", "Projection", remaining))
+    return summaries[:3]
+
+
+def _infer_retirement_age(yearly_metrics: list[dict[str, Any]]) -> int | None:
+    for row in yearly_metrics:
+        if row.get("withdrawals_usd", 0) > 0:
+            return int(row.get("age") or 0) or None
+    return None
+
+
+def _summarize_phase(key: str, label: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    ending = rows[-1]
+    return {
+        "key": key,
+        "label": label,
+        "start_year": rows[0]["year"],
+        "end_year": ending["year"],
+        "start_age": rows[0]["age"],
+        "end_age": ending["age"],
+        "ending_balance_usd": ending["ending_balance_usd"],
+        "total_contributions_usd": round(sum(row.get("contributions_usd", 0.0) for row in rows), 2),
+        "total_withdrawals_usd": round(sum(row.get("withdrawals_usd", 0.0) for row in rows), 2),
+        "total_taxes_usd": round(sum(row.get("taxes_usd", 0.0) for row in rows), 2),
+        "total_rmds_usd": round(sum(row.get("rmds_usd", 0.0) for row in rows), 2),
+        "net_cash_flow_usd": round(sum(row.get("net_cash_flow_usd", 0.0) for row in rows), 2),
+    }
+
+
+def _percentile_bands(result: dict[str, Any]) -> list[dict[str, Any]]:
+    for section_name in ("candidate_result", "branch_result", "result"):
+        section = _object(result.get(section_name))
+        monte = _object(section.get("monte_carlo"))
+        bands = _percentile_rows(monte)
+        if bands:
+            return bands
+    return _percentile_rows(_object(result.get("monte_carlo")))
+
+
+def _percentile_rows(monte: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = []
+    for percentile in ("p10", "p50", "p90"):
+        future = _number(monte.get(f"{percentile}_future_value_usd"))
+        if future is None:
+            continue
+        rows.append(
+            {
+                "percentile": percentile.upper(),
+                "future_value_usd": future,
+                "real_value_usd": _number(monte.get(f"{percentile}_real_value_usd")),
+                "success_probability": _number(monte.get(f"{percentile}_success_probability")),
+            }
+        )
+    return rows
+
+
+def _field_review_links(
+    plan_id: str,
+    assumption_traces: list[dict[str, Any]],
+    warnings: list[str],
+) -> list[dict[str, str]]:
+    fields = {str(trace.get("field") or "").strip() for trace in assumption_traces}
+    for warning in warnings:
+        lowered = warning.lower()
+        if "tax" in lowered:
+            fields.add("marginal_tax_rate")
+            fields.add("state_tax_rate")
+        if "inflation" in lowered:
+            fields.add("inflation_rate")
+        if "contribution" in lowered:
+            fields.add("annual_contribution_usd")
+        if "withdraw" in lowered or "drawdown" in lowered:
+            fields.add("withdrawal_strategy")
+    links = []
+    for field in sorted(field for field in fields if field in PLAN_SIMULATION_FIELD_LABELS):
+        links.append(
+            {
+                "field": field,
+                "label": PLAN_SIMULATION_FIELD_LABELS[field],
+                "href": f"#plan?id={plan_id}&section=assumptions&field={field}",
+                "reason": "Review this assumption before using the simulation for a decision.",
+            }
+        )
+    return links[:6]
 
 
 def _outcome_label(metrics: dict[str, Any]) -> str:

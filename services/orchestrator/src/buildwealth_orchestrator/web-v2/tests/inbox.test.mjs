@@ -115,6 +115,40 @@ test('inbox entries render recommendation quality metadata', () => {
   assert.match(markup, /decision grade/);
 });
 
+test('inbox entries route saved simulation recommendations to Plan and Copilot', () => {
+  const markup = String(renderEntries([
+    {
+      id: 'rec-saved-simulation',
+      status: 'proposed',
+      priority: 'medium',
+      source: 'generator:plan_simulation',
+      recommendation_type: 'workflow_action',
+      plan_id: 'plan-1',
+      title: 'Review early retirement simulation',
+      detail: 'The saved run should be checked before making a decision.',
+      action_payload: {
+        plan_id: 'plan-1',
+        saved_simulation_id: 'saved-simulation-1',
+        saved_simulation_title: 'Early retirement',
+        source: 'scenario_branch',
+        quality: {
+          actionability: 'review_only',
+        },
+      },
+    },
+  ], {
+    planLookup: new Map([['plan-1', 'Retirement Plan']]),
+    expanded: null,
+    emptyMessage: '',
+  }));
+
+  assert.match(markup, /Saved Simulation route/);
+  assert.match(markup, /Early retirement · scenario branch · plan linked/);
+  assert.match(markup, /Open simulation/);
+  assert.match(markup, /href="#plan\?id=plan-1&amp;section=scenarios&amp;saved=saved-simulation-1"/);
+  assert.match(markup, /href="#copilot\?focus=rec-saved-simulation&amp;intent=saved-simulation&amp;plan=plan-1&amp;saved=saved-simulation-1"/);
+});
+
 test('context capture panel routes material profile candidates through source review', () => {
   const markup = String(renderContextCaptures({
     lifecycleState: 'pending_review',

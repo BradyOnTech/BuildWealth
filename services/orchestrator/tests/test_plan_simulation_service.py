@@ -4,7 +4,7 @@ import json
 import httpx
 
 from buildwealth_orchestrator.services.engine_adapter import SidecarAdapter
-from buildwealth_orchestrator.services.planning_sidecar import IgnidashScenarioService
+from buildwealth_orchestrator.services.planning_sidecar import BuildWealthScenarioService
 from buildwealth_orchestrator.services.scenario_engine import ScenarioEngine
 
 
@@ -23,8 +23,8 @@ def _build_scenario_engine() -> ScenarioEngine:
     )
 
 
-def test_ignidash_sidecar_service_returns_local_when_disabled() -> None:
-    service = IgnidashScenarioService(
+def test_plan_simulation_service_returns_local_when_disabled() -> None:
+    service = BuildWealthScenarioService(
         scenario_engine=_build_scenario_engine(),
         sidecar_adapter=None,
         sidecar_enabled=False,
@@ -41,8 +41,8 @@ def test_ignidash_sidecar_service_returns_local_when_disabled() -> None:
     assert result.warnings == []
 
 
-def test_ignidash_sidecar_service_returns_local_when_adapter_missing() -> None:
-    service = IgnidashScenarioService(
+def test_plan_simulation_service_returns_local_when_adapter_missing() -> None:
+    service = BuildWealthScenarioService(
         scenario_engine=_build_scenario_engine(),
         sidecar_adapter=None,
         sidecar_enabled=True,
@@ -59,8 +59,8 @@ def test_ignidash_sidecar_service_returns_local_when_adapter_missing() -> None:
     assert result.warnings == []
 
 
-def test_ignidash_sidecar_service_local_path_preserves_projection_payloads() -> None:
-    service = IgnidashScenarioService(
+def test_plan_simulation_service_local_path_preserves_projection_payloads() -> None:
+    service = BuildWealthScenarioService(
         scenario_engine=_build_scenario_engine(),
         sidecar_adapter=None,
         sidecar_enabled=False,
@@ -106,7 +106,7 @@ def test_ignidash_sidecar_service_local_path_preserves_projection_payloads() -> 
     assert result.expense_projection["first_year_expenses_usd"] == 64000
 
 
-def test_ignidash_sidecar_service_merges_sidecar_response() -> None:
+def test_plan_simulation_service_merges_sidecar_response() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content.decode("utf-8"))
         assert payload["contract_version"] == 1
@@ -167,7 +167,7 @@ def test_ignidash_sidecar_service_merges_sidecar_response() -> None:
         transport=httpx.MockTransport(handler),
     )
 
-    service = IgnidashScenarioService(
+    service = BuildWealthScenarioService(
         scenario_engine=_build_scenario_engine(),
         sidecar_adapter=adapter,
         sidecar_enabled=True,
@@ -184,7 +184,7 @@ def test_ignidash_sidecar_service_merges_sidecar_response() -> None:
     assert by_label["optimistic"].real_value_usd == 850000
 
 
-def test_ignidash_sidecar_service_falls_back_on_sidecar_error() -> None:
+def test_plan_simulation_service_falls_back_on_sidecar_error() -> None:
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(status_code=503, json={"detail": "temporary outage"})
 
@@ -194,7 +194,7 @@ def test_ignidash_sidecar_service_falls_back_on_sidecar_error() -> None:
         transport=httpx.MockTransport(handler),
     )
 
-    service = IgnidashScenarioService(
+    service = BuildWealthScenarioService(
         scenario_engine=_build_scenario_engine(),
         sidecar_adapter=adapter,
         sidecar_enabled=True,
@@ -210,7 +210,7 @@ def test_ignidash_sidecar_service_falls_back_on_sidecar_error() -> None:
     assert any("sidecar unavailable" in warning.lower() for warning in result.warnings)
 
 
-def test_ignidash_sidecar_service_skips_sidecar_when_contract_guarded() -> None:
+def test_plan_simulation_service_skips_sidecar_when_contract_guarded() -> None:
     calls = {"count": 0}
 
     def handler(_: httpx.Request) -> httpx.Response:
@@ -223,7 +223,7 @@ def test_ignidash_sidecar_service_skips_sidecar_when_contract_guarded() -> None:
         transport=httpx.MockTransport(handler),
     )
 
-    service = IgnidashScenarioService(
+    service = BuildWealthScenarioService(
         scenario_engine=_build_scenario_engine(),
         sidecar_adapter=adapter,
         sidecar_enabled=True,
@@ -245,7 +245,7 @@ def test_ignidash_sidecar_service_skips_sidecar_when_contract_guarded() -> None:
     assert any("sidecar skipped" in warning.lower() for warning in result.warnings)
 
 
-def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
+def test_plan_simulation_service_uses_account_allocation_payload() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content.decode("utf-8"))
         accounts = payload["accounts"]
@@ -344,7 +344,7 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
         max_retries=0,
         transport=httpx.MockTransport(handler),
     )
-    service = IgnidashScenarioService(
+    service = BuildWealthScenarioService(
         scenario_engine=_build_scenario_engine(),
         sidecar_adapter=adapter,
         sidecar_enabled=True,
@@ -546,7 +546,7 @@ def test_ignidash_sidecar_service_uses_account_allocation_payload() -> None:
     assert result.simulation["seed"] == 314159
 
 
-def test_ignidash_sidecar_service_forwards_assumption_set_metadata() -> None:
+def test_plan_simulation_service_forwards_assumption_set_metadata() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content.decode("utf-8"))
         assert payload["metadata"]["assumption_set_id"] == "stagflation"
@@ -607,7 +607,7 @@ def test_ignidash_sidecar_service_forwards_assumption_set_metadata() -> None:
         max_retries=0,
         transport=httpx.MockTransport(handler),
     )
-    service = IgnidashScenarioService(
+    service = BuildWealthScenarioService(
         scenario_engine=_build_scenario_engine(),
         sidecar_adapter=adapter,
         sidecar_enabled=True,

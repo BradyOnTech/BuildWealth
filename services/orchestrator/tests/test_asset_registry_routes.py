@@ -20,6 +20,14 @@ class FakeAssetRegistry:
                     "watchlisted": False,
                     "custom": True,
                     "manual_price": False,
+                    "manual_price_detail": {},
+                    "provenance": [
+                        {
+                            "source": "manual",
+                            "label": "Manual metadata",
+                            "detail": "Saved in the local asset registry.",
+                        }
+                    ],
                     "tags": ["Custom"],
                     "quality_status": "needs_review",
                     "quality_label": "Needs review",
@@ -57,6 +65,7 @@ def test_asset_registry_routes(monkeypatch) -> None:
         detail_response = client.get("/api/portfolio/assets/ODD1")
         assert detail_response.status_code == 200
         assert detail_response.json()["symbol"] == "ODD1"
+        assert detail_response.json()["provenance"][0]["label"] == "Manual metadata"
 
         update_response = client.put(
             "/api/portfolio/assets/ODD1/metadata",

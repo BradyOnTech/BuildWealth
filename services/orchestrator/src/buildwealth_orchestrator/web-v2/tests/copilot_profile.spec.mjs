@@ -318,7 +318,7 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
   ]);
   assert.deepEqual(savedProfile.tax_profile, { filing_status: 'single' });
   assert.equal(savedProfile.notes, 'Keep this note.');
-  assert.equal(onboardingStatusCalls, 2);
+  assert.equal(onboardingStatusCalls, 3);
 
   await page.getByRole('button', { name: /new conversation/i }).click();
   await page.getByText('Your profile is 75% complete. Next: Add goals.').waitFor({ state: 'visible' });

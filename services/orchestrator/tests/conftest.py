@@ -14,7 +14,6 @@ _PATH_OVERRIDES: dict[str, Path] = {
     "DURABLE_STORAGE_DIR": _TEST_DATA_ROOT / "storage",
     "BACKUP_ARCHIVE_DIR": _TEST_DATA_ROOT / "backups",
     "PROTECTION_POLICY_PATH": _TEST_DATA_ROOT / "security" / "protection_policy.json",
-    "IGNIDASH_EXPORT_DIR": _TEST_DATA_ROOT / "ignidash",
     "PORTFOLIO_REVIEW_PACKET_DIR": _TEST_DATA_ROOT / "reports" / "portfolio_review_packets",
     "IMPORT_INBOX_DIR": _TEST_DATA_ROOT / "imports" / "inbox",
     "IMPORT_ARCHIVE_DIR": _TEST_DATA_ROOT / "imports" / "archive",
