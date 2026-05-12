@@ -148,6 +148,7 @@ function renderWithdrawalResult(planId = '', result = {}) {
       </header>
 
       ${Object.keys(best).length ? raw(renderBestStrategies(best)) : ''}
+      ${raw(renderStrategyExplanation(result.explanation))}
 
       ${warnings.length ? html`
         <div class="error-banner">
@@ -166,6 +167,42 @@ function renderWithdrawalResult(planId = '', result = {}) {
         <button class="action-link" data-withdrawal-action="save-decision">Save decision note <span class="arrow">›</span></button>
       </div>
     </div>
+  `;
+}
+
+function renderStrategyExplanation(explanation = {}) {
+  const payload = objectValue(explanation);
+  const drivers = Array.isArray(payload.drivers) ? payload.drivers : [];
+  const tradeoffs = Array.isArray(payload.tradeoffs) ? payload.tradeoffs.filter(Boolean) : [];
+  if (!Object.keys(payload).length) return '';
+  return html`
+    <article class="simulation-explainer">
+      <header>
+        <div>
+          <span class="story-block-eyebrow">What this means</span>
+          <h4>${esc(payload.recommended_strategy ? `${strategyLabel(payload.recommended_strategy)} stands out.` : 'The strategies have trade-offs.')}</h4>
+        </div>
+      </header>
+      <p>${esc(payload.summary || 'Strategy explanation unavailable.')}</p>
+      ${drivers.length ? html`
+        <div class="simulation-explainer-grid">
+          ${raw(drivers.slice(0, 4).map(driver => html`
+            <div class="simulation-driver ${esc(clean(driver.direction) || 'neutral')}">
+              <span>${esc(clean(driver.label) || 'Driver')}</span>
+              <p>${esc(clean(driver.detail))}</p>
+            </div>
+          `).join(''))}
+        </div>
+      ` : ''}
+      ${tradeoffs.length ? html`
+        <details class="simulation-trace">
+          <summary>Trade-offs</summary>
+          <ul>
+            ${raw(tradeoffs.slice(0, 5).map(item => html`<li>${esc(item)}</li>`).join(''))}
+          </ul>
+        </details>
+      ` : ''}
+    </article>
   `;
 }
 

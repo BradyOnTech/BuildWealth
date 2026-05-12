@@ -341,8 +341,33 @@ The user wants to know where the next dollar should go before retirement and how
 - Use a visual ordered list for contribution priority.
 - Explain shared limits, employer match, HSA eligibility, IRA income restrictions, taxable overflow, and mega-backdoor assumptions.
 - Compare withdrawal strategies by taxes, ending value, depletion risk, cash-flow stability, and account exhaustion order.
+- Translate withdrawal comparisons into plain-English drivers: highest ending value, inflation-adjusted value, middle simulation result, rough downside result, taxes, withdrawals, and trade-offs.
 - Let the user save the chosen strategy as a plan decision.
 - Classify every what-if change with the two-stage Plan Lever Impact Policy before apply.
+
+**Two-stage Review Level Policy:**
+
+The user-facing label is **Review level**. Use only **Low review** and **High review** in the UI.
+
+Stage one asks whether the change is materially large:
+
+- High review when a dollar assumption changes by at least $10,000 per year.
+- High review when a one-time branch event changes cash flow by at least $25,000.
+- High review when future value or inflation-adjusted value changes by at least $50,000 or at least 5% of the active-plan result.
+- High review when success probability changes by at least five percentage points.
+- High review when a return, inflation, or tax-rate assumption changes by at least one percentage point.
+- High review when the planning horizon changes by at least two years.
+- High review when taxes, withdrawal strategy, withdrawal order, filing status, or Roth conversion settings change.
+- High review when three or more assumptions change at once.
+
+Stage two asks whether the result is decision-ready:
+
+- High review when the simulation has model warnings.
+- High review when the explanation confidence is low.
+- High review when the result weakens the active plan or has trade-offs.
+- High review when the result lacks a clear active-plan comparison.
+
+Overall Review level is High review when either stage is high. Otherwise it is Low review. Keep the language basic: "slow down before applying this" rather than "materiality threshold exceeded."
 
 **Cross-Cutting Copilot Guidelines**
 

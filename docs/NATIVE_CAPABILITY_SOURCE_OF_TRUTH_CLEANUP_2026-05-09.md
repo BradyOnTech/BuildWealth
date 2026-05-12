@@ -14,6 +14,8 @@ BuildWealth now targets native capability ownership and the v2 Product Surface. 
 
 This checklist exists so cleanup happens deliberately while implementation proceeds.
 
+Functional completion and deletion gates are tracked in [Native Completion and Deletion Plan](./NATIVE_COMPLETION_AND_DELETION_PLAN_2026-05-12.md).
+
 **Canonical Decisions**
 
 - BuildWealth-native capabilities replace upstream sidecars: [ADR 0003](./adr/0003-buildwealth-native-capabilities-replace-upstream-sidecars.md)

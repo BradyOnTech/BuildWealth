@@ -67,6 +67,8 @@ from buildwealth_orchestrator.schemas import (
     PlanScenarioBranchResponse,
     PlanSimulationExplainRequest,
     PlanSimulationExplainResponse,
+    PlanWhatIfReviewLevelRequest,
+    PlanWhatIfReviewLevelResponse,
     PlanSettings,
     PlanSettingsUpdateRequest,
     PlanTimelineResponse,
@@ -81,6 +83,9 @@ from buildwealth_orchestrator.schemas import (
     PlanSavedSimulationCreateRequest,
     PlanSavedSimulationDecisionRequest,
     PlanSavedSimulationDecisionResponse,
+    PlanSavedSimulationCompareResponse,
+    PlanSavedSimulationRerunRequest,
+    PlanSavedSimulationRerunResponse,
     PlanSavedSimulationsResponse,
     PlanResearchBridgeRequest,
     PlanResearchBridgeResponse,
@@ -351,6 +356,13 @@ from buildwealth_orchestrator.services.plan_workspace import (
     PlanWorkspace,
 )
 from buildwealth_orchestrator.services.plan_simulation_analyzer import explain_plan_simulation
+from buildwealth_orchestrator.services.plan_lever_impact import classify_plan_lever_impact
+from buildwealth_orchestrator.services.plan_strategy_explainer import (
+    explain_withdrawal_strategy_comparison,
+)
+from buildwealth_orchestrator.services.plan_saved_simulation_review import (
+    compare_saved_simulation_to_current_plan,
+)
 from buildwealth_orchestrator.services.recommendation_inbox import (
     RecommendationInbox,
     RecommendationNotFoundError,
@@ -13241,6 +13253,7 @@ async def tool_compare_withdrawal_strategies(arguments: dict[str, object]) -> di
         },
         "warnings": warnings,
     }
+    response["explanation"] = explain_withdrawal_strategy_comparison(response)
     if include_raw_results:
         response["raw_results"] = raw_results
     return response
@@ -17572,6 +17585,25 @@ def explain_plan_simulation_result(
     return PlanSimulationExplainResponse(**payload)
 
 
+@app.post("/api/plans/{plan_id}/what-if-review-level", response_model=PlanWhatIfReviewLevelResponse)
+def classify_plan_what_if_review_level(
+    plan_id: str,
+    request: PlanWhatIfReviewLevelRequest,
+) -> PlanWhatIfReviewLevelResponse:
+    try:
+        plan_workspace.get_plan(plan_id)
+        payload = classify_plan_lever_impact(
+            plan_id=plan_id,
+            source=request.source,
+            input_payload=request.input_payload,
+            result_payload=request.result_payload,
+            explanation_payload=request.explanation_payload,
+        )
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return PlanWhatIfReviewLevelResponse(**payload)
+
+
 @app.get("/api/plans/{plan_id}/simulations/saved", response_model=PlanSavedSimulationsResponse)
 def list_plan_saved_simulations(plan_id: str, limit: int = 50) -> PlanSavedSimulationsResponse:
     try:
@@ -17609,6 +17641,124 @@ def get_plan_saved_simulation(plan_id: str, saved_simulation_id: str) -> PlanSav
     except PlanNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return PlanSavedSimulation(**payload)
+
+
+@app.get(
+    "/api/plans/{plan_id}/simulations/saved/{saved_simulation_id}/compare-current",
+    response_model=PlanSavedSimulationCompareResponse,
+)
+def compare_plan_saved_simulation_to_current(
+    plan_id: str,
+    saved_simulation_id: str,
+) -> PlanSavedSimulationCompareResponse:
+    try:
+        detail = plan_workspace.get_plan(plan_id)
+        simulation = plan_workspace.get_saved_simulation(
+            plan_id=plan_id,
+            saved_simulation_id=saved_simulation_id,
+        )
+        settings_payload = detail.get("settings")
+        current_settings = settings_payload if isinstance(settings_payload, dict) else {}
+        payload = compare_saved_simulation_to_current_plan(
+            plan_id=plan_id,
+            saved_simulation=simulation,
+            current_settings=current_settings,
+        )
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return PlanSavedSimulationCompareResponse(**payload)
+
+
+@app.post(
+    "/api/plans/{plan_id}/simulations/saved/{saved_simulation_id}/rerun",
+    response_model=PlanSavedSimulationRerunResponse,
+)
+async def rerun_plan_saved_simulation(
+    plan_id: str,
+    saved_simulation_id: str,
+    request: PlanSavedSimulationRerunRequest,
+) -> PlanSavedSimulationRerunResponse:
+    try:
+        simulation = plan_workspace.get_saved_simulation(
+            plan_id=plan_id,
+            saved_simulation_id=saved_simulation_id,
+        )
+        source = str(simulation.get("source") or "").strip().lower()
+        input_payload = simulation.get("input_payload") if isinstance(simulation.get("input_payload"), dict) else {}
+
+        if source == "scenario_diff":
+            result_model = await run_plan_scenario_diff(plan_id, PlanScenarioDiffRequest(**input_payload))
+            result_payload = result_model.model_dump(mode="json")
+            explanation = explain_plan_simulation(
+                plan_id=plan_id,
+                source=source,
+                input_payload=input_payload,
+                result_payload=result_payload,
+            )
+            review_level = classify_plan_lever_impact(
+                plan_id=plan_id,
+                source=source,
+                input_payload=input_payload,
+                result_payload=result_payload,
+                explanation_payload=explanation,
+            )
+        elif source == "scenario_branch":
+            result_model = await run_plan_scenario_branch(plan_id, PlanScenarioBranchRequest(**input_payload))
+            result_payload = result_model.model_dump(mode="json")
+            explanation = explain_plan_simulation(
+                plan_id=plan_id,
+                source=source,
+                input_payload=input_payload,
+                result_payload=result_payload,
+            )
+            review_level = classify_plan_lever_impact(
+                plan_id=plan_id,
+                source=source,
+                input_payload=input_payload,
+                result_payload=result_payload,
+                explanation_payload=explanation,
+            )
+        elif source == "withdrawal_strategy":
+            result_model = await compare_plan_withdrawal_strategies(
+                plan_id,
+                PlanWithdrawalStrategyCompareRequest(**input_payload),
+            )
+            result_payload = result_model.model_dump(mode="json")
+            explanation = result_payload.get("explanation") if isinstance(result_payload.get("explanation"), dict) else {}
+            review_level = {}
+        else:
+            raise ValueError("Only simulation, what-if, and strategy comparison Saved Simulations can be rerun.")
+
+        saved_payload = None
+        if request.save_result:
+            summary = str(explanation.get("summary") or "").strip() if isinstance(explanation, dict) else ""
+            saved_payload = plan_workspace.save_simulation(
+                plan_id=plan_id,
+                simulation_payload={
+                    "title": str(request.title or "").strip() or f"Rerun: {simulation.get('title') or saved_simulation_id}",
+                    "source": source,
+                    "summary": summary,
+                    "notes": request.notes,
+                    "input_payload": input_payload,
+                    "result_payload": result_payload,
+                },
+            )
+            _queue_autogit_event("plan_saved_simulation_rerun_saved")
+    except PlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return PlanSavedSimulationRerunResponse(
+        plan_id=plan_id,
+        saved_simulation_id=saved_simulation_id,
+        source=source,
+        input_payload=input_payload,
+        result_payload=result_payload,
+        explanation=explanation if isinstance(explanation, dict) else {},
+        review_level=review_level if isinstance(review_level, dict) else {},
+        saved_simulation=PlanSavedSimulation(**saved_payload) if isinstance(saved_payload, dict) else None,
+    )
 
 
 @app.post(

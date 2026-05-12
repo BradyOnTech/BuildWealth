@@ -670,7 +670,7 @@
   padding: var(--s-4);
   border: var(--hair) solid var(--rule-soft);
   border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--paper-bright) 84%, var(--forest-wash));
+  background: color-mix(in srgb, var(--paper-bright) 84%, var(--forest));
   display: grid;
   gap: var(--s-3);
 }
@@ -750,6 +750,71 @@
 
 .simulation-trace ul {
   margin: var(--s-3) 0 0;
+  padding-left: var(--s-4);
+  color: var(--ink-soft);
+  font-size: var(--t-body-sm);
+  line-height: var(--lh-body);
+}
+
+.what-if-review-level {
+  margin-top: var(--s-4);
+  padding: var(--s-4);
+  border: var(--hair) solid var(--rule-soft);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--paper-bright) 88%, var(--brass));
+  display: grid;
+  gap: var(--s-3);
+}
+
+.what-if-review-level.high {
+  background: color-mix(in srgb, var(--paper-bright) 84%, var(--oxblood));
+}
+
+.what-if-review-level header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-3);
+  align-items: start;
+}
+
+.what-if-review-level h4 {
+  margin: 3px 0 0;
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 32;
+  font-size: 19px;
+  color: var(--ink-strong);
+}
+
+.what-if-review-level p {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: var(--lh-body);
+}
+
+.review-stage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--s-3);
+}
+
+.review-stage {
+  border-top: var(--hair) dotted var(--rule-soft);
+  padding-top: var(--s-3);
+}
+
+.review-stage span {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+}
+
+.review-stage.high span { color: var(--oxblood); }
+.review-stage.low span { color: var(--forest); }
+
+.review-stage ul {
+  margin: var(--s-2) 0 0;
   padding-left: var(--s-4);
   color: var(--ink-soft);
   font-size: var(--t-body-sm);

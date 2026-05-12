@@ -122,6 +122,8 @@ def test_tool_compare_withdrawal_strategies_ranks_and_summarizes(monkeypatch) ->
     assert payload["best_strategy_by_metric"]["future_value"] == "four_percent_rule"
     assert payload["best_strategy_by_metric"]["real_value"] == "four_percent_rule"
     assert payload["best_strategy_by_metric"]["monte_carlo_p50"] == "four_percent_rule"
+    assert payload["explanation"]["recommended_strategy"] == "four_percent_rule"
+    assert "4% Rule has the strongest overall result" in payload["explanation"]["summary"]
     assert any("Ignored invalid strategies: bad" in warning for warning in payload["warnings"])
 
     comparisons = payload["comparisons"]

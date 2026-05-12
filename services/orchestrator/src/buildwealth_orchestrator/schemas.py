@@ -2080,6 +2080,44 @@ class PlanSavedSimulationDecisionResponse(BaseModel):
     decision: PlanDecision
 
 
+class PlanSavedSimulationSettingDifference(BaseModel):
+    field: str
+    label: str
+    saved_value: str
+    current_value: str
+
+
+class PlanSavedSimulationCompareResponse(BaseModel):
+    plan_id: str
+    saved_simulation_id: str
+    simulation: PlanSavedSimulation
+    summary: str = ""
+    changed_since_saved: bool = False
+    setting_differences: list[PlanSavedSimulationSettingDifference] = Field(default_factory=list)
+    saved_metrics: dict[str, Any] = Field(default_factory=dict)
+    current_settings: dict[str, Any] = Field(default_factory=dict)
+    saved_base_settings: dict[str, Any] = Field(default_factory=dict)
+    saved_candidate_settings: dict[str, Any] = Field(default_factory=dict)
+    rerun_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class PlanSavedSimulationRerunRequest(BaseModel):
+    save_result: bool = False
+    title: str | None = None
+    notes: str = ""
+
+
+class PlanSavedSimulationRerunResponse(BaseModel):
+    plan_id: str
+    saved_simulation_id: str
+    source: Literal["scenario_diff", "scenario_branch", "withdrawal_strategy"]
+    input_payload: dict[str, Any] = Field(default_factory=dict)
+    result_payload: dict[str, Any] = Field(default_factory=dict)
+    explanation: dict[str, Any] = Field(default_factory=dict)
+    review_level: dict[str, Any] = Field(default_factory=dict)
+    saved_simulation: PlanSavedSimulation | None = None
+
+
 # Internal shared plan-settings payload.
 # Guardrail: keep inheritance depth to one internal base layer.
 # Public inheritors: PlanSettings, PlanSettingsUpdateRequest.
@@ -2197,6 +2235,7 @@ class PlanWithdrawalStrategyCompareResponse(BaseModel):
     strategies: list[str] = Field(default_factory=list)
     comparisons: list[PlanWithdrawalStrategyComparisonRow] = Field(default_factory=list)
     best_strategy_by_metric: dict[str, str | None] = Field(default_factory=dict)
+    explanation: dict[str, Any] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     raw_results: dict[str, Any] = Field(default_factory=dict)
 
@@ -2276,6 +2315,33 @@ class PlanSimulationExplainResponse(BaseModel):
     confidence_level: Literal["high", "medium", "low"] = "low"
     confidence_reasons: list[str] = Field(default_factory=list)
     metrics: dict[str, Any] = Field(default_factory=dict)
+    trace: dict[str, Any] = Field(default_factory=dict)
+
+
+class PlanWhatIfReviewLevelRequest(BaseModel):
+    source: Literal["simulation", "scenario_diff", "scenario_branch", "withdrawal_strategy"] = "simulation"
+    input_payload: dict[str, Any] = Field(default_factory=dict)
+    result_payload: dict[str, Any] = Field(default_factory=dict)
+    explanation_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class PlanWhatIfReviewLevelStage(BaseModel):
+    name: str
+    level: Literal["high", "low"] = "low"
+    summary: str = ""
+    reasons: list[str] = Field(default_factory=list)
+
+
+class PlanWhatIfReviewLevelResponse(BaseModel):
+    plan_id: str
+    generated_at: datetime
+    source: str = "Simulation"
+    review_level: Literal["high", "low"] = "low"
+    summary: str = ""
+    stage_one: PlanWhatIfReviewLevelStage
+    stage_two: PlanWhatIfReviewLevelStage
+    recommended_actions: list[str] = Field(default_factory=list)
+    thresholds: dict[str, Any] = Field(default_factory=dict)
     trace: dict[str, Any] = Field(default_factory=dict)
 
 

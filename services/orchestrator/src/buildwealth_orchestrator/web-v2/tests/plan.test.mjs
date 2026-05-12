@@ -33,6 +33,8 @@ test('plan api exposes v2 workspace endpoints', () => {
   assert.match(apiSource, /updatePlanAssumptionSets:\s*\(id,\s*body/);
   assert.match(apiSource, /planScenarioDiff:\s*\(id,\s*body/);
   assert.match(apiSource, /\/api\/plans\/.*\/scenario-diff/);
+  assert.match(apiSource, /planWhatIfReviewLevel:\s*\(id,\s*body/);
+  assert.match(apiSource, /\/api\/plans\/.*\/what-if-review-level/);
   assert.match(apiSource, /planBranchTemplates:\s*\(id\)/);
   assert.match(apiSource, /\/api\/plans\/.*\/branch-templates/);
   assert.match(apiSource, /updatePlanBranchTemplates:\s*\(id,\s*body/);
@@ -41,6 +43,8 @@ test('plan api exposes v2 workspace endpoints', () => {
   assert.match(apiSource, /planSavedSimulations:\s*\(id,\s*limit/);
   assert.match(apiSource, /\/api\/plans\/.*\/simulations\/saved/);
   assert.match(apiSource, /savePlanSimulation:\s*\(id,\s*body/);
+  assert.match(apiSource, /comparePlanSavedSimulationCurrent:\s*\(id,\s*savedSimulationId/);
+  assert.match(apiSource, /rerunPlanSavedSimulation:\s*\(id,\s*savedSimulationId,\s*body/);
   assert.match(apiSource, /attachPlanSavedSimulationDecision:\s*\(id,\s*savedSimulationId,\s*body/);
   assert.match(apiSource, /planWithdrawalStrategyCompare:\s*\(id,\s*body/);
   assert.match(apiSource, /\/api\/plans\/.*\/withdrawal-strategy-compare/);
@@ -110,10 +114,13 @@ test('plan view wires simulation workspace actions', () => {
   assert.match(planSource, /buildWithdrawalComparePayload/);
   assert.match(planSource, /api\.planScenarioDiff/);
   assert.match(planSource, /api\.explainPlanSimulation/);
+  assert.match(planSource, /api\.planWhatIfReviewLevel/);
   assert.match(planSource, /api\.planBranchTemplates/);
   assert.match(planSource, /api\.planScenarioBranch/);
   assert.match(planSource, /api\.planSavedSimulations/);
   assert.match(planSource, /api\.savePlanSimulation/);
+  assert.match(planSource, /api\.comparePlanSavedSimulationCurrent/);
+  assert.match(planSource, /api\.rerunPlanSavedSimulation/);
   assert.match(planSource, /api\.attachPlanSavedSimulationDecision/);
   assert.match(planSource, /api\.planWithdrawalStrategyCompare/);
   assert.match(planSource, /data-scenario-field/);
@@ -579,6 +586,25 @@ test('plan branch workspace renders templates, result, and review handoffs', () 
         confidence_reasons: ['The result includes comparable active-plan and candidate deltas.'],
       },
     },
+    reviewLevel: {
+      payload: {
+        review_level: 'high',
+        summary: 'High review: read the explanation, check the assumptions, and save a decision note before changing the active plan.',
+        stage_one: {
+          name: 'Change size',
+          level: 'high',
+          summary: 'This change is big enough to slow down and review.',
+          reasons: ['Future value changes by $60,000 or more.'],
+        },
+        stage_two: {
+          name: 'Result trust',
+          level: 'high',
+          summary: 'The result needs extra review before it supports a decision.',
+          reasons: ['The result weakens the active plan.'],
+        },
+        recommended_actions: ['Save a decision note before applying this to the active plan.'],
+      },
+    },
   }, {
     assumptionSets: {
       active_assumption_set_id: 'default',
@@ -595,6 +621,9 @@ test('plan branch workspace renders templates, result, and review handoffs', () 
   assert.match(markup, /What this means/);
   assert.match(markup, /Looks weaker than the active plan/);
   assert.match(markup, /Medium confidence/);
+  assert.match(markup, /Review level/);
+  assert.match(markup, /High review/);
+  assert.match(markup, /Slow down before applying this/);
   assert.match(markup, /Discuss in Copilot/);
   assert.match(markup, /Save simulation/);
   assert.match(markup, /Save decision note/);
@@ -631,6 +660,18 @@ test('plan withdrawal workspace renders strategy comparison rows and review hand
         monte_carlo_p50: 'four_percent_rule',
       },
       warnings: ['Dynamic guardrails used local projection fallback.'],
+      explanation: {
+        recommended_strategy: 'dynamic_guardrails',
+        summary: 'Dynamic Guardrails has the strongest overall result in this comparison. 4% Rule has the lowest projected taxes.',
+        drivers: [
+          {
+            label: 'Highest ending value',
+            direction: 'positive',
+            detail: 'Dynamic Guardrails has the highest ending value: $1,250,000.',
+          },
+        ],
+        tradeoffs: ['Dynamic Guardrails has the highest ending value, but 4% Rule projects $20,000 less in taxes.'],
+      },
       comparisons: [
         {
           strategy: 'dynamic_guardrails',
@@ -675,6 +716,10 @@ test('plan withdrawal workspace renders strategy comparison rows and review hand
   assert.match(markup, /\$140,000/);
   assert.match(markup, /17%/);
   assert.match(markup, /Best future value/);
+  assert.match(markup, /What this means/);
+  assert.match(markup, /Dynamic Guardrails stands out/);
+  assert.match(markup, /4% Rule has the lowest projected taxes/);
+  assert.match(markup, /Trade-offs/);
   assert.match(markup, /Provider fallback used\./);
   assert.match(markup, /Discuss in Copilot/);
   assert.match(markup, /Save decision note/);
@@ -737,6 +782,25 @@ test('plan scenario workspace renders compact results and decision handoff', () 
         confidence_reasons: ['Changed assumptions are visible and traceable.'],
       },
     },
+    reviewLevel: {
+      payload: {
+        review_level: 'low',
+        summary: 'Low review: this looks like a small, well-explained experiment that can stay in the normal simulation workflow.',
+        stage_one: {
+          name: 'Change size',
+          level: 'low',
+          summary: 'The changed values look small enough for normal review.',
+          reasons: [],
+        },
+        stage_two: {
+          name: 'Result trust',
+          level: 'low',
+          summary: 'The result is explained clearly enough for normal review.',
+          reasons: [],
+        },
+        recommended_actions: ['Save the simulation if you may want to compare it later.'],
+      },
+    },
   }, {
     assumptionSets: {
       active_assumption_set_id: 'default',
@@ -756,6 +820,9 @@ test('plan scenario workspace renders compact results and decision handoff', () 
   assert.match(markup, /What this means/);
   assert.match(markup, /Looks better than the active plan/);
   assert.match(markup, /High confidence/);
+  assert.match(markup, /Review level/);
+  assert.match(markup, /Low review/);
+  assert.match(markup, /Normal review is enough/);
   assert.match(markup, /Annual contribution changed from \$25,000 to \$30,000/);
   assert.match(markup, /Discuss in Copilot/);
   assert.match(markup, /Save simulation/);
@@ -790,6 +857,30 @@ test('plan scenario workspace renders immutable Saved Simulations', () => {
           },
         ],
       },
+      focusedComparison: {
+        saved_simulation_id: 'saved-simulation-1',
+        summary: 'Early retirement was saved against older plan assumptions. Rerun it before using it for a decision.',
+        changed_since_saved: true,
+        setting_differences: [
+          {
+            field: 'annual_contribution_usd',
+            label: 'Annual contribution',
+            saved_value: '$20,000',
+            current_value: '$24,000',
+          },
+        ],
+        saved_metrics: {
+          delta_future_value_usd: -60000,
+          delta_real_value_usd: -50000,
+          success_probability_delta: -0.02,
+        },
+      },
+      rerun: {
+        saved_simulation: {
+          id: 'saved-simulation-rerun',
+          title: 'Rerun: Early retirement',
+        },
+      },
     },
   }, {
     assumptionSets: { sets: [] },
@@ -801,8 +892,15 @@ test('plan scenario workspace renders immutable Saved Simulations', () => {
   assert.match(markup, /immutable/);
   assert.match(markup, /Future -\$60,000/);
   assert.match(markup, /Discuss/);
+  assert.match(markup, /Compare current/);
+  assert.match(markup, /Rerun and save/);
   assert.match(markup, /Attach decision/);
   assert.match(markup, /data-saved-simulation-id="saved-simulation-1"/);
+  assert.match(markup, /Saved Simulation Detail/);
+  assert.match(markup, /Current plan has changed/);
+  assert.match(markup, /Annual contribution moved from \$20,000 to \$24,000/);
+  assert.match(markup, /Saved future change/);
+  assert.match(markup, /Rerun saved as Rerun: Early retirement/);
 });
 
 test('plan timeline workspace renders retirement structure and builds update payload', () => {

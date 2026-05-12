@@ -3,7 +3,7 @@
 
 import { html, raw, esc } from '../../lib/dom.js';
 import { fmtPctSigned, fmtUsd, fmtUsdSigned } from '../../lib/format.js';
-import { renderSimulationExplanation } from './scenarios.js';
+import { renderSimulationExplanation, renderWhatIfReviewLevel } from './scenarios.js';
 
 const BRANCH_COMPARE_FIELDS = [
   { key: 'annual_contribution_usd', label: 'Annual contribution', type: 'money' },
@@ -96,7 +96,7 @@ export function renderBranches(plan = {}, state = {}, assumptionState = {}) {
         </div>
       `}
 
-      ${hasResult ? raw(renderBranchResult(planId, result, state.explanation)) : ''}
+      ${hasResult ? raw(renderBranchResult(planId, result, state.explanation, state.reviewLevel)) : ''}
     </section>
   `;
 }
@@ -190,7 +190,7 @@ function renderTemplateSummary(template = {}) {
   `;
 }
 
-function renderBranchResult(planId = '', result = {}, explanation = null) {
+function renderBranchResult(planId = '', result = {}, explanation = null, reviewLevel = null) {
   const deltas = Array.isArray(result.scenario_deltas) ? result.scenario_deltas : [];
   const monte = objectValue(result.monte_carlo_delta);
   const simulation = objectValue(result.simulation_delta);
@@ -213,6 +213,7 @@ function renderBranchResult(planId = '', result = {}, explanation = null) {
       ${Object.keys(monte).length ? raw(renderMetricBlock('Monte Carlo', monte)) : ''}
       ${Object.keys(simulation).length ? raw(renderMetricBlock('Simulation', simulation)) : ''}
       ${raw(renderSimulationExplanation(explanation))}
+      ${raw(renderWhatIfReviewLevel(reviewLevel))}
 
       <div class="scenario-handoff">
         <a class="link-editorial" href="#copilot?intent=plan-branch&amp;plan=${encodeURIComponent(planId)}">Discuss in Copilot</a>

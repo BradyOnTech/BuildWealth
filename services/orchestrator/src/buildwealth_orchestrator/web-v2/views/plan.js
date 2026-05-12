@@ -46,9 +46,9 @@ const ui = {
   health: { busy: false, recommendations: [], error: null },
   trajectory: { busy: false, tracking: null, error: null },
   artifacts: { focusedArtifactId: '', focusedArtifact: null, busy: false, error: null },
-  scenarios: { draft: {}, dirty: false, busy: false, saveBusy: false, result: null, explanation: null, lastPayload: null, error: null, focusedRecommendationId: '' },
-  branches: { busy: false, saveBusy: false, branchTemplates: null, selectedTemplateId: '', draft: {}, dirty: false, result: null, explanation: null, lastPayload: null, error: null },
-  savedSimulations: { busy: false, payload: null, error: null },
+  scenarios: { draft: {}, dirty: false, busy: false, saveBusy: false, result: null, explanation: null, reviewLevel: null, lastPayload: null, error: null, focusedRecommendationId: '' },
+  branches: { busy: false, saveBusy: false, branchTemplates: null, selectedTemplateId: '', draft: {}, dirty: false, result: null, explanation: null, reviewLevel: null, lastPayload: null, error: null },
+  savedSimulations: { busy: false, payload: null, error: null, focusedComparison: null, rerun: null },
   withdrawals: { busy: false, selectedStrategies: ['four_percent_rule', 'dynamic_guardrails', 'bucket_strategy'], draft: {}, dirty: false, result: null, error: null },
   timeline: { busy: false, timeline: null, draft: {}, dirty: false, editing: false, saving: false, error: null },
   contributions: { busy: false, contributionRules: null, draft: {}, dirty: false, editing: false, saving: false, error: null },
@@ -246,15 +246,17 @@ async function loadBranchTemplates(id) {
 }
 
 async function loadSavedSimulations(id) {
-  ui.savedSimulations = { busy: true, payload: null, error: null };
+  const previous = ui.savedSimulations || {};
+  ui.savedSimulations = { ...previous, busy: true, payload: previous.payload || null, error: null };
   try {
     ui.savedSimulations = {
+      ...previous,
       busy: false,
       payload: await api.planSavedSimulations(id, 25),
       error: null,
     };
   } catch (err) {
-    ui.savedSimulations = { busy: false, payload: null, error: err.message };
+    ui.savedSimulations = { ...previous, busy: false, payload: previous.payload || null, error: err.message };
   }
 }
 
@@ -568,6 +570,8 @@ function attachHandlers() {
   delegate(page, 'click', '[data-branch-action="save-simulation"]', () => saveBranchSimulation());
   delegate(page, 'click', '[data-branch-action="save-decision"]', () => saveBranchDecisionNote());
   delegate(page, 'click', '[data-saved-simulation-action="decision"]', (_, el) => attachSavedSimulationDecision(el));
+  delegate(page, 'click', '[data-saved-simulation-action="compare"]', (_, el) => compareSavedSimulationCurrent(el));
+  delegate(page, 'click', '[data-saved-simulation-action="rerun"]', (_, el) => rerunSavedSimulation(el));
 
   delegate(page, 'change', '[data-withdrawal-field]', (_, el) => stageWithdrawalEdit(el));
   delegate(page, 'change', '[data-withdrawal-strategy]', (_, el) => toggleWithdrawalStrategy(el));
@@ -705,10 +709,17 @@ async function runScenarioDiff() {
     ui.scenarios.result = result;
     ui.scenarios.lastPayload = payload;
     ui.scenarios.explanation = { busy: true, payload: null, error: null };
+    ui.scenarios.reviewLevel = { busy: true, payload: null, error: null };
     ui.scenarios.busy = false;
     ui.scenarios.dirty = false;
     rerenderScenarios();
     ui.scenarios.explanation = await explainSimulationResult('scenario_diff', payload, result);
+    ui.scenarios.reviewLevel = await classifyWhatIfReviewLevel(
+      'scenario_diff',
+      payload,
+      result,
+      ui.scenarios.explanation?.payload || {},
+    );
     rerenderScenarios();
   } catch (err) {
     ui.scenarios.busy = false;
@@ -790,10 +801,17 @@ async function runScenarioBranch() {
     ui.branches.result = result;
     ui.branches.lastPayload = payload;
     ui.branches.explanation = { busy: true, payload: null, error: null };
+    ui.branches.reviewLevel = { busy: true, payload: null, error: null };
     ui.branches.busy = false;
     ui.branches.dirty = false;
     rerenderBranches();
     ui.branches.explanation = await explainSimulationResult('scenario_branch', payload, result);
+    ui.branches.reviewLevel = await classifyWhatIfReviewLevel(
+      'scenario_branch',
+      payload,
+      result,
+      ui.branches.explanation?.payload || {},
+    );
     rerenderBranches();
   } catch (err) {
     ui.branches.busy = false;
@@ -810,6 +828,23 @@ async function explainSimulationResult(source, inputPayload, resultPayload) {
         source,
         input_payload: inputPayload,
         result_payload: resultPayload,
+      }),
+      error: null,
+    };
+  } catch (err) {
+    return { busy: false, payload: null, error: err.message };
+  }
+}
+
+async function classifyWhatIfReviewLevel(source, inputPayload, resultPayload, explanationPayload = {}) {
+  try {
+    return {
+      busy: false,
+      payload: await api.planWhatIfReviewLevel(ui.plan.id, {
+        source,
+        input_payload: inputPayload,
+        result_payload: resultPayload,
+        explanation_payload: explanationPayload,
       }),
       error: null,
     };
@@ -906,6 +941,71 @@ async function attachSavedSimulationDecision(el) {
     focusRequestedSection('scenarios');
   } catch (err) {
     ui.savedSimulations = { ...ui.savedSimulations, busy: false, error: err.message };
+    rerenderScenarios();
+  }
+}
+
+async function compareSavedSimulationCurrent(el) {
+  if (!ui.plan) return;
+  const savedSimulationId = String(el.dataset.savedSimulationId || '').trim();
+  if (!savedSimulationId) return;
+  ui.savedSimulations = {
+    ...ui.savedSimulations,
+    busy: true,
+    error: null,
+    focusedComparison: { busy: true, saved_simulation_id: savedSimulationId },
+  };
+  rerenderScenarios();
+  try {
+    const comparison = await api.comparePlanSavedSimulationCurrent(ui.plan.id, savedSimulationId);
+    ui.savedSimulations = {
+      ...ui.savedSimulations,
+      busy: false,
+      focusedComparison: comparison,
+      error: null,
+    };
+    rerenderScenarios();
+  } catch (err) {
+    ui.savedSimulations = {
+      ...ui.savedSimulations,
+      busy: false,
+      focusedComparison: null,
+      error: err.message,
+    };
+    rerenderScenarios();
+  }
+}
+
+async function rerunSavedSimulation(el) {
+  if (!ui.plan) return;
+  const savedSimulationId = String(el.dataset.savedSimulationId || '').trim();
+  if (!savedSimulationId) return;
+  ui.savedSimulations = {
+    ...ui.savedSimulations,
+    busy: true,
+    error: null,
+    rerun: { busy: true, saved_simulation_id: savedSimulationId },
+  };
+  rerenderScenarios();
+  try {
+    const result = await api.rerunPlanSavedSimulation(ui.plan.id, savedSimulationId, {
+      save_result: true,
+    });
+    ui.savedSimulations = {
+      ...ui.savedSimulations,
+      busy: false,
+      rerun: result,
+      error: null,
+    };
+    await loadSavedSimulations(ui.plan.id);
+    rerenderScenarios();
+  } catch (err) {
+    ui.savedSimulations = {
+      ...ui.savedSimulations,
+      busy: false,
+      rerun: null,
+      error: err.message,
+    };
     rerenderScenarios();
   }
 }

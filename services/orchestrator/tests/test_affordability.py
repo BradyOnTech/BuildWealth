@@ -120,7 +120,7 @@ class TestPlanImpact:
     def test_plan_impact_detail_present(self):
         r = _assess(monthly_amount_usd=1000)
         assert r.plan_impact_detail is not None
-        assert "scenario diff" in r.plan_impact_detail.lower()
+        assert "simulation" in r.plan_impact_detail.lower()
 
 
 class TestEdgeCases:

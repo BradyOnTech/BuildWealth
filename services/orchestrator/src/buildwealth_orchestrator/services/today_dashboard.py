@@ -223,7 +223,7 @@ def _build_recommendations(
             TodayRecommendation(
                 id="create-plan",
                 title="Create a plan baseline",
-                detail="Set an active plan so scenario diff and recommendations can be tracked over time.",
+                detail="Set an active plan so simulations and recommendations can be tracked over time.",
                 priority="high",
             )
         )

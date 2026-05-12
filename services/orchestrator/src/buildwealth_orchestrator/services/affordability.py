@@ -176,7 +176,7 @@ def assess_affordability(
     if annual_reduction > 0:
         plan_impact = (
             f"Reducing annual savings by ${annual_reduction:,.0f} would slow portfolio growth. "
-            f"Run a scenario diff with reduced contributions to see the long-term impact."
+            f"Run a simulation with reduced contributions to see the long-term impact."
         )
 
     return AffordabilityResponse(

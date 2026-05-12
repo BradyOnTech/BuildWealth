@@ -157,6 +157,7 @@ export const api = {
   updatePlanAssumptionSets: (id, body = {}) => putJson(`/api/plans/${encodeURIComponent(id)}/assumption-sets`, body),
   planScenarioDiff: (id, body = {}) => postJson(`/api/plans/${encodeURIComponent(id)}/scenario-diff`, body),
   explainPlanSimulation: (id, body = {}) => postJson(`/api/plans/${encodeURIComponent(id)}/simulation-explain`, body),
+  planWhatIfReviewLevel: (id, body = {}) => postJson(`/api/plans/${encodeURIComponent(id)}/what-if-review-level`, body),
   planBranchTemplates: (id) => fetchJson(`/api/plans/${encodeURIComponent(id)}/branch-templates`),
   updatePlanBranchTemplates: (id, body = {}) => putJson(`/api/plans/${encodeURIComponent(id)}/branch-templates`, body),
   planScenarioBranch: (id, body = {}) => postJson(`/api/plans/${encodeURIComponent(id)}/scenario-branch`, body),
@@ -164,6 +165,13 @@ export const api = {
   savePlanSimulation: (id, body = {}) => postJson(`/api/plans/${encodeURIComponent(id)}/simulations/saved`, body),
   planSavedSimulation: (id, savedSimulationId) => fetchJson(
     `/api/plans/${encodeURIComponent(id)}/simulations/saved/${encodeURIComponent(savedSimulationId)}`,
+  ),
+  comparePlanSavedSimulationCurrent: (id, savedSimulationId) => fetchJson(
+    `/api/plans/${encodeURIComponent(id)}/simulations/saved/${encodeURIComponent(savedSimulationId)}/compare-current`,
+  ),
+  rerunPlanSavedSimulation: (id, savedSimulationId, body = {}) => postJson(
+    `/api/plans/${encodeURIComponent(id)}/simulations/saved/${encodeURIComponent(savedSimulationId)}/rerun`,
+    body,
   ),
   attachPlanSavedSimulationDecision: (id, savedSimulationId, body = {}) => postJson(
     `/api/plans/${encodeURIComponent(id)}/simulations/saved/${encodeURIComponent(savedSimulationId)}/decision`,

@@ -73,7 +73,7 @@ export function renderScenarios(plan = {}, state = {}, assumptionState = {}) {
         ${state.dirty ? html`<span class="marginalia">Simulation inputs are staged for review.</span>` : html`<span class="marginalia">Stage an override to compare.</span>`}
       </div>
 
-      ${hasResult ? raw(renderScenarioResult(plan, result, { focusId, planId, explanation: state.explanation })) : ''}
+      ${hasResult ? raw(renderScenarioResult(plan, result, { focusId, planId, explanation: state.explanation, reviewLevel: state.reviewLevel })) : ''}
       ${raw(renderSavedSimulations(planId, savedState))}
     </section>
   `;
@@ -118,7 +118,7 @@ function renderAssumptionPicker(key, label, assumptionSets, draft = {}) {
   `;
 }
 
-function renderScenarioResult(plan, result, { focusId = '', planId = '', explanation = null } = {}) {
+function renderScenarioResult(plan, result, { focusId = '', planId = '', explanation = null, reviewLevel = null } = {}) {
   const deltas = Array.isArray(result.scenario_deltas) ? result.scenario_deltas : [];
   const monte = objectValue(result.monte_carlo_delta);
   const simulation = objectValue(result.simulation_delta);
@@ -151,6 +151,7 @@ function renderScenarioResult(plan, result, { focusId = '', planId = '', explana
       ${Object.keys(monte).length ? raw(renderMetricBlock('Monte Carlo', monte)) : ''}
       ${Object.keys(simulation).length ? raw(renderMetricBlock('Simulation', simulation)) : ''}
       ${raw(renderSimulationExplanation(explanation))}
+      ${raw(renderWhatIfReviewLevel(reviewLevel))}
 
       <div class="scenario-handoff">
         <a class="link-editorial" href="#copilot?intent=plan-scenario&amp;plan=${encodeURIComponent(planId || clean(plan.id))}">Discuss in Copilot</a>
@@ -226,6 +227,72 @@ export function renderSimulationExplanation(state = {}) {
   `;
 }
 
+export function renderWhatIfReviewLevel(state = {}) {
+  state = objectValue(state);
+  const payload = objectValue(state.payload || state);
+  const stageOne = objectValue(payload.stage_one);
+  const stageTwo = objectValue(payload.stage_two);
+  const actions = Array.isArray(payload.recommended_actions) ? payload.recommended_actions.filter(Boolean) : [];
+  const stageOneReasons = Array.isArray(stageOne.reasons) ? stageOne.reasons.filter(Boolean) : [];
+  const stageTwoReasons = Array.isArray(stageTwo.reasons) ? stageTwo.reasons.filter(Boolean) : [];
+  if (state.busy) {
+    return html`
+      <article class="what-if-review-level">
+        <span class="story-block-eyebrow">Review level</span>
+        <p class="marginalia">Checking how much review this change needs...</p>
+      </article>
+    `;
+  }
+  if (state.error) {
+    return html`
+      <article class="what-if-review-level">
+        <span class="story-block-eyebrow">Review level</span>
+        <p class="error-banner">${esc(state.error)}</p>
+      </article>
+    `;
+  }
+  if (!Object.keys(payload).length) return '';
+  return html`
+    <article class="what-if-review-level ${esc(clean(payload.review_level) || 'low')}">
+      <header>
+        <div>
+          <span class="story-block-eyebrow">Review level</span>
+          <h4>${esc(reviewLevelTitle(payload.review_level))}</h4>
+        </div>
+        <span class="simulation-confidence ${esc(clean(payload.review_level) || 'low')}">${esc(reviewLevelBadge(payload.review_level))}</span>
+      </header>
+      <p>${esc(payload.summary || 'Review guidance unavailable.')}</p>
+      <div class="review-stage-grid">
+        ${raw(renderReviewStage(stageOne, stageOneReasons))}
+        ${raw(renderReviewStage(stageTwo, stageTwoReasons))}
+      </div>
+      ${actions.length ? html`
+        <details class="simulation-trace">
+          <summary>Suggested next steps</summary>
+          <ul>
+            ${raw(actions.slice(0, 5).map(item => html`<li>${esc(item)}</li>`).join(''))}
+          </ul>
+        </details>
+      ` : ''}
+    </article>
+  `;
+}
+
+function renderReviewStage(stage = {}, reasons = []) {
+  const level = clean(stage.level) || 'low';
+  return html`
+    <div class="review-stage ${esc(level)}">
+      <span>${esc(clean(stage.name) || 'Review stage')} · ${esc(reviewLevelBadge(level))}</span>
+      <p>${esc(clean(stage.summary) || 'No extra review notes.')}</p>
+      ${reasons.length ? html`
+        <ul>
+          ${raw(reasons.slice(0, 4).map(reason => html`<li>${esc(reason)}</li>`).join(''))}
+        </ul>
+      ` : ''}
+    </div>
+  `;
+}
+
 function renderSavedSimulations(planId = '', state = {}) {
   const payload = objectValue(state.payload);
   const simulations = Array.isArray(payload.simulations) ? payload.simulations.slice(0, 8) : [];
@@ -243,6 +310,7 @@ function renderSavedSimulations(planId = '', state = {}) {
           ${raw(simulations.map(item => renderSavedSimulation(planId, item)).join(''))}
         </div>
       ` : html`<p class="marginalia">No Saved Simulations yet. Run a simulation, then save the result.</p>`}
+      ${raw(renderSavedSimulationReview(state.focusedComparison, state.rerun))}
     </div>
   `;
 }
@@ -264,12 +332,85 @@ function renderSavedSimulation(planId = '', item = {}) {
       </div>
       <div class="scenario-handoff">
         <a class="link-editorial" href="#copilot?intent=plan-scenario&amp;plan=${encodeURIComponent(planId)}">Discuss</a>
+        <button class="action-link" data-saved-simulation-action="compare" data-saved-simulation-id="${esc(id)}">
+          Compare current <span class="arrow">›</span>
+        </button>
+        <button class="action-link" data-saved-simulation-action="rerun" data-saved-simulation-id="${esc(id)}">
+          Rerun and save <span class="arrow">›</span>
+        </button>
         <button class="action-link" data-saved-simulation-action="decision" data-saved-simulation-id="${esc(id)}">
           Attach decision <span class="arrow">›</span>
         </button>
       </div>
     </article>
   `;
+}
+
+function renderSavedSimulationReview(comparison = null, rerun = null) {
+  const comparisonPayload = objectValue(comparison);
+  const rerunPayload = objectValue(rerun);
+  if (comparisonPayload.busy || rerunPayload.busy) {
+    return html`
+      <article class="simulation-explainer">
+        <span class="story-block-eyebrow">Saved Simulation Detail</span>
+        <p class="marginalia">${comparisonPayload.busy ? 'Comparing against the current plan...' : 'Rerunning saved inputs...'}</p>
+      </article>
+    `;
+  }
+  if (!Object.keys(comparisonPayload).length && !Object.keys(rerunPayload).length) return '';
+
+  const differences = Array.isArray(comparisonPayload.setting_differences)
+    ? comparisonPayload.setting_differences
+    : [];
+  const metrics = objectValue(comparisonPayload.saved_metrics);
+  const rerunSaved = objectValue(rerunPayload.saved_simulation);
+  return html`
+    <article class="simulation-explainer">
+      <header>
+        <div>
+          <span class="story-block-eyebrow">Saved Simulation Detail</span>
+          <h4>${esc(comparisonPayload.changed_since_saved ? 'Current plan has changed.' : 'Saved assumptions still line up.')}</h4>
+        </div>
+      </header>
+      ${comparisonPayload.summary ? html`<p>${esc(comparisonPayload.summary)}</p>` : ''}
+      ${differences.length ? html`
+        <details class="simulation-trace" open>
+          <summary>Changed since saved</summary>
+          <ul>
+            ${raw(differences.slice(0, 6).map(item => html`
+              <li>${esc(item.label)} moved from ${esc(item.saved_value)} to ${esc(item.current_value)}.</li>
+            `).join(''))}
+          </ul>
+        </details>
+      ` : ''}
+      ${Object.keys(metrics).length ? html`
+        <dl class="scenario-change-list">
+          ${raw(savedMetricRows(metrics).map(([label, value]) => html`
+            <div>
+              <dt>${esc(label)}</dt>
+              <dd>${esc(value)}</dd>
+            </div>
+          `).join(''))}
+        </dl>
+      ` : ''}
+      ${Object.keys(rerunPayload).length ? html`
+        <p>${rerunSaved.id
+          ? html`Rerun saved as ${esc(clean(rerunSaved.title) || rerunSaved.id)}.`
+          : html`Rerun completed with current plan data.`}</p>
+      ` : ''}
+    </article>
+  `;
+}
+
+function savedMetricRows(metrics = {}) {
+  const rows = [];
+  const future = Number(metrics.delta_future_value_usd);
+  const real = Number(metrics.delta_real_value_usd);
+  const success = Number(metrics.success_probability_delta);
+  if (Number.isFinite(future)) rows.push(['Saved future change', fmtUsdSigned(future)]);
+  if (Number.isFinite(real)) rows.push(['Saved real change', fmtUsdSigned(real)]);
+  if (Number.isFinite(success)) rows.push(['Saved success change', fmtPctSigned(success, { fromFraction: true })]);
+  return rows;
 }
 
 function simulationSourceLabel(source = '') {
@@ -438,6 +579,16 @@ function confidenceLabel(value = '') {
   if (normalized === 'high') return 'High confidence';
   if (normalized === 'medium') return 'Medium confidence';
   return 'Low confidence';
+}
+
+function reviewLevelTitle(value = '') {
+  return clean(value).toLowerCase() === 'high'
+    ? 'Slow down before applying this.'
+    : 'Normal review is enough.';
+}
+
+function reviewLevelBadge(value = '') {
+  return clean(value).toLowerCase() === 'high' ? 'High review' : 'Low review';
 }
 
 function objectValue(value) {
