@@ -1,8 +1,19 @@
 {
+  "llm_provider": "openai",
+  "llm_api_key": "",
+  "llm_model": "gpt-5.5",
+  "llm_base_url": "https://api.openai.com/v1",
+  "llm_timeout_seconds": 60,
+  "llm_max_tokens": 2048,
+  "llm_parallel_tool_calls": true,
   "openai_api_key": "",
   "openai_model": "gpt-4o",
   "openai_base_url": "https://api.openai.com/v1",
-  "ghostfolio_api_base": "http://localhost:3333/api",
-  "ghostfolio_security_token": "",
-  "updated_at": "2026-04-09T21:45:01.219211+00:00"
+  "context_embeddings_enabled": false,
+  "context_embedding_provider": "disabled",
+  "context_embedding_model": "nomic-embed-text",
+  "context_embedding_base_url": "http://localhost:11434",
+  "context_embedding_timeout_seconds": 5.0,
+  "updated_at": "2026-05-12T22:22:57.442182+00:00",
+  "llm_settings_saved_at": "2026-05-12T22:22:57.442182+00:00"
 }

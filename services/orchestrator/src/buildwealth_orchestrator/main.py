@@ -17583,9 +17583,23 @@ def sync_status() -> SyncStatusResponse:
 
 
 @app.get("/api/import/files")
-def list_import_files() -> dict[str, list[str]]:
-    files = sorted([path.name for path in settings.import_inbox_dir.glob("*.csv")])
-    return {"files": files}
+def list_import_files() -> dict[str, Any]:
+    files = []
+    for path in sorted(settings.import_inbox_dir.glob("*.csv"), key=lambda item: item.name.lower()):
+        stat = path.stat()
+        files.append(
+            {
+                "name": path.name,
+                "filename": path.name,
+                "path": str(path),
+                "size_bytes": stat.st_size,
+                "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+            }
+        )
+    return {
+        "items": files,
+        "files": [item["name"] for item in files],
+    }
 
 
 @app.get("/api/import/csv-templates")

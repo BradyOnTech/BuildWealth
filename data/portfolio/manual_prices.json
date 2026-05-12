@@ -1,5 +1,12 @@
 {
   "schema_version": 1,
-  "by_symbol": {},
-  "updated_at": "2026-04-09T21:45:01.220674+00:00"
+  "by_symbol": {
+    "DEMO_HOME": {
+      "symbol": "DEMO_HOME",
+      "price": 420000.0,
+      "note": "[demo-average-household] local home-value estimate for net-worth testing",
+      "updated_at": "2026-05-12T22:22:57.353046+00:00"
+    }
+  },
+  "updated_at": "2026-05-12T22:22:57.353048+00:00"
 }

@@ -130,12 +130,9 @@ function marginaliaItem(label, value, dir) {
   `;
 }
 
-function computeRunway(payload) {
-  // months of expenses covered by liquid net worth — best-effort, fine to be null.
-  const surplus = payload.monthly_surplus_usd;
-  const nw = payload.net_worth_usd ?? payload.total_value_usd;
-  if (!surplus || surplus <= 0 || !nw) return null;
-  return Math.round(nw / Math.max(surplus, 1) / 12);
+export function computeRunway(payload) {
+  const months = Number(payload?.emergency_fund_months);
+  return Number.isFinite(months) ? months.toFixed(1) : null;
 }
 
 /* ─────────────  COMMAND CENTER  ───────────── */

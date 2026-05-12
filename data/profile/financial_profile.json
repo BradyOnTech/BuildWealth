@@ -1,27 +1,207 @@
 {
   "schema_version": 2,
-  "income_items": [],
-  "expense_items": [],
-  "debt_items": [],
-  "goal_items": [],
-  "physical_assets": [],
+  "income_items": [
+    {
+      "id": "demo-income-alex-salary",
+      "label": "Alex salary",
+      "monthly_amount_usd": 8750,
+      "source_type": "salary",
+      "is_pre_tax": false,
+      "annual_growth_rate": 0.035,
+      "start_date": null,
+      "end_date": null
+    },
+    {
+      "id": "demo-income-jordan-salary",
+      "label": "Jordan salary",
+      "monthly_amount_usd": 4580,
+      "source_type": "salary",
+      "is_pre_tax": false,
+      "annual_growth_rate": 0.03,
+      "start_date": null,
+      "end_date": null
+    }
+  ],
+  "expense_items": [
+    {
+      "id": "demo-expense-mortgage",
+      "label": "Mortgage payment",
+      "monthly_amount_usd": 2400,
+      "category": "housing",
+      "is_fixed": true,
+      "inflation_rate": 0.02,
+      "start_date": null,
+      "end_date": null
+    },
+    {
+      "id": "demo-expense-groceries",
+      "label": "Groceries and household",
+      "monthly_amount_usd": 950,
+      "category": "food",
+      "is_fixed": false,
+      "inflation_rate": 0.035,
+      "start_date": null,
+      "end_date": null
+    },
+    {
+      "id": "demo-expense-childcare",
+      "label": "Childcare",
+      "monthly_amount_usd": 900,
+      "category": "family",
+      "is_fixed": true,
+      "inflation_rate": 0.04,
+      "start_date": null,
+      "end_date": null
+    },
+    {
+      "id": "demo-expense-utilities",
+      "label": "Utilities and internet",
+      "monthly_amount_usd": 420,
+      "category": "utilities",
+      "is_fixed": true,
+      "inflation_rate": 0.03,
+      "start_date": null,
+      "end_date": null
+    },
+    {
+      "id": "demo-expense-transport",
+      "label": "Transportation",
+      "monthly_amount_usd": 650,
+      "category": "transportation",
+      "is_fixed": false,
+      "inflation_rate": 0.03,
+      "start_date": null,
+      "end_date": null
+    },
+    {
+      "id": "demo-expense-insurance",
+      "label": "Insurance premiums",
+      "monthly_amount_usd": 420,
+      "category": "insurance",
+      "is_fixed": true,
+      "inflation_rate": 0.035,
+      "start_date": null,
+      "end_date": null
+    },
+    {
+      "id": "demo-expense-discretionary",
+      "label": "Restaurants, travel, shopping",
+      "monthly_amount_usd": 1050,
+      "category": "lifestyle",
+      "is_fixed": false,
+      "inflation_rate": 0.03,
+      "start_date": null,
+      "end_date": null
+    }
+  ],
+  "debt_items": [
+    {
+      "id": "demo-debt-mortgage",
+      "label": "Primary home mortgage",
+      "balance_usd": 318000,
+      "interest_rate": 0.062,
+      "minimum_payment_usd": 2250,
+      "payoff_strategy": "minimum",
+      "custom_monthly_payment_usd": null
+    },
+    {
+      "id": "demo-debt-auto",
+      "label": "Auto loan",
+      "balance_usd": 18000,
+      "interest_rate": 0.071,
+      "minimum_payment_usd": 465,
+      "payoff_strategy": "avalanche",
+      "custom_monthly_payment_usd": null
+    },
+    {
+      "id": "demo-debt-student",
+      "label": "Student loan",
+      "balance_usd": 24000,
+      "interest_rate": 0.054,
+      "minimum_payment_usd": 280,
+      "payoff_strategy": "minimum",
+      "custom_monthly_payment_usd": null
+    }
+  ],
+  "goal_items": [
+    {
+      "id": "demo-goal-emergency-fund",
+      "label": "Six-month emergency fund",
+      "target_amount_usd": 41000,
+      "target_date": "2027-12-31T00:00:00+00:00",
+      "priority": "high",
+      "notes": "Current cash covers about four months of core expenses."
+    },
+    {
+      "id": "demo-goal-home-maintenance",
+      "label": "Home maintenance reserve",
+      "target_amount_usd": 18000,
+      "target_date": "2028-06-30T00:00:00+00:00",
+      "priority": "medium",
+      "notes": "Roof and HVAC replacement reserve."
+    },
+    {
+      "id": "demo-goal-college",
+      "label": "College savings starter goal",
+      "target_amount_usd": 55000,
+      "target_date": "2038-08-01T00:00:00+00:00",
+      "priority": "medium",
+      "notes": "Early target for one child; not intended to cover full cost."
+    }
+  ],
+  "physical_assets": [
+    {
+      "id": "demo-asset-home",
+      "label": "Primary residence",
+      "current_value_usd": 420000,
+      "asset_type": "real_estate",
+      "annual_growth_rate": 0.025,
+      "purchase_date": "2021-06-15T00:00:00+00:00"
+    },
+    {
+      "id": "demo-asset-vehicle",
+      "label": "Family vehicle",
+      "current_value_usd": 24000,
+      "asset_type": "vehicle",
+      "annual_growth_rate": -0.08,
+      "purchase_date": "2023-04-10T00:00:00+00:00"
+    }
+  ],
   "tax_profile": {
-    "filing_status": null,
-    "marginal_tax_rate": null,
-    "effective_tax_rate": null,
-    "state_tax_rate": null,
-    "state": null
+    "filing_status": "married_filing_jointly",
+    "marginal_tax_rate": 0.24,
+    "effective_tax_rate": 0.18,
+    "state_tax_rate": 0.068,
+    "state": "MN"
   },
   "investment_policy": {
-    "max_single_symbol_exposure_pct": null,
-    "max_sector_exposure_pct": null,
-    "minimum_research_confidence": null,
-    "minimum_cash_runway_months": null,
-    "max_asset_class_exposure_pct": {},
-    "simplicity_preference": null,
-    "tax_sensitivity": null,
-    "risk_tolerance": null,
-    "preferred_account_locations": {},
+    "max_single_symbol_exposure_pct": 12,
+    "max_sector_exposure_pct": 35,
+    "minimum_research_confidence": "medium",
+    "minimum_cash_runway_months": 6,
+    "max_asset_class_exposure_pct": {
+      "equity": 85,
+      "fixed_income": 35,
+      "cash": 20,
+      "real_estate": 45
+    },
+    "simplicity_preference": "high",
+    "tax_sensitivity": "medium",
+    "risk_tolerance": "moderate",
+    "preferred_account_locations": {
+      "bonds": [
+        "401k",
+        "hsa"
+      ],
+      "broad_equity_etfs": [
+        "taxable",
+        "roth_ira",
+        "401k"
+      ],
+      "single_stocks": [
+        "taxable"
+      ]
+    },
     "restricted_symbols": [],
     "restricted_sectors": []
   },
@@ -29,7 +209,134 @@
     "no_debt": false,
     "no_goals": false
   },
-  "profile_metadata": {},
-  "notes": "",
-  "updated_at": "2026-05-08T19:54:25.456438+00:00"
+  "profile_metadata": {
+    "tax_profile.filing_status": {
+      "status": "user_confirmed",
+      "source": "demo_average_household",
+      "confidence": "high",
+      "updated_at": "2026-05-12T22:22:56.913590+00:00",
+      "last_confirmed_at": "2026-05-12T22:22:56.913590+00:00",
+      "confirmed_by_user": true,
+      "stale_after_days": 365
+    },
+    "tax_profile.marginal_tax_rate": {
+      "status": "user_confirmed",
+      "source": "demo_average_household",
+      "confidence": "high",
+      "updated_at": "2026-05-12T22:22:56.913590+00:00",
+      "last_confirmed_at": "2026-05-12T22:22:56.913590+00:00",
+      "confirmed_by_user": true,
+      "stale_after_days": 180
+    },
+    "tax_profile.effective_tax_rate": {
+      "status": "user_confirmed",
+      "source": "demo_average_household",
+      "confidence": "high",
+      "updated_at": "2026-05-12T22:22:56.913590+00:00",
+      "last_confirmed_at": "2026-05-12T22:22:56.913590+00:00",
+      "confirmed_by_user": true,
+      "stale_after_days": 180
+    },
+    "tax_profile.state_tax_rate": {
+      "status": "user_confirmed",
+      "source": "demo_average_household",
+      "confidence": "high",
+      "updated_at": "2026-05-12T22:22:56.913590+00:00",
+      "last_confirmed_at": "2026-05-12T22:22:56.913590+00:00",
+      "confirmed_by_user": true,
+      "stale_after_days": 180
+    },
+    "investment_policy.risk_tolerance": {
+      "status": "user_confirmed",
+      "source": "demo_average_household",
+      "confidence": "high",
+      "updated_at": "2026-05-12T22:22:56.913590+00:00",
+      "last_confirmed_at": "2026-05-12T22:22:56.913590+00:00",
+      "confirmed_by_user": true,
+      "stale_after_days": 365
+    },
+    "investment_policy.max_single_symbol_exposure_pct": {
+      "status": "user_confirmed",
+      "source": "demo_average_household",
+      "confidence": "high",
+      "updated_at": "2026-05-12T22:22:56.913590+00:00",
+      "last_confirmed_at": "2026-05-12T22:22:56.913590+00:00",
+      "confirmed_by_user": true,
+      "stale_after_days": 365
+    },
+    "investment_policy.max_sector_exposure_pct": {
+      "status": "user_confirmed",
+      "source": "demo_average_household",
+      "confidence": "high",
+      "updated_at": "2026-05-12T22:22:56.913590+00:00",
+      "last_confirmed_at": "2026-05-12T22:22:56.913590+00:00",
+      "confirmed_by_user": true,
+      "stale_after_days": 365
+    },
+    "tax_profile.state": {
+      "status": "user_confirmed",
+      "source": "demo_average_household",
+      "confidence": "high",
+      "updated_at": "2026-05-12T22:22:56.914684+00:00",
+      "stale_after_days": 365,
+      "last_confirmed_at": "2026-05-12T22:22:56.914684+00:00",
+      "confirmed_by_user": true
+    },
+    "investment_policy.max_asset_class_exposure_pct": {
+      "status": "user_confirmed",
+      "source": "demo_average_household",
+      "confidence": "high",
+      "updated_at": "2026-05-12T22:22:56.914684+00:00",
+      "stale_after_days": 365,
+      "last_confirmed_at": "2026-05-12T22:22:56.914684+00:00",
+      "confirmed_by_user": true
+    },
+    "investment_policy.minimum_cash_runway_months": {
+      "status": "user_confirmed",
+      "source": "demo_average_household",
+      "confidence": "high",
+      "updated_at": "2026-05-12T22:22:56.914684+00:00",
+      "stale_after_days": 365,
+      "last_confirmed_at": "2026-05-12T22:22:56.914684+00:00",
+      "confirmed_by_user": true
+    },
+    "investment_policy.minimum_research_confidence": {
+      "status": "user_confirmed",
+      "source": "demo_average_household",
+      "confidence": "high",
+      "updated_at": "2026-05-12T22:22:56.914684+00:00",
+      "stale_after_days": 365,
+      "last_confirmed_at": "2026-05-12T22:22:56.914684+00:00",
+      "confirmed_by_user": true
+    },
+    "investment_policy.preferred_account_locations": {
+      "status": "user_confirmed",
+      "source": "demo_average_household",
+      "confidence": "high",
+      "updated_at": "2026-05-12T22:22:56.914684+00:00",
+      "stale_after_days": 365,
+      "last_confirmed_at": "2026-05-12T22:22:56.914684+00:00",
+      "confirmed_by_user": true
+    },
+    "investment_policy.simplicity_preference": {
+      "status": "user_confirmed",
+      "source": "demo_average_household",
+      "confidence": "high",
+      "updated_at": "2026-05-12T22:22:56.914684+00:00",
+      "stale_after_days": 365,
+      "last_confirmed_at": "2026-05-12T22:22:56.914684+00:00",
+      "confirmed_by_user": true
+    },
+    "investment_policy.tax_sensitivity": {
+      "status": "user_confirmed",
+      "source": "demo_average_household",
+      "confidence": "high",
+      "updated_at": "2026-05-12T22:22:56.914684+00:00",
+      "stale_after_days": 365,
+      "last_confirmed_at": "2026-05-12T22:22:56.914684+00:00",
+      "confirmed_by_user": true
+    }
+  },
+  "notes": "Demo household for testing BuildWealth end-to-end: mid-career couple, one child, mortgage, retirement accounts, taxable brokerage, emergency savings, and realistic planning tradeoffs.",
+  "updated_at": "2026-05-12T22:22:56.914684+00:00"
 }

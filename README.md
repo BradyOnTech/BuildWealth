@@ -41,6 +41,27 @@ docker compose -f infra/docker-compose.yml up -d orchestrator
 curl -s -X POST http://localhost:8090/api/snapshot/sync | jq
 ```
 
+## Demo Household Data
+
+For end-to-end product testing, seed a realistic average-household dataset:
+
+```bash
+./scripts/seed-demo-data.py
+```
+
+This creates a mid-career household profile, investment accounts, portfolio transactions,
+watchlist items, recommendations, a sample import CSV, and a retirement simulation workspace.
+The script is idempotent for rows marked as demo data, so it can be rerun while testing.
+
+Copilot needs a real provider key for live answers. To seed the demo and persist your local
+provider settings in one step:
+
+```bash
+LLM_API_KEY=... ./scripts/seed-demo-data.py
+```
+
+The key is stored only in the local `data/settings/user_settings.json` file.
+
 ## Engine Status
 
 BuildWealth runs standalone by default. Engine status is available for native runtime checks:

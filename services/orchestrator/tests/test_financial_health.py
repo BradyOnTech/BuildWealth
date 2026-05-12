@@ -135,6 +135,23 @@ class TestEmergencyFund:
         r = _health()
         assert r.emergency_fund_months == 50.0
 
+    def test_emergency_fund_uses_liquid_cash_when_account_detail_exists(self):
+        snap = PortfolioSnapshot(
+            as_of=datetime(2026, 4, 8, tzinfo=timezone.utc),
+            total_value_usd=500000,
+            total_investment_usd=450000,
+            raw={
+                "account_totals": {
+                    "checking": {"type": "depository", "cash_balance": 8000},
+                    "brokerage": {"type": "taxable", "cash_balance": 2000},
+                    "home": {"type": "real_estate", "cash_balance": 400000},
+                    "retirement": {"type": "401k", "cash_balance": 50000},
+                }
+            },
+        )
+        r = _health(snapshot=snap)
+        assert r.emergency_fund_months == 5.0
+
     def test_thin_emergency_fund(self):
         r = _health(
             snapshot=_snap(total_value=5000),

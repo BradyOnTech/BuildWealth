@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderCommandCards, renderMove } from '../views/today.js';
+import { computeRunway, renderCommandCards, renderMove } from '../views/today.js';
+
+test('today hero runway uses emergency-fund months from the dashboard payload', () => {
+  assert.equal(computeRunway({
+    emergency_fund_months: 4,
+    monthly_surplus_usd: 3500,
+    net_worth_usd: 580000,
+  }), '4.0');
+});
 
 test('today move renders top-action quality explanation', () => {
   const markup = String(renderMove({

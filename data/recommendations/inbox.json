@@ -1,3 +1,83 @@
 {
-  "recommendations": []
+  "recommendations": [
+    {
+      "id": "rec-20260512T222257Z-68043515",
+      "created_at": "2026-05-12T22:22:57.426209+00:00",
+      "updated_at": "2026-05-12T22:22:57.426209+00:00",
+      "title": "Finish the emergency fund",
+      "detail": "Core expenses imply a six-month target near $41,000; current demo cash is closer to four months.",
+      "priority": "high",
+      "status": "proposed",
+      "recommendation_type": "workflow_action",
+      "source": "demo_average_household",
+      "plan_id": "plan-20260512T220057Z-1c3ae360",
+      "action_payload": {
+        "kind": "cash_liquidity_review",
+        "demo_seed": true,
+        "target_months": 6
+      },
+      "resolution_note": "",
+      "resolved_at": null
+    },
+    {
+      "id": "rec-20260512T222257Z-169b4ef2",
+      "created_at": "2026-05-12T22:22:57.426480+00:00",
+      "updated_at": "2026-05-12T22:22:57.426480+00:00",
+      "title": "Check contribution order before adding taxable deposits",
+      "detail": "The household has HSA and Roth room, so taxable brokerage should be overflow rather than the first extra dollar.",
+      "priority": "medium",
+      "status": "proposed",
+      "recommendation_type": "plan_settings_update",
+      "source": "demo_average_household",
+      "plan_id": "plan-20260512T220057Z-1c3ae360",
+      "action_payload": {
+        "kind": "contribution_order_review",
+        "demo_seed": true,
+        "plan_id": "plan-20260512T220057Z-1c3ae360"
+      },
+      "resolution_note": "",
+      "resolved_at": null
+    },
+    {
+      "id": "rec-20260512T222257Z-ce4e7513",
+      "created_at": "2026-05-12T22:22:57.426739+00:00",
+      "updated_at": "2026-05-12T22:22:57.426739+00:00",
+      "title": "Watch single-stock exposure",
+      "detail": "AAPL and MSFT are intentionally small in the demo, but this tests concentration and research-thesis workflows.",
+      "priority": "medium",
+      "status": "proposed",
+      "recommendation_type": "general",
+      "source": "demo_average_household",
+      "plan_id": "plan-20260512T220057Z-1c3ae360",
+      "action_payload": {
+        "kind": "portfolio_concentration_review",
+        "demo_seed": true,
+        "symbols": [
+          "AAPL",
+          "MSFT"
+        ]
+      },
+      "resolution_note": "",
+      "resolved_at": null
+    },
+    {
+      "id": "rec-20260512T222257Z-6c696acd",
+      "created_at": "2026-05-12T22:22:57.426959+00:00",
+      "updated_at": "2026-05-12T22:22:57.426959+00:00",
+      "title": "Preview the demo brokerage import",
+      "detail": "Use the sample import file to test preview, reconciliation, account mapping, and audit report flows.",
+      "priority": "low",
+      "status": "proposed",
+      "recommendation_type": "workflow_action",
+      "source": "demo_average_household",
+      "plan_id": "plan-20260512T220057Z-1c3ae360",
+      "action_payload": {
+        "kind": "import_workbench_review",
+        "demo_seed": true,
+        "file_name": "average-household-brokerage-import.csv"
+      },
+      "resolution_note": "",
+      "resolved_at": null
+    }
+  ]
 }

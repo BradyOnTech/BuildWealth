@@ -22,6 +22,45 @@ DTI_ATTENTION = 36.0             # <= 36% is needs_attention, above is critical
 EMERGENCY_HEALTHY = 6.0          # >= 6 months is healthy
 EMERGENCY_ATTENTION = 3.0        # >= 3 months is needs_attention
 
+LIQUID_ACCOUNT_TYPES = {"depository", "checking", "savings", "cash", "money_market", "taxable", "brokerage"}
+ILLIQUID_ACCOUNT_TYPES = {"401k", "ira", "roth_ira", "traditional_ira", "hsa", "real_estate"}
+
+
+def _estimate_emergency_fund_value(snapshot: PortfolioSnapshot | None) -> float:
+    if snapshot is None:
+        return 0.0
+
+    account_totals = snapshot.raw.get("account_totals") if isinstance(snapshot.raw, dict) else None
+    if isinstance(account_totals, dict) and account_totals:
+        liquid_cash = 0.0
+        saw_cash_detail = False
+        for account in account_totals.values():
+            if not isinstance(account, dict):
+                continue
+            account_type = str(account.get("type") or "").strip().lower()
+            if account_type in ILLIQUID_ACCOUNT_TYPES:
+                continue
+            cash_balance = float(account.get("cash_balance") or 0.0)
+            if cash_balance > 0:
+                saw_cash_detail = True
+                if not account_type or account_type in LIQUID_ACCOUNT_TYPES:
+                    liquid_cash += cash_balance
+        if saw_cash_detail:
+            return liquid_cash
+
+    cash_like_holdings = 0.0
+    for holding in snapshot.holdings:
+        asset_class = str(holding.asset_class or "").strip().lower()
+        asset_type = str(holding.asset_type or "").strip().lower()
+        if asset_class in {"cash", "cash_equivalent"} or asset_type in {"cash", "money_market"}:
+            cash_like_holdings += float(holding.value_usd or 0.0)
+    if cash_like_holdings > 0:
+        return cash_like_holdings
+
+    # Older snapshots did not separate cash from invested assets. Preserve the
+    # legacy behavior only when no liquidity detail is available.
+    return float(snapshot.total_value_usd or 0.0)
+
 
 def compute_financial_health(
     *,
@@ -51,7 +90,8 @@ def compute_financial_health(
     savings_rate = (monthly_surplus / gross_income * 100.0) if gross_income > 0 else 0.0
     dti = (total_debt_payments / gross_income * 100.0) if gross_income > 0 else 0.0
     monthly_burn = total_expenses + total_debt_payments
-    emergency_months = (portfolio_value / monthly_burn) if monthly_burn > 0 else 0.0
+    emergency_fund_value = _estimate_emergency_fund_value(snapshot)
+    emergency_months = (emergency_fund_value / monthly_burn) if monthly_burn > 0 else 0.0
 
     # --- Highlights ---
     highlights: list[str] = []
@@ -118,11 +158,11 @@ def compute_financial_health(
     # Emergency fund highlights
     if portfolio_value > 0 and monthly_burn > 0:
         if emergency_months >= EMERGENCY_HEALTHY:
-            highlights.append(f"Portfolio covers {emergency_months:.1f} months of expenses — solid emergency buffer.")
+            highlights.append(f"Liquid cash covers {emergency_months:.1f} months of expenses — solid emergency buffer.")
         elif emergency_months >= EMERGENCY_ATTENTION:
-            highlights.append(f"Portfolio covers {emergency_months:.1f} months of expenses — consider building to {EMERGENCY_HEALTHY:.0f}+ months.")
+            highlights.append(f"Liquid cash covers {emergency_months:.1f} months of expenses — consider building to {EMERGENCY_HEALTHY:.0f}+ months.")
         else:
-            highlights.append(f"Portfolio covers only {emergency_months:.1f} months of expenses — emergency fund is thin.")
+            highlights.append(f"Liquid cash covers only {emergency_months:.1f} months of expenses — emergency fund is thin.")
 
     # --- Overall Status ---
     scores: list[int] = []

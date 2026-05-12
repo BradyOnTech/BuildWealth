@@ -56,6 +56,26 @@ def _route_import_response(path: Path, *, dry_run: bool) -> CsvImportResponse:
     )
 
 
+def test_import_files_route_returns_staged_csv_metadata() -> None:
+    staged = main.settings.import_inbox_dir / "average-household-test.csv"
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    staged.write_text("date,action,symbol\n2026-01-02,BUY,VTI\n", encoding="utf-8")
+
+    try:
+        with TestClient(main.app) as client:
+            response = client.get("/api/import/files")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert "average-household-test.csv" in payload["files"]
+        item = next(row for row in payload["items"] if row["name"] == "average-household-test.csv")
+        assert item["filename"] == "average-household-test.csv"
+        assert item["size_bytes"] > 0
+        assert item["modified_at"]
+    finally:
+        staged.unlink(missing_ok=True)
+
+
 def test_import_workbench_preview_apply_and_report_routes(monkeypatch) -> None:
     async def fake_execute_csv_import(*, file_path: Path, request):
         return _route_import_response(file_path, dry_run=bool(request.dry_run))
