@@ -12,6 +12,7 @@ export function renderOverview(ui) {
   const flags = p.flags || {};
   const income = sumMonthly(p.income_items);
   const expenses = sumMonthly(p.expense_items);
+  const householdMembers = Array.isArray(p.household_members) ? p.household_members : [];
   const surplus = income != null && expenses != null ? income - expenses : null;
   const debtTotal = sumField(p.debt_items, 'balance_usd');
   const goalsCount = (p.goal_items || []).length;
@@ -23,6 +24,7 @@ export function renderOverview(ui) {
   return html`
     <div class="profile-overview">
       ${raw(card('Household snapshot', [
+        line('Household',        householdSummary(householdMembers), 'People this financial picture is built around.'),
         line('Monthly income',   fmtUsdOrEmpty(income),       'Sum of all income items entered.'),
         line('Monthly expenses', fmtUsdOrEmpty(expenses),     'Sum of all expense items entered.'),
         line('Monthly surplus',  fmtUsdOrEmpty(surplus),      surplus != null && surplus < 0 ? 'Spending exceeds income — cash runway is at risk.' : 'What is left to save or invest each month.'),
@@ -196,4 +198,14 @@ function restrictedSummary(profile) {
 function humanCandidateKind(candidate) {
   const kind = candidate?.field_path || candidate?.kind || 'context';
   return String(kind).replace(/[._]/g, ' ');
+}
+
+function householdSummary(members) {
+  if (!Array.isArray(members) || !members.length) return 'Not set';
+  const adults = members.filter(member => !member?.dependent && !['child', 'dependent'].includes(String(member?.relationship || '').toLowerCase())).length;
+  const dependents = members.length - adults;
+  const parts = [];
+  if (adults > 0) parts.push(`${adults} adult${adults === 1 ? '' : 's'}`);
+  if (dependents > 0) parts.push(`${dependents} dependent${dependents === 1 ? '' : 's'}`);
+  return parts.length ? parts.join(', ') : `${members.length} member${members.length === 1 ? '' : 's'}`;
 }

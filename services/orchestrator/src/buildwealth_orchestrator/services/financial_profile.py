@@ -276,6 +276,7 @@ class FinancialProfileStore:
     def _default_payload() -> dict[str, Any]:
         return {
             "schema_version": PROFILE_SCHEMA_VERSION,
+            "household_members": [],
             "income_items": [],
             "expense_items": [],
             "debt_items": [],
@@ -336,6 +337,23 @@ class FinancialProfileStore:
             defaults.update(raw)
 
         defaults["schema_version"] = PROFILE_SCHEMA_VERSION
+
+        defaults["household_members"] = self._ensure_id(
+            [item for item in defaults.get("household_members", []) if isinstance(item, dict)],
+            "member",
+        )
+        for item in defaults["household_members"]:
+            relationship = str(item.get("relationship") or "other").strip().lower()
+            if relationship not in {"self", "partner", "child", "dependent", "other"}:
+                relationship = "other"
+            item["relationship"] = relationship
+            item["display_name"] = str(
+                item.get("display_name") or item.get("label") or "Household member"
+            ).strip() or "Household member"
+            item["dependent"] = bool(item.get("dependent") or relationship in {"child", "dependent"})
+            item.setdefault("birth_year", None)
+            item.setdefault("retirement_age", None)
+            item.setdefault("notes", "")
 
         defaults["income_items"] = self._ensure_id(
             [item for item in defaults.get("income_items", []) if isinstance(item, dict)],

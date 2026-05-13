@@ -6,6 +6,11 @@ import { TABLE_SECTIONS, sectionForKey, renderTable } from '../views/profile/tab
 test('overview: renders household snapshot from filled income and expense rows', () => {
   const ui = {
     profile: {
+      household_members: [
+        { id: 'm1', display_name: 'Alex', relationship: 'self', dependent: false },
+        { id: 'm2', display_name: 'Jordan', relationship: 'partner', dependent: false },
+        { id: 'm3', display_name: 'Riley', relationship: 'child', dependent: true },
+      ],
       income_items: [
         { id: 'a', monthly_amount_usd: 9500, label: 'Salary', source_type: 'salary' },
         { id: 'b', monthly_amount_usd: 1000, label: 'Side',   source_type: 'business' },
@@ -25,6 +30,7 @@ test('overview: renders household snapshot from filled income and expense rows',
   const markup = String(renderOverview(ui));
   // monthly income/expenses/surplus/debt should appear
   assert.match(markup, /\$10,500/);             // income total
+  assert.match(markup, /2 adults, 1 dependent/);
   assert.match(markup, /\$5,000/);              // expense total
   assert.match(markup, /\$5,500/);              // surplus
   assert.match(markup, /\$12,000/);             // debt total

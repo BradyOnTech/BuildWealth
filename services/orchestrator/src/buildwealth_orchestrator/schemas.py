@@ -1402,6 +1402,16 @@ class ProfileFlags(BaseModel):
     no_goals: bool = False
 
 
+class HouseholdMemberItem(BaseModel):
+    id: str
+    display_name: str
+    relationship: Literal["self", "partner", "child", "dependent", "other"] = "self"
+    birth_year: int | None = Field(default=None, ge=1900, le=2200)
+    retirement_age: int | None = Field(default=None, ge=18, le=100)
+    dependent: bool = False
+    notes: str = ""
+
+
 class PhysicalAssetItem(BaseModel):
     id: str
     label: str
@@ -1412,6 +1422,7 @@ class PhysicalAssetItem(BaseModel):
 
 
 class FinancialProfileRequest(BaseModel):
+    household_members: list[HouseholdMemberItem] = Field(default_factory=list)
     income_items: list[IncomeItem] = Field(default_factory=list)
     expense_items: list[ExpenseItem] = Field(default_factory=list)
     debt_items: list[DebtItem] = Field(default_factory=list)

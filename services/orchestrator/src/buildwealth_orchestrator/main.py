@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import importlib.util
 import json
 import re
+import shutil
+import sqlite3
 import time
 import uuid
 from contextlib import asynccontextmanager, suppress
@@ -12,7 +15,7 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import quote as url_quote
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 import httpx
@@ -383,6 +386,16 @@ from buildwealth_orchestrator.services.user_settings import (
     UserSettingsStore,
     provider_default_model_ids,
 )
+from buildwealth_orchestrator.services.control_plane import (
+    AuthenticationError,
+    AuthorizationError,
+    ControlPlaneStore,
+    RequestContext,
+)
+from buildwealth_orchestrator.services.workspace_services import (
+    WorkspaceServiceFactory,
+    WorkspaceServices,
+)
 from buildwealth_orchestrator.settings import get_settings
 
 settings = get_settings()
@@ -412,6 +425,16 @@ user_settings_store = UserSettingsStore(settings.snapshot_dir.parent / "settings
 git_integration_settings_store = GitIntegrationSettingsStore(
     settings.git_integration_settings_path,
     default_workspace_dir=settings.versioned_workspace_dir,
+)
+control_plane_store = ControlPlaneStore(settings.control_db_path)
+control_plane_store.bootstrap_default_household(
+    owner_email=settings.auth_dev_email,
+    default_storage_root=settings.snapshot_dir.parent,
+    demo_storage_root=settings.workspace_root_dir / "ws_demo_household",
+)
+workspace_service_factory = WorkspaceServiceFactory(
+    settings=settings,
+    control_plane=control_plane_store,
 )
 
 # Apply user settings over env defaults
@@ -506,6 +529,73 @@ def parse_path_candidates(raw_value: str, fallback: tuple[str, ...]) -> tuple[st
         if item.strip()
     )
     return values or fallback
+
+
+def _auth_mode() -> str:
+    return str(settings.auth_mode or "dev").strip().lower()
+
+
+def _session_cookie_kwargs() -> dict[str, Any]:
+    return {
+        "httponly": True,
+        "samesite": "lax",
+        "secure": _auth_mode() not in {"dev", "test", "disabled"},
+        "max_age": max(1, int(settings.auth_session_days)) * 24 * 60 * 60,
+        "path": "/",
+    }
+
+
+def get_request_context(request: Request) -> RequestContext:
+    requested_workspace_id = (
+        request.headers.get("x-buildwealth-workspace-id")
+        or request.query_params.get("workspace_id")
+        or None
+    )
+    token = request.cookies.get(settings.auth_session_cookie_name) or ""
+    mode = _auth_mode()
+    try:
+        if token:
+            return control_plane_store.request_context_for_token(
+                token=token,
+                auth_mode=mode,
+                requested_workspace_id=requested_workspace_id,
+            )
+        if mode in {"dev", "test", "disabled"}:
+            return control_plane_store.dev_request_context(
+                auth_mode=mode,
+                requested_workspace_id=requested_workspace_id,
+            )
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except AuthorizationError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    raise HTTPException(status_code=401, detail="Authentication required")
+
+
+def require_permission(context: RequestContext, permission: str) -> None:
+    if permission not in context.permissions:
+        raise HTTPException(status_code=403, detail=f"Missing permission: {permission}")
+
+
+def get_workspace_services(
+    context: RequestContext = Depends(get_request_context),
+) -> WorkspaceServices:
+    return workspace_service_factory.for_context(context)
+
+
+def _seed_demo_workspace_data(workspace_root: Path) -> dict[str, Any]:
+    script_path = Path(__file__).resolve().parents[4] / "scripts" / "seed-demo-data.py"
+    if not script_path.exists():
+        raise RuntimeError("Demo seed script was not found")
+    spec = importlib.util.spec_from_file_location("buildwealth_demo_seed", script_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Demo seed script could not be loaded")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    seed_demo_dataset = getattr(module, "seed_demo_dataset", None)
+    if not callable(seed_demo_dataset):
+        raise RuntimeError("Demo seed function was not found")
+    return seed_demo_dataset(workspace_root, include_settings=False)
 
 
 snapshot_store = SnapshotStore(settings.snapshot_dir)
@@ -3864,8 +3954,11 @@ def resolve_active_plan_detail() -> dict[str, Any] | None:
         return None
 
 
-def get_financial_profile_payload() -> dict[str, Any]:
-    payload = financial_profile_store.get()
+def get_financial_profile_payload(
+    profile_store: FinancialProfileStore | None = None,
+) -> dict[str, Any]:
+    resolved_store = profile_store or financial_profile_store
+    payload = resolved_store.get()
     tax_profile = payload.get("tax_profile")
     if isinstance(tax_profile, dict) and not tax_profile.get("state"):
         tax_profile["state"] = settings.app_state
@@ -3877,7 +3970,9 @@ def save_financial_profile_payload(
     request: FinancialProfileRequest,
     *,
     source: str = "profile_editor",
+    profile_store: FinancialProfileStore | None = None,
 ) -> dict[str, Any]:
+    resolved_store = profile_store or financial_profile_store
     payload = request.model_dump(mode="json")
 
     for key in ("income_items", "expense_items", "debt_items", "goal_items", "physical_assets"):
@@ -3891,18 +3986,27 @@ def save_financial_profile_payload(
             label = str(row.get(label_key) or "").strip()
             row[label_key] = label or "Untitled"
 
+    members = payload.get("household_members")
+    if isinstance(members, list):
+        for member in members:
+            if not isinstance(member, dict):
+                continue
+            display_name = str(member.get("display_name") or "").strip()
+            member["display_name"] = display_name or "Household member"
+
     tax_profile = payload.get("tax_profile")
     if isinstance(tax_profile, dict) and not tax_profile.get("state"):
         tax_profile["state"] = settings.app_state
         payload["tax_profile"] = tax_profile
 
     try:
-        return financial_profile_store.save(payload, metadata_source=source)
+        return resolved_store.save(payload, metadata_source=source)
     except TypeError:
-        return financial_profile_store.save(payload)
+        return resolved_store.save(payload)
 
 
 PROFILE_AUDIT_SECTION_ORDER = [
+    "household_members",
     "income_items",
     "expense_items",
     "debt_items",
@@ -15546,21 +15650,228 @@ def pull_git_remote(request: GitRemoteOperationRequest) -> GitRemoteOperationRes
     return GitRemoteOperationResponse.model_validate(result)
 
 
+@app.post("/api/auth/register")
+def register_owner(request: Request, response: Response, payload: dict[str, Any]) -> dict[str, Any]:
+    if _auth_mode() not in {"dev", "test", "local"}:
+        raise HTTPException(status_code=403, detail="Local registration is disabled")
+    try:
+        user = control_plane_store.create_owner_user(
+            email=str(payload.get("email") or ""),
+            password=str(payload.get("password") or ""),
+            display_name=str(payload.get("display_name") or ""),
+        )
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="User already exists") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    workspace = control_plane_store.default_workspace_for_user(str(user["id"]))
+    session = control_plane_store.create_session(
+        user_id=str(user["id"]),
+        active_workspace_id=workspace.id,
+        ttl_days=settings.auth_session_days,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    response.set_cookie(
+        settings.auth_session_cookie_name,
+        session["session_token"],
+        **_session_cookie_kwargs(),
+    )
+    return {
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+            "display_name": user.get("display_name") or "",
+        },
+        "workspace_id": workspace.id,
+        "csrf_token": session["csrf_token"],
+    }
+
+
+@app.post("/api/auth/login")
+def login(request: Request, response: Response, payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        user = control_plane_store.authenticate_local(
+            email=str(payload.get("email") or ""),
+            password=str(payload.get("password") or ""),
+        )
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    workspace = control_plane_store.default_workspace_for_user(str(user["id"]))
+    session = control_plane_store.create_session(
+        user_id=str(user["id"]),
+        active_workspace_id=workspace.id,
+        ttl_days=settings.auth_session_days,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    response.set_cookie(
+        settings.auth_session_cookie_name,
+        session["session_token"],
+        **_session_cookie_kwargs(),
+    )
+    return {
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+            "display_name": user.get("display_name") or "",
+        },
+        "workspace_id": workspace.id,
+        "csrf_token": session["csrf_token"],
+    }
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request, response: Response) -> dict[str, Any]:
+    control_plane_store.revoke_session(request.cookies.get(settings.auth_session_cookie_name) or "")
+    response.delete_cookie(settings.auth_session_cookie_name, path="/")
+    return {"ok": True}
+
+
+@app.get("/api/auth/session")
+def auth_session(context: RequestContext = Depends(get_request_context)) -> dict[str, Any]:
+    workspace, _role = control_plane_store.get_workspace_for_user(
+        user_id=context.user_id,
+        workspace_id=context.workspace_id,
+    )
+    user = control_plane_store.get_user(context.user_id)
+    return {
+        "authenticated": True,
+        "auth_mode": context.auth_mode,
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+            "display_name": user.get("display_name") or "",
+        },
+        "workspace": {
+            "id": workspace.id,
+            "name": workspace.name,
+            "workspace_type": workspace.workspace_type,
+            "is_demo": context.is_demo_workspace,
+        },
+        "role": context.role,
+        "permissions": sorted(context.permissions),
+    }
+
+
+@app.get("/api/workspaces")
+def list_workspaces(context: RequestContext = Depends(get_request_context)) -> dict[str, Any]:
+    workspaces = control_plane_store.list_workspaces_for_user(context.user_id)
+    return {
+        "active_workspace_id": context.workspace_id,
+        "items": [
+            {
+                "id": workspace.id,
+                "name": workspace.name,
+                "workspace_type": workspace.workspace_type,
+                "is_demo": workspace.workspace_type == "demo",
+            }
+            for workspace in workspaces
+        ],
+    }
+
+
+@app.get("/api/workspaces/current")
+def current_workspace(context: RequestContext = Depends(get_request_context)) -> dict[str, Any]:
+    workspace, _role = control_plane_store.get_workspace_for_user(
+        user_id=context.user_id,
+        workspace_id=context.workspace_id,
+    )
+    return {
+        "id": workspace.id,
+        "name": workspace.name,
+        "workspace_type": workspace.workspace_type,
+        "is_demo": workspace.workspace_type == "demo",
+        "role": context.role,
+        "permissions": sorted(context.permissions),
+    }
+
+
+@app.post("/api/workspaces/{workspace_id}/select")
+def select_workspace(
+    workspace_id: str,
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+) -> dict[str, Any]:
+    workspace, role = control_plane_store.get_workspace_for_user(
+        user_id=context.user_id,
+        workspace_id=workspace_id,
+    )
+    control_plane_store.select_workspace_for_session(
+        token=request.cookies.get(settings.auth_session_cookie_name) or "",
+        workspace_id=workspace.id,
+    )
+    return {
+        "id": workspace.id,
+        "name": workspace.name,
+        "workspace_type": workspace.workspace_type,
+        "is_demo": workspace.workspace_type == "demo",
+        "role": role,
+    }
+
+
+@app.post("/api/workspaces/{workspace_id}/demo/reset")
+def reset_demo_workspace(
+    workspace_id: str,
+    context: RequestContext = Depends(get_request_context),
+) -> dict[str, Any]:
+    require_permission(context, "demo.reset")
+    workspace, _role = control_plane_store.get_workspace_for_user(
+        user_id=context.user_id,
+        workspace_id=workspace_id,
+    )
+    if workspace.workspace_type != "demo":
+        raise HTTPException(status_code=400, detail="Only demo workspaces can be reset")
+    paths = workspace_service_factory.paths_for_record(workspace)
+    if paths.root.exists():
+        shutil.rmtree(paths.root)
+    paths.root.mkdir(parents=True, exist_ok=True)
+    try:
+        summary = _seed_demo_workspace_data(paths.root)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Demo workspace reset failed: {exc}") from exc
+    control_plane_store.record_audit_event(
+        action="demo_workspace.reset",
+        actor_user_id=context.user_id,
+        organization_id=context.organization_id,
+        workspace_id=workspace.id,
+        target_type="workspace",
+        target_id=workspace.id,
+    )
+    return {
+        "ok": True,
+        "workspace": {
+            "id": workspace.id,
+            "name": workspace.name,
+            "workspace_type": workspace.workspace_type,
+            "is_demo": True,
+        },
+        "summary": summary,
+    }
+
+
 @app.get("/api/settings")
-def get_user_settings() -> dict[str, Any]:
-    return user_settings_store.load_masked()
+def get_user_settings(
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_permission(services.context, "settings.read")
+    return services.settings_store.load_masked()
 
 
 @app.put("/api/settings")
-def update_user_settings(request: dict[str, Any]) -> dict[str, Any]:
+def update_user_settings(
+    request: dict[str, Any],
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
     global llm_client
 
-    saved = user_settings_store.save(request)
+    require_permission(services.context, "settings.write")
+    saved = services.settings_store.save(request)
 
     # Hot-reload affected services
     saved_explicit_keys = {
         key
-        for key in user_settings_store.load_stored_raw()
+        for key in services.settings_store.load_stored_raw()
         if key.startswith("llm_") or key.startswith("openai_")
     }
     llm_client = build_llm_client(
@@ -15581,14 +15892,18 @@ def update_user_settings(request: dict[str, Any]) -> dict[str, Any]:
     if embedding_changed:
         _apply_context_embedding_settings(saved)
         try:
-            context_intelligence_service.embedding_client = build_embedding_client_from_settings(settings)
+            services.context_intelligence_service.embedding_client = build_embedding_client_from_settings(settings)
         except Exception:
             # The new client may fail to build (bad URL, missing model). Fall
             # back to a disabled client rather than crash the request — the
             # user can fix and resave.
-            context_intelligence_service.embedding_client = build_embedding_client_from_settings(settings, force_disabled=True) if False else context_intelligence_service.embedding_client
+            services.context_intelligence_service.embedding_client = (
+                build_embedding_client_from_settings(settings, force_disabled=True)
+                if False
+                else services.context_intelligence_service.embedding_client
+            )
 
-    return user_settings_store.load_masked()
+    return services.settings_store.load_masked()
 
 
 def _apply_context_embedding_settings(saved: dict[str, Any]) -> None:
@@ -15613,22 +15928,26 @@ def _apply_context_embedding_settings(saved: dict[str, Any]) -> None:
             pass
 
 
-def _settings_payload_for_probe(request: dict[str, Any]) -> tuple[dict[str, Any], set[str]]:
-    current = user_settings_store.load_raw()
+def _settings_payload_for_probe(
+    request: dict[str, Any],
+    settings_store: Any | None = None,
+) -> tuple[dict[str, Any], set[str]]:
+    resolved_store = settings_store or user_settings_store
+    current = resolved_store.load_raw()
     payload = dict(current)
     masked_sensitive_keys: set[str] = set()
     provider_changed = False
     provider_transition_keys: set[str] = set()
     explicit_keys: set[str] = {
         key
-        for key in user_settings_store.load_stored_raw()
+        for key in resolved_store.load_stored_raw()
         if key.startswith("llm_") or key.startswith("openai_")
     }
     original_provider = str(current.get("llm_provider") or "openai")
     for key, value in request.items():
-        if key not in user_settings_store.DEFAULTS:
+        if key not in resolved_store.DEFAULTS:
             continue
-        if key in user_settings_store.SENSITIVE_KEYS and isinstance(value, str) and value.startswith(MASKED_PLACEHOLDER):
+        if key in resolved_store.SENSITIVE_KEYS and isinstance(value, str) and value.startswith(MASKED_PLACEHOLDER):
             masked_sensitive_keys.add(key)
             continue
         if value is not None:
@@ -15677,8 +15996,12 @@ def _llm_probe_failure_response(payload: dict[str, Any], client: Any, stage: str
 
 
 @app.post("/api/settings/test-llm")
-async def test_llm_settings(request: dict[str, Any]) -> dict[str, Any]:
-    payload, explicit_keys = _settings_payload_for_probe(request)
+async def test_llm_settings(
+    request: dict[str, Any],
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_permission(services.context, "settings.read")
+    payload, explicit_keys = _settings_payload_for_probe(request, services.settings_store)
     client = build_llm_client(
         _llm_config_from_payload(
             payload,
@@ -15706,13 +16029,17 @@ async def test_llm_settings(request: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.post("/api/settings/test-embedding")
-def test_embedding_settings(request: dict[str, Any]) -> dict[str, Any]:
+def test_embedding_settings(
+    request: dict[str, Any],
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
     """Probe the embedding provider with the supplied (or saved) settings.
 
     Builds a transient settings object, instantiates the embedding client,
     and runs a small embed_text() against a fixed string. Returns the
     provider/model used and the embedded vector length on success.
     """
+    require_permission(services.context, "settings.read")
     from copy import copy
 
     probe_settings = copy(settings)
@@ -15782,7 +16109,9 @@ def test_embedding_settings(request: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.get("/api/settings/context")
-def get_context_settings() -> dict[str, Any]:
+def get_context_settings(
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
     """Read-only summary of context-intelligence + embedding configuration.
 
     These knobs are env-driven today (CONTEXT_EMBEDDING_*), not user-editable
@@ -15790,7 +16119,8 @@ def get_context_settings() -> dict[str, Any]:
     so users can see what's configured without needing to know the env-var
     names. Editing is deferred until Slice 6 wires UserSettingsStore support.
     """
-    registry_status = context_intelligence_service.get_status()
+    require_permission(services.context, "settings.read")
+    registry_status = services.context_intelligence_service.get_status()
     return {
         "context_engine_enabled": True,
         "embeddings_enabled": bool(settings.context_embeddings_enabled),
@@ -15809,6 +16139,9 @@ def get_context_settings() -> dict[str, Any]:
 
 
 async def on_startup() -> None:
+    settings.control_db_path.parent.mkdir(parents=True, exist_ok=True)
+    settings.workspace_root_dir.mkdir(parents=True, exist_ok=True)
+    settings.secret_key_path.parent.mkdir(parents=True, exist_ok=True)
     settings.import_inbox_dir.mkdir(parents=True, exist_ok=True)
     settings.import_archive_dir.mkdir(parents=True, exist_ok=True)
     settings.import_workbench_dir.mkdir(parents=True, exist_ok=True)
@@ -15997,17 +16330,26 @@ def record_today_review_checkpoint() -> TodayDashboardResponse:
 
 
 @app.get("/api/financial-profile", response_model=FinancialProfileResponse)
-def get_financial_profile() -> FinancialProfileResponse:
-    return FinancialProfileResponse(**get_financial_profile_payload())
+def get_financial_profile(
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> FinancialProfileResponse:
+    require_permission(services.context, "profile.read")
+    return FinancialProfileResponse(**get_financial_profile_payload(services.financial_profile_store))
 
 
 @app.put("/api/financial-profile", response_model=FinancialProfileResponse)
 def update_financial_profile(
     request: FinancialProfileRequest,
     source: str | None = None,
+    services: WorkspaceServices = Depends(get_workspace_services),
 ) -> FinancialProfileResponse:
+    require_permission(services.context, "profile.write")
     source_label = str(source or "profile_editor").strip() or "profile_editor"
-    saved = save_financial_profile_payload(request, source=source_label)
+    saved = save_financial_profile_payload(
+        request,
+        source=source_label,
+        profile_store=services.financial_profile_store,
+    )
     _record_profile_update_activity(
         source=source_label,
         sections=_profile_update_sections_from_payload(request),
@@ -16018,8 +16360,27 @@ def update_financial_profile(
 
 
 @app.get("/api/onboarding/status", response_model=OnboardingStatusResponse)
-def onboarding_status() -> OnboardingStatusResponse:
-    return build_onboarding_status_response()
+def onboarding_status(
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> OnboardingStatusResponse:
+    require_permission(services.context, "profile.read")
+    try:
+        latest_snapshot = services.snapshot_store.latest()
+    except FileNotFoundError:
+        latest_snapshot = None
+    active_plan_detail = None
+    active_plan_id = services.plan_workspace.get_active_plan_id()
+    if active_plan_id:
+        try:
+            active_plan_detail = services.plan_workspace.get_plan(active_plan_id)
+        except PlanNotFoundError:
+            active_plan_detail = None
+    return build_onboarding_status_response(
+        profile_payload=get_financial_profile_payload(services.financial_profile_store),
+        latest_snapshot=latest_snapshot,
+        active_plan_detail=active_plan_detail,
+        load_fallbacks=False,
+    )
 
 
 @app.get("/api/financial-health", response_model=FinancialHealthResponse)

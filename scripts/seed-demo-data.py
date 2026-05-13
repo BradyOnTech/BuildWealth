@@ -72,6 +72,35 @@ def seed_profile(data_root: Path) -> dict[str, Any]:
                 "annual_growth_rate": 0.03,
             },
         ],
+        "household_members": [
+            {
+                "id": "demo-member-alex",
+                "display_name": "Alex",
+                "relationship": "self",
+                "birth_year": 1988,
+                "retirement_age": 65,
+                "dependent": False,
+                "notes": "Primary earner in the demo household.",
+            },
+            {
+                "id": "demo-member-jordan",
+                "display_name": "Jordan",
+                "relationship": "partner",
+                "birth_year": 1990,
+                "retirement_age": 65,
+                "dependent": False,
+                "notes": "Second earner in the demo household.",
+            },
+            {
+                "id": "demo-member-riley",
+                "display_name": "Riley",
+                "relationship": "child",
+                "birth_year": 2020,
+                "retirement_age": None,
+                "dependent": True,
+                "notes": "Dependent used for childcare and college-savings planning examples.",
+            },
+        ],
         "expense_items": [
             {"id": "demo-expense-mortgage", "label": "Mortgage payment", "monthly_amount_usd": 2400, "category": "housing", "is_fixed": True, "inflation_rate": 0.02},
             {"id": "demo-expense-groceries", "label": "Groceries and household", "monthly_amount_usd": 950, "category": "food", "is_fixed": False, "inflation_rate": 0.035},
@@ -626,12 +655,8 @@ def seed_settings(data_root: Path) -> dict[str, Any]:
     }
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Seed BuildWealth with a realistic average-household demo dataset.")
-    parser.add_argument("--data-root", default=str(REPO_ROOT / "data"), help="BuildWealth data root to seed.")
-    args = parser.parse_args()
-
-    data_root = Path(args.data_root).resolve()
+def seed_demo_dataset(data_root: Path, *, include_settings: bool = True) -> dict[str, Any]:
+    data_root = Path(data_root).resolve()
     data_root.mkdir(parents=True, exist_ok=True)
 
     profile = seed_profile(data_root)
@@ -640,12 +665,17 @@ def main() -> int:
     recommendations = seed_recommendations(data_root, str(plan.get("plan_id") or ""))
     import_file = seed_import_file(data_root)
     snapshot_path = seed_snapshot(data_root)
-    settings = seed_settings(data_root)
+    settings = seed_settings(data_root) if include_settings else {
+        "llm_provider": None,
+        "llm_model": None,
+        "has_llm_api_key": False,
+    }
 
-    summary = {
+    return {
         "data_root": str(data_root),
         "profile_income_items": len(profile.get("income_items", [])),
         "profile_expense_items": len(profile.get("expense_items", [])),
+        "profile_household_members": len(profile.get("household_members", [])),
         "portfolio_total_value": portfolio.get("holdings", {}).get("total_portfolio_value"),
         "portfolio_transactions_removed_before_seed": portfolio.get("removed_demo_transactions"),
         "plan_id": plan.get("plan_id"),
@@ -656,6 +686,14 @@ def main() -> int:
         "llm_model": settings.get("llm_model"),
         "has_llm_api_key": settings.get("has_llm_api_key"),
     }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Seed BuildWealth with a realistic average-household demo dataset.")
+    parser.add_argument("--data-root", default=str(REPO_ROOT / "data"), help="BuildWealth data root to seed.")
+    args = parser.parse_args()
+
+    summary = seed_demo_dataset(Path(args.data_root), include_settings=True)
     print(json.dumps(summary, indent=2))
     return 0
 

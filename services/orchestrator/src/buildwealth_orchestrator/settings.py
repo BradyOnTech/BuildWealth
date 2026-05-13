@@ -12,6 +12,13 @@ class Settings(BaseSettings):
     app_env: str = Field(default="local", alias="APP_ENV")
     app_currency: str = Field(default="USD", alias="APP_CURRENCY")
     app_state: str = Field(default="MN", alias="APP_STATE")
+    auth_mode: str = Field(default="dev", alias="AUTH_MODE")
+    auth_session_cookie_name: str = Field(default="buildwealth_session", alias="AUTH_SESSION_COOKIE_NAME")
+    auth_session_days: int = Field(default=14, alias="AUTH_SESSION_DAYS")
+    auth_dev_email: str = Field(default="owner@buildwealth.local", alias="AUTH_DEV_EMAIL")
+    control_db_path: Path = Field(default=Path("data/control/control.db"), alias="CONTROL_DB_PATH")
+    workspace_root_dir: Path = Field(default=Path("data/workspaces"), alias="WORKSPACE_ROOT_DIR")
+    secret_key_path: Path = Field(default=Path("data/control/local_secret.key"), alias="SECRET_KEY_PATH")
 
     snapshot_dir: Path = Field(default=Path("data/snapshots"), alias="SNAPSHOT_DIR")
     durable_storage_dir: Path = Field(default=Path("data/storage"), alias="DURABLE_STORAGE_DIR")

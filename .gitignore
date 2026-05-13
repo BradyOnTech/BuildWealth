@@ -21,7 +21,9 @@ data/portfolio/watchlist.json
 data/imports/inbox/*.csv
 data/imports/archive/*.csv
 data/conversations/
+data/control/
 data/storage/
+data/workspaces/
 data/plans/
 data/versioned/
 services/orchestrator/data/

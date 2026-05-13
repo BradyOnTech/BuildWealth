@@ -313,7 +313,7 @@ function attachHandlers() {
 
 function ensureShape(profile) {
   const next = profile && typeof profile === 'object' ? { ...profile } : {};
-  for (const key of ['income_items', 'expense_items', 'debt_items', 'goal_items', 'physical_assets']) {
+  for (const key of ['household_members', 'income_items', 'expense_items', 'debt_items', 'goal_items', 'physical_assets']) {
     if (!Array.isArray(next[key])) next[key] = [];
   }
   if (!next.tax_profile || typeof next.tax_profile !== 'object') next.tax_profile = {};
