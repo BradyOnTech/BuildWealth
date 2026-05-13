@@ -10,4 +10,4 @@ New implementation should use BuildWealth workflow names:
 - Import Workbench for statement, CSV, reconciliation, and import-report workflows.
 - Plan, Simulations, Saved Simulations, and Plan Strategy Lab for what-if, retirement, contribution, tax, and withdrawal workflows.
 
-If optional calculation services remain during migration, they are implementation details behind BuildWealth-owned interfaces. The user-facing contract is always BuildWealth data in, BuildWealth explanation out, and BuildWealth review/apply controls around changes.
+Optional calculation services are retired from the target runtime. The user-facing and developer-facing contract is BuildWealth data in, BuildWealth service logic, BuildWealth explanation out, and BuildWealth review/apply controls around changes.

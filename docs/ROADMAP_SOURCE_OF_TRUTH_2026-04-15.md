@@ -186,16 +186,16 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - full: `pytest -q` (`476 passed`)
 
 ### 2026-04-20 (Completed - Cross-Cutting Follow-up, Slice D Planning Native Module Decomposition)
-1. Decomposed planning native module orchestration into focused internal helper boundaries in `planning_calculation_adapter.py`:
+1. Decomposed planning native module orchestration into focused internal helper boundaries in `plan_simulation_service.py`:
 - added `_ScenarioRunInputs` dataclass to centralize run-time input state.
 - split local execution, local-envelope updates, native module request execution, native module merge envelope assembly, and degraded fallback assembly into dedicated helper methods.
 2. Kept public API/contracts unchanged:
 - `RemoteScenarioService.run(...)` signature and response contract remain stable.
 - native module request/response schema models and metadata semantics remain unchanged.
 3. Added focused regression coverage for local-path projection payload preservation:
-- expanded `tests/test_planning_calculation_adapter.py` with local-path projection payload assertions.
+- expanded `tests/test_plan_simulation_service.py` with local-path projection payload assertions.
 4. Verification:
-- targeted: `pytest -q tests/test_planning_calculation_adapter.py` (`8 passed`).
+- targeted: `pytest -q tests/test_plan_simulation_service.py` (`8 passed`).
 - full: `pytest -q` (`476 passed`).
 
 ### 2026-04-15 (Completed - Cross-Cutting Follow-up, Slice B Frontend Field Schema Isolation)
@@ -254,16 +254,16 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - native module call disposition decisions (guarded/disabled/adapter-missing/use-native module).
 - canonical engine status/fallback constants and warning normalization behavior.
 2. Unified benchmark/attribution/planning native module services on shared policy:
-- `portfolio_benchmark.py`, `portfolio_attribution.py`, and `planning_calculation_adapter.py` now resolve native module eligibility through one policy entrypoint.
+- `portfolio_benchmark.py`, `portfolio_attribution.py`, and `plan_simulation_service.py` now resolve native module eligibility through one policy entrypoint.
 - degraded response updates and native module-unavailable warning formatting are now shared helpers instead of ad hoc per-service logic.
 3. Expanded native module execution-state matrix coverage:
 - added `test_engine_policy.py` for direct policy/envelope behavior.
 - added adapter-missing path coverage in:
   - `test_portfolio_benchmark.py`
   - `test_portfolio_attribution.py`
-  - `test_planning_calculation_adapter.py`
+  - `test_plan_simulation_service.py`
 4. Verification:
-- targeted: `pytest -q tests/test_engine_policy.py tests/test_portfolio_benchmark.py tests/test_portfolio_attribution.py tests/test_planning_calculation_adapter.py` (`22 passed`).
+- targeted: `pytest -q tests/test_engine_policy.py tests/test_portfolio_benchmark.py tests/test_portfolio_attribution.py tests/test_plan_simulation_service.py` (`22 passed`).
 - full: `pytest -q` (`473 passed`).
 
 ### 2026-04-15 (Completed - Phase 6.0 Slice 4, Runtime Telemetry Dashboards)
@@ -463,7 +463,7 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 5. Source-provenance note:
 - implementation follows Simulations simulation/returns-provider patterns and historical return dataset structure (`simulation-engine.ts`, `returns-providers/*`, `historical-data/nyu-returns.ts`).
 6. Verification:
-- targeted suite: `pytest -q tests/test_scenario_engine.py tests/test_plan_assumption_sets.py tests/test_plan_workspace.py tests/test_planning_calculation_adapter.py tests/test_copilot_tool_updates.py` (`70 passed`).
+- targeted suite: `pytest -q tests/test_scenario_engine.py tests/test_plan_assumption_sets.py tests/test_plan_workspace.py tests/test_plan_simulation_service.py tests/test_copilot_tool_updates.py` (`70 passed`).
 - full suite: `pytest -q` (`427 passed`).
 
 ### 2026-04-15 (Completed - Phase 5.0 Slice 4, Household/Couple Planning Mode)
@@ -485,7 +485,7 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 6. Added regression coverage:
 - household projection adjustments and filing-status defaults (`test_household_planning.py`)
 - plan settings household/filing validation (`test_plan_workspace.py`)
-- native module metadata forwarding + Copilot settings-contract coverage remain in place (`test_planning_calculation_adapter.py`, `test_copilot_tool_updates.py`).
+- native module metadata forwarding + Copilot settings-contract coverage remain in place (`test_plan_simulation_service.py`, `test_copilot_tool_updates.py`).
 7. Verification: `pytest -q services/orchestrator/tests` passes (`424 passed`).
 
 ### 2026-04-15 (Completed - Phase 5.0 Slice 3, Configurable Drawdown Ordering)
@@ -509,7 +509,7 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 6. Added regression coverage:
 - scenario-engine drawdown-order override behavior (`test_scenario_engine.py`)
 - plan workspace settings/timeline drawdown-order persistence (`test_plan_workspace.py`)
-- native module metadata forwarding (`test_planning_calculation_adapter.py`)
+- native module metadata forwarding (`test_plan_simulation_service.py`)
 - Copilot planning tool contract field coverage (`test_copilot_tool_updates.py`).
 7. Verification: `pytest -q services/orchestrator/tests` passes (`420 passed`).
 
@@ -532,7 +532,7 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - scenario conversion behavior (`test_scenario_engine.py`)
 - assumption set parsing/application updates (`test_plan_assumption_sets.py`)
 - plan workspace settings/assumption persistence/validation (`test_plan_workspace.py`)
-- native module metadata forwarding (`test_planning_calculation_adapter.py`)
+- native module metadata forwarding (`test_plan_simulation_service.py`)
 - Copilot planning tool contract updates (`test_copilot_tool_updates.py`).
 6. Verification: `pytest -q services/orchestrator/tests` passes (`419 passed`).
 

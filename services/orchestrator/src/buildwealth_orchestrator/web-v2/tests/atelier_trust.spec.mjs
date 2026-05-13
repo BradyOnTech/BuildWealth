@@ -102,9 +102,9 @@ test('Atelier surfaces trust durability state in v2', async ({ page }) => {
           },
           {
             id: 'providers',
-            title: 'Provider and engine health',
+            title: 'Provider and service readiness',
             status: 'ready',
-            detail: 'No enabled provider or engine degradation is currently recorded.',
+            detail: 'No enabled provider or service issues are currently recorded.',
             domain: 'provider',
           },
           {
@@ -280,7 +280,7 @@ test('Atelier surfaces trust durability state in v2', async ({ page }) => {
   await page.getByText('1 uncheckpointed', { exact: true }).waitFor({ state: 'visible' });
   await page.getByRole('heading', { name: 'Ready to rely today?' }).waitFor({ state: 'visible' });
   await page.getByText('5/8 checks ready').waitFor({ state: 'visible' });
-  await page.getByText('Provider and engine health').waitFor({ state: 'visible' });
+  await page.getByText('Provider and service readiness').waitFor({ state: 'visible' });
   await page.getByText('Backup available').waitFor({ state: 'visible' });
   await page.getByText('Restore preview verified').waitFor({ state: 'visible' });
   await page.getByRole('heading', { name: 'Profile & Copilot changes' }).waitFor({ state: 'visible' });

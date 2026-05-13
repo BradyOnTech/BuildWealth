@@ -3,7 +3,7 @@
 ## Scope
 This runbook describes how to run BuildWealth in standalone local-first mode and how to verify core runtime health.
 
-Earlier versions of this runbook described optional native module modes. That path is superseded by BuildWealth-native capability ownership. Native Module and legacy upstream containers are historical migration scaffolding, not the target runtime.
+Earlier versions of this runbook described optional calculation-module modes. That path is superseded by BuildWealth-native capability ownership. BuildWealth now runs portfolio analysis and plan simulation through orchestrator-owned services.
 
 ## Runtime Modes
 
@@ -25,10 +25,10 @@ Expected behavior:
 - The v2 product surface is available.
 - Portfolio, Plan, Profile, Inbox, Copilot, Import & Sync, Data & Recovery, and Settings workflows should route through BuildWealth-owned APIs.
 
-### Legacy Migration Scaffolding
-Legacy native module settings, engine status probes, and upstream container profiles may still exist in code while native replacement work is underway. They should not be used as normal product operation or expanded as new architecture.
+### Retired Migration Scaffolding
+Legacy calculation settings, engine status probes, adapter contracts, and upstream container profiles are retired from normal operation. Do not add new workflows that depend on them.
 
-Use them only for short-lived migration investigation, then remove the dependency once the native BuildWealth workflow is complete.
+If a stale reference appears during development, remove it or convert it into BuildWealth-owned service logic with direct tests.
 
 ## Triage Checklist
 

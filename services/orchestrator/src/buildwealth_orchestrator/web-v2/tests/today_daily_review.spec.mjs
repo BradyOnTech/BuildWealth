@@ -196,7 +196,7 @@ test('Today daily review routes command cards into review flows', async ({ page 
   await page.getByText('Command center').waitFor({ state: 'visible' });
   await page.getByText('Confidence heat map').waitFor({ state: 'visible' });
   await page.getByText('Tax profile blocks decision-grade advice.').waitFor({ state: 'visible' });
-  await page.getByText('Engine health').waitFor({ state: 'visible' });
+  await page.getByText('Service readiness').waitFor({ state: 'visible' });
   await page.getByText('Cash runway is 2.5 months lower.').waitFor({ state: 'visible' });
   await page.getByText('Research readiness changed from ready to warning.').waitFor({ state: 'visible' });
   await page.getByText('2 new Copilot-drafted review(s) are waiting.').waitFor({ state: 'visible' });

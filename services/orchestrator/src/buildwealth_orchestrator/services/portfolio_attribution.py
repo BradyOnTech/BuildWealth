@@ -15,20 +15,10 @@ from buildwealth_orchestrator.schemas import (
     PortfolioAttributionResponse,
     PortfolioAttributionSummary,
 )
-from buildwealth_orchestrator.services.engine_adapter import (
-    CalculationAdapter,
-    CalculationAdapterError,
-)
-from buildwealth_orchestrator.services.engine_policy import (
-    FALLBACK_METHOD_LOCAL_CALCULATION,
-    resolve_engine_call_disposition,
-    calculation_unavailable_warning,
-)
 from buildwealth_orchestrator.services.portfolio_store import PortfolioStore
 
 
 EPSILON = 1e-9
-PORTFOLIO_ATTRIBUTION_CONTRACT_VERSION = 1
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -141,67 +131,19 @@ class BuildWealthAttributionService:
         self,
         *,
         portfolio_store: PortfolioStore,
-        calculation_adapter: CalculationAdapter | None,
-        calculation_adapter_enabled: bool,
-        calculation_adapter_path: str,
         base_currency: str = "USD",
     ) -> None:
         self.portfolio_store = portfolio_store
-        self.calculation_adapter = calculation_adapter
-        self.calculation_adapter_enabled = calculation_adapter_enabled
-        self.calculation_adapter_path = calculation_adapter_path
         self.base_currency = str(base_currency or "USD").upper()
 
     async def analyze(
         self,
         *,
         top_n: int,
-        contract_guard_reason: str | None = None,
     ) -> PortfolioAttributionResponse:
         request_payload = self._build_request_payload(top_n=top_n)
-
-        disposition = resolve_engine_call_disposition(
-            engine_label="Portfolio attribution",
-            calculation_adapter_enabled=self.calculation_adapter_enabled,
-            calculation_adapter=self.calculation_adapter,
-            contract_guard_reason=contract_guard_reason,
-            disabled_behavior="degraded_fallback",
-        )
-
-        if not disposition.use_calculation_adapter:
-            fallback = self._compute_local_fallback(
-                request_payload,
-                fallback_method=disposition.fallback_method or FALLBACK_METHOD_LOCAL_CALCULATION,
-                warning=disposition.warning or "Portfolio attribution local calculation selected; using local fallback",
-            )
-            return self._to_api_response(request_payload, fallback)
-
-        if self.calculation_adapter is not None:
-            try:
-                contract_response = await self.calculation_adapter.post_json(
-                    path=self.calculation_adapter_path,
-                    request_payload=request_payload.model_dump(mode="json"),
-                    request_model=RemoteAttributionRequestV1,
-                    response_model=RemoteAttributionResponseV1,
-                )
-                return self._to_api_response(request_payload, contract_response)
-            except CalculationAdapterError as exc:
-                fallback = self._compute_local_fallback(
-                    request_payload,
-                    fallback_method="local_attribution_fallback",
-                    warning=calculation_unavailable_warning(
-                        engine_label="Portfolio attribution",
-                        error=exc,
-                    ),
-                )
-                return self._to_api_response(request_payload, fallback)
-
-        fallback = self._compute_local_fallback(
-            request_payload,
-            fallback_method=FALLBACK_METHOD_LOCAL_CALCULATION,
-            warning="Portfolio attribution calculation unavailable; using local fallback",
-        )
-        return self._to_api_response(request_payload, fallback)
+        local_response = self._compute_local(request_payload)
+        return self._to_api_response(request_payload, local_response)
 
     def _build_request_payload(self, *, top_n: int) -> RemoteAttributionRequestV1:
         holdings_payload = self.portfolio_store.get_holdings()
@@ -277,12 +219,9 @@ class BuildWealthAttributionService:
             metadata={"source": "portfolio_store.holdings"},
         )
 
-    def _compute_local_fallback(
+    def _compute_local(
         self,
         request_payload: RemoteAttributionRequestV1,
-        *,
-        fallback_method: str,
-        warning: str,
     ) -> RemoteAttributionResponseV1:
         denominator = request_payload.portfolio_total_return_base
         if abs(denominator) <= EPSILON:
@@ -321,7 +260,7 @@ class BuildWealthAttributionService:
 
         accounted_return = round(sum(row.total_return_base for row in rows), 2)
         residual_return = round(request_payload.portfolio_total_return_base - accounted_return, 2)
-        warnings = [warning]
+        warnings: list[str] = []
         if abs(residual_return) > 0.01:
             warnings.append(
                 "Attribution has residual return not represented by open holdings (likely closed positions or cash flows)."
@@ -329,8 +268,8 @@ class BuildWealthAttributionService:
 
         return RemoteAttributionResponseV1(
             request_id=request_payload.request_id,
-            engine_status="degraded",
-            fallback_method=fallback_method,
+            engine_status="ok",
+            fallback_method=None,
             summary=RemoteAttributionSummaryV1(
                 portfolio_total_return_base=round(request_payload.portfolio_total_return_base, 2),
                 portfolio_total_value_base=round(request_payload.portfolio_total_value_base, 2),

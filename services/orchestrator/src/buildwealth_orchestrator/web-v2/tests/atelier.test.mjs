@@ -118,7 +118,7 @@ test('atelier renders trust durability visibility from existing status payloads'
         },
         {
           id: 'providers',
-          title: 'Provider and engine health',
+          title: 'Provider and service readiness',
           status: 'blocked',
           detail: 'Provider health needs review.',
           domain: 'provider',
@@ -154,7 +154,7 @@ test('atelier renders trust durability visibility from existing status payloads'
   assert.match(markup, /Ready to rely today\?/);
   assert.match(markup, /4\/8 checks ready/);
   assert.match(markup, /Release readiness is blocked/);
-  assert.match(markup, /Provider and engine health/);
+  assert.match(markup, /Provider and service readiness/);
   assert.match(markup, /Create backup/);
   assert.match(markup, /Backup available/);
   assert.match(markup, /Protection compliant/);

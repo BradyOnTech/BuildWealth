@@ -29,12 +29,9 @@ def _sanitize_warning(value: Any) -> str:
     if "BuildWealth native analytics uses local" in text:
         return ""
     replacements = {
-        "Portfolio benchmark calculation_service": "Benchmark service",
-        "Portfolio attribution calculation_service": "Attribution service",
         "Portfolio benchmark": "Benchmark service",
         "Portfolio attribution": "Attribution service",
         "portfolio_analysis": "analytics",
-        "calculation_service": "adapter",
     }
     for source, target in replacements.items():
         text = text.replace(source, target)

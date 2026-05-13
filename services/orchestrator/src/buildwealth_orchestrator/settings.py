@@ -55,68 +55,9 @@ class Settings(BaseSettings):
         alias="TODAY_REVIEW_CHECKPOINT_PATH",
     )
 
-    portfolio_calculation_service_base_url: str = Field(
-        default="http://localhost:8411",
-        alias="PORTFOLIO_CALCULATION_SERVICE_BASE_URL",
-    )
-    portfolio_benchmark_calculation_adapter_path: str = Field(
-        default="/v1/benchmark/compare",
-        alias="PORTFOLIO_BENCHMARK_CALCULATION_SERVICE_PATH",
-    )
-    portfolio_attribution_calculation_adapter_path: str = Field(
-        default="/v1/attribution/compute",
-        alias="PORTFOLIO_ATTRIBUTION_CALCULATION_SERVICE_PATH",
-    )
-    enable_portfolio_benchmark_calculation_service: bool = Field(
-        default=False,
-        alias="ENABLE_PORTFOLIO_BENCHMARK_CALCULATION_SERVICE",
-    )
-    enable_portfolio_attribution_calculation_service: bool = Field(
-        default=False,
-        alias="ENABLE_PORTFOLIO_ATTRIBUTION_CALCULATION_SERVICE",
-    )
-    engine_calculation_timeout_seconds: float = Field(default=3.0, alias="ENGINE_CALCULATION_TIMEOUT_SECONDS")
-    engine_calculation_retry_count: int = Field(default=1, alias="ENGINE_CALCULATION_RETRY_COUNT")
-    engine_health_probe_interval_seconds: float = Field(
-        default=60.0,
-        alias="ENGINE_HEALTH_PROBE_INTERVAL_SECONDS",
-    )
-    engine_calculation_version_paths: str = Field(
-        default="/version",
-        alias="ENGINE_CALCULATION_VERSION_PATHS",
-    )
-    portfolio_calculation_service_health_paths: str = Field(
-        default="/health,/api/v1/health",
-        alias="PORTFOLIO_CALCULATION_SERVICE_HEALTH_PATHS",
-    )
-    plan_calculation_service_health_paths: str = Field(
-        default="/health,/api/health",
-        alias="PLAN_CALCULATION_SERVICE_HEALTH_PATHS",
-    )
-    portfolio_calculation_contract_version: int = Field(
-        default=1,
-        alias="PORTFOLIO_CALCULATION_SERVICE_CONTRACT_VERSION",
-    )
-    plan_calculation_contract_version: int = Field(
-        default=1,
-        alias="PLAN_CALCULATION_SERVICE_CONTRACT_VERSION",
-    )
     portfolio_benchmark_default_symbols: str = Field(
         default="SPY",
         alias="PORTFOLIO_BENCHMARK_DEFAULT_SYMBOLS",
-    )
-
-    plan_calculation_service_base_url: str = Field(
-        default="http://localhost:8412",
-        alias="PLAN_CALCULATION_SERVICE_BASE_URL",
-    )
-    plan_simulation_calculation_adapter_path: str = Field(
-        default="/v1/scenario/simulate",
-        alias="PLAN_SIMULATION_CALCULATION_SERVICE_PATH",
-    )
-    enable_plan_simulation_calculation_service: bool = Field(
-        default=False,
-        alias="ENABLE_PLAN_SIMULATION_CALCULATION_SERVICE",
     )
 
     planner_years_to_retirement: int = Field(default=30, alias="PLANNER_YEARS_TO_RETIREMENT")

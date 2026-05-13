@@ -90,13 +90,13 @@
 - Rationale: preserves single-app UX and local-first operation while reducing parity risk and rewrite cost on mature financial calculation logic.
 
 2. Canonical data ownership
-- Decision: Python remains the system of record for ledger, profile, plans, and snapshots. Optional calculation services are stateless implementation details.
-- Rationale: avoids split-brain data models and keeps migration logic centralized.
+- Decision: Python remains the system of record for ledger, profile, plans, snapshots, calculations, and audit-ready outputs.
+- Rationale: avoids split-brain data models and keeps user workflows inside one BuildWealth runtime.
 
 3. Engine integration model
-- Decision: use versioned calculation interfaces with strict response validation and fallback behavior while migration scaffolding remains.
-- Rationale: contract versioning reduces integration drift and keeps optional calculators isolated from product workflows.
+- Decision: benchmark, attribution, and plan simulation routes use BuildWealth-owned services directly.
+- Rationale: the replacement logic now lives inside the orchestrator, so runtime probes, adapter contracts, and optional calculator fallbacks are retired.
 
 4. Scope of optional calculation services
-- Decision: prioritize local BuildWealth services for benchmark, attribution, tax, and scenario calculation, while retaining explicit degraded fallback behavior where optional calculators still exist.
-- Rationale: maximizes correctness without introducing unnecessary service complexity.
+- Decision: optional calculation services are no longer part of normal BuildWealth operation.
+- Rationale: correctness now comes from native service tests, clear module ownership, and user-visible review/apply workflows rather than a second runtime path.

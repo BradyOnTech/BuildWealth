@@ -148,16 +148,16 @@ These decisions refine the build plan based on the current repository and upstre
   - full: `pytest -q` in `services/orchestrator` passes (`476 passed`).
 
 ### 2026-04-20 (Completed - Cross-Cutting Follow-up, Slice D Planning Native Module Decomposition)
-- Decomposed `planning_calculation_adapter.py` orchestration flow into focused internal helpers while keeping external contracts stable:
+- Decomposed `plan_simulation_service.py` orchestration flow into focused internal helpers while keeping external contracts stable:
   - local scenario execution helper
   - local projection update helper
   - native module request execution helper
   - native module merge response helper
   - degraded local fallback helper
 - Added `_ScenarioRunInputs` dataclass to centralize run-time native module input state and reduce inline argument fan-out.
-- Added local-path regression coverage in `test_planning_calculation_adapter.py` to confirm projection payload preservation under local-only execution.
+- Added local-path regression coverage in `test_plan_simulation_service.py` to confirm projection payload preservation under local-only execution.
 - Verification:
-  - targeted: `pytest -q tests/test_planning_calculation_adapter.py` (`8 passed`)
+  - targeted: `pytest -q tests/test_plan_simulation_service.py` (`8 passed`)
   - full: `pytest -q` in `services/orchestrator` passes (`476 passed`).
 
 ### 2026-04-15 (Completed - Cross-Cutting Follow-up, Slice B Frontend Field Schema Isolation)
@@ -209,12 +209,12 @@ These decisions refine the build plan based on the current repository and upstre
 - Unified native module eligibility/fallback handling in:
   - `portfolio_benchmark.py`
   - `portfolio_attribution.py`
-  - `planning_calculation_adapter.py`
+  - `plan_simulation_service.py`
 - Added native module execution matrix coverage:
   - new `test_engine_policy.py`
   - adapter-missing path tests for benchmark/attribution/planning native module services.
 - Verification:
-  - targeted: `pytest -q tests/test_engine_policy.py tests/test_portfolio_benchmark.py tests/test_portfolio_attribution.py tests/test_planning_calculation_adapter.py` (`22 passed`)
+  - targeted: `pytest -q tests/test_engine_policy.py tests/test_portfolio_benchmark.py tests/test_portfolio_attribution.py tests/test_plan_simulation_service.py` (`22 passed`)
   - full: `pytest -q` in `services/orchestrator` passes (`473 passed`).
 
 ### 2026-04-15 (Completed - Phase 6.0 Slice 4, Runtime Telemetry Dashboards)
@@ -586,7 +586,7 @@ These decisions refine the build plan based on the current repository and upstre
   - `test_engine_adapter.py`
   - `test_portfolio_benchmark.py`
   - `test_portfolio_attribution.py`
-  - `test_planning_calculation_adapter.py`
+  - `test_plan_simulation_service.py`
   - `test_user_settings.py`
 
 ### 2026-04-14 (Completed - Phase 3.1 Asset Metadata Database Expansion)
@@ -731,10 +731,10 @@ These decisions refine the build plan based on the current repository and upstre
 - Added unit coverage for adapter transport/validation behavior and benchmark service native module/fallback execution paths
 
 ### 2026-04-10 (Completed - Planning Native Module v1)
-- Added Simulations scenario native module service (`planning_calculation_adapter.py`) with contract payload construction, response mapping, and local fallback behavior
+- Added Simulations scenario native module service (`plan_simulation_service.py`) with contract payload construction, response mapping, and local fallback behavior
 - `/api/planning/scenarios` now routes through native module integration when enabled and falls back to local scenario engine when unavailable
 - Planning response now includes engine metadata (`engine`, `engine_status`, `fallback_method`, `warnings`) for degraded-path transparency
-- Added unit coverage for native module disabled/success/failure paths in `test_planning_calculation_adapter.py`
+- Added unit coverage for native module disabled/success/failure paths in `test_plan_simulation_service.py`
 
 ### 2026-04-10 (Completed - Benchmark Overlay UI)
 - Portfolio history panel now fetches benchmark comparison data from `GET /api/portfolio/benchmark` alongside snapshot history
@@ -772,7 +772,7 @@ These decisions refine the build plan based on the current repository and upstre
 - Added planning endpoint `POST /api/planning/contribution-allocation` with support for rule-based allocation and default `tax_optimized_high_earner` profile generation
 - Planner scenario-diff flows now consume plan contribution rules and pass per-account annual contributions into the Simulations native module request payload when rules are present
 - Planning responses now include `contribution_allocation` metadata so scenario output can show effective employee + employer funded contribution totals
-- Added focused coverage in `test_contribution_rules.py` and extended native module request coverage in `test_planning_calculation_adapter.py`
+- Added focused coverage in `test_contribution_rules.py` and extended native module request coverage in `test_plan_simulation_service.py`
 
 ### 2026-04-11 (Completed - Physical Assets Foundation)
 - Financial health model now includes `physical_assets` from financial profile in net-worth computation (`net_worth = portfolio + physical_assets - debt`)
@@ -786,7 +786,7 @@ These decisions refine the build plan based on the current repository and upstre
 - Added planning endpoint `POST /api/planning/income-projection` to generate year-by-year income curves from either provided inputs or saved profile data
 - Planning scenario route now includes projected first-year income in Simulations baseline assumptions and attaches projection payload in native module metadata
 - Plan scenario-diff flows now generate and pass base/candidate income projections so planning responses include model context for income assumptions
-- Added `income_projection` field on planning responses and focused coverage in `test_income_projection.py` and `test_planning_calculation_adapter.py`
+- Added `income_projection` field on planning responses and focused coverage in `test_income_projection.py` and `test_plan_simulation_service.py`
 
 ### 2026-04-11 (Completed - Income Modeling UI Wiring)
 - Profile UI income builder now captures `annual_growth_rate`, `start_date`, and `end_date` for each income row
@@ -799,7 +799,7 @@ These decisions refine the build plan based on the current repository and upstre
 - Planning scenario route and plan scenario-diff flows now generate and pass base/candidate expense projections so native module baseline assumptions include first-year annual expenses
 - Planning responses now include `expense_projection` metadata, and scenario-diff output surfaces base/candidate expense projection summaries
 - Profile UI expense builder now captures `inflation_rate`, `start_date`, and `end_date` and renders those assumptions after save/reload
-- Added focused coverage in `test_expense_projection.py` and extended native module request coverage in `test_planning_calculation_adapter.py`
+- Added focused coverage in `test_expense_projection.py` and extended native module request coverage in `test_plan_simulation_service.py`
 
 ### 2026-04-11 (Completed - Debt Payoff Modeling Foundation)
 - Added debt payoff projection service (`debt_projection.py`) with minimum/snowball/avalanche/custom strategy handling and month-by-month amortization output
@@ -807,7 +807,7 @@ These decisions refine the build plan based on the current repository and upstre
 - Planning scenario route and plan scenario-diff flows now generate and pass base/candidate debt projections; native module baseline assumptions now include first-year annual debt payments and debt projection metadata
 - Planning responses now include `debt_projection` metadata, and scenario-diff output surfaces base/candidate debt strategy/payoff summaries
 - Profile UI debt builder now captures payoff strategy and optional custom monthly payment per debt item
-- Added focused coverage in `test_debt_projection.py`, extended native module payload coverage in `test_planning_calculation_adapter.py`, and profile migration coverage for new debt fields
+- Added focused coverage in `test_debt_projection.py`, extended native module payload coverage in `test_plan_simulation_service.py`, and profile migration coverage for new debt fields
 
 ### 2026-04-12 (Completed - Plan Timeline Events Foundation)
 - Added timeline impact projection service (`timeline_projection.py`) with support for dated `purchase`, `windfall`, `job_change`, `retirement`, and `milestone` events, including one-time/monthly/yearly recurrence and year-by-year impact aggregation
@@ -815,7 +815,7 @@ These decisions refine the build plan based on the current repository and upstre
 - Added plan timeline API endpoints (`GET/PUT /api/plans/{plan_id}/timeline`) plus Copilot tools (`get_plan_timeline`, `update_plan_timeline`) for timeline modeling workflows
 - Planning and scenario-diff flows now compute and pass timeline projections into Simulations native module metadata and baseline assumptions; first-year portfolio/contribution impacts are applied to scenario setup and income/expense/debt impacts are applied to native module assumptions
 - Plan Workspace UI now includes timeline JSON editing/saving and scenario-diff output now surfaces base/candidate timeline impact summaries
-- Added focused coverage in `test_timeline_projection.py`, `test_plan_workspace.py`, and `test_planning_calculation_adapter.py`
+- Added focused coverage in `test_timeline_projection.py`, `test_plan_workspace.py`, and `test_plan_simulation_service.py`
 
 ### 2026-04-12 (Completed - Tax-Aware Scenario Engine Foundation)
 - Replaced the local planning fallback projection engine with a year-by-year tax-aware model (`scenario_engine.py`) that consumes income, expense, debt, timeline, and contribution-allocation inputs
@@ -823,14 +823,14 @@ These decisions refine the build plan based on the current repository and upstre
 - Implemented tax-aware withdrawal handling (taxable-first, then tax-deferred, then tax-free) plus tax-deferred withdrawal tax reconciliation
 - Planning native module local fallback now receives full projection inputs (accounts, income/expense/debt/timeline/contribution context, filing status) so degraded mode behavior remains meaningful
 - Plan and planning endpoints now pass account/filling-status context through to scenario execution and apply timeline first-year portfolio/contribution effects consistently
-- Added focused coverage for tax-aware timeline/account behavior in `test_scenario_engine.py` and extended integration coverage in `test_planning_calculation_adapter.py`
+- Added focused coverage for tax-aware timeline/account behavior in `test_scenario_engine.py` and extended integration coverage in `test_plan_simulation_service.py`
 
 ### 2026-04-12 (Completed - Withdrawal Strategies Foundation)
 - Added strategy-aware retirement withdrawals in local planning simulation (`scenario_engine.py`) with `cashflow_only`, `four_percent_rule`, `dynamic_guardrails`, `bond_tent`, and `bucket_strategy`
 - Reused Simulations planning patterns from `src/lib/calc/{portfolio,simulation-engine,account,phase}.ts` for age-aware withdrawal ordering and phase-aware retirement behavior
-- Planning native module/local fallback wiring now carries `withdrawal_strategy` and `retirement_age` (`planning_calculation_adapter.py`) so degraded mode and native module mode share the same strategy assumptions
+- Planning native module/local fallback wiring now carries `withdrawal_strategy` and `retirement_age` (`plan_simulation_service.py`) so degraded mode and native module mode share the same strategy assumptions
 - Plan scenario APIs now resolve strategy from plan settings with timeline retirement fallback and pass it through scenario execution (`main.py`)
-- Added focused coverage in `test_scenario_engine.py` and `test_planning_calculation_adapter.py` for strategy normalization, guardrail behavior, bucket ordering, and strategy metadata propagation
+- Added focused coverage in `test_scenario_engine.py` and `test_plan_simulation_service.py` for strategy normalization, guardrail behavior, bucket ordering, and strategy metadata propagation
 
 ### 2026-04-12 (Completed - Social Security Modeling Foundation)
 - Added Social Security projection service (`social_security_projection.py`) with FRA-benefit estimation from earnings, claim-age comparisons (`62/67/70`), and year-by-year benefit projection output
@@ -839,7 +839,7 @@ These decisions refine the build plan based on the current repository and upstre
 - Planning and scenario-diff flows now generate and pass Social Security projections into scenario execution; native module metadata and local fallback now both carry `social_security_projection`
 - Local tax-aware scenario engine now applies Social Security income in annual cashflow and federal tax calculations (`social_security_income_usd`) instead of hardcoded zero
 - Plan scenario-diff UI output now includes Social Security context summaries for base/candidate comparisons
-- Added focused coverage in `test_social_security_projection.py`, `test_scenario_engine.py`, `test_planning_calculation_adapter.py`, and `test_plan_workspace.py`
+- Added focused coverage in `test_social_security_projection.py`, `test_scenario_engine.py`, `test_plan_simulation_service.py`, and `test_plan_workspace.py`
 
 ### 2026-04-12 (Completed - RMD Modeling Foundation)
 - Added RMD projection service (`rmd_projection.py`) adapted from Simulations RMD table/simulation patterns (`src/lib/calc/historical-data/rmd-table.ts`, `src/lib/calc/simulation-engine.ts`, `src/lib/calc/portfolio.ts`)
@@ -848,7 +848,7 @@ These decisions refine the build plan based on the current repository and upstre
 - Planning and scenario-diff flows now generate/pass `rmd_projection` metadata into native module/local execution and return it in planning responses
 - Local tax-aware scenario engine now enforces per-account RMD withdrawals for eligible tax-deferred accounts (401k/403b/IRA), tracks yearly `rmds_usd`, and reconciles tax impact from forced distributions
 - Plan scenario-diff UI output now includes RMD context summaries for base/candidate comparisons
-- Added focused coverage in `test_rmd_projection.py`, `test_scenario_engine.py`, `test_planning_calculation_adapter.py`, and `test_plan_workspace.py`
+- Added focused coverage in `test_rmd_projection.py`, `test_scenario_engine.py`, `test_plan_simulation_service.py`, and `test_plan_workspace.py`
 
 ### 2026-04-12 (Completed - Multiple Assumption Sets Foundation)
 - Added plan assumption-set schema and APIs (`GET/PUT /api/plans/{plan_id}/assumption-sets`) with validation and decision-log integration in Plan Workspace
@@ -856,7 +856,7 @@ These decisions refine the build plan based on the current repository and upstre
 - Plan scenario execution now applies the active assumption set by default; scenario-diff now supports separate base/candidate assumption-set selection
 - Planning and native module execution now propagate assumption-set identity (`assumption_set_id`, `assumption_set_name`) into scenario assumptions and native module metadata for traceability
 - Plan Workspace UI now includes assumption-set JSON editing/saving and scenario-diff base/candidate assumption-set selectors
-- Added focused coverage in `test_plan_workspace.py`, `test_plan_assumption_sets.py`, `test_scenario_engine.py`, and `test_planning_calculation_adapter.py`
+- Added focused coverage in `test_plan_workspace.py`, `test_plan_assumption_sets.py`, `test_scenario_engine.py`, and `test_plan_simulation_service.py`
 
 ### 2026-04-12 (Completed - Scenario Branching Foundation)
 - Added life-event scenario branch API (`POST /api/plans/{plan_id}/scenario-branch`) and Copilot tool (`run_plan_scenario_branch`) for branch-vs-base comparisons

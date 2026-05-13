@@ -13,19 +13,7 @@ from buildwealth_orchestrator.schemas import (
     PortfolioBenchmarkSeriesPoint,
     PortfolioBenchmarkSummary,
 )
-from buildwealth_orchestrator.services.engine_adapter import (
-    CalculationAdapter,
-    CalculationAdapterError,
-)
-from buildwealth_orchestrator.services.engine_policy import (
-    FALLBACK_METHOD_LOCAL_CALCULATION,
-    resolve_engine_call_disposition,
-    calculation_unavailable_warning,
-)
 from buildwealth_orchestrator.services.snapshot_store import SnapshotStore
-
-PORTFOLIO_BENCHMARK_CONTRACT_VERSION = 1
-
 
 class RemoteBenchmarkPortfolioPointV1(BaseModel):
     date: date
@@ -103,16 +91,10 @@ class BuildWealthBenchmarkService:
         *,
         snapshot_store: SnapshotStore,
         research_service: Any,
-        calculation_adapter: CalculationAdapter | None,
-        calculation_adapter_enabled: bool,
-        calculation_adapter_path: str,
         base_currency: str = "USD",
     ) -> None:
         self.snapshot_store = snapshot_store
         self.research_service = research_service
-        self.calculation_adapter = calculation_adapter
-        self.calculation_adapter_enabled = calculation_adapter_enabled
-        self.calculation_adapter_path = calculation_adapter_path
         self.base_currency = str(base_currency or "USD").upper()
 
     async def compare(
@@ -120,55 +102,13 @@ class BuildWealthBenchmarkService:
         *,
         benchmark_symbols: list[str],
         limit: int,
-        contract_guard_reason: str | None = None,
     ) -> PortfolioBenchmarkResponse:
         request_payload = self._build_request_payload(
             benchmark_symbols=benchmark_symbols,
             limit=limit,
         )
-
-        disposition = resolve_engine_call_disposition(
-            engine_label="Portfolio benchmark",
-            calculation_adapter_enabled=self.calculation_adapter_enabled,
-            calculation_adapter=self.calculation_adapter,
-            contract_guard_reason=contract_guard_reason,
-            disabled_behavior="degraded_fallback",
-        )
-
-        if not disposition.use_calculation_adapter:
-            fallback = self._compute_local_fallback(
-                request_payload,
-                fallback_method=disposition.fallback_method or FALLBACK_METHOD_LOCAL_CALCULATION,
-                warning=disposition.warning or "Portfolio benchmark local calculation selected; using local fallback",
-            )
-            return self._to_api_response(request_payload, fallback)
-
-        if self.calculation_adapter is not None:
-            try:
-                contract_response = await self.calculation_adapter.post_json(
-                    path=self.calculation_adapter_path,
-                    request_payload=request_payload.model_dump(mode="json"),
-                    request_model=RemoteBenchmarkRequestV1,
-                    response_model=RemoteBenchmarkResponseV1,
-                )
-                return self._to_api_response(request_payload, contract_response)
-            except CalculationAdapterError as exc:
-                fallback = self._compute_local_fallback(
-                    request_payload,
-                    fallback_method="local_benchmark_fallback",
-                    warning=calculation_unavailable_warning(
-                        engine_label="Portfolio benchmark",
-                        error=exc,
-                    ),
-                )
-                return self._to_api_response(request_payload, fallback)
-
-        fallback = self._compute_local_fallback(
-            request_payload,
-            fallback_method=FALLBACK_METHOD_LOCAL_CALCULATION,
-            warning="Portfolio benchmark calculation unavailable; using local fallback",
-        )
-        return self._to_api_response(request_payload, fallback)
+        local_response = self._compute_local(request_payload)
+        return self._to_api_response(request_payload, local_response)
 
     def _build_request_payload(
         self,
@@ -200,12 +140,9 @@ class BuildWealthBenchmarkService:
             metadata={"source": "snapshot_store"},
         )
 
-    def _compute_local_fallback(
+    def _compute_local(
         self,
         request_payload: RemoteBenchmarkRequestV1,
-        *,
-        fallback_method: str,
-        warning: str,
     ) -> RemoteBenchmarkResponseV1:
         dates = [point.date for point in request_payload.portfolio_series]
         portfolio_values = [point.total_value_base for point in request_payload.portfolio_series]
@@ -246,8 +183,8 @@ class BuildWealthBenchmarkService:
 
         return RemoteBenchmarkResponseV1(
             request_id=request_payload.request_id,
-            engine_status="degraded",
-            fallback_method=fallback_method,
+            engine_status="ok",
+            fallback_method=None,
             summary=RemoteBenchmarkSummaryV1(
                 portfolio_return_pct=round(portfolio_index[-1] - portfolio_index[0], 4),
                 benchmark_return_pct_by_symbol=benchmark_return_pct_by_symbol,
@@ -256,7 +193,7 @@ class BuildWealthBenchmarkService:
                 max_drawdown_pct=self._max_drawdown_pct(portfolio_index),
             ),
             series=series,
-            warnings=[warning],
+            warnings=[],
             generated_at=datetime.now(timezone.utc),
         )
 

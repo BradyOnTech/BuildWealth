@@ -85,6 +85,9 @@ class EngineStatusItem(BaseModel):
 
 class EngineStatusResponse(BaseModel):
     as_of: datetime
+    enabled_count: int = 0
+    reachable_count: int = 0
+    degraded_count: int = 0
     engines: list[EngineStatusItem] = Field(default_factory=list)
 
 

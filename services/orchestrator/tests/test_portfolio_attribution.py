@@ -1,10 +1,6 @@
 import asyncio
-import json
 from pathlib import Path
 
-import httpx
-
-from buildwealth_orchestrator.services.engine_adapter import CalculationAdapter
 from buildwealth_orchestrator.services.portfolio_attribution import BuildWealthAttributionService
 from buildwealth_orchestrator.services.portfolio_store import PortfolioStore
 
@@ -44,22 +40,19 @@ def _seed_store(store: PortfolioStore) -> None:
     store.set_manual_price(symbol="MSFT", price=180.0)
 
 
-def test_attribution_service_uses_local_fallback_when_local_calculation(tmp_path: Path) -> None:
+def test_attribution_service_computes_native_contributors_and_detractors(tmp_path: Path) -> None:
     store = PortfolioStore(tmp_path / "portfolio")
     _seed_store(store)
 
     service = BuildWealthAttributionService(
         portfolio_store=store,
-        calculation_adapter=None,
-        calculation_adapter_enabled=False,
-        calculation_adapter_path="/v1/attribution/compute",
         base_currency="USD",
     )
 
     result = asyncio.run(service.analyze(top_n=2))
 
-    assert result.engine_status == "degraded"
-    assert result.fallback_method == "local_calculation"
+    assert result.engine_status == "ok"
+    assert result.fallback_method is None
     assert result.summary.portfolio_total_return_base > 0
     assert result.contributors
     assert result.detractors
@@ -67,164 +60,20 @@ def test_attribution_service_uses_local_fallback_when_local_calculation(tmp_path
     assert result.detractors[0].symbol == "MSFT"
 
 
-def test_attribution_service_uses_degraded_fallback_when_adapter_missing(tmp_path: Path) -> None:
+def test_attribution_service_limits_native_rankings(tmp_path: Path) -> None:
     store = PortfolioStore(tmp_path / "portfolio")
     _seed_store(store)
 
     service = BuildWealthAttributionService(
         portfolio_store=store,
-        calculation_adapter=None,
-        calculation_adapter_enabled=True,
-        calculation_adapter_path="/v1/attribution/compute",
         base_currency="USD",
     )
 
-    result = asyncio.run(service.analyze(top_n=2))
-
-    assert result.engine_status == "degraded"
-    assert result.fallback_method == "local_calculation"
-    assert any("calculation unavailable" in warning.lower() for warning in result.warnings)
-
-
-def test_attribution_service_uses_calculation_service_response_when_enabled(tmp_path: Path) -> None:
-    store = PortfolioStore(tmp_path / "portfolio")
-    _seed_store(store)
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        payload = json.loads(request.content.decode("utf-8"))
-        return httpx.Response(
-            status_code=200,
-            json={
-                "contract_version": 1,
-                "request_id": payload["request_id"],
-                "engine": "portfolio_analysis",
-                "engine_status": "ok",
-                "fallback_method": None,
-                "summary": {
-                    "portfolio_total_return_base": 115.0,
-                    "portfolio_total_value_base": 2100.0,
-                    "accounted_return_base": 115.0,
-                    "residual_return_base": 0.0,
-                    "contributors_count": 1,
-                    "detractors_count": 1,
-                },
-                "contributors": [
-                    {
-                        "symbol": "AAPL",
-                        "name": "Apple",
-                        "account_id": "default",
-                        "asset_class": "US Stocks",
-                        "current_value_base": 1200.0,
-                        "cost_basis_base": 1000.0,
-                        "price_return_base": 200.0,
-                        "income_return_base": 15.0,
-                        "total_return_base": 215.0,
-                        "total_return_pct": 21.5,
-                        "contribution_pct": 186.9565,
-                        "allocation_pct": 57.1428,
-                    }
-                ],
-                "detractors": [
-                    {
-                        "symbol": "MSFT",
-                        "name": "Microsoft",
-                        "account_id": "default",
-                        "asset_class": "US Stocks",
-                        "current_value_base": 900.0,
-                        "cost_basis_base": 1000.0,
-                        "price_return_base": -100.0,
-                        "income_return_base": 0.0,
-                        "total_return_base": -100.0,
-                        "total_return_pct": -10.0,
-                        "contribution_pct": -86.9565,
-                        "allocation_pct": 42.8572,
-                    }
-                ],
-                "positions": [],
-                "warnings": [],
-                "generated_at": "2026-04-11T18:00:00Z",
-            },
-        )
-
-    adapter = CalculationAdapter(
-        base_url="http://localhost:8411",
-        max_retries=0,
-        transport=httpx.MockTransport(handler),
-    )
-    service = BuildWealthAttributionService(
-        portfolio_store=store,
-        calculation_adapter=adapter,
-        calculation_adapter_enabled=True,
-        calculation_adapter_path="/v1/attribution/compute",
-        base_currency="USD",
-    )
-
-    result = asyncio.run(service.analyze(top_n=3))
+    result = asyncio.run(service.analyze(top_n=1))
 
     assert result.engine_status == "ok"
     assert result.fallback_method is None
-    assert result.summary.portfolio_total_return_base == 115.0
+    assert len(result.contributors) == 1
+    assert len(result.detractors) == 1
     assert result.contributors[0].symbol == "AAPL"
     assert result.detractors[0].symbol == "MSFT"
-
-
-def test_attribution_service_falls_back_when_calculation_service_call_fails(tmp_path: Path) -> None:
-    store = PortfolioStore(tmp_path / "portfolio")
-    _seed_store(store)
-
-    def handler(_: httpx.Request) -> httpx.Response:
-        return httpx.Response(status_code=503, json={"detail": "service unavailable"})
-
-    adapter = CalculationAdapter(
-        base_url="http://localhost:8411",
-        max_retries=0,
-        transport=httpx.MockTransport(handler),
-    )
-    service = BuildWealthAttributionService(
-        portfolio_store=store,
-        calculation_adapter=adapter,
-        calculation_adapter_enabled=True,
-        calculation_adapter_path="/v1/attribution/compute",
-        base_currency="USD",
-    )
-
-    result = asyncio.run(service.analyze(top_n=2))
-
-    assert result.engine_status == "degraded"
-    assert result.fallback_method == "local_attribution_fallback"
-    assert any("calculation unavailable" in warning.lower() for warning in result.warnings)
-
-
-def test_attribution_service_skips_calculation_service_when_contract_guarded(tmp_path: Path) -> None:
-    store = PortfolioStore(tmp_path / "portfolio")
-    _seed_store(store)
-    calls = {"count": 0}
-
-    def handler(_: httpx.Request) -> httpx.Response:
-        calls["count"] += 1
-        return httpx.Response(status_code=200, json={})
-
-    adapter = CalculationAdapter(
-        base_url="http://localhost:8411",
-        max_retries=0,
-        transport=httpx.MockTransport(handler),
-    )
-    service = BuildWealthAttributionService(
-        portfolio_store=store,
-        calculation_adapter=adapter,
-        calculation_adapter_enabled=True,
-        calculation_adapter_path="/v1/attribution/compute",
-        base_currency="USD",
-    )
-
-    result = asyncio.run(
-        service.analyze(
-            top_n=2,
-            contract_guard_reason="CalculationAdapter contract version mismatch (expected v1, got v2)",
-        )
-    )
-
-    assert calls["count"] == 0
-    assert result.engine_status == "degraded"
-    assert result.fallback_method == "contract_version_guard"
-    assert any("calculation skipped" in warning.lower() for warning in result.warnings)

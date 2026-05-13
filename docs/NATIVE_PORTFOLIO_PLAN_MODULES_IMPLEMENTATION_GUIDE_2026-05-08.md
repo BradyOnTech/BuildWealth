@@ -279,7 +279,7 @@ The user runs a scenario and sees a projection. They need to understand what dro
 **Backend home:**
 
 - Keep `scenario_engine.py`, `tax_engine.py`, `contribution_rules.py`, `rmd_projection.py`, `social_security_projection.py`, and projection services.
-- Treat `planning_calculation_adapter.py` as migration scaffolding while native simulation coverage is built.
+- Treat `plan_simulation_service.py` as migration scaffolding while native simulation coverage is built.
 - Add `plan_simulation_analyzer.py` to extract chart-ready metrics, phase summaries, drivers, warnings, and explanation payloads from raw simulation results.
 - Add `plan_lever_impact.py` for two-stage Plan Lever Impact Policy classification.
 - Use existing `test_simulation_delta.py` patterns for comparison behavior.

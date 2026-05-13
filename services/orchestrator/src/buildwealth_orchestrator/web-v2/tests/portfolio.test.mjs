@@ -342,7 +342,6 @@ test('portfolio guardrails render editable plain-language risk limits', () => {
   assert.match(markup, /40% now · 35% limit/);
   assert.doesNotMatch(markup, /Portfolio Analysis/);
   assert.doesNotMatch(markup, /Simulations/);
-  assert.doesNotMatch(markup, /calculation_service/);
   assert.doesNotMatch(markup, /classic/i);
 });
 
@@ -409,7 +408,6 @@ test('portfolio analytics renders performance benchmarks and contributors', () =
   assert.match(markup, /Technology · 40/);
   assert.match(markup, /Broaden sector exposure/);
   assert.doesNotMatch(markup, /Portfolio Analysis/);
-  assert.doesNotMatch(markup, /calculation_service/);
 });
 
 test('api portfolio risk policy helpers call native guardrail endpoint', async (t) => {

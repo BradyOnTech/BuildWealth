@@ -25,10 +25,10 @@ export function template() {
       <article class="kpi-card"><p class="kpi-label">Active Plan</p><p class="kpi-value" id="today-active-plan">-</p></article>
     </div>
     <div class="kpi-row">
-      <article class="kpi-card"><p class="kpi-label">Enabled Engines</p><p class="kpi-value" id="today-engine-enabled">-</p></article>
-      <article class="kpi-card"><p class="kpi-label">Reachable Engines</p><p class="kpi-value" id="today-engine-reachable">-</p></article>
-      <article class="kpi-card"><p class="kpi-label">Degraded Events</p><p class="kpi-value" id="today-engine-degraded">-</p></article>
-      <article class="kpi-card"><p class="kpi-label">Engine Probe Age</p><p class="kpi-value" id="today-engine-probe-age">-</p></article>
+      <article class="kpi-card"><p class="kpi-label">Native Services</p><p class="kpi-value" id="today-engine-enabled">-</p></article>
+      <article class="kpi-card"><p class="kpi-label">Ready Services</p><p class="kpi-value" id="today-engine-reachable">-</p></article>
+      <article class="kpi-card"><p class="kpi-label">Service Issues</p><p class="kpi-value" id="today-engine-degraded">-</p></article>
+      <article class="kpi-card"><p class="kpi-label">Status Age</p><p class="kpi-value" id="today-engine-probe-age">-</p></article>
     </div>
     <section class="panel">
       <div class="panel-head-inline">
@@ -61,10 +61,10 @@ export function template() {
     </div>
     <section class="panel">
       <div class="panel-head-inline">
-        <h3 class="panel-title">Engine Status</h3>
-        <button class="ghost small" id="today-refresh-engines" type="button">Refresh Engine Status</button>
+        <h3 class="panel-title">Service Status</h3>
+        <button class="ghost small" id="today-refresh-engines" type="button">Refresh Service Status</button>
       </div>
-      <p class="hint" id="today-engines-as-of">Loading engine status...</p>
+      <p class="hint" id="today-engines-as-of">Loading service status...</p>
       <div id="today-engines-list" class="item-list"></div>
     </section>
     <section class="panel">
@@ -233,8 +233,8 @@ function renderEngineStatus(payload, errorMessage = null) {
     reachableEl.textContent = '-';
     degradedEl.textContent = '-';
     probeAgeEl.textContent = '-';
-    asOfEl.textContent = errorMessage ? `Engine status unavailable: ${errorMessage}` : 'Engine status unavailable.';
-    listEl.innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No engine telemetry available.</p></article>';
+    asOfEl.textContent = errorMessage ? `Service status unavailable: ${errorMessage}` : 'Service status unavailable.';
+    listEl.innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No service status available.</p></article>';
     return;
   }
 
@@ -250,42 +250,32 @@ function renderEngineStatus(payload, errorMessage = null) {
   degradedEl.textContent = String(degradedTotal);
   degradedEl.className = `kpi-value ${degradedTotal > 0 ? 'drift-neg' : 'drift-pos'}`;
   probeAgeEl.textContent = probeAge == null ? '-' : fmtAgeMinutes(probeAge);
-  asOfEl.textContent = `Last probe: ${fmtDate(payload.as_of)}`;
+  asOfEl.textContent = `Last checked: ${fmtDate(payload.as_of)}`;
 
   if (!engines.length) {
-    listEl.innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No engines configured.</p></article>';
+    listEl.innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No services configured.</p></article>';
     return;
   }
 
   listEl.innerHTML = '';
   for (const engine of engines) {
     const row = document.createElement('article');
-    const contractMismatch = engine.enabled && engine.reachable && engine.contract_compatible === false;
     const statusLabel = !engine.enabled
       ? 'DISABLED'
-      : contractMismatch
-        ? 'CONTRACT MISMATCH'
-        : engine.reachable
-        ? 'HEALTHY'
-        : 'UNREACHABLE';
+      : engine.reachable
+        ? 'READY'
+        : 'UNAVAILABLE';
     const statusClass = !engine.enabled
       ? 'attention'
-      : contractMismatch
-        ? 'incomplete'
       : engine.reachable
         ? 'complete'
         : 'incomplete';
-    const engineName = String(engine.name || 'engine').replace(/_/g, ' ');
-    const expectedVersionText = engine.expected_contract_version != null
-      ? `v${engine.expected_contract_version}`
-      : 'n/a';
-    const actualVersionText = engine.contract_version != null ? `v${engine.contract_version}` : 'n/a';
-    const versionText = `actual ${actualVersionText} / expected ${expectedVersionText}`;
+    const engineName = String(engine.name || 'service').replace(/_/g, ' ');
     const checkedText = engine.last_checked_at ? fmtDate(engine.last_checked_at) : 'never';
     row.className = `list-item ${statusClass}`;
     row.innerHTML = `
       <p class="list-item-title">${engineName} <span class="status-badge ${statusClass}">${statusLabel}</span></p>
-      <p class="list-item-meta">Version: ${versionText} • Degraded count: ${Number(engine.degraded_count || 0)} • Checked: ${checkedText}</p>
+      <p class="list-item-meta">Issue count: ${Number(engine.degraded_count || 0)} • Checked: ${checkedText}</p>
       ${engine.last_error ? `<p class="list-item-meta">Last error: ${engine.last_error}</p>` : ''}
     `;
     listEl.appendChild(row);

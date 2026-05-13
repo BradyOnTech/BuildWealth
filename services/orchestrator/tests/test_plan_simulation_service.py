@@ -1,10 +1,6 @@
 import asyncio
-import json
 
-import httpx
-
-from buildwealth_orchestrator.services.engine_adapter import CalculationAdapter
-from buildwealth_orchestrator.services.planning_calculation_adapter import BuildWealthScenarioService
+from buildwealth_orchestrator.services.plan_simulation_service import BuildWealthScenarioService
 from buildwealth_orchestrator.services.scenario_engine import ScenarioEngine
 
 
@@ -23,34 +19,12 @@ def _build_scenario_engine() -> ScenarioEngine:
     )
 
 
-def test_plan_simulation_service_returns_local_when_disabled() -> None:
-    service = BuildWealthScenarioService(
-        scenario_engine=_build_scenario_engine(),
-        calculation_adapter=None,
-        calculation_adapter_enabled=False,
-        calculation_adapter_path="/v1/scenario/simulate",
-        currency="USD",
-    )
-
-    result = asyncio.run(service.run(current_portfolio_value_usd=100000))
-
-    assert len(result.scenarios) == 4
-    assert result.engine == "local"
-    assert result.engine_status == "ok"
-    assert result.fallback_method is None
-    assert result.warnings == []
+def _build_service() -> BuildWealthScenarioService:
+    return BuildWealthScenarioService(scenario_engine=_build_scenario_engine())
 
 
-def test_plan_simulation_service_returns_local_when_adapter_missing() -> None:
-    service = BuildWealthScenarioService(
-        scenario_engine=_build_scenario_engine(),
-        calculation_adapter=None,
-        calculation_adapter_enabled=True,
-        calculation_adapter_path="/v1/scenario/simulate",
-        currency="USD",
-    )
-
-    result = asyncio.run(service.run(current_portfolio_value_usd=100000))
+def test_plan_simulation_service_returns_native_simulation() -> None:
+    result = asyncio.run(_build_service().run(current_portfolio_value_usd=100000))
 
     assert len(result.scenarios) == 4
     assert result.engine == "local"
@@ -60,16 +34,8 @@ def test_plan_simulation_service_returns_local_when_adapter_missing() -> None:
 
 
 def test_plan_simulation_service_local_path_preserves_projection_payloads() -> None:
-    service = BuildWealthScenarioService(
-        scenario_engine=_build_scenario_engine(),
-        calculation_adapter=None,
-        calculation_adapter_enabled=False,
-        calculation_adapter_path="/v1/scenario/simulate",
-        currency="USD",
-    )
-
     result = asyncio.run(
-        service.run(
+        _build_service().run(
             current_portfolio_value_usd=100000,
             income_projection={
                 "start_year": 2026,
@@ -106,254 +72,9 @@ def test_plan_simulation_service_local_path_preserves_projection_payloads() -> N
     assert result.expense_projection.first_year_expenses_usd == 64000
 
 
-def test_plan_simulation_service_merges_calculation_service_response() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        payload = json.loads(request.content.decode("utf-8"))
-        assert payload["contract_version"] == 1
-        return httpx.Response(
-            status_code=200,
-            json={
-                "contract_version": 1,
-                "request_id": payload["request_id"],
-                "engine": "simulation",
-                "engine_status": "ok",
-                "fallback_method": None,
-                "scenarios": [
-                    {
-                        "scenario_id": "baseline",
-                        "label": "baseline",
-                        "summary": {
-                            "ending_balance_nominal": 1000000,
-                            "ending_balance_real": 700000,
-                        },
-                        "timeline": [],
-                    },
-                    {
-                        "scenario_id": "optimistic",
-                        "label": "optimistic",
-                        "summary": {
-                            "ending_balance_nominal": 1200000,
-                            "ending_balance_real": 850000,
-                        },
-                        "timeline": [],
-                    },
-                    {
-                        "scenario_id": "conservative",
-                        "label": "conservative",
-                        "summary": {
-                            "ending_balance_nominal": 800000,
-                            "ending_balance_real": 560000,
-                        },
-                        "timeline": [],
-                    },
-                    {
-                        "scenario_id": "hsa_delta",
-                        "label": "hsa_delta",
-                        "summary": {
-                            "ending_balance_nominal": 1030000,
-                            "ending_balance_real": 721000,
-                        },
-                        "timeline": [],
-                    },
-                ],
-                "warnings": [],
-                "generated_at": "2026-04-10T13:00:00Z",
-            },
-        )
-
-    adapter = CalculationAdapter(
-        base_url="http://localhost:8412",
-        max_retries=0,
-        transport=httpx.MockTransport(handler),
-    )
-
-    service = BuildWealthScenarioService(
-        scenario_engine=_build_scenario_engine(),
-        calculation_adapter=adapter,
-        calculation_adapter_enabled=True,
-        calculation_adapter_path="/v1/scenario/simulate",
-        currency="USD",
-    )
-
-    result = asyncio.run(service.run(current_portfolio_value_usd=100000))
-
-    assert result.engine == "simulation"
-    assert result.engine_status == "ok"
-    by_label = {scenario.label: scenario for scenario in result.scenarios}
-    assert by_label["baseline"].future_value_usd == 1000000
-    assert by_label["optimistic"].real_value_usd == 850000
-
-
-def test_plan_simulation_service_falls_back_on_calculation_service_error() -> None:
-    def handler(_: httpx.Request) -> httpx.Response:
-        return httpx.Response(status_code=503, json={"detail": "temporary outage"})
-
-    adapter = CalculationAdapter(
-        base_url="http://localhost:8412",
-        max_retries=0,
-        transport=httpx.MockTransport(handler),
-    )
-
-    service = BuildWealthScenarioService(
-        scenario_engine=_build_scenario_engine(),
-        calculation_adapter=adapter,
-        calculation_adapter_enabled=True,
-        calculation_adapter_path="/v1/scenario/simulate",
-        currency="USD",
-    )
-
-    result = asyncio.run(service.run(current_portfolio_value_usd=100000))
-
-    assert result.engine == "local"
-    assert result.engine_status == "degraded"
-    assert result.fallback_method == "local_scenario_engine_fallback"
-    assert any("calculation unavailable" in warning.lower() for warning in result.warnings)
-
-
-def test_plan_simulation_service_skips_calculation_service_when_contract_guarded() -> None:
-    calls = {"count": 0}
-
-    def handler(_: httpx.Request) -> httpx.Response:
-        calls["count"] += 1
-        return httpx.Response(status_code=200, json={})
-
-    adapter = CalculationAdapter(
-        base_url="http://localhost:8412",
-        max_retries=0,
-        transport=httpx.MockTransport(handler),
-    )
-
-    service = BuildWealthScenarioService(
-        scenario_engine=_build_scenario_engine(),
-        calculation_adapter=adapter,
-        calculation_adapter_enabled=True,
-        calculation_adapter_path="/v1/scenario/simulate",
-        currency="USD",
-    )
-
+def test_plan_simulation_service_uses_account_allocation_and_planning_controls() -> None:
     result = asyncio.run(
-        service.run(
-            current_portfolio_value_usd=100000,
-            contract_guard_reason="CalculationAdapter contract version mismatch (expected v1, got v2)",
-        )
-    )
-
-    assert calls["count"] == 0
-    assert result.engine == "local"
-    assert result.engine_status == "degraded"
-    assert result.fallback_method == "contract_version_guard"
-    assert any("calculation skipped" in warning.lower() for warning in result.warnings)
-
-
-def test_plan_simulation_service_uses_account_allocation_payload() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        payload = json.loads(request.content.decode("utf-8"))
-        accounts = payload["accounts"]
-        assert len(accounts) == 2
-        assert payload["baseline_assumptions"]["annual_income"] == 130000
-        assert payload["baseline_assumptions"]["annual_expenses"] == 66000
-        assert payload["baseline_assumptions"]["annual_debt_payments"] == 11000
-        assert accounts[0]["account_id"] == "acct-401k"
-        assert accounts[0]["account_type"] == "401k"
-        assert accounts[0]["tax_treatment"] == "tax_deferred"
-        assert accounts[0]["annual_contribution"] == 18000
-        assert payload["metadata"]["income_projection"]["first_year_gross_income_usd"] == 125000
-        assert payload["metadata"]["expense_projection"]["first_year_expenses_usd"] == 64000
-        assert payload["metadata"]["debt_projection"]["selected_scenario"]["first_year_payments_usd"] == 10000
-        assert payload["metadata"]["timeline_projection"]["first_year_income_impact_usd"] == 5000
-        assert payload["metadata"]["contribution_allocation"]["total_contributions_usd"] == 22000
-        assert payload["metadata"]["social_security_projection"]["selected_annual_benefit_usd"] == 18000
-        assert payload["metadata"]["rmd_projection"]["rmd_start_age"] == 75
-        assert payload["metadata"]["filing_status"] == "single"
-        assert payload["metadata"]["state_tax_rate"] == 0.05
-        assert payload["metadata"]["include_irmaa"] is False
-        assert payload["metadata"]["roth_conversion_annual_amount_usd"] == 12000.0
-        assert payload["metadata"]["roth_conversion_start_age"] == 60
-        assert payload["metadata"]["roth_conversion_end_age"] == 72
-        assert payload["metadata"]["drawdown_order"] == "tax_deferred, taxable, tax_free, cash"
-        assert payload["metadata"]["household_mode"] == "couple"
-        assert payload["metadata"]["household_partner_income_usd"] == 90000.0
-        assert payload["metadata"]["household_partner_income_growth_rate"] == 0.03
-        assert payload["metadata"]["household_partner_retirement_age"] == 65
-        assert payload["metadata"]["household_partner_social_security_annual_usd"] == 24000.0
-        assert payload["metadata"]["household_partner_social_security_claiming_age"] == 67
-        assert payload["metadata"]["household_shared_goal_target_usd"] == 150000.0
-        assert payload["metadata"]["household_shared_goal_target_year"] == 2035
-        assert payload["metadata"]["household_shared_goal_annual_funding_usd"] == 10000.0
-        assert payload["metadata"]["household_partner_income_added_first_year_usd"] == 90000.0
-        assert payload["metadata"]["household_partner_income_added_total_usd"] == 920000.0
-        assert payload["metadata"]["withdrawal_strategy"] == "4_percent_rule"
-        assert payload["metadata"]["retirement_age"] == 60
-        assert payload["metadata"]["simulation_mode"] == "historical"
-        assert payload["metadata"]["simulation_monte_carlo_variant"] == "p10"
-        assert payload["metadata"]["simulation_historical_start_year"] == 1972
-        assert payload["metadata"]["simulation_seed"] == 314159
-        return httpx.Response(
-            status_code=200,
-            json={
-                "contract_version": 1,
-                "request_id": payload["request_id"],
-                "engine": "simulation",
-                "engine_status": "ok",
-                "fallback_method": None,
-                "scenarios": [
-                    {
-                        "scenario_id": "baseline",
-                        "label": "baseline",
-                        "summary": {
-                            "ending_balance_nominal": 1000000,
-                            "ending_balance_real": 700000,
-                        },
-                        "timeline": [],
-                    },
-                    {
-                        "scenario_id": "optimistic",
-                        "label": "optimistic",
-                        "summary": {
-                            "ending_balance_nominal": 1200000,
-                            "ending_balance_real": 850000,
-                        },
-                        "timeline": [],
-                    },
-                    {
-                        "scenario_id": "conservative",
-                        "label": "conservative",
-                        "summary": {
-                            "ending_balance_nominal": 800000,
-                            "ending_balance_real": 560000,
-                        },
-                        "timeline": [],
-                    },
-                    {
-                        "scenario_id": "hsa_delta",
-                        "label": "hsa_delta",
-                        "summary": {
-                            "ending_balance_nominal": 1030000,
-                            "ending_balance_real": 721000,
-                        },
-                        "timeline": [],
-                    },
-                ],
-                "warnings": [],
-                "generated_at": "2026-04-10T13:00:00Z",
-            },
-        )
-
-    adapter = CalculationAdapter(
-        base_url="http://localhost:8412",
-        max_retries=0,
-        transport=httpx.MockTransport(handler),
-    )
-    service = BuildWealthScenarioService(
-        scenario_engine=_build_scenario_engine(),
-        calculation_adapter=adapter,
-        calculation_adapter_enabled=True,
-        calculation_adapter_path="/v1/scenario/simulate",
-        currency="USD",
-    )
-
-    result = asyncio.run(
-        service.run(
+        _build_service().run(
             current_portfolio_value_usd=100000,
             annual_contribution_usd=22000,
             accounts=[
@@ -505,17 +226,6 @@ def test_plan_simulation_service_uses_account_allocation_payload() -> None:
             roth_conversion_start_age=60,
             roth_conversion_end_age=72,
             drawdown_order=["tax_deferred", "taxable", "tax_free", "cash"],
-            household_mode="couple",
-            household_partner_income_usd=90000,
-            household_partner_income_growth_rate=0.03,
-            household_partner_retirement_age=65,
-            household_partner_social_security_annual_usd=24000,
-            household_partner_social_security_claiming_age=67,
-            household_shared_goal_target_usd=150000,
-            household_shared_goal_target_year=2035,
-            household_shared_goal_annual_funding_usd=10000,
-            household_partner_income_added_first_year_usd=90000,
-            household_partner_income_added_total_usd=920000,
             withdrawal_strategy="4_percent_rule",
             retirement_age=60,
             simulation_mode="historical",
@@ -525,7 +235,7 @@ def test_plan_simulation_service_uses_account_allocation_payload() -> None:
         )
     )
 
-    assert result.engine == "simulation"
+    assert result.engine == "local"
     assert result.income_projection is not None
     assert result.income_projection.first_year_gross_income_usd == 125000
     assert result.expense_projection is not None
@@ -545,78 +255,27 @@ def test_plan_simulation_service_uses_account_allocation_payload() -> None:
     assert result.simulation["requested_historical_start_year"] == 1972
     assert result.simulation["seed"] == 314159
 
+    baseline = next(item for item in result.scenarios if item.label == "baseline")
+    assert baseline.assumptions["account_count"] == 3
+    assert baseline.assumptions["annual_contribution_usd"] == 22000
+    assert baseline.assumptions["state_tax_rate"] == 0.05
+    assert baseline.assumptions["include_irmaa"] is False
+    assert baseline.assumptions["roth_conversion_annual_amount_usd"] == 12000
+    assert baseline.assumptions["roth_conversion_start_age"] == 60
+    assert baseline.assumptions["roth_conversion_end_age"] == 72
+    assert baseline.assumptions["drawdown_order"] == "tax_deferred,taxable,tax_free,cash"
+    assert baseline.assumptions["withdrawal_strategy"] == "four_percent_rule"
+    assert baseline.assumptions["retirement_age"] == 60
+    assert {point.account_id for point in baseline.account_balance_points} == {
+        "acct-401k",
+        "acct-taxable",
+        "synthetic-roth-conversion",
+    }
+
 
 def test_plan_simulation_service_forwards_assumption_set_metadata() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        payload = json.loads(request.content.decode("utf-8"))
-        assert payload["metadata"]["assumption_set_id"] == "stagflation"
-        assert payload["metadata"]["assumption_set_name"] == "Stagflation"
-        return httpx.Response(
-            status_code=200,
-            json={
-                "contract_version": 1,
-                "request_id": payload["request_id"],
-                "engine": "simulation",
-                "engine_status": "ok",
-                "fallback_method": None,
-                "scenarios": [
-                    {
-                        "scenario_id": "baseline",
-                        "label": "baseline",
-                        "summary": {
-                            "ending_balance_nominal": 1000000,
-                            "ending_balance_real": 700000,
-                        },
-                        "timeline": [],
-                    },
-                    {
-                        "scenario_id": "optimistic",
-                        "label": "optimistic",
-                        "summary": {
-                            "ending_balance_nominal": 1200000,
-                            "ending_balance_real": 850000,
-                        },
-                        "timeline": [],
-                    },
-                    {
-                        "scenario_id": "conservative",
-                        "label": "conservative",
-                        "summary": {
-                            "ending_balance_nominal": 800000,
-                            "ending_balance_real": 560000,
-                        },
-                        "timeline": [],
-                    },
-                    {
-                        "scenario_id": "hsa_delta",
-                        "label": "hsa_delta",
-                        "summary": {
-                            "ending_balance_nominal": 1030000,
-                            "ending_balance_real": 721000,
-                        },
-                        "timeline": [],
-                    },
-                ],
-                "warnings": [],
-                "generated_at": "2026-04-10T13:00:00Z",
-            },
-        )
-
-    adapter = CalculationAdapter(
-        base_url="http://localhost:8412",
-        max_retries=0,
-        transport=httpx.MockTransport(handler),
-    )
-    service = BuildWealthScenarioService(
-        scenario_engine=_build_scenario_engine(),
-        calculation_adapter=adapter,
-        calculation_adapter_enabled=True,
-        calculation_adapter_path="/v1/scenario/simulate",
-        currency="USD",
-    )
-
     result = asyncio.run(
-        service.run(
+        _build_service().run(
             current_portfolio_value_usd=100000,
             assumption_set_id="stagflation",
             assumption_set_name="Stagflation",

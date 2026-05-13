@@ -283,20 +283,13 @@ from buildwealth_orchestrator.services.price_updater import (
     build_snapshot_from_holdings,
     refresh_portfolio,
 )
-from buildwealth_orchestrator.services.engine_adapter import CalculationAdapter
 from buildwealth_orchestrator.services.portfolio_benchmark import (
-    PORTFOLIO_BENCHMARK_CONTRACT_VERSION,
     BuildWealthBenchmarkService,
 )
 from buildwealth_orchestrator.services.portfolio_attribution import (
-    PORTFOLIO_ATTRIBUTION_CONTRACT_VERSION,
     BuildWealthAttributionService,
 )
-from buildwealth_orchestrator.services.planning_calculation_adapter import (
-    PLAN_SIMULATION_CONTRACT_VERSION,
-    BuildWealthScenarioService,
-)
-from buildwealth_orchestrator.services.engine_status import EngineProbeConfig, EngineStatusTracker
+from buildwealth_orchestrator.services.plan_simulation_service import BuildWealthScenarioService
 from buildwealth_orchestrator.services.durable_storage import (
     DurableStorageMigrationError,
     DurableStorageMigrationNotFoundError,
@@ -521,15 +514,6 @@ if "context_embedding_timeout_seconds" in _user_context_keys:
         settings.context_embedding_timeout_seconds = float(_timeout) if _timeout is not None else settings.context_embedding_timeout_seconds
     except (TypeError, ValueError):
         pass
-
-
-def parse_path_candidates(raw_value: str, fallback: tuple[str, ...]) -> tuple[str, ...]:
-    values = tuple(
-        item.strip()
-        for item in str(raw_value or "").split(",")
-        if item.strip()
-    )
-    return values or fallback
 
 
 def _auth_mode() -> str:
@@ -882,24 +866,13 @@ scenario_engine = ScenarioEngine(
     marginal_tax_rate=settings.planner_marginal_tax_rate,
 )
 research_service = OpenBBResearchService(provider=settings.openbb_provider)
-portfolio_calculation_adapter = CalculationAdapter(
-    base_url=settings.portfolio_calculation_service_base_url,
-    timeout_seconds=settings.engine_calculation_timeout_seconds,
-    max_retries=settings.engine_calculation_retry_count,
-)
 benchmark_service = BuildWealthBenchmarkService(
     snapshot_store=snapshot_store,
     research_service=research_service,
-    calculation_adapter=portfolio_calculation_adapter,
-    calculation_adapter_enabled=settings.enable_portfolio_benchmark_calculation_service,
-    calculation_adapter_path=settings.portfolio_benchmark_calculation_adapter_path,
     base_currency=settings.app_currency,
 )
 attribution_service = BuildWealthAttributionService(
     portfolio_store=portfolio_store,
-    calculation_adapter=portfolio_calculation_adapter,
-    calculation_adapter_enabled=settings.enable_portfolio_attribution_calculation_service,
-    calculation_adapter_path=settings.portfolio_attribution_calculation_adapter_path,
     base_currency=settings.app_currency,
 )
 
@@ -908,9 +881,6 @@ def benchmark_service_for_workspace(services: WorkspaceServices) -> BuildWealthB
     return BuildWealthBenchmarkService(
         snapshot_store=services.snapshot_store,
         research_service=research_service,
-        calculation_adapter=portfolio_calculation_adapter,
-        calculation_adapter_enabled=settings.enable_portfolio_benchmark_calculation_service,
-        calculation_adapter_path=settings.portfolio_benchmark_calculation_adapter_path,
         base_currency=settings.app_currency,
     )
 
@@ -918,82 +888,10 @@ def benchmark_service_for_workspace(services: WorkspaceServices) -> BuildWealthB
 def attribution_service_for_workspace(services: WorkspaceServices) -> BuildWealthAttributionService:
     return BuildWealthAttributionService(
         portfolio_store=services.portfolio_store,
-        calculation_adapter=portfolio_calculation_adapter,
-        calculation_adapter_enabled=settings.enable_portfolio_attribution_calculation_service,
-        calculation_adapter_path=settings.portfolio_attribution_calculation_adapter_path,
         base_currency=settings.app_currency,
     )
-plan_calculation_adapter = CalculationAdapter(
-    base_url=settings.plan_calculation_service_base_url,
-    timeout_seconds=settings.engine_calculation_timeout_seconds,
-    max_retries=settings.engine_calculation_retry_count,
-)
 plan_simulation_service = BuildWealthScenarioService(
     scenario_engine=scenario_engine,
-    calculation_adapter=plan_calculation_adapter,
-    calculation_adapter_enabled=settings.enable_plan_simulation_calculation_service,
-    calculation_adapter_path=settings.plan_simulation_calculation_adapter_path,
-    currency=settings.app_currency,
-    default_tax_rate=settings.planner_marginal_tax_rate,
-)
-engine_status_tracker = EngineStatusTracker(
-    configs=[
-        EngineProbeConfig(
-            name="portfolio_benchmark",
-            base_url=settings.portfolio_calculation_service_base_url,
-            enabled=settings.enable_portfolio_benchmark_calculation_service,
-            health_paths=parse_path_candidates(
-                settings.portfolio_calculation_service_health_paths,
-                fallback=("/health", "/api/v1/health"),
-            ),
-            version_paths=parse_path_candidates(
-                settings.engine_calculation_version_paths,
-                fallback=("/version",),
-            ),
-            expected_contract_version=(
-                settings.portfolio_calculation_contract_version
-                if settings.portfolio_calculation_contract_version > 0
-                else PORTFOLIO_BENCHMARK_CONTRACT_VERSION
-            ),
-        ),
-        EngineProbeConfig(
-            name="portfolio_attribution",
-            base_url=settings.portfolio_calculation_service_base_url,
-            enabled=settings.enable_portfolio_attribution_calculation_service,
-            health_paths=parse_path_candidates(
-                settings.portfolio_calculation_service_health_paths,
-                fallback=("/health", "/api/v1/health"),
-            ),
-            version_paths=parse_path_candidates(
-                settings.engine_calculation_version_paths,
-                fallback=("/version",),
-            ),
-            expected_contract_version=(
-                settings.portfolio_calculation_contract_version
-                if settings.portfolio_calculation_contract_version > 0
-                else PORTFOLIO_ATTRIBUTION_CONTRACT_VERSION
-            ),
-        ),
-        EngineProbeConfig(
-            name="plan_simulation",
-            base_url=settings.plan_calculation_service_base_url,
-            enabled=settings.enable_plan_simulation_calculation_service,
-            health_paths=parse_path_candidates(
-                settings.plan_calculation_service_health_paths,
-                fallback=("/health", "/api/health"),
-            ),
-            version_paths=parse_path_candidates(
-                settings.engine_calculation_version_paths,
-                fallback=("/version",),
-            ),
-            expected_contract_version=(
-                settings.plan_calculation_contract_version
-                if settings.plan_calculation_contract_version > 0
-                else PLAN_SIMULATION_CONTRACT_VERSION
-            ),
-        ),
-    ],
-    timeout_seconds=settings.engine_calculation_timeout_seconds,
 )
 coordinator = Coordinator()
 conversation_store = ConversationStore(settings.conversation_dir)
@@ -1194,7 +1092,6 @@ runtime_telemetry_tracker = RuntimeTelemetryTracker()
 
 sync_lock = asyncio.Lock()
 scheduler_task: asyncio.Task | None = None
-engine_health_task: asyncio.Task | None = None
 autogit_task: asyncio.Task | None = None
 sync_state: dict[str, object] = {
     "running": False,
@@ -1234,13 +1131,6 @@ async def telemetry_latency_middleware(request: Request, call_next):
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-async def contract_guard_reason(engine_name: str) -> str | None:
-    try:
-        return await engine_status_tracker.contract_guard_reason(engine_name)
-    except Exception:
-        return None
 
 
 async def build_live_snapshot(
@@ -1301,19 +1191,6 @@ async def scheduled_sync_loop() -> None:
             await execute_sync(trigger="scheduled")
         except Exception:
             # Failures are captured in sync_state for observability.
-            pass
-
-        await asyncio.sleep(interval_seconds)
-
-
-async def engine_probe_loop() -> None:
-    interval_seconds = max(10, int(settings.engine_health_probe_interval_seconds))
-
-    while True:
-        try:
-            await engine_status_tracker.probe_all()
-        except Exception:
-            # Probe failures are reflected in tracker state where possible.
             pass
 
         await asyncio.sleep(interval_seconds)
@@ -1607,19 +1484,8 @@ def build_scenario_engine_for_plan_settings(plan_settings: dict[str, Any]) -> Sc
 
 def build_plan_simulation_service_for_plan_settings(plan_settings: dict[str, Any]) -> BuildWealthScenarioService:
     engine = build_scenario_engine_for_plan_settings(plan_settings)
-    marginal_tax_rate = _coerce_float(
-        plan_settings.get("marginal_tax_rate"),
-        settings.planner_marginal_tax_rate,
-    )
-    state_tax_rate = _coerce_float(plan_settings.get("state_tax_rate"), 0.0)
-    blended_effective_tax_rate = max(0.0, min(1.0, marginal_tax_rate + state_tax_rate))
     return BuildWealthScenarioService(
         scenario_engine=engine,
-        calculation_adapter=plan_calculation_adapter,
-        calculation_adapter_enabled=settings.enable_plan_simulation_calculation_service,
-        calculation_adapter_path=settings.plan_simulation_calculation_adapter_path,
-        currency=settings.app_currency,
-        default_tax_rate=blended_effective_tax_rate,
     )
 
 
@@ -3554,7 +3420,7 @@ async def run_scenarios_for_plan_settings(
         else None
     )
     resolved_portfolio_value = float(current_portfolio_value_usd)
-    calculation_service_accounts: list[dict[str, Any]] | None = build_planning_accounts_from_portfolio() or None
+    planning_accounts: list[dict[str, Any]] | None = build_planning_accounts_from_portfolio() or None
     income_projection_payload: dict[str, Any] | None = None
     expense_projection_payload: dict[str, Any] | None = None
     debt_projection_payload: dict[str, Any] | None = None
@@ -3608,9 +3474,9 @@ async def run_scenarios_for_plan_settings(
 
     if contribution_allocation is not None:
         resolved_annual_contribution = float(contribution_allocation.total_contributions_usd)
-        calculation_service_accounts = []
+        planning_accounts = []
         for item in contribution_allocation.allocations:
-            calculation_service_accounts.append(
+            planning_accounts.append(
                 {
                     "account_id": item.account_id,
                     "account_type": item.account_type,
@@ -3667,14 +3533,12 @@ async def run_scenarios_for_plan_settings(
     drawdown_order = str(plan_settings.get("drawdown_order") or "").strip() or None
     if not drawdown_order:
         drawdown_order = str(timeline_drawdown_order or "").strip() or None
-    scenario_guard_reason = await contract_guard_reason("plan_simulation")
-
     result = await service.run(
         current_portfolio_value_usd=resolved_portfolio_value,
         annual_contribution_usd=resolved_annual_contribution,
         years=resolved_years,
         hsa_extra_contribution_usd=(float(hsa_extra) if hsa_extra is not None else None),
-        accounts=calculation_service_accounts,
+        accounts=planning_accounts,
         income_projection=income_projection_payload,
         expense_projection=expense_projection_payload,
         debt_projection=debt_projection_payload,
@@ -3707,15 +3571,9 @@ async def run_scenarios_for_plan_settings(
         simulation_monte_carlo_variant=plan_settings.get("simulation_monte_carlo_variant"),
         simulation_historical_start_year=plan_settings.get("simulation_historical_start_year"),
         simulation_seed=plan_settings.get("simulation_seed"),
-        contract_guard_reason=scenario_guard_reason,
         assumption_set_id=(str(assumption_set.get("id")) if isinstance(assumption_set, dict) and assumption_set.get("id") else None),
         assumption_set_name=(str(assumption_set.get("name")) if isinstance(assumption_set, dict) and assumption_set.get("name") else None),
     )
-    if result.engine_status == "degraded":
-        await engine_status_tracker.increment_degraded(
-            "plan_simulation",
-            reason=result.warnings[0] if result.warnings else None,
-        )
     household_context = _build_household_response_context(
         household_settings=household_settings,
         household_adjustments=household_adjustments_payload,
@@ -5237,10 +5095,40 @@ def _release_readiness_check(
 
 
 def _engine_status_snapshot_sync() -> EngineStatusResponse:
-    state = getattr(engine_status_tracker, "_state", {})
-    as_of = getattr(engine_status_tracker, "_as_of", utc_now())
-    engines = list(state.values()) if isinstance(state, dict) else []
-    return EngineStatusResponse(as_of=as_of, engines=engines)
+    return build_native_engine_status()
+
+
+def build_native_engine_status() -> EngineStatusResponse:
+    engines = [
+        {
+            "name": "portfolio_benchmark",
+            "enabled": True,
+            "reachable": True,
+            "contract_compatible": True,
+            "last_checked_at": utc_now(),
+        },
+        {
+            "name": "portfolio_attribution",
+            "enabled": True,
+            "reachable": True,
+            "contract_compatible": True,
+            "last_checked_at": utc_now(),
+        },
+        {
+            "name": "plan_simulation",
+            "enabled": True,
+            "reachable": True,
+            "contract_compatible": True,
+            "last_checked_at": utc_now(),
+        },
+    ]
+    return EngineStatusResponse(
+        as_of=utc_now(),
+        enabled_count=len(engines),
+        reachable_count=len(engines),
+        degraded_count=0,
+        engines=engines,
+    )
 
 
 def _latest_activity_event(events: list[dict[str, Any]], event_type: str) -> dict[str, Any] | None:
@@ -5684,36 +5572,36 @@ def build_release_readiness_response(
             names = ", ".join(engine.name for engine in degraded[:3])
             checks.append(_release_readiness_check(
                 id="providers",
-                title="Provider and engine health",
+                title="Provider and service readiness",
                 status="blocked",
-                detail=f"Provider/engine degradation is present: {names}.",
+                detail=f"Provider or service issues are present: {names}.",
                 domain="provider",
                 action_kind="review_provider_status",
                 last_verified_at=engine_status.as_of,
-                metadata={"degraded_engines": [engine.model_dump(mode="json") for engine in degraded]},
+                metadata={"degraded_services": [engine.model_dump(mode="json") for engine in degraded]},
             ))
             actions.append(_release_readiness_action(
                 "review_provider_status",
-                "Review provider health",
-                "Provider or engine degradation should caveat advice before product testing.",
+                "Review provider and service readiness",
+                "Provider or service issues should caveat advice before product testing.",
                 href="#today",
             ))
         else:
             checks.append(_release_readiness_check(
                 id="providers",
-                title="Provider and engine health",
+                title="Provider and service readiness",
                 status="ready",
-                detail="No enabled provider or engine degradation is currently recorded.",
+                detail="No enabled provider or service issues are currently recorded.",
                 domain="provider",
                 last_verified_at=engine_status.as_of,
-                metadata={"engine_count": len(engine_status.engines)},
+                metadata={"service_count": len(engine_status.engines)},
             ))
     except Exception as exc:
         checks.append(_release_readiness_check(
             id="providers",
-            title="Provider and engine health",
+            title="Provider and service readiness",
             status="warning",
-            detail=f"Provider/engine health unavailable: {exc}",
+            detail=f"Provider and service readiness unavailable: {exc}",
             domain="provider",
             action_kind="review_provider_status",
             href="#today",
@@ -17125,29 +17013,20 @@ async def on_startup() -> None:
     except DataProtectionError as exc:
         print(f"Data protection auto-apply skipped: {exc}")
 
-    global scheduler_task, engine_health_task, autogit_task
-    await engine_status_tracker.probe_all()
+    global scheduler_task, autogit_task
 
     if settings.sync_interval_minutes > 0:
         scheduler_task = asyncio.create_task(scheduled_sync_loop())
-    if settings.engine_health_probe_interval_seconds > 0:
-        engine_health_task = asyncio.create_task(engine_probe_loop())
     autogit_task = asyncio.create_task(autogit_checkpoint_loop())
 
 
 async def on_shutdown() -> None:
-    global scheduler_task, engine_health_task, autogit_task
+    global scheduler_task, autogit_task
     if scheduler_task is not None:
         scheduler_task.cancel()
         with suppress(asyncio.CancelledError):
             await scheduler_task
         scheduler_task = None
-
-    if engine_health_task is not None:
-        engine_health_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await engine_health_task
-        engine_health_task = None
 
     if autogit_task is not None:
         autogit_task.cancel()
@@ -17208,9 +17087,7 @@ def health() -> dict[str, str]:
 
 @app.get("/api/engines/status", response_model=EngineStatusResponse)
 async def get_engine_status(refresh: bool = False) -> EngineStatusResponse:
-    if refresh:
-        await engine_status_tracker.probe_all()
-    return await engine_status_tracker.snapshot()
+    return build_native_engine_status()
 
 
 def _fallback_context_freshness_payload() -> dict[str, Any]:
@@ -17601,18 +17478,10 @@ async def get_portfolio_benchmark(
 
     bounded_limit = max(2, min(int(limit), 3650))
     try:
-        guard_reason = await contract_guard_reason("portfolio_benchmark")
-        result = await benchmark_service_for_workspace(services).compare(
+        return await benchmark_service_for_workspace(services).compare(
             benchmark_symbols=resolved_symbols,
             limit=bounded_limit,
-            contract_guard_reason=guard_reason,
         )
-        if result.engine_status == "degraded":
-            await engine_status_tracker.increment_degraded(
-                "portfolio_benchmark",
-                reason=result.warnings[0] if result.warnings else None,
-            )
-        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -17625,17 +17494,9 @@ async def get_portfolio_attribution(
     require_permission(services.context, "portfolio.read")
     bounded_top_n = max(1, min(int(top_n), 50))
     try:
-        guard_reason = await contract_guard_reason("portfolio_attribution")
-        result = await attribution_service_for_workspace(services).analyze(
+        return await attribution_service_for_workspace(services).analyze(
             top_n=bounded_top_n,
-            contract_guard_reason=guard_reason,
         )
-        if result.engine_status == "degraded":
-            await engine_status_tracker.increment_degraded(
-                "portfolio_attribution",
-                reason=result.warnings[0] if result.warnings else None,
-            )
-        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -17675,7 +17536,6 @@ async def get_portfolio_analytics(
             benchmark_response = await benchmark_service_for_workspace(services).compare(
                 benchmark_symbols=resolved_symbols,
                 limit=max(2, min(benchmark_limit, 3650)),
-                contract_guard_reason="BuildWealth native analytics uses local benchmark calculations.",
             )
         except ValueError as exc:
             benchmark_error = str(exc)
@@ -17683,7 +17543,6 @@ async def get_portfolio_analytics(
     try:
         attribution_response = await attribution_service_for_workspace(services).analyze(
             top_n=max(1, min(int(top_n), 50)),
-            contract_guard_reason="BuildWealth native analytics uses local return attribution.",
         )
     except ValueError as exc:
         attribution_error = str(exc)
@@ -21391,7 +21250,6 @@ async def plan_scenarios(
     if requested_drawdown_order is not None:
         active_drawdown_order = requested_drawdown_order
 
-    scenario_guard_reason = await contract_guard_reason("plan_simulation")
     result = await service.run(
         current_portfolio_value_usd=resolved_current_value,
         annual_contribution_usd=resolved_annual_contribution,
@@ -21442,7 +21300,6 @@ async def plan_scenarios(
         simulation_monte_carlo_variant=planning_settings_for_run.get("simulation_monte_carlo_variant"),
         simulation_historical_start_year=planning_settings_for_run.get("simulation_historical_start_year"),
         simulation_seed=planning_settings_for_run.get("simulation_seed"),
-        contract_guard_reason=scenario_guard_reason,
         assumption_set_id=(
             str(active_assumption_set.get("id"))
             if isinstance(active_assumption_set, dict) and active_assumption_set.get("id")
@@ -21454,11 +21311,6 @@ async def plan_scenarios(
             else None
         ),
     )
-    if result.engine_status == "degraded":
-        await engine_status_tracker.increment_degraded(
-            "plan_simulation",
-            reason=result.warnings[0] if result.warnings else None,
-        )
     if request_household_overrides_provided:
         household_source = "scenario_request_overrides"
     elif active_plan_detail is not None:

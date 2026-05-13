@@ -200,7 +200,7 @@ Ongoing guardrails:
 
 ### Native Module / Degraded-Mode Execution
 Files:
-- `services/orchestrator/src/buildwealth_orchestrator/services/planning_calculation_adapter.py`
+- `services/orchestrator/src/buildwealth_orchestrator/services/plan_simulation_service.py`
 - `services/orchestrator/src/buildwealth_orchestrator/services/engine_adapter.py`
 - `services/orchestrator/src/buildwealth_orchestrator/services/engine_status.py`
 - `services/orchestrator/src/buildwealth_orchestrator/services/portfolio_benchmark.py`
@@ -260,7 +260,7 @@ Status:
 - Completed (2026-04-20, Slice D)
 
 Problem:
-- `planning_calculation_adapter.py` still handles too many jobs in one class:
+- `plan_simulation_service.py` still handles too many jobs in one class:
   - local execution
   - request building
   - adapter call
@@ -330,7 +330,7 @@ Definition of done:
 
 ### Slice D: Planning Native Module Decomposition (Completed 2026-04-20)
 Goal:
-- reduce the internal cognitive load of `planning_calculation_adapter.py`
+- reduce the internal cognitive load of `plan_simulation_service.py`
 
 Definition of done:
 - request build, local execution, fallback, and merge paths are separate functions

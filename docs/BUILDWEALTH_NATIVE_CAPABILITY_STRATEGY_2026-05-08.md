@@ -18,7 +18,7 @@ BuildWealth should provide the full portfolio and planning workflow inside Build
 - **BuildWealth v2 UI:** the single future product surface.
 - **Primary navigation:** Today, Inbox, Plan, Portfolio, Profile, Copilot.
 - **Data & Tools:** lower-frequency utilities such as Import & Sync, Accounts & Transactions, Prices & FX, Workflows, Activity Log, Data & Recovery, and Advanced Settings.
-- **Implementation detail boundary:** optional calculation services can exist during migration, but they must not appear as user destinations, product labels, recommendation text, or Copilot answers.
+- **Implementation boundary:** portfolio analysis and plan simulation logic runs inside BuildWealth-owned services. New work should deepen those modules, not add adapter/probe/fallback runtime paths.
 
 **Feature Delta**
 
@@ -59,7 +59,7 @@ Each module should expose one small interface to API routes, Copilot tools, and 
 3. Rename implementation labels to BuildWealth-owned terms.
 4. Keep default startup and test data BuildWealth-only.
 5. Make local services first-class.
-6. Delete unused bridges, settings, contracts, and probes only after tests prove no active workflow depends on them.
+6. Delete unused bridges, settings, contracts, and probes after tests prove no active workflow depends on them.
 7. Clean stale provenance and license wording from files that now describe BuildWealth-native logic.
 
 **Workflow Acceptance Criteria**

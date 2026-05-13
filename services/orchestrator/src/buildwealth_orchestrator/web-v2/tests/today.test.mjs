@@ -162,7 +162,7 @@ test('today command cards render decision state with actions', () => {
   assert.match(markup, /Investment policy/);
   assert.match(markup, /Guardrails <b>Missing<\/b>/);
   assert.match(markup, /href="#copilot\?intent=investment-policy"/);
-  assert.match(markup, /Engine health/);
+  assert.match(markup, /Service readiness/);
   assert.match(markup, /1\/2/);
-  assert.match(markup, /3 degraded event/);
+  assert.match(markup, /3 service issue/);
 });

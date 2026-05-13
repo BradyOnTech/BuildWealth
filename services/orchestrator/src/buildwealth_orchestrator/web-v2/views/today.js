@@ -172,15 +172,15 @@ function buildEngineCommandCard(engines) {
   const degraded = Number(engines.degraded_count ?? 0);
   const status = degraded > 0 || reachable < enabled ? 'warning' : 'ready';
   return {
-    id: 'engine-health',
-    title: 'Engine health',
+    id: 'service-readiness',
+    title: 'Service readiness',
     status,
     detail: degraded > 0
-      ? `${degraded} degraded event${degraded === 1 ? '' : 's'} recorded across compute engines.`
+      ? `${degraded} service issue${degraded === 1 ? '' : 's'} recorded across BuildWealth services.`
       : reachable < enabled
-        ? 'Some configured compute engines are not reachable.'
-        : 'Compute engines are reachable with no degraded events.',
-    metric_label: 'Reachable',
+        ? 'Some BuildWealth services need attention.'
+        : 'BuildWealth services are ready with no recorded issues.',
+    metric_label: 'Ready',
     metric_value: `${reachable}/${enabled}`,
     action_label: 'Open operations',
     href: '#atelier',
@@ -389,7 +389,7 @@ function renderRoom(payload, engines) {
           <span class="glyph">§</span>
           ${headline}
           <span class="marginalia">
-            Last sync ${lastSync ? fmtRelative(lastSync) : '—'} · ${enginesReachable}/${enginesEnabled} engines reachable
+            Last sync ${lastSync ? fmtRelative(lastSync) : '—'} · ${enginesReachable}/${enginesEnabled} services ready
           </span>
         </p>
         <details class="diagnostics-toggle">

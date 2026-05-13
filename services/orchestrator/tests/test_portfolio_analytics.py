@@ -99,7 +99,6 @@ def test_portfolio_analytics_payload_sanitizes_internal_engine_labels() -> None:
     assert payload["risk_explanations"]["rows"][0]["label"] == "Largest holding"
     assert payload["risk_explanations"]["alerts"][0]["metric"] == "sector"
     assert "Portfolio Analysis" not in " ".join(payload["warnings"])
-    assert "calculation_service" not in " ".join(payload["warnings"])
 
 
 def test_portfolio_analytics_payload_can_be_partial_without_snapshots() -> None:
