@@ -1,8 +1,40 @@
 // Minimal JSON fetch helper for v2.
 // Forked from web/lib/api.js — kept tiny on purpose; v2 grows its own surface.
 
+const CSRF_STORAGE_KEY = 'buildwealth.csrf_token';
+
+let csrfToken = readStoredCsrfToken();
+
+function readStoredCsrfToken() {
+  try { return window.sessionStorage.getItem(CSRF_STORAGE_KEY) || ''; }
+  catch { return ''; }
+}
+
+export function setCsrfToken(token) {
+  csrfToken = String(token || '');
+  try {
+    if (csrfToken) window.sessionStorage.setItem(CSRF_STORAGE_KEY, csrfToken);
+    else window.sessionStorage.removeItem(CSRF_STORAGE_KEY);
+  } catch {
+    // Storage can be unavailable in private contexts; cookie auth still works.
+  }
+}
+
+function withAuthHeaders(options = {}) {
+  const method = String(options.method || 'GET').toUpperCase();
+  const headers = { ...(options.headers || {}) };
+  if (csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    headers['x-buildwealth-csrf-token'] = csrfToken;
+  }
+  return {
+    credentials: 'same-origin',
+    ...options,
+    headers,
+  };
+}
+
 export async function fetchJson(url, options = {}) {
-  const response = await fetch(url, options);
+  const response = await fetch(url, withAuthHeaders(options));
   const body = await response.text();
 
   if (!body.trim()) {
@@ -125,6 +157,30 @@ function contextCandidatesUrl({
 }
 
 export const api = {
+  authLogin: async (body = {}) => {
+    const result = await postJson('/api/auth/login', body);
+    setCsrfToken(result?.csrf_token || '');
+    return result;
+  },
+  authRegister: async (body = {}) => {
+    const result = await postJson('/api/auth/register', body);
+    setCsrfToken(result?.csrf_token || '');
+    return result;
+  },
+  authLogout: async () => {
+    try { return await postJson('/api/auth/logout', {}); }
+    finally { setCsrfToken(''); }
+  },
+  authSession: async () => {
+    const result = await fetchJson('/api/auth/session');
+    if (result?.csrf_token) setCsrfToken(result.csrf_token);
+    return result;
+  },
+  workspaces: () => fetchJson('/api/workspaces'),
+  currentWorkspace: () => fetchJson('/api/workspaces/current'),
+  selectWorkspace: (workspaceId) => postJson(`/api/workspaces/${encodeURIComponent(workspaceId)}/select`, {}),
+  resetDemoWorkspace: (workspaceId) => postJson(`/api/workspaces/${encodeURIComponent(workspaceId)}/demo/reset`, {}),
+
   today:        () => fetchJson('/api/dashboard/today'),
   recordTodayReview: () => postJson('/api/dashboard/today/review-checkpoint', {}),
   refreshTodayResearch: () => postJson('/api/dashboard/today/research-readiness/refresh', {}),

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 from buildwealth_orchestrator import main
+from buildwealth_orchestrator.services.control_plane import ControlPlaneStore
 
 
 class FakeImportWorkbenchStore:
@@ -68,13 +71,20 @@ class FakeRecommendationInbox:
 
 
 def test_portfolio_audit_route(monkeypatch) -> None:
-    monkeypatch.setattr(main, "import_workbench_store", FakeImportWorkbenchStore())
-    monkeypatch.setattr(main, "asset_registry", FakeAssetRegistry())
-    monkeypatch.setattr(main, "portfolio_store", FakePortfolioStore())
-    monkeypatch.setattr(main, "recommendation_inbox", FakeRecommendationInbox())
+    services = SimpleNamespace(
+        context=SimpleNamespace(permissions=ControlPlaneStore.OWNER_PERMISSIONS),
+        import_workbench_store=FakeImportWorkbenchStore(),
+        asset_registry=FakeAssetRegistry(),
+        portfolio_store=FakePortfolioStore(),
+        recommendation_inbox=FakeRecommendationInbox(),
+    )
+    main.app.dependency_overrides[main.get_workspace_services] = lambda: services
 
-    with TestClient(main.app) as client:
-        response = client.get("/api/portfolio/audit?limit=5")
+    try:
+        with TestClient(main.app) as client:
+            response = client.get("/api/portfolio/audit?limit=5")
+    finally:
+        main.app.dependency_overrides.pop(main.get_workspace_services, None)
 
     assert response.status_code == 200
     payload = response.json()

@@ -51,6 +51,11 @@ const ui = {
   contextTesting:  false,
   contextSaveError:null,
   contextTestResult: null,
+  workspaces:       [],
+  activeWorkspaceId:null,
+  demoResetting:    false,
+  demoResetResult:  null,
+  demoResetError:   null,
 };
 
 const EMBEDDING_PROVIDERS = [
@@ -90,9 +95,10 @@ async function load() {
   ui.loaded = false;
   ui.loadError = null;
   try {
-    const [settings, contextSettings] = await Promise.all([
+    const [settings, contextSettings, workspaces] = await Promise.all([
       api.settings(),
       api.contextSettings().catch(() => null),
+      api.workspaces().catch(() => null),
     ]);
     ui.loadedSettings = settings;
     ui.draft = toDraft(settings);
@@ -105,6 +111,11 @@ async function load() {
     ui.contextTesting = false;
     ui.contextSaveError = null;
     ui.contextTestResult = null;
+    ui.workspaces = Array.isArray(workspaces?.items) ? workspaces.items : [];
+    ui.activeWorkspaceId = workspaces?.active_workspace_id || null;
+    ui.demoResetting = false;
+    ui.demoResetResult = null;
+    ui.demoResetError = null;
     ui.loaded = true;
   } catch (err) {
     ui.loadError = err.message || 'Could not load settings.';
@@ -136,6 +147,7 @@ function render() {
     ${raw(masthead())}
     ${raw(providerCard())}
     ${raw(contextCard())}
+    ${raw(demoWorkspaceCard(ui))}
     ${raw(handoffCard())}
   `);
 }
@@ -485,6 +497,51 @@ function handoffCard() {
   `;
 }
 
+export function demoWorkspaceCard(model) {
+  const demo = (model.workspaces || []).find(w => w.is_demo || w.workspace_type === 'demo');
+  const activeIsDemo = demo && model.activeWorkspaceId === demo.id;
+  return html`
+    <section class="settings-card settings-card-quiet">
+      <header class="settings-card-head">
+        <h2 class="settings-card-title">Demo workspace</h2>
+        <p class="settings-card-lede">
+          Demo data lives in its own household workspace so testing never touches your real financial picture.
+        </p>
+      </header>
+      ${demo ? html`
+        <div class="settings-context-row settings-field span-2">
+          <span class="status-pill ${activeIsDemo ? 'proposed' : 'archived'}"><span class="dot"></span></span>
+          <span class="settings-context-label">${demo.name || 'Demo Household'}</span>
+          <span class="settings-context-value">${activeIsDemo ? 'Active now' : 'Available'}</span>
+        </div>
+        <footer class="settings-actions">
+          <button class="btn btn-primary" id="demo-reset" ${model.demoResetting ? 'disabled' : ''}>
+            ${model.demoResetting ? 'Resetting…' : 'Reset demo data'}
+          </button>
+          <button class="btn btn-ghost" id="demo-switch" ${activeIsDemo ? 'disabled' : ''}>
+            Switch to demo
+          </button>
+          ${model.demoResetError ? html`<p class="inline-warning">${model.demoResetError}</p>` : ''}
+        </footer>
+        ${model.demoResetResult ? html`
+          <div class="settings-test-block ok">
+            <p class="settings-test-headline">Demo workspace reset.</p>
+            <p class="settings-test-detail">
+              ${Number(model.demoResetResult.profile_household_members || 0)} household members ·
+              ${Number(model.demoResetResult.recommendations || 0)} recommendations ·
+              portfolio value ${model.demoResetResult.portfolio_total_value || 'seeded'}
+            </p>
+          </div>
+        ` : ''}
+      ` : html`
+        <p class="settings-card-empty">
+          Demo workspace is not available yet. The backend will create one during workspace bootstrap.
+        </p>
+      `}
+    </section>
+  `;
+}
+
 /* ─────────────  Events  ───────────── */
 
 // init() runs once per route; #settings-page is a fresh node each time, so the
@@ -553,6 +610,8 @@ function attachHandlers() {
   });
   delegate(root, 'click',  '#context-save', (e) => { e.preventDefault(); saveContext(); });
   delegate(root, 'click',  '#context-test', (e) => { e.preventDefault(); testEmbedding(); });
+  delegate(root, 'click',  '#demo-reset', (e) => { e.preventDefault(); resetDemoWorkspace(); });
+  delegate(root, 'click',  '#demo-switch', (e) => { e.preventDefault(); switchToDemoWorkspace(); });
 }
 
 /* ─────────────  Actions  ───────────── */
@@ -647,6 +706,41 @@ async function testEmbedding() {
       : { ok: false, stage: 'embed_text', detail: err?.message || 'Test failed.' };
   } finally {
     ui.contextTesting = false;
+    render();
+  }
+}
+
+async function resetDemoWorkspace() {
+  const demo = (ui.workspaces || []).find(w => w.is_demo || w.workspace_type === 'demo');
+  if (!demo || ui.demoResetting) return;
+  ui.demoResetting = true;
+  ui.demoResetError = null;
+  ui.demoResetResult = null;
+  render();
+  try {
+    const result = await api.resetDemoWorkspace(demo.id);
+    ui.demoResetResult = result?.summary || {};
+    const workspaces = await api.workspaces().catch(() => null);
+    ui.workspaces = Array.isArray(workspaces?.items) ? workspaces.items : ui.workspaces;
+    ui.activeWorkspaceId = workspaces?.active_workspace_id || ui.activeWorkspaceId;
+  } catch (err) {
+    ui.demoResetError = err?.message || 'Could not reset demo workspace.';
+  } finally {
+    ui.demoResetting = false;
+    render();
+  }
+}
+
+async function switchToDemoWorkspace() {
+  const demo = (ui.workspaces || []).find(w => w.is_demo || w.workspace_type === 'demo');
+  if (!demo) return;
+  try {
+    await api.selectWorkspace(demo.id);
+    ui.activeWorkspaceId = demo.id;
+    location.hash = '#today';
+    location.reload();
+  } catch (err) {
+    ui.demoResetError = err?.message || 'Could not switch to demo workspace.';
     render();
   }
 }

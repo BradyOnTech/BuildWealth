@@ -14,6 +14,8 @@ from buildwealth_orchestrator.services.copilot_runtime import ConversationStore
 from buildwealth_orchestrator.services.financial_profile import FinancialProfileStore
 from buildwealth_orchestrator.services.import_workbench import ImportWorkbenchStore
 from buildwealth_orchestrator.services.plan_workspace import PlanWorkspace
+from buildwealth_orchestrator.services.asset_registry import AssetRegistry
+from buildwealth_orchestrator.services.portfolio_review_packets import PortfolioReviewPacketStore
 from buildwealth_orchestrator.services.portfolio_store import PortfolioStore
 from buildwealth_orchestrator.services.recommendation_inbox import RecommendationInbox
 from buildwealth_orchestrator.services.snapshot_store import SnapshotStore
@@ -54,12 +56,14 @@ class WorkspaceServices:
     paths: WorkspacePaths
     financial_profile_store: FinancialProfileStore
     portfolio_store: PortfolioStore
+    asset_registry: AssetRegistry
     snapshot_store: SnapshotStore
     plan_workspace: PlanWorkspace
     recommendation_inbox: RecommendationInbox
     conversation_store: ConversationStore
     context_intelligence_service: ContextIntelligenceService
     import_workbench_store: ImportWorkbenchStore
+    portfolio_review_packet_store: PortfolioReviewPacketStore
     today_review_checkpoint_store: TodayReviewCheckpointStore
     settings_store: WorkspaceSettingsStore
     secret_store: WorkspaceSecretStore
@@ -123,6 +127,7 @@ class WorkspaceServiceFactory:
         settings_store = WorkspaceSettingsStore(paths.settings_path, secret_store)
         profile_store = FinancialProfileStore(paths.profile_path)
         portfolio_store = PortfolioStore(paths.portfolio_dir)
+        asset_registry = AssetRegistry(portfolio_store)
         plan_workspace = PlanWorkspace(paths.plans_dir)
         recommendation_inbox = RecommendationInbox(paths.recommendations_path)
         snapshot_store = SnapshotStore(paths.snapshot_dir)
@@ -141,6 +146,7 @@ class WorkspaceServiceFactory:
             paths=paths,
             financial_profile_store=profile_store,
             portfolio_store=portfolio_store,
+            asset_registry=asset_registry,
             snapshot_store=snapshot_store,
             plan_workspace=plan_workspace,
             recommendation_inbox=recommendation_inbox,
@@ -150,8 +156,8 @@ class WorkspaceServiceFactory:
                 workbench_dir=paths.import_workbench_dir,
                 reports_dir=paths.import_reports_dir,
             ),
+            portfolio_review_packet_store=PortfolioReviewPacketStore(paths.portfolio_review_packet_dir),
             today_review_checkpoint_store=TodayReviewCheckpointStore(paths.today_review_checkpoint_path),
             settings_store=settings_store,
             secret_store=secret_store,
         )
-

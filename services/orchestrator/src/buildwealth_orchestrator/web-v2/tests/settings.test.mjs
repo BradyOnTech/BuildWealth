@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { toDraft, buildPayloadFor, parseTestError } from '../views/settings.js';
+import { toDraft, buildPayloadFor, parseTestError, demoWorkspaceCard } from '../views/settings.js';
 
 test('toDraft: reads provider settings with sensible defaults', () => {
   const draft = toDraft({
@@ -79,4 +79,28 @@ test('parseTestError: falls back to a plain failure shape when detail is absent'
   assert.equal(parsed.ok, false);
   assert.equal(parsed.stage, 'provider_error');
   assert.equal(parsed.detail, 'Network down');
+});
+
+test('demoWorkspaceCard: renders reset action for demo workspace', () => {
+  const markup = String(demoWorkspaceCard({
+    workspaces: [
+      { id: 'ws_real', name: 'My Household', workspace_type: 'household', is_demo: false },
+      { id: 'ws_demo', name: 'Demo Household', workspace_type: 'demo', is_demo: true },
+    ],
+    activeWorkspaceId: 'ws_real',
+    demoResetting: false,
+  }));
+  assert.match(markup, /Demo workspace/);
+  assert.match(markup, /Reset demo data/);
+  assert.match(markup, /Switch to demo/);
+});
+
+test('demoWorkspaceCard: labels active demo workspace clearly', () => {
+  const markup = String(demoWorkspaceCard({
+    workspaces: [{ id: 'ws_demo', name: 'Demo Household', workspace_type: 'demo', is_demo: true }],
+    activeWorkspaceId: 'ws_demo',
+    demoResetting: false,
+  }));
+  assert.match(markup, /Active now/);
+  assert.match(markup, /disabled/);
 });

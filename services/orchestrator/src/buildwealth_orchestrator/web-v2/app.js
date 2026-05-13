@@ -12,10 +12,11 @@ import * as profile from './views/profile.js';
 import * as settings from './views/settings.js';
 import * as importSync from './views/import_sync.js';
 import * as workflows from './views/workflows.js';
+import { authScreen } from './views/auth.js';
 
 import { state } from './lib/state.js';
 import { api } from './lib/api.js';
-import { html, raw, $ } from './lib/dom.js';
+import { html, raw, $, esc } from './lib/dom.js';
 import { fmtDateLong } from './lib/format.js';
 
 const VIEWS = [today, inbox, plan, portfolio, profile, copilot, research, atelier, settings, importSync, workflows];
@@ -58,6 +59,11 @@ const TOOLS_GROUPS = [
 
 let currentView = null;
 let toolsOpen = false;
+let workspaceMenuOpen = false;
+let accountMenuOpen = false;
+let globalEventsWired = false;
+let authEventsWired = false;
+let statusRefreshTimer = null;
 
 function primaryViews() {
   return PRIMARY_ORDER
@@ -220,6 +226,8 @@ function updateTopbar(view) {
     folio.textContent = `${prefix}${view.meta.label} · ${fmtDateLong(new Date())}`;
   }
   renderTopbarChips();
+  renderWorkspaceMenu();
+  renderAccountMenu();
 }
 
 /* ─────────────  Top-bar status chips  ─────────────
@@ -241,6 +249,86 @@ function renderTopbarChips() {
   chips.push(backupChip());
 
   host.innerHTML = chips.filter(Boolean).map(renderChip).join('');
+}
+
+function activeWorkspace() {
+  return (state.workspaces || []).find(w => w.id === state.activeWorkspaceId)
+    || state.session?.workspace
+    || null;
+}
+
+function renderWorkspaceMenu() {
+  const host = $('#workspace-menu');
+  if (!host) return;
+  const workspace = activeWorkspace();
+  const workspaces = Array.isArray(state.workspaces) ? state.workspaces : [];
+  const label = workspace?.name || 'Workspace';
+  const isDemo = Boolean(workspace?.is_demo || workspace?.workspace_type === 'demo');
+  host.innerHTML = html`
+    <button class="workspace-button ${isDemo ? 'demo' : ''}" id="workspace-toggle" type="button" aria-expanded="${workspaceMenuOpen ? 'true' : 'false'}">
+      <span class="workspace-dot"></span>
+      <span class="workspace-label">${label}</span>
+      ${isDemo ? html`<span class="workspace-badge">Demo</span>` : ''}
+    </button>
+    ${workspaceMenuOpen ? raw(renderWorkspaceDropdown(workspaces)) : ''}
+  `;
+}
+
+function renderWorkspaceDropdown(workspaces) {
+  const rows = workspaces.length
+    ? workspaces.map(workspace => html`
+        <button class="workspace-option ${workspace.id === state.activeWorkspaceId ? 'active' : ''}"
+                type="button"
+                data-workspace-select="${esc(workspace.id)}">
+          <span class="workspace-option-name">${workspace.name || workspace.id}</span>
+          <span class="workspace-option-meta">${workspace.is_demo || workspace.workspace_type === 'demo' ? 'Demo household' : 'Household'}</span>
+        </button>
+      `).join('')
+    : html`<p class="workspace-empty">No workspaces loaded.</p>`;
+  return html`
+    <div class="workspace-dropdown" role="menu">
+      ${raw(rows)}
+      <a class="workspace-settings-link" href="#settings" data-route>Workspace settings</a>
+    </div>
+  `;
+}
+
+function renderAccountMenu() {
+  const host = $('#account-menu');
+  if (!host) return;
+  const user = state.session?.user || {};
+  const displayName = user.display_name || user.email || 'Account';
+  host.innerHTML = html`
+    <button class="account-button" id="account-toggle" type="button" aria-expanded="${accountMenuOpen ? 'true' : 'false'}">
+      <span class="account-avatar">${initials(displayName)}</span>
+      <span class="account-name">${displayName}</span>
+    </button>
+    ${accountMenuOpen ? raw(renderAccountDropdown(user)) : ''}
+  `;
+}
+
+function renderAccountDropdown(user) {
+  const workspace = activeWorkspace();
+  return html`
+    <div class="account-dropdown" role="menu">
+      <div class="account-summary">
+        <strong>${user.display_name || 'BuildWealth user'}</strong>
+        <span>${user.email || ''}</span>
+      </div>
+      <div class="account-meta">
+        <span>${workspace?.name || 'Workspace'}</span>
+        <span>${state.session?.role || 'owner'}</span>
+      </div>
+      <a class="account-link" href="#settings" data-route>Account settings</a>
+      <button class="account-link danger" id="auth-logout" type="button">Sign out</button>
+    </div>
+  `;
+}
+
+function initials(value) {
+  const parts = String(value || 'BW').trim().split(/\s+/).filter(Boolean);
+  const letters = parts.length > 1 ? `${parts[0][0]}${parts[1][0]}` : (parts[0] || 'BW').slice(0, 2);
+  return letters.toUpperCase();
 }
 
 function renderChip(chip) {
@@ -304,7 +392,7 @@ async function refreshSystemStatus() {
   if (settingsResp.status === 'fulfilled') {
     const s = settingsResp.value || {};
     next.copilot = {
-      configured: Boolean(s.llm_api_key),
+      configured: Boolean(s.llm_api_key_configured || s.llm_api_key),
       provider: s.llm_provider,
       model: s.llm_model,
     };
@@ -367,6 +455,8 @@ function bootShell() {
             <span class="topbar-folio" id="topbar-folio"></span>
           </div>
           <div class="topbar-actions">
+            <div class="workspace-menu" id="workspace-menu"></div>
+            <div class="account-menu" id="account-menu"></div>
             <div class="topbar-chips" id="topbar-status"></div>
           </div>
         </header>
@@ -397,16 +487,59 @@ function wireGlobalEvents() {
       setToolsOpen(false);
       return;
     }
+    const workspaceToggle = event.target.closest('#workspace-toggle');
+    if (workspaceToggle) {
+      event.preventDefault();
+      workspaceMenuOpen = !workspaceMenuOpen;
+      renderWorkspaceMenu();
+      return;
+    }
+    const workspaceSelect = event.target.closest('[data-workspace-select]');
+    if (workspaceSelect) {
+      event.preventDefault();
+      switchWorkspace(workspaceSelect.getAttribute('data-workspace-select'));
+      return;
+    }
+    const accountToggle = event.target.closest('#account-toggle');
+    if (accountToggle) {
+      event.preventDefault();
+      accountMenuOpen = !accountMenuOpen;
+      renderAccountMenu();
+      return;
+    }
+    const logout = event.target.closest('#auth-logout');
+    if (logout) {
+      event.preventDefault();
+      signOut();
+      return;
+    }
+    if (workspaceMenuOpen && !event.target.closest('#workspace-menu')) {
+      workspaceMenuOpen = false;
+      renderWorkspaceMenu();
+    }
+    if (accountMenuOpen && !event.target.closest('#account-menu')) {
+      accountMenuOpen = false;
+      renderAccountMenu();
+    }
   });
 
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && toolsOpen) {
-      setToolsOpen(false);
+    if (event.key === 'Escape') {
+      if (toolsOpen) setToolsOpen(false);
+      if (workspaceMenuOpen) {
+        workspaceMenuOpen = false;
+        renderWorkspaceMenu();
+      }
+      if (accountMenuOpen) {
+        accountMenuOpen = false;
+        renderAccountMenu();
+      }
     }
   });
 }
 
-async function preloadGlobalState() {
+async function preloadGlobalState({ refreshWorkspace = true } = {}) {
+  if (refreshWorkspace) await refreshWorkspaceState({ requireSession: true });
   try {
     const plans = await api.plans();
     state.plans = Array.isArray(plans) ? plans : [];
@@ -419,22 +552,137 @@ async function preloadGlobalState() {
   }
 }
 
+async function refreshWorkspaceState({ requireSession = false } = {}) {
+  try {
+    const session = await api.authSession();
+    const workspaces = await api.workspaces();
+    state.authRequired = false;
+    state.session = session;
+    const items = Array.isArray(workspaces?.items) ? workspaces.items : [];
+    state.workspaces = items;
+    state.activeWorkspaceId = workspaces?.active_workspace_id || session?.workspace?.id || items[0]?.id || null;
+    renderWorkspaceMenu();
+  } catch (err) {
+    if (err?.status === 401 && requireSession) {
+      state.authRequired = true;
+      throw err;
+    }
+    console.warn('[v2 boot] workspace preload failed:', err.message);
+  }
+}
+
+async function switchWorkspace(workspaceId) {
+  if (!workspaceId || workspaceId === state.activeWorkspaceId) {
+    workspaceMenuOpen = false;
+    renderWorkspaceMenu();
+    return;
+  }
+  try {
+    await api.selectWorkspace(workspaceId);
+    workspaceMenuOpen = false;
+    state.activeWorkspaceId = workspaceId;
+    await refreshWorkspaceState();
+    await preloadGlobalState();
+    refreshSystemStatus();
+    route();
+  } catch (err) {
+    state.lastError = err.message || 'Could not switch workspace.';
+    workspaceMenuOpen = false;
+    renderWorkspaceMenu();
+    renderTopbarChips();
+  }
+}
+
+function renderAuthGate(mode = 'login', error = '') {
+  clearAppTimers();
+  state.authRequired = true;
+  state.session = null;
+  state.workspaces = [];
+  state.activeWorkspaceId = null;
+  document.body.innerHTML = authScreen({ mode, error });
+}
+
+function setAuthBusy(mode, busy, error = '') {
+  document.body.innerHTML = authScreen({ mode, busy, error });
+}
+
+function wireAuthEvents() {
+  if (authEventsWired) return;
+  authEventsWired = true;
+  document.addEventListener('click', (event) => {
+    const modeSwitch = event.target.closest('[data-auth-mode-switch]');
+    if (!modeSwitch) return;
+    event.preventDefault();
+    renderAuthGate(modeSwitch.getAttribute('data-auth-mode-switch') || 'login');
+  });
+  document.addEventListener('submit', async (event) => {
+    const form = event.target.closest('#auth-form');
+    if (!form) return;
+    event.preventDefault();
+    const mode = form.getAttribute('data-auth-mode') || 'login';
+    const data = Object.fromEntries(new FormData(form).entries());
+    setAuthBusy(mode, true);
+    try {
+      if (mode === 'register') await api.authRegister(data);
+      else await api.authLogin(data);
+      await bootAuthenticatedShell();
+    } catch (err) {
+      setAuthBusy(mode, false, err?.message || 'Could not sign in.');
+    }
+  });
+}
+
+async function signOut() {
+  try {
+    await api.authLogout();
+  } catch (err) {
+    console.warn('[v2 auth] logout failed:', err.message);
+  } finally {
+    renderAuthGate('login');
+  }
+}
+
+function wireShellEventsOnce() {
+  if (globalEventsWired) return;
+  globalEventsWired = true;
+  window.addEventListener('hashchange', route);
+  wireGlobalEvents();
+}
+
+function clearAppTimers() {
+  if (statusRefreshTimer) {
+    clearInterval(statusRefreshTimer);
+    statusRefreshTimer = null;
+  }
+}
+
+async function bootAuthenticatedShell() {
+  bootShell();
+  state.bootedAt = new Date();
+  wireShellEventsOnce();
+  await preloadGlobalState();
+  route();
+  refreshSystemStatus();
+  clearAppTimers();
+  statusRefreshTimer = setInterval(refreshSystemStatus, 60_000);
+}
+
 async function boot() {
   // Take scroll into our own hands — the browser's automatic scroll
   // restoration races with route()'s scrollTo(0, 0) on reload and wins,
   // leaving the user landed mid-page on a freshly-loaded view.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-  bootShell();
-  state.bootedAt = new Date();
-  window.addEventListener('hashchange', route);
-  wireGlobalEvents();
-  await preloadGlobalState();
-  route();
-  // Status chips refresh in the background after the first paint and on a
-  // gentle 60s cadence — long enough not to be noisy, short enough that the
-  // user sees a fresh signal after any save.
-  refreshSystemStatus();
-  setInterval(refreshSystemStatus, 60_000);
+  wireAuthEvents();
+  try {
+    await refreshWorkspaceState({ requireSession: true });
+  } catch (err) {
+    if (err?.status === 401) {
+      renderAuthGate('login');
+      return;
+    }
+    console.warn('[v2 boot] auth preflight failed:', err.message);
+  }
+  await bootAuthenticatedShell();
 }
 
 if (document.readyState === 'loading') {

@@ -7,6 +7,10 @@ export const state = {
   telemetry: null,
   plans: [],
   activePlanId: null,
+  session: null,
+  workspaces: [],
+  activeWorkspaceId: null,
+  authRequired: false,
   lastError: null,
   bootedAt: null,
 };

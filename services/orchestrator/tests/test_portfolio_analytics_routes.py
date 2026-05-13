@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 from buildwealth_orchestrator import main
+from buildwealth_orchestrator.services.control_plane import ControlPlaneStore
 
 
 class FakePortfolioStore:
@@ -55,12 +58,19 @@ class FakeAttributionService:
 
 def test_portfolio_analytics_route(monkeypatch) -> None:
     benchmark = FakeBenchmarkService()
-    monkeypatch.setattr(main, "portfolio_store", FakePortfolioStore())
-    monkeypatch.setattr(main, "benchmark_service", benchmark)
-    monkeypatch.setattr(main, "attribution_service", FakeAttributionService())
+    services = SimpleNamespace(
+        context=SimpleNamespace(permissions=ControlPlaneStore.OWNER_PERMISSIONS),
+        portfolio_store=FakePortfolioStore(),
+    )
+    main.app.dependency_overrides[main.get_workspace_services] = lambda: services
+    monkeypatch.setattr(main, "benchmark_service_for_workspace", lambda services: benchmark)
+    monkeypatch.setattr(main, "attribution_service_for_workspace", lambda services: FakeAttributionService())
 
-    with TestClient(main.app) as client:
-        response = client.get("/api/portfolio/analytics?symbols=SPY&period=mtd&limit=10&top_n=3")
+    try:
+        with TestClient(main.app) as client:
+            response = client.get("/api/portfolio/analytics?symbols=SPY&period=mtd&limit=10&top_n=3")
+    finally:
+        main.app.dependency_overrides.pop(main.get_workspace_services, None)
 
     assert response.status_code == 200
     payload = response.json()

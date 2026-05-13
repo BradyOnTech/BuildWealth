@@ -363,11 +363,17 @@ class PortfolioStore:
 
     @staticmethod
     def _write_json(path: Path, data: Any) -> None:
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        temp_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        temp_path.replace(path)
 
     @staticmethod
     def _read_json(path: Path) -> Any:
-        return json.loads(path.read_text(encoding="utf-8"))
+        raw = path.read_text(encoding="utf-8")
+        if not raw.strip():
+            raise ValueError(f"{path} is empty")
+        return json.loads(raw)
 
     @staticmethod
     def _normalize_symbol(value: Any) -> str:

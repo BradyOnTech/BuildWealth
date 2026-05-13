@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 from buildwealth_orchestrator import main
+from buildwealth_orchestrator.services.control_plane import ControlPlaneStore
 
 
 class FakeAssetRegistry:
@@ -55,21 +58,28 @@ class FakeAssetRegistry:
 
 
 def test_asset_registry_routes(monkeypatch) -> None:
-    monkeypatch.setattr(main, "asset_registry", FakeAssetRegistry())
+    services = SimpleNamespace(
+        context=SimpleNamespace(permissions=ControlPlaneStore.OWNER_PERMISSIONS),
+        asset_registry=FakeAssetRegistry(),
+    )
+    main.app.dependency_overrides[main.get_workspace_services] = lambda: services
 
-    with TestClient(main.app) as client:
-        search_response = client.get("/api/portfolio/assets/search?q=odd")
-        assert search_response.status_code == 200
-        assert search_response.json()["items"][0]["quality_label"] == "Needs review"
+    try:
+        with TestClient(main.app) as client:
+            search_response = client.get("/api/portfolio/assets/search?q=odd")
+            assert search_response.status_code == 200
+            assert search_response.json()["items"][0]["quality_label"] == "Needs review"
 
-        detail_response = client.get("/api/portfolio/assets/ODD1")
-        assert detail_response.status_code == 200
-        assert detail_response.json()["symbol"] == "ODD1"
-        assert detail_response.json()["provenance"][0]["label"] == "Manual metadata"
+            detail_response = client.get("/api/portfolio/assets/ODD1")
+            assert detail_response.status_code == 200
+            assert detail_response.json()["symbol"] == "ODD1"
+            assert detail_response.json()["provenance"][0]["label"] == "Manual metadata"
 
-        update_response = client.put(
-            "/api/portfolio/assets/ODD1/metadata",
-            json={"asset_class": "Alternatives", "asset_type": "Collectible"},
-        )
-        assert update_response.status_code == 200
-        assert update_response.json()["quality_label"] == "Ready"
+            update_response = client.put(
+                "/api/portfolio/assets/ODD1/metadata",
+                json={"asset_class": "Alternatives", "asset_type": "Collectible"},
+            )
+            assert update_response.status_code == 200
+            assert update_response.json()["quality_label"] == "Ready"
+    finally:
+        main.app.dependency_overrides.pop(main.get_workspace_services, None)

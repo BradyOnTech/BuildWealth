@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import copy
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -10,6 +11,29 @@ from buildwealth_orchestrator.schemas import (
     CsvImportReconciliationRow,
     CsvImportResponse,
 )
+from buildwealth_orchestrator.services.control_plane import ControlPlaneStore
+from buildwealth_orchestrator.services.workspace_services import WorkspaceServiceFactory
+
+
+def _install_temp_workspace_spine(monkeypatch, tmp_path: Path) -> None:
+    test_settings = copy(main.settings)
+    test_settings.auth_mode = "dev"
+    test_settings.auth_dev_email = "owner@example.test"
+    test_settings.control_db_path = tmp_path / "control" / "control.db"
+    test_settings.workspace_root_dir = tmp_path / "workspaces"
+    test_settings.secret_key_path = tmp_path / "control" / "local_secret.key"
+
+    control_plane = ControlPlaneStore(test_settings.control_db_path)
+    control_plane.bootstrap_default_household(
+        owner_email=test_settings.auth_dev_email,
+        default_storage_root=tmp_path / "real",
+        demo_storage_root=tmp_path / "demo",
+    )
+    factory = WorkspaceServiceFactory(settings=test_settings, control_plane=control_plane)
+
+    monkeypatch.setattr(main, "settings", test_settings)
+    monkeypatch.setattr(main, "control_plane_store", control_plane)
+    monkeypatch.setattr(main, "workspace_service_factory", factory)
 
 
 def _route_import_response(path: Path, *, dry_run: bool) -> CsvImportResponse:
@@ -56,8 +80,12 @@ def _route_import_response(path: Path, *, dry_run: bool) -> CsvImportResponse:
     )
 
 
-def test_import_files_route_returns_staged_csv_metadata() -> None:
-    staged = main.settings.import_inbox_dir / "average-household-test.csv"
+def test_import_files_route_returns_staged_csv_metadata(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    services = main.workspace_service_factory.for_context(
+        main.control_plane_store.dev_request_context(auth_mode="dev")
+    )
+    staged = services.paths.import_inbox_dir / "average-household-test.csv"
     staged.parent.mkdir(parents=True, exist_ok=True)
     staged.write_text("date,action,symbol\n2026-01-02,BUY,VTI\n", encoding="utf-8")
 
@@ -76,8 +104,13 @@ def test_import_files_route_returns_staged_csv_metadata() -> None:
         staged.unlink(missing_ok=True)
 
 
-def test_import_workbench_preview_apply_and_report_routes(monkeypatch) -> None:
-    async def fake_execute_csv_import(*, file_path: Path, request):
+def test_import_workbench_preview_apply_and_report_routes(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    services = main.workspace_service_factory.for_context(
+        main.control_plane_store.dev_request_context(auth_mode="dev")
+    )
+
+    async def fake_execute_csv_import(*, file_path: Path, request, services=None):
         return _route_import_response(file_path, dry_run=bool(request.dry_run))
 
     monkeypatch.setattr(main, "execute_csv_import", fake_execute_csv_import)
@@ -122,7 +155,7 @@ def test_import_workbench_preview_apply_and_report_routes(monkeypatch) -> None:
         report_id = applied["report"]["report_id"]
         review_items = [
             item
-            for item in main.recommendation_inbox.list(limit=None, include_archived=True)
+            for item in services.recommendation_inbox.list(limit=None, include_archived=True)
             if item.get("source") == "import_workbench"
             and item.get("action_payload", {}).get("report_id") == report_id
         ]
@@ -133,6 +166,12 @@ def test_import_workbench_preview_apply_and_report_routes(monkeypatch) -> None:
 
         inbox_response = client.get("/api/recommendations?source=import_workbench")
         assert inbox_response.status_code == 200
+        inbox_items = inbox_response.json()
+        assert any(
+            item["id"] == review_items[0]["id"]
+            and item["recommendation_type"] == "asset_review_item"
+            for item in inbox_items
+        )
 
         report_response = client.get(f"/api/import/reports/{report_id}")
         assert report_response.status_code == 200

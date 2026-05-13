@@ -125,6 +125,14 @@
   text-wrap: pretty;
 }
 
+.settings-card-empty {
+  margin: 0;
+  color: var(--ink-soft);
+  font-family: var(--serif);
+  font-size: 15px;
+  font-style: italic;
+}
+
 /* ───────────  Field grid  ─────────── */
 
 .settings-grid {

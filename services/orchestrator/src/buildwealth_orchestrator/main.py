@@ -539,7 +539,7 @@ def _session_cookie_kwargs() -> dict[str, Any]:
     return {
         "httponly": True,
         "samesite": "lax",
-        "secure": _auth_mode() not in {"dev", "test", "disabled"},
+        "secure": _auth_mode() not in {"dev", "test", "local", "disabled"},
         "max_age": max(1, int(settings.auth_session_days)) * 24 * 60 * 60,
         "path": "/",
     }
@@ -577,10 +577,38 @@ def require_permission(context: RequestContext, permission: str) -> None:
         raise HTTPException(status_code=403, detail=f"Missing permission: {permission}")
 
 
+def require_csrf(request: Request) -> None:
+    mode = _auth_mode()
+    if mode in {"dev", "test", "disabled"}:
+        return
+    session_token = request.cookies.get(settings.auth_session_cookie_name) or ""
+    csrf_token = request.headers.get("x-buildwealth-csrf-token") or ""
+    if not control_plane_store.verify_csrf_token(
+        session_token=session_token,
+        csrf_token=csrf_token,
+    ):
+        raise HTTPException(status_code=403, detail="CSRF token is missing or invalid")
+
+
 def get_workspace_services(
     context: RequestContext = Depends(get_request_context),
 ) -> WorkspaceServices:
     return workspace_service_factory.for_context(context)
+
+
+def workspace_services_or_legacy(candidate: Any) -> Any:
+    if isinstance(candidate, WorkspaceServices):
+        return candidate
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        context=SimpleNamespace(permissions=ControlPlaneStore.OWNER_PERMISSIONS),
+        financial_profile_store=financial_profile_store,
+        portfolio_store=portfolio_store,
+        snapshot_store=snapshot_store,
+        plan_workspace=plan_workspace,
+        recommendation_inbox=recommendation_inbox,
+    )
 
 
 def _seed_demo_workspace_data(workspace_root: Path) -> dict[str, Any]:
@@ -735,6 +763,27 @@ attribution_service = BuildWealthAttributionService(
     sidecar_path=settings.portfolio_attribution_remote_engine_path,
     base_currency=settings.app_currency,
 )
+
+
+def benchmark_service_for_workspace(services: WorkspaceServices) -> BuildWealthBenchmarkService:
+    return BuildWealthBenchmarkService(
+        snapshot_store=services.snapshot_store,
+        research_service=research_service,
+        sidecar_adapter=portfolio_remote_engine_adapter,
+        sidecar_enabled=settings.enable_portfolio_benchmark_remote_engine,
+        sidecar_path=settings.portfolio_benchmark_remote_engine_path,
+        base_currency=settings.app_currency,
+    )
+
+
+def attribution_service_for_workspace(services: WorkspaceServices) -> BuildWealthAttributionService:
+    return BuildWealthAttributionService(
+        portfolio_store=services.portfolio_store,
+        sidecar_adapter=portfolio_remote_engine_adapter,
+        sidecar_enabled=settings.enable_portfolio_attribution_remote_engine,
+        sidecar_path=settings.portfolio_attribution_remote_engine_path,
+        base_currency=settings.app_currency,
+    )
 plan_remote_engine_adapter = SidecarAdapter(
     base_url=settings.plan_remote_engine_base_url,
     timeout_seconds=settings.engine_remote_timeout_seconds,
@@ -1113,12 +1162,27 @@ async def autogit_checkpoint_loop() -> None:
 
 
 
-def resolve_import_path(path_value: str) -> Path:
+def resolve_import_path(
+    path_value: str,
+    *,
+    import_inbox_dir: Path | None = None,
+    workspace_root: Path | None = None,
+) -> Path:
+    inbox_dir = import_inbox_dir or settings.import_inbox_dir
     candidate = Path(path_value).expanduser()
     if candidate.is_absolute():
-        return candidate.resolve()
+        resolved = candidate.resolve()
+    else:
+        resolved = (inbox_dir / candidate).resolve()
 
-    return (settings.import_inbox_dir / candidate).resolve()
+    if workspace_root is not None:
+        resolved_root = workspace_root.resolve()
+        try:
+            resolved.relative_to(resolved_root)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Import file must belong to the active workspace") from exc
+
+    return resolved
 
 
 
@@ -1129,8 +1193,10 @@ def normalize_upload_filename(file_name: str) -> str:
 
 
 
-def unique_inbox_path(base_name: str) -> Path:
-    candidate = settings.import_inbox_dir / base_name
+def unique_inbox_path(base_name: str, *, import_inbox_dir: Path | None = None) -> Path:
+    inbox_dir = import_inbox_dir or settings.import_inbox_dir
+    inbox_dir.mkdir(parents=True, exist_ok=True)
+    candidate = inbox_dir / base_name
     if not candidate.exists():
         return candidate
 
@@ -1139,30 +1205,38 @@ def unique_inbox_path(base_name: str) -> Path:
     index = 1
 
     while True:
-        with_index = settings.import_inbox_dir / f"{stem}-{index}{suffix}"
+        with_index = inbox_dir / f"{stem}-{index}{suffix}"
         if not with_index.exists():
             return with_index
         index += 1
 
 
-async def execute_csv_import(file_path: Path, request: CsvImportRequest) -> CsvImportResponse:
+async def execute_csv_import(
+    file_path: Path,
+    request: CsvImportRequest,
+    *,
+    services: WorkspaceServices | None = None,
+) -> CsvImportResponse:
     if len(request.delimiter) != 1:
         raise HTTPException(status_code=400, detail="Delimiter must be a single character")
 
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"CSV file not found: {file_path}")
 
+    resolved_portfolio_store = services.portfolio_store if services is not None else portfolio_store
+    import_archive_dir = services.paths.import_archive_dir if services is not None else settings.import_archive_dir
+
     parsed = parse_transaction_csv(
         file_path=file_path,
         default_data_source=request.default_data_source or "YAHOO",
         default_currency=request.default_currency or settings.app_currency,
         delimiter=request.delimiter,
-        account_ids_by_name=portfolio_store.account_ids_by_name(),
+        account_ids_by_name=resolved_portfolio_store.account_ids_by_name(),
         broker_template=request.broker_template,
     )
     parsed = apply_existing_transaction_reconciliation(
         parsed,
-        existing_transactions=portfolio_store.list_transactions(limit=1_000_000),
+        existing_transactions=resolved_portfolio_store.list_transactions(limit=1_000_000),
     )
 
     imported_activities = 0
@@ -1174,7 +1248,7 @@ async def execute_csv_import(file_path: Path, request: CsvImportRequest) -> CsvI
                 account_id = act.get("accountId")
                 account_name = str(act.get("accountName") or "").strip()
                 if not account_id and account_name:
-                    account_record = portfolio_store.ensure_account(account_name)
+                    account_record = resolved_portfolio_store.ensure_account(account_name)
                     account_id = account_record.get("id")
                 items.append({
                     "date": act.get("date", ""),
@@ -1192,12 +1266,12 @@ async def execute_csv_import(file_path: Path, request: CsvImportRequest) -> CsvI
                     "sector": act.get("sector"),
                     "region": act.get("region"),
                 })
-            imported_activities = portfolio_store.add_transactions_bulk(items)
+            imported_activities = resolved_portfolio_store.add_transactions_bulk(items)
     else:
         parsed.warnings.append("No valid activities were parsed from this CSV file.")
 
     if request.archive_after_success and not request.dry_run and not parsed.errors:
-        archived_path = archive_import_file(file_path, settings.import_archive_dir)
+        archived_path = archive_import_file(file_path, import_archive_dir)
         parsed.warnings.append(f"Archived source CSV to {archived_path}")
 
     return CsvImportResponse(
@@ -3858,12 +3932,17 @@ async def compute_plan_scenario_branch(
     }
 
 
-def resolve_plan_id_or_active(requested_plan_id: object | None) -> str:
+def resolve_plan_id_or_active(
+    requested_plan_id: object | None,
+    *,
+    workspace: PlanWorkspace | None = None,
+) -> str:
+    resolved_workspace = workspace or plan_workspace
     plan_id = str(requested_plan_id).strip() if isinstance(requested_plan_id, str) else ""
     if plan_id:
         return plan_id
 
-    active_plan_id = plan_workspace.get_active_plan_id()
+    active_plan_id = resolved_workspace.get_active_plan_id()
     if active_plan_id:
         return active_plan_id
 
@@ -3943,13 +4022,14 @@ def build_snapshot_history_payload(limit: int = 30) -> SnapshotHistoryResponse:
     )
 
 
-def resolve_active_plan_detail() -> dict[str, Any] | None:
-    active_plan_id = plan_workspace.get_active_plan_id()
+def resolve_active_plan_detail(*, workspace: PlanWorkspace | None = None) -> dict[str, Any] | None:
+    resolved_workspace = workspace or plan_workspace
+    active_plan_id = resolved_workspace.get_active_plan_id()
     if not active_plan_id:
         return None
 
     try:
-        return plan_workspace.get_plan(active_plan_id)
+        return resolved_workspace.get_plan(active_plan_id)
     except PlanNotFoundError:
         return None
 
@@ -4121,21 +4201,23 @@ def _recommendation_list(
     plan_id: str | None = None,
     include_archived: bool = False,
     sort: str | None = None,
+    inbox: RecommendationInbox | None = None,
 ) -> list[dict[str, Any]]:
+    resolved_inbox = inbox or recommendation_inbox
     cleaned_status = str(status or "").strip().lower() or None
     status_filter = None
     if cleaned_status in {"proposed", "applied", "rejected", "archived"}:
         status_filter = cleaned_status
 
     resolved_plan_id = plan_id.strip() if isinstance(plan_id, str) and plan_id.strip() else None
-    raw_rows = recommendation_inbox.list(
+    raw_rows = resolved_inbox.list(
         limit=None,
         status=status_filter,  # type: ignore[arg-type]
         plan_id=resolved_plan_id,
         include_archived=include_archived,
         sort="none",
     )
-    calibration_rows = recommendation_inbox.list(
+    calibration_rows = resolved_inbox.list(
         limit=None,
         status=None,
         plan_id=None,
@@ -10165,12 +10247,14 @@ def build_portfolio_watchlist_payload(
     interval: str = "1d",
     sort: str = "ranked",
     limit: int = 200,
+    store: PortfolioStore | None = None,
 ) -> dict[str, Any]:
     period_value = str(period or "2y").strip() or "2y"
     interval_value = str(interval or "1d").strip() or "1d"
     sort_value = _normalize_watchlist_sort(sort)
     limit_value = max(1, min(int(limit), 500))
-    items_payload = portfolio_store.list_watchlist()
+    resolved_store = store or portfolio_store
+    items_payload = resolved_store.list_watchlist()
     rows: list[dict[str, Any]] = []
     warnings: list[str] = []
 
@@ -11589,12 +11673,18 @@ async def tool_draft_investment_research_recommendation(arguments: dict[str, obj
     }
 
 
-def _watchlist_item_for_symbol(symbol: str, data_source: str = "OPENBB") -> dict[str, Any] | None:
+def _watchlist_item_for_symbol(
+    symbol: str,
+    data_source: str = "OPENBB",
+    *,
+    store: PortfolioStore | None = None,
+) -> dict[str, Any] | None:
     normalized_symbol = str(symbol or "").strip().upper()
     normalized_source = str(data_source or "OPENBB").strip().upper() or "OPENBB"
     if not normalized_symbol:
         return None
-    for item in portfolio_store.list_watchlist():
+    resolved_store = store or portfolio_store
+    for item in resolved_store.list_watchlist():
         if not isinstance(item, dict):
             continue
         if str(item.get("symbol") or "").strip().upper() != normalized_symbol:
@@ -15659,6 +15749,7 @@ def register_owner(request: Request, response: Response, payload: dict[str, Any]
             email=str(payload.get("email") or ""),
             password=str(payload.get("password") or ""),
             display_name=str(payload.get("display_name") or ""),
+            workspace_root_dir=settings.workspace_root_dir,
         )
     except sqlite3.IntegrityError as exc:
         raise HTTPException(status_code=409, detail="User already exists") from exc
@@ -15729,13 +15820,16 @@ def logout(request: Request, response: Response) -> dict[str, Any]:
 
 
 @app.get("/api/auth/session")
-def auth_session(context: RequestContext = Depends(get_request_context)) -> dict[str, Any]:
+def auth_session(
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+) -> dict[str, Any]:
     workspace, _role = control_plane_store.get_workspace_for_user(
         user_id=context.user_id,
         workspace_id=context.workspace_id,
     )
     user = control_plane_store.get_user(context.user_id)
-    return {
+    payload = {
         "authenticated": True,
         "auth_mode": context.auth_mode,
         "user": {
@@ -15752,6 +15846,13 @@ def auth_session(context: RequestContext = Depends(get_request_context)) -> dict
         "role": context.role,
         "permissions": sorted(context.permissions),
     }
+    session_token = request.cookies.get(settings.auth_session_cookie_name) or ""
+    if session_token:
+        try:
+            payload["csrf_token"] = control_plane_store.rotate_csrf_token(session_token)
+        except AuthenticationError:
+            pass
+    return payload
 
 
 @app.get("/api/workspaces")
@@ -15793,6 +15894,7 @@ def select_workspace(
     request: Request,
     context: RequestContext = Depends(get_request_context),
 ) -> dict[str, Any]:
+    require_csrf(request)
     workspace, role = control_plane_store.get_workspace_for_user(
         user_id=context.user_id,
         workspace_id=workspace_id,
@@ -15813,8 +15915,10 @@ def select_workspace(
 @app.post("/api/workspaces/{workspace_id}/demo/reset")
 def reset_demo_workspace(
     workspace_id: str,
+    request: Request,
     context: RequestContext = Depends(get_request_context),
 ) -> dict[str, Any]:
+    require_csrf(request)
     require_permission(context, "demo.reset")
     workspace, _role = control_plane_store.get_workspace_for_user(
         user_id=context.user_id,
@@ -15860,13 +15964,15 @@ def get_user_settings(
 
 @app.put("/api/settings")
 def update_user_settings(
-    request: dict[str, Any],
+    payload: dict[str, Any],
+    http_request: Request,
     services: WorkspaceServices = Depends(get_workspace_services),
 ) -> dict[str, Any]:
     global llm_client
 
+    require_csrf(http_request)
     require_permission(services.context, "settings.write")
-    saved = services.settings_store.save(request)
+    saved = services.settings_store.save(payload)
 
     # Hot-reload affected services
     saved_explicit_keys = {
@@ -15887,7 +15993,7 @@ def update_user_settings(
     # client so the next embed_text() call uses the new provider/model/url.
     embedding_changed = any(
         key.startswith("context_embedding") or key == "context_embeddings_enabled"
-        for key in request
+        for key in payload
     )
     if embedding_changed:
         _apply_context_embedding_settings(saved)
@@ -16340,9 +16446,11 @@ def get_financial_profile(
 @app.put("/api/financial-profile", response_model=FinancialProfileResponse)
 def update_financial_profile(
     request: FinancialProfileRequest,
+    http_request: Request,
     source: str | None = None,
     services: WorkspaceServices = Depends(get_workspace_services),
 ) -> FinancialProfileResponse:
+    require_csrf(http_request)
     require_permission(services.context, "profile.write")
     source_label = str(source or "profile_editor").strip() or "profile_editor"
     saved = save_financial_profile_payload(
@@ -16424,8 +16532,10 @@ def check_affordability(request: AffordabilityRequest) -> AffordabilityResponse:
 async def upload_statement(
     file: UploadFile = File(...),
     delimiter: str = Form(","),
+    services: WorkspaceServices = Depends(get_workspace_services),
 ) -> dict[str, Any]:
     """Upload a bank/credit card CSV statement and get expense/income suggestions."""
+    require_permission(services.context, "imports.read")
     raw = (await file.read()).decode("utf-8", errors="replace")
     result = parse_statement_csv(raw, delimiter=delimiter)
     return {
@@ -16461,9 +16571,15 @@ async def upload_statement(
 
 
 @app.post("/api/import/statement/apply")
-def apply_statement_suggestions(request: dict[str, Any]) -> dict[str, Any]:
+def apply_statement_suggestions(
+    request: dict[str, Any],
+    http_request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
     """Apply selected expense/income suggestions to the financial profile."""
-    profile = financial_profile_store.load()
+    require_csrf(http_request)
+    require_permission(services.context, "profile.write")
+    profile = services.financial_profile_store.load()
     added_expenses = 0
     added_income = 0
 
@@ -16490,7 +16606,7 @@ def apply_statement_suggestions(request: dict[str, Any]) -> dict[str, Any]:
         })
         added_income += 1
 
-    financial_profile_store.save(profile)
+    services.financial_profile_store.save(profile)
 
     return {
         "added_expenses": added_expenses,
@@ -16501,18 +16617,31 @@ def apply_statement_suggestions(request: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.get("/api/portfolio/holdings")
-def get_portfolio_holdings() -> dict[str, Any]:
-    return portfolio_store.get_holdings()
+def get_portfolio_holdings(
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_permission(services.context, "portfolio.read")
+    return services.portfolio_store.get_holdings()
 
 
 @app.get("/api/portfolio/transactions")
-def get_portfolio_transactions(limit: int = 200) -> list[dict[str, Any]]:
-    return portfolio_store.list_transactions(limit=limit)
+def get_portfolio_transactions(
+    limit: int = 200,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> list[dict[str, Any]]:
+    require_permission(services.context, "portfolio.read")
+    return services.portfolio_store.list_transactions(limit=limit)
 
 
 @app.post("/api/portfolio/transactions")
-def add_portfolio_transaction(request: dict[str, Any]) -> dict[str, Any]:
-    return portfolio_store.add_transaction(
+def add_portfolio_transaction(
+    request: dict[str, Any],
+    http_request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_csrf(http_request)
+    require_permission(services.context, "portfolio.write")
+    return services.portfolio_store.add_transaction(
         date=request.get("date", ""),
         symbol=request.get("symbol", ""),
         action=request.get("action", "BUY"),
@@ -16532,18 +16661,29 @@ def add_portfolio_transaction(request: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.delete("/api/portfolio/transactions/{transaction_id}")
-def delete_portfolio_transaction(transaction_id: str) -> dict[str, Any]:
-    deleted = portfolio_store.delete_transaction(transaction_id)
+def delete_portfolio_transaction(
+    transaction_id: str,
+    request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_csrf(request)
+    require_permission(services.context, "portfolio.write")
+    deleted = services.portfolio_store.delete_transaction(transaction_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Transaction not found.")
     return {"deleted": True, "id": transaction_id}
 
 
 @app.post("/api/portfolio/refresh-prices")
-async def refresh_portfolio_prices() -> dict[str, Any]:
-    holdings_data = await refresh_portfolio(portfolio_store, research_service)
+async def refresh_portfolio_prices(
+    request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_csrf(request)
+    require_permission(services.context, "portfolio.write")
+    holdings_data = await refresh_portfolio(services.portfolio_store, research_service)
     snapshot = build_snapshot_from_holdings(holdings_data)
-    snapshot_store.write(snapshot)
+    services.snapshot_store.write(snapshot)
     return {
         "total_value": holdings_data.get("total_value", 0),
         "holdings_count": len(holdings_data.get("holdings", {})),
@@ -16552,7 +16692,12 @@ async def refresh_portfolio_prices() -> dict[str, Any]:
 
 
 @app.get("/api/portfolio/benchmark", response_model=PortfolioBenchmarkResponse)
-async def get_portfolio_benchmark(symbols: str | None = None, limit: int = 180) -> PortfolioBenchmarkResponse:
+async def get_portfolio_benchmark(
+    symbols: str | None = None,
+    limit: int = 180,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> PortfolioBenchmarkResponse:
+    require_permission(services.context, "portfolio.read")
     resolved_symbols = parse_benchmark_symbols(
         symbols,
         default_symbols=settings.portfolio_benchmark_default_symbols,
@@ -16563,7 +16708,7 @@ async def get_portfolio_benchmark(symbols: str | None = None, limit: int = 180) 
     bounded_limit = max(2, min(int(limit), 3650))
     try:
         guard_reason = await sidecar_contract_guard_reason("portfolio_benchmark")
-        result = await benchmark_service.compare(
+        result = await benchmark_service_for_workspace(services).compare(
             benchmark_symbols=resolved_symbols,
             limit=bounded_limit,
             sidecar_guard_reason=guard_reason,
@@ -16579,11 +16724,15 @@ async def get_portfolio_benchmark(symbols: str | None = None, limit: int = 180) 
 
 
 @app.get("/api/portfolio/attribution", response_model=PortfolioAttributionResponse)
-async def get_portfolio_attribution(top_n: int = 5) -> PortfolioAttributionResponse:
+async def get_portfolio_attribution(
+    top_n: int = 5,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> PortfolioAttributionResponse:
+    require_permission(services.context, "portfolio.read")
     bounded_top_n = max(1, min(int(top_n), 50))
     try:
         guard_reason = await sidecar_contract_guard_reason("portfolio_attribution")
-        result = await attribution_service.analyze(
+        result = await attribution_service_for_workspace(services).analyze(
             top_n=bounded_top_n,
             sidecar_guard_reason=guard_reason,
         )
@@ -16603,8 +16752,10 @@ async def get_portfolio_analytics(
     limit: int = 180,
     top_n: int = 5,
     period: str = "1y",
+    services: WorkspaceServices = Depends(get_workspace_services),
 ) -> PortfolioAnalyticsResponse:
-    holdings_payload = portfolio_store.get_holdings()
+    require_permission(services.context, "portfolio.read")
+    holdings_payload = services.portfolio_store.get_holdings()
     benchmark_response: PortfolioBenchmarkResponse | None = None
     benchmark_error = ""
     attribution_response: PortfolioAttributionResponse | None = None
@@ -16627,7 +16778,7 @@ async def get_portfolio_analytics(
     benchmark_limit = period_limits.get(normalized_period, max(2, min(int(limit), 3650)))
     if resolved_symbols:
         try:
-            benchmark_response = await benchmark_service.compare(
+            benchmark_response = await benchmark_service_for_workspace(services).compare(
                 benchmark_symbols=resolved_symbols,
                 limit=max(2, min(benchmark_limit, 3650)),
                 sidecar_guard_reason="BuildWealth native analytics uses local benchmark calculations.",
@@ -16636,7 +16787,7 @@ async def get_portfolio_analytics(
             benchmark_error = str(exc)
 
     try:
-        attribution_response = await attribution_service.analyze(
+        attribution_response = await attribution_service_for_workspace(services).analyze(
             top_n=max(1, min(int(top_n), 50)),
             sidecar_guard_reason="BuildWealth native analytics uses local return attribution.",
         )
@@ -16657,21 +16808,28 @@ async def get_portfolio_analytics(
 
 
 @app.get("/api/portfolio/accounts")
-def get_portfolio_accounts() -> list[dict[str, Any]]:
-    return portfolio_store.get_accounts()
+def get_portfolio_accounts(
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> list[dict[str, Any]]:
+    require_permission(services.context, "portfolio.read")
+    return services.portfolio_store.get_accounts()
 
 
 @app.get("/api/portfolio/audit", response_model=PortfolioAuditResponse)
-def get_portfolio_audit(limit: int = 25) -> PortfolioAuditResponse:
+def get_portfolio_audit(
+    limit: int = 25,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> PortfolioAuditResponse:
+    require_permission(services.context, "portfolio.read")
     bounded_limit = max(1, min(int(limit), 100))
     payload = build_portfolio_audit_payload(
-        import_reports=import_workbench_store.list_reports(limit=bounded_limit),
-        asset_registry_payload=asset_registry.search(limit=500),
-        accounts=portfolio_store.get_accounts(),
-        transactions=portfolio_store.list_transactions(limit=500),
-        manual_prices_payload=portfolio_store.get_manual_prices(),
-        cost_basis_payload=portfolio_store.get_cost_basis_methods(),
-        recommendations=recommendation_inbox.list(
+        import_reports=services.import_workbench_store.list_reports(limit=bounded_limit),
+        asset_registry_payload=services.asset_registry.search(limit=500),
+        accounts=services.portfolio_store.get_accounts(),
+        transactions=services.portfolio_store.list_transactions(limit=500),
+        manual_prices_payload=services.portfolio_store.get_manual_prices(),
+        cost_basis_payload=services.portfolio_store.get_cost_basis_methods(),
+        recommendations=services.recommendation_inbox.list(
             limit=500,
             include_archived=False,
             sort="created_at_desc",
@@ -16681,19 +16839,23 @@ def get_portfolio_audit(limit: int = 25) -> PortfolioAuditResponse:
 
 
 @app.get("/api/portfolio/export-bundle")
-def get_portfolio_export_bundle(limit: int = 10_000) -> dict[str, Any]:
+def get_portfolio_export_bundle(
+    limit: int = 10_000,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_permission(services.context, "export.create")
     bounded_limit = max(1, min(int(limit), 50_000))
-    transactions = portfolio_store.list_transactions(limit=bounded_limit)
-    holdings_payload = portfolio_store.get_holdings()
-    import_reports = import_workbench_store.list_reports(limit=200)
+    transactions = services.portfolio_store.list_transactions(limit=bounded_limit)
+    holdings_payload = services.portfolio_store.get_holdings()
+    import_reports = services.import_workbench_store.list_reports(limit=200)
     audit_report = build_portfolio_audit_payload(
         import_reports=import_reports,
-        asset_registry_payload=asset_registry.search(limit=500),
-        accounts=portfolio_store.get_accounts(),
+        asset_registry_payload=services.asset_registry.search(limit=500),
+        accounts=services.portfolio_store.get_accounts(),
         transactions=transactions,
-        manual_prices_payload=portfolio_store.get_manual_prices(),
-        cost_basis_payload=portfolio_store.get_cost_basis_methods(),
-        recommendations=recommendation_inbox.list(
+        manual_prices_payload=services.portfolio_store.get_manual_prices(),
+        cost_basis_payload=services.portfolio_store.get_cost_basis_methods(),
+        recommendations=services.recommendation_inbox.list(
             limit=500,
             include_archived=False,
             sort="created_at_desc",
@@ -16723,11 +16885,11 @@ def get_portfolio_export_bundle(limit: int = 10_000) -> dict[str, Any]:
         "transactions": transactions,
         "holdings": holdings_payload,
         "lots": lots,
-        "asset_metadata": portfolio_store.get_asset_metadata_map(),
-        "manual_prices": portfolio_store.get_manual_prices(),
-        "fx_rates": portfolio_store.get_fx_rates(),
-        "fx_rate_history": portfolio_store.get_fx_rates_history(),
-        "cost_basis_methods": portfolio_store.get_cost_basis_methods(),
+        "asset_metadata": services.portfolio_store.get_asset_metadata_map(),
+        "manual_prices": services.portfolio_store.get_manual_prices(),
+        "fx_rates": services.portfolio_store.get_fx_rates(),
+        "fx_rate_history": services.portfolio_store.get_fx_rates_history(),
+        "cost_basis_methods": services.portfolio_store.get_cost_basis_methods(),
         "import_reports": import_reports,
         "audit_report": audit_report,
         "recovery_posture": {
@@ -16739,14 +16901,23 @@ def get_portfolio_export_bundle(limit: int = 10_000) -> dict[str, Any]:
 
 
 @app.get("/api/portfolio/assets/search", response_model=AssetRegistrySearchResponse)
-def search_portfolio_assets(q: str = "", limit: int = 100) -> AssetRegistrySearchResponse:
-    payload = asset_registry.search(query=q, limit=limit)
+def search_portfolio_assets(
+    q: str = "",
+    limit: int = 100,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> AssetRegistrySearchResponse:
+    require_permission(services.context, "portfolio.read")
+    payload = services.asset_registry.search(query=q, limit=limit)
     return AssetRegistrySearchResponse(**payload)
 
 
 @app.get("/api/portfolio/assets/{symbol}", response_model=AssetRegistryItem)
-def get_portfolio_asset(symbol: str) -> AssetRegistryItem:
-    item = asset_registry.detail(symbol)
+def get_portfolio_asset(
+    symbol: str,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> AssetRegistryItem:
+    require_permission(services.context, "portfolio.read")
+    item = services.asset_registry.detail(symbol)
     if item is None:
         raise HTTPException(status_code=404, detail="Asset not found.")
     return AssetRegistryItem(**item)
@@ -16756,21 +16927,31 @@ def get_portfolio_asset(symbol: str) -> AssetRegistryItem:
 def update_portfolio_asset_metadata(
     symbol: str,
     request: AssetMetadataUpdateRequest,
+    http_request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
 ) -> AssetRegistryItem:
+    require_csrf(http_request)
+    require_permission(services.context, "portfolio.write")
     updates = request.model_dump(exclude_unset=True)
     try:
-        item = asset_registry.update_metadata(symbol, updates)
+        item = services.asset_registry.update_metadata(symbol, updates)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return AssetRegistryItem(**item)
 
 
 @app.post("/api/portfolio/accounts")
-def add_portfolio_account(request: dict[str, Any]) -> dict[str, Any]:
+def add_portfolio_account(
+    request: dict[str, Any],
+    http_request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_csrf(http_request)
+    require_permission(services.context, "portfolio.write")
     name = str(request.get("name") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="Account name is required.")
-    return portfolio_store.add_account(
+    return services.portfolio_store.add_account(
         name=name,
         account_type=str(request.get("type") or "taxable"),
         currency=str(request.get("currency") or "USD"),
@@ -16783,12 +16964,15 @@ def get_portfolio_watchlist(
     interval: str = "1d",
     sort: str = "ranked",
     limit: int = 200,
+    services: WorkspaceServices = Depends(get_workspace_services),
 ) -> WatchlistRankResponse:
+    require_permission(services.context, "portfolio.read")
     payload = build_portfolio_watchlist_payload(
         period=period,
         interval=interval,
         sort=sort,
         limit=limit,
+        store=services.portfolio_store,
     )
     return WatchlistRankResponse(**payload)
 
@@ -16809,7 +16993,13 @@ def get_research_watchlist_rank(
 
 
 @app.post("/api/portfolio/watchlist")
-def upsert_portfolio_watchlist_item(request: dict[str, Any]) -> dict[str, Any]:
+def upsert_portfolio_watchlist_item(
+    request: dict[str, Any],
+    http_request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_csrf(http_request)
+    require_permission(services.context, "portfolio.write")
     symbol = str(request.get("symbol") or "").strip().upper()
     if not symbol:
         raise HTTPException(status_code=400, detail="symbol is required")
@@ -16830,7 +17020,7 @@ def upsert_portfolio_watchlist_item(request: dict[str, Any]) -> dict[str, Any]:
             raise HTTPException(status_code=400, detail="thesis_reference_price_usd must be a number") from exc
 
     try:
-        item = portfolio_store.upsert_watchlist_item(
+        item = services.portfolio_store.upsert_watchlist_item(
             symbol=symbol,
             data_source=str(request.get("data_source") or "OPENBB"),
             note=request.get("note"),
@@ -16845,7 +17035,14 @@ def upsert_portfolio_watchlist_item(request: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.put("/api/portfolio/watchlist/{symbol}/thesis")
-def save_portfolio_watchlist_thesis_revision(symbol: str, request: dict[str, Any]) -> dict[str, Any]:
+def save_portfolio_watchlist_thesis_revision(
+    symbol: str,
+    request: dict[str, Any],
+    http_request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_csrf(http_request)
+    require_permission(services.context, "portfolio.write")
     normalized_symbol = str(symbol or request.get("symbol") or "").strip().upper()
     if not normalized_symbol:
         raise HTTPException(status_code=400, detail="symbol is required")
@@ -16880,7 +17077,11 @@ def save_portfolio_watchlist_thesis_revision(symbol: str, request: dict[str, Any
         expires_at = (reviewed_at_dt + timedelta(days=review_window_days)).isoformat()
 
     try:
-        current = _watchlist_item_for_symbol(normalized_symbol, data_source) or {}
+        current = _watchlist_item_for_symbol(
+            normalized_symbol,
+            data_source,
+            store=services.portfolio_store,
+        ) or {}
         revision_event = _compact_thesis_revision_event(
             target_type="watchlist",
             symbol=normalized_symbol,
@@ -16893,7 +17094,7 @@ def save_portfolio_watchlist_thesis_revision(symbol: str, request: dict[str, Any
             review_window_days=review_window_days,
             request=request,
         )
-        portfolio_store.upsert_watchlist_item(
+        services.portfolio_store.upsert_watchlist_item(
             symbol=normalized_symbol,
             data_source=data_source,
             thesis=thesis,
@@ -16901,14 +17102,14 @@ def save_portfolio_watchlist_thesis_revision(symbol: str, request: dict[str, Any
             thesis_reference_price_usd=reference_value,
             tags=request.get("tags") if isinstance(request.get("tags"), list) else None,
         )
-        item = portfolio_store.refresh_watchlist_thesis_review(
+        item = services.portfolio_store.refresh_watchlist_thesis_review(
             symbol=normalized_symbol,
             data_source=data_source,
             reviewed_at=reviewed_at,
             expires_at=expires_at,
             reference_price_usd=reference_value,
         )
-        item = portfolio_store.append_watchlist_thesis_revision_event(
+        item = services.portfolio_store.append_watchlist_thesis_revision_event(
             symbol=normalized_symbol,
             data_source=data_source,
             event=revision_event,
@@ -16941,8 +17142,15 @@ def save_portfolio_watchlist_thesis_revision(symbol: str, request: dict[str, Any
 
 
 @app.delete("/api/portfolio/watchlist/{symbol}")
-def delete_portfolio_watchlist_item(symbol: str, data_source: str | None = None) -> dict[str, Any]:
-    deleted = portfolio_store.delete_watchlist_item(symbol, data_source=data_source)
+def delete_portfolio_watchlist_item(
+    symbol: str,
+    request: Request,
+    data_source: str | None = None,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_csrf(request)
+    require_permission(services.context, "portfolio.write")
+    deleted = services.portfolio_store.delete_watchlist_item(symbol, data_source=data_source)
     if not deleted:
         raise HTTPException(status_code=404, detail="Watchlist item not found.")
     return {
@@ -16953,12 +17161,21 @@ def delete_portfolio_watchlist_item(symbol: str, data_source: str | None = None)
 
 
 @app.get("/api/portfolio/risk-policy")
-def get_portfolio_risk_policy() -> dict[str, Any]:
-    return portfolio_store.get_risk_policy()
+def get_portfolio_risk_policy(
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_permission(services.context, "portfolio.read")
+    return services.portfolio_store.get_risk_policy()
 
 
 @app.put("/api/portfolio/risk-policy")
-def set_portfolio_risk_policy(request: dict[str, Any]) -> dict[str, Any]:
+def set_portfolio_risk_policy(
+    request: dict[str, Any],
+    http_request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_csrf(http_request)
+    require_permission(services.context, "portfolio.write")
     allowed_fields = {
         "single_holding_max_pct",
         "top3_holdings_max_pct",
@@ -16979,23 +17196,37 @@ def set_portfolio_risk_policy(request: dict[str, Any]) -> dict[str, Any]:
             raise HTTPException(status_code=400, detail=f"{key} must be a number") from exc
     if not updates:
         raise HTTPException(status_code=400, detail="At least one risk threshold field is required.")
-    return portfolio_store.set_risk_policy_thresholds(updates=updates)
+    return services.portfolio_store.set_risk_policy_thresholds(updates=updates)
 
 
-@app.post("/api/portfolio/review-packets", response_model=PortfolioReviewPacketResponse)
-def create_portfolio_review_packet(request: PortfolioReviewPacketRequest) -> PortfolioReviewPacketResponse:
+def create_portfolio_review_packet(
+    request: PortfolioReviewPacketRequest,
+    services: Any | None = None,
+) -> PortfolioReviewPacketResponse:
+    if not hasattr(services, "portfolio_store"):
+        from types import SimpleNamespace
+
+        services = SimpleNamespace(
+            context=SimpleNamespace(permissions=ControlPlaneStore.OWNER_PERMISSIONS),
+            portfolio_store=portfolio_store,
+            snapshot_store=snapshot_store,
+            recommendation_inbox=recommendation_inbox,
+            plan_workspace=plan_workspace,
+            portfolio_review_packet_store=portfolio_review_packet_store,
+        )
+    require_permission(services.context, "portfolio.write")
     plan_detail: dict[str, Any] | None = None
     if request.plan_id:
         try:
-            plan_detail = plan_workspace.get_plan(request.plan_id)
+            plan_detail = services.plan_workspace.get_plan(request.plan_id)
         except PlanNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    holdings_payload = portfolio_store.get_holdings()
-    transactions = portfolio_store.list_transactions(limit=request.include_transactions_limit)
-    snapshots = snapshot_store.recent(limit=request.include_snapshot_history_limit)
-    watchlist_items = portfolio_store.list_watchlist()
-    recommendations = recommendation_inbox.list(
+    holdings_payload = services.portfolio_store.get_holdings()
+    transactions = services.portfolio_store.list_transactions(limit=request.include_transactions_limit)
+    snapshots = services.snapshot_store.recent(limit=request.include_snapshot_history_limit)
+    watchlist_items = services.portfolio_store.list_watchlist()
+    recommendations = services.recommendation_inbox.list(
         limit=request.include_recommendations_limit,
         plan_id=request.plan_id,
         include_archived=request.include_archived_recommendations,
@@ -17024,7 +17255,7 @@ def create_portfolio_review_packet(request: PortfolioReviewPacketRequest) -> Por
     packet["summary"] = packet_summary
 
     markdown = build_portfolio_review_packet_markdown(title=resolved_title, packet=packet)
-    summary_payload = portfolio_review_packet_store.write(
+    summary_payload = services.portfolio_review_packet_store.write(
         packet_payload=packet,
         markdown=markdown,
         title=resolved_title,
@@ -17033,7 +17264,7 @@ def create_portfolio_review_packet(request: PortfolioReviewPacketRequest) -> Por
     plan_artifact: PlanArtifactSummary | None = None
     if request.plan_id and request.save_to_plan_artifacts:
         try:
-            artifact_payload = plan_workspace.write_artifact(
+            artifact_payload = services.plan_workspace.write_artifact(
                 plan_id=request.plan_id,
                 title=resolved_title,
                 markdown=markdown,
@@ -17046,7 +17277,7 @@ def create_portfolio_review_packet(request: PortfolioReviewPacketRequest) -> Por
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     try:
-        stored = portfolio_review_packet_store.read(str(summary_payload.get("packet_id") or ""))
+        stored = services.portfolio_review_packet_store.read(str(summary_payload.get("packet_id") or ""))
     except FileNotFoundError:
         stored = {
             "summary": summary_payload,
@@ -17063,16 +17294,34 @@ def create_portfolio_review_packet(request: PortfolioReviewPacketRequest) -> Por
     )
 
 
+@app.post("/api/portfolio/review-packets", response_model=PortfolioReviewPacketResponse)
+def create_portfolio_review_packet_route(
+    request: PortfolioReviewPacketRequest,
+    http_request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> PortfolioReviewPacketResponse:
+    require_csrf(http_request)
+    return create_portfolio_review_packet(request, services=services)
+
+
 @app.get("/api/portfolio/review-packets", response_model=PortfolioReviewPacketListResponse)
-def list_portfolio_review_packets(limit: int = 20) -> PortfolioReviewPacketListResponse:
-    items = portfolio_review_packet_store.list(limit=max(1, min(int(limit), 200)))
+def list_portfolio_review_packets(
+    limit: int = 20,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> PortfolioReviewPacketListResponse:
+    require_permission(services.context, "portfolio.read")
+    items = services.portfolio_review_packet_store.list(limit=max(1, min(int(limit), 200)))
     return PortfolioReviewPacketListResponse(items=items)
 
 
 @app.get("/api/portfolio/review-packets/{packet_id}", response_model=PortfolioReviewPacketResponse)
-def get_portfolio_review_packet(packet_id: str) -> PortfolioReviewPacketResponse:
+def get_portfolio_review_packet(
+    packet_id: str,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> PortfolioReviewPacketResponse:
+    require_permission(services.context, "portfolio.read")
     try:
-        payload = portfolio_review_packet_store.read(packet_id)
+        payload = services.portfolio_review_packet_store.read(packet_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -17084,17 +17333,26 @@ def get_portfolio_review_packet(packet_id: str) -> PortfolioReviewPacketResponse
 
 
 @app.get("/api/portfolio/cost-basis-methods")
-def get_portfolio_cost_basis_methods() -> dict[str, Any]:
-    return portfolio_store.get_cost_basis_methods()
+def get_portfolio_cost_basis_methods(
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_permission(services.context, "portfolio.read")
+    return services.portfolio_store.get_cost_basis_methods()
 
 
 @app.put("/api/portfolio/cost-basis-methods")
-def set_portfolio_cost_basis_method(request: dict[str, Any]) -> dict[str, Any]:
+def set_portfolio_cost_basis_method(
+    request: dict[str, Any],
+    http_request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_csrf(http_request)
+    require_permission(services.context, "portfolio.write")
     method = str(request.get("method") or "").strip().upper()
     if not method:
         raise HTTPException(status_code=400, detail="method is required")
     try:
-        return portfolio_store.set_cost_basis_method(
+        return services.portfolio_store.set_cost_basis_method(
             method=method,
             account=request.get("account"),
             symbol=request.get("symbol"),
@@ -17104,12 +17362,21 @@ def set_portfolio_cost_basis_method(request: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.get("/api/portfolio/manual-prices")
-def get_portfolio_manual_prices() -> dict[str, Any]:
-    return portfolio_store.get_manual_prices()
+def get_portfolio_manual_prices(
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_permission(services.context, "portfolio.read")
+    return services.portfolio_store.get_manual_prices()
 
 
 @app.put("/api/portfolio/manual-prices")
-def set_portfolio_manual_price(request: dict[str, Any]) -> dict[str, Any]:
+def set_portfolio_manual_price(
+    request: dict[str, Any],
+    http_request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_csrf(http_request)
+    require_permission(services.context, "portfolio.write")
     symbol = str(request.get("symbol") or "").strip().upper()
     if not symbol:
         raise HTTPException(status_code=400, detail="symbol is required")
@@ -17119,31 +17386,49 @@ def set_portfolio_manual_price(request: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="price must be a number") from exc
     note = str(request.get("note") or "")
     try:
-        return portfolio_store.set_manual_price(symbol=symbol, price=price, note=note)
+        return services.portfolio_store.set_manual_price(symbol=symbol, price=price, note=note)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.delete("/api/portfolio/manual-prices/{symbol}")
-def clear_portfolio_manual_price(symbol: str) -> dict[str, Any]:
-    deleted = portfolio_store.clear_manual_price(symbol)
+def clear_portfolio_manual_price(
+    symbol: str,
+    request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_csrf(request)
+    require_permission(services.context, "portfolio.write")
+    deleted = services.portfolio_store.clear_manual_price(symbol)
     if not deleted:
         raise HTTPException(status_code=404, detail="Manual price override not found.")
     return {"deleted": True, "symbol": str(symbol).upper()}
 
 
 @app.get("/api/portfolio/fx-rates")
-def get_portfolio_fx_rates() -> dict[str, Any]:
-    return portfolio_store.get_fx_rates()
+def get_portfolio_fx_rates(
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_permission(services.context, "portfolio.read")
+    return services.portfolio_store.get_fx_rates()
 
 
 @app.get("/api/portfolio/fx-rates/history")
-def get_portfolio_fx_rate_history() -> dict[str, Any]:
-    return portfolio_store.get_fx_rates_history()
+def get_portfolio_fx_rate_history(
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_permission(services.context, "portfolio.read")
+    return services.portfolio_store.get_fx_rates_history()
 
 
 @app.put("/api/portfolio/fx-rates")
-def set_portfolio_fx_rate(request: dict[str, Any]) -> dict[str, Any]:
+def set_portfolio_fx_rate(
+    request: dict[str, Any],
+    http_request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_csrf(http_request)
+    require_permission(services.context, "portfolio.write")
     currency = str(request.get("currency") or "").strip().upper()
     if not currency:
         raise HTTPException(status_code=400, detail="currency is required")
@@ -17153,7 +17438,7 @@ def set_portfolio_fx_rate(request: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="rate must be a number") from exc
     base_currency = request.get("base_currency")
     try:
-        return portfolio_store.set_fx_rate(
+        return services.portfolio_store.set_fx_rate(
             currency=currency,
             rate=rate,
             base_currency=str(base_currency).strip().upper() if base_currency is not None else None,
@@ -17163,7 +17448,13 @@ def set_portfolio_fx_rate(request: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.put("/api/portfolio/fx-rates/history")
-def set_portfolio_fx_rate_history(request: dict[str, Any]) -> dict[str, Any]:
+def set_portfolio_fx_rate_history(
+    request: dict[str, Any],
+    http_request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_csrf(http_request)
+    require_permission(services.context, "portfolio.write")
     currency = str(request.get("currency") or "").strip().upper()
     if not currency:
         raise HTTPException(status_code=400, detail="currency is required")
@@ -17172,7 +17463,7 @@ def set_portfolio_fx_rate_history(request: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="rates_by_date must be an object of date->rate")
     base_currency = request.get("base_currency")
     try:
-        return portfolio_store.set_fx_rate_history(
+        return services.portfolio_store.set_fx_rate_history(
             currency=currency,
             rates_by_date=rates_by_date,
             base_currency=str(base_currency).strip().upper() if base_currency is not None else None,
@@ -17182,20 +17473,35 @@ def set_portfolio_fx_rate_history(request: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.delete("/api/portfolio/fx-rates/{currency}")
-def clear_portfolio_fx_rate(currency: str) -> dict[str, Any]:
-    deleted = portfolio_store.clear_fx_rate(currency)
+def clear_portfolio_fx_rate(
+    currency: str,
+    request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_csrf(request)
+    require_permission(services.context, "portfolio.write")
+    deleted = services.portfolio_store.clear_fx_rate(currency)
     if not deleted:
         raise HTTPException(status_code=404, detail="FX rate not found or cannot clear base currency.")
     return {"deleted": True, "currency": str(currency).upper()}
 
 
 @app.get("/api/portfolio/custom-assets")
-def get_portfolio_custom_assets() -> list[dict[str, Any]]:
-    return portfolio_store.list_custom_assets()
+def get_portfolio_custom_assets(
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> list[dict[str, Any]]:
+    require_permission(services.context, "portfolio.read")
+    return services.portfolio_store.list_custom_assets()
 
 
 @app.post("/api/portfolio/custom-assets")
-def create_portfolio_custom_asset(request: dict[str, Any]) -> dict[str, Any]:
+def create_portfolio_custom_asset(
+    request: dict[str, Any],
+    http_request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_csrf(http_request)
+    require_permission(services.context, "portfolio.write")
     name = str(request.get("name") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="name is required")
@@ -17205,7 +17511,7 @@ def create_portfolio_custom_asset(request: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="value must be a number") from exc
 
     try:
-        return portfolio_store.create_custom_asset(
+        return services.portfolio_store.create_custom_asset(
             name=name,
             value=value,
             account=str(request.get("account") or "default"),
@@ -17238,21 +17544,28 @@ def simulate_portfolio_trade(request: SimulateTradeRequest) -> SimulateTradeResp
 
 def build_portfolio_fit_assessment_payload(
     request: PortfolioFitAssessmentRequest,
+    *,
+    services: WorkspaceServices | None = None,
 ) -> PortfolioFitAssessmentResponse:
     if not request.symbol:
         raise ValueError("Portfolio-fit assessment requires a symbol.")
+    resolved_snapshot_store = services.snapshot_store if services is not None else snapshot_store
+    resolved_portfolio_store = services.portfolio_store if services is not None else portfolio_store
+    resolved_profile_store = services.financial_profile_store if services is not None else financial_profile_store
+    resolved_plan_workspace = services.plan_workspace if services is not None else plan_workspace
+
     try:
-        snap = snapshot_store.latest()
+        snap = resolved_snapshot_store.latest()
     except FileNotFoundError:
         snap = None
 
     holdings_payload: dict[str, Any] = {}
     try:
-        holdings_payload = portfolio_store.get_holdings()
+        holdings_payload = resolved_portfolio_store.get_holdings()
     except Exception:
         holdings_payload = {}
 
-    profile_payload = get_financial_profile_payload()
+    profile_payload = get_financial_profile_payload(resolved_profile_store)
     investment_policy = (
         profile_payload.get("investment_policy")
         if isinstance(profile_payload.get("investment_policy"), dict)
@@ -17301,14 +17614,18 @@ def build_portfolio_fit_assessment_payload(
         holdings_payload=holdings_payload,
         profile_readiness_payload=profile_readiness.model_dump(mode="json"),
         emergency_fund_months=emergency_fund_months,
-        active_plan_detail=resolve_active_plan_detail(),
+        active_plan_detail=resolve_active_plan_detail(workspace=resolved_plan_workspace),
     )
 
 
 @app.post("/api/portfolio/fit-assessment", response_model=PortfolioFitAssessmentResponse)
-def portfolio_fit_assessment(request: PortfolioFitAssessmentRequest) -> PortfolioFitAssessmentResponse:
+def portfolio_fit_assessment(
+    request: PortfolioFitAssessmentRequest,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> PortfolioFitAssessmentResponse:
+    require_permission(services.context, "portfolio.read")
     try:
-        return build_portfolio_fit_assessment_payload(request)
+        return build_portfolio_fit_assessment_payload(request, services=services)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -17348,13 +17665,16 @@ def list_recommendations(
     plan_id: str | None = None,
     include_archived: bool = False,
     sort: str = "ranked",
+    services: WorkspaceServices = Depends(get_workspace_services),
 ) -> list[RecommendationItem]:
+    require_permission(services.context, "recommendations.read")
     rows = _recommendation_list(
         limit=limit,
         status=status,
         plan_id=plan_id,
         include_archived=include_archived,
         sort=sort,
+        inbox=services.recommendation_inbox,
     )
     return [RecommendationItem(**row) for row in rows]
 
@@ -17378,9 +17698,15 @@ def get_recommendation_closure_analytics(
 @app.post("/api/recommendations/generate/portfolio-risk", response_model=RecommendationFactoryResponse)
 def generate_portfolio_risk_recommendation_candidates(
     request: PortfolioRiskRecommendationGenerateRequest,
+    http_request: Request = None,
+    services: WorkspaceServices = Depends(get_workspace_services),
 ) -> RecommendationFactoryResponse:
-    holdings_payload = portfolio_store.get_holdings()
-    existing_recommendations = recommendation_inbox.list(
+    services = workspace_services_or_legacy(services)
+    if http_request is not None:
+        require_csrf(http_request)
+    require_permission(services.context, "recommendations.write")
+    holdings_payload = services.portfolio_store.get_holdings()
+    existing_recommendations = services.recommendation_inbox.list(
         limit=None,
         status=None,
         plan_id=None,
@@ -17390,7 +17716,7 @@ def generate_portfolio_risk_recommendation_candidates(
     result = generate_portfolio_risk_recommendations(
         holdings_payload=holdings_payload,
         existing_recommendations=existing_recommendations,
-        creator=recommendation_inbox if not request.dry_run else None,
+        creator=services.recommendation_inbox if not request.dry_run else None,
         dry_run=request.dry_run,
         plan_id=request.plan_id,
         limit=request.limit,
@@ -17403,18 +17729,24 @@ def generate_portfolio_risk_recommendation_candidates(
 @app.post("/api/recommendations/generate/plan-tracking", response_model=RecommendationFactoryResponse)
 def generate_plan_tracking_recommendation_candidates(
     request: PlanTrackingRecommendationGenerateRequest,
+    http_request: Request = None,
+    services: WorkspaceServices = Depends(get_workspace_services),
 ) -> RecommendationFactoryResponse:
+    services = workspace_services_or_legacy(services)
+    if http_request is not None:
+        require_csrf(http_request)
+    require_permission(services.context, "recommendations.write")
     try:
-        plan_id = resolve_plan_id_or_active(request.plan_id)
-        detail = plan_workspace.get_plan(plan_id)
+        plan_id = resolve_plan_id_or_active(request.plan_id, workspace=services.plan_workspace)
+        detail = services.plan_workspace.get_plan(plan_id)
     except PlanNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     plan_settings = PlanSettings(**detail.get("settings", {}))
-    snapshots = snapshot_store.recent(limit=90)
-    transactions = portfolio_store.list_transactions(limit=10_000)
+    snapshots = services.snapshot_store.recent(limit=90)
+    transactions = services.portfolio_store.list_transactions(limit=10_000)
     planner_defaults = {
         "annual_contribution_usd": settings.planner_annual_contribution_usd,
         "expected_return_baseline": settings.planner_expected_return_baseline,
@@ -17430,7 +17762,7 @@ def generate_plan_tracking_recommendation_candidates(
     ).model_dump(mode="json")
     tracking_payload["plan_settings"] = plan_settings.model_dump(mode="json", exclude_none=True)
     tracking_payload["planner_defaults"] = planner_defaults
-    existing_recommendations = recommendation_inbox.list(
+    existing_recommendations = services.recommendation_inbox.list(
         limit=None,
         status=None,
         plan_id=None,
@@ -17440,7 +17772,7 @@ def generate_plan_tracking_recommendation_candidates(
     result = generate_plan_tracking_recommendations(
         plan_tracking_payload=tracking_payload,
         existing_recommendations=existing_recommendations,
-        creator=recommendation_inbox if not request.dry_run else None,
+        creator=services.recommendation_inbox if not request.dry_run else None,
         dry_run=request.dry_run,
         limit=request.limit,
     )
@@ -17452,10 +17784,16 @@ def generate_plan_tracking_recommendation_candidates(
 @app.post("/api/recommendations/generate/cash-liquidity", response_model=RecommendationFactoryResponse)
 def generate_cash_liquidity_recommendation_candidates(
     request: CashLiquidityRecommendationGenerateRequest,
+    http_request: Request = None,
+    services: WorkspaceServices = Depends(get_workspace_services),
 ) -> RecommendationFactoryResponse:
-    holdings_payload = portfolio_store.get_holdings()
-    financial_profile_payload = get_financial_profile_payload()
-    existing_recommendations = recommendation_inbox.list(
+    services = workspace_services_or_legacy(services)
+    if http_request is not None:
+        require_csrf(http_request)
+    require_permission(services.context, "recommendations.write")
+    holdings_payload = services.portfolio_store.get_holdings()
+    financial_profile_payload = get_financial_profile_payload(services.financial_profile_store)
+    existing_recommendations = services.recommendation_inbox.list(
         limit=None,
         status=None,
         plan_id=None,
@@ -17466,7 +17804,7 @@ def generate_cash_liquidity_recommendation_candidates(
         holdings_payload=holdings_payload,
         financial_profile_payload=financial_profile_payload,
         existing_recommendations=existing_recommendations,
-        creator=recommendation_inbox if not request.dry_run else None,
+        creator=services.recommendation_inbox if not request.dry_run else None,
         dry_run=request.dry_run,
         plan_id=request.plan_id,
         limit=request.limit,
@@ -17479,13 +17817,19 @@ def generate_cash_liquidity_recommendation_candidates(
 @app.post("/api/recommendations/generate/profile-completeness", response_model=RecommendationFactoryResponse)
 def generate_profile_completeness_recommendation_candidates(
     request: ProfileCompletenessRecommendationGenerateRequest,
+    http_request: Request = None,
+    services: WorkspaceServices = Depends(get_workspace_services),
 ) -> RecommendationFactoryResponse:
-    profile_payload = get_financial_profile_payload()
+    services = workspace_services_or_legacy(services)
+    if http_request is not None:
+        require_csrf(http_request)
+    require_permission(services.context, "recommendations.write")
+    profile_payload = get_financial_profile_payload(services.financial_profile_store)
     profile_readiness = build_onboarding_status_response(
         profile_payload=profile_payload,
         load_fallbacks=False,
     ).profile_readiness
-    existing_recommendations = recommendation_inbox.list(
+    existing_recommendations = services.recommendation_inbox.list(
         limit=None,
         status=None,
         plan_id=None,
@@ -17495,7 +17839,7 @@ def generate_profile_completeness_recommendation_candidates(
     result = generate_profile_completeness_recommendations(
         profile_readiness_payload=profile_readiness.model_dump(mode="json") if profile_readiness else {},
         existing_recommendations=existing_recommendations,
-        creator=recommendation_inbox if not request.dry_run else None,
+        creator=services.recommendation_inbox if not request.dry_run else None,
         dry_run=request.dry_run,
         plan_id=request.plan_id,
         limit=request.limit,
@@ -17508,18 +17852,24 @@ def generate_profile_completeness_recommendation_candidates(
 @app.post("/api/recommendations/generate/stale-assumptions", response_model=RecommendationFactoryResponse)
 def generate_stale_assumption_recommendation_candidates(
     request: StaleAssumptionRecommendationGenerateRequest,
+    http_request: Request = None,
+    services: WorkspaceServices = Depends(get_workspace_services),
 ) -> RecommendationFactoryResponse:
+    services = workspace_services_or_legacy(services)
+    if http_request is not None:
+        require_csrf(http_request)
+    require_permission(services.context, "recommendations.write")
     try:
-        plan_id = resolve_plan_id_or_active(request.plan_id)
-        detail = plan_workspace.get_plan(plan_id)
+        plan_id = resolve_plan_id_or_active(request.plan_id, workspace=services.plan_workspace)
+        detail = services.plan_workspace.get_plan(plan_id)
     except PlanNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     plan_settings = PlanSettings(**detail.get("settings", {}))
-    snapshots = snapshot_store.recent(limit=90)
-    transactions = portfolio_store.list_transactions(limit=10_000)
+    snapshots = services.snapshot_store.recent(limit=90)
+    transactions = services.portfolio_store.list_transactions(limit=10_000)
     planner_defaults = {
         "annual_contribution_usd": settings.planner_annual_contribution_usd,
         "expected_return_baseline": settings.planner_expected_return_baseline,
@@ -17536,14 +17886,14 @@ def generate_stale_assumption_recommendation_candidates(
     tracking_payload["plan_settings"] = plan_settings.model_dump(mode="json", exclude_none=True)
     tracking_payload["planner_defaults"] = planner_defaults
 
-    profile_payload = get_financial_profile_payload()
+    profile_payload = get_financial_profile_payload(services.financial_profile_store)
     profile_readiness = build_onboarding_status_response(
         profile_payload=profile_payload,
         latest_snapshot=None,
         active_plan_detail=detail,
         load_fallbacks=False,
     ).profile_readiness
-    existing_recommendations = recommendation_inbox.list(
+    existing_recommendations = services.recommendation_inbox.list(
         limit=None,
         status=None,
         plan_id=None,
@@ -17555,7 +17905,7 @@ def generate_stale_assumption_recommendation_candidates(
         plan_tracking_payload=tracking_payload,
         profile_readiness_payload=profile_readiness.model_dump(mode="json") if profile_readiness else {},
         existing_recommendations=existing_recommendations,
-        creator=recommendation_inbox if not request.dry_run else None,
+        creator=services.recommendation_inbox if not request.dry_run else None,
         dry_run=request.dry_run,
         limit=request.limit,
     )
@@ -17567,13 +17917,20 @@ def generate_stale_assumption_recommendation_candidates(
 @app.post("/api/recommendations/generate/watchlist-research", response_model=RecommendationFactoryResponse)
 def generate_watchlist_research_recommendation_candidates(
     request: WatchlistResearchRecommendationGenerateRequest,
+    http_request: Request = None,
+    services: WorkspaceServices = Depends(get_workspace_services),
 ) -> RecommendationFactoryResponse:
+    services = workspace_services_or_legacy(services)
+    if http_request is not None:
+        require_csrf(http_request)
+    require_permission(services.context, "recommendations.write")
     try:
         watchlist_payload = build_portfolio_watchlist_payload(
             period=request.period,
             interval=request.interval,
             limit=request.limit,
             sort="ranked",
+            store=services.portfolio_store,
         )
     except AttributeError:
         watchlist_payload = {
@@ -17594,7 +17951,8 @@ def generate_watchlist_research_recommendation_candidates(
             continue
         try:
             fit_assessments_by_symbol[symbol.upper()] = build_portfolio_fit_assessment_payload(
-                PortfolioFitAssessmentRequest(symbol=symbol, period=request.period, interval=request.interval)
+                PortfolioFitAssessmentRequest(symbol=symbol, period=request.period, interval=request.interval),
+                services=services,
             ).model_dump(mode="json")
         except Exception as exc:
             fit_assessments_by_symbol[symbol.upper()] = {
@@ -17607,7 +17965,7 @@ def generate_watchlist_research_recommendation_candidates(
                 "recommended_next_step": "research_more",
             }
 
-    existing_recommendations = recommendation_inbox.list(
+    existing_recommendations = services.recommendation_inbox.list(
         limit=None,
         status=None,
         plan_id=None,
@@ -17618,7 +17976,7 @@ def generate_watchlist_research_recommendation_candidates(
         watchlist_rank_payload=watchlist_payload,
         fit_assessments_by_symbol=fit_assessments_by_symbol,
         existing_recommendations=existing_recommendations,
-        creator=recommendation_inbox if not request.dry_run else None,
+        creator=services.recommendation_inbox if not request.dry_run else None,
         dry_run=request.dry_run,
         plan_id=request.plan_id,
         limit=request.limit,
@@ -17692,7 +18050,13 @@ def generate_research_thesis_expiration_recommendation_candidates(
 @app.post("/api/recommendations/generate/run-all", response_model=RecommendationFactoryRunAllResponse)
 def run_all_recommendation_factories(
     request: RecommendationFactoryRunAllRequest,
+    http_request: Request = None,
+    services: WorkspaceServices = Depends(get_workspace_services),
 ) -> RecommendationFactoryRunAllResponse:
+    services = workspace_services_or_legacy(services)
+    if http_request is not None:
+        require_csrf(http_request)
+    require_permission(services.context, "recommendations.write")
     factories: dict[str, RecommendationFactoryResponse] = {}
     errors: list[dict[str, Any]] = []
 
@@ -17702,7 +18066,9 @@ def run_all_recommendation_factories(
                 dry_run=request.dry_run,
                 plan_id=request.plan_id,
                 limit=request.limit,
-            )
+            ),
+            http_request=http_request,
+            services=services,
         )
     except HTTPException as exc:
         errors.append({"factory": "portfolio_risk", "reason": str(exc.detail)})
@@ -17715,7 +18081,9 @@ def run_all_recommendation_factories(
                 dry_run=request.dry_run,
                 plan_id=request.plan_id,
                 limit=request.limit,
-            )
+            ),
+            http_request=http_request,
+            services=services,
         )
     except HTTPException as exc:
         errors.append({"factory": "plan_tracking", "reason": str(exc.detail)})
@@ -17728,7 +18096,9 @@ def run_all_recommendation_factories(
                 dry_run=request.dry_run,
                 plan_id=request.plan_id,
                 limit=request.limit,
-            )
+            ),
+            http_request=http_request,
+            services=services,
         )
     except HTTPException as exc:
         errors.append({"factory": "cash_liquidity", "reason": str(exc.detail)})
@@ -17741,7 +18111,9 @@ def run_all_recommendation_factories(
                 dry_run=request.dry_run,
                 plan_id=request.plan_id,
                 limit=request.limit,
-            )
+            ),
+            http_request=http_request,
+            services=services,
         )
     except HTTPException as exc:
         errors.append({"factory": "profile_completeness", "reason": str(exc.detail)})
@@ -17754,7 +18126,9 @@ def run_all_recommendation_factories(
                 dry_run=request.dry_run,
                 plan_id=request.plan_id,
                 limit=request.limit,
-            )
+            ),
+            http_request=http_request,
+            services=services,
         )
     except HTTPException as exc:
         errors.append({"factory": "stale_assumptions", "reason": str(exc.detail)})
@@ -17767,7 +18141,9 @@ def run_all_recommendation_factories(
                 dry_run=request.dry_run,
                 plan_id=request.plan_id,
                 limit=request.limit,
-            )
+            ),
+            http_request=http_request,
+            services=services,
         )
     except HTTPException as exc:
         errors.append({"factory": "watchlist_research", "reason": str(exc.detail)})
@@ -17803,14 +18179,20 @@ def run_all_recommendation_factories(
 
 
 @app.post("/api/recommendations", response_model=RecommendationItem)
-def create_recommendation(request: RecommendationCreateRequest) -> RecommendationItem:
+def create_recommendation(
+    request: RecommendationCreateRequest,
+    http_request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> RecommendationItem:
+    require_csrf(http_request)
+    require_permission(services.context, "recommendations.write")
     try:
         prepared_payload = _prepare_recommendation_action_payload(
             source=request.source,
             action_payload=request.action_payload,
             plan_id=request.plan_id,
         )
-        recommendation = recommendation_inbox.create(
+        recommendation = services.recommendation_inbox.create(
             title=request.title,
             detail=request.detail,
             priority=request.priority,
@@ -17826,9 +18208,13 @@ def create_recommendation(request: RecommendationCreateRequest) -> Recommendatio
 
 
 @app.get("/api/recommendations/{recommendation_id}", response_model=RecommendationItem)
-def get_recommendation(recommendation_id: str) -> RecommendationItem:
+def get_recommendation(
+    recommendation_id: str,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> RecommendationItem:
+    require_permission(services.context, "recommendations.read")
     try:
-        recommendation = recommendation_inbox.get(recommendation_id)
+        recommendation = services.recommendation_inbox.get(recommendation_id)
     except RecommendationNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _recommendation_item_from_row(recommendation)
@@ -17838,13 +18224,17 @@ def get_recommendation(recommendation_id: str) -> RecommendationItem:
 def update_recommendation(
     recommendation_id: str,
     request: RecommendationUpdateRequest,
+    http_request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
 ) -> RecommendationItem:
+    require_csrf(http_request)
+    require_permission(services.context, "recommendations.write")
     updates = request.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(status_code=400, detail="Provide at least one field to update")
 
     try:
-        recommendation = recommendation_inbox.update(recommendation_id, updates=updates)
+        recommendation = services.recommendation_inbox.update(recommendation_id, updates=updates)
     except RecommendationNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -17944,9 +18334,14 @@ def sync_status() -> SyncStatusResponse:
 
 
 @app.get("/api/import/files")
-def list_import_files() -> dict[str, Any]:
+def list_import_files(
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    require_permission(services.context, "imports.read")
     files = []
-    for path in sorted(settings.import_inbox_dir.glob("*.csv"), key=lambda item: item.name.lower()):
+    inbox_dir = services.paths.import_inbox_dir
+    inbox_dir.mkdir(parents=True, exist_ok=True)
+    for path in sorted(inbox_dir.glob("*.csv"), key=lambda item: item.name.lower()):
         stat = path.stat()
         files.append(
             {
@@ -19230,13 +19625,24 @@ def backfill_snapshot_history_route(request: dict[str, Any] | None = None) -> di
 
 
 @app.post("/api/import/csv", response_model=CsvImportResponse)
-async def import_csv_transactions(request: CsvImportRequest) -> CsvImportResponse:
-    file_path = resolve_import_path(request.path)
-    return await execute_csv_import(file_path=file_path, request=request)
+async def import_csv_transactions(
+    request: CsvImportRequest,
+    http_request: Request,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> CsvImportResponse:
+    require_csrf(http_request)
+    require_permission(services.context, "imports.write")
+    file_path = resolve_import_path(
+        request.path,
+        import_inbox_dir=services.paths.import_inbox_dir,
+        workspace_root=services.paths.root,
+    )
+    return await execute_csv_import(file_path=file_path, request=request, services=services)
 
 
 @app.post("/api/import/upload-csv", response_model=CsvImportResponse)
 async def import_uploaded_csv(
+    http_request: Request,
     file: UploadFile = File(...),
     dry_run: bool = Form(True),
     delimiter: str = Form(","),
@@ -19244,12 +19650,15 @@ async def import_uploaded_csv(
     default_data_source: str | None = Form(None),
     default_currency: str | None = Form(None),
     archive_after_success: bool = Form(False),
+    services: WorkspaceServices = Depends(get_workspace_services),
 ) -> CsvImportResponse:
+    require_csrf(http_request)
+    require_permission(services.context, "imports.write")
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file name provided")
 
     inbox_name = normalize_upload_filename(file.filename)
-    destination = unique_inbox_path(inbox_name)
+    destination = unique_inbox_path(inbox_name, import_inbox_dir=services.paths.import_inbox_dir)
 
     try:
         content = await file.read()
@@ -19267,22 +19676,26 @@ async def import_uploaded_csv(
         archive_after_success=archive_after_success,
     )
 
-    return await execute_csv_import(file_path=destination, request=request)
+    return await execute_csv_import(file_path=destination, request=request, services=services)
 
 
 @app.post("/api/import/workbench/preview", response_model=ImportWorkbenchPreviewResponse)
 async def preview_import_workbench(
+    http_request: Request,
     file: UploadFile = File(...),
     delimiter: str = Form(","),
     broker_template: str = Form("auto"),
     default_data_source: str | None = Form(None),
     default_currency: str | None = Form(None),
+    services: WorkspaceServices = Depends(get_workspace_services),
 ) -> ImportWorkbenchPreviewResponse:
+    require_csrf(http_request)
+    require_permission(services.context, "imports.write")
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file name provided")
 
     inbox_name = normalize_upload_filename(file.filename)
-    destination = unique_inbox_path(inbox_name)
+    destination = unique_inbox_path(inbox_name, import_inbox_dir=services.paths.import_inbox_dir)
 
     try:
         content = await file.read()
@@ -19299,8 +19712,8 @@ async def preview_import_workbench(
         default_currency=default_currency,
         archive_after_success=False,
     )
-    preview = await execute_csv_import(file_path=destination, request=request)
-    session = import_workbench_store.create_session(
+    preview = await execute_csv_import(file_path=destination, request=request, services=services)
+    session = services.import_workbench_store.create_session(
         file_path=destination,
         original_file_name=file.filename,
         options=request.model_dump(mode="json"),
@@ -19309,7 +19722,12 @@ async def preview_import_workbench(
     return ImportWorkbenchPreviewResponse.model_validate(session)
 
 
-def _create_import_review_items(report: dict[str, Any]) -> list[dict[str, Any]]:
+def _create_import_review_items(
+    report: dict[str, Any],
+    *,
+    inbox: RecommendationInbox | None = None,
+) -> list[dict[str, Any]]:
+    resolved_inbox = inbox or recommendation_inbox
     created: list[dict[str, Any]] = []
     draft_items = report.get("review_items") if isinstance(report.get("review_items"), list) else []
     for draft in draft_items:
@@ -19317,7 +19735,7 @@ def _create_import_review_items(report: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         try:
             created.append(
-                recommendation_inbox.create(
+                resolved_inbox.create(
                     title=str(draft.get("title") or "Asset needs review"),
                     detail=str(draft.get("detail") or "Review this imported row before relying on it."),
                     priority=str(draft.get("priority") or "medium"),
@@ -19334,11 +19752,15 @@ def _create_import_review_items(report: dict[str, Any]) -> list[dict[str, Any]]:
 @app.post("/api/import/workbench/{session_id}/apply", response_model=ImportWorkbenchApplyResponse)
 async def apply_import_workbench_session(
     session_id: str,
+    http_request: Request,
     request: ImportWorkbenchApplyRequest | None = None,
+    services: WorkspaceServices = Depends(get_workspace_services),
 ) -> ImportWorkbenchApplyResponse:
+    require_csrf(http_request)
+    require_permission(services.context, "imports.write")
     apply_request = request or ImportWorkbenchApplyRequest()
     try:
-        session = import_workbench_store.load_session(session_id)
+        session = services.import_workbench_store.load_session(session_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -19349,7 +19771,11 @@ async def apply_import_workbench_session(
         )
 
     source_file = session.get("source_file") if isinstance(session.get("source_file"), dict) else {}
-    file_path = Path(str(source_file.get("path") or ""))
+    file_path = resolve_import_path(
+        str(source_file.get("path") or ""),
+        import_inbox_dir=services.paths.import_inbox_dir,
+        workspace_root=services.paths.root,
+    )
     options = session.get("options") if isinstance(session.get("options"), dict) else {}
     import_request = CsvImportRequest(
         path=str(file_path),
@@ -19360,14 +19786,14 @@ async def apply_import_workbench_session(
         default_currency=options.get("default_currency"),
         archive_after_success=bool(apply_request.archive_after_success),
     )
-    response = await execute_csv_import(file_path=file_path, request=import_request)
-    report = import_workbench_store.create_report(
+    response = await execute_csv_import(file_path=file_path, request=import_request, services=services)
+    report = services.import_workbench_store.create_report(
         session=session,
         apply_response=response,
         operator=apply_request.operator,
     )
-    _create_import_review_items(report)
-    updated_session = import_workbench_store.update_session_after_apply(
+    _create_import_review_items(report, inbox=services.recommendation_inbox)
+    updated_session = services.import_workbench_store.update_session_after_apply(
         session_id,
         apply_response=response,
         report=report,
@@ -19380,18 +19806,26 @@ async def apply_import_workbench_session(
 
 
 @app.get("/api/import/reports", response_model=ImportReportListResponse)
-def list_import_reports(limit: int = 50) -> ImportReportListResponse:
+def list_import_reports(
+    limit: int = 50,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> ImportReportListResponse:
+    require_permission(services.context, "imports.read")
     reports = [
         ImportReportResponse.model_validate(report)
-        for report in import_workbench_store.list_reports(limit=limit)
+        for report in services.import_workbench_store.list_reports(limit=limit)
     ]
     return ImportReportListResponse(reports=reports)
 
 
 @app.get("/api/import/reports/{report_id}", response_model=ImportReportResponse)
-def get_import_report(report_id: str) -> ImportReportResponse:
+def get_import_report(
+    report_id: str,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> ImportReportResponse:
+    require_permission(services.context, "imports.read")
     try:
-        report = import_workbench_store.load_report(report_id)
+        report = services.import_workbench_store.load_report(report_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return ImportReportResponse.model_validate(report)

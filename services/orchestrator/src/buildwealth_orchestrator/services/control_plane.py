@@ -331,6 +331,7 @@ class ControlPlaneStore:
         email: str,
         password: str,
         display_name: str = "",
+        workspace_root_dir: Path | None = None,
     ) -> dict[str, Any]:
         normalized = self.normalize_email(email)
         if not normalized:
@@ -339,6 +340,10 @@ class ControlPlaneStore:
             raise ValueError("password must be at least 8 characters")
         now = utc_now_iso()
         user_id = f"usr_{uuid.uuid4().hex[:16]}"
+        organization_id = f"org_{uuid.uuid4().hex[:16]}"
+        household_workspace_id = f"ws_{uuid.uuid4().hex[:16]}_household"
+        demo_workspace_id = f"ws_{uuid.uuid4().hex[:16]}_demo"
+        root_dir = workspace_root_dir or (self.database_path.parent.parent / "workspaces")
         with self._connect() as connection:
             connection.execute(
                 """
@@ -360,12 +365,55 @@ class ControlPlaneStore:
             )
             connection.execute(
                 """
-                INSERT OR IGNORE INTO memberships (
+                INSERT INTO organizations (id, name, org_type, status, created_at, updated_at)
+                VALUES (?, ?, 'household', 'active', ?, ?)
+                """,
+                (organization_id, "My Household", now, now),
+            )
+            connection.execute(
+                """
+                INSERT INTO memberships (
                     id, user_id, organization_id, role, status, created_at, updated_at
                 )
                 VALUES (?, ?, ?, 'owner', 'active', ?, ?)
                 """,
-                (f"mem_{uuid.uuid4().hex[:16]}", user_id, DEFAULT_ORGANIZATION_ID, now, now),
+                (f"mem_{uuid.uuid4().hex[:16]}", user_id, organization_id, now, now),
+            )
+            self._upsert_workspace(
+                connection,
+                workspace_id=household_workspace_id,
+                organization_id=organization_id,
+                name="My Household",
+                workspace_type="household",
+                storage_path=root_dir / household_workspace_id,
+                now=now,
+            )
+            self._upsert_workspace(
+                connection,
+                workspace_id=demo_workspace_id,
+                organization_id=organization_id,
+                name="Demo Household",
+                workspace_type="demo",
+                storage_path=root_dir / demo_workspace_id,
+                now=now,
+            )
+            connection.execute(
+                """
+                INSERT INTO audit_events (
+                    id, actor_user_id, organization_id, workspace_id, action,
+                    target_type, target_id, outcome, metadata_json, created_at
+                )
+                VALUES (?, ?, ?, ?, 'workspace.created', 'organization', ?, 'ok', ?, ?)
+                """,
+                (
+                    f"evt_{uuid.uuid4().hex[:16]}",
+                    user_id,
+                    organization_id,
+                    household_workspace_id,
+                    organization_id,
+                    "{}",
+                    now,
+                ),
             )
         return self.get_user(user_id)
 
@@ -435,6 +483,43 @@ class ControlPlaneStore:
                 "UPDATE sessions SET revoked_at = ? WHERE session_token_hash = ?",
                 (utc_now_iso(), _token_hash(token)),
             )
+
+    def rotate_csrf_token(self, token: str) -> str:
+        if not token:
+            raise AuthenticationError("Session is not active")
+        csrf_token = secrets.token_urlsafe(32)
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE sessions
+                SET csrf_token_hash = ?, last_seen_at = ?
+                WHERE session_token_hash = ?
+                  AND revoked_at IS NULL
+                  AND expires_at > ?
+                """,
+                (_token_hash(csrf_token), utc_now_iso(), _token_hash(token), utc_now_iso()),
+            )
+        if cursor.rowcount != 1:
+            raise AuthenticationError("Session is not active")
+        return csrf_token
+
+    def verify_csrf_token(self, *, session_token: str, csrf_token: str) -> bool:
+        if not session_token or not csrf_token:
+            return False
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT csrf_token_hash
+                FROM sessions
+                WHERE session_token_hash = ?
+                  AND revoked_at IS NULL
+                  AND expires_at > ?
+                """,
+                (_token_hash(session_token), utc_now_iso()),
+            ).fetchone()
+        if row is None:
+            return False
+        return hmac.compare_digest(str(row["csrf_token_hash"] or ""), _token_hash(csrf_token))
 
     def select_workspace_for_session(self, *, token: str, workspace_id: str) -> None:
         if not token:
