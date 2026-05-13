@@ -66,7 +66,12 @@ def test_profile_route_uses_active_workspace_context(monkeypatch, tmp_path: Path
         real_update = client.put(
             "/api/financial-profile",
             headers={"x-buildwealth-workspace-id": DEFAULT_HOUSEHOLD_WORKSPACE_ID},
-            json={"notes": "real household profile"},
+            json={
+                "notes": "real household profile",
+                "household_members": [
+                    {"id": "real-self", "display_name": "Real Owner", "relationship": "self"}
+                ],
+            },
         )
         demo_update = client.put(
             "/api/financial-profile",
@@ -87,6 +92,7 @@ def test_profile_route_uses_active_workspace_context(monkeypatch, tmp_path: Path
     assert real_response.status_code == 200
     assert demo_response.status_code == 200
     assert real_response.json()["notes"] == "real household profile"
+    assert real_response.json()["household_members"][0]["display_name"] == "Real Owner"
     assert demo_response.json()["notes"] == "demo household profile"
 
 
@@ -114,3 +120,38 @@ def test_settings_route_uses_workspace_secret_store(monkeypatch, tmp_path: Path)
     assert "sk-demo-secret-9876" not in (
         tmp_path / "demo" / "settings" / "workspace_secrets.json"
     ).read_text(encoding="utf-8")
+
+
+def test_demo_workspace_reset_seeds_demo_without_touching_real_workspace(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+
+    with TestClient(main.app) as client:
+        real_update = client.put(
+            "/api/financial-profile",
+            headers={"x-buildwealth-workspace-id": DEFAULT_HOUSEHOLD_WORKSPACE_ID},
+            json={"notes": "do not touch real workspace"},
+        )
+        reset_response = client.post(
+            f"/api/workspaces/{DEMO_HOUSEHOLD_WORKSPACE_ID}/demo/reset",
+            headers={"x-buildwealth-workspace-id": DEMO_HOUSEHOLD_WORKSPACE_ID},
+        )
+        real_response = client.get(
+            "/api/financial-profile",
+            headers={"x-buildwealth-workspace-id": DEFAULT_HOUSEHOLD_WORKSPACE_ID},
+        )
+        demo_response = client.get(
+            "/api/financial-profile",
+            headers={"x-buildwealth-workspace-id": DEMO_HOUSEHOLD_WORKSPACE_ID},
+        )
+        blocked_reset = client.post(
+            f"/api/workspaces/{DEFAULT_HOUSEHOLD_WORKSPACE_ID}/demo/reset",
+            headers={"x-buildwealth-workspace-id": DEFAULT_HOUSEHOLD_WORKSPACE_ID},
+        )
+
+    assert real_update.status_code == 200
+    assert reset_response.status_code == 200
+    assert reset_response.json()["summary"]["profile_household_members"] == 3
+    assert real_response.json()["notes"] == "do not touch real workspace"
+    assert len(demo_response.json()["household_members"]) == 3
+    assert demo_response.json()["tax_profile"]["filing_status"] == "married_filing_jointly"
+    assert blocked_reset.status_code == 400

@@ -29,6 +29,7 @@ def test_demo_seed_script_creates_realistic_idempotent_household(tmp_path: Path)
 
     assert first["profile_income_items"] == 2
     assert first["profile_expense_items"] == 7
+    assert first["profile_household_members"] == 3
     assert first["portfolio_total_value"] > 500_000
     assert second["portfolio_total_value"] == first["portfolio_total_value"]
     assert second["portfolio_transactions_removed_before_seed"] > 0
@@ -38,6 +39,7 @@ def test_demo_seed_script_creates_realistic_idempotent_household(tmp_path: Path)
     assert Path(second["snapshot_file"]).exists()
 
     profile = json.loads((data_root / "profile" / "financial_profile.json").read_text())
+    assert len(profile["household_members"]) == 3
     assert profile["tax_profile"]["filing_status"] == "married_filing_jointly"
     assert profile["investment_policy"]["risk_tolerance"] == "moderate"
 
