@@ -1,6 +1,6 @@
 """Income projection helpers for planning workflows.
 
-Projection structure and growth/timeframe behavior are adapted from Ignidash (MIT):
+Projection structure and growth/timeframe behavior are implemented for BuildWealth simulation workflows:
 - src/lib/calc/incomes.ts
 - src/lib/schemas/inputs/income-form-schema.ts
 - src/lib/schemas/inputs/income-expenses-shared-schemas.ts

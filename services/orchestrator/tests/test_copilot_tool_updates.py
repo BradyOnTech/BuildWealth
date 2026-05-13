@@ -55,8 +55,8 @@ def test_copilot_prompt_includes_context_quality_guidance() -> None:
 
 def test_copilot_native_boundary_tool_descriptions() -> None:
     descriptions = "\n".join(str(tool.description) for tool in main.copilot.tools.values())
-    assert "Fetch a live portfolio snapshot from Ghostfolio" not in descriptions
-    assert "List known Ghostfolio accounts" not in descriptions
+    assert "Fetch a live portfolio snapshot from Portfolio Analysis" not in descriptions
+    assert "List known Portfolio Analysis accounts" not in descriptions
     assert "Import Reports" in descriptions
     assert "BuildWealth portfolio accounts" in descriptions
 

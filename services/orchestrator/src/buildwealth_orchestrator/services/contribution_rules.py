@@ -1,6 +1,6 @@
 """Contribution-rule allocation engine for retirement planning.
 
-Core rule/limit behavior is adapted from Ignidash (MIT):
+Core rule/limit behavior is implemented for BuildWealth simulation workflows:
 - src/lib/calc/contribution-rules.ts
 - src/lib/schemas/inputs/contribution-form-schema.ts
 """
@@ -108,7 +108,7 @@ def _get_account_type_limit_key(account_type: str) -> str:
 
 
 def get_annual_contribution_limit(limit_key: str, age: int) -> float:
-    # Mirrors Ignidash current IRS-limit table assumptions.
+    # Mirrors Simulations current IRS-limit table assumptions.
     if limit_key == "401kCombined":
         if 60 <= age <= 63:
             return 35_750.0

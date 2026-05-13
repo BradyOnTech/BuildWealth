@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://buildwealth.local/contracts/engine/v1/ignidash.scenario.request.schema.json",
-  "title": "Ignidash Scenario Request v1",
+  "$id": "https://buildwealth.local/contracts/engine/v1/plan.scenario.request.schema.json",
+  "title": "Plan Scenario Request v1",
   "type": "object",
   "additionalProperties": false,
   "required": [

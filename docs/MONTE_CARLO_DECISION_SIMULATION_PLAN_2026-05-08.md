@@ -186,7 +186,7 @@ Copilot should not invent a hidden simulation. If a fresh run is needed, it shou
 
 ## Simulation Engine Architecture
 
-### Module: Plan Simulation Engine
+### Module: Simulations
 
 Add a focused engine module:
 

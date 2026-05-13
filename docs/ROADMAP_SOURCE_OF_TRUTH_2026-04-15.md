@@ -185,17 +185,17 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - style: `ruff check src/buildwealth_orchestrator/schemas.py`
 - full: `pytest -q` (`476 passed`)
 
-### 2026-04-20 (Completed - Cross-Cutting Follow-up, Slice D Planning Sidecar Decomposition)
-1. Decomposed planning sidecar orchestration into focused internal helper boundaries in `planning_sidecar.py`:
+### 2026-04-20 (Completed - Cross-Cutting Follow-up, Slice D Planning Native Module Decomposition)
+1. Decomposed planning native module orchestration into focused internal helper boundaries in `planning_calculation_adapter.py`:
 - added `_ScenarioRunInputs` dataclass to centralize run-time input state.
-- split local execution, local-envelope updates, sidecar request execution, sidecar merge envelope assembly, and degraded fallback assembly into dedicated helper methods.
+- split local execution, local-envelope updates, native module request execution, native module merge envelope assembly, and degraded fallback assembly into dedicated helper methods.
 2. Kept public API/contracts unchanged:
-- `IgnidashScenarioService.run(...)` signature and response contract remain stable.
-- sidecar request/response schema models and metadata semantics remain unchanged.
+- `RemoteScenarioService.run(...)` signature and response contract remain stable.
+- native module request/response schema models and metadata semantics remain unchanged.
 3. Added focused regression coverage for local-path projection payload preservation:
-- expanded `tests/test_planning_sidecar.py` with local-path projection payload assertions.
+- expanded `tests/test_planning_calculation_adapter.py` with local-path projection payload assertions.
 4. Verification:
-- targeted: `pytest -q tests/test_planning_sidecar.py` (`8 passed`).
+- targeted: `pytest -q tests/test_planning_calculation_adapter.py` (`8 passed`).
 - full: `pytest -q` (`476 passed`).
 
 ### 2026-04-15 (Completed - Cross-Cutting Follow-up, Slice B Frontend Field Schema Isolation)
@@ -249,21 +249,21 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - targeted: `pytest -q tests/test_storage_reliability_smoke.py tests/test_backup_restore.py tests/test_data_protection.py` (`5 passed`).
 - full: `pytest -q` (`474 passed`).
 
-### 2026-04-15 (Completed - Cross-Cutting Follow-up, Engine Policy/Envelope Unification + Sidecar Matrix Tests)
-1. Added shared sidecar policy and degraded-envelope helper module (`engine_policy.py`) to centralize:
-- sidecar call disposition decisions (guarded/disabled/adapter-missing/use-sidecar).
+### 2026-04-15 (Completed - Cross-Cutting Follow-up, Engine Policy/Envelope Unification + Native Module Matrix Tests)
+1. Added shared native module policy and degraded-envelope helper module (`engine_policy.py`) to centralize:
+- native module call disposition decisions (guarded/disabled/adapter-missing/use-native module).
 - canonical engine status/fallback constants and warning normalization behavior.
-2. Unified benchmark/attribution/planning sidecar services on shared policy:
-- `portfolio_benchmark.py`, `portfolio_attribution.py`, and `planning_sidecar.py` now resolve sidecar eligibility through one policy entrypoint.
-- degraded response updates and sidecar-unavailable warning formatting are now shared helpers instead of ad hoc per-service logic.
-3. Expanded sidecar execution-state matrix coverage:
+2. Unified benchmark/attribution/planning native module services on shared policy:
+- `portfolio_benchmark.py`, `portfolio_attribution.py`, and `planning_calculation_adapter.py` now resolve native module eligibility through one policy entrypoint.
+- degraded response updates and native module-unavailable warning formatting are now shared helpers instead of ad hoc per-service logic.
+3. Expanded native module execution-state matrix coverage:
 - added `test_engine_policy.py` for direct policy/envelope behavior.
 - added adapter-missing path coverage in:
   - `test_portfolio_benchmark.py`
   - `test_portfolio_attribution.py`
-  - `test_planning_sidecar.py`
+  - `test_planning_calculation_adapter.py`
 4. Verification:
-- targeted: `pytest -q tests/test_engine_policy.py tests/test_portfolio_benchmark.py tests/test_portfolio_attribution.py tests/test_planning_sidecar.py` (`22 passed`).
+- targeted: `pytest -q tests/test_engine_policy.py tests/test_portfolio_benchmark.py tests/test_portfolio_attribution.py tests/test_planning_calculation_adapter.py` (`22 passed`).
 - full: `pytest -q` (`473 passed`).
 
 ### 2026-04-15 (Completed - Phase 6.0 Slice 4, Runtime Telemetry Dashboards)
@@ -362,13 +362,13 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - new schemas for request/list/detail responses (`PortfolioReviewPacket*`).
 - new settings path `PORTFOLIO_REVIEW_PACKET_DIR` (default `data/reports/portfolio_review_packets`).
 5. Source-provenance note:
-- packet packaging structure follows Ghostfolio export/activity/account-balance service patterns (`apps/api/src/app/export/export.service.ts`, `apps/api/src/app/activities/activities.service.ts`, `apps/api/src/app/account-balance/account-balance.service.ts`) while preserving BuildWealth standalone contracts.
+- packet packaging structure follows Portfolio Analysis export/activity/account-balance service patterns (`apps/api/src/app/export/export.service.ts`, `apps/api/src/app/activities/activities.service.ts`, `apps/api/src/app/account-balance/account-balance.service.ts`) while preserving BuildWealth standalone contracts.
 6. Verification:
 - targeted: `pytest -q tests/test_portfolio_review_packets.py` (`3 passed`).
 - full: `pytest -q` (`444 passed`).
 
 ### 2026-04-15 (Completed - Phase 5.1 Slice 3, Portfolio Drift/Risk Alerts)
-1. Added a dedicated portfolio risk-alert sidecar service (`portfolio_risk_alerts.py`) with Ghostfolio-style threshold semantics:
+1. Added a dedicated portfolio risk-alert native module service (`portfolio_risk_alerts.py`) with portfolio analysis threshold semantics:
 - concentration thresholds (`single_holding`, `top3`, `HHI`, `effective_positions`)
 - allocation/cluster thresholds (`account`, `asset_class`, `sector`, `region`)
 - deterministic alert states (`breach`/`watch`), severity, drift-from-threshold, and remediation guidance.
@@ -383,7 +383,7 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - new endpoints: `GET /api/portfolio/risk-policy`, `PUT /api/portfolio/risk-policy`.
 - Portfolio view now includes threshold controls and a risk-alert table with severity/state badges and drift visibility.
 5. Source-provenance note:
-- threshold-band and cluster-risk patterns adapted from Ghostfolio rule modules (`account-cluster-risk/current-investment.ts`, `asset-class-cluster-risk/equity.ts`, `regional-market-cluster-risk/north-america.ts`) while preserving BuildWealth standalone contracts.
+- threshold-band and cluster-risk patterns adapted from Portfolio Analysis rule modules (`account-cluster-risk/current-investment.ts`, `asset-class-cluster-risk/equity.ts`, `regional-market-cluster-risk/north-america.ts`) while preserving BuildWealth standalone contracts.
 6. Verification:
 - targeted: `pytest -q tests/test_portfolio_risk_alerts.py tests/test_portfolio_store.py` (`58 passed`).
 - full: `pytest -q` (`441 passed`).
@@ -402,7 +402,7 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - added `Corporate Actions` section with impact summaries for split/merger events.
 - added `Lot Audit Trail` section with account-filter-aware event rendering and lot-consumption details.
 5. Source-provenance note:
-- event-oriented activity/cashflow packaging follows Ghostfolio activity and account-balance service patterns (`apps/api/src/app/activities/activities.service.ts`, `apps/api/src/app/account-balance/account-balance.service.ts`) while preserving BuildWealth standalone contracts.
+- event-oriented activity/cashflow packaging follows Portfolio Analysis activity and account-balance service patterns (`apps/api/src/app/activities/activities.service.ts`, `apps/api/src/app/account-balance/account-balance.service.ts`) while preserving BuildWealth standalone contracts.
 6. Verification:
 - targeted: `pytest -q tests/test_portfolio_store.py tests/test_portfolio_performance.py` (`58 passed`).
 - full: `pytest -q` (`436 passed`).
@@ -420,7 +420,7 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - `CsvImportResponse` now returns `reconciliation_report` with parser confidence rollups and accepted/normalized/rejected row collections.
 - Sync & Import view now renders latest reconciliation summary and row-detail panels directly after inbox/upload runs.
 4. Source-provenance note:
-- implementation follows Ghostfolio import-service duplicate/error handling patterns (`apps/api/src/app/import/import.service.ts`) while keeping BuildWealth standalone local-store authority and contract-first API shape.
+- implementation follows Portfolio Analysis import-service duplicate/error handling patterns (`apps/api/src/app/import/import.service.ts`) while keeping BuildWealth standalone local-store authority and contract-first API shape.
 5. Added regression coverage:
 - reconciliation confidence/report semantics and duplicate rejection behavior in `test_csv_importer.py`.
 6. Verification:
@@ -440,7 +440,7 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - `test_plan_workspace.py` mode-switch cleanup assertions.
 - `test_withdrawal_strategy_compare.py` simulation metadata assertions on compare rows.
 5. Source-provenance note:
-- hardening preserves the Ignidash-style simulation-mode semantics already adopted in Phase 5.0 Slice 5 while keeping BuildWealth contract/UI behavior first-class.
+- hardening preserves the simulation simulation-mode semantics already adopted in Phase 5.0 Slice 5 while keeping BuildWealth contract/UI behavior first-class.
 6. Verification:
 - targeted suite: `pytest -q tests/test_plan_workspace.py tests/test_simulation_delta.py tests/test_withdrawal_strategy_compare.py` (`21 passed`).
 - full suite: `pytest -q` (`432 passed`).
@@ -457,13 +457,13 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - diff and branch responses now include `simulation_delta` payloads alongside scenario/Monte-Carlo deltas.
 - withdrawal strategy compare rows now include simulation mode/variant context.
 - plan editor now includes simulation selectors in settings + diff, numeric controls for historical start year/seed, and simulation sections in diff/branch/compare output text.
-4. Sidecar/adapter parity updates:
-- planning sidecar request metadata now includes simulation fields.
-- sidecar-merged planning responses preserve local simulation summaries for consistent downstream compare/reporting behavior.
+4. Native Module/adapter parity updates:
+- planning native module request metadata now includes simulation fields.
+- native module-merged planning responses preserve local simulation summaries for consistent downstream compare/reporting behavior.
 5. Source-provenance note:
-- implementation follows Ignidash simulation/returns-provider patterns and historical return dataset structure (`simulation-engine.ts`, `returns-providers/*`, `historical-data/nyu-returns.ts`).
+- implementation follows Simulations simulation/returns-provider patterns and historical return dataset structure (`simulation-engine.ts`, `returns-providers/*`, `historical-data/nyu-returns.ts`).
 6. Verification:
-- targeted suite: `pytest -q tests/test_scenario_engine.py tests/test_plan_assumption_sets.py tests/test_plan_workspace.py tests/test_planning_sidecar.py tests/test_copilot_tool_updates.py` (`70 passed`).
+- targeted suite: `pytest -q tests/test_scenario_engine.py tests/test_plan_assumption_sets.py tests/test_plan_workspace.py tests/test_planning_calculation_adapter.py tests/test_copilot_tool_updates.py` (`70 passed`).
 - full suite: `pytest -q` (`427 passed`).
 
 ### 2026-04-15 (Completed - Phase 5.0 Slice 4, Household/Couple Planning Mode)
@@ -481,11 +481,11 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - settings and scenario-diff editors include household mode + filing status selectors and partner/shared-goal numeric controls.
 - diff/branch output rendering now includes household context sections and summary-line transitions (`mode`/`filing` base->candidate).
 5. Source-provenance note:
-- approach follows Ignidash-style assumption layering (explicit scenario assumption overlays) and tax-filing semantics from Ignidash tax model structure while keeping BuildWealth API/UI contracts first-class.
+- approach follows simulation assumption layering (explicit scenario assumption overlays) and tax-filing semantics from Simulations tax model structure while keeping BuildWealth API/UI contracts first-class.
 6. Added regression coverage:
 - household projection adjustments and filing-status defaults (`test_household_planning.py`)
 - plan settings household/filing validation (`test_plan_workspace.py`)
-- sidecar metadata forwarding + Copilot settings-contract coverage remain in place (`test_planning_sidecar.py`, `test_copilot_tool_updates.py`).
+- native module metadata forwarding + Copilot settings-contract coverage remain in place (`test_planning_calculation_adapter.py`, `test_copilot_tool_updates.py`).
 7. Verification: `pytest -q services/orchestrator/tests` passes (`424 passed`).
 
 ### 2026-04-15 (Completed - Phase 5.0 Slice 3, Configurable Drawdown Ordering)
@@ -497,19 +497,19 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - added `drawdown_order` to scenario request and plan settings/timeline schemas.
 - persisted and sanitized drawdown order in Plan Workspace settings and retirement timeline payloads.
 - included drawdown-order context in plan markdown/context summaries.
-3. Wired drawdown-order execution through API, sidecar, and Copilot surfaces:
+3. Wired drawdown-order execution through API, native module, and Copilot surfaces:
 - threaded drawdown order through plan scenario run paths (plan scenarios, diff, strategy compare, branch compute, and context baseline run).
-- added sidecar metadata forwarding for drawdown order.
+- added native module metadata forwarding for drawdown order.
 - expanded Copilot tool contract for `run_planning_scenarios` to accept `drawdown_order`.
 4. Extended Plan Workspace UI:
 - added retirement timeline drawdown-order input and editor wiring for load/save/disabled states.
 5. Source-provenance note:
-- decumulation-order override structure follows Ignidash simulation-engine style assumption layering (explicit assumption override on top of default strategy behavior).
+- decumulation-order override structure follows Simulations simulation-engine style assumption layering (explicit assumption override on top of default strategy behavior).
 - BuildWealth-specific schema/API/UI contracts remain first-class and are not a runtime fork of upstream apps.
 6. Added regression coverage:
 - scenario-engine drawdown-order override behavior (`test_scenario_engine.py`)
 - plan workspace settings/timeline drawdown-order persistence (`test_plan_workspace.py`)
-- sidecar metadata forwarding (`test_planning_sidecar.py`)
+- native module metadata forwarding (`test_planning_calculation_adapter.py`)
 - Copilot planning tool contract field coverage (`test_copilot_tool_updates.py`).
 7. Verification: `pytest -q services/orchestrator/tests` passes (`420 passed`).
 
@@ -521,18 +521,18 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 2. Implemented Roth conversion planning controls and simulation behavior:
 - new plan/scenario controls: `roth_conversion_annual_amount_usd`, `roth_conversion_start_age`, `roth_conversion_end_age`
 - scenario engine now executes yearly tax-deferred -> Roth transfers in-window, adds conversion dollars to ordinary taxable income, and records conversion totals in assumptions/timeline/account outputs
-- conversion metadata now flows through API and Copilot planning-tool contracts, including sidecar metadata payloads.
+- conversion metadata now flows through API and Copilot planning-tool contracts, including native module metadata payloads.
 3. Extended planning UX and compare output visibility:
 - Plan Workspace settings now includes Roth conversion controls for both saved settings and diff overlays
 - withdrawal-strategy comparison output now surfaces total Roth conversions by strategy row.
 4. Source-provenance note:
-- tax/simulation extension follows Ignidash tax and simulation-engine structure patterns (`src/lib/calc/taxes.ts`, `src/lib/calc/simulation-engine.ts`)
+- tax/simulation extension follows Simulations tax and simulation-engine structure patterns (`src/lib/calc/taxes.ts`, `src/lib/calc/simulation-engine.ts`)
 - conversion control wiring remains within BuildWealth contracts and does not fork/embed upstream app runtime.
 5. Added regression coverage:
 - scenario conversion behavior (`test_scenario_engine.py`)
 - assumption set parsing/application updates (`test_plan_assumption_sets.py`)
 - plan workspace settings/assumption persistence/validation (`test_plan_workspace.py`)
-- sidecar metadata forwarding (`test_planning_sidecar.py`)
+- native module metadata forwarding (`test_planning_calculation_adapter.py`)
 - Copilot planning tool contract updates (`test_copilot_tool_updates.py`).
 6. Verification: `pytest -q services/orchestrator/tests` passes (`419 passed`).
 
@@ -550,8 +550,8 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - plan trend automatically refreshes after closure-summary artifact generation
 - plan detail render path now lazy-loads plan-scoped trend when cache is stale or missing.
 4. Source-provenance note:
-- trend/calibration window packaging reuses the previously added closure analytics model (Ignidash-style quality windows)
-- actionability and explainability surfaces remain aligned with Ghostfolio-style transparent dashboard conventions.
+- trend/calibration window packaging reuses the previously added closure analytics model (simulation quality windows)
+- actionability and explainability surfaces remain aligned with portfolio analysis transparent dashboard conventions.
 5. Verification: `pytest -q services/orchestrator/tests` passes (`413 passed`).
 
 ### 2026-04-14 (Completed - Phase 4.2 Follow-up, Plan Workspace Closure-Analytics Artifacts)
@@ -567,8 +567,8 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - added “Closure Calibration Summary” panel in plan editor
 - added one-click “Generate Artifact” control that writes artifact + decision log and renders calibration stats inline.
 5. Source-provenance note:
-- summary/calibration packaging follows Ignidash-style analyzer segment reporting
-- artifact and audit trail behavior remains aligned with Ghostfolio-style explainability and review traceability conventions.
+- summary/calibration packaging follows simulation analyzer segment reporting
+- artifact and audit trail behavior remains aligned with portfolio analysis explainability and review traceability conventions.
 6. Added regression coverage:
 - plan-scoped filtering and summary artifact generation tests in `test_recommendation_closure_analytics.py`
 - Copilot contract/invocation coverage for new plan-closure-summary tool in `test_copilot_tool_updates.py`.
@@ -588,8 +588,8 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - now surfaces calibration-by-type and calibration-by-source quality stats
 - adds calibration window trend card and calibration bias in the analytics summary line.
 5. Source-provenance note:
-- calibration packaging follows Ignidash-style analyzer segment/quality reporting patterns
-- actionable explainability remains aligned with Ghostfolio-style transparent metric surfaces.
+- calibration packaging follows simulation analyzer segment/quality reporting patterns
+- actionable explainability remains aligned with portfolio analysis transparent metric surfaces.
 6. Added regression coverage:
 - extended `test_recommendation_closure_analytics.py` assertions for calibration summary, segmented calibration rows, and calibration windows.
 7. Verification: `pytest -q services/orchestrator/tests` passes (`408 passed`).
@@ -611,8 +611,8 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - Today Dashboard now has a dedicated “Top 3 Next Actions” card with rank/score/type/source visibility and one-click inbox navigation
 - Plan Workspace now renders plan-scoped “Top 3 Next Actions” with one-click inbox navigation.
 6. Source-provenance note:
-- ranking and score-factor transparency continues to reuse Ignidash-style analyzer packaging patterns already in recommendation scoring
-- action prioritization display remains aligned with Ghostfolio-inspired “actionable risk/explainability” presentation conventions used elsewhere in dashboard surfaces.
+- ranking and score-factor transparency continues to reuse simulation analyzer packaging patterns already in recommendation scoring
+- action prioritization display remains aligned with portfolio analysis “actionable risk/explainability” presentation conventions used elsewhere in dashboard surfaces.
 7. Added regression coverage:
 - plan-scoped next-action selection and plan-detail enrichment tests in `test_recommendation_ranking_integration.py`.
 8. Verification: `pytest -q tests/test_recommendation_ranking_integration.py tests/test_today_dashboard.py tests/test_recommendation_actions.py tests/test_copilot_tool_updates.py tests/test_buildwealth_context.py` passes (`49 passed`).
@@ -636,8 +636,8 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - closed recommendations now surface expected outcomes, realized outcomes, and expected-vs-realized gap details
 - added one-click `Log Outcome` action for applied/rejected rows.
 6. Source-provenance note:
-- outcome packaging follows Ignidash-style analyzer/calibration summary patterns
-- closure artifact persistence remains consistent with Ghostfolio-style auditability and decision traceability.
+- outcome packaging follows simulation analyzer/calibration summary patterns
+- closure artifact persistence remains consistent with portfolio analysis auditability and decision traceability.
 7. Added regression coverage:
 - outcome update and analytics behavior in `test_recommendation_closure_analytics.py`
 - updated closure expectations in `test_recommendation_actions.py`
@@ -660,8 +660,8 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - confidence scoring now rewards satisfied dossier citation coverage and penalizes missing required coverage
 - Inbox recommendation detail now displays citation status with cited/missing symbols.
 6. Source-provenance note:
-- analyzer-style evidence quality packaging remains aligned with Ignidash scoring/reporting patterns
-- artifact-centric research traceability stays consistent with Ghostfolio-style structured data provenance expectations.
+- analyzer-style evidence quality packaging remains aligned with Simulations scoring/reporting patterns
+- artifact-centric research traceability stays consistent with portfolio analysis structured data provenance expectations.
 7. Added regression coverage:
 - dossier lookup and citation-enforcement tests in `test_recommendation_evidence_citations.py`
 - Copilot tool contract/invocation coverage in `test_copilot_tool_updates.py`
@@ -687,8 +687,8 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - ranking/sort behavior tests in `test_portfolio_watchlist.py`
 - tool registry/contract/invocation coverage in `test_copilot_tool_updates.py`.
 6. Source-provenance note:
-- score packaging and factor transparency mirrors Ignidash analyzer-style output conventions
-- watchlist signal framing remains aligned with Ghostfolio watchlist/market-condition presentation patterns.
+- score packaging and factor transparency mirrors Simulations analyzer-style output conventions
+- watchlist signal framing remains aligned with Portfolio Analysis watchlist/market-condition presentation patterns.
 7. Verification: `pytest -q services/orchestrator/tests` passes (`393 passed`).
 
 ### 2026-04-14 (Completed - Phase 4.2 Slice 2, Pre-Apply Recommendation Preview)
@@ -733,7 +733,7 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - main integration for ranked/default sorting and score-bearing route output (`test_recommendation_ranking_integration.py`)
 - Copilot tool contract update (`test_copilot_tool_updates.py`).
 7. Source-provenance note:
-- analyzer-style weighted summary packaging aligns with Ignidash `src/lib/calc/data-analyzers/*` output conventions.
+- analyzer-style weighted summary packaging aligns with Simulations `src/lib/calc/data-analyzers/*` output conventions.
 8. Verification: `pytest -q services/orchestrator/tests` passes.
 
 ### 2026-04-14 (Completed - Phase 4.1 Slice 2, Research Dossier Artifacts)
@@ -755,7 +755,7 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - dossier shape/freshness/portfolio-fit tests in `test_research_service.py`
 - tool contract and invocation tests in `test_copilot_tool_updates.py`.
 6. Source-provenance note:
-- output packaging follows Ignidash-style analyzer summary structure (`src/lib/calc/data-analyzers/*`) and uses Ghostfolio-aligned symbol normalization conventions already in active BuildWealth research flows.
+- output packaging follows simulation analyzer summary structure (`src/lib/calc/data-analyzers/*`) and uses Portfolio Analysis-aligned symbol normalization conventions already in active BuildWealth research flows.
 7. Verification: `pytest -q services/orchestrator/tests` passes (`376 passed`).
 
 ### 2026-04-14 (Completed - Phase 4.1 Slice 1, Research Compare Vertical Slice)
@@ -780,20 +780,20 @@ Build a production-grade all-in-one financial command center that unifies:
 
 ## Architecture Invariants (Do Not Break)
 1. Python orchestrator remains system of record and product entrypoint.
-2. Sidecars remain optional, contract-bound compute adapters (no full-app runtime dependency).
-3. Degraded mode remains explicit and safe when sidecars/providers are unavailable.
+2. Native modules remain optional, contract-bound compute adapters (no full-app runtime dependency).
+3. Degraded mode remains explicit and safe when native modules/providers are unavailable.
 4. Vertical slices ship with API + UI + tests together.
 
 ## Upstream Review Summary (Completed 2026-04-14)
 
-### Ghostfolio repository areas reviewed
+### Portfolio Analysis repository areas reviewed
 - `apps/api/src/app/portfolio/{calculator,portfolio.service.ts,rules.service.ts}`
 - `apps/api/src/app/import/*`
 - `apps/api/src/app/{activities,account-balance,symbol,export}`
 - `apps/api/src/services/data-provider/*`
 - `apps/client/src/app/components/{portfolio-performance,benchmark-comparator,home-watchlist}`
 
-### Ignidash repository areas reviewed
+### Simulations repository areas reviewed
 - `src/lib/calc/{simulation-engine,portfolio,account,taxes,returns,contribution-rules}`
 - `src/lib/calc/returns-providers/*`
 - `src/lib/calc/data-analyzers/*`
@@ -801,20 +801,20 @@ Build a production-grade all-in-one financial command center that unifies:
 - `convex/{plans,timeline,tax_settings,templates,validators}`
 
 ### Feature signals from upstream still relevant to BuildWealth
-1. Ghostfolio patterns to leverage further:
+1. Portfolio Analysis patterns to leverage further:
 - richer symbol search and metadata UX flow (`symbol` module patterns)
 - account-balance detail views and portfolio rules/tagging patterns
 - import/export and reconciliation ergonomics
 - benchmark/performance visualization polish patterns
 
-2. Ignidash patterns to leverage further:
+2. Simulations patterns to leverage further:
 - simulation modes: fixed, stochastic, historical backtest, Monte Carlo variants
 - analyzer/reporting layer for multi-simulation comparison
 - more complete retirement/tax scenario controls (drawdown order, advanced decumulation)
 - stronger plan/template/schema lifecycle controls
 
 ## Licensing and Compliance Gate (Mandatory)
-As of 2026-04-14, Ghostfolio and Ignidash GitHub default branches report AGPL-3.0 licenses.
+As of 2026-04-14, portfolio and planning modules GitHub default branches report AGPL-3.0 licenses.
 
 Actions required before further direct code adaptation from current upstream revisions:
 1. Run explicit legal review for AGPL compatibility with BuildWealth distribution model.
@@ -833,7 +833,7 @@ Until legal review is complete, prioritize:
 1. Portfolio foundation: multi-account ledger, lot-aware holdings, configurable cost basis, total return decomposition, cash ledger, manual prices, custom assets, FX + FX history, historical backfill, watchlist, broker template import coverage, benchmark/attribution adapters.
 2. Planning foundation: tax engine baseline, contribution rules, income/expense/debt/physical-asset projections, timeline events, tax-aware scenario core, withdrawal strategies, Social Security, RMD, assumption sets, scenario branching, branch templates, projection visuals.
 3. BuildWealth differentiator foundation: unified context quality/coverage metadata, cache observability/reset controls, decision packets, recommendation closure metadata, research-to-planning bridge with persisted plan artifacts.
-4. UX and operations foundation: guided planners/editors, standalone-first operations docs, migration/compatibility docs, sidecar contract hardening.
+4. UX and operations foundation: guided planners/editors, standalone-first operations docs, migration/compatibility docs, native module contract hardening.
 
 ## Remaining Strategic Build (What Is Left)
 The highest-leverage missing work is no longer raw parity checkboxes. It is decision-grade integration quality across portfolio, planning, research, and Copilot loops.
@@ -899,8 +899,8 @@ Slices:
 4. Add Copilot tools for compare + dossier retrieval and enforce evidence citations in recommendations.
 
 Upstream reuse targets:
-1. Ghostfolio symbol/data-provider patterns for normalized market metadata retrieval.
-2. Ignidash analyzer output structuring patterns for multi-scenario comparison style summaries.
+1. Portfolio Analysis symbol/data-provider patterns for normalized market metadata retrieval.
+2. Simulations analyzer output structuring patterns for multi-scenario comparison style summaries.
 
 Definition of done:
 1. Research compare flows are accessible via API, UI, and Copilot.
@@ -917,8 +917,8 @@ Slices:
 4. Add "Top 3 Next Actions" card in dashboard and plans workspace.
 
 Upstream reuse targets:
-1. Ignidash simulation/compare patterns for expected delta calculation.
-2. Ghostfolio portfolio risk/presentation conventions for action explainability.
+1. Simulations simulation/compare patterns for expected delta calculation.
+2. Portfolio Analysis portfolio risk/presentation conventions for action explainability.
 
 Definition of done:
 1. Recommendation inbox defaults to ranked actions with transparent scores.
@@ -936,8 +936,8 @@ Slices:
 5. Add simulation mode selector (fixed/stochastic/historical/Monte Carlo variants) and comparison outputs.
 
 Upstream reuse targets:
-1. Ignidash `returns-providers/*` and `simulation-engine.ts` patterns for simulation modes.
-2. Ignidash `taxes.ts` structures for extended tax-processing design.
+1. Simulations `returns-providers/*` and `simulation-engine.ts` patterns for simulation modes.
+2. Simulations `taxes.ts` structures for extended tax-processing design.
 
 Definition of done:
 1. New tax and decumulation controls are editable in plan workspace and reflected in outputs.
@@ -954,8 +954,8 @@ Slices:
 4. Add export/report package endpoints for periodic review packets.
 
 Upstream reuse targets:
-1. Ghostfolio import/export and activities/account-balance module patterns.
-2. Ghostfolio calculator and rules patterns for risk and classification logic.
+1. Portfolio Analysis import/export and activities/account-balance module patterns.
+2. Portfolio Analysis calculator and rules patterns for risk and classification logic.
 
 Definition of done:
 1. Import UX produces deterministic reconciliation output for every run.
@@ -990,11 +990,11 @@ Use this scoring when selecting the next slice:
 3. Extend timeline-default drift harness to cover any future additional mirror files (beyond `web/lib/timeline_defaults.js`) if timeline vocab is reused in new frontend modules.
 
 ## Cross-Cutting Engineering Follow-Up
-1. Post-refactor helper indirection and intentional sidecar complexity are documented in [`docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`](./CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md).
+1. Post-refactor helper indirection and intentional native module complexity are documented in [`docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`](./CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md).
 2. Execute those cleanup slices when they reduce operational risk or readability without displacing higher-value product slices.
 
 ## Guardrails
-1. Do not fork or embed full Ghostfolio/Ignidash apps into BuildWealth runtime path.
+1. Do not fork or embed full portfolio and planning modules apps into BuildWealth runtime path.
 2. Reuse upstream logic selectively where it improves correctness and speed.
 3. Keep BuildWealth UX/API contracts stable while internals evolve.
 4. Ship each slice with tests and operator-facing observability.
@@ -1015,5 +1015,5 @@ Use this scoring when selecting the next slice:
 
 4. Product reliability:
 - full test suite remains green on each slice.
-- no silent degraded sidecar failures.
+- no silent degraded native module failures.
 - backup/restore validation passes in CI or scripted local checks.

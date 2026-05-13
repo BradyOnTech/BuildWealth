@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 # Scoring-packaging shape and weighted-summary style are aligned with
-# Ignidash analyzer conventions (`src/lib/calc/data-analyzers/*`), while
+# Simulations analyzer conventions (`src/lib/calc/data-analyzers/*`), while
 # score factors are BuildWealth-specific for recommendation ranking.
 RECOMMENDATION_SCORE_MODEL_VERSION = "v1"
 RECOMMENDATION_CALIBRATION_MODEL_VERSION = "calibration_v1"

@@ -331,12 +331,14 @@ class FinancialCopilot:
         conversation_id: str | None,
         contextual_brief: str,
         context_trace: dict[str, Any] | None = None,
+        conversation_store: ConversationStore | None = None,
     ) -> dict[str, Any]:
-        conversation = self.conversation_store.get_or_create(
+        store = conversation_store or self.conversation_store
+        conversation = store.get_or_create(
             conversation_id=conversation_id,
             first_user_message=question,
         )
-        self.conversation_store.append_message(
+        store.append_message(
             conversation,
             role="user",
             content=question,
@@ -425,7 +427,7 @@ class FinancialCopilot:
                 "I can still use direct endpoints for sync/import/planning, but conversational reasoning is limited."
             )
 
-        self.conversation_store.append_message(
+        store.append_message(
             conversation,
             role="assistant",
             content=answer,
@@ -435,7 +437,7 @@ class FinancialCopilot:
                 "context_trace": context_trace or {},
             },
         )
-        self.conversation_store.save(conversation)
+        store.save(conversation)
 
         return {
             "conversation_id": conversation["id"],

@@ -24,7 +24,7 @@ Portfolio analytics, import review, asset maintenance, and plan simulation run t
 ```
 
 2. Review `infra/env/orchestrator.env`.
-- Sidecars are disabled by default.
+- Optional external calculators are disabled by default.
 - Configure OpenAI/OpenBB as needed.
 
 3. Start BuildWealth:
@@ -148,7 +148,7 @@ make down
 - [Future State Product Plan (active, 2026-04-26)](./docs/FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
 - [Git Integration Design](./docs/GIT_INTEGRATION_DESIGN.md)
 - [Git Integration Implementation Plan](./docs/GIT_INTEGRATION_IMPLEMENTATION_PLAN.md)
-- [Sidecar Adapter Architecture](./docs/SIDECAR_ADAPTER_ARCHITECTURE.md)
+- [Native Capability Architecture](./docs/NATIVE_CAPABILITY_ARCHITECTURE.md)
 - [Standalone Operations](./docs/OPERATIONS_STANDALONE.md)
 - [Migration and Compatibility](./docs/MIGRATION_AND_COMPATIBILITY.md)
 - [Standalone Build Plan (historical)](./docs/STANDALONE_BUILD_PLAN.md)

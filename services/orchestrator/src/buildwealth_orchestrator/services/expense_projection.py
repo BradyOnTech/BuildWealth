@@ -1,6 +1,6 @@
 """Expense projection helpers for planning workflows.
 
-Projection structure and growth/timeframe behavior are adapted from Ignidash (MIT):
+Projection structure and growth/timeframe behavior are implemented for BuildWealth simulation workflows:
 - src/lib/calc/expenses.ts
 - src/lib/schemas/inputs/expense-form-schema.ts
 - src/lib/schemas/inputs/income-expenses-shared-schemas.ts

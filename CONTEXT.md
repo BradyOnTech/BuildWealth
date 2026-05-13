@@ -14,7 +14,7 @@ _Avoid_: Memory, vector store, prompt context
 
 **BuildWealth-Native Capability**:
 A capability whose data, calculations, UI, UX, Copilot access, review flow, and audit trail are owned and expressed as part of BuildWealth.
-_Avoid_: Ghostfolio feature, Ignidash feature, sidecar feature, external app parity
+_Avoid_: Portfolio feature, Plan feature, adapter feature, external product parity
 
 **v2 Product Surface**:
 The canonical BuildWealth user interface for all current and future user workflows.
@@ -32,9 +32,9 @@ _Avoid_: Feature migration, screen migration, parity checklist
 The workflow coverage and approval threshold that must be met before v1/classic UI is removed.
 _Avoid_: Automatic cleanup, incidental deletion, old UI deprecation
 
-**Portfolio Analytics Engine**:
+**Portfolio Analysis**:
 The BuildWealth-native capability that explains portfolio performance, benchmarks, attribution, allocation, risk, and trade impact.
-_Avoid_: Ghostfolio sidecar, benchmark sidecar, attribution sidecar
+_Avoid_: Portfolio adapter, benchmark adapter, attribution adapter
 
 **Portfolio Audit**:
 The BuildWealth-native evidence trail that explains changes to, or interpretation of, portfolio financial state.
@@ -42,7 +42,7 @@ _Avoid_: System log, app activity feed, git history
 
 **Import Workbench**:
 The BuildWealth-native capability that previews, reconciles, applies, and audits imported financial data before it becomes portfolio state.
-_Avoid_: Ghostfolio import, external import flow, CSV uploader
+_Avoid_: Portfolio import, external import flow, CSV uploader
 
 **Import Report**:
 A durable source-evidence record that explains how one import preview and apply operation affected Canonical State.
@@ -50,15 +50,15 @@ _Avoid_: Import state, transaction ledger, CSV result
 
 **Asset Registry**:
 The BuildWealth-native capability that resolves, classifies, enriches, prices, and audits investable assets used by Portfolio, Plan, Research, and Copilot.
-_Avoid_: Symbol metadata sidecar, Ghostfolio symbol search, ticker cache
+_Avoid_: Symbol metadata adapter, Portfolio symbol search, ticker cache
 
 **Asset Review Item**:
 A review item for an unresolved, ambiguous, weakly classified, or manually overridden asset that could affect portfolio interpretation or plan quality.
 _Avoid_: Broken ticker, bad symbol, metadata warning
 
-**Plan Simulation Engine**:
+**Simulations**:
 The BuildWealth-native capability that runs projections, scenario comparisons, Monte Carlo simulations, historical backtests, and failure-mode analysis for financial plans.
-_Avoid_: Ignidash sidecar, planning sidecar, scenario sidecar
+_Avoid_: Plan adapter, planning adapter, scenario adapter
 
 **Scenario**:
 A named set of assumptions used to compare possible financial outcomes.
@@ -95,7 +95,7 @@ _Avoid_: Probability label, AI confidence, guarantee
 
 **Plan Strategy Lab**:
 The BuildWealth-native capability that compares contribution ordering, withdrawal strategies, retirement tax controls, and other plan-improvement levers.
-_Avoid_: Ignidash strategy flow, tax sidecar, withdrawal sidecar
+_Avoid_: Plan strategy flow, tax adapter, withdrawal adapter
 
 **Plan Lever**:
 A reviewable change that can be simulated against the active plan before the user decides whether to adopt it.
@@ -251,15 +251,15 @@ _Avoid_: Context Registry, live index
 - **Workflow Replacement** is the migration standard from v1/classic to the **v2 Product Surface**; old controls move only when they support a current user job or better outcome.
 - The **Classic Removal Gate** requires v2 end-to-end coverage for import/review, portfolio maintenance, portfolio review, portfolio history, plan workspace, Inbox, Profile, Data & Recovery, and Copilot workflows.
 - Passing the **Classic Removal Gate** requires explicit product-owner approval; v1/classic should not be removed only because implementation tasks appear complete.
-- The **Portfolio Analytics Engine**, **Import Workbench**, and **Asset Registry** belong to the Portfolio and Data & Tools workflows.
+- The **Portfolio Analysis**, **Import Workbench**, and **Asset Registry** belong to the Portfolio and Data & Tools workflows.
 - The **Import Workbench** owns ingestion, mapping, reconciliation, duplicate review, account matching, unknown asset resolution, apply preview, and import reports; Portfolio owns the resulting transactions, accounts, assets, holdings, performance, risk, and audit interpretation after apply.
 - An **Import Report** is **Source Evidence** for an import operation, while the resulting transactions, accounts, assets, and holdings belong in **Canonical State**.
 - An unresolved import asset may become a limited asset record only with visible uncertainty; if the uncertainty could affect portfolio interpretation or planning quality, BuildWealth creates or updates an **Asset Review Item**.
-- The **Portfolio Analytics Engine** may value a limited asset when price and quantity are usable, but allocation, concentration, sector, region, risk, and plan outputs must show **Needs Review** where missing classification changes interpretation.
+- The **Portfolio Analysis** may value a limited asset when price and quantity are usable, but allocation, concentration, sector, region, risk, and plan outputs must show **Needs Review** where missing classification changes interpretation.
 - **Portfolio Audit** contains events that change or explain portfolio financial state; Data & Recovery contains system operations needed to trust, restore, or operate the app.
 - **Portfolio Audit** includes import reports, transaction changes, account changes, asset resolutions, manual price changes, FX overrides, cost-basis method changes, lot rebuilds, corporate actions, review packets, and saved trade simulations.
 - **Portfolio Audit** excludes ordinary view loads, generic sync status, git checkpoints, provider settings, and health checks unless they directly changed or explain portfolio state.
-- The **Plan Simulation Engine** and **Plan Strategy Lab** belong to the Plan workflow and may create evidence for Inbox recommendations and Plan decisions.
+- The **Simulations** and **Plan Strategy Lab** belong to the Plan workflow and may create evidence for Inbox recommendations and Plan decisions.
 - A plan is the user's working financial thesis; a **Scenario** defines comparable assumptions; a **Branch** is a scenario created from a life event, template, or focused what-if change; a simulation tests a plan, scenario, or branch; a **Saved Simulation** preserves the result; a **Plan Decision** decides whether anything changes in the real plan.
 - A **Simulation Run** should have a stable run id and lifecycle status even when the first implementation completes synchronously.
 - **Simulation Run** statuses are `queued`, `running`, `completed`, `failed`, and `cancelled`.
@@ -364,10 +364,10 @@ _Avoid_: Context Registry, live index
 - "feature flag" implied a parallel context mode. Resolved: **Context Intelligence** should become the **Default Context Path** once implemented.
 - "context conflict" could be transient or persistent. Resolved: persistent material conflicts create **Conflict Review Items** in Inbox.
 - "dismiss conflict" would degrade future advice by hiding uncertainty. Resolved: **Conflict Resolution** requires source-level confirmation, source update, candidate rejection, or a scoped intentional exception. Deferral is allowed but does not unblock **Decision-Grade Advice**.
-- "sidecar" was used to describe both temporary implementation scaffolding and long-term product architecture. Resolved: the product goal is **BuildWealth-Native Capability**; external app names should not appear in user workflows, product labels, default runtime paths, or future module boundaries.
+- "adapter" was used to describe both temporary implementation scaffolding and long-term product architecture. Resolved: the product goal is **BuildWealth-Native Capability**; external app names should not appear in user workflows, product labels, default runtime paths, or future module boundaries.
 - "classic UI" was used as an acceptable place for unfinished workflows. Resolved: use **v2 Product Surface** as the canonical UI target; classic/v1 is migration scaffolding only.
 - "v2 migration" could imply copying v1 screens. Resolved: use **Workflow Replacement**, where v2 replaces user jobs and outcomes rather than cloning every old feature.
-- External app names were used as shorthand for product areas. Resolved: use **Portfolio Analytics Engine**, **Import Workbench**, **Asset Registry**, **Plan Simulation Engine**, and **Plan Strategy Lab** as canonical BuildWealth terms.
+- External product names were used as shorthand for product areas. Resolved: use **Portfolio Analysis**, **Import Workbench**, **Asset Registry**, **Simulations**, and **Plan Strategy Lab** as canonical BuildWealth terms.
 - "same or better" could mean cloning features, screens, or workflows. Resolved: use **Outcome Parity** as the standard, with feature-level parity only when it directly improves decision quality.
 - "unknown ticker" could mean an import error, an asset metadata gap, or a planning blocker. Resolved: use **Asset Review Item** when unresolved or weak asset identity/classification could affect interpretation.
 - "success probability" was too narrow for retirement planning. Resolved: use **Plan Resilience** for user-facing simulation quality, with funding reliability, fragile years, liquidity gaps, account depletion, and goal funding risk as supporting signals.

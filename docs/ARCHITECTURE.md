@@ -2,7 +2,7 @@
 
 **Status**
 
-Active architecture summary. This document supersedes earlier sidecar-first architecture language.
+Active architecture summary. This document supersedes earlier native module-first architecture language.
 
 **Overview**
 
@@ -38,9 +38,9 @@ The long-term architecture is BuildWealth-native capability ownership. Portfolio
 
 - **Import Workbench:** import preview, mapping, reconciliation, duplicate review, account matching, unknown asset resolution, apply, and Import Reports
 - **Asset Registry:** asset resolution, classification, metadata quality, manual overrides, price/FX support, and Asset Review Items
-- **Portfolio Analytics Engine:** portfolio performance, benchmark, attribution, allocation, risk, fit review, and trade impact
+- **Portfolio Analysis:** portfolio performance, benchmark, attribution, allocation, risk, fit review, and trade impact
 - **Portfolio Audit:** import reports, transaction changes, account changes, asset resolutions, manual price/FX overrides, lot/cost-basis changes, corporate actions, review packets, and saved trade simulations
-- **Plan Simulation Engine:** scenarios, branches, simulations, Saved Simulations, Plan Strength, failure-mode analysis, and historical/Monte Carlo paths
+- **Simulations:** scenarios, branches, simulations, Saved Simulations, Plan Strength, failure-mode analysis, and historical/Monte Carlo paths
 - **Plan Strategy Lab:** contribution ordering, withdrawal strategy comparison, retirement tax controls, and Plan Lever comparison
 - **Context Intelligence:** governed context capture, retrieval, conflict review, and context traces for Copilot and recommendations
 
@@ -64,14 +64,14 @@ Providers enrich or operate BuildWealth-owned workflows. They do not own user-fa
 
 **Legacy And Migration Notes**
 
-Earlier architecture used Ghostfolio/Ignidash sidecar language for targeted reuse. That direction is superseded by ADR 0003. External app references are historical scaffolding and should be removed from runtime paths, UI labels, module names, recommendation text, Copilot answers, and default operations.
+Earlier architecture used portfolio and planning modules native module language for targeted reuse. That direction is superseded by ADR 0003. External app references are historical scaffolding and should be removed from runtime paths, UI labels, module names, recommendation text, Copilot answers, and default operations.
 
 Classic/v1 UI remains temporary migration scaffolding. It should be removed only after the Classic Removal Gate passes and the product owner explicitly approves removal.
 
 See:
 
-- [ADR 0003: BuildWealth-native capabilities replace upstream sidecars](./adr/0003-buildwealth-native-capabilities-replace-upstream-sidecars.md)
+- [ADR 0003: BuildWealth-native capabilities replace native capability ownership](./adr/0003-buildwealth-native-capability-ownership.md)
 - [ADR 0004: v2 is the only future product surface](./adr/0004-v2-is-the-only-future-product-surface.md)
-- [BuildWealth Upstream App Exit Strategy](./UPSTREAM_APP_EXIT_STRATEGY_2026-05-08.md)
+- [BuildWealth BuildWealth Native Capability Strategy](./BUILDWEALTH_NATIVE_CAPABILITY_STRATEGY_2026-05-08.md)
 - [Native Portfolio and Plan Modules Implementation Guide](./NATIVE_PORTFOLIO_PLAN_MODULES_IMPLEMENTATION_GUIDE_2026-05-08.md)
 - [Monte Carlo Decision Simulation Plan](./MONTE_CARLO_DECISION_SIMULATION_PLAN_2026-05-08.md)

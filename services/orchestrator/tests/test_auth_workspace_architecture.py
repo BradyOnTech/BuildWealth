@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import copy
+from datetime import timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -324,6 +325,916 @@ def test_registered_users_get_separate_statement_import_suggestions(monkeypatch,
     assert alice_profile.json()["income_items"] == []
     assert bob_profile.json()["income_items"][0]["label"] == "Salary"
     assert bob_profile.json()["expense_items"] == []
+
+
+def test_registered_users_get_separate_plan_workspaces(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "local"
+
+    with TestClient(main.app) as alice, TestClient(main.app) as bob:
+        alice_register = alice.post(
+            "/api/auth/register",
+            json={
+                "email": "plan-alice@example.test",
+                "password": "correct-horse-1",
+                "display_name": "Plan Alice",
+            },
+        )
+        bob_register = bob.post(
+            "/api/auth/register",
+            json={
+                "email": "plan-bob@example.test",
+                "password": "correct-horse-2",
+                "display_name": "Plan Bob",
+            },
+        )
+        alice_csrf = _csrf_headers(alice)
+        bob_csrf = _csrf_headers(bob)
+
+        blocked_missing_csrf = alice.post(
+            "/api/plans",
+            json={"title": "Blocked Plan"},
+        )
+        alice_create = alice.post(
+            "/api/plans",
+            headers=alice_csrf,
+            json={"title": "Alice Independence Plan", "description": "Alice-only plan."},
+        )
+        bob_create = bob.post(
+            "/api/plans",
+            headers=bob_csrf,
+            json={"title": "Bob Cash Flow Plan", "description": "Bob-only plan."},
+        )
+        alice_plan_id = alice_create.json()["id"]
+        bob_plan_id = bob_create.json()["id"]
+
+        alice_list = alice.get("/api/plans")
+        bob_list = bob.get("/api/plans")
+        bob_reads_alice = bob.get(f"/api/plans/{alice_plan_id}")
+        alice_reads_bob = alice.get(f"/api/plans/{bob_plan_id}")
+        alice_update = alice.patch(
+            f"/api/plans/{alice_plan_id}/settings",
+            headers=alice_csrf,
+            json={"annual_contribution_usd": 18000},
+        )
+        bob_update_alice = bob.patch(
+            f"/api/plans/{alice_plan_id}/settings",
+            headers=bob_csrf,
+            json={"annual_contribution_usd": 1},
+        )
+
+    assert alice_register.status_code == 200
+    assert bob_register.status_code == 200
+    assert blocked_missing_csrf.status_code == 403
+    assert alice_create.status_code == 200
+    assert bob_create.status_code == 200
+    assert [item["id"] for item in alice_list.json()] == [alice_plan_id]
+    assert [item["id"] for item in bob_list.json()] == [bob_plan_id]
+    assert bob_reads_alice.status_code == 404
+    assert alice_reads_bob.status_code == 404
+    assert alice_update.status_code == 200
+    assert alice_update.json()["settings"]["annual_contribution_usd"] == 18000
+    assert bob_update_alice.status_code == 404
+
+
+def test_registered_users_cannot_act_on_other_workspace_recommendations(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "local"
+
+    with TestClient(main.app) as alice, TestClient(main.app) as bob:
+        alice_register = alice.post(
+            "/api/auth/register",
+            json={
+                "email": "rec-alice@example.test",
+                "password": "correct-horse-1",
+                "display_name": "Recommendation Alice",
+            },
+        )
+        bob_register = bob.post(
+            "/api/auth/register",
+            json={
+                "email": "rec-bob@example.test",
+                "password": "correct-horse-2",
+                "display_name": "Recommendation Bob",
+            },
+        )
+        alice_csrf = _csrf_headers(alice)
+        bob_csrf = _csrf_headers(bob)
+
+        alice_context = main.control_plane_store.request_context_for_token(
+            token=alice.cookies.get(main.settings.auth_session_cookie_name),
+            auth_mode="local",
+        )
+        alice_services = main.workspace_service_factory.for_context(alice_context)
+        plan = alice_services.plan_workspace.create_plan("Alice BuildWealth Plan")
+        recommendation = alice_services.recommendation_inbox.create(
+            title="Increase emergency savings",
+            detail="Route more monthly surplus to the emergency fund.",
+            priority="high",
+            recommendation_type="general",
+            source="route-test",
+            plan_id=plan["id"],
+            action_payload={},
+        )
+
+        bob_read = bob.get(f"/api/recommendations/{recommendation['id']}")
+        bob_apply = bob.post(
+            f"/api/recommendations/{recommendation['id']}/apply",
+            headers=bob_csrf,
+            json={"plan_id": plan["id"], "rationale": "Not Bob's recommendation."},
+        )
+        missing_csrf = alice.post(
+            f"/api/recommendations/{recommendation['id']}/apply",
+            json={"plan_id": plan["id"], "rationale": "Missing CSRF should fail."},
+        )
+        alice_preview = alice.post(
+            f"/api/recommendations/{recommendation['id']}/preview",
+            headers=alice_csrf,
+            json={"plan_id": plan["id"], "capture_scenario_diff": False},
+        )
+        alice_apply = alice.post(
+            f"/api/recommendations/{recommendation['id']}/apply",
+            headers=alice_csrf,
+            json={
+                "plan_id": plan["id"],
+                "rationale": "This fits Alice's plan.",
+                "capture_scenario_diff": False,
+                "create_decision_packet": False,
+            },
+        )
+        alice_outcome = alice.post(
+            f"/api/recommendations/{recommendation['id']}/outcome",
+            headers=alice_csrf,
+            json={
+                "plan_id": plan["id"],
+                "note": "Checked one month later.",
+                "measurement_source": "manual_review",
+            },
+        )
+
+    assert alice_register.status_code == 200
+    assert bob_register.status_code == 200
+    assert bob_read.status_code == 404
+    assert bob_apply.status_code == 404
+    assert missing_csrf.status_code == 403
+    assert alice_preview.status_code == 200
+    assert alice_preview.json()["recommendation"]["id"] == recommendation["id"]
+    assert alice_apply.status_code == 200
+    assert alice_apply.json()["recommendation"]["status"] == "applied"
+    assert alice_apply.json()["plan"]["id"] == plan["id"]
+    assert alice_outcome.status_code == 200
+    assert alice_outcome.json()["decision_closure"]["realized_outcome"]["note"] == "Checked one month later."
+
+
+def test_registered_users_get_separate_backup_and_protection_state(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "local"
+
+    with TestClient(main.app) as alice, TestClient(main.app) as bob:
+        alice_register = alice.post(
+            "/api/auth/register",
+            json={
+                "email": "backup-alice@example.test",
+                "password": "correct-horse-1",
+                "display_name": "Backup Alice",
+            },
+        )
+        bob_register = bob.post(
+            "/api/auth/register",
+            json={
+                "email": "backup-bob@example.test",
+                "password": "correct-horse-2",
+                "display_name": "Backup Bob",
+            },
+        )
+        alice_workspace_id = alice_register.json()["workspace_id"]
+        bob_workspace_id = bob_register.json()["workspace_id"]
+        alice_csrf = _csrf_headers(alice)
+        bob_csrf = _csrf_headers(bob)
+
+        alice_profile = alice.put(
+            "/api/financial-profile",
+            headers=alice_csrf,
+            json={"notes": "alice backup source"},
+        )
+        bob_profile = bob.put(
+            "/api/financial-profile",
+            headers=bob_csrf,
+            json={"notes": "bob backup source"},
+        )
+        blocked_missing_csrf = alice.post(
+            "/api/storage/backups",
+            json={"reason": "should be blocked"},
+        )
+        alice_backup = alice.post(
+            "/api/storage/backups",
+            headers=alice_csrf,
+            json={"reason": "alice backup"},
+        )
+        bob_backup = bob.post(
+            "/api/storage/backups",
+            headers=bob_csrf,
+            json={"reason": "bob backup"},
+        )
+        alice_backups = alice.get("/api/storage/backups")
+        bob_backups = bob.get("/api/storage/backups")
+        blocked_cross_read = alice.get(
+            "/api/storage/backups",
+            headers={"x-buildwealth-workspace-id": bob_workspace_id},
+        )
+        alice_durable_migration = alice.post(
+            "/api/storage/durable/migrate",
+            headers=alice_csrf,
+            json={"run_rollback_check": False},
+        )
+        bob_durable_status = bob.get("/api/storage/durable/status")
+        bob_policy = bob.put(
+            "/api/storage/protection/policy",
+            headers=bob_csrf,
+            json={"protection_level": "hardened", "include_backups": True},
+        )
+        alice_protection = alice.get("/api/storage/protection/status")
+        bob_protection = bob.get("/api/storage/protection/status")
+
+    assert alice_register.status_code == 200
+    assert bob_register.status_code == 200
+    assert alice_workspace_id != bob_workspace_id
+    assert alice_profile.status_code == 200
+    assert bob_profile.status_code == 200
+    assert blocked_missing_csrf.status_code == 403
+    assert blocked_cross_read.status_code == 403
+    assert alice_backup.status_code == 200
+    assert bob_backup.status_code == 200
+    assert alice_backups.status_code == 200
+    assert bob_backups.status_code == 200
+    assert alice_backups.json()["data_root"] != bob_backups.json()["data_root"]
+    assert alice_backups.json()["backup_dir"] != bob_backups.json()["backup_dir"]
+    assert alice_backup.json()["archive_path"].startswith(alice_backups.json()["backup_dir"])
+    assert bob_backup.json()["archive_path"].startswith(bob_backups.json()["backup_dir"])
+    assert alice_durable_migration.status_code == 200
+    assert alice_durable_migration.json()["data_root"] == alice_backups.json()["data_root"]
+    assert bob_durable_status.status_code == 200
+    assert bob_durable_status.json()["data_root"] == bob_backups.json()["data_root"]
+    assert bob_policy.status_code == 200
+    assert alice_protection.status_code == 200
+    assert bob_protection.status_code == 200
+    assert alice_protection.json()["policy"]["protection_level"] == "standard"
+    assert bob_protection.json()["policy"]["protection_level"] == "hardened"
+    assert bob_protection.json()["policy"]["include_backups"] is True
+
+
+def test_registered_users_get_separate_context_candidates(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "local"
+
+    with TestClient(main.app) as alice, TestClient(main.app) as bob:
+        alice_register = alice.post(
+            "/api/auth/register",
+            json={
+                "email": "context-alice@example.test",
+                "password": "correct-horse-1",
+                "display_name": "Context Alice",
+            },
+        )
+        bob_register = bob.post(
+            "/api/auth/register",
+            json={
+                "email": "context-bob@example.test",
+                "password": "correct-horse-2",
+                "display_name": "Context Bob",
+            },
+        )
+        alice_csrf = _csrf_headers(alice)
+        bob_csrf = _csrf_headers(bob)
+
+        blocked_missing_csrf = alice.post(
+            "/api/context/candidates",
+            json={"extracted_claim": "missing csrf should not be saved"},
+        )
+        alice_candidate = alice.post(
+            "/api/context/candidates",
+            headers=alice_csrf,
+            json={
+                "source_domain": "conversation",
+                "source_ref": "conversation/alice",
+                "extracted_claim": "Alice wants a plain-language portfolio review.",
+                "target_domain": "profile",
+                "target_area": "preferences",
+                "target_field": "communication_style",
+                "target_value": "plain language",
+            },
+        )
+        bob_candidate = bob.post(
+            "/api/context/candidates",
+            headers=bob_csrf,
+            json={
+                "source_domain": "conversation",
+                "source_ref": "conversation/bob",
+                "extracted_claim": "Bob prefers detailed simulation notes.",
+                "target_domain": "profile",
+                "target_area": "preferences",
+                "target_field": "communication_style",
+                "target_value": "detailed",
+            },
+        )
+        alice_list = alice.get("/api/context/candidates")
+        bob_list = bob.get("/api/context/candidates")
+        bob_updates_alice = bob.patch(
+            f"/api/context/candidates/{alice_candidate.json()['id']}/lifecycle",
+            headers=bob_csrf,
+            json={"lifecycle_state": "applied"},
+        )
+        alice_updates_own = alice.patch(
+            f"/api/context/candidates/{alice_candidate.json()['id']}/lifecycle",
+            headers=alice_csrf,
+            json={"lifecycle_state": "applied"},
+        )
+
+    assert alice_register.status_code == 200
+    assert bob_register.status_code == 200
+    assert blocked_missing_csrf.status_code == 403
+    assert alice_candidate.status_code == 200
+    assert bob_candidate.status_code == 200
+    assert [item["id"] for item in alice_list.json()["items"]] == [alice_candidate.json()["id"]]
+    assert [item["id"] for item in bob_list.json()["items"]] == [bob_candidate.json()["id"]]
+    assert bob_updates_alice.status_code == 404
+    assert alice_updates_own.status_code == 200
+    assert alice_updates_own.json()["lifecycle_state"] == "applied"
+
+
+def test_registered_users_get_separate_git_workspaces(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "local"
+
+    with TestClient(main.app) as alice, TestClient(main.app) as bob:
+        alice_register = alice.post(
+            "/api/auth/register",
+            json={
+                "email": "git-alice@example.test",
+                "password": "correct-horse-1",
+                "display_name": "Git Alice",
+            },
+        )
+        bob_register = bob.post(
+            "/api/auth/register",
+            json={
+                "email": "git-bob@example.test",
+                "password": "correct-horse-2",
+                "display_name": "Git Bob",
+            },
+        )
+        alice_csrf = _csrf_headers(alice)
+        bob_csrf = _csrf_headers(bob)
+
+        blocked_missing_csrf = alice.put(
+            "/api/git/policy",
+            json={"enabled": True},
+        )
+        alice_policy = alice.put(
+            "/api/git/policy",
+            headers=alice_csrf,
+            json={"enabled": True, "include_financial_profile": True},
+        )
+        bob_policy = bob.put(
+            "/api/git/policy",
+            headers=bob_csrf,
+            json={"enabled": True, "include_recommendations": False},
+        )
+        alice_init = alice.post("/api/git/init", headers=alice_csrf)
+        bob_init = bob.post("/api/git/init", headers=bob_csrf)
+        alice_checkpoint = alice.post(
+            "/api/git/checkpoint",
+            headers=alice_csrf,
+            json={"message": "Alice checkpoint"},
+        )
+        bob_checkpoint = bob.post(
+            "/api/git/checkpoint",
+            headers=bob_csrf,
+            json={"message": "Bob checkpoint"},
+        )
+        alice_status = alice.get("/api/git/status")
+        bob_status = bob.get("/api/git/status")
+        alice_activity = alice.get("/api/git/activity")
+        bob_activity = bob.get("/api/git/activity")
+        alice_loaded_policy = alice.get("/api/git/policy")
+        bob_loaded_policy = bob.get("/api/git/policy")
+        alice_workflow = alice.post(
+            "/api/release-readiness/workflow-verification",
+            headers=alice_csrf,
+            json={
+                "workflow": "product_testing",
+                "status": "passed",
+                "passed_count": 3,
+                "failed_count": 0,
+                "notes": "Alice-only workflow pass.",
+            },
+        )
+        alice_readiness = alice.get("/api/release-readiness")
+        bob_readiness = bob.get("/api/release-readiness")
+
+    assert alice_register.status_code == 200
+    assert bob_register.status_code == 200
+    assert blocked_missing_csrf.status_code == 403
+    assert alice_policy.status_code == 200
+    assert bob_policy.status_code == 200
+    assert alice_policy.json()["workspace_dir"] != bob_policy.json()["workspace_dir"]
+    assert alice_policy.json()["include_financial_profile"] is True
+    assert bob_policy.json()["include_recommendations"] is False
+    assert alice_loaded_policy.json()["include_financial_profile"] is True
+    assert bob_loaded_policy.json()["include_financial_profile"] is False
+    assert alice_init.status_code == 200
+    assert bob_init.status_code == 200
+    assert alice_checkpoint.status_code == 200
+    assert bob_checkpoint.status_code == 200
+    assert alice_status.status_code == 200
+    assert bob_status.status_code == 200
+    assert alice_status.json()["workspace_dir"] != bob_status.json()["workspace_dir"]
+    assert alice_status.json()["workspace_dir"] == alice_policy.json()["workspace_dir"]
+    assert bob_status.json()["workspace_dir"] == bob_policy.json()["workspace_dir"]
+    assert "Alice checkpoint" in [event["title"] for event in alice_activity.json()["events"]]
+    assert "Bob checkpoint" not in [event["title"] for event in alice_activity.json()["events"]]
+    assert "Bob checkpoint" in [event["title"] for event in bob_activity.json()["events"]]
+    assert "Alice checkpoint" not in [event["title"] for event in bob_activity.json()["events"]]
+    assert alice_workflow.status_code == 200
+    assert alice_readiness.status_code == 200
+    assert bob_readiness.status_code == 200
+    alice_checks = {check["id"]: check for check in alice_readiness.json()["checks"]}
+    bob_checks = {check["id"]: check for check in bob_readiness.json()["checks"]}
+    assert alice_checks["workflow_verification"]["status"] == "ready"
+    assert bob_checks["workflow_verification"]["status"] == "warning"
+
+
+def test_registered_users_get_separate_today_review_checkpoints(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "local"
+
+    with TestClient(main.app) as alice, TestClient(main.app) as bob:
+        alice_register = alice.post(
+            "/api/auth/register",
+            json={
+                "email": "today-alice@example.test",
+                "password": "correct-horse-1",
+                "display_name": "Today Alice",
+            },
+        )
+        bob_register = bob.post(
+            "/api/auth/register",
+            json={
+                "email": "today-bob@example.test",
+                "password": "correct-horse-2",
+                "display_name": "Today Bob",
+            },
+        )
+        alice_csrf = _csrf_headers(alice)
+
+        blocked_missing_csrf = alice.post("/api/dashboard/today/review-checkpoint")
+        alice_dashboard = alice.get("/api/dashboard/today")
+        bob_dashboard = bob.get("/api/dashboard/today")
+        alice_checkpoint = alice.post(
+            "/api/dashboard/today/review-checkpoint",
+            headers=alice_csrf,
+        )
+
+        alice_context = main.control_plane_store.request_context_for_token(
+            token=alice.cookies.get(main.settings.auth_session_cookie_name),
+            auth_mode="local",
+        )
+        bob_context = main.control_plane_store.request_context_for_token(
+            token=bob.cookies.get(main.settings.auth_session_cookie_name),
+            auth_mode="local",
+        )
+        alice_services = main.workspace_service_factory.for_context(alice_context)
+        bob_services = main.workspace_service_factory.for_context(bob_context)
+
+    assert alice_register.status_code == 200
+    assert bob_register.status_code == 200
+    assert blocked_missing_csrf.status_code == 403
+    assert alice_dashboard.status_code == 200
+    assert bob_dashboard.status_code == 200
+    assert alice_checkpoint.status_code == 200
+    assert alice_services.today_review_checkpoint_store.latest() is not None
+    assert bob_services.today_review_checkpoint_store.latest() is None
+
+
+def test_registered_users_get_separate_snapshot_state(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "local"
+
+    with TestClient(main.app) as alice, TestClient(main.app) as bob:
+        alice_register = alice.post(
+            "/api/auth/register",
+            json={
+                "email": "snapshot-alice@example.test",
+                "password": "correct-horse-1",
+                "display_name": "Snapshot Alice",
+            },
+        )
+        bob_register = bob.post(
+            "/api/auth/register",
+            json={
+                "email": "snapshot-bob@example.test",
+                "password": "correct-horse-2",
+                "display_name": "Snapshot Bob",
+            },
+        )
+        alice_context = main.control_plane_store.request_context_for_token(
+            token=alice.cookies.get(main.settings.auth_session_cookie_name),
+            auth_mode="local",
+        )
+        bob_context = main.control_plane_store.request_context_for_token(
+            token=bob.cookies.get(main.settings.auth_session_cookie_name),
+            auth_mode="local",
+        )
+        alice_services = main.workspace_service_factory.for_context(alice_context)
+        bob_services = main.workspace_service_factory.for_context(bob_context)
+        alice_services.snapshot_store.write(
+            main.PortfolioSnapshot(
+                as_of=main.utc_now() - timedelta(days=1),
+                total_value_usd=120_000,
+            )
+        )
+        alice_services.snapshot_store.write(
+            main.PortfolioSnapshot(
+                as_of=main.utc_now(),
+                total_value_usd=125_000,
+            )
+        )
+        bob_services.snapshot_store.write(
+            main.PortfolioSnapshot(
+                as_of=main.utc_now(),
+                total_value_usd=42_000,
+            )
+        )
+
+        alice_latest = alice.get("/api/snapshot/latest")
+        bob_latest = bob.get("/api/snapshot/latest")
+        alice_history = alice.get("/api/snapshot/history")
+        bob_history = bob.get("/api/snapshot/history")
+        blocked_sync = alice.post("/api/snapshot/sync")
+        blocked_backfill = alice.post("/api/snapshot/backfill-history", json={"days": 1})
+
+    assert alice_register.status_code == 200
+    assert bob_register.status_code == 200
+    assert alice_latest.status_code == 200
+    assert bob_latest.status_code == 200
+    assert alice_latest.json()["total_value_usd"] == 125_000
+    assert bob_latest.json()["total_value_usd"] == 42_000
+    assert alice_history.status_code == 200
+    assert bob_history.status_code == 200
+    assert alice_history.json()["window_points"] == 2
+    assert bob_history.json()["window_points"] == 1
+    assert blocked_sync.status_code == 403
+    assert blocked_backfill.status_code == 403
+
+
+def test_registered_users_get_separate_financial_health_and_planning_context(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "local"
+
+    with TestClient(main.app) as alice, TestClient(main.app) as bob:
+        alice_register = alice.post(
+            "/api/auth/register",
+            json={
+                "email": "planner-alice@example.test",
+                "password": "correct-horse-1",
+                "display_name": "Planner Alice",
+            },
+        )
+        bob_register = bob.post(
+            "/api/auth/register",
+            json={
+                "email": "planner-bob@example.test",
+                "password": "correct-horse-2",
+                "display_name": "Planner Bob",
+            },
+        )
+        alice_context = main.control_plane_store.request_context_for_token(
+            token=alice.cookies.get(main.settings.auth_session_cookie_name),
+            auth_mode="local",
+        )
+        bob_context = main.control_plane_store.request_context_for_token(
+            token=bob.cookies.get(main.settings.auth_session_cookie_name),
+            auth_mode="local",
+        )
+        alice_services = main.workspace_service_factory.for_context(alice_context)
+        bob_services = main.workspace_service_factory.for_context(bob_context)
+
+        alice_services.financial_profile_store.save(
+            {
+                "income_items": [
+                    {
+                        "id": "alice-salary",
+                        "label": "Alice Salary",
+                        "monthly_amount_usd": 10_000,
+                        "source_type": "salary",
+                    }
+                ],
+                "expense_items": [
+                    {
+                        "id": "alice-housing",
+                        "label": "Alice Housing",
+                        "monthly_amount_usd": 3_000,
+                        "category": "housing",
+                    }
+                ],
+                "debt_items": [
+                    {
+                        "id": "alice-loan",
+                        "label": "Alice Loan",
+                        "balance_usd": 1_000,
+                        "minimum_payment_usd": 100,
+                        "interest_rate": 0.05,
+                    }
+                ],
+                "goal_items": [
+                    {
+                        "id": "alice-goal",
+                        "label": "Alice Goal",
+                        "target_amount_usd": 50_000,
+                        "target_date": "2030-01-01T00:00:00Z",
+                        "priority": "high",
+                    }
+                ],
+                "physical_assets": [
+                    {
+                        "id": "alice-car",
+                        "label": "Alice Car",
+                        "current_value_usd": 18_000,
+                        "asset_type": "vehicle",
+                    }
+                ],
+            }
+        )
+        bob_services.financial_profile_store.save(
+            {
+                "income_items": [
+                    {
+                        "id": "bob-salary",
+                        "label": "Bob Salary",
+                        "monthly_amount_usd": 4_000,
+                        "source_type": "salary",
+                    }
+                ],
+                "expense_items": [
+                    {
+                        "id": "bob-housing",
+                        "label": "Bob Housing",
+                        "monthly_amount_usd": 3_500,
+                        "category": "housing",
+                    }
+                ],
+                "debt_items": [
+                    {
+                        "id": "bob-loan",
+                        "label": "Bob Loan",
+                        "balance_usd": 20_000,
+                        "minimum_payment_usd": 550,
+                        "interest_rate": 0.12,
+                    }
+                ],
+                "goal_items": [
+                    {
+                        "id": "bob-goal",
+                        "label": "Bob Goal",
+                        "target_amount_usd": 80_000,
+                        "target_date": "2030-01-01T00:00:00Z",
+                        "priority": "medium",
+                    }
+                ],
+            }
+        )
+        alice_services.snapshot_store.write(
+            main.PortfolioSnapshot(
+                as_of=main.utc_now(),
+                total_value_usd=125_000,
+                holdings=[
+                    {
+                        "symbol": "VTI",
+                        "name": "Vanguard Total Stock Market ETF",
+                        "value_usd": 100_000,
+                        "allocation_percent": 80.0,
+                    },
+                    {
+                        "symbol": "CASH",
+                        "name": "Cash",
+                        "value_usd": 25_000,
+                        "allocation_percent": 20.0,
+                        "asset_type": "cash",
+                    },
+                ],
+            )
+        )
+        bob_services.snapshot_store.write(
+            main.PortfolioSnapshot(
+                as_of=main.utc_now(),
+                total_value_usd=42_000,
+                holdings=[
+                    {
+                        "symbol": "QQQ",
+                        "name": "Invesco QQQ Trust",
+                        "value_usd": 42_000,
+                        "allocation_percent": 100.0,
+                    }
+                ],
+            )
+        )
+        alice_services.portfolio_store.add_account("Alice 401k", account_type="401k")
+        bob_services.portfolio_store.add_account("Bob Brokerage", account_type="taxable")
+
+        alice_health = alice.get("/api/financial-health")
+        bob_health = bob.get("/api/financial-health")
+        alice_affordability = alice.post(
+            "/api/affordability",
+            json={"description": "Car payment", "monthly_amount_usd": 500},
+        )
+        bob_affordability = bob.post(
+            "/api/affordability",
+            json={"description": "Car payment", "monthly_amount_usd": 500},
+        )
+        alice_goal_progress = alice.get("/api/goals/progress")
+        bob_goal_progress = bob.get("/api/goals/progress")
+        alice_income_projection = alice.post("/api/planning/income-projection", json={"years": 1})
+        bob_income_projection = bob.post("/api/planning/income-projection", json={"years": 1})
+        alice_expense_projection = alice.post("/api/planning/expense-projection", json={"years": 1})
+        bob_expense_projection = bob.post("/api/planning/expense-projection", json={"years": 1})
+        alice_debt_projection = alice.post("/api/planning/debt-projection", json={"max_years": 1})
+        bob_debt_projection = bob.post("/api/planning/debt-projection", json={"max_years": 1})
+        alice_social_security = alice.post(
+            "/api/planning/social-security-projection",
+            json={"years": 1},
+        )
+        bob_social_security = bob.post(
+            "/api/planning/social-security-projection",
+            json={"years": 1},
+        )
+        alice_rmd_projection = alice.post("/api/planning/rmd-projection", json={"years": 1})
+        bob_rmd_projection = bob.post("/api/planning/rmd-projection", json={"years": 1})
+        alice_contribution = alice.post(
+            "/api/planning/contribution-allocation",
+            json={"annual_contribution_usd": 6_000},
+        )
+        bob_contribution = bob.post(
+            "/api/planning/contribution-allocation",
+            json={"annual_contribution_usd": 6_000},
+        )
+        alice_scenario = alice.post("/api/planning/scenarios", json={"years": 1})
+        bob_scenario = bob.post("/api/planning/scenarios", json={"years": 1})
+        alice_trade = alice.post(
+            "/api/portfolio/simulate-trade",
+            json={"symbol": "AAPL", "action": "buy", "amount_usd": 1_000},
+        )
+        bob_trade = bob.post(
+            "/api/portfolio/simulate-trade",
+            json={"symbol": "AAPL", "action": "buy", "amount_usd": 1_000},
+        )
+
+    assert alice_register.status_code == 200
+    assert bob_register.status_code == 200
+    assert alice_health.status_code == 200
+    assert bob_health.status_code == 200
+    assert alice_health.json()["monthly_surplus_usd"] == 6_900
+    assert bob_health.json()["monthly_surplus_usd"] == -50
+    assert alice_health.json()["net_worth_usd"] > bob_health.json()["net_worth_usd"]
+    assert alice_affordability.status_code == 200
+    assert bob_affordability.status_code == 200
+    assert alice_affordability.json()["assessment"] == "affordable"
+    assert bob_affordability.json()["assessment"] == "not_affordable"
+    assert alice_goal_progress.status_code == 200
+    assert bob_goal_progress.status_code == 200
+    assert alice_goal_progress.json()["monthly_surplus_usd"] == 6_900
+    assert bob_goal_progress.json()["monthly_surplus_usd"] == -50
+    assert alice_goal_progress.json()["goals"][0]["current_savings_usd"] == 125_000
+    assert bob_goal_progress.json()["goals"][0]["current_savings_usd"] == 42_000
+    assert alice_income_projection.status_code == 200
+    assert bob_income_projection.status_code == 200
+    assert alice_income_projection.json()["first_year_gross_income_usd"] == 120_000
+    assert bob_income_projection.json()["first_year_gross_income_usd"] == 48_000
+    assert alice_expense_projection.status_code == 200
+    assert bob_expense_projection.status_code == 200
+    assert alice_expense_projection.json()["first_year_expenses_usd"] == 36_000
+    assert bob_expense_projection.json()["first_year_expenses_usd"] == 42_000
+    assert alice_debt_projection.status_code == 200
+    assert bob_debt_projection.status_code == 200
+    assert alice_debt_projection.json()["debt_items_count"] == 1
+    assert bob_debt_projection.json()["minimum_scenario"]["remaining_balance_usd"] > 0
+    assert alice_social_security.status_code == 200
+    assert bob_social_security.status_code == 200
+    assert alice_social_security.json()["fra_monthly_benefit_usd"] > bob_social_security.json()["fra_monthly_benefit_usd"]
+    assert alice_rmd_projection.status_code == 200
+    assert bob_rmd_projection.status_code == 200
+    assert alice_rmd_projection.json()["eligible_account_count"] == 1
+    assert bob_rmd_projection.json()["eligible_account_count"] == 0
+    assert alice_contribution.status_code == 200
+    assert bob_contribution.status_code == 200
+    assert alice_contribution.json()["annual_contribution_target_usd"] == 6_000
+    assert bob_contribution.json()["annual_contribution_target_usd"] == 6_000
+    assert alice_scenario.status_code == 200
+    assert bob_scenario.status_code == 200
+    assert alice_scenario.json()["scenarios"][0]["future_value_usd"] > bob_scenario.json()["scenarios"][0]["future_value_usd"]
+    assert alice_trade.status_code == 200
+    assert bob_trade.status_code == 200
+    assert alice_trade.json()["current_total_value_usd"] == 125_000
+    assert bob_trade.json()["current_total_value_usd"] == 42_000
+
+
+def test_copilot_chat_and_tools_use_active_user_workspace(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "local"
+
+    async def fake_assemble_copilot_context_payload(**kwargs):
+        services = kwargs["services"]
+        return {
+            "trace": {"workspace_id": services.record.id},
+            "question": kwargs.get("question"),
+        }
+
+    class ToolCheckingCopilot:
+        async def chat(
+            self,
+            *,
+            question,
+            conversation_id=None,
+            contextual_brief=None,
+            context_trace=None,
+            conversation_store=None,
+        ):
+            assert conversation_store is not None
+            profile = await main.tool_get_financial_profile({})
+            conversation = conversation_store.get_or_create(conversation_id, question)
+            conversation_store.append_message(conversation, "user", question)
+            answer = f"profile-notes:{profile.get('notes')}"
+            conversation_store.append_message(
+                conversation,
+                "assistant",
+                answer,
+                metadata={"context_trace": context_trace or {}},
+            )
+            conversation_store.save(conversation)
+            return {
+                "conversation_id": conversation["id"],
+                "answer": answer,
+                "tool_calls": [],
+                "model": "test-copilot",
+                "context_trace": context_trace or {},
+                "created_at": main.utc_now(),
+            }
+
+    monkeypatch.setattr(main, "assemble_copilot_context_payload", fake_assemble_copilot_context_payload)
+    monkeypatch.setattr(main, "copilot", ToolCheckingCopilot())
+
+    with TestClient(main.app) as alice, TestClient(main.app) as bob:
+        alice_register = alice.post(
+            "/api/auth/register",
+            json={
+                "email": "copilot-alice@example.test",
+                "password": "correct-horse-1",
+                "display_name": "Copilot Alice",
+            },
+        )
+        bob_register = bob.post(
+            "/api/auth/register",
+            json={
+                "email": "copilot-bob@example.test",
+                "password": "correct-horse-2",
+                "display_name": "Copilot Bob",
+            },
+        )
+        alice_csrf = _csrf_headers(alice)
+        bob_csrf = _csrf_headers(bob)
+
+        alice_profile = alice.put(
+            "/api/financial-profile",
+            headers=alice_csrf,
+            json={"notes": "alice copilot workspace"},
+        )
+        bob_profile = bob.put(
+            "/api/financial-profile",
+            headers=bob_csrf,
+            json={"notes": "bob copilot workspace"},
+        )
+
+        alice_chat = alice.post("/api/copilot/chat", json={"question": "Who am I scoped to?"})
+        bob_chat = bob.post("/api/copilot/chat", json={"question": "Who am I scoped to?"})
+        alice_conversations = alice.get("/api/copilot/conversations")
+        bob_conversations = bob.get("/api/copilot/conversations")
+        bob_reads_alice = bob.get(
+            f"/api/copilot/conversations/{alice_chat.json()['conversation_id']}"
+        )
+
+    assert alice_register.status_code == 200
+    assert bob_register.status_code == 200
+    assert alice_profile.status_code == 200
+    assert bob_profile.status_code == 200
+    assert alice_chat.status_code == 200
+    assert bob_chat.status_code == 200
+    assert alice_chat.json()["answer"] == "profile-notes:alice copilot workspace"
+    assert bob_chat.json()["answer"] == "profile-notes:bob copilot workspace"
+    assert [item["id"] for item in alice_conversations.json()] == [alice_chat.json()["conversation_id"]]
+    assert [item["id"] for item in bob_conversations.json()] == [bob_chat.json()["conversation_id"]]
+    assert bob_reads_alice.status_code == 404
 
 
 def test_demo_workspace_reset_seeds_demo_without_touching_real_workspace(monkeypatch, tmp_path: Path) -> None:

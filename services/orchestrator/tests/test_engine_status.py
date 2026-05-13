@@ -137,5 +137,5 @@ def test_engine_status_probe_marks_contract_mismatch_and_guard_reason() -> None:
     assert item.contract_compatible is False
     assert item.last_error == "Contract version mismatch (expected v1, got v2)"
 
-    guard_reason = asyncio.run(tracker.sidecar_guard_reason("portfolio_benchmark"))
-    assert guard_reason == "Sidecar contract version mismatch (expected v1, got v2)"
+    guard_reason = asyncio.run(tracker.contract_guard_reason("portfolio_benchmark"))
+    assert guard_reason == "CalculationAdapter contract version mismatch (expected v1, got v2)"

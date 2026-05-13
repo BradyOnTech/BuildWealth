@@ -450,7 +450,7 @@ export function template() {
       </section>
       <p class="hint" id="git-status"></p>
     </div>
-    <p class="hint">Engine sidecar endpoints and health probes are configured via environment variables (<code>infra/env/orchestrator.env</code>).</p>
+    <p class="hint">Portfolio and planning calculation settings are configured via environment variables (<code>infra/env/orchestrator.env</code>).</p>
     <p class="hint" id="settings-status"></p>`;
 }
 

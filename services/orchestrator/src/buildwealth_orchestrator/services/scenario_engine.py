@@ -1,7 +1,7 @@
 """Tax-aware planning scenario engine.
 
 Projection structure and account/phase processing patterns are adapted from
-Ignidash (MIT):
+BuildWealth simulation workflows:
 - src/lib/calc/simulation-engine.ts
 - src/lib/calc/returns-providers/stochastic-returns-provider.ts
 - src/lib/calc/returns-providers/lcg-historical-backtest-returns-provider.ts
@@ -142,7 +142,7 @@ MONTE_CARLO_VARIANT_ALIASES: dict[str, MonteCarloVariant] = {
 
 DEFAULT_SIMULATION_SEED = 9521
 
-# Adapted from Ignidash NYU historical market dataset (MIT):
+# Historical market dataset used by BuildWealth simulation paths:
 # src/lib/calc/historical-data/nyu-returns.ts
 HISTORICAL_STOCK_RETURNS: tuple[tuple[int, float, float], ...] = (
     (1928, 0.4549, -0.0116),
@@ -827,7 +827,7 @@ class ScenarioEngine:
                 return (3, account.account_id)
             return (4, account.account_id)
 
-        # Ignidash-inspired age-aware withdrawal ordering.
+        # simulation age-aware withdrawal ordering.
         if age < 59.5:
             if _is_cash_account_type(account_type):
                 return (1, account.account_id)

@@ -7,10 +7,10 @@ import pytest
 from pydantic import BaseModel
 
 from buildwealth_orchestrator.services.engine_adapter import (
-    SidecarAdapter,
-    SidecarRequestValidationError,
-    SidecarResponseValidationError,
-    SidecarTransportError,
+    CalculationAdapter,
+    CalculationAdapterRequestValidationError,
+    CalculationAdapterResponseValidationError,
+    CalculationAdapterTransportError,
 )
 
 
@@ -25,7 +25,7 @@ class _ResponseContract(BaseModel):
     engine_status: Literal["ok", "degraded"]
 
 
-def test_sidecar_adapter_retries_on_retryable_http_error() -> None:
+def test_calculation_adapter_retries_on_retryable_http_error() -> None:
     attempts = {"count": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -43,7 +43,7 @@ def test_sidecar_adapter_retries_on_retryable_http_error() -> None:
             },
         )
 
-    adapter = SidecarAdapter(
+    adapter = CalculationAdapter(
         base_url="http://localhost:8411",
         max_retries=1,
         transport=httpx.MockTransport(handler),
@@ -63,10 +63,10 @@ def test_sidecar_adapter_retries_on_retryable_http_error() -> None:
     assert attempts["count"] == 2
 
 
-def test_sidecar_adapter_rejects_invalid_outbound_payload() -> None:
-    adapter = SidecarAdapter(base_url="http://localhost:8411", transport=httpx.MockTransport(lambda _: None))
+def test_calculation_adapter_rejects_invalid_outbound_payload() -> None:
+    adapter = CalculationAdapter(base_url="http://localhost:8411", transport=httpx.MockTransport(lambda _: None))
 
-    with pytest.raises(SidecarRequestValidationError):
+    with pytest.raises(CalculationAdapterRequestValidationError):
         asyncio.run(
             adapter.post_json(
                 path="/v1/example",
@@ -77,17 +77,17 @@ def test_sidecar_adapter_rejects_invalid_outbound_payload() -> None:
         )
 
 
-def test_sidecar_adapter_rejects_invalid_inbound_payload() -> None:
+def test_calculation_adapter_rejects_invalid_inbound_payload() -> None:
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(status_code=200, json={"contract_version": 1, "engine_status": "ok"})
 
-    adapter = SidecarAdapter(
+    adapter = CalculationAdapter(
         base_url="http://localhost:8411",
         max_retries=0,
         transport=httpx.MockTransport(handler),
     )
 
-    with pytest.raises(SidecarResponseValidationError):
+    with pytest.raises(CalculationAdapterResponseValidationError):
         asyncio.run(
             adapter.post_json(
                 path="/v1/example",
@@ -98,14 +98,14 @@ def test_sidecar_adapter_rejects_invalid_inbound_payload() -> None:
         )
 
 
-def test_sidecar_adapter_rejects_non_contract_path() -> None:
-    adapter = SidecarAdapter(
+def test_calculation_adapter_rejects_non_contract_path() -> None:
+    adapter = CalculationAdapter(
         base_url="http://localhost:8411",
         max_retries=0,
         transport=httpx.MockTransport(lambda _: httpx.Response(status_code=200, json={})),
     )
 
-    with pytest.raises(SidecarTransportError):
+    with pytest.raises(CalculationAdapterTransportError):
         asyncio.run(
             adapter.post_json(
                 path="/api/portfolio/benchmark",

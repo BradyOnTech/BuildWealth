@@ -22,7 +22,7 @@ class EngineProbeConfig:
 
 
 class EngineStatusTracker:
-    """Track sidecar probe status and degraded execution counts."""
+    """Track optional calculation probes and degraded execution counts."""
 
     def __init__(
         self,
@@ -135,7 +135,7 @@ class EngineStatusTracker:
             "last_checked_at": checked_at,
         }
 
-    async def sidecar_guard_reason(self, engine_name: str) -> str | None:
+    async def contract_guard_reason(self, engine_name: str) -> str | None:
         async with self._lock:
             entry = self._state.get(engine_name)
             if entry is None:
@@ -148,10 +148,10 @@ class EngineStatusTracker:
             expected = entry.get("expected_contract_version")
             actual = entry.get("contract_version")
             if expected is None:
-                return "Sidecar contract compatibility check failed"
+                return "CalculationAdapter contract compatibility check failed"
             if actual is None:
-                return f"Sidecar contract version is unverified (expected v{expected})"
-            return f"Sidecar contract version mismatch (expected v{expected}, got v{actual})"
+                return f"CalculationAdapter contract version is unverified (expected v{expected})"
+            return f"CalculationAdapter contract version mismatch (expected v{expected}, got v{actual})"
 
     async def _get_payload(self, base_url: str, path: str) -> dict[str, Any]:
         normalized_path = self._normalize_path(path)

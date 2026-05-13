@@ -35,7 +35,7 @@ class FakeBenchmarkService:
                 "alpha_pct_by_symbol": {"SPY": 10},
             },
             "series": [],
-            "warnings": ["Portfolio benchmark sidecar disabled; using local fallback"],
+            "warnings": ["Portfolio benchmark local calculation selected; using local fallback"],
         }
 
 
@@ -79,4 +79,4 @@ def test_portfolio_analytics_route(monkeypatch) -> None:
     assert benchmark.last_kwargs["limit"] == 31
     assert payload["benchmark"]["rows"][0]["symbol"] == "SPY"
     assert payload["attribution"]["contributors"][0]["symbol"] == "VTI"
-    assert "Ghostfolio" not in " ".join(payload["warnings"])
+    assert "Portfolio Analysis" not in " ".join(payload["warnings"])

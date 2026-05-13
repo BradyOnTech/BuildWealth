@@ -682,9 +682,6 @@ def test_build_portfolio_fit_assessment_payload_assembles_context(monkeypatch) -
             assert interval == "1d"
             return _packet("MSFT")
 
-    class FakeHealth:
-        emergency_fund_months = 7.0
-
     monkeypatch.setattr(main, "snapshot_store", FakeSnapshotStore())
     monkeypatch.setattr(main, "portfolio_store", FakePortfolioStore())
     monkeypatch.setattr(main, "research_service", FakeResearchService())
@@ -692,10 +689,40 @@ def test_build_portfolio_fit_assessment_payload_assembles_context(monkeypatch) -
         main,
         "get_financial_profile_payload",
         lambda: {
-            "income_items": [{"id": "income-1"}],
-            "expense_items": [{"id": "expense-1"}],
-            "goal_items": [{"id": "goal-1"}],
-            "physical_assets": [{"id": "asset-1"}],
+            "income_items": [
+                {
+                    "id": "income-1",
+                    "label": "Salary",
+                    "monthly_amount_usd": 12_000,
+                    "source_type": "salary",
+                }
+            ],
+            "expense_items": [
+                {
+                    "id": "expense-1",
+                    "label": "Housing",
+                    "monthly_amount_usd": 3_000,
+                    "category": "housing",
+                }
+            ],
+            "debt_items": [],
+            "goal_items": [
+                {
+                    "id": "goal-1",
+                    "label": "Retirement",
+                    "target_amount_usd": 1_000_000,
+                    "target_date": "2045-01-01T00:00:00Z",
+                    "priority": "high",
+                }
+            ],
+            "physical_assets": [
+                {
+                    "id": "asset-1",
+                    "label": "Home",
+                    "current_value_usd": 450_000,
+                    "asset_type": "real_estate",
+                }
+            ],
             "investment_policy": {
                 "max_single_symbol_exposure_pct": 12.0,
                 "minimum_research_confidence": "medium",
@@ -704,7 +731,6 @@ def test_build_portfolio_fit_assessment_payload_assembles_context(monkeypatch) -
             "tax_profile": {"filing_status": "single", "marginal_tax_rate": 0.24},
         },
     )
-    monkeypatch.setattr(main, "get_financial_health", lambda: FakeHealth())
     monkeypatch.setattr(
         main,
         "resolve_active_plan_detail",

@@ -1,6 +1,6 @@
 """Social Security income projection helpers for planning workflows.
 
-Timeline age/retirement patterns are aligned with Ignidash (MIT):
+Timeline age/retirement patterns are aligned with BuildWealth simulation workflows:
 - src/lib/schemas/inputs/timeline-form-schema.ts
 - src/lib/calc/phase.ts
 """

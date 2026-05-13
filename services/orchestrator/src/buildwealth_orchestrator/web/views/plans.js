@@ -98,7 +98,7 @@ export function template() {
         <p class="hint tight">Edit named assumption sets JSON. Active set is applied by default when running scenarios.</p>
         <label class="field"><span>Assumption Sets JSON</span><textarea id="plan-assumption-sets" rows="10" placeholder='{"active_assumption_set_id":"default","sets":[...]}' disabled></textarea></label>
         <div class="view-header"><h3>Contribution Rules</h3><button class="primary small" id="save-plan-contribution-rules" disabled>Save Contribution Rules</button></div>
-        <p class="hint tight">Ignidash-style ranked allocation rules. Use the editor for common cases, or JSON for advanced payloads.</p>
+        <p class="hint tight">Ranked contribution rules for where the next dollar should go. Use the editor for common cases, or JSON for advanced payloads.</p>
         <div class="settings-grid">
           <label class="field"><span>Base Rule</span><select id="contribution-base-rule" disabled><option value="save">Save</option><option value="spend">Spend</option></select></label>
           <label class="field"><span>Profile ID</span><input type="text" id="contribution-profile-id" placeholder="Optional profile override" disabled /></label>

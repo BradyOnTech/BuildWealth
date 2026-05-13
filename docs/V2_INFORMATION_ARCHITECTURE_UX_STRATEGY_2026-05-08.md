@@ -630,8 +630,8 @@ Long-term, these should not be permanent main sidebar items:
 - Settings
 - Data & Recovery
 - Activity Log
-- Ghostfolio
-- Ignidash
+- Portfolio Analysis
+- Simulations
 
 They remain reachable through Data & Tools and contextual links.
 

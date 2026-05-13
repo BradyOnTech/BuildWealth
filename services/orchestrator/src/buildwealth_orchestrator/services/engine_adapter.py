@@ -10,23 +10,23 @@ from pydantic import BaseModel, ValidationError
 ResponseModelT = TypeVar("ResponseModelT", bound=BaseModel)
 
 
-class SidecarAdapterError(RuntimeError):
-    """Base adapter error for sidecar communication failures."""
+class CalculationAdapterError(RuntimeError):
+    """Base adapter error for optional calculation communication failures."""
 
 
-class SidecarRequestValidationError(SidecarAdapterError):
+class CalculationAdapterRequestValidationError(CalculationAdapterError):
     """Raised when outbound payload fails contract validation."""
 
 
-class SidecarResponseValidationError(SidecarAdapterError):
+class CalculationAdapterResponseValidationError(CalculationAdapterError):
     """Raised when inbound payload fails contract validation."""
 
 
-class SidecarTransportError(SidecarAdapterError):
-    """Raised for sidecar transport and HTTP-level failures."""
+class CalculationAdapterTransportError(CalculationAdapterError):
+    """Raised for optional calculation transport and HTTP-level failures."""
 
 
-class SidecarAdapter:
+class CalculationAdapter:
     """HTTP adapter with request/response validation and retry behavior."""
 
     def __init__(
@@ -55,14 +55,14 @@ class SidecarAdapter:
         try:
             request_obj = request_model.model_validate(request_payload)
         except ValidationError as exc:
-            raise SidecarRequestValidationError(f"Invalid outbound contract payload: {exc}") from exc
+            raise CalculationAdapterRequestValidationError(f"Invalid outbound contract payload: {exc}") from exc
 
         body = request_obj.model_dump(mode="json")
         attempts = self.max_retries + 1
         path_value = self._normalize_path(path)
         if not self._is_versioned_contract_path(path_value):
-            raise SidecarTransportError(
-                "Sidecar path must use a versioned contract prefix (for example /v1/...)"
+            raise CalculationAdapterTransportError(
+                "CalculationAdapter path must use a versioned contract prefix (for example /v1/...)"
             )
 
         for attempt in range(attempts):
@@ -79,33 +79,33 @@ class SidecarAdapter:
                 try:
                     payload = response.json()
                 except ValueError as exc:
-                    raise SidecarTransportError("Sidecar returned non-JSON response body") from exc
+                    raise CalculationAdapterTransportError("CalculationAdapter returned non-JSON response body") from exc
 
                 try:
                     return response_model.model_validate(payload)
                 except ValidationError as exc:
-                    raise SidecarResponseValidationError(
+                    raise CalculationAdapterResponseValidationError(
                         f"Invalid inbound contract payload: {exc}"
                     ) from exc
-            except SidecarResponseValidationError:
+            except CalculationAdapterResponseValidationError:
                 raise
             except httpx.HTTPStatusError as exc:
                 if attempt < attempts - 1 and self._is_retryable_status(exc.response.status_code):
                     continue
                 status = exc.response.status_code
-                raise SidecarTransportError(f"Sidecar request failed with HTTP {status}") from exc
+                raise CalculationAdapterTransportError(f"CalculationAdapter request failed with HTTP {status}") from exc
             except httpx.RequestError as exc:
                 if attempt < attempts - 1:
                     continue
-                raise SidecarTransportError(f"Sidecar request failed: {exc}") from exc
+                raise CalculationAdapterTransportError(f"CalculationAdapter request failed: {exc}") from exc
 
-        raise SidecarTransportError("Sidecar request failed after retries")
+        raise CalculationAdapterTransportError("CalculationAdapter request failed after retries")
 
     @staticmethod
     def _normalize_path(path: str) -> str:
         cleaned = str(path).strip()
         if not cleaned:
-            raise SidecarTransportError("Sidecar path must not be empty")
+            raise CalculationAdapterTransportError("CalculationAdapter path must not be empty")
         return cleaned if cleaned.startswith("/") else f"/{cleaned}"
 
     @staticmethod

@@ -8,25 +8,32 @@ from uuid import uuid4
 from pydantic import BaseModel, Field, field_validator
 
 from buildwealth_orchestrator.schemas import (
+    ContributionAllocationResponse,
+    DebtProjectionResponse,
+    ExpenseProjectionResponse,
+    IncomeProjectionResponse,
     PlanningResponse,
+    RmdProjectionResponse,
     ScenarioResult,
     ScenarioTimelinePoint,
+    SocialSecurityProjectionResponse,
+    TimelineImpactProjectionResponse,
 )
 from buildwealth_orchestrator.services.contribution_rules import (
     normalize_account_type,
     tax_treatment_for_account_type,
 )
-from buildwealth_orchestrator.services.engine_adapter import SidecarAdapter, SidecarAdapterError
+from buildwealth_orchestrator.services.engine_adapter import CalculationAdapter, CalculationAdapterError
 from buildwealth_orchestrator.services.engine_policy import (
     ENGINE_STATUS_DEGRADED,
     degraded_response_update,
     resolve_engine_call_disposition,
-    sidecar_unavailable_warning,
+    calculation_unavailable_warning,
 )
 from buildwealth_orchestrator.services.scenario_engine import ScenarioEngine
 
-IGNIDASH_SCENARIO_CONTRACT_VERSION = 1
-IGNIDASH_SCENARIO_ENGINE_LABEL = "Plan simulation"
+PLAN_SIMULATION_CONTRACT_VERSION = 1
+PLAN_SIMULATION_ENGINE_LABEL = "Plan simulation"
 
 
 @dataclass(frozen=True)
@@ -71,10 +78,10 @@ class _ScenarioRunInputs:
     simulation_monte_carlo_variant: str | None = None
     simulation_historical_start_year: int | None = None
     simulation_seed: int | None = None
-    sidecar_guard_reason: str | None = None
+    contract_guard_reason: str | None = None
 
 
-class IgnidashScenarioAccountV1(BaseModel):
+class RemoteScenarioAccountV1(BaseModel):
     account_id: str
     account_type: str
     tax_treatment: Literal["taxable", "tax_deferred", "tax_free"] = "taxable"
@@ -82,33 +89,33 @@ class IgnidashScenarioAccountV1(BaseModel):
     annual_contribution: float = 0.0
 
 
-class IgnidashScenarioOverrideV1(BaseModel):
+class RemoteScenarioOverrideV1(BaseModel):
     scenario_id: str
     label: str
     overrides: dict[str, float | str | bool | None] = Field(default_factory=dict)
 
 
-class IgnidashScenarioRequestV1(BaseModel):
+class RemoteScenarioRequestV1(BaseModel):
     contract_version: Literal[1] = 1
     request_id: str
     currency: str = Field(pattern=r"^[A-Z]{3}$")
     start_year: int
     horizon_years: int
     household: dict[str, int]
-    accounts: list[IgnidashScenarioAccountV1]
+    accounts: list[RemoteScenarioAccountV1]
     baseline_assumptions: dict[str, float]
-    scenario_overrides: list[IgnidashScenarioOverrideV1]
+    scenario_overrides: list[RemoteScenarioOverrideV1]
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("scenario_overrides")
     @classmethod
-    def _validate_overrides(cls, values: list[IgnidashScenarioOverrideV1]) -> list[IgnidashScenarioOverrideV1]:
+    def _validate_overrides(cls, values: list[RemoteScenarioOverrideV1]) -> list[RemoteScenarioOverrideV1]:
         if not values:
             raise ValueError("scenario_overrides must not be empty")
         return values
 
 
-class IgnidashScenarioSummaryV1(BaseModel):
+class RemoteScenarioSummaryV1(BaseModel):
     ending_balance_nominal: float
     ending_balance_real: float
     total_contributions: float | None = None
@@ -116,7 +123,7 @@ class IgnidashScenarioSummaryV1(BaseModel):
     success_probability: float | None = None
 
 
-class IgnidashScenarioTimelinePointV1(BaseModel):
+class RemoteScenarioTimelinePointV1(BaseModel):
     year: int
     age: int
     starting_balance: float
@@ -130,20 +137,20 @@ class IgnidashScenarioTimelinePointV1(BaseModel):
     ending_balance_real: float | None = None
 
 
-class IgnidashScenarioOutputV1(BaseModel):
+class RemoteScenarioOutputV1(BaseModel):
     scenario_id: str
     label: str
-    summary: IgnidashScenarioSummaryV1
-    timeline: list[IgnidashScenarioTimelinePointV1] = Field(default_factory=list)
+    summary: RemoteScenarioSummaryV1
+    timeline: list[RemoteScenarioTimelinePointV1] = Field(default_factory=list)
 
 
-class IgnidashScenarioResponseV1(BaseModel):
+class RemoteScenarioResponseV1(BaseModel):
     contract_version: Literal[1] = 1
     request_id: str
-    engine: Literal["ignidash"] = "ignidash"
+    engine: Literal["simulation"] = "simulation"
     engine_status: Literal["ok", "degraded"]
     fallback_method: str | None = None
-    scenarios: list[IgnidashScenarioOutputV1]
+    scenarios: list[RemoteScenarioOutputV1]
     warnings: list[str] = Field(default_factory=list)
     generated_at: datetime | None = None
 
@@ -153,16 +160,16 @@ class BuildWealthScenarioService:
         self,
         *,
         scenario_engine: ScenarioEngine,
-        sidecar_adapter: SidecarAdapter | None,
-        sidecar_enabled: bool,
-        sidecar_path: str,
+        calculation_adapter: CalculationAdapter | None,
+        calculation_adapter_enabled: bool,
+        calculation_adapter_path: str,
         currency: str = "USD",
         default_tax_rate: float = 0.25,
     ) -> None:
         self.scenario_engine = scenario_engine
-        self.sidecar_adapter = sidecar_adapter
-        self.sidecar_enabled = sidecar_enabled
-        self.sidecar_path = sidecar_path
+        self.calculation_adapter = calculation_adapter
+        self.calculation_adapter_enabled = calculation_adapter_enabled
+        self.calculation_adapter_path = calculation_adapter_path
         self.currency = str(currency or "USD").upper()
         self.default_tax_rate = float(default_tax_rate)
 
@@ -209,7 +216,7 @@ class BuildWealthScenarioService:
         simulation_monte_carlo_variant: str | None = None,
         simulation_historical_start_year: int | None = None,
         simulation_seed: int | None = None,
-        sidecar_guard_reason: str | None = None,
+        contract_guard_reason: str | None = None,
     ) -> PlanningResponse:
         inputs = _ScenarioRunInputs(
             current_portfolio_value_usd=current_portfolio_value_usd,
@@ -252,21 +259,21 @@ class BuildWealthScenarioService:
             simulation_monte_carlo_variant=simulation_monte_carlo_variant,
             simulation_historical_start_year=simulation_historical_start_year,
             simulation_seed=simulation_seed,
-            sidecar_guard_reason=sidecar_guard_reason,
+            contract_guard_reason=contract_guard_reason,
         )
 
         local_result = self._build_local_result(inputs)
         local_projection_updates = self._build_local_projection_updates(inputs)
 
         disposition = resolve_engine_call_disposition(
-            engine_label=IGNIDASH_SCENARIO_ENGINE_LABEL,
-            sidecar_enabled=self.sidecar_enabled,
-            sidecar_adapter=self.sidecar_adapter,
-            sidecar_guard_reason=inputs.sidecar_guard_reason,
+            engine_label=PLAN_SIMULATION_ENGINE_LABEL,
+            calculation_adapter_enabled=self.calculation_adapter_enabled,
+            calculation_adapter=self.calculation_adapter,
+            contract_guard_reason=inputs.contract_guard_reason,
             disabled_behavior="local_ok",
             adapter_missing_behavior="local_ok",
         )
-        if not disposition.use_sidecar:
+        if not disposition.use_calculation_adapter:
             if disposition.engine_status == ENGINE_STATUS_DEGRADED:
                 return self._build_degraded_local_response(
                     local_result=local_result,
@@ -279,14 +286,14 @@ class BuildWealthScenarioService:
                 local_projection_updates=local_projection_updates,
             )
 
-        if self.sidecar_adapter is None:
+        if self.calculation_adapter is None:
             return self._build_local_only_response(
                 local_result=local_result,
                 local_projection_updates=local_projection_updates,
             )
 
         request_payload = self._build_request_payload(inputs=inputs)
-        return await self._run_sidecar_path(
+        return await self._run_calculation_adapter_path(
             local_result=local_result,
             local_projection_updates=local_projection_updates,
             request_payload=request_payload,
@@ -328,13 +335,41 @@ class BuildWealthScenarioService:
     @staticmethod
     def _build_local_projection_updates(inputs: _ScenarioRunInputs) -> dict[str, Any]:
         return {
-            "income_projection": inputs.income_projection,
-            "expense_projection": inputs.expense_projection,
-            "debt_projection": inputs.debt_projection,
-            "timeline_projection": inputs.timeline_projection,
-            "contribution_allocation": inputs.contribution_allocation,
-            "social_security_projection": inputs.social_security_projection,
-            "rmd_projection": inputs.rmd_projection,
+            "income_projection": (
+                IncomeProjectionResponse(**inputs.income_projection)
+                if inputs.income_projection is not None
+                else None
+            ),
+            "expense_projection": (
+                ExpenseProjectionResponse(**inputs.expense_projection)
+                if inputs.expense_projection is not None
+                else None
+            ),
+            "debt_projection": (
+                DebtProjectionResponse(**inputs.debt_projection)
+                if inputs.debt_projection is not None
+                else None
+            ),
+            "timeline_projection": (
+                TimelineImpactProjectionResponse(**inputs.timeline_projection)
+                if inputs.timeline_projection is not None
+                else None
+            ),
+            "contribution_allocation": (
+                ContributionAllocationResponse(**inputs.contribution_allocation)
+                if inputs.contribution_allocation is not None
+                else None
+            ),
+            "social_security_projection": (
+                SocialSecurityProjectionResponse(**inputs.social_security_projection)
+                if inputs.social_security_projection is not None
+                else None
+            ),
+            "rmd_projection": (
+                RmdProjectionResponse(**inputs.rmd_projection)
+                if inputs.rmd_projection is not None
+                else None
+            ),
         }
 
     @staticmethod
@@ -363,28 +398,28 @@ class BuildWealthScenarioService:
             }
         )
 
-    async def _run_sidecar_path(
+    async def _run_calculation_adapter_path(
         self,
         *,
         local_result: PlanningResponse,
         local_projection_updates: dict[str, Any],
-        request_payload: IgnidashScenarioRequestV1,
+        request_payload: RemoteScenarioRequestV1,
     ) -> PlanningResponse:
         try:
-            response_payload = await self._request_sidecar_response(request_payload=request_payload)
-            return self._build_merged_sidecar_response(
+            response_payload = await self._request_calculation_service_response(request_payload=request_payload)
+            return self._build_merged_calculation_service_response(
                 local_result=local_result,
                 local_projection_updates=local_projection_updates,
                 response_payload=response_payload,
             )
-        except SidecarAdapterError as exc:
+        except CalculationAdapterError as exc:
             return local_result.model_copy(
                 update={
                     **degraded_response_update(
                         engine="local",
                         fallback_method="local_scenario_engine_fallback",
-                        warning=sidecar_unavailable_warning(
-                            engine_label=IGNIDASH_SCENARIO_ENGINE_LABEL,
+                        warning=calculation_unavailable_warning(
+                            engine_label=PLAN_SIMULATION_ENGINE_LABEL,
                             error=exc,
                         ),
                     ),
@@ -392,36 +427,36 @@ class BuildWealthScenarioService:
                 }
             )
 
-    async def _request_sidecar_response(
+    async def _request_calculation_service_response(
         self,
         *,
-        request_payload: IgnidashScenarioRequestV1,
-    ) -> IgnidashScenarioResponseV1:
-        if self.sidecar_adapter is None:
-            raise SidecarAdapterError("Sidecar adapter is not configured")
-        return await self.sidecar_adapter.post_json(
-            path=self.sidecar_path,
+        request_payload: RemoteScenarioRequestV1,
+    ) -> RemoteScenarioResponseV1:
+        if self.calculation_adapter is None:
+            raise CalculationAdapterError("CalculationAdapter adapter is not configured")
+        return await self.calculation_adapter.post_json(
+            path=self.calculation_adapter_path,
             request_payload=request_payload.model_dump(mode="json"),
-            request_model=IgnidashScenarioRequestV1,
-            response_model=IgnidashScenarioResponseV1,
+            request_model=RemoteScenarioRequestV1,
+            response_model=RemoteScenarioResponseV1,
         )
 
-    def _build_merged_sidecar_response(
+    def _build_merged_calculation_service_response(
         self,
         *,
         local_result: PlanningResponse,
         local_projection_updates: dict[str, Any],
-        response_payload: IgnidashScenarioResponseV1,
+        response_payload: RemoteScenarioResponseV1,
     ) -> PlanningResponse:
-        scenarios = self._merge_sidecar_scenarios(
+        scenarios = self._merge_calculation_service_scenarios(
             local_scenarios=local_result.scenarios,
-            sidecar_scenarios=response_payload.scenarios,
+            calculation_service_scenarios=response_payload.scenarios,
         )
         return PlanningResponse(
             scenarios=scenarios,
             monte_carlo=local_result.monte_carlo,
             simulation=local_result.simulation,
-            engine="ignidash",
+            engine="simulation",
             engine_status=response_payload.engine_status,
             fallback_method=response_payload.fallback_method,
             warnings=list(response_payload.warnings),
@@ -432,7 +467,7 @@ class BuildWealthScenarioService:
         self,
         *,
         inputs: _ScenarioRunInputs,
-    ) -> IgnidashScenarioRequestV1:
+    ) -> RemoteScenarioRequestV1:
         resolved_years = int(self.scenario_engine.years_to_retirement if inputs.years is None else inputs.years)
         resolved_contribution = float(
             self.scenario_engine.annual_contribution_usd
@@ -477,7 +512,7 @@ class BuildWealthScenarioService:
         }
 
         scenario_overrides = [
-            IgnidashScenarioOverrideV1(
+            RemoteScenarioOverrideV1(
                 scenario_id="baseline",
                 label="baseline",
                 overrides={
@@ -486,7 +521,7 @@ class BuildWealthScenarioService:
                     "horizon_years": resolved_years,
                 },
             ),
-            IgnidashScenarioOverrideV1(
+            RemoteScenarioOverrideV1(
                 scenario_id="optimistic",
                 label="optimistic",
                 overrides={
@@ -495,7 +530,7 @@ class BuildWealthScenarioService:
                     "horizon_years": resolved_years,
                 },
             ),
-            IgnidashScenarioOverrideV1(
+            RemoteScenarioOverrideV1(
                 scenario_id="conservative",
                 label="conservative",
                 overrides={
@@ -504,7 +539,7 @@ class BuildWealthScenarioService:
                     "horizon_years": resolved_years,
                 },
             ),
-            IgnidashScenarioOverrideV1(
+            RemoteScenarioOverrideV1(
                 scenario_id="hsa_delta",
                 label="hsa_delta",
                 overrides={
@@ -596,7 +631,7 @@ class BuildWealthScenarioService:
         if inputs.simulation_seed is not None:
             metadata["simulation_seed"] = int(inputs.simulation_seed)
 
-        return IgnidashScenarioRequestV1(
+        return RemoteScenarioRequestV1(
             request_id=uuid4().hex,
             currency=self.currency,
             start_year=inputs.start_year or datetime.now(timezone.utc).year,
@@ -614,10 +649,10 @@ class BuildWealthScenarioService:
         current_portfolio_value_usd: float,
         annual_contribution_usd: float,
         accounts: list[dict[str, Any]] | None,
-    ) -> list[IgnidashScenarioAccountV1]:
+    ) -> list[RemoteScenarioAccountV1]:
         if not accounts:
             return [
-                IgnidashScenarioAccountV1(
+                RemoteScenarioAccountV1(
                     account_id="primary",
                     account_type="portfolio",
                     tax_treatment="taxable",
@@ -626,7 +661,7 @@ class BuildWealthScenarioService:
                 )
             ]
 
-        mapped: list[IgnidashScenarioAccountV1] = []
+        mapped: list[RemoteScenarioAccountV1] = []
         for index, account in enumerate(accounts, start=1):
             account_id = str(account.get("account_id") or account.get("id") or f"account-{index}").strip()
             if not account_id:
@@ -652,7 +687,7 @@ class BuildWealthScenarioService:
             )
 
             mapped.append(
-                IgnidashScenarioAccountV1(
+                RemoteScenarioAccountV1(
                     account_id=account_id,
                     account_type=account_type,
                     tax_treatment=tax_treatment,
@@ -664,7 +699,7 @@ class BuildWealthScenarioService:
         if mapped:
             return mapped
         return [
-            IgnidashScenarioAccountV1(
+            RemoteScenarioAccountV1(
                 account_id="primary",
                 account_type="portfolio",
                 tax_treatment="taxable",
@@ -674,13 +709,13 @@ class BuildWealthScenarioService:
         ]
 
     @staticmethod
-    def _merge_sidecar_scenarios(
+    def _merge_calculation_service_scenarios(
         *,
         local_scenarios: list[ScenarioResult],
-        sidecar_scenarios: list[IgnidashScenarioOutputV1],
+        calculation_service_scenarios: list[RemoteScenarioOutputV1],
     ) -> list[ScenarioResult]:
-        by_label: dict[str, IgnidashScenarioOutputV1] = {}
-        for row in sidecar_scenarios:
+        by_label: dict[str, RemoteScenarioOutputV1] = {}
+        for row in calculation_service_scenarios:
             key = str(row.scenario_id or row.label).strip().lower()
             if key in {"baseline", "optimistic", "conservative", "hsa_delta"}:
                 by_label[key] = row
@@ -688,8 +723,8 @@ class BuildWealthScenarioService:
         merged: list[ScenarioResult] = []
         for local in local_scenarios:
             key = str(local.label).strip().lower()
-            sidecar = by_label.get(key)
-            if sidecar is None:
+            calculation_service = by_label.get(key)
+            if calculation_service is None:
                 merged.append(local)
                 continue
 
@@ -711,14 +746,14 @@ class BuildWealthScenarioService:
                         else None
                     ),
                 )
-                for item in sidecar.timeline
+                for item in calculation_service.timeline
             ]
 
             merged.append(
                 ScenarioResult(
                     label=local.label,
-                    future_value_usd=round(float(sidecar.summary.ending_balance_nominal), 2),
-                    real_value_usd=round(float(sidecar.summary.ending_balance_real), 2),
+                    future_value_usd=round(float(calculation_service.summary.ending_balance_nominal), 2),
+                    real_value_usd=round(float(calculation_service.summary.ending_balance_real), 2),
                     assumptions=dict(local.assumptions),
                     timeline_points=timeline_points,
                     account_balance_points=list(local.account_balance_points),

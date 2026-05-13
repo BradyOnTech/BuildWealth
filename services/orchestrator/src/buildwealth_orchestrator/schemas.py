@@ -649,7 +649,7 @@ class PlanningResponse(BaseModel):
     scenarios: list[ScenarioResult]
     monte_carlo: dict[str, Any]
     simulation: dict[str, Any] = Field(default_factory=dict)
-    engine: Literal["local", "ignidash"] = "local"
+    engine: Literal["local", "simulation"] = "local"
     engine_status: Literal["ok", "degraded"] = "ok"
     fallback_method: str | None = None
     warnings: list[str] = Field(default_factory=list)
@@ -2269,7 +2269,7 @@ class PlanWithdrawalStrategyComparisonRow(BaseModel):
     simulation_mode: str | None = None
     simulation_monte_carlo_variant: str | None = None
     average_effective_tax_rate: float | None = None
-    engine: Literal["local", "ignidash"] = "local"
+    engine: Literal["local", "simulation"] = "local"
     engine_status: Literal["ok", "degraded"] = "ok"
     fallback_method: str | None = None
     warnings: list[str] = Field(default_factory=list)

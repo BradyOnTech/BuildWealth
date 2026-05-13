@@ -8,7 +8,7 @@ from typing import Any
 from buildwealth_orchestrator.schemas import Holding, PortfolioSnapshot
 
 
-def normalize_ghostfolio_snapshot(
+def normalize_portfolio_analysis_snapshot(
     holdings_payload: dict[str, Any],
     performance_payload: dict[str, Any],
     accounts_payload: dict[str, Any] | list[dict[str, Any]],
@@ -63,7 +63,7 @@ def normalize_ghostfolio_snapshot(
         holdings=sorted(holdings, key=lambda x: x.value_usd, reverse=True),
         accounts=accounts,
         raw={
-            "ghostfolio": {
+            "portfolio_analysis": {
                 "holdings": holdings_payload,
                 "performance": performance_payload,
                 "accounts": accounts_payload,

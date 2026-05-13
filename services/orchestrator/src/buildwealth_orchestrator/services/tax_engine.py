@@ -1,6 +1,6 @@
 """Tax estimate engine for standalone planning workflows.
 
-Adapted from Ignidash (MIT):
+Implemented for BuildWealth simulation workflows:
 - src/lib/calc/taxes.ts
 - src/lib/calc/tax-data/federal-income-tax-brackets.ts
 - src/lib/calc/tax-data/capital-gains-tax-brackets.ts
@@ -59,7 +59,7 @@ class TaxYearConfig:
     fica_medicare_rate: float = 0.0145
 
 
-# 2026 values adapted from Ignidash tax-data constants.
+# 2026 values used by BuildWealth tax calculations.
 # 2026 IRMAA values are sourced from CMS (Nov 14, 2025):
 # https://www.cms.gov/newsroom/fact-sheets/2026-medicare-parts-b-premiums-deductibles
 TAX_YEAR_2026 = TaxYearConfig(

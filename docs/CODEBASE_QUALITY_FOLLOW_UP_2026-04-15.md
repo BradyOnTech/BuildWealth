@@ -4,7 +4,7 @@
 2026-04-15
 
 ## Purpose
-This document records the areas where the recent code-quality refactor improved maintainability but also introduced more indirection, plus the areas where the sidecar/degraded-mode layer remains intentionally complex because it reflects the chosen architecture.
+This document records the areas where the recent code-quality refactor improved maintainability but also introduced more indirection, plus the areas where the native module/degraded-mode layer remains intentionally complex because it reflects the chosen architecture.
 
 The goal is not to undo the refactor. The goal is to make the new structure easier to understand and to reduce complexity where the indirection is now doing too many jobs at once.
 
@@ -16,9 +16,9 @@ The refactor was a net improvement:
 - typing is stronger in several service modules
 - error handling is less misleading
 
-The tradeoff is that some shared helpers now sit one layer farther away from the feature code that uses them, and the sidecar orchestration layer still carries real complexity because it has to support:
+The tradeoff is that some shared helpers now sit one layer farther away from the feature code that uses them, and the native module orchestration layer still carries real complexity because it has to support:
 - local-first execution
-- optional sidecars
+- optional native modules
 - contract-version guards
 - degraded responses
 - operator-facing engine health
@@ -27,8 +27,8 @@ The tradeoff is that some shared helpers now sit one layer farther away from the
 - Completed: Slice A (Shared Helper Cohesion)
 - Completed: Slice B (Frontend Field Schema Isolation)
 - Completed: Slice C (Engine Policy and Envelope Unification)
-- Completed: Slice D (Planning Sidecar Decomposition)
-- Completed: Slice E (Sidecar Matrix Test Hardening)
+- Completed: Slice D (Planning Native Module Decomposition)
+- Completed: Slice E (Native Module Matrix Test Hardening)
 - Completed: Schema Base Clarity Follow-up
 - Completed: Typed Portfolio Metrics Contract Follow-up
 - Completed: Timeline Defaults Mirror Audit + Drift Harness
@@ -173,7 +173,7 @@ Status:
 
 Files:
 - `services/orchestrator/src/buildwealth_orchestrator/schemas.py`
-- `contracts/engine/v1/ghostfolio.*.json`
+- `contracts/engine/v1/portfolio_analysis.*.json`
 
 What happened:
 - repeated request/response shapes were collapsed into shared Pydantic bases and repeated JSON schema fragments were centralized with local `$defs`
@@ -198,9 +198,9 @@ Ongoing guardrails:
 
 ## Intentional Complexity That Should Not Be Deleted
 
-### Sidecar / Degraded-Mode Execution
+### Native Module / Degraded-Mode Execution
 Files:
-- `services/orchestrator/src/buildwealth_orchestrator/services/planning_sidecar.py`
+- `services/orchestrator/src/buildwealth_orchestrator/services/planning_calculation_adapter.py`
 - `services/orchestrator/src/buildwealth_orchestrator/services/engine_adapter.py`
 - `services/orchestrator/src/buildwealth_orchestrator/services/engine_status.py`
 - `services/orchestrator/src/buildwealth_orchestrator/services/portfolio_benchmark.py`
@@ -210,7 +210,7 @@ Files:
 What makes it complex:
 - one codepath may produce:
   - local result
-  - sidecar request
+  - native module request
   - contract guard skip
   - adapter error fallback
   - degraded response with explicit metadata
@@ -218,24 +218,24 @@ What makes it complex:
 - benchmark, attribution, and planning all follow similar patterns but are not identical
 
 Why this complexity is intentional:
-- BuildWealth chose targeted sidecar reuse, not a full rewrite and not a full fork
-- local mode must remain functional when sidecars are disabled or unavailable
+- BuildWealth chose targeted native module reuse, not a full rewrite and not a full fork
+- local mode must remain functional when native modules are disabled or unavailable
 - contract guards are necessary to avoid silent incorrect compute
 
 What should not happen:
 - do not remove degraded mode
-- do not collapse sidecar and local execution into hidden implicit fallbacks
+- do not collapse native module and local execution into hidden implicit fallbacks
 - do not let feature services invent their own ad hoc engine metadata fields
 
 ## How To Simplify The Intentional Complexity
 
 ### 1. Extract Engine Call Policy
 Problem:
-- services decide sidecar eligibility inline
+- services decide native module eligibility inline
 
 Fix:
 1. Introduce a small engine policy helper that answers:
-   - sidecar enabled?
+   - native module enabled?
    - adapter available?
    - contract compatible?
    - guard reason?
@@ -255,12 +255,12 @@ Fix:
    - warnings merge behavior
 3. Leave domain payload assembly in the feature services.
 
-### 3. Separate Planning Sidecar Responsibilities
+### 3. Separate Planning Native Module Responsibilities
 Status:
 - Completed (2026-04-20, Slice D)
 
 Problem:
-- `planning_sidecar.py` still handles too many jobs in one class:
+- `planning_calculation_adapter.py` still handles too many jobs in one class:
   - local execution
   - request building
   - adapter call
@@ -271,8 +271,8 @@ Result:
 1. Split into focused internal helpers:
    - local result builder
    - local-only/degraded envelope builders
-   - sidecar request execution helper
-   - sidecar merge response helper
+   - native module request execution helper
+   - native module merge response helper
 2. Kept the external service API unchanged.
 3. Added local-path projection payload regression coverage.
 
@@ -288,7 +288,7 @@ Fix:
 2. Reuse them in Pydantic models, service logic, and tests.
 3. Keep docs aligned with those exact values.
 
-### 5. Add Sidecar Matrix Tests
+### 5. Add Native Module Matrix Tests
 Problem:
 - the architecture is intentional, but its complexity is easiest to break in edge cases
 
@@ -299,7 +299,7 @@ Fix:
    - contract mismatch
    - request error
    - invalid response
-   - successful sidecar response
+   - successful native module response
 2. Assert both business payload correctness and engine metadata correctness.
 
 ## Recommended Execution Order
@@ -322,21 +322,21 @@ Definition of done:
 
 ### Slice C: Engine Policy and Envelope Unification (Completed 2026-04-15)
 Goal:
-- isolate intentional sidecar complexity behind smaller internal abstractions
+- isolate intentional native module complexity behind smaller internal abstractions
 
 Definition of done:
 - planning, benchmark, and attribution all use the same engine call policy helper
 - degraded metadata assembly is shared and typed
 
-### Slice D: Planning Sidecar Decomposition (Completed 2026-04-20)
+### Slice D: Planning Native Module Decomposition (Completed 2026-04-20)
 Goal:
-- reduce the internal cognitive load of `planning_sidecar.py`
+- reduce the internal cognitive load of `planning_calculation_adapter.py`
 
 Definition of done:
 - request build, local execution, fallback, and merge paths are separate functions
 - behavior and API contracts stay unchanged
 
-### Slice E: Sidecar Matrix Test Hardening (Completed 2026-04-15)
+### Slice E: Native Module Matrix Test Hardening (Completed 2026-04-15)
 Goal:
 - make intentional complexity safer to maintain
 
@@ -398,7 +398,7 @@ For extracted helpers:
 - keep only the helpers that are truly shared
 - keep helper modules small and cohesive
 
-For sidecar orchestration:
+For native module orchestration:
 - keep degraded mode explicit
 - make engine decisions and result envelopes canonical
 - test the state matrix directly

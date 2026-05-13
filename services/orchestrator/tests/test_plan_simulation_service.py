@@ -3,8 +3,8 @@ import json
 
 import httpx
 
-from buildwealth_orchestrator.services.engine_adapter import SidecarAdapter
-from buildwealth_orchestrator.services.planning_sidecar import BuildWealthScenarioService
+from buildwealth_orchestrator.services.engine_adapter import CalculationAdapter
+from buildwealth_orchestrator.services.planning_calculation_adapter import BuildWealthScenarioService
 from buildwealth_orchestrator.services.scenario_engine import ScenarioEngine
 
 
@@ -26,9 +26,9 @@ def _build_scenario_engine() -> ScenarioEngine:
 def test_plan_simulation_service_returns_local_when_disabled() -> None:
     service = BuildWealthScenarioService(
         scenario_engine=_build_scenario_engine(),
-        sidecar_adapter=None,
-        sidecar_enabled=False,
-        sidecar_path="/v1/scenario/simulate",
+        calculation_adapter=None,
+        calculation_adapter_enabled=False,
+        calculation_adapter_path="/v1/scenario/simulate",
         currency="USD",
     )
 
@@ -44,9 +44,9 @@ def test_plan_simulation_service_returns_local_when_disabled() -> None:
 def test_plan_simulation_service_returns_local_when_adapter_missing() -> None:
     service = BuildWealthScenarioService(
         scenario_engine=_build_scenario_engine(),
-        sidecar_adapter=None,
-        sidecar_enabled=True,
-        sidecar_path="/v1/scenario/simulate",
+        calculation_adapter=None,
+        calculation_adapter_enabled=True,
+        calculation_adapter_path="/v1/scenario/simulate",
         currency="USD",
     )
 
@@ -62,9 +62,9 @@ def test_plan_simulation_service_returns_local_when_adapter_missing() -> None:
 def test_plan_simulation_service_local_path_preserves_projection_payloads() -> None:
     service = BuildWealthScenarioService(
         scenario_engine=_build_scenario_engine(),
-        sidecar_adapter=None,
-        sidecar_enabled=False,
-        sidecar_path="/v1/scenario/simulate",
+        calculation_adapter=None,
+        calculation_adapter_enabled=False,
+        calculation_adapter_path="/v1/scenario/simulate",
         currency="USD",
     )
 
@@ -101,12 +101,12 @@ def test_plan_simulation_service_local_path_preserves_projection_payloads() -> N
     assert result.engine == "local"
     assert result.engine_status == "ok"
     assert result.income_projection is not None
-    assert result.income_projection["first_year_gross_income_usd"] == 125000
+    assert result.income_projection.first_year_gross_income_usd == 125000
     assert result.expense_projection is not None
-    assert result.expense_projection["first_year_expenses_usd"] == 64000
+    assert result.expense_projection.first_year_expenses_usd == 64000
 
 
-def test_plan_simulation_service_merges_sidecar_response() -> None:
+def test_plan_simulation_service_merges_calculation_service_response() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content.decode("utf-8"))
         assert payload["contract_version"] == 1
@@ -115,7 +115,7 @@ def test_plan_simulation_service_merges_sidecar_response() -> None:
             json={
                 "contract_version": 1,
                 "request_id": payload["request_id"],
-                "engine": "ignidash",
+                "engine": "simulation",
                 "engine_status": "ok",
                 "fallback_method": None,
                 "scenarios": [
@@ -161,7 +161,7 @@ def test_plan_simulation_service_merges_sidecar_response() -> None:
             },
         )
 
-    adapter = SidecarAdapter(
+    adapter = CalculationAdapter(
         base_url="http://localhost:8412",
         max_retries=0,
         transport=httpx.MockTransport(handler),
@@ -169,26 +169,26 @@ def test_plan_simulation_service_merges_sidecar_response() -> None:
 
     service = BuildWealthScenarioService(
         scenario_engine=_build_scenario_engine(),
-        sidecar_adapter=adapter,
-        sidecar_enabled=True,
-        sidecar_path="/v1/scenario/simulate",
+        calculation_adapter=adapter,
+        calculation_adapter_enabled=True,
+        calculation_adapter_path="/v1/scenario/simulate",
         currency="USD",
     )
 
     result = asyncio.run(service.run(current_portfolio_value_usd=100000))
 
-    assert result.engine == "ignidash"
+    assert result.engine == "simulation"
     assert result.engine_status == "ok"
     by_label = {scenario.label: scenario for scenario in result.scenarios}
     assert by_label["baseline"].future_value_usd == 1000000
     assert by_label["optimistic"].real_value_usd == 850000
 
 
-def test_plan_simulation_service_falls_back_on_sidecar_error() -> None:
+def test_plan_simulation_service_falls_back_on_calculation_service_error() -> None:
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(status_code=503, json={"detail": "temporary outage"})
 
-    adapter = SidecarAdapter(
+    adapter = CalculationAdapter(
         base_url="http://localhost:8412",
         max_retries=0,
         transport=httpx.MockTransport(handler),
@@ -196,9 +196,9 @@ def test_plan_simulation_service_falls_back_on_sidecar_error() -> None:
 
     service = BuildWealthScenarioService(
         scenario_engine=_build_scenario_engine(),
-        sidecar_adapter=adapter,
-        sidecar_enabled=True,
-        sidecar_path="/v1/scenario/simulate",
+        calculation_adapter=adapter,
+        calculation_adapter_enabled=True,
+        calculation_adapter_path="/v1/scenario/simulate",
         currency="USD",
     )
 
@@ -207,17 +207,17 @@ def test_plan_simulation_service_falls_back_on_sidecar_error() -> None:
     assert result.engine == "local"
     assert result.engine_status == "degraded"
     assert result.fallback_method == "local_scenario_engine_fallback"
-    assert any("sidecar unavailable" in warning.lower() for warning in result.warnings)
+    assert any("calculation unavailable" in warning.lower() for warning in result.warnings)
 
 
-def test_plan_simulation_service_skips_sidecar_when_contract_guarded() -> None:
+def test_plan_simulation_service_skips_calculation_service_when_contract_guarded() -> None:
     calls = {"count": 0}
 
     def handler(_: httpx.Request) -> httpx.Response:
         calls["count"] += 1
         return httpx.Response(status_code=200, json={})
 
-    adapter = SidecarAdapter(
+    adapter = CalculationAdapter(
         base_url="http://localhost:8412",
         max_retries=0,
         transport=httpx.MockTransport(handler),
@@ -225,16 +225,16 @@ def test_plan_simulation_service_skips_sidecar_when_contract_guarded() -> None:
 
     service = BuildWealthScenarioService(
         scenario_engine=_build_scenario_engine(),
-        sidecar_adapter=adapter,
-        sidecar_enabled=True,
-        sidecar_path="/v1/scenario/simulate",
+        calculation_adapter=adapter,
+        calculation_adapter_enabled=True,
+        calculation_adapter_path="/v1/scenario/simulate",
         currency="USD",
     )
 
     result = asyncio.run(
         service.run(
             current_portfolio_value_usd=100000,
-            sidecar_guard_reason="Sidecar contract version mismatch (expected v1, got v2)",
+            contract_guard_reason="CalculationAdapter contract version mismatch (expected v1, got v2)",
         )
     )
 
@@ -242,7 +242,7 @@ def test_plan_simulation_service_skips_sidecar_when_contract_guarded() -> None:
     assert result.engine == "local"
     assert result.engine_status == "degraded"
     assert result.fallback_method == "contract_version_guard"
-    assert any("sidecar skipped" in warning.lower() for warning in result.warnings)
+    assert any("calculation skipped" in warning.lower() for warning in result.warnings)
 
 
 def test_plan_simulation_service_uses_account_allocation_payload() -> None:
@@ -293,7 +293,7 @@ def test_plan_simulation_service_uses_account_allocation_payload() -> None:
             json={
                 "contract_version": 1,
                 "request_id": payload["request_id"],
-                "engine": "ignidash",
+                "engine": "simulation",
                 "engine_status": "ok",
                 "fallback_method": None,
                 "scenarios": [
@@ -339,16 +339,16 @@ def test_plan_simulation_service_uses_account_allocation_payload() -> None:
             },
         )
 
-    adapter = SidecarAdapter(
+    adapter = CalculationAdapter(
         base_url="http://localhost:8412",
         max_retries=0,
         transport=httpx.MockTransport(handler),
     )
     service = BuildWealthScenarioService(
         scenario_engine=_build_scenario_engine(),
-        sidecar_adapter=adapter,
-        sidecar_enabled=True,
-        sidecar_path="/v1/scenario/simulate",
+        calculation_adapter=adapter,
+        calculation_adapter_enabled=True,
+        calculation_adapter_path="/v1/scenario/simulate",
         currency="USD",
     )
 
@@ -525,7 +525,7 @@ def test_plan_simulation_service_uses_account_allocation_payload() -> None:
         )
     )
 
-    assert result.engine == "ignidash"
+    assert result.engine == "simulation"
     assert result.income_projection is not None
     assert result.income_projection.first_year_gross_income_usd == 125000
     assert result.expense_projection is not None
@@ -556,7 +556,7 @@ def test_plan_simulation_service_forwards_assumption_set_metadata() -> None:
             json={
                 "contract_version": 1,
                 "request_id": payload["request_id"],
-                "engine": "ignidash",
+                "engine": "simulation",
                 "engine_status": "ok",
                 "fallback_method": None,
                 "scenarios": [
@@ -602,16 +602,16 @@ def test_plan_simulation_service_forwards_assumption_set_metadata() -> None:
             },
         )
 
-    adapter = SidecarAdapter(
+    adapter = CalculationAdapter(
         base_url="http://localhost:8412",
         max_retries=0,
         transport=httpx.MockTransport(handler),
     )
     service = BuildWealthScenarioService(
         scenario_engine=_build_scenario_engine(),
-        sidecar_adapter=adapter,
-        sidecar_enabled=True,
-        sidecar_path="/v1/scenario/simulate",
+        calculation_adapter=adapter,
+        calculation_adapter_enabled=True,
+        calculation_adapter_path="/v1/scenario/simulate",
         currency="USD",
     )
 

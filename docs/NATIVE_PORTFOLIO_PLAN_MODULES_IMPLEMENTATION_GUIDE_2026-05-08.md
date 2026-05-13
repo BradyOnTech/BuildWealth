@@ -8,7 +8,7 @@
 
 Active implementation guide for BuildWealth-native Portfolio, Plan, and Data & Tools workflows.
 
-This guide follows [ADR 0003](./adr/0003-buildwealth-native-capabilities-replace-upstream-sidecars.md) and [ADR 0004](./adr/0004-v2-is-the-only-future-product-surface.md). Do not use external app names, sidecar labels, or classic/v1 fallback language for new product surfaces.
+This guide follows [ADR 0003](./adr/0003-buildwealth-native-capability-ownership.md) and [ADR 0004](./adr/0004-v2-is-the-only-future-product-surface.md). Do not use external app names, native module labels, or classic/v1 fallback language for new product surfaces.
 
 **Guiding Idea**
 
@@ -52,9 +52,9 @@ Do not create new top-level sidebar entries unless the user would return to that
 | Import Report | Import report |
 | Asset Registry | Investments & Assets |
 | Asset Review Item | Asset needs review |
-| Portfolio Analytics Engine | Portfolio Analysis |
+| Portfolio Analysis | Portfolio Analysis |
 | Portfolio Audit | Portfolio History |
-| Plan Simulation Engine | Simulations |
+| Simulations | Simulations |
 | Simulation Run | Simulation |
 | Simulation Artifact | Saved Simulation |
 | Plan Resilience | Plan Strength |
@@ -164,7 +164,7 @@ The user imports an unknown ticker, reviews a watchlist candidate, or researches
 
 The user opens Portfolio from Today or Inbox after a performance, risk, or recommendation alert. They need to know what happened, why it happened, whether it matters, and what action is available.
 
-**Module:** Portfolio Analytics Engine.
+**Module:** Portfolio Analysis.
 
 **User-facing label:** Portfolio Analysis.
 
@@ -172,7 +172,7 @@ The user opens Portfolio from Today or Inbox after a performance, risk, or recom
 
 - Keep `portfolio_performance.py`, `portfolio_benchmark.py`, `portfolio_attribution.py`, `portfolio_metrics.py`, `portfolio_risk_alerts.py`, and `portfolio_simulator.py`.
 - Add `portfolio_analytics.py` only if it becomes useful as a shallow Interface that composes those services for UI/API responses.
-- Avoid leaking sidecar terms through the response body unless debugging metadata is explicitly requested.
+- Avoid leaking native module terms through the response body unless debugging metadata is explicitly requested.
 
 **API shape:**
 
@@ -272,14 +272,14 @@ The user does not want to build every scenario from scratch. They want to ask "w
 
 The user runs a scenario and sees a projection. They need to understand what drove the result, what changed compared with the active plan, and which assumptions matter most.
 
-**Module:** Plan Simulation Engine.
+**Module:** Simulations.
 
 **User-facing label:** Simulations.
 
 **Backend home:**
 
 - Keep `scenario_engine.py`, `tax_engine.py`, `contribution_rules.py`, `rmd_projection.py`, `social_security_projection.py`, and projection services.
-- Treat `planning_sidecar.py` as migration scaffolding while native simulation coverage is built.
+- Treat `planning_calculation_adapter.py` as migration scaffolding while native simulation coverage is built.
 - Add `plan_simulation_analyzer.py` to extract chart-ready metrics, phase summaries, drivers, warnings, and explanation payloads from raw simulation results.
 - Add `plan_lever_impact.py` for two-stage Plan Lever Impact Policy classification.
 - Use existing `test_simulation_delta.py` patterns for comparison behavior.
@@ -381,7 +381,7 @@ Copilot should help the user reach these workflows, not replace them.
 
 **Build Order**
 
-1. **Native framing and cleanup.** Remove external app links once replacement links exist, rename user-facing sidecar labels, and update stale license/provenance docs.
+1. **Native framing and cleanup.** Remove external app links once replacement links exist, rename user-facing native module labels, and update stale license/provenance docs.
 2. **Import Workbench.** This unlocks trustworthy data and removes one of the strongest reasons old external portfolio workflows remained reachable.
 3. **Portfolio Analytics and Asset Registry.** This turns Portfolio into the complete capital workspace and removes another major old external portfolio workflow.
 4. **Plan Templates and Saved Simulations.** This gives users a fast way into meaningful what-if work and removes another major old external planning workflow.
@@ -396,4 +396,4 @@ Copilot should help the user reach these workflows, not replace them.
 - Today, Inbox, Portfolio, Plan, Profile, or Data & Tools links to it when context calls for it.
 - Copilot uses the same API and review boundaries.
 - Tests cover service behavior, route contracts, and the main UI interaction.
-- User-facing labels say BuildWealth concepts, not Ghostfolio, Ignidash, or sidecar.
+- User-facing labels say BuildWealth concepts, not Portfolio Analysis, Simulations, or native module.

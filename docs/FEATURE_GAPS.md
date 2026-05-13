@@ -160,9 +160,9 @@ Current prompt is 2 generic sentences. Should guide the copilot to:
 
 ### Portfolio & Snapshot
 - `get_latest_snapshot` — Latest local snapshot
-- `get_live_snapshot` — Live from Ghostfolio
+- `get_live_snapshot` — Live from Portfolio Analysis
 - `get_snapshot_history` — Historical trends (14-day)
-- `list_accounts` — Ghostfolio accounts
+- `list_accounts` — Portfolio Analysis accounts
 
 ### Financial Profile
 - `get_financial_profile` — Full profile (income, expenses, debt, goals, tax)

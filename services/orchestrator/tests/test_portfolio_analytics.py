@@ -61,7 +61,7 @@ def test_portfolio_analytics_payload_sanitizes_internal_engine_labels() -> None:
                 "max_drawdown_pct": -2,
             },
             "series": [],
-            "warnings": ["Portfolio benchmark sidecar disabled; using local fallback"],
+            "warnings": ["Portfolio benchmark local calculation selected; using local fallback"],
         },
         attribution_response={
             "summary": {
@@ -83,7 +83,7 @@ def test_portfolio_analytics_payload_sanitizes_internal_engine_labels() -> None:
                 }
             ],
             "detractors": [],
-            "warnings": ["Portfolio attribution sidecar disabled; using local fallback"],
+            "warnings": ["Portfolio attribution local calculation selected; using local fallback"],
         },
         period="mtd",
         snapshot_limit=31,
@@ -98,8 +98,8 @@ def test_portfolio_analytics_payload_sanitizes_internal_engine_labels() -> None:
     assert payload["attribution"]["contributors"][0]["symbol"] == "VTI"
     assert payload["risk_explanations"]["rows"][0]["label"] == "Largest holding"
     assert payload["risk_explanations"]["alerts"][0]["metric"] == "sector"
-    assert "Ghostfolio" not in " ".join(payload["warnings"])
-    assert "sidecar" not in " ".join(payload["warnings"])
+    assert "Portfolio Analysis" not in " ".join(payload["warnings"])
+    assert "calculation_service" not in " ".join(payload["warnings"])
 
 
 def test_portfolio_analytics_payload_can_be_partial_without_snapshots() -> None:

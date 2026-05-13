@@ -14,32 +14,32 @@ from buildwealth_orchestrator.schemas import (
     PortfolioBenchmarkSummary,
 )
 from buildwealth_orchestrator.services.engine_adapter import (
-    SidecarAdapter,
-    SidecarAdapterError,
+    CalculationAdapter,
+    CalculationAdapterError,
 )
 from buildwealth_orchestrator.services.engine_policy import (
-    FALLBACK_METHOD_SIDECAR_DISABLED,
+    FALLBACK_METHOD_LOCAL_CALCULATION,
     resolve_engine_call_disposition,
-    sidecar_unavailable_warning,
+    calculation_unavailable_warning,
 )
 from buildwealth_orchestrator.services.snapshot_store import SnapshotStore
 
-GHOSTFOLIO_BENCHMARK_CONTRACT_VERSION = 1
+PORTFOLIO_BENCHMARK_CONTRACT_VERSION = 1
 
 
-class GhostfolioBenchmarkPortfolioPointV1(BaseModel):
+class RemoteBenchmarkPortfolioPointV1(BaseModel):
     date: date
     total_value_base: float
     net_external_flow_base: float = 0.0
 
 
-class GhostfolioBenchmarkRequestV1(BaseModel):
+class RemoteBenchmarkRequestV1(BaseModel):
     contract_version: Literal[1] = 1
     request_id: str
     portfolio_base_currency: str = Field(pattern=r"^[A-Z]{3}$")
     start_date: date
     end_date: date
-    portfolio_series: list[GhostfolioBenchmarkPortfolioPointV1]
+    portfolio_series: list[RemoteBenchmarkPortfolioPointV1]
     benchmark_symbols: list[str]
     sampling_interval: Literal["DAILY", "WEEKLY", "MONTHLY"] = "DAILY"
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -54,13 +54,13 @@ class GhostfolioBenchmarkRequestV1(BaseModel):
 
     @field_validator("portfolio_series")
     @classmethod
-    def _validate_series(cls, values: list[GhostfolioBenchmarkPortfolioPointV1]) -> list[GhostfolioBenchmarkPortfolioPointV1]:
+    def _validate_series(cls, values: list[RemoteBenchmarkPortfolioPointV1]) -> list[RemoteBenchmarkPortfolioPointV1]:
         if len(values) < 2:
             raise ValueError("portfolio_series must include at least 2 points")
         return sorted(values, key=lambda item: item.date)
 
     @model_validator(mode="after")
-    def _validate_window(self) -> GhostfolioBenchmarkRequestV1:
+    def _validate_window(self) -> RemoteBenchmarkRequestV1:
         if self.start_date > self.end_date:
             raise ValueError("start_date must be before or equal to end_date")
         if self.portfolio_series[0].date < self.start_date:
@@ -70,7 +70,7 @@ class GhostfolioBenchmarkRequestV1(BaseModel):
         return self
 
 
-class GhostfolioBenchmarkSummaryV1(BaseModel):
+class RemoteBenchmarkSummaryV1(BaseModel):
     portfolio_return_pct: float
     benchmark_return_pct_by_symbol: dict[str, float]
     alpha_pct_by_symbol: dict[str, float]
@@ -78,21 +78,21 @@ class GhostfolioBenchmarkSummaryV1(BaseModel):
     max_drawdown_pct: float | None = None
 
 
-class GhostfolioBenchmarkSeriesPointV1(BaseModel):
+class RemoteBenchmarkSeriesPointV1(BaseModel):
     date: date
     portfolio_index: float
     benchmark_index_by_symbol: dict[str, float]
     alpha_index_by_symbol: dict[str, float]
 
 
-class GhostfolioBenchmarkResponseV1(BaseModel):
+class RemoteBenchmarkResponseV1(BaseModel):
     contract_version: Literal[1] = 1
     request_id: str
-    engine: Literal["ghostfolio"] = "ghostfolio"
+    engine: Literal["portfolio_analysis"] = "portfolio_analysis"
     engine_status: Literal["ok", "degraded"]
     fallback_method: str | None = None
-    summary: GhostfolioBenchmarkSummaryV1
-    series: list[GhostfolioBenchmarkSeriesPointV1]
+    summary: RemoteBenchmarkSummaryV1
+    series: list[RemoteBenchmarkSeriesPointV1]
     warnings: list[str] = Field(default_factory=list)
     generated_at: datetime | None = None
 
@@ -103,16 +103,16 @@ class BuildWealthBenchmarkService:
         *,
         snapshot_store: SnapshotStore,
         research_service: Any,
-        sidecar_adapter: SidecarAdapter | None,
-        sidecar_enabled: bool,
-        sidecar_path: str,
+        calculation_adapter: CalculationAdapter | None,
+        calculation_adapter_enabled: bool,
+        calculation_adapter_path: str,
         base_currency: str = "USD",
     ) -> None:
         self.snapshot_store = snapshot_store
         self.research_service = research_service
-        self.sidecar_adapter = sidecar_adapter
-        self.sidecar_enabled = sidecar_enabled
-        self.sidecar_path = sidecar_path
+        self.calculation_adapter = calculation_adapter
+        self.calculation_adapter_enabled = calculation_adapter_enabled
+        self.calculation_adapter_path = calculation_adapter_path
         self.base_currency = str(base_currency or "USD").upper()
 
     async def compare(
@@ -120,7 +120,7 @@ class BuildWealthBenchmarkService:
         *,
         benchmark_symbols: list[str],
         limit: int,
-        sidecar_guard_reason: str | None = None,
+        contract_guard_reason: str | None = None,
     ) -> PortfolioBenchmarkResponse:
         request_payload = self._build_request_payload(
             benchmark_symbols=benchmark_symbols,
@@ -129,34 +129,34 @@ class BuildWealthBenchmarkService:
 
         disposition = resolve_engine_call_disposition(
             engine_label="Portfolio benchmark",
-            sidecar_enabled=self.sidecar_enabled,
-            sidecar_adapter=self.sidecar_adapter,
-            sidecar_guard_reason=sidecar_guard_reason,
+            calculation_adapter_enabled=self.calculation_adapter_enabled,
+            calculation_adapter=self.calculation_adapter,
+            contract_guard_reason=contract_guard_reason,
             disabled_behavior="degraded_fallback",
         )
 
-        if not disposition.use_sidecar:
+        if not disposition.use_calculation_adapter:
             fallback = self._compute_local_fallback(
                 request_payload,
-                fallback_method=disposition.fallback_method or FALLBACK_METHOD_SIDECAR_DISABLED,
-                warning=disposition.warning or "Portfolio benchmark sidecar disabled; using local fallback",
+                fallback_method=disposition.fallback_method or FALLBACK_METHOD_LOCAL_CALCULATION,
+                warning=disposition.warning or "Portfolio benchmark local calculation selected; using local fallback",
             )
             return self._to_api_response(request_payload, fallback)
 
-        if self.sidecar_adapter is not None:
+        if self.calculation_adapter is not None:
             try:
-                contract_response = await self.sidecar_adapter.post_json(
-                    path=self.sidecar_path,
+                contract_response = await self.calculation_adapter.post_json(
+                    path=self.calculation_adapter_path,
                     request_payload=request_payload.model_dump(mode="json"),
-                    request_model=GhostfolioBenchmarkRequestV1,
-                    response_model=GhostfolioBenchmarkResponseV1,
+                    request_model=RemoteBenchmarkRequestV1,
+                    response_model=RemoteBenchmarkResponseV1,
                 )
                 return self._to_api_response(request_payload, contract_response)
-            except SidecarAdapterError as exc:
+            except CalculationAdapterError as exc:
                 fallback = self._compute_local_fallback(
                     request_payload,
                     fallback_method="local_benchmark_fallback",
-                    warning=sidecar_unavailable_warning(
+                    warning=calculation_unavailable_warning(
                         engine_label="Portfolio benchmark",
                         error=exc,
                     ),
@@ -165,8 +165,8 @@ class BuildWealthBenchmarkService:
 
         fallback = self._compute_local_fallback(
             request_payload,
-            fallback_method=FALLBACK_METHOD_SIDECAR_DISABLED,
-            warning="Portfolio benchmark sidecar adapter unavailable; using local fallback",
+            fallback_method=FALLBACK_METHOD_LOCAL_CALCULATION,
+            warning="Portfolio benchmark calculation unavailable; using local fallback",
         )
         return self._to_api_response(request_payload, fallback)
 
@@ -175,14 +175,14 @@ class BuildWealthBenchmarkService:
         *,
         benchmark_symbols: list[str],
         limit: int,
-    ) -> GhostfolioBenchmarkRequestV1:
+    ) -> RemoteBenchmarkRequestV1:
         bounded_limit = max(2, min(int(limit), 3650))
         history = self.snapshot_store.recent(limit=bounded_limit)
         if len(history) < 2:
             raise ValueError("At least 2 snapshots are required for benchmark comparison")
 
         points = [
-            GhostfolioBenchmarkPortfolioPointV1(
+            RemoteBenchmarkPortfolioPointV1(
                 date=snapshot.as_of.date(),
                 total_value_base=float(snapshot.total_value_usd),
                 net_external_flow_base=0.0,
@@ -190,7 +190,7 @@ class BuildWealthBenchmarkService:
             for snapshot in sorted(history, key=lambda row: row.as_of)
         ]
 
-        return GhostfolioBenchmarkRequestV1(
+        return RemoteBenchmarkRequestV1(
             request_id=uuid4().hex,
             portfolio_base_currency=self.base_currency,
             start_date=points[0].date,
@@ -202,11 +202,11 @@ class BuildWealthBenchmarkService:
 
     def _compute_local_fallback(
         self,
-        request_payload: GhostfolioBenchmarkRequestV1,
+        request_payload: RemoteBenchmarkRequestV1,
         *,
         fallback_method: str,
         warning: str,
-    ) -> GhostfolioBenchmarkResponseV1:
+    ) -> RemoteBenchmarkResponseV1:
         dates = [point.date for point in request_payload.portfolio_series]
         portfolio_values = [point.total_value_base for point in request_payload.portfolio_series]
         portfolio_index = self._normalize_to_index(portfolio_values)
@@ -223,7 +223,7 @@ class BuildWealthBenchmarkService:
             benchmark_return_pct_by_symbol[symbol] = benchmark_return
             alpha_pct_by_symbol[symbol] = round((portfolio_index[-1] - portfolio_index[0]) - benchmark_return, 4)
 
-        series: list[GhostfolioBenchmarkSeriesPointV1] = []
+        series: list[RemoteBenchmarkSeriesPointV1] = []
         for idx, point_date in enumerate(dates):
             benchmark_row = {
                 symbol: values[idx]
@@ -234,7 +234,7 @@ class BuildWealthBenchmarkService:
                 for symbol, benchmark_value in benchmark_row.items()
             }
             series.append(
-                GhostfolioBenchmarkSeriesPointV1(
+                RemoteBenchmarkSeriesPointV1(
                     date=point_date,
                     portfolio_index=portfolio_index[idx],
                     benchmark_index_by_symbol=benchmark_row,
@@ -244,11 +244,11 @@ class BuildWealthBenchmarkService:
 
         tracking_error_pct = self._tracking_error_pct(portfolio_index, benchmark_index_by_symbol)
 
-        return GhostfolioBenchmarkResponseV1(
+        return RemoteBenchmarkResponseV1(
             request_id=request_payload.request_id,
             engine_status="degraded",
             fallback_method=fallback_method,
-            summary=GhostfolioBenchmarkSummaryV1(
+            summary=RemoteBenchmarkSummaryV1(
                 portfolio_return_pct=round(portfolio_index[-1] - portfolio_index[0], 4),
                 benchmark_return_pct_by_symbol=benchmark_return_pct_by_symbol,
                 alpha_pct_by_symbol=alpha_pct_by_symbol,
@@ -371,8 +371,8 @@ class BuildWealthBenchmarkService:
 
     @staticmethod
     def _to_api_response(
-        request_payload: GhostfolioBenchmarkRequestV1,
-        contract_response: GhostfolioBenchmarkResponseV1,
+        request_payload: RemoteBenchmarkRequestV1,
+        contract_response: RemoteBenchmarkResponseV1,
     ) -> PortfolioBenchmarkResponse:
         return PortfolioBenchmarkResponse(
             request_id=contract_response.request_id,

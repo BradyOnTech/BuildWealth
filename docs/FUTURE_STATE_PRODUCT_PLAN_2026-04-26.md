@@ -19,7 +19,7 @@ Domain expansion plans:
 - [Investment Fit and Market Research Plan (2026-04-26)](./INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md)
 - [Context Intelligence Implementation Plan (2026-05-07)](./CONTEXT_INTELLIGENCE_IMPLEMENTATION_PLAN_2026-05-07.md)
 - [Fresh Product Ideas and Next Build Sequence (2026-04-28)](./FRESH_PRODUCT_IDEAS_AND_NEXT_SEQUENCE_2026-04-28.md)
-- [Upstream App Exit Strategy (2026-05-08)](./UPSTREAM_APP_EXIT_STRATEGY_2026-05-08.md)
+- [BuildWealth Native Capability Strategy (2026-05-08)](./BUILDWEALTH_NATIVE_CAPABILITY_STRATEGY_2026-05-08.md)
 - [Native Portfolio and Plan Modules Implementation Guide (2026-05-08)](./NATIVE_PORTFOLIO_PLAN_MODULES_IMPLEMENTATION_GUIDE_2026-05-08.md)
 - [Monte Carlo Decision Simulation Plan (2026-05-08)](./MONTE_CARLO_DECISION_SIMULATION_PLAN_2026-05-08.md)
 - [Native Capability Source-of-Truth Cleanup (2026-05-09)](./NATIVE_CAPABILITY_SOURCE_OF_TRUTH_CLEANUP_2026-05-09.md)
@@ -50,7 +50,7 @@ The durable product loop is:
 
 1. Local-first and private by default.
 2. The Python orchestrator remains the system of record for persistent state, migrations, API contracts, and product behavior.
-3. Optional sidecars are stateless compute specialists, not product surfaces or durable data owners.
+3. Optional native modules are stateless compute specialists, not product surfaces or durable data owners.
 4. BuildWealth UI and API are the single user entrypoint.
 5. Copilot operates through the same contracts as the rest of the app.
 6. Copilot may draft important financial changes, but the user reviews and applies them.

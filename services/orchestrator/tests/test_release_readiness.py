@@ -183,7 +183,7 @@ def _degraded_engine_status() -> main.EngineStatusResponse:
                 "enabled": True,
                 "reachable": False,
                 "contract_compatible": False,
-                "last_error": "sidecar unavailable",
+                "last_error": "calculation unavailable",
             }
         ],
     )

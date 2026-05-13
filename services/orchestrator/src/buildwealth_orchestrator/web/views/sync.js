@@ -16,7 +16,7 @@ export function template() {
     <div class="two-col">
       <section class="card">
         <h3 class="section-title">Portfolio Sync</h3>
-        <p class="hint">Pull latest holdings/performance from Ghostfolio and regenerate planning payloads.</p>
+        <p class="hint">Refresh local holdings, performance, and planning payloads.</p>
         <button class="primary" id="run-sync">Run Sync Now</button>
         <dl class="meta" id="sync-meta">
           <div><dt>Last Trigger</dt><dd id="meta-trigger">-</dd></div>

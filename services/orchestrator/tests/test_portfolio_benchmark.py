@@ -6,7 +6,7 @@ from pathlib import Path
 import httpx
 
 from buildwealth_orchestrator.schemas import PortfolioSnapshot
-from buildwealth_orchestrator.services.engine_adapter import SidecarAdapter
+from buildwealth_orchestrator.services.engine_adapter import CalculationAdapter
 from buildwealth_orchestrator.services.portfolio_benchmark import BuildWealthBenchmarkService
 from buildwealth_orchestrator.services.snapshot_store import SnapshotStore
 
@@ -47,7 +47,7 @@ def _write_snapshots(snapshot_store: SnapshotStore) -> None:
     )
 
 
-def test_benchmark_service_uses_local_fallback_when_sidecar_disabled(tmp_path: Path) -> None:
+def test_benchmark_service_uses_local_fallback_when_local_calculation(tmp_path: Path) -> None:
     snapshot_store = SnapshotStore(tmp_path / "snapshots")
     _write_snapshots(snapshot_store)
     research = _FakeResearch(
@@ -63,16 +63,16 @@ def test_benchmark_service_uses_local_fallback_when_sidecar_disabled(tmp_path: P
     service = BuildWealthBenchmarkService(
         snapshot_store=snapshot_store,
         research_service=research,
-        sidecar_adapter=None,
-        sidecar_enabled=False,
-        sidecar_path="/v1/benchmark/compare",
+        calculation_adapter=None,
+        calculation_adapter_enabled=False,
+        calculation_adapter_path="/v1/benchmark/compare",
         base_currency="USD",
     )
 
     result = asyncio.run(service.compare(benchmark_symbols=["SPY"], limit=30))
 
     assert result.engine_status == "degraded"
-    assert result.fallback_method == "sidecar_disabled"
+    assert result.fallback_method == "local_calculation"
     assert result.summary.portfolio_return_pct == 20.0
     assert result.summary.benchmark_return_pct_by_symbol["SPY"] == 10.0
     assert len(result.series) == 3
@@ -94,20 +94,20 @@ def test_benchmark_service_uses_degraded_fallback_when_adapter_missing(tmp_path:
     service = BuildWealthBenchmarkService(
         snapshot_store=snapshot_store,
         research_service=research,
-        sidecar_adapter=None,
-        sidecar_enabled=True,
-        sidecar_path="/v1/benchmark/compare",
+        calculation_adapter=None,
+        calculation_adapter_enabled=True,
+        calculation_adapter_path="/v1/benchmark/compare",
         base_currency="USD",
     )
 
     result = asyncio.run(service.compare(benchmark_symbols=["SPY"], limit=30))
 
     assert result.engine_status == "degraded"
-    assert result.fallback_method == "sidecar_disabled"
-    assert any("adapter unavailable" in warning.lower() for warning in result.warnings)
+    assert result.fallback_method == "local_calculation"
+    assert any("calculation unavailable" in warning.lower() for warning in result.warnings)
 
 
-def test_benchmark_service_uses_sidecar_response_when_enabled(tmp_path: Path) -> None:
+def test_benchmark_service_uses_calculation_service_response_when_enabled(tmp_path: Path) -> None:
     snapshot_store = SnapshotStore(tmp_path / "snapshots")
     _write_snapshots(snapshot_store)
     research = _FakeResearch({})
@@ -119,7 +119,7 @@ def test_benchmark_service_uses_sidecar_response_when_enabled(tmp_path: Path) ->
             json={
                 "contract_version": 1,
                 "request_id": payload["request_id"],
-                "engine": "ghostfolio",
+                "engine": "portfolio_analysis",
                 "engine_status": "ok",
                 "fallback_method": None,
                 "summary": {
@@ -148,7 +148,7 @@ def test_benchmark_service_uses_sidecar_response_when_enabled(tmp_path: Path) ->
             },
         )
 
-    adapter = SidecarAdapter(
+    adapter = CalculationAdapter(
         base_url="http://localhost:8411",
         max_retries=0,
         transport=httpx.MockTransport(handler),
@@ -157,9 +157,9 @@ def test_benchmark_service_uses_sidecar_response_when_enabled(tmp_path: Path) ->
     service = BuildWealthBenchmarkService(
         snapshot_store=snapshot_store,
         research_service=research,
-        sidecar_adapter=adapter,
-        sidecar_enabled=True,
-        sidecar_path="/v1/benchmark/compare",
+        calculation_adapter=adapter,
+        calculation_adapter_enabled=True,
+        calculation_adapter_path="/v1/benchmark/compare",
         base_currency="USD",
     )
 
@@ -170,7 +170,7 @@ def test_benchmark_service_uses_sidecar_response_when_enabled(tmp_path: Path) ->
     assert result.summary.alpha_pct_by_symbol["SPY"] == 10.0
 
 
-def test_benchmark_service_falls_back_when_sidecar_call_fails(tmp_path: Path) -> None:
+def test_benchmark_service_falls_back_when_calculation_service_call_fails(tmp_path: Path) -> None:
     snapshot_store = SnapshotStore(tmp_path / "snapshots")
     _write_snapshots(snapshot_store)
     research = _FakeResearch({"SPY": [{"date": "2026-04-08", "close": 400}]})
@@ -178,7 +178,7 @@ def test_benchmark_service_falls_back_when_sidecar_call_fails(tmp_path: Path) ->
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(status_code=503, json={"detail": "service unavailable"})
 
-    adapter = SidecarAdapter(
+    adapter = CalculationAdapter(
         base_url="http://localhost:8411",
         max_retries=0,
         transport=httpx.MockTransport(handler),
@@ -187,9 +187,9 @@ def test_benchmark_service_falls_back_when_sidecar_call_fails(tmp_path: Path) ->
     service = BuildWealthBenchmarkService(
         snapshot_store=snapshot_store,
         research_service=research,
-        sidecar_adapter=adapter,
-        sidecar_enabled=True,
-        sidecar_path="/v1/benchmark/compare",
+        calculation_adapter=adapter,
+        calculation_adapter_enabled=True,
+        calculation_adapter_path="/v1/benchmark/compare",
         base_currency="USD",
     )
 
@@ -197,10 +197,10 @@ def test_benchmark_service_falls_back_when_sidecar_call_fails(tmp_path: Path) ->
 
     assert result.engine_status == "degraded"
     assert result.fallback_method == "local_benchmark_fallback"
-    assert any("sidecar unavailable" in warning.lower() for warning in result.warnings)
+    assert any("calculation unavailable" in warning.lower() for warning in result.warnings)
 
 
-def test_benchmark_service_skips_sidecar_when_contract_guarded(tmp_path: Path) -> None:
+def test_benchmark_service_skips_calculation_service_when_contract_guarded(tmp_path: Path) -> None:
     snapshot_store = SnapshotStore(tmp_path / "snapshots")
     _write_snapshots(snapshot_store)
     research = _FakeResearch(
@@ -218,7 +218,7 @@ def test_benchmark_service_skips_sidecar_when_contract_guarded(tmp_path: Path) -
         calls["count"] += 1
         return httpx.Response(status_code=200, json={})
 
-    adapter = SidecarAdapter(
+    adapter = CalculationAdapter(
         base_url="http://localhost:8411",
         max_retries=0,
         transport=httpx.MockTransport(handler),
@@ -226,9 +226,9 @@ def test_benchmark_service_skips_sidecar_when_contract_guarded(tmp_path: Path) -
     service = BuildWealthBenchmarkService(
         snapshot_store=snapshot_store,
         research_service=research,
-        sidecar_adapter=adapter,
-        sidecar_enabled=True,
-        sidecar_path="/v1/benchmark/compare",
+        calculation_adapter=adapter,
+        calculation_adapter_enabled=True,
+        calculation_adapter_path="/v1/benchmark/compare",
         base_currency="USD",
     )
 
@@ -236,11 +236,11 @@ def test_benchmark_service_skips_sidecar_when_contract_guarded(tmp_path: Path) -
         service.compare(
             benchmark_symbols=["SPY"],
             limit=30,
-            sidecar_guard_reason="Sidecar contract version mismatch (expected v1, got v2)",
+            contract_guard_reason="CalculationAdapter contract version mismatch (expected v1, got v2)",
         )
     )
 
     assert calls["count"] == 0
     assert result.engine_status == "degraded"
     assert result.fallback_method == "contract_version_guard"
-    assert any("sidecar skipped" in warning.lower() for warning in result.warnings)
+    assert any("calculation skipped" in warning.lower() for warning in result.warnings)

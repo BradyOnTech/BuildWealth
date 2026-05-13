@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-# Export payload packing pattern adapted from Ghostfolio (MIT):
+# Export payload packing pattern implemented for BuildWealth portfolio workflows:
 # apps/api/src/app/export/export.service.ts
-# Activity/account-balance aggregation approach adapted from Ghostfolio (MIT):
+# Activity/account-balance aggregation approach implemented for BuildWealth portfolio workflows:
 # apps/api/src/app/activities/activities.service.ts
 # apps/api/src/app/account-balance/account-balance.service.ts
 

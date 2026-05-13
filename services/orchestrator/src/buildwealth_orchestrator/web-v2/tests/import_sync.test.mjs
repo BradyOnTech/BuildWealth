@@ -29,8 +29,8 @@ test('v2 tools drawer does not expose external app bridge labels', () => {
   const currentDir = dirname(fileURLToPath(import.meta.url));
   const source = readFileSync(resolve(currentDir, '../app.js'), 'utf8');
 
-  assert.doesNotMatch(source, /Ghostfolio/);
-  assert.doesNotMatch(source, /Ignidash/);
+  assert.doesNotMatch(source, /Portfolio Analysis/);
+  assert.doesNotMatch(source, /Simulations/);
   assert.doesNotMatch(source, /localhost:3333/);
   assert.doesNotMatch(source, /localhost:3000/);
   assert.doesNotMatch(source, /href:\s*'\/classic'/);

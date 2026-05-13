@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 from buildwealth_orchestrator import main
+from buildwealth_orchestrator.services.control_plane import ControlPlaneStore
 from buildwealth_orchestrator.services.portfolio_audit import build_portfolio_audit_payload
 
 
@@ -129,12 +132,26 @@ class FakeAssetRegistry:
 
 
 def test_portfolio_export_bundle_route_contains_recovery_evidence(monkeypatch) -> None:
-    monkeypatch.setattr(main, "portfolio_store", FakePortfolioStore())
-    monkeypatch.setattr(main, "import_workbench_store", FakeImportWorkbenchStore())
+    portfolio_store = FakePortfolioStore()
+    import_workbench_store = FakeImportWorkbenchStore()
+    monkeypatch.setattr(main, "portfolio_store", portfolio_store)
+    monkeypatch.setattr(main, "import_workbench_store", import_workbench_store)
     monkeypatch.setattr(main, "asset_registry", FakeAssetRegistry())
+    main.app.dependency_overrides[main.get_workspace_services] = lambda: SimpleNamespace(
+        context=SimpleNamespace(permissions=ControlPlaneStore.OWNER_PERMISSIONS),
+        portfolio_store=portfolio_store,
+        import_workbench_store=import_workbench_store,
+        recommendation_inbox=main.recommendation_inbox,
+        plan_workspace=main.plan_workspace,
+        snapshot_store=main.snapshot_store,
+        asset_registry=main.asset_registry,
+    )
 
-    with TestClient(main.app) as client:
-        response = client.get("/api/portfolio/export-bundle?limit=25")
+    try:
+        with TestClient(main.app) as client:
+            response = client.get("/api/portfolio/export-bundle?limit=25")
+    finally:
+        main.app.dependency_overrides.pop(main.get_workspace_services, None)
 
     assert response.status_code == 200
     payload = response.json()

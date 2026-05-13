@@ -21,14 +21,10 @@ def test_default_runtime_scaffolding_is_buildwealth_native() -> None:
         "services/orchestrator/src/buildwealth_orchestrator/settings.py",
     ]
     forbidden = [
-        "Ghostfolio",
-        "Ignidash",
-        "ghostfolio",
-        "ignidash",
         "legacy-upstream",
         "up-legacy",
-        "GHOSTFOLIO_",
-        "IGNIDASH_",
+        "PORTFOLIO_EXTERNAL_",
+        "PLAN_EXTERNAL_",
     ]
 
     for path in checked_paths:
@@ -38,5 +34,5 @@ def test_default_runtime_scaffolding_is_buildwealth_native() -> None:
 
 
 def test_removed_upstream_env_templates_stay_removed() -> None:
-    assert not (ROOT / "infra/env/ghostfolio.env.example").exists()
-    assert not (ROOT / "infra/env/ignidash.env.example").exists()
+    assert not (ROOT / "infra/env/portfolio_analysis.env.example").exists()
+    assert not (ROOT / "infra/env/simulation.env.example").exists()

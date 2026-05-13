@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://buildwealth.local/contracts/engine/v1/ghostfolio.benchmark.response.schema.json",
-  "title": "Ghostfolio Benchmark Response v1",
+  "$id": "https://buildwealth.local/contracts/engine/v1/portfolio.benchmark.response.schema.json",
+  "title": "Portfolio Benchmark Response v1",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -23,7 +23,7 @@
     },
     "engine": {
       "type": "string",
-      "const": "ghostfolio"
+      "const": "portfolio_analysis"
     },
     "engine_status": {
       "type": "string",

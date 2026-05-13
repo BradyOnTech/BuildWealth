@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-# Adapted from Ghostfolio (MIT):
+# Implemented for BuildWealth portfolio workflows:
 # apps/api/src/app/portfolio/calculator/roai/portfolio-calculator.ts
 # apps/api/src/app/portfolio/portfolio.service.ts
 
@@ -16,19 +16,19 @@ from buildwealth_orchestrator.schemas import (
     PortfolioAttributionSummary,
 )
 from buildwealth_orchestrator.services.engine_adapter import (
-    SidecarAdapter,
-    SidecarAdapterError,
+    CalculationAdapter,
+    CalculationAdapterError,
 )
 from buildwealth_orchestrator.services.engine_policy import (
-    FALLBACK_METHOD_SIDECAR_DISABLED,
+    FALLBACK_METHOD_LOCAL_CALCULATION,
     resolve_engine_call_disposition,
-    sidecar_unavailable_warning,
+    calculation_unavailable_warning,
 )
 from buildwealth_orchestrator.services.portfolio_store import PortfolioStore
 
 
 EPSILON = 1e-9
-GHOSTFOLIO_ATTRIBUTION_CONTRACT_VERSION = 1
+PORTFOLIO_ATTRIBUTION_CONTRACT_VERSION = 1
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -59,7 +59,7 @@ def _parse_datetime(value: Any) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-class GhostfolioAttributionPositionV1(BaseModel):
+class RemoteAttributionPositionV1(BaseModel):
     symbol: str
     name: str | None = None
     account_id: str | None = None
@@ -81,7 +81,7 @@ class GhostfolioAttributionPositionV1(BaseModel):
         return symbol
 
 
-class GhostfolioAttributionRequestV1(BaseModel):
+class RemoteAttributionRequestV1(BaseModel):
     contract_version: Literal[1] = 1
     request_id: str
     portfolio_base_currency: str = Field(pattern=r"^[A-Z]{3}$")
@@ -89,7 +89,7 @@ class GhostfolioAttributionRequestV1(BaseModel):
     top_n: int = Field(default=5, ge=1, le=50)
     portfolio_total_return_base: float = 0.0
     portfolio_total_value_base: float = 0.0
-    positions: list[GhostfolioAttributionPositionV1] = Field(default_factory=list)
+    positions: list[RemoteAttributionPositionV1] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("top_n")
@@ -98,7 +98,7 @@ class GhostfolioAttributionRequestV1(BaseModel):
         return max(1, min(int(value), 50))
 
 
-class GhostfolioAttributionPositionResultV1(BaseModel):
+class RemoteAttributionPositionResultV1(BaseModel):
     symbol: str
     name: str | None = None
     account_id: str | None = None
@@ -113,7 +113,7 @@ class GhostfolioAttributionPositionResultV1(BaseModel):
     allocation_pct: float = 0.0
 
 
-class GhostfolioAttributionSummaryV1(BaseModel):
+class RemoteAttributionSummaryV1(BaseModel):
     portfolio_total_return_base: float
     portfolio_total_value_base: float
     accounted_return_base: float
@@ -122,16 +122,16 @@ class GhostfolioAttributionSummaryV1(BaseModel):
     detractors_count: int
 
 
-class GhostfolioAttributionResponseV1(BaseModel):
+class RemoteAttributionResponseV1(BaseModel):
     contract_version: Literal[1] = 1
     request_id: str
-    engine: Literal["ghostfolio"] = "ghostfolio"
+    engine: Literal["portfolio_analysis"] = "portfolio_analysis"
     engine_status: Literal["ok", "degraded"]
     fallback_method: str | None = None
-    summary: GhostfolioAttributionSummaryV1
-    contributors: list[GhostfolioAttributionPositionResultV1] = Field(default_factory=list)
-    detractors: list[GhostfolioAttributionPositionResultV1] = Field(default_factory=list)
-    positions: list[GhostfolioAttributionPositionResultV1] = Field(default_factory=list)
+    summary: RemoteAttributionSummaryV1
+    contributors: list[RemoteAttributionPositionResultV1] = Field(default_factory=list)
+    detractors: list[RemoteAttributionPositionResultV1] = Field(default_factory=list)
+    positions: list[RemoteAttributionPositionResultV1] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     generated_at: datetime | None = None
 
@@ -141,55 +141,55 @@ class BuildWealthAttributionService:
         self,
         *,
         portfolio_store: PortfolioStore,
-        sidecar_adapter: SidecarAdapter | None,
-        sidecar_enabled: bool,
-        sidecar_path: str,
+        calculation_adapter: CalculationAdapter | None,
+        calculation_adapter_enabled: bool,
+        calculation_adapter_path: str,
         base_currency: str = "USD",
     ) -> None:
         self.portfolio_store = portfolio_store
-        self.sidecar_adapter = sidecar_adapter
-        self.sidecar_enabled = sidecar_enabled
-        self.sidecar_path = sidecar_path
+        self.calculation_adapter = calculation_adapter
+        self.calculation_adapter_enabled = calculation_adapter_enabled
+        self.calculation_adapter_path = calculation_adapter_path
         self.base_currency = str(base_currency or "USD").upper()
 
     async def analyze(
         self,
         *,
         top_n: int,
-        sidecar_guard_reason: str | None = None,
+        contract_guard_reason: str | None = None,
     ) -> PortfolioAttributionResponse:
         request_payload = self._build_request_payload(top_n=top_n)
 
         disposition = resolve_engine_call_disposition(
             engine_label="Portfolio attribution",
-            sidecar_enabled=self.sidecar_enabled,
-            sidecar_adapter=self.sidecar_adapter,
-            sidecar_guard_reason=sidecar_guard_reason,
+            calculation_adapter_enabled=self.calculation_adapter_enabled,
+            calculation_adapter=self.calculation_adapter,
+            contract_guard_reason=contract_guard_reason,
             disabled_behavior="degraded_fallback",
         )
 
-        if not disposition.use_sidecar:
+        if not disposition.use_calculation_adapter:
             fallback = self._compute_local_fallback(
                 request_payload,
-                fallback_method=disposition.fallback_method or FALLBACK_METHOD_SIDECAR_DISABLED,
-                warning=disposition.warning or "Portfolio attribution sidecar disabled; using local fallback",
+                fallback_method=disposition.fallback_method or FALLBACK_METHOD_LOCAL_CALCULATION,
+                warning=disposition.warning or "Portfolio attribution local calculation selected; using local fallback",
             )
             return self._to_api_response(request_payload, fallback)
 
-        if self.sidecar_adapter is not None:
+        if self.calculation_adapter is not None:
             try:
-                contract_response = await self.sidecar_adapter.post_json(
-                    path=self.sidecar_path,
+                contract_response = await self.calculation_adapter.post_json(
+                    path=self.calculation_adapter_path,
                     request_payload=request_payload.model_dump(mode="json"),
-                    request_model=GhostfolioAttributionRequestV1,
-                    response_model=GhostfolioAttributionResponseV1,
+                    request_model=RemoteAttributionRequestV1,
+                    response_model=RemoteAttributionResponseV1,
                 )
                 return self._to_api_response(request_payload, contract_response)
-            except SidecarAdapterError as exc:
+            except CalculationAdapterError as exc:
                 fallback = self._compute_local_fallback(
                     request_payload,
                     fallback_method="local_attribution_fallback",
-                    warning=sidecar_unavailable_warning(
+                    warning=calculation_unavailable_warning(
                         engine_label="Portfolio attribution",
                         error=exc,
                     ),
@@ -198,12 +198,12 @@ class BuildWealthAttributionService:
 
         fallback = self._compute_local_fallback(
             request_payload,
-            fallback_method=FALLBACK_METHOD_SIDECAR_DISABLED,
-            warning="Portfolio attribution sidecar adapter unavailable; using local fallback",
+            fallback_method=FALLBACK_METHOD_LOCAL_CALCULATION,
+            warning="Portfolio attribution calculation unavailable; using local fallback",
         )
         return self._to_api_response(request_payload, fallback)
 
-    def _build_request_payload(self, *, top_n: int) -> GhostfolioAttributionRequestV1:
+    def _build_request_payload(self, *, top_n: int) -> RemoteAttributionRequestV1:
         holdings_payload = self.portfolio_store.get_holdings()
         holdings = holdings_payload.get("holdings") if isinstance(holdings_payload.get("holdings"), dict) else {}
         performance = (
@@ -217,7 +217,7 @@ class BuildWealthAttributionService:
         )
         total_portfolio_return = _safe_float(performance.get("total_return_usd"), 0.0)
 
-        rows: list[GhostfolioAttributionPositionV1] = []
+        rows: list[RemoteAttributionPositionV1] = []
         for key in sorted(holdings.keys()):
             holding = holdings.get(key)
             if not isinstance(holding, dict):
@@ -242,7 +242,7 @@ class BuildWealthAttributionService:
             )
 
             rows.append(
-                GhostfolioAttributionPositionV1(
+                RemoteAttributionPositionV1(
                     symbol=symbol.upper(),
                     name=_normalize_text(holding.get("name")),
                     account_id=_normalize_text(holding.get("account")),
@@ -263,7 +263,7 @@ class BuildWealthAttributionService:
             or holdings_payload.get("updated_at")
         )
 
-        return GhostfolioAttributionRequestV1(
+        return RemoteAttributionRequestV1(
             request_id=uuid4().hex,
             portfolio_base_currency=str(
                 holdings_payload.get("base_currency")
@@ -279,16 +279,16 @@ class BuildWealthAttributionService:
 
     def _compute_local_fallback(
         self,
-        request_payload: GhostfolioAttributionRequestV1,
+        request_payload: RemoteAttributionRequestV1,
         *,
         fallback_method: str,
         warning: str,
-    ) -> GhostfolioAttributionResponseV1:
+    ) -> RemoteAttributionResponseV1:
         denominator = request_payload.portfolio_total_return_base
         if abs(denominator) <= EPSILON:
             denominator = sum(position.total_return_base for position in request_payload.positions)
 
-        rows: list[GhostfolioAttributionPositionResultV1] = []
+        rows: list[RemoteAttributionPositionResultV1] = []
         for position in request_payload.positions:
             contribution_pct = (
                 (position.total_return_base / denominator) * 100.0
@@ -296,7 +296,7 @@ class BuildWealthAttributionService:
                 else 0.0
             )
             rows.append(
-                GhostfolioAttributionPositionResultV1(
+                RemoteAttributionPositionResultV1(
                     symbol=position.symbol,
                     name=position.name,
                     account_id=position.account_id,
@@ -327,11 +327,11 @@ class BuildWealthAttributionService:
                 "Attribution has residual return not represented by open holdings (likely closed positions or cash flows)."
             )
 
-        return GhostfolioAttributionResponseV1(
+        return RemoteAttributionResponseV1(
             request_id=request_payload.request_id,
             engine_status="degraded",
             fallback_method=fallback_method,
-            summary=GhostfolioAttributionSummaryV1(
+            summary=RemoteAttributionSummaryV1(
                 portfolio_total_return_base=round(request_payload.portfolio_total_return_base, 2),
                 portfolio_total_value_base=round(request_payload.portfolio_total_value_base, 2),
                 accounted_return_base=accounted_return,
@@ -348,8 +348,8 @@ class BuildWealthAttributionService:
 
     @staticmethod
     def _to_api_response(
-        request_payload: GhostfolioAttributionRequestV1,
-        contract_response: GhostfolioAttributionResponseV1,
+        request_payload: RemoteAttributionRequestV1,
+        contract_response: RemoteAttributionResponseV1,
     ) -> PortfolioAttributionResponse:
         return PortfolioAttributionResponse(
             request_id=contract_response.request_id,

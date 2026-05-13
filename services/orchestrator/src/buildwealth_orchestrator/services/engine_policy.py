@@ -1,4 +1,4 @@
-"""Shared sidecar call policy and degraded-response envelope helpers."""
+"""Shared calculation policy and degraded-response envelope helpers."""
 
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ ENGINE_STATUS_OK: Literal["ok"] = "ok"
 ENGINE_STATUS_DEGRADED: Literal["degraded"] = "degraded"
 
 FALLBACK_METHOD_CONTRACT_VERSION_GUARD = "contract_version_guard"
-FALLBACK_METHOD_SIDECAR_DISABLED = "sidecar_disabled"
+FALLBACK_METHOD_LOCAL_CALCULATION = "local_calculation"
 
 
 @dataclass(frozen=True)
 class EngineCallDisposition:
-    use_sidecar: bool
-    mode: Literal["use_sidecar", "guarded", "disabled", "adapter_missing", "local_only"]
+    use_calculation_adapter: bool
+    mode: Literal["use_calculation_adapter", "guarded", "disabled", "adapter_missing", "local_only"]
     engine_status: Literal["ok", "degraded"]
     fallback_method: str | None = None
     warning: str | None = None
@@ -24,13 +24,13 @@ class EngineCallDisposition:
 def resolve_engine_call_disposition(
     *,
     engine_label: str,
-    sidecar_enabled: bool,
-    sidecar_adapter: Any | None,
-    sidecar_guard_reason: str | None = None,
+    calculation_adapter_enabled: bool,
+    calculation_adapter: Any | None,
+    contract_guard_reason: str | None = None,
     disabled_behavior: Literal["degraded_fallback", "local_ok"] = "degraded_fallback",
     adapter_missing_behavior: Literal["degraded_fallback", "local_ok"] | None = None,
 ) -> EngineCallDisposition:
-    """Resolve whether a service should call sidecar or use local path.
+    """Resolve whether a service should call an optional calculator or use the local path.
 
     disabled_behavior and adapter_missing_behavior control whether local mode should be
     treated as normal (`local_ok`) or explicit degraded fallback (`degraded_fallback`).
@@ -39,55 +39,55 @@ def resolve_engine_call_disposition(
     adapter_behavior = adapter_missing_behavior or disabled_behavior
     label = str(engine_label or "Engine").strip() or "Engine"
 
-    if sidecar_guard_reason:
+    if contract_guard_reason:
         return EngineCallDisposition(
-            use_sidecar=False,
+            use_calculation_adapter=False,
             mode="guarded",
             engine_status=ENGINE_STATUS_DEGRADED,
             fallback_method=FALLBACK_METHOD_CONTRACT_VERSION_GUARD,
-            warning=f"{label} sidecar skipped: {sidecar_guard_reason}",
+            warning=f"{label} calculation skipped: {contract_guard_reason}",
         )
 
-    if not sidecar_enabled:
+    if not calculation_adapter_enabled:
         if disabled_behavior == "local_ok":
             return EngineCallDisposition(
-                use_sidecar=False,
+                use_calculation_adapter=False,
                 mode="disabled",
                 engine_status=ENGINE_STATUS_OK,
             )
         return EngineCallDisposition(
-            use_sidecar=False,
+            use_calculation_adapter=False,
             mode="disabled",
             engine_status=ENGINE_STATUS_DEGRADED,
-            fallback_method=FALLBACK_METHOD_SIDECAR_DISABLED,
-            warning=f"{label} sidecar disabled; using local fallback",
+            fallback_method=FALLBACK_METHOD_LOCAL_CALCULATION,
+            warning=f"{label} local calculation selected; using local fallback",
         )
 
-    if sidecar_adapter is None:
+    if calculation_adapter is None:
         if adapter_behavior == "local_ok":
             return EngineCallDisposition(
-                use_sidecar=False,
+                use_calculation_adapter=False,
                 mode="adapter_missing",
                 engine_status=ENGINE_STATUS_OK,
             )
         return EngineCallDisposition(
-            use_sidecar=False,
+            use_calculation_adapter=False,
             mode="adapter_missing",
             engine_status=ENGINE_STATUS_DEGRADED,
-            fallback_method=FALLBACK_METHOD_SIDECAR_DISABLED,
-            warning=f"{label} sidecar adapter unavailable; using local fallback",
+            fallback_method=FALLBACK_METHOD_LOCAL_CALCULATION,
+            warning=f"{label} calculation unavailable; using local fallback",
         )
 
     return EngineCallDisposition(
-        use_sidecar=True,
-        mode="use_sidecar",
+        use_calculation_adapter=True,
+        mode="use_calculation_adapter",
         engine_status=ENGINE_STATUS_OK,
     )
 
 
-def sidecar_unavailable_warning(*, engine_label: str, error: Any) -> str:
+def calculation_unavailable_warning(*, engine_label: str, error: Any) -> str:
     label = str(engine_label or "Engine").strip() or "Engine"
-    return f"{label} sidecar unavailable: {error}"
+    return f"{label} calculation unavailable: {error}"
 
 
 def normalize_warnings(*values: str | Sequence[str] | None) -> list[str]:

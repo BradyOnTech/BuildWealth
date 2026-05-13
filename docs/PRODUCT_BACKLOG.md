@@ -28,6 +28,6 @@ The future-state plan reframes these workstreams around operating loops instead 
 
 ## Execution Principles
 1. Ship vertical slices with tests and UI/API integration, not isolated internals.
-2. Reuse Ghostfolio/Ignidash logic where it increases correctness/time-to-value.
+2. Reuse portfolio and planning modules logic where it increases correctness/time-to-value.
 3. Keep Python orchestrator as system of record and single product entrypoint.
-4. Preserve explicit degraded-mode behavior when sidecars are unavailable.
+4. Preserve explicit degraded-mode behavior when native modules are unavailable.

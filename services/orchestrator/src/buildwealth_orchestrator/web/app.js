@@ -31,16 +31,6 @@ function renderNav() {
     nav.appendChild(a);
   }
 
-  nav.innerHTML += `
-    <div class="nav-divider"></div>
-    <a href="http://localhost:3333" target="_blank" rel="noopener" class="nav-item external">
-      <span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 3h6v6"/><path d="M17 3L9 11"/><path d="M15 11v5a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1h5"/></svg></span>
-      <span class="nav-label">Ghostfolio</span>
-    </a>
-    <a href="http://localhost:3000" target="_blank" rel="noopener" class="nav-item external">
-      <span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 3h6v6"/><path d="M17 3L9 11"/><path d="M15 11v5a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1h5"/></svg></span>
-      <span class="nav-label">Ignidash</span>
-    </a>`;
 }
 
 function route() {
