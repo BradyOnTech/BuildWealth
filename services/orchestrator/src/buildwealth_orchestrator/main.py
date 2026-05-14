@@ -300,6 +300,13 @@ from buildwealth_orchestrator.services.backup_restore import (
     BackupRestoreError,
     BackupRestoreService,
 )
+from buildwealth_orchestrator.services.account_data_deletion import (
+    RECOVERY_WINDOW_DAYS,
+    build_account_data_deletion_preview,
+    purge_after_for_recovery_window,
+    required_confirmation_phrase,
+    serialize_deletion_request,
+)
 from buildwealth_orchestrator.services.data_protection import (
     DataProtectionError,
     DataProtectionService,
@@ -601,6 +608,19 @@ def get_request_context(request: Request) -> RequestContext:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     except AuthorizationError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    raise HTTPException(status_code=401, detail="Authentication required")
+
+
+def get_authenticated_account_user(request: Request) -> dict[str, Any]:
+    token = request.cookies.get(settings.auth_session_cookie_name) or ""
+    mode = _auth_mode()
+    try:
+        if token:
+            return control_plane_store.authenticated_user_for_token(token=token)
+        if mode in {"dev", "test", "disabled"}:
+            return control_plane_store.default_dev_user()
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
     raise HTTPException(status_code=401, detail="Authentication required")
 
 
@@ -16896,6 +16916,101 @@ def change_account_password(
 def export_account_bundle(context: RequestContext = Depends(get_request_context)) -> dict[str, Any]:
     require_permission(context, "account.export")
     return control_plane_store.export_account_bundle(context.user_id)
+
+
+@app.get("/api/account/data-deletion/preview")
+def preview_account_data_deletion(
+    scope: str = "workspace",
+    context: RequestContext = Depends(get_request_context),
+) -> dict[str, Any]:
+    require_permission(context, "account.delete")
+    try:
+        return build_account_data_deletion_preview(
+            control_plane=control_plane_store,
+            workspace_service_factory=workspace_service_factory,
+            context=context,
+            scope=scope,
+            recovery_window_days=RECOVERY_WINDOW_DAYS,
+        )
+    except (AuthorizationError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/account/data-deletion/requests")
+def list_account_data_deletion_requests(
+    account_user: dict[str, Any] = Depends(get_authenticated_account_user),
+) -> dict[str, Any]:
+    requests = control_plane_store.list_account_data_deletion_requests_for_user(
+        user_id=str(account_user["id"]),
+    )
+    return {"items": [serialize_deletion_request(request) for request in requests]}
+
+
+@app.post("/api/account/data-deletion/request")
+def request_account_data_deletion(
+    request: Request,
+    payload: dict[str, Any],
+    context: RequestContext = Depends(get_request_context),
+) -> dict[str, Any]:
+    require_csrf(request)
+    require_permission(context, "account.delete")
+    scope = str(payload.get("scope") or "workspace").strip().lower()
+    phrase = required_confirmation_phrase(scope)
+    if str(payload.get("confirm") or "").strip().lower() != phrase:
+        raise HTTPException(status_code=400, detail=f'Type "{phrase}" to confirm data deletion request')
+    try:
+        preview = build_account_data_deletion_preview(
+            control_plane=control_plane_store,
+            workspace_service_factory=workspace_service_factory,
+            context=context,
+            scope=scope,
+            recovery_window_days=RECOVERY_WINDOW_DAYS,
+        )
+        if not preview.get("can_request"):
+            raise ValueError("No active workspace data is available for deletion")
+        deletion_request = control_plane_store.create_account_data_deletion_request(
+            user_id=context.user_id,
+            requested_by_user_id=context.user_id,
+            organization_id=context.organization_id,
+            workspace_id=context.workspace_id if preview["scope"] == "workspace" else None,
+            scope=str(preview["scope"]),
+            purge_after=str(preview["purge_after"] or purge_after_for_recovery_window()),
+            preview=preview,
+        )
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except AuthorizationError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "message": "Data deletion scheduled. You can cancel during the recovery window.",
+        "request": serialize_deletion_request(deletion_request),
+    }
+
+
+@app.post("/api/account/data-deletion/{request_id}/cancel")
+def cancel_account_data_deletion(
+    request_id: str,
+    request: Request,
+    account_user: dict[str, Any] = Depends(get_authenticated_account_user),
+) -> dict[str, Any]:
+    require_csrf(request)
+    try:
+        deletion_request = control_plane_store.cancel_account_data_deletion_request(
+            request_id=request_id,
+            canceled_by_user_id=str(account_user["id"]),
+        )
+    except AuthorizationError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "message": "Data deletion canceled.",
+        "request": serialize_deletion_request(deletion_request),
+    }
 
 
 @app.delete("/api/account")

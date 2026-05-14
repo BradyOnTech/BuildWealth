@@ -214,6 +214,15 @@ export const api = {
   },
   changeAccountPassword: (body = {}) => postJson('/api/account/password', body),
   exportAccount: () => fetchJson('/api/account/export'),
+  accountDataDeletionPreview: (scope = 'workspace') => {
+    const params = new URLSearchParams({ scope: String(scope || 'workspace') });
+    return fetchJson(`/api/account/data-deletion/preview?${params.toString()}`);
+  },
+  accountDataDeletionRequests: () => fetchJson('/api/account/data-deletion/requests'),
+  requestAccountDataDeletion: (body = {}) => postJson('/api/account/data-deletion/request', body),
+  cancelAccountDataDeletion: (requestId) => {
+    return postJson(`/api/account/data-deletion/${encodeURIComponent(requestId)}/cancel`, {});
+  },
   deactivateAccount: async (body = {}) => {
     try { return await deleteJson('/api/account', body); }
     finally {

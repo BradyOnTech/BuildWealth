@@ -6,6 +6,7 @@ import {
   parseTestError,
   demoWorkspaceCard,
   accountCard,
+  accountDataDeletionPanel,
   hostedReadinessPanel,
 } from '../views/settings.js';
 
@@ -128,6 +129,8 @@ test('accountCard: exposes export password and deactivation controls', () => {
   assert.match(markup, /Change password/);
   assert.match(markup, /Deactivate account/);
   assert.match(markup, /Account export ready/);
+  assert.match(markup, /Delete BuildWealth data/);
+  assert.match(markup, /Preview deletion/);
 });
 
 test('accountCard: keeps hosted sign-in security provider managed', () => {
@@ -150,8 +153,50 @@ test('accountCard: keeps hosted sign-in security provider managed', () => {
   assert.match(markup, /Set up passkeys/);
   assert.match(markup, /Type close buildwealth access/);
   assert.match(markup, /Close BuildWealth access/);
+  assert.match(markup, /Delete BuildWealth data/);
   assert.doesNotMatch(markup, /Change password/);
   assert.doesNotMatch(markup, /Deactivate account/);
+});
+
+test('accountDataDeletionPanel: renders preview summary and pending cancel control', () => {
+  const markup = String(accountDataDeletionPanel({
+    accountDeletionScope: 'household',
+    accountDeletionPreview: {
+      scope: 'household',
+      can_request: true,
+      affected_workspace_count: 2,
+      recovery_window_days: 30,
+      purge_after: '2026-06-13T12:00:00Z',
+      confirmation_phrase: 'delete household data',
+      totals: {
+        workspace_count: 2,
+        file_count: 42,
+        size_bytes: 1536,
+        secret_count: 2,
+        backup_archive_count: 3,
+      },
+      will_retain: ['minimal audit events', 'hosted identity provider account unless deleted by the provider'],
+    },
+    accountDeletionRequests: [
+      {
+        id: 'del_123',
+        status: 'pending',
+        scope: 'household',
+        purge_after: '2026-06-13T12:00:00Z',
+        preview: { affected_workspace_count: 2 },
+      },
+    ],
+  }));
+
+  assert.match(markup, /Delete BuildWealth data/);
+  assert.match(markup, /2 workspaces/);
+  assert.match(markup, /1.5 KB/);
+  assert.match(markup, /2 secret keys/);
+  assert.match(markup, /3 backup archives/);
+  assert.match(markup, /Type delete household data/);
+  assert.match(markup, /Schedule deletion/);
+  assert.match(markup, /Household deletion pending/);
+  assert.match(markup, /Cancel/);
 });
 
 test('hostedReadinessPanel: renders blockers in plain language', () => {

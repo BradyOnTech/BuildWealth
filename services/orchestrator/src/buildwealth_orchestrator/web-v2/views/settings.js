@@ -69,6 +69,13 @@ const ui = {
   deactivateBusy: false,
   hostedCloseResult: null,
   hostedCloseBusy: false,
+  accountDeletionScope: 'workspace',
+  accountDeletionPreview: null,
+  accountDeletionRequests: [],
+  accountDeletionBusy: false,
+  accountDeletionRequesting: false,
+  accountDeletionCancelingId: null,
+  accountDeletionResult: null,
 };
 
 const EMBEDDING_PROVIDERS = [
@@ -108,12 +115,13 @@ async function load() {
   ui.loaded = false;
   ui.loadError = null;
   try {
-    const [settings, contextSettings, workspaces, session, authConfig] = await Promise.all([
+    const [settings, contextSettings, workspaces, session, authConfig, deletionRequests] = await Promise.all([
       api.settings(),
       api.contextSettings().catch(() => null),
       api.workspaces().catch(() => null),
       api.authSession().catch(() => null),
       api.authConfig().catch(() => null),
+      api.accountDataDeletionRequests().catch(() => null),
     ]);
     const hostedReadiness = authConfig?.hosted_auth_enabled
       ? await api.hostedAuthReadiness().catch((err) => ({ error: err.message || 'Could not load hosted readiness.' }))
@@ -145,6 +153,15 @@ async function load() {
     ui.passwordResult = null;
     ui.deactivateResult = null;
     ui.deactivateBusy = false;
+    ui.hostedCloseResult = null;
+    ui.hostedCloseBusy = false;
+    ui.accountDeletionScope = 'workspace';
+    ui.accountDeletionPreview = null;
+    ui.accountDeletionRequests = Array.isArray(deletionRequests?.items) ? deletionRequests.items : [];
+    ui.accountDeletionBusy = false;
+    ui.accountDeletionRequesting = false;
+    ui.accountDeletionCancelingId = null;
+    ui.accountDeletionResult = null;
     ui.loaded = true;
   } catch (err) {
     ui.loadError = err.message || 'Could not load settings.';
@@ -608,6 +625,8 @@ export function accountCard(model) {
         </div>
       ` : ''}
 
+      ${raw(accountDataDeletionPanel(model))}
+
       ${localAccount ? html`
         <form id="account-password-form" class="settings-grid">
           <label class="settings-field">
@@ -671,6 +690,110 @@ export function accountCard(model) {
       ${model.hostedCloseResult ? html`<p class="success-banner">${esc(model.hostedCloseResult.message || 'BuildWealth access closed.')}</p>` : ''}
       ${model.accountError ? html`<p class="inline-warning">${esc(model.accountError)}</p>` : ''}
     </section>
+  `;
+}
+
+export function accountDataDeletionPanel(model) {
+  const preview = model.accountDeletionPreview || null;
+  const requests = Array.isArray(model.accountDeletionRequests) ? model.accountDeletionRequests : [];
+  const pending = requests.filter(request => request.status === 'pending');
+  const scope = model.accountDeletionScope || preview?.scope || 'workspace';
+  const phrase = preview?.confirmation_phrase || deletionPhraseForScope(scope);
+  const totals = preview?.totals || {};
+  return html`
+    <div class="settings-test-block">
+      <p class="settings-test-headline">Delete BuildWealth data</p>
+      <p class="settings-test-detail">
+        Preview first. Deletion is delayed for ${esc(preview?.recovery_window_days || 30)} days and can be canceled during that window.
+      </p>
+      <div class="settings-grid">
+        <label class="settings-field">
+          <span class="settings-label">Deletion scope</span>
+          <select class="settings-input" id="account-deletion-scope">
+            <option value="workspace" ${scope === 'workspace' ? 'selected' : ''}>Current workspace</option>
+            <option value="household" ${scope === 'household' ? 'selected' : ''}>Household data</option>
+            <option value="account" ${scope === 'account' ? 'selected' : ''}>Account data</option>
+          </select>
+        </label>
+        <div class="settings-actions">
+          <button class="btn btn-quiet" id="account-deletion-preview" ${model.accountDeletionBusy ? 'disabled' : ''}>
+            ${model.accountDeletionBusy ? 'Previewing…' : 'Preview deletion'}
+          </button>
+        </div>
+      </div>
+
+      ${preview ? html`
+        <div class="settings-context-grid">
+          <div class="settings-context-row">
+            <span class="status-pill ${preview.can_request ? 'pending' : 'rejected'}"><span class="dot"></span></span>
+            <span class="settings-context-label">Affected data</span>
+            <span class="settings-context-value">
+              ${Number(totals.workspace_count || preview.affected_workspace_count || 0)} workspace${Number(totals.workspace_count || preview.affected_workspace_count || 0) === 1 ? '' : 's'} ·
+              ${Number(totals.file_count || 0)} file${Number(totals.file_count || 0) === 1 ? '' : 's'} ·
+              ${formatBytes(Number(totals.size_bytes || 0))}
+            </span>
+          </div>
+          <div class="settings-context-row">
+            <span class="status-pill pending"><span class="dot"></span></span>
+            <span class="settings-context-label">Secrets and backups</span>
+            <span class="settings-context-value">
+              ${Number(totals.secret_count || 0)} secret key${Number(totals.secret_count || 0) === 1 ? '' : 's'} ·
+              ${Number(totals.backup_archive_count || 0)} backup archive${Number(totals.backup_archive_count || 0) === 1 ? '' : 's'}
+            </span>
+          </div>
+          <div class="settings-context-row">
+            <span class="status-pill archived"><span class="dot"></span></span>
+            <span class="settings-context-label">Recovery window</span>
+            <span class="settings-context-value">
+              Purge after ${esc(formatDateTime(preview.purge_after) || preview.purge_after || 'recovery window')}
+            </span>
+          </div>
+          <div class="settings-context-row">
+            <span class="status-pill archived"><span class="dot"></span></span>
+            <span class="settings-context-label">Retained</span>
+            <span class="settings-context-value">${esc((preview.will_retain || []).join(' · '))}</span>
+          </div>
+        </div>
+
+        <form id="account-data-deletion-form" class="settings-grid">
+          <label class="settings-field span-2">
+            <span class="settings-label">Type ${esc(phrase)}</span>
+            <input class="settings-input" name="confirm" type="text" autocomplete="off" />
+          </label>
+          <div class="settings-actions span-2">
+            <button class="btn btn-danger" type="submit" ${model.accountDeletionRequesting || !preview.can_request ? 'disabled' : ''}>
+              ${model.accountDeletionRequesting ? 'Scheduling…' : 'Schedule deletion'}
+            </button>
+          </div>
+        </form>
+      ` : ''}
+
+      ${pending.length ? html`
+        <div class="settings-context-grid">
+          ${raw(pending.map(request => deletionRequestRow(request, model)).join(''))}
+        </div>
+      ` : ''}
+      ${model.accountDeletionResult ? html`<p class="success-banner">${esc(model.accountDeletionResult.message || 'Data deletion updated.')}</p>` : ''}
+    </div>
+  `;
+}
+
+function deletionRequestRow(request, model) {
+  const busy = model.accountDeletionCancelingId === request.id;
+  const scope = request.scope || 'workspace';
+  const preview = request.preview || {};
+  const count = Number(preview.affected_workspace_count || preview.totals?.workspace_count || 0);
+  return html`
+    <div class="settings-context-row">
+      <span class="status-pill pending"><span class="dot"></span></span>
+      <span class="settings-context-label">${esc(titleCase(scope))} deletion pending</span>
+      <span class="settings-context-value">
+        ${count || 'Pending'} workspace${count === 1 ? '' : 's'} · purge after ${esc(formatDateTime(request.purge_after) || request.purge_after || 'recovery window')}
+        <button class="link-quiet danger account-data-deletion-cancel" data-request-id="${esc(request.id)}" ${busy ? 'disabled' : ''}>
+          ${busy ? 'Canceling' : 'Cancel'}
+        </button>
+      </span>
+    </div>
   `;
 }
 
@@ -794,6 +917,18 @@ function attachHandlers() {
   delegate(root, 'click',  '#demo-reset', (e) => { e.preventDefault(); resetDemoWorkspace(); });
   delegate(root, 'click',  '#demo-switch', (e) => { e.preventDefault(); switchToDemoWorkspace(); });
   delegate(root, 'click',  '#account-export', (e) => { e.preventDefault(); prepareAccountExport(); });
+  delegate(root, 'change', '#account-deletion-scope', (_, el) => {
+    ui.accountDeletionScope = el.value || 'workspace';
+    ui.accountDeletionPreview = null;
+    ui.accountDeletionResult = null;
+    render();
+  });
+  delegate(root, 'click',  '#account-deletion-preview', (e) => { e.preventDefault(); previewAccountDataDeletion(); });
+  delegate(root, 'submit', '#account-data-deletion-form', (e, form) => { e.preventDefault(); requestAccountDataDeletion(form); });
+  delegate(root, 'click',  '.account-data-deletion-cancel', (e, button) => {
+    e.preventDefault();
+    cancelAccountDataDeletion(button.dataset.requestId || '');
+  });
   delegate(root, 'submit', '#account-password-form', (e, form) => { e.preventDefault(); changeAccountPassword(form); });
   delegate(root, 'submit', '#account-deactivate-form', (e, form) => { e.preventDefault(); deactivateAccount(form); });
   delegate(root, 'submit', '#account-hosted-close-form', (e, form) => { e.preventDefault(); closeHostedAccount(form); });
@@ -946,6 +1081,78 @@ async function prepareAccountExport() {
   }
 }
 
+async function previewAccountDataDeletion() {
+  if (ui.accountDeletionBusy) return;
+  ui.accountDeletionBusy = true;
+  ui.accountError = null;
+  ui.accountDeletionResult = null;
+  render();
+  try {
+    ui.accountDeletionPreview = await api.accountDataDeletionPreview(ui.accountDeletionScope || 'workspace');
+    ui.accountDeletionScope = ui.accountDeletionPreview?.scope || ui.accountDeletionScope || 'workspace';
+  } catch (err) {
+    ui.accountError = err?.message || 'Could not preview data deletion.';
+  } finally {
+    ui.accountDeletionBusy = false;
+    render();
+  }
+}
+
+async function requestAccountDataDeletion(form) {
+  if (ui.accountDeletionRequesting) return;
+  const data = new FormData(form);
+  ui.accountDeletionRequesting = true;
+  ui.accountError = null;
+  ui.accountDeletionResult = null;
+  render();
+  try {
+    const result = await api.requestAccountDataDeletion({
+      scope: ui.accountDeletionScope || ui.accountDeletionPreview?.scope || 'workspace',
+      confirm: data.get('confirm') || '',
+    });
+    ui.accountDeletionResult = result;
+    if (result?.request) {
+      ui.accountDeletionRequests = [
+        result.request,
+        ...(ui.accountDeletionRequests || []).filter(request => request.id !== result.request.id),
+      ];
+    }
+    form.reset();
+  } catch (err) {
+    ui.accountError = err?.message || 'Could not schedule data deletion.';
+  } finally {
+    ui.accountDeletionRequesting = false;
+    render();
+  }
+}
+
+async function cancelAccountDataDeletion(requestId) {
+  if (!requestId || ui.accountDeletionCancelingId) return;
+  ui.accountDeletionCancelingId = requestId;
+  ui.accountError = null;
+  ui.accountDeletionResult = null;
+  render();
+  try {
+    const result = await api.cancelAccountDataDeletion(requestId);
+    ui.accountDeletionResult = result;
+    if (result?.request) {
+      ui.accountDeletionRequests = (ui.accountDeletionRequests || []).map(request => (
+        request.id === result.request.id ? result.request : request
+      ));
+    }
+    const workspaces = await api.workspaces().catch(() => null);
+    if (workspaces) {
+      ui.workspaces = Array.isArray(workspaces.items) ? workspaces.items : ui.workspaces;
+      ui.activeWorkspaceId = workspaces.active_workspace_id || ui.activeWorkspaceId;
+    }
+  } catch (err) {
+    ui.accountError = err?.message || 'Could not cancel data deletion.';
+  } finally {
+    ui.accountDeletionCancelingId = null;
+    render();
+  }
+}
+
 async function changeAccountPassword(form) {
   if (ui.passwordChanging) return;
   const data = new FormData(form);
@@ -1063,6 +1270,39 @@ function parseIntOr(value, fallback) {
 function parseFloatOr(value, fallback) {
   const n = parseFloat(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function deletionPhraseForScope(scope) {
+  const normalized = String(scope || '').trim().toLowerCase();
+  if (normalized === 'account') return 'delete my buildwealth data';
+  if (normalized === 'household') return 'delete household data';
+  return 'delete workspace data';
+}
+
+function formatBytes(bytes) {
+  const n = Number(bytes || 0);
+  if (!Number.isFinite(n) || n <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = n;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+}
+
+function formatDateTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function titleCase(value) {
+  return String(value || '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, ch => ch.toUpperCase());
 }
 
 /* ─────────────  Skeletons  ───────────── */

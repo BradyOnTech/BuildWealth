@@ -115,3 +115,73 @@ Recommended product shape:
 1. **Close BuildWealth access** disables account access now.
 2. **Delete household data** becomes a separate destructive flow with export, recovery window, and final confirmation.
 3. **Provider account deletion** remains provider-managed unless BuildWealth adds a reviewed provider-specific integration.
+
+## Control-Plane Deletion Ledger
+
+BuildWealth now has the database structure needed for a delayed destructive deletion flow.
+
+Deletion requests are recorded in `account_data_deletion_requests` with:
+
+- `status`: `pending`, `canceled`, `completed`, or `failed`
+- `scope`: `workspace`, `household`, or `account`
+- `requested_at`
+- `purge_after`
+- `canceled_at`
+- `completed_at`
+- `preview_json`
+- `result_json`
+- `failure_reason`
+
+The control plane also tracks lifecycle timestamps on users, organizations, and workspaces:
+
+- `deletion_requested_at`
+- `purge_after`
+- `deletion_completed_at`
+
+When a deletion request is created, affected workspaces move to `pending_deletion`. Normal workspace resolution already requires `status = 'active'`, so pending workspaces are no longer available through ordinary app workflows. Canceling a pending request restores the affected workspace or household to `active`. Completing a request marks the affected records `deleted` after the purge worker has removed the filesystem data.
+
+This ledger does not delete files by itself. It exists so preview, request, cancellation, and final purge can share one durable lifecycle record.
+
+## Deletion Preview and Request API
+
+BuildWealth now exposes the first dry-run deletion API layer:
+
+- `GET /api/account/data-deletion/preview?scope=workspace`
+- `GET /api/account/data-deletion/requests`
+- `POST /api/account/data-deletion/request`
+- `POST /api/account/data-deletion/{request_id}/cancel`
+
+Preview responses include:
+
+- affected workspace count
+- per-workspace file counts and byte counts
+- backup archive counts
+- encrypted secret key names, never secret values
+- deletion categories
+- retention categories
+- required confirmation phrase
+- recovery window and `purge_after`
+
+Requesting deletion records the preview snapshot into the deletion ledger and moves affected workspace records to `pending_deletion`. Canceling during the recovery window moves those records back to `active`.
+
+## Settings UI
+
+BuildWealth v2 Settings now exposes the deletion request workflow inside Account & data:
+
+- choose deletion scope: current workspace, household data, or account data
+- preview affected data before scheduling
+- review workspace, file, byte, secret-key, and backup-archive counts
+- see the recovery window and purge date
+- type the confirmation phrase returned by the preview
+- schedule deletion
+- see pending deletion requests
+- cancel pending deletion during the recovery window
+
+The UI does not expose raw secret values. It can show secret key names so a user understands which provider keys are affected.
+
+This is still not the final purge layer. Remaining work:
+
+- final purge worker
+- backup archive pruning
+- encrypted secret shredding
+- hosted/legal/privacy review copy

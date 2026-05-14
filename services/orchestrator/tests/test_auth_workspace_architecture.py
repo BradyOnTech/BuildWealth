@@ -377,6 +377,175 @@ def test_account_export_password_change_and_deactivation_controls(monkeypatch, t
     assert blocked_login.status_code == 401
 
 
+def test_account_data_deletion_request_lifecycle_marks_workspace_pending(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    context = main.control_plane_store.dev_request_context(auth_mode="dev")
+    purge_after = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+
+    request = main.control_plane_store.create_account_data_deletion_request(
+        user_id=context.user_id,
+        requested_by_user_id=context.user_id,
+        organization_id=context.organization_id,
+        workspace_id=context.workspace_id,
+        scope="workspace",
+        purge_after=purge_after,
+        preview={
+            "delete": ["workspace_files", "workspace_backups", "workspace_secrets"],
+            "retain": ["minimal_audit_record"],
+        },
+    )
+    duplicate_error = None
+    try:
+        main.control_plane_store.create_account_data_deletion_request(
+            user_id=context.user_id,
+            requested_by_user_id=context.user_id,
+            organization_id=context.organization_id,
+            workspace_id=context.workspace_id,
+            scope="workspace",
+            purge_after=purge_after,
+            preview={},
+        )
+    except ValueError as exc:
+        duplicate_error = str(exc)
+    visible_workspaces = main.control_plane_store.list_workspaces_for_user(context.user_id)
+    pending = main.control_plane_store.list_pending_account_data_deletion_requests(
+        due_at=(datetime.now(timezone.utc) + timedelta(days=31)).isoformat()
+    )
+    not_due = main.control_plane_store.list_pending_account_data_deletion_requests(
+        due_at=(datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+    )
+    canceled = main.control_plane_store.cancel_account_data_deletion_request(
+        request_id=request.id,
+        canceled_by_user_id=context.user_id,
+    )
+    restored_workspaces = main.control_plane_store.list_workspaces_for_user(context.user_id)
+
+    assert request.status == "pending"
+    assert request.scope == "workspace"
+    assert request.workspace_id == context.workspace_id
+    assert request.preview["delete"] == ["workspace_files", "workspace_backups", "workspace_secrets"]
+    assert duplicate_error == "A data deletion request is already pending for this household"
+    assert context.workspace_id not in {workspace.id for workspace in visible_workspaces}
+    assert request.id in {item.id for item in pending}
+    assert request.id not in {item.id for item in not_due}
+    assert canceled.status == "canceled"
+    assert context.workspace_id in {workspace.id for workspace in restored_workspaces}
+
+
+def test_account_data_deletion_completion_marks_records_deleted(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    context = main.control_plane_store.dev_request_context(auth_mode="dev")
+    purge_after = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+
+    request = main.control_plane_store.create_account_data_deletion_request(
+        user_id=context.user_id,
+        requested_by_user_id=context.user_id,
+        organization_id=context.organization_id,
+        workspace_id=context.workspace_id,
+        scope="workspace",
+        purge_after=purge_after,
+        preview={"delete": ["workspace_root"]},
+    )
+    completed = main.control_plane_store.complete_account_data_deletion_request(
+        request_id=request.id,
+        result={"deleted_paths": ["/tmp/buildwealth-test-workspace"], "backup_archives_pruned": 1},
+    )
+    visible_workspaces = main.control_plane_store.list_workspaces_for_user(context.user_id)
+
+    with main.control_plane_store._connect() as connection:
+        workspace_row = connection.execute(
+            "SELECT status, deletion_completed_at FROM workspaces WHERE id = ?",
+            (context.workspace_id,),
+        ).fetchone()
+        audit_row = connection.execute(
+            """
+            SELECT metadata_json
+            FROM audit_events
+            WHERE action = 'account.data_deletion_completed'
+              AND target_id = ?
+            """,
+            (request.id,),
+        ).fetchone()
+
+    assert completed.status == "completed"
+    assert completed.completed_at
+    assert completed.result["backup_archives_pruned"] == 1
+    assert workspace_row["status"] == "deleted"
+    assert workspace_row["deletion_completed_at"]
+    assert context.workspace_id not in {workspace.id for workspace in visible_workspaces}
+    assert audit_row is not None
+    assert "backup_archives_pruned" in audit_row["metadata_json"]
+
+
+def test_account_data_deletion_preview_request_and_cancel_routes(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "dev"
+    context = main.control_plane_store.dev_request_context(auth_mode="dev")
+    workspace, _role = main.control_plane_store.get_workspace_for_user(
+        user_id=context.user_id,
+        workspace_id=context.workspace_id,
+    )
+    paths = main.workspace_service_factory.paths_for_record(workspace)
+    paths.profile_path.parent.mkdir(parents=True, exist_ok=True)
+    paths.profile_path.write_text('{"household_name":"Test Household"}', encoding="utf-8")
+    paths.portfolio_dir.mkdir(parents=True, exist_ok=True)
+    (paths.portfolio_dir / "transactions.json").write_text("[]", encoding="utf-8")
+    paths.backup_archive_dir.mkdir(parents=True, exist_ok=True)
+    (paths.backup_archive_dir / "buildwealth-backup-test.tar.gz").write_bytes(b"backup")
+    paths.secrets_path.parent.mkdir(parents=True, exist_ok=True)
+    paths.secrets_path.write_text(
+        '{"schema_version":1,"secrets":{"llm_api_key":{},"openai_api_key":{}}}',
+        encoding="utf-8",
+    )
+
+    with TestClient(main.app) as client:
+        preview = client.get("/api/account/data-deletion/preview?scope=workspace")
+        bad_confirm = client.post(
+            "/api/account/data-deletion/request",
+            json={"scope": "workspace", "confirm": "delete everything"},
+        )
+        requested = client.post(
+            "/api/account/data-deletion/request",
+            json={"scope": "workspace", "confirm": "delete workspace data"},
+        )
+        pending_requests = client.get("/api/account/data-deletion/requests")
+        request_id = requested.json()["request"]["id"]
+        canceled = client.post(f"/api/account/data-deletion/{request_id}/cancel")
+        workspaces_after_cancel = client.get("/api/workspaces")
+
+    preview_payload = preview.json()
+    preview_workspace = preview_payload["affected_workspaces"][0]
+    assert preview.status_code == 200
+    assert preview_payload["confirmation_phrase"] == "delete workspace data"
+    assert preview_payload["recovery_window_days"] == 30
+    assert preview_payload["can_request"] is True
+    assert preview_workspace["workspace_id"] == context.workspace_id
+    assert preview_workspace["file_count"] >= 4
+    assert preview_workspace["backup_archive_count"] == 1
+    assert preview_workspace["secret_count"] == 2
+    assert preview_workspace["secret_keys"] == ["llm_api_key", "openai_api_key"]
+    assert "provider account" in " ".join(preview_payload["will_retain"])
+    assert bad_confirm.status_code == 400
+    assert requested.status_code == 200
+    assert requested.json()["request"]["status"] == "pending"
+    assert requested.json()["request"]["preview"]["totals"]["secret_count"] == 2
+    assert pending_requests.status_code == 200
+    assert request_id in {item["id"] for item in pending_requests.json()["items"]}
+    assert canceled.status_code == 200
+    assert canceled.json()["request"]["status"] == "canceled"
+    assert workspaces_after_cancel.status_code == 200
+    assert context.workspace_id in {item["id"] for item in workspaces_after_cancel.json()["items"]}
+
+
 def test_hosted_oidc_login_creates_buildwealth_session(monkeypatch, tmp_path: Path) -> None:
     _install_temp_workspace_spine(monkeypatch, tmp_path)
     main.settings.auth_mode = "hosted"

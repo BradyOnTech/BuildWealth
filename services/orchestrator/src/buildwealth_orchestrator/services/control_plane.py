@@ -70,6 +70,24 @@ class WorkspaceRecord:
     status: str
 
 
+@dataclass(frozen=True)
+class AccountDataDeletionRequest:
+    id: str
+    user_id: str
+    organization_id: str
+    workspace_id: str | None
+    requested_by_user_id: str
+    status: str
+    scope: str
+    requested_at: str
+    purge_after: str
+    canceled_at: str | None
+    completed_at: str | None
+    preview: dict[str, Any]
+    result: dict[str, Any]
+    failure_reason: str
+
+
 class AuthenticationError(ValueError):
     pass
 
@@ -234,11 +252,58 @@ class ControlPlaneStore:
                     consumed_at TEXT
                 );
 
+                CREATE TABLE IF NOT EXISTS account_data_deletion_requests (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    workspace_id TEXT REFERENCES workspaces(id) ON DELETE SET NULL,
+                    requested_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    status TEXT NOT NULL,
+                    scope TEXT NOT NULL,
+                    requested_at TEXT NOT NULL,
+                    purge_after TEXT NOT NULL,
+                    canceled_at TEXT,
+                    completed_at TEXT,
+                    preview_json TEXT NOT NULL DEFAULT '{}',
+                    result_json TEXT NOT NULL DEFAULT '{}',
+                    failure_reason TEXT NOT NULL DEFAULT ''
+                );
+
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_auth_provider_subject
                 ON users(auth_provider, auth_provider_subject)
                 WHERE auth_provider_subject IS NOT NULL AND auth_provider_subject != '';
+
+                CREATE INDEX IF NOT EXISTS idx_account_data_deletion_pending
+                ON account_data_deletion_requests(status, purge_after);
+
+                CREATE INDEX IF NOT EXISTS idx_account_data_deletion_org
+                ON account_data_deletion_requests(organization_id, status);
                 """
             )
+            self._ensure_column(connection, "users", "deletion_requested_at", "TEXT")
+            self._ensure_column(connection, "users", "purge_after", "TEXT")
+            self._ensure_column(connection, "users", "deletion_completed_at", "TEXT")
+            self._ensure_column(connection, "organizations", "deletion_requested_at", "TEXT")
+            self._ensure_column(connection, "organizations", "purge_after", "TEXT")
+            self._ensure_column(connection, "organizations", "deletion_completed_at", "TEXT")
+            self._ensure_column(connection, "workspaces", "deletion_requested_at", "TEXT")
+            self._ensure_column(connection, "workspaces", "purge_after", "TEXT")
+            self._ensure_column(connection, "workspaces", "deletion_completed_at", "TEXT")
+
+    @staticmethod
+    def _ensure_column(
+        connection: sqlite3.Connection,
+        table_name: str,
+        column_name: str,
+        column_sql: str,
+    ) -> None:
+        columns = {
+            str(row["name"])
+            for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+        }
+        if column_name in columns:
+            return
+        connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}")
 
     @staticmethod
     def normalize_email(email: str) -> str:
@@ -815,6 +880,39 @@ class ControlPlaneStore:
             ],
         }
 
+    def authenticated_user_for_token(self, *, token: str) -> dict[str, Any]:
+        if not token:
+            raise AuthenticationError("Authentication required")
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT u.*, s.id AS session_id, s.expires_at, s.revoked_at
+                FROM sessions s
+                JOIN users u ON u.id = s.user_id
+                WHERE s.session_token_hash = ?
+                  AND s.revoked_at IS NULL
+                """,
+                (_token_hash(token),),
+            ).fetchone()
+            if row is None:
+                raise AuthenticationError("Session is not active")
+            expires_at = datetime.fromisoformat(str(row["expires_at"]))
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if expires_at <= utc_now() or str(row["status"]) != "active":
+                raise AuthenticationError("Session is not active")
+            connection.execute(
+                "UPDATE sessions SET last_seen_at = ? WHERE id = ?",
+                (utc_now_iso(), row["session_id"]),
+            )
+        user = dict(row)
+        user.pop("password_hash", None)
+        user.pop("auth_provider_subject", None)
+        return user
+
+    def default_dev_user(self) -> dict[str, Any]:
+        return self.get_user(self._default_dev_user_id())
+
     def deactivate_user_account(self, *, user_id: str, current_password: str) -> None:
         self.verify_local_password(user_id=user_id, password=current_password)
         now = utc_now_iso()
@@ -886,6 +984,431 @@ class ControlPlaneStore:
                     }
                 ),
             )
+
+    def create_account_data_deletion_request(
+        self,
+        *,
+        user_id: str,
+        requested_by_user_id: str,
+        organization_id: str,
+        scope: str,
+        purge_after: str,
+        preview: dict[str, Any] | None = None,
+        workspace_id: str | None = None,
+    ) -> AccountDataDeletionRequest:
+        normalized_scope = str(scope or "").strip().lower()
+        if normalized_scope not in {"workspace", "household", "account"}:
+            raise ValueError("Deletion scope must be workspace, household, or account")
+        if normalized_scope == "workspace" and not str(workspace_id or "").strip():
+            raise ValueError("Workspace deletion requires a workspace_id")
+        if not str(purge_after or "").strip():
+            raise ValueError("Deletion request requires a purge_after timestamp")
+
+        now = utc_now_iso()
+        request_id = f"del_{uuid.uuid4().hex[:16]}"
+        preview_json = json.dumps(preview or {}, sort_keys=True)
+        with self._connect() as connection:
+            owner_row = connection.execute(
+                """
+                SELECT m.role
+                FROM memberships m
+                JOIN users u ON u.id = m.user_id
+                JOIN organizations o ON o.id = m.organization_id
+                WHERE m.user_id = ?
+                  AND m.organization_id = ?
+                  AND m.status = 'active'
+                  AND u.status = 'active'
+                  AND o.status = 'active'
+                """,
+                (requested_by_user_id, organization_id),
+            ).fetchone()
+            if owner_row is None:
+                raise AuthorizationError("User cannot request deletion for this household")
+            if str(owner_row["role"] or "") != "owner":
+                raise AuthorizationError("Only a household owner can request data deletion")
+
+            user_row = connection.execute(
+                "SELECT id FROM users WHERE id = ? AND status = 'active'",
+                (user_id,),
+            ).fetchone()
+            if user_row is None:
+                raise AuthenticationError("User is not active")
+
+            duplicate = connection.execute(
+                """
+                SELECT id
+                FROM account_data_deletion_requests
+                WHERE organization_id = ?
+                  AND status = 'pending'
+                LIMIT 1
+                """,
+                (organization_id,),
+            ).fetchone()
+            if duplicate is not None:
+                raise ValueError("A data deletion request is already pending for this household")
+
+            affected_workspace_ids = self._affected_workspace_ids_for_deletion(
+                connection,
+                organization_id=organization_id,
+                workspace_id=workspace_id,
+                scope=normalized_scope,
+            )
+            if not affected_workspace_ids:
+                raise AuthorizationError("No active workspace data is available for deletion")
+
+            connection.execute(
+                """
+                INSERT INTO account_data_deletion_requests (
+                    id, user_id, organization_id, workspace_id, requested_by_user_id,
+                    status, scope, requested_at, purge_after, preview_json
+                )
+                VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
+                """,
+                (
+                    request_id,
+                    user_id,
+                    organization_id,
+                    workspace_id,
+                    requested_by_user_id,
+                    normalized_scope,
+                    now,
+                    purge_after,
+                    preview_json,
+                ),
+            )
+            connection.executemany(
+                """
+                UPDATE workspaces
+                SET status = 'pending_deletion',
+                    deletion_requested_at = ?,
+                    purge_after = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                [(now, purge_after, now, affected_id) for affected_id in affected_workspace_ids],
+            )
+            if normalized_scope in {"household", "account"}:
+                connection.execute(
+                    """
+                    UPDATE organizations
+                    SET status = 'pending_deletion',
+                        deletion_requested_at = ?,
+                        purge_after = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (now, purge_after, now, organization_id),
+                )
+            if normalized_scope == "account":
+                connection.execute(
+                    """
+                    UPDATE users
+                    SET deletion_requested_at = ?,
+                        purge_after = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (now, purge_after, now, user_id),
+                )
+            self._record_audit_event_with_connection(
+                connection,
+                action="account.data_deletion_requested",
+                actor_user_id=requested_by_user_id,
+                organization_id=organization_id,
+                workspace_id=workspace_id,
+                target_type="account_data_deletion_request",
+                target_id=request_id,
+                metadata_json=json.dumps(
+                    {
+                        "scope": normalized_scope,
+                        "purge_after": purge_after,
+                        "affected_workspace_ids": affected_workspace_ids,
+                    },
+                    sort_keys=True,
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM account_data_deletion_requests WHERE id = ?",
+                (request_id,),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("Deletion request was not created")
+        return self._deletion_request_from_row(row)
+
+    def cancel_account_data_deletion_request(
+        self,
+        *,
+        request_id: str,
+        canceled_by_user_id: str,
+    ) -> AccountDataDeletionRequest:
+        now = utc_now_iso()
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM account_data_deletion_requests WHERE id = ?",
+                (request_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Deletion request not found")
+            if str(row["status"] or "") != "pending":
+                raise ValueError("Only pending deletion requests can be canceled")
+
+            membership = connection.execute(
+                """
+                SELECT role
+                FROM memberships
+                WHERE user_id = ? AND organization_id = ? AND status = 'active'
+                """,
+                (canceled_by_user_id, row["organization_id"]),
+            ).fetchone()
+            if membership is None or str(membership["role"] or "") != "owner":
+                raise AuthorizationError("Only a household owner can cancel data deletion")
+
+            connection.execute(
+                """
+                UPDATE account_data_deletion_requests
+                SET status = 'canceled', canceled_at = ?
+                WHERE id = ?
+                """,
+                (now, request_id),
+            )
+            workspace_id = row["workspace_id"]
+            organization_id = str(row["organization_id"])
+            if workspace_id and not self._has_pending_deletion_for_workspace(
+                connection,
+                workspace_id=str(workspace_id),
+            ):
+                connection.execute(
+                    """
+                    UPDATE workspaces
+                    SET status = 'active',
+                        deletion_requested_at = NULL,
+                        purge_after = NULL,
+                        updated_at = ?
+                    WHERE id = ? AND status = 'pending_deletion'
+                    """,
+                    (now, workspace_id),
+                )
+            if not workspace_id and not self._has_pending_deletion_for_organization(
+                connection,
+                organization_id=organization_id,
+            ):
+                connection.execute(
+                    """
+                    UPDATE workspaces
+                    SET status = 'active',
+                        deletion_requested_at = NULL,
+                        purge_after = NULL,
+                        updated_at = ?
+                    WHERE organization_id = ? AND status = 'pending_deletion'
+                    """,
+                    (now, organization_id),
+                )
+                connection.execute(
+                    """
+                    UPDATE organizations
+                    SET status = 'active',
+                        deletion_requested_at = NULL,
+                        purge_after = NULL,
+                        updated_at = ?
+                    WHERE id = ? AND status = 'pending_deletion'
+                    """,
+                    (now, organization_id),
+                )
+            if str(row["scope"] or "") == "account":
+                connection.execute(
+                    """
+                    UPDATE users
+                    SET deletion_requested_at = NULL,
+                        purge_after = NULL,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (now, row["user_id"]),
+                )
+            self._record_audit_event_with_connection(
+                connection,
+                action="account.data_deletion_canceled",
+                actor_user_id=canceled_by_user_id,
+                organization_id=organization_id,
+                workspace_id=str(workspace_id) if workspace_id else None,
+                target_type="account_data_deletion_request",
+                target_id=request_id,
+                metadata_json=json.dumps({"scope": row["scope"]}, sort_keys=True),
+            )
+            updated = connection.execute(
+                "SELECT * FROM account_data_deletion_requests WHERE id = ?",
+                (request_id,),
+            ).fetchone()
+        if updated is None:
+            raise ValueError("Deletion request not found")
+        return self._deletion_request_from_row(updated)
+
+    def complete_account_data_deletion_request(
+        self,
+        *,
+        request_id: str,
+        result: dict[str, Any] | None = None,
+    ) -> AccountDataDeletionRequest:
+        now = utc_now_iso()
+        result_json = json.dumps(result or {}, sort_keys=True)
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM account_data_deletion_requests WHERE id = ?",
+                (request_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Deletion request not found")
+            if str(row["status"] or "") != "pending":
+                raise ValueError("Only pending deletion requests can be completed")
+            connection.execute(
+                """
+                UPDATE account_data_deletion_requests
+                SET status = 'completed', completed_at = ?, result_json = ?
+                WHERE id = ?
+                """,
+                (now, result_json, request_id),
+            )
+            workspace_id = row["workspace_id"]
+            organization_id = str(row["organization_id"])
+            if workspace_id:
+                connection.execute(
+                    """
+                    UPDATE workspaces
+                    SET status = 'deleted',
+                        deletion_completed_at = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (now, now, workspace_id),
+                )
+            else:
+                connection.execute(
+                    """
+                    UPDATE workspaces
+                    SET status = 'deleted',
+                        deletion_completed_at = ?,
+                        updated_at = ?
+                    WHERE organization_id = ? AND status = 'pending_deletion'
+                    """,
+                    (now, now, organization_id),
+                )
+                connection.execute(
+                    """
+                    UPDATE organizations
+                    SET status = 'deleted',
+                        deletion_completed_at = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (now, now, organization_id),
+                )
+            if str(row["scope"] or "") == "account":
+                connection.execute(
+                    """
+                    UPDATE users
+                    SET status = 'deleted',
+                        deletion_completed_at = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (now, now, row["user_id"]),
+                )
+                connection.execute(
+                    "UPDATE memberships SET status = 'inactive', updated_at = ? WHERE user_id = ?",
+                    (now, row["user_id"]),
+                )
+            self._record_audit_event_with_connection(
+                connection,
+                action="account.data_deletion_completed",
+                actor_user_id=str(row["requested_by_user_id"]),
+                organization_id=organization_id,
+                workspace_id=str(workspace_id) if workspace_id else None,
+                target_type="account_data_deletion_request",
+                target_id=request_id,
+                metadata_json=result_json,
+            )
+            updated = connection.execute(
+                "SELECT * FROM account_data_deletion_requests WHERE id = ?",
+                (request_id,),
+            ).fetchone()
+        if updated is None:
+            raise ValueError("Deletion request not found")
+        return self._deletion_request_from_row(updated)
+
+    def fail_account_data_deletion_request(
+        self,
+        *,
+        request_id: str,
+        failure_reason: str,
+        result: dict[str, Any] | None = None,
+    ) -> AccountDataDeletionRequest:
+        now = utc_now_iso()
+        result_json = json.dumps(result or {}, sort_keys=True)
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM account_data_deletion_requests WHERE id = ?",
+                (request_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Deletion request not found")
+            if str(row["status"] or "") != "pending":
+                raise ValueError("Only pending deletion requests can be marked failed")
+            connection.execute(
+                """
+                UPDATE account_data_deletion_requests
+                SET status = 'failed',
+                    completed_at = ?,
+                    result_json = ?,
+                    failure_reason = ?
+                WHERE id = ?
+                """,
+                (now, result_json, str(failure_reason or "").strip()[:500], request_id),
+            )
+            self._record_audit_event_with_connection(
+                connection,
+                action="account.data_deletion_failed",
+                actor_user_id=str(row["requested_by_user_id"]),
+                organization_id=str(row["organization_id"]),
+                workspace_id=str(row["workspace_id"]) if row["workspace_id"] else None,
+                target_type="account_data_deletion_request",
+                target_id=request_id,
+                outcome="error",
+                metadata_json=json.dumps({"failure_reason": str(failure_reason or "").strip()[:500]}),
+            )
+            updated = connection.execute(
+                "SELECT * FROM account_data_deletion_requests WHERE id = ?",
+                (request_id,),
+            ).fetchone()
+        if updated is None:
+            raise ValueError("Deletion request not found")
+        return self._deletion_request_from_row(updated)
+
+    def list_pending_account_data_deletion_requests(self, *, due_at: str | None = None) -> list[AccountDataDeletionRequest]:
+        query = "SELECT * FROM account_data_deletion_requests WHERE status = 'pending'"
+        params: tuple[str, ...] = ()
+        if due_at is not None:
+            query += " AND purge_after <= ?"
+            params = (due_at,)
+        query += " ORDER BY purge_after, requested_at"
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [self._deletion_request_from_row(row) for row in rows]
+
+    def list_account_data_deletion_requests_for_user(self, *, user_id: str) -> list[AccountDataDeletionRequest]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT d.*
+                FROM account_data_deletion_requests d
+                LEFT JOIN memberships m ON m.organization_id = d.organization_id
+                WHERE d.user_id = ?
+                   OR d.requested_by_user_id = ?
+                   OR m.user_id = ?
+                ORDER BY d.requested_at DESC
+                """,
+                (user_id, user_id, user_id),
+            ).fetchall()
+        return [self._deletion_request_from_row(row) for row in rows]
 
     def create_session(
         self,
@@ -1191,6 +1714,74 @@ class ControlPlaneStore:
         )
 
     @staticmethod
+    def _affected_workspace_ids_for_deletion(
+        connection: sqlite3.Connection,
+        *,
+        organization_id: str,
+        workspace_id: str | None,
+        scope: str,
+    ) -> list[str]:
+        if scope == "workspace":
+            row = connection.execute(
+                """
+                SELECT id
+                FROM workspaces
+                WHERE id = ?
+                  AND organization_id = ?
+                  AND status = 'active'
+                """,
+                (workspace_id, organization_id),
+            ).fetchone()
+            return [str(row["id"])] if row is not None else []
+        rows = connection.execute(
+            """
+            SELECT id
+            FROM workspaces
+            WHERE organization_id = ?
+              AND status = 'active'
+            ORDER BY CASE workspace_type WHEN 'household' THEN 0 WHEN 'demo' THEN 1 ELSE 2 END, name
+            """,
+            (organization_id,),
+        ).fetchall()
+        return [str(row["id"]) for row in rows]
+
+    @staticmethod
+    def _has_pending_deletion_for_workspace(
+        connection: sqlite3.Connection,
+        *,
+        workspace_id: str,
+    ) -> bool:
+        row = connection.execute(
+            """
+            SELECT id
+            FROM account_data_deletion_requests
+            WHERE workspace_id = ?
+              AND status = 'pending'
+            LIMIT 1
+            """,
+            (workspace_id,),
+        ).fetchone()
+        return row is not None
+
+    @staticmethod
+    def _has_pending_deletion_for_organization(
+        connection: sqlite3.Connection,
+        *,
+        organization_id: str,
+    ) -> bool:
+        row = connection.execute(
+            """
+            SELECT id
+            FROM account_data_deletion_requests
+            WHERE organization_id = ?
+              AND status = 'pending'
+            LIMIT 1
+            """,
+            (organization_id,),
+        ).fetchone()
+        return row is not None
+
+    @staticmethod
     def _workspace_from_row(row: sqlite3.Row) -> WorkspaceRecord:
         return WorkspaceRecord(
             id=str(row["id"]),
@@ -1199,6 +1790,25 @@ class ControlPlaneStore:
             workspace_type=str(row["workspace_type"]),
             storage_path=Path(str(row["storage_path"])),
             status=str(row["status"]),
+        )
+
+    @staticmethod
+    def _deletion_request_from_row(row: sqlite3.Row) -> AccountDataDeletionRequest:
+        return AccountDataDeletionRequest(
+            id=str(row["id"]),
+            user_id=str(row["user_id"]),
+            organization_id=str(row["organization_id"]),
+            workspace_id=str(row["workspace_id"]) if row["workspace_id"] else None,
+            requested_by_user_id=str(row["requested_by_user_id"]),
+            status=str(row["status"]),
+            scope=str(row["scope"]),
+            requested_at=str(row["requested_at"]),
+            purge_after=str(row["purge_after"]),
+            canceled_at=str(row["canceled_at"]) if row["canceled_at"] else None,
+            completed_at=str(row["completed_at"]) if row["completed_at"] else None,
+            preview=_json_object(row["preview_json"]),
+            result=_json_object(row["result_json"]),
+            failure_reason=str(row["failure_reason"] or ""),
         )
 
 

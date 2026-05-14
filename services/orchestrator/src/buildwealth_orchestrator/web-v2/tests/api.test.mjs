@@ -63,6 +63,10 @@ test('account helpers use protected routes and clear session state after deactiv
   setActiveWorkspaceId('ws_demo_household');
 
   await api.exportAccount();
+  await api.accountDataDeletionPreview('household');
+  await api.accountDataDeletionRequests();
+  await api.requestAccountDataDeletion({ scope: 'workspace', confirm: 'delete workspace data' });
+  await api.cancelAccountDataDeletion('del_123');
   await api.changeAccountPassword({ current_password: 'old-password', new_password: 'new-password' });
   await api.deactivateAccount({ current_password: 'new-password', confirm: 'deactivate' });
   setCsrfToken('csrf-token-456');
@@ -74,20 +78,33 @@ test('account helpers use protected routes and clear session state after deactiv
   assert.equal(requests[0].options.method || 'GET', 'GET');
   assert.equal(requests[0].options.headers['x-buildwealth-workspace-id'], 'ws_demo_household');
 
-  assert.equal(requests[1].url, '/api/account/password');
-  assert.equal(requests[1].options.method, 'POST');
-  assert.equal(requests[1].options.headers['x-buildwealth-csrf-token'], 'csrf-token-123');
+  assert.equal(requests[1].url, '/api/account/data-deletion/preview?scope=household');
+  assert.equal(requests[1].options.method || 'GET', 'GET');
+  assert.equal(requests[2].url, '/api/account/data-deletion/requests');
+  assert.equal(requests[2].options.method || 'GET', 'GET');
 
-  assert.equal(requests[2].url, '/api/account');
-  assert.equal(requests[2].options.method, 'DELETE');
-  assert.equal(requests[2].options.headers['x-buildwealth-csrf-token'], 'csrf-token-123');
-
-  assert.equal(requests[3].url, '/api/account/hosted/close');
+  assert.equal(requests[3].url, '/api/account/data-deletion/request');
   assert.equal(requests[3].options.method, 'POST');
-  assert.equal(requests[3].options.headers['x-buildwealth-csrf-token'], 'csrf-token-456');
+  assert.equal(requests[3].options.headers['x-buildwealth-csrf-token'], 'csrf-token-123');
 
-  assert.equal(requests[4].url, '/api/dashboard/today');
-  assert.equal(requests[4].options.headers['x-buildwealth-workspace-id'], undefined);
+  assert.equal(requests[4].url, '/api/account/data-deletion/del_123/cancel');
+  assert.equal(requests[4].options.method, 'POST');
+  assert.equal(requests[4].options.headers['x-buildwealth-csrf-token'], 'csrf-token-123');
+
+  assert.equal(requests[5].url, '/api/account/password');
+  assert.equal(requests[5].options.method, 'POST');
+  assert.equal(requests[5].options.headers['x-buildwealth-csrf-token'], 'csrf-token-123');
+
+  assert.equal(requests[6].url, '/api/account');
+  assert.equal(requests[6].options.method, 'DELETE');
+  assert.equal(requests[6].options.headers['x-buildwealth-csrf-token'], 'csrf-token-123');
+
+  assert.equal(requests[7].url, '/api/account/hosted/close');
+  assert.equal(requests[7].options.method, 'POST');
+  assert.equal(requests[7].options.headers['x-buildwealth-csrf-token'], 'csrf-token-456');
+
+  assert.equal(requests[8].url, '/api/dashboard/today');
+  assert.equal(requests[8].options.headers['x-buildwealth-workspace-id'], undefined);
 });
 
 test('security helpers call secret key rotation preview and apply routes', async () => {
