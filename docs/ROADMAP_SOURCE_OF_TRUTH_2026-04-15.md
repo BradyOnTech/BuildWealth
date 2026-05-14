@@ -185,13 +185,13 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - style: `ruff check src/buildwealth_orchestrator/schemas.py`
 - full: `pytest -q` (`476 passed`)
 
-### 2026-04-20 (Completed - Cross-Cutting Follow-up, Slice D Planning Native Module Decomposition)
-1. Decomposed planning native module orchestration into focused internal helper boundaries in `plan_simulation_service.py`:
+### 2026-04-20 (Completed - Cross-Cutting Follow-up, Slice D Planning Retired Calculation Module Decomposition)
+1. Decomposed planning retired calculation module orchestration into focused internal helper boundaries in `plan_simulation_service.py`:
 - added `_ScenarioRunInputs` dataclass to centralize run-time input state.
-- split local execution, local-envelope updates, native module request execution, native module merge envelope assembly, and degraded fallback assembly into dedicated helper methods.
+- split local execution, local-envelope updates, retired calculation module request execution, retired calculation module merge envelope assembly, and degraded fallback assembly into dedicated helper methods.
 2. Kept public API/contracts unchanged:
 - `RemoteScenarioService.run(...)` signature and response contract remain stable.
-- native module request/response schema models and metadata semantics remain unchanged.
+- retired calculation module request/response schema models and metadata semantics remain unchanged.
 3. Added focused regression coverage for local-path projection payload preservation:
 - expanded `tests/test_plan_simulation_service.py` with local-path projection payload assertions.
 4. Verification:
@@ -249,14 +249,14 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - targeted: `pytest -q tests/test_storage_reliability_smoke.py tests/test_backup_restore.py tests/test_data_protection.py` (`5 passed`).
 - full: `pytest -q` (`474 passed`).
 
-### 2026-04-15 (Completed - Cross-Cutting Follow-up, Engine Policy/Envelope Unification + Native Module Matrix Tests)
-1. Added shared native module policy and degraded-envelope helper module (`engine_policy.py`) to centralize:
-- native module call disposition decisions (guarded/disabled/adapter-missing/use-native module).
-- canonical engine status/fallback constants and warning normalization behavior.
-2. Unified benchmark/attribution/planning native module services on shared policy:
-- `portfolio_benchmark.py`, `portfolio_attribution.py`, and `plan_simulation_service.py` now resolve native module eligibility through one policy entrypoint.
-- degraded response updates and native module-unavailable warning formatting are now shared helpers instead of ad hoc per-service logic.
-3. Expanded native module execution-state matrix coverage:
+### 2026-04-15 (Completed - Cross-Cutting Follow-up, Engine Policy/Envelope Unification + Retired Calculation Module Matrix Tests)
+1. Added shared retired calculation module policy and degraded-envelope helper module (`engine_policy.py`) to centralize:
+- retired calculation module call disposition decisions (guarded/disabled/adapter-missing/use-retired calculation module).
+- canonical service status/fallback constants and warning normalization behavior.
+2. Unified benchmark/attribution/planning retired calculation module services on shared policy:
+- `portfolio_benchmark.py`, `portfolio_attribution.py`, and `plan_simulation_service.py` now resolve retired calculation module eligibility through one policy entrypoint.
+- degraded response updates and retired calculation module-unavailable warning formatting are now shared helpers instead of ad hoc per-service logic.
+3. Expanded retired calculation module execution-state matrix coverage:
 - added `test_engine_policy.py` for direct policy/envelope behavior.
 - added adapter-missing path coverage in:
   - `test_portfolio_benchmark.py`
@@ -368,7 +368,7 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - full: `pytest -q` (`444 passed`).
 
 ### 2026-04-15 (Completed - Phase 5.1 Slice 3, Portfolio Drift/Risk Alerts)
-1. Added a dedicated portfolio risk-alert native module service (`portfolio_risk_alerts.py`) with portfolio analysis threshold semantics:
+1. Added a dedicated portfolio risk-alert retired calculation module service (`portfolio_risk_alerts.py`) with portfolio analysis threshold semantics:
 - concentration thresholds (`single_holding`, `top3`, `HHI`, `effective_positions`)
 - allocation/cluster thresholds (`account`, `asset_class`, `sector`, `region`)
 - deterministic alert states (`breach`/`watch`), severity, drift-from-threshold, and remediation guidance.
@@ -457,9 +457,9 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - diff and branch responses now include `simulation_delta` payloads alongside scenario/Monte-Carlo deltas.
 - withdrawal strategy compare rows now include simulation mode/variant context.
 - plan editor now includes simulation selectors in settings + diff, numeric controls for historical start year/seed, and simulation sections in diff/branch/compare output text.
-4. Native Module/adapter parity updates:
-- planning native module request metadata now includes simulation fields.
-- native module-merged planning responses preserve local simulation summaries for consistent downstream compare/reporting behavior.
+4. Retired Calculation Module/adapter parity updates:
+- planning retired calculation module request metadata now includes simulation fields.
+- retired calculation module-merged planning responses preserve local simulation summaries for consistent downstream compare/reporting behavior.
 5. Source-provenance note:
 - implementation follows Simulations simulation/returns-provider patterns and historical return dataset structure (`simulation-engine.ts`, `returns-providers/*`, `historical-data/nyu-returns.ts`).
 6. Verification:
@@ -485,7 +485,7 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 6. Added regression coverage:
 - household projection adjustments and filing-status defaults (`test_household_planning.py`)
 - plan settings household/filing validation (`test_plan_workspace.py`)
-- native module metadata forwarding + Copilot settings-contract coverage remain in place (`test_plan_simulation_service.py`, `test_copilot_tool_updates.py`).
+- retired calculation module metadata forwarding + Copilot settings-contract coverage remain in place (`test_plan_simulation_service.py`, `test_copilot_tool_updates.py`).
 7. Verification: `pytest -q services/orchestrator/tests` passes (`424 passed`).
 
 ### 2026-04-15 (Completed - Phase 5.0 Slice 3, Configurable Drawdown Ordering)
@@ -497,9 +497,9 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - added `drawdown_order` to scenario request and plan settings/timeline schemas.
 - persisted and sanitized drawdown order in Plan Workspace settings and retirement timeline payloads.
 - included drawdown-order context in plan markdown/context summaries.
-3. Wired drawdown-order execution through API, native module, and Copilot surfaces:
+3. Wired drawdown-order execution through API, retired calculation module, and Copilot surfaces:
 - threaded drawdown order through plan scenario run paths (plan scenarios, diff, strategy compare, branch compute, and context baseline run).
-- added native module metadata forwarding for drawdown order.
+- added retired calculation module metadata forwarding for drawdown order.
 - expanded Copilot tool contract for `run_planning_scenarios` to accept `drawdown_order`.
 4. Extended Plan Workspace UI:
 - added retirement timeline drawdown-order input and editor wiring for load/save/disabled states.
@@ -509,7 +509,7 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 6. Added regression coverage:
 - scenario-engine drawdown-order override behavior (`test_scenario_engine.py`)
 - plan workspace settings/timeline drawdown-order persistence (`test_plan_workspace.py`)
-- native module metadata forwarding (`test_plan_simulation_service.py`)
+- retired calculation module metadata forwarding (`test_plan_simulation_service.py`)
 - Copilot planning tool contract field coverage (`test_copilot_tool_updates.py`).
 7. Verification: `pytest -q services/orchestrator/tests` passes (`420 passed`).
 
@@ -521,7 +521,7 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 2. Implemented Roth conversion planning controls and simulation behavior:
 - new plan/scenario controls: `roth_conversion_annual_amount_usd`, `roth_conversion_start_age`, `roth_conversion_end_age`
 - scenario engine now executes yearly tax-deferred -> Roth transfers in-window, adds conversion dollars to ordinary taxable income, and records conversion totals in assumptions/timeline/account outputs
-- conversion metadata now flows through API and Copilot planning-tool contracts, including native module metadata payloads.
+- conversion metadata now flows through API and Copilot planning-tool contracts, including retired calculation module metadata payloads.
 3. Extended planning UX and compare output visibility:
 - Plan Workspace settings now includes Roth conversion controls for both saved settings and diff overlays
 - withdrawal-strategy comparison output now surfaces total Roth conversions by strategy row.
@@ -532,7 +532,7 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - scenario conversion behavior (`test_scenario_engine.py`)
 - assumption set parsing/application updates (`test_plan_assumption_sets.py`)
 - plan workspace settings/assumption persistence/validation (`test_plan_workspace.py`)
-- native module metadata forwarding (`test_plan_simulation_service.py`)
+- retired calculation module metadata forwarding (`test_plan_simulation_service.py`)
 - Copilot planning tool contract updates (`test_copilot_tool_updates.py`).
 6. Verification: `pytest -q services/orchestrator/tests` passes (`419 passed`).
 
@@ -780,8 +780,8 @@ Build a production-grade all-in-one financial command center that unifies:
 
 ## Architecture Invariants (Do Not Break)
 1. Python orchestrator remains system of record and product entrypoint.
-2. Native modules remain optional, contract-bound compute adapters (no full-app runtime dependency).
-3. Degraded mode remains explicit and safe when native modules/providers are unavailable.
+2. Native modules remain optional, service-owned compute adapters (no full-app runtime dependency).
+3. Degraded mode remains explicit and safe when retired calculation modules/providers are unavailable.
 4. Vertical slices ship with API + UI + tests together.
 
 ## Upstream Review Summary (Completed 2026-04-14)
@@ -833,7 +833,7 @@ Until legal review is complete, prioritize:
 1. Portfolio foundation: multi-account ledger, lot-aware holdings, configurable cost basis, total return decomposition, cash ledger, manual prices, custom assets, FX + FX history, historical backfill, watchlist, broker template import coverage, benchmark/attribution adapters.
 2. Planning foundation: tax engine baseline, contribution rules, income/expense/debt/physical-asset projections, timeline events, tax-aware scenario core, withdrawal strategies, Social Security, RMD, assumption sets, scenario branching, branch templates, projection visuals.
 3. BuildWealth differentiator foundation: unified context quality/coverage metadata, cache observability/reset controls, decision packets, recommendation closure metadata, research-to-planning bridge with persisted plan artifacts.
-4. UX and operations foundation: guided planners/editors, standalone-first operations docs, migration/compatibility docs, native module contract hardening.
+4. UX and operations foundation: guided planners/editors, standalone-first operations docs, migration/compatibility docs, retired calculation module contract hardening.
 
 ## Remaining Strategic Build (What Is Left)
 The highest-leverage missing work is no longer raw parity checkboxes. It is decision-grade integration quality across portfolio, planning, research, and Copilot loops.
@@ -990,7 +990,7 @@ Use this scoring when selecting the next slice:
 3. Extend timeline-default drift harness to cover any future additional mirror files (beyond `web/lib/timeline_defaults.js`) if timeline vocab is reused in new frontend modules.
 
 ## Cross-Cutting Engineering Follow-Up
-1. Post-refactor helper indirection and intentional native module complexity are documented in [`docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`](./CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md).
+1. Post-refactor helper indirection and intentional retired calculation module complexity are documented in [`docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`](./CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md).
 2. Execute those cleanup slices when they reduce operational risk or readability without displacing higher-value product slices.
 
 ## Guardrails
@@ -1015,5 +1015,5 @@ Use this scoring when selecting the next slice:
 
 4. Product reliability:
 - full test suite remains green on each slice.
-- no silent degraded native module failures.
+- no silent degraded retired calculation module failures.
 - backup/restore validation passes in CI or scripted local checks.

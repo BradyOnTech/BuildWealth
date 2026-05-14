@@ -34,6 +34,18 @@ def test_plan_workspace_create_and_get_context(tmp_path: Path) -> None:
     assert "settings" in context_payload
 
 
+def test_plan_workspace_recovers_empty_index_file(tmp_path: Path) -> None:
+    workspace = PlanWorkspace(tmp_path)
+    workspace.index_path.write_text("", encoding="utf-8")
+
+    assert workspace.get_active_plan_id() is None
+
+    recovered = json.loads(workspace.index_path.read_text(encoding="utf-8"))
+    assert recovered["schema_version"] == 2
+    assert recovered["active_plan_id"] is None
+    assert recovered["plans"] == []
+
+
 def test_plan_workspace_updates_and_decisions(tmp_path: Path) -> None:
     workspace = PlanWorkspace(tmp_path)
     first = workspace.create_plan(title="Plan One")

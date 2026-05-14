@@ -15,19 +15,18 @@ from buildwealth_orchestrator.schemas import (
 )
 from buildwealth_orchestrator.services.snapshot_store import SnapshotStore
 
-class RemoteBenchmarkPortfolioPointV1(BaseModel):
+class NativeBenchmarkPortfolioPointV1(BaseModel):
     date: date
     total_value_base: float
     net_external_flow_base: float = 0.0
 
 
-class RemoteBenchmarkRequestV1(BaseModel):
-    contract_version: Literal[1] = 1
+class NativeBenchmarkRequestV1(BaseModel):
     request_id: str
     portfolio_base_currency: str = Field(pattern=r"^[A-Z]{3}$")
     start_date: date
     end_date: date
-    portfolio_series: list[RemoteBenchmarkPortfolioPointV1]
+    portfolio_series: list[NativeBenchmarkPortfolioPointV1]
     benchmark_symbols: list[str]
     sampling_interval: Literal["DAILY", "WEEKLY", "MONTHLY"] = "DAILY"
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -42,13 +41,13 @@ class RemoteBenchmarkRequestV1(BaseModel):
 
     @field_validator("portfolio_series")
     @classmethod
-    def _validate_series(cls, values: list[RemoteBenchmarkPortfolioPointV1]) -> list[RemoteBenchmarkPortfolioPointV1]:
+    def _validate_series(cls, values: list[NativeBenchmarkPortfolioPointV1]) -> list[NativeBenchmarkPortfolioPointV1]:
         if len(values) < 2:
             raise ValueError("portfolio_series must include at least 2 points")
         return sorted(values, key=lambda item: item.date)
 
     @model_validator(mode="after")
-    def _validate_window(self) -> RemoteBenchmarkRequestV1:
+    def _validate_window(self) -> NativeBenchmarkRequestV1:
         if self.start_date > self.end_date:
             raise ValueError("start_date must be before or equal to end_date")
         if self.portfolio_series[0].date < self.start_date:
@@ -58,7 +57,7 @@ class RemoteBenchmarkRequestV1(BaseModel):
         return self
 
 
-class RemoteBenchmarkSummaryV1(BaseModel):
+class NativeBenchmarkSummaryV1(BaseModel):
     portfolio_return_pct: float
     benchmark_return_pct_by_symbol: dict[str, float]
     alpha_pct_by_symbol: dict[str, float]
@@ -66,21 +65,20 @@ class RemoteBenchmarkSummaryV1(BaseModel):
     max_drawdown_pct: float | None = None
 
 
-class RemoteBenchmarkSeriesPointV1(BaseModel):
+class NativeBenchmarkSeriesPointV1(BaseModel):
     date: date
     portfolio_index: float
     benchmark_index_by_symbol: dict[str, float]
     alpha_index_by_symbol: dict[str, float]
 
 
-class RemoteBenchmarkResponseV1(BaseModel):
-    contract_version: Literal[1] = 1
+class NativeBenchmarkResponseV1(BaseModel):
     request_id: str
     engine: Literal["portfolio_analysis"] = "portfolio_analysis"
     engine_status: Literal["ok", "degraded"]
     fallback_method: str | None = None
-    summary: RemoteBenchmarkSummaryV1
-    series: list[RemoteBenchmarkSeriesPointV1]
+    summary: NativeBenchmarkSummaryV1
+    series: list[NativeBenchmarkSeriesPointV1]
     warnings: list[str] = Field(default_factory=list)
     generated_at: datetime | None = None
 
@@ -115,14 +113,14 @@ class BuildWealthBenchmarkService:
         *,
         benchmark_symbols: list[str],
         limit: int,
-    ) -> RemoteBenchmarkRequestV1:
+    ) -> NativeBenchmarkRequestV1:
         bounded_limit = max(2, min(int(limit), 3650))
         history = self.snapshot_store.recent(limit=bounded_limit)
         if len(history) < 2:
             raise ValueError("At least 2 snapshots are required for benchmark comparison")
 
         points = [
-            RemoteBenchmarkPortfolioPointV1(
+            NativeBenchmarkPortfolioPointV1(
                 date=snapshot.as_of.date(),
                 total_value_base=float(snapshot.total_value_usd),
                 net_external_flow_base=0.0,
@@ -130,7 +128,7 @@ class BuildWealthBenchmarkService:
             for snapshot in sorted(history, key=lambda row: row.as_of)
         ]
 
-        return RemoteBenchmarkRequestV1(
+        return NativeBenchmarkRequestV1(
             request_id=uuid4().hex,
             portfolio_base_currency=self.base_currency,
             start_date=points[0].date,
@@ -142,8 +140,8 @@ class BuildWealthBenchmarkService:
 
     def _compute_local(
         self,
-        request_payload: RemoteBenchmarkRequestV1,
-    ) -> RemoteBenchmarkResponseV1:
+        request_payload: NativeBenchmarkRequestV1,
+    ) -> NativeBenchmarkResponseV1:
         dates = [point.date for point in request_payload.portfolio_series]
         portfolio_values = [point.total_value_base for point in request_payload.portfolio_series]
         portfolio_index = self._normalize_to_index(portfolio_values)
@@ -160,7 +158,7 @@ class BuildWealthBenchmarkService:
             benchmark_return_pct_by_symbol[symbol] = benchmark_return
             alpha_pct_by_symbol[symbol] = round((portfolio_index[-1] - portfolio_index[0]) - benchmark_return, 4)
 
-        series: list[RemoteBenchmarkSeriesPointV1] = []
+        series: list[NativeBenchmarkSeriesPointV1] = []
         for idx, point_date in enumerate(dates):
             benchmark_row = {
                 symbol: values[idx]
@@ -171,7 +169,7 @@ class BuildWealthBenchmarkService:
                 for symbol, benchmark_value in benchmark_row.items()
             }
             series.append(
-                RemoteBenchmarkSeriesPointV1(
+                NativeBenchmarkSeriesPointV1(
                     date=point_date,
                     portfolio_index=portfolio_index[idx],
                     benchmark_index_by_symbol=benchmark_row,
@@ -181,11 +179,11 @@ class BuildWealthBenchmarkService:
 
         tracking_error_pct = self._tracking_error_pct(portfolio_index, benchmark_index_by_symbol)
 
-        return RemoteBenchmarkResponseV1(
+        return NativeBenchmarkResponseV1(
             request_id=request_payload.request_id,
             engine_status="ok",
             fallback_method=None,
-            summary=RemoteBenchmarkSummaryV1(
+            summary=NativeBenchmarkSummaryV1(
                 portfolio_return_pct=round(portfolio_index[-1] - portfolio_index[0], 4),
                 benchmark_return_pct_by_symbol=benchmark_return_pct_by_symbol,
                 alpha_pct_by_symbol=alpha_pct_by_symbol,
@@ -308,24 +306,23 @@ class BuildWealthBenchmarkService:
 
     @staticmethod
     def _to_api_response(
-        request_payload: RemoteBenchmarkRequestV1,
-        contract_response: RemoteBenchmarkResponseV1,
+        request_payload: NativeBenchmarkRequestV1,
+        native_response: NativeBenchmarkResponseV1,
     ) -> PortfolioBenchmarkResponse:
         return PortfolioBenchmarkResponse(
-            request_id=contract_response.request_id,
-            contract_version=contract_response.contract_version,
-            engine=contract_response.engine,
-            engine_status=contract_response.engine_status,
-            fallback_method=contract_response.fallback_method,
+            request_id=native_response.request_id,
+            engine=native_response.engine,
+            engine_status=native_response.engine_status,
+            fallback_method=native_response.fallback_method,
             benchmark_symbols=request_payload.benchmark_symbols,
             start_date=request_payload.start_date,
             end_date=request_payload.end_date,
             summary=PortfolioBenchmarkSummary(
-                portfolio_return_pct=contract_response.summary.portfolio_return_pct,
-                benchmark_return_pct_by_symbol=contract_response.summary.benchmark_return_pct_by_symbol,
-                alpha_pct_by_symbol=contract_response.summary.alpha_pct_by_symbol,
-                tracking_error_pct=contract_response.summary.tracking_error_pct,
-                max_drawdown_pct=contract_response.summary.max_drawdown_pct,
+                portfolio_return_pct=native_response.summary.portfolio_return_pct,
+                benchmark_return_pct_by_symbol=native_response.summary.benchmark_return_pct_by_symbol,
+                alpha_pct_by_symbol=native_response.summary.alpha_pct_by_symbol,
+                tracking_error_pct=native_response.summary.tracking_error_pct,
+                max_drawdown_pct=native_response.summary.max_drawdown_pct,
             ),
             series=[
                 PortfolioBenchmarkSeriesPoint(
@@ -334,8 +331,8 @@ class BuildWealthBenchmarkService:
                     benchmark_index_by_symbol=point.benchmark_index_by_symbol,
                     alpha_index_by_symbol=point.alpha_index_by_symbol,
                 )
-                for point in contract_response.series
+                for point in native_response.series
             ],
-            warnings=list(contract_response.warnings),
-            generated_at=contract_response.generated_at,
+            warnings=list(native_response.warnings),
+            generated_at=native_response.generated_at,
         )

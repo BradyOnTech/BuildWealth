@@ -188,6 +188,44 @@ def test_scenario_engine_monte_carlo_variant_controls_terminal_values() -> None:
         abs=0.01,
     )
     assert baseline_p90.future_value_usd >= baseline_p10.future_value_usd
+    monte = p10.monte_carlo
+    assert "p25_future_value_usd" in monte
+    assert "p75_future_value_usd" in monte
+    assert monte["plan_strength_label"] in {"Strong", "Workable", "Needs attention", "Fragile"}
+    assert monte["funded_trial_rate_pct"] >= 0
+    assert monte["percentile_timeline"][0]["p50_ending_balance_usd"] > 0
+
+
+def test_scenario_engine_reports_plan_strength_and_failure_years() -> None:
+    engine = ScenarioEngine(
+        years_to_retirement=5,
+        annual_contribution_usd=0,
+        baseline_return=0.0,
+        optimistic_return=0.0,
+        conservative_return=0.0,
+        return_volatility=0.0,
+        inflation=0.025,
+        monte_carlo_runs=20,
+        hsa_delta_default=0,
+        marginal_tax_rate=0.0,
+    )
+
+    result = engine.run(
+        current_portfolio_value_usd=10_000,
+        annual_contribution_usd=0,
+        years=5,
+        income_projection={"first_year_gross_income_usd": 0},
+        expense_projection={"first_year_expenses_usd": 50_000},
+        simulation_mode="monte_carlo",
+        simulation_seed=42,
+    )
+
+    failure = result.monte_carlo["failure_analysis"]
+    assert result.monte_carlo["plan_strength_label"] == "Fragile"
+    assert result.monte_carlo["funded_trial_rate_pct"] == 0
+    assert failure["failed_trial_count"] == 20
+    assert failure["first_failure_year_distribution"][0]["count"] == 20
+    assert result.simulation["failed_trial_count"] == 20
 
 
 def test_scenario_engine_projects_tax_and_account_timelines() -> None:

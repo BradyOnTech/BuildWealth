@@ -38,20 +38,20 @@ async function load(params = {}) {
   if (!root) return;
 
   let payload = null;
-  let engines = null;
+  let services = null;
   try {
     const shouldRefreshResearch = String(params.refresh || '').toLowerCase() === 'research';
     const shouldRecordReview = String(params.review || '').toLowerCase() === 'complete';
-    [payload, engines] = await Promise.all([
+    [payload, services] = await Promise.all([
       shouldRecordReview
         ? api.recordTodayReview()
         : shouldRefreshResearch
           ? api.refreshTodayResearch()
           : api.today(),
-      api.engines().catch(() => null),
+      api.services().catch(() => null),
     ]);
     state.today = payload;
-    state.engines = engines;
+    state.services = services;
     state.lastError = null;
     emit('today:loaded', payload);
   } catch (err) {
@@ -67,9 +67,9 @@ async function load(params = {}) {
 
   setView(root, html`
     ${raw(renderHero(payload))}
-    ${raw(renderCommandCards(payload, engines))}
+    ${raw(renderCommandCards(payload, services))}
     ${raw(renderMove(payload))}
-    ${raw(renderRoom(payload, engines))}
+    ${raw(renderRoom(payload, services))}
   `);
   if (
     String(params.refresh || '').toLowerCase() === 'research'
@@ -137,10 +137,10 @@ export function computeRunway(payload) {
 
 /* ─────────────  COMMAND CENTER  ───────────── */
 
-export function renderCommandCards(payload, engines = null) {
+export function renderCommandCards(payload, services = null) {
   const cards = Array.isArray(payload.command_cards) ? [...payload.command_cards] : [];
-  const engineCard = buildEngineCommandCard(engines);
-  if (engineCard) cards.push(engineCard);
+  const serviceCard = buildServiceCommandCard(services);
+  if (serviceCard) cards.push(serviceCard);
   const visibleCards = cards.slice(0, 10);
   if (!visibleCards.length) {
     return html``;
@@ -165,11 +165,11 @@ export function renderCommandCards(payload, engines = null) {
   `;
 }
 
-function buildEngineCommandCard(engines) {
-  if (!engines || typeof engines !== 'object') return null;
-  const enabled = Number(engines.enabled_count ?? 0);
-  const reachable = Number(engines.reachable_count ?? 0);
-  const degraded = Number(engines.degraded_count ?? 0);
+function buildServiceCommandCard(services) {
+  if (!services || typeof services !== 'object') return null;
+  const enabled = Number(services.enabled_count ?? 0);
+  const reachable = Number(services.reachable_count ?? 0);
+  const degraded = Number(services.degraded_count ?? 0);
   const status = degraded > 0 || reachable < enabled ? 'warning' : 'ready';
   return {
     id: 'service-readiness',
@@ -363,16 +363,16 @@ function humanSource(source) {
 
 /* ─────────────  THE ROOM  ───────────── */
 
-function renderRoom(payload, engines) {
+function renderRoom(payload, services) {
   const sync = payload.sync_status || {};
-  const enginesEnabled = engines?.enabled_count ?? 0;
-  const enginesReachable = engines?.reachable_count ?? 0;
+  const servicesEnabled = services?.enabled_count ?? 0;
+  const servicesReachable = services?.reachable_count ?? 0;
   const closure = stateFromContext(payload.context_state);
   const lastSync = sync.last_completed_at || sync.last_started_at;
 
   const allQuiet = (
     payload.context_state === 'ready' &&
-    (engines?.degraded_count ?? 0) === 0 &&
+    (services?.degraded_count ?? 0) === 0 &&
     sync.failed_count === 0
   );
 
@@ -389,7 +389,7 @@ function renderRoom(payload, engines) {
           <span class="glyph">§</span>
           ${headline}
           <span class="marginalia">
-            Last sync ${lastSync ? fmtRelative(lastSync) : '—'} · ${enginesReachable}/${enginesEnabled} services ready
+            Last sync ${lastSync ? fmtRelative(lastSync) : '—'} · ${servicesReachable}/${servicesEnabled} services ready
           </span>
         </p>
         <details class="diagnostics-toggle">

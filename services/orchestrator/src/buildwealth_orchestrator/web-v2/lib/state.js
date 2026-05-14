@@ -3,7 +3,7 @@
 
 export const state = {
   today: null,
-  engines: null,
+  services: null,
   telemetry: null,
   plans: [],
   activePlanId: null,

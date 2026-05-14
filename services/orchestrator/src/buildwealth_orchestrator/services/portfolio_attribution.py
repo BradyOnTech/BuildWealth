@@ -49,7 +49,7 @@ def _parse_datetime(value: Any) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-class RemoteAttributionPositionV1(BaseModel):
+class NativeAttributionPositionV1(BaseModel):
     symbol: str
     name: str | None = None
     account_id: str | None = None
@@ -71,15 +71,14 @@ class RemoteAttributionPositionV1(BaseModel):
         return symbol
 
 
-class RemoteAttributionRequestV1(BaseModel):
-    contract_version: Literal[1] = 1
+class NativeAttributionRequestV1(BaseModel):
     request_id: str
     portfolio_base_currency: str = Field(pattern=r"^[A-Z]{3}$")
     as_of: datetime | None = None
     top_n: int = Field(default=5, ge=1, le=50)
     portfolio_total_return_base: float = 0.0
     portfolio_total_value_base: float = 0.0
-    positions: list[RemoteAttributionPositionV1] = Field(default_factory=list)
+    positions: list[NativeAttributionPositionV1] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("top_n")
@@ -88,7 +87,7 @@ class RemoteAttributionRequestV1(BaseModel):
         return max(1, min(int(value), 50))
 
 
-class RemoteAttributionPositionResultV1(BaseModel):
+class NativeAttributionPositionResultV1(BaseModel):
     symbol: str
     name: str | None = None
     account_id: str | None = None
@@ -103,7 +102,7 @@ class RemoteAttributionPositionResultV1(BaseModel):
     allocation_pct: float = 0.0
 
 
-class RemoteAttributionSummaryV1(BaseModel):
+class NativeAttributionSummaryV1(BaseModel):
     portfolio_total_return_base: float
     portfolio_total_value_base: float
     accounted_return_base: float
@@ -112,16 +111,15 @@ class RemoteAttributionSummaryV1(BaseModel):
     detractors_count: int
 
 
-class RemoteAttributionResponseV1(BaseModel):
-    contract_version: Literal[1] = 1
+class NativeAttributionResponseV1(BaseModel):
     request_id: str
     engine: Literal["portfolio_analysis"] = "portfolio_analysis"
     engine_status: Literal["ok", "degraded"]
     fallback_method: str | None = None
-    summary: RemoteAttributionSummaryV1
-    contributors: list[RemoteAttributionPositionResultV1] = Field(default_factory=list)
-    detractors: list[RemoteAttributionPositionResultV1] = Field(default_factory=list)
-    positions: list[RemoteAttributionPositionResultV1] = Field(default_factory=list)
+    summary: NativeAttributionSummaryV1
+    contributors: list[NativeAttributionPositionResultV1] = Field(default_factory=list)
+    detractors: list[NativeAttributionPositionResultV1] = Field(default_factory=list)
+    positions: list[NativeAttributionPositionResultV1] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     generated_at: datetime | None = None
 
@@ -145,7 +143,7 @@ class BuildWealthAttributionService:
         local_response = self._compute_local(request_payload)
         return self._to_api_response(request_payload, local_response)
 
-    def _build_request_payload(self, *, top_n: int) -> RemoteAttributionRequestV1:
+    def _build_request_payload(self, *, top_n: int) -> NativeAttributionRequestV1:
         holdings_payload = self.portfolio_store.get_holdings()
         holdings = holdings_payload.get("holdings") if isinstance(holdings_payload.get("holdings"), dict) else {}
         performance = (
@@ -159,7 +157,7 @@ class BuildWealthAttributionService:
         )
         total_portfolio_return = _safe_float(performance.get("total_return_usd"), 0.0)
 
-        rows: list[RemoteAttributionPositionV1] = []
+        rows: list[NativeAttributionPositionV1] = []
         for key in sorted(holdings.keys()):
             holding = holdings.get(key)
             if not isinstance(holding, dict):
@@ -184,7 +182,7 @@ class BuildWealthAttributionService:
             )
 
             rows.append(
-                RemoteAttributionPositionV1(
+                NativeAttributionPositionV1(
                     symbol=symbol.upper(),
                     name=_normalize_text(holding.get("name")),
                     account_id=_normalize_text(holding.get("account")),
@@ -205,7 +203,7 @@ class BuildWealthAttributionService:
             or holdings_payload.get("updated_at")
         )
 
-        return RemoteAttributionRequestV1(
+        return NativeAttributionRequestV1(
             request_id=uuid4().hex,
             portfolio_base_currency=str(
                 holdings_payload.get("base_currency")
@@ -221,13 +219,13 @@ class BuildWealthAttributionService:
 
     def _compute_local(
         self,
-        request_payload: RemoteAttributionRequestV1,
-    ) -> RemoteAttributionResponseV1:
+        request_payload: NativeAttributionRequestV1,
+    ) -> NativeAttributionResponseV1:
         denominator = request_payload.portfolio_total_return_base
         if abs(denominator) <= EPSILON:
             denominator = sum(position.total_return_base for position in request_payload.positions)
 
-        rows: list[RemoteAttributionPositionResultV1] = []
+        rows: list[NativeAttributionPositionResultV1] = []
         for position in request_payload.positions:
             contribution_pct = (
                 (position.total_return_base / denominator) * 100.0
@@ -235,7 +233,7 @@ class BuildWealthAttributionService:
                 else 0.0
             )
             rows.append(
-                RemoteAttributionPositionResultV1(
+                NativeAttributionPositionResultV1(
                     symbol=position.symbol,
                     name=position.name,
                     account_id=position.account_id,
@@ -266,11 +264,11 @@ class BuildWealthAttributionService:
                 "Attribution has residual return not represented by open holdings (likely closed positions or cash flows)."
             )
 
-        return RemoteAttributionResponseV1(
+        return NativeAttributionResponseV1(
             request_id=request_payload.request_id,
             engine_status="ok",
             fallback_method=None,
-            summary=RemoteAttributionSummaryV1(
+            summary=NativeAttributionSummaryV1(
                 portfolio_total_return_base=round(request_payload.portfolio_total_return_base, 2),
                 portfolio_total_value_base=round(request_payload.portfolio_total_value_base, 2),
                 accounted_return_base=accounted_return,
@@ -287,37 +285,36 @@ class BuildWealthAttributionService:
 
     @staticmethod
     def _to_api_response(
-        request_payload: RemoteAttributionRequestV1,
-        contract_response: RemoteAttributionResponseV1,
+        request_payload: NativeAttributionRequestV1,
+        native_response: NativeAttributionResponseV1,
     ) -> PortfolioAttributionResponse:
         return PortfolioAttributionResponse(
-            request_id=contract_response.request_id,
-            contract_version=contract_response.contract_version,
-            engine=contract_response.engine,
-            engine_status=contract_response.engine_status,
-            fallback_method=contract_response.fallback_method,
+            request_id=native_response.request_id,
+            engine=native_response.engine,
+            engine_status=native_response.engine_status,
+            fallback_method=native_response.fallback_method,
             as_of=request_payload.as_of,
             top_n=request_payload.top_n,
             summary=PortfolioAttributionSummary(
-                portfolio_total_return_base=contract_response.summary.portfolio_total_return_base,
-                portfolio_total_value_base=contract_response.summary.portfolio_total_value_base,
-                accounted_return_base=contract_response.summary.accounted_return_base,
-                residual_return_base=contract_response.summary.residual_return_base,
-                contributors_count=contract_response.summary.contributors_count,
-                detractors_count=contract_response.summary.detractors_count,
+                portfolio_total_return_base=native_response.summary.portfolio_total_return_base,
+                portfolio_total_value_base=native_response.summary.portfolio_total_value_base,
+                accounted_return_base=native_response.summary.accounted_return_base,
+                residual_return_base=native_response.summary.residual_return_base,
+                contributors_count=native_response.summary.contributors_count,
+                detractors_count=native_response.summary.detractors_count,
             ),
             contributors=[
                 PortfolioAttributionPosition(**row.model_dump(mode="python"))
-                for row in contract_response.contributors
+                for row in native_response.contributors
             ],
             detractors=[
                 PortfolioAttributionPosition(**row.model_dump(mode="python"))
-                for row in contract_response.detractors
+                for row in native_response.detractors
             ],
             positions=[
                 PortfolioAttributionPosition(**row.model_dump(mode="python"))
-                for row in contract_response.positions
+                for row in native_response.positions
             ],
-            warnings=list(contract_response.warnings),
-            generated_at=contract_response.generated_at,
+            warnings=list(native_response.warnings),
+            generated_at=native_response.generated_at,
         )

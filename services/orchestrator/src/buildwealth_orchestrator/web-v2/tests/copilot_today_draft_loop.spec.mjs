@@ -158,12 +158,12 @@ test('Copilot drafted investment review surfaces in Today and opens focused Inbo
       return;
     }
 
-    if (url.pathname === '/api/engines/status') {
+    if (url.pathname === '/api/services/status') {
       await route.fulfill(jsonResponse({
         enabled_count: 2,
         reachable_count: 2,
         degraded_count: 0,
-        engines: [],
+        services: [],
       }));
       return;
     }

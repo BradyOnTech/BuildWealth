@@ -46,23 +46,25 @@ class PlanWorkspace:
         if self.index_path.exists():
             return
 
-        self._save_index(
-            {
-                "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
-                "active_plan_id": None,
-                "plans": [],
-            }
-        )
+        self._save_index(self._empty_index_payload())
+
+    @staticmethod
+    def _empty_index_payload() -> dict[str, Any]:
+        return {
+            "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
+            "active_plan_id": None,
+            "plans": [],
+        }
 
     def _load_index(self) -> dict[str, Any]:
         try:
             payload = json.loads(self.index_path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            self._initialize_index()
-            payload = json.loads(self.index_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            payload = self._empty_index_payload()
+            self._save_index(payload)
 
         if not isinstance(payload, dict):
-            payload = {}
+            payload = self._empty_index_payload()
 
         payload.setdefault("active_plan_id", None)
         payload.setdefault("plans", [])
@@ -71,7 +73,9 @@ class PlanWorkspace:
         return payload
 
     def _save_index(self, index_payload: dict[str, Any]) -> None:
-        self.index_path.write_text(json.dumps(index_payload, indent=2), encoding="utf-8")
+        tmp_path = self.index_path.with_name(f"{self.index_path.name}.{uuid.uuid4().hex}.tmp")
+        tmp_path.write_text(json.dumps(index_payload, indent=2), encoding="utf-8")
+        tmp_path.replace(self.index_path)
 
     def _plan_dir(self, plan_id: str) -> Path:
         return self.base_dir / plan_id

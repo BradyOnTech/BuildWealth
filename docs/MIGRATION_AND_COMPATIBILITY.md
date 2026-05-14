@@ -21,7 +21,7 @@ BuildWealth uses file-backed local stores with schema-versioned payloads. Migrat
 - Plan workspace payloads (index/settings/timeline/contribution rules/assumption sets/branch templates): `schema_version = 2`
 
 ### Retired Engine Contracts
-Earlier builds included versioned native module contracts for benchmark, attribution, and scenario calculations. Those contracts are migration scaffolding under the BuildWealth-native capability direction and should not be expanded for new work.
+Earlier builds included versioned retired calculation module contracts for benchmark, attribution, and scenario calculations. Those contracts are migration scaffolding under the BuildWealth-native capability direction and should not be expanded for new work.
 
 ## Migration Behavior
 
@@ -53,10 +53,10 @@ Key upgrade behaviors:
 - Ensures contribution rules / assumption sets / branch templates files use current payload envelopes and defaults.
 
 ### 4) Native Capability Migration
-BuildWealth is moving away from native module runtime compatibility and toward native orchestrator-owned capabilities.
+BuildWealth is moving away from retired calculation module runtime compatibility and toward native orchestrator-owned capabilities.
 
 Migration behavior:
-- existing native module-related settings, probes, and contract files may remain until the native replacement workflow is complete
+- existing retired calculation module-related settings, probes, and contract files may remain until the native replacement workflow is complete
 - new implementation should target native services such as Import Workbench, Asset Registry, Portfolio Analysis, Simulations, and Plan Strategy Lab
 - removal should happen after tests prove no active v2 workflow depends on the old adapter path
 
@@ -117,7 +117,7 @@ Behavior:
 - Downgrade compatibility is not guaranteed after migration writes current schema versions.
 
 3. Retired engine compatibility
-- Native Module contract compatibility is historical migration scaffolding.
+- Retired Calculation Module service readiness is historical migration scaffolding.
 - New calculation behavior should use native BuildWealth service contracts and typed API schemas.
 
 ## Operational Guidance

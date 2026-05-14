@@ -15,7 +15,7 @@ import * as workflows from './views/workflows.js';
 import { authScreen } from './views/auth.js';
 
 import { state } from './lib/state.js';
-import { api } from './lib/api.js';
+import { api, setActiveWorkspaceId } from './lib/api.js';
 import { html, raw, $, esc } from './lib/dom.js';
 import { fmtDateLong } from './lib/format.js';
 
@@ -552,7 +552,7 @@ async function preloadGlobalState({ refreshWorkspace = true } = {}) {
   }
 }
 
-async function refreshWorkspaceState({ requireSession = false } = {}) {
+async function refreshWorkspaceState({ requireSession = false, retriedWorkspace = false } = {}) {
   try {
     const session = await api.authSession();
     const workspaces = await api.workspaces();
@@ -566,6 +566,11 @@ async function refreshWorkspaceState({ requireSession = false } = {}) {
     if (err?.status === 401 && requireSession) {
       state.authRequired = true;
       throw err;
+    }
+    if (err?.status === 403 && !retriedWorkspace) {
+      setActiveWorkspaceId('');
+      state.activeWorkspaceId = null;
+      return refreshWorkspaceState({ requireSession, retriedWorkspace: true });
     }
     console.warn('[v2 boot] workspace preload failed:', err.message);
   }
@@ -581,6 +586,8 @@ async function switchWorkspace(workspaceId) {
     await api.selectWorkspace(workspaceId);
     workspaceMenuOpen = false;
     state.activeWorkspaceId = workspaceId;
+    state.activePlanId = null;
+    state.plans = [];
     await refreshWorkspaceState();
     await preloadGlobalState();
     refreshSystemStatus();

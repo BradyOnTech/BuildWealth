@@ -95,8 +95,8 @@
 
 3. Engine integration model
 - Decision: benchmark, attribution, and plan simulation routes use BuildWealth-owned services directly.
-- Rationale: the replacement logic now lives inside the orchestrator, so runtime probes, adapter contracts, and optional calculator fallbacks are retired.
+- Rationale: the replacement logic now lives inside the orchestrator, so runtime probes, retired adapter interfaces, and retired calculator fallbacks are retired.
 
-4. Scope of optional calculation services
-- Decision: optional calculation services are no longer part of normal BuildWealth operation.
+4. Scope of retired calculation services
+- Decision: retired calculation services are no longer part of normal BuildWealth operation.
 - Rationale: correctness now comes from native service tests, clear module ownership, and user-visible review/apply workflows rather than a second runtime path.

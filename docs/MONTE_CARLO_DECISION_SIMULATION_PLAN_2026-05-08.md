@@ -672,13 +672,14 @@ This feature is ready when:
 
 ## First Build Slice
 
-The recommended first slice is:
+Implemented 2026-05-14 inside the existing BuildWealth-owned simulation path rather than by creating parallel provider files:
 
-- [ ] Add `return_providers.py` with fixed, normal, historical sequence, and historical bootstrap providers.
-- [ ] Add `plan_simulation_engine.py` that runs full annual paths using existing account/tax/cash-flow helpers where possible.
-- [ ] Return p10/p25/p50/p75/p90 timelines and terminal values.
-- [ ] Return Plan Strength, funded-trial rate, and first-failure-year distribution.
-- [ ] Add backend tests for determinism, percentile ordering, historical sequence selection, and contribution/spending sensitivity.
-- [ ] Keep existing `ScenarioEngine.run(...)` and `/api/planning/scenarios` compatible.
+- [x] Use the existing `ScenarioEngine` fixed, stochastic, historical, and Monte Carlo modes as the native return-provider boundary.
+- [x] Use existing annual account/tax/cash-flow timeline mechanics as the base path for Monte Carlo replay.
+- [x] Return p10/p25/p50/p75/p90 terminal values and annual percentile timeline rows.
+- [x] Return Plan Strength, funded-trial rate, first-failure-year distribution, and plain-language failure-mode summaries.
+- [x] Add backend tests for seeded stochastic behavior, historical start-year selection, percentile ordering, Plan Strength, and spending-driven failure analysis.
+- [x] Keep existing `ScenarioEngine.run(...)` and `/api/planning/scenarios` compatible.
+- [x] Surface Plan Strength and failure-mode checks in the v2 Plan simulation explanation.
 
-This slice creates the real engine foundation without forcing a UI migration in the same step.
+This slice deepens the existing engine foundation without creating a second simulation source of truth.

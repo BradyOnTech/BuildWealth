@@ -445,8 +445,8 @@ def test_today_trust_durability_card_surfaces_protection_backup_and_git(
     monkeypatch.setattr(main, "_git_activity_store", lambda: GitActivity())
     monkeypatch.setattr(
         main,
-        "_engine_status_snapshot_sync",
-        lambda: main.EngineStatusResponse(as_of=main.utc_now(), engines=[]),
+        "_service_status_snapshot_sync",
+        lambda: main.ServiceStatusResponse(as_of=main.utc_now(), services=[]),
     )
 
     card = main._build_trust_durability_command_card()

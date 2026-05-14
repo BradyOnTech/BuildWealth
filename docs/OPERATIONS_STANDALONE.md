@@ -3,7 +3,7 @@
 ## Scope
 This runbook describes how to run BuildWealth in standalone local-first mode and how to verify core runtime health.
 
-Earlier versions of this runbook described optional calculation-module modes. That path is superseded by BuildWealth-native capability ownership. BuildWealth now runs portfolio analysis and plan simulation through orchestrator-owned services.
+Earlier versions of this runbook described retired calculation-module modes. That path is superseded by BuildWealth-native capability ownership. BuildWealth now runs portfolio analysis and plan simulation through orchestrator-owned services.
 
 ## Runtime Modes
 
@@ -26,7 +26,7 @@ Expected behavior:
 - Portfolio, Plan, Profile, Inbox, Copilot, Import & Sync, Data & Recovery, and Settings workflows should route through BuildWealth-owned APIs.
 
 ### Retired Migration Scaffolding
-Legacy calculation settings, engine status probes, adapter contracts, and upstream container profiles are retired from normal operation. Do not add new workflows that depend on them.
+Legacy calculation settings, service status probes, retired adapter interfaces, and upstream container profiles are retired from normal operation. Do not add new workflows that depend on them.
 
 If a stale reference appears during development, remove it or convert it into BuildWealth-owned service logic with direct tests.
 

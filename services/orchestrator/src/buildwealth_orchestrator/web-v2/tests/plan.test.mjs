@@ -631,9 +631,29 @@ test('plan branch workspace renders templates, result, and review handoffs', () 
         ],
         percentile_bands: [
           { percentile: 'P10', future_value_usd: 850000 },
+          { percentile: 'P25', future_value_usd: 960000 },
           { percentile: 'P50', future_value_usd: 1080000 },
+          { percentile: 'P75', future_value_usd: 1190000 },
           { percentile: 'P90', future_value_usd: 1300000 },
         ],
+        plan_strength: {
+          label: 'Workable',
+          funded_trial_rate_pct: 82.5,
+          summary: 'Most simulated paths stayed funded, but the plan still has years worth reviewing (82.5%).',
+        },
+        failure_analysis: {
+          failed_trial_count: 35,
+          most_common_first_failure_year: 2052,
+          first_failure_year_distribution: [
+            { year: 2052, count: 12, trial_share_pct: 6.0 },
+          ],
+          failure_modes: [
+            {
+              label: 'Portfolio depletion',
+              detail: '35 of 200 simulated paths ran out before the horizon ended.',
+            },
+          ],
+        },
         field_review_links: [
           {
             label: 'Expected return',
@@ -682,8 +702,13 @@ test('plan branch workspace renders templates, result, and review handoffs', () 
   assert.match(markup, /2026 to 2046/);
   assert.match(markup, /Life phases/);
   assert.match(markup, /Accumulation \(2026-2045\)/);
+  assert.match(markup, /Plan Strength/);
+  assert.match(markup, /Workable/);
+  assert.match(markup, /82.5%/);
   assert.match(markup, /Monte Carlo range/);
   assert.match(markup, /P50: future value \$1,080,000/);
+  assert.match(markup, /Failure-mode check/);
+  assert.match(markup, /Most common first shortfall year: 2052/);
   assert.match(markup, /Fields to review/);
   assert.match(markup, /href="#plan\?id=plan-1&amp;section=assumptions&amp;field=expected_return_baseline"/);
   assert.match(markup, /Review level/);

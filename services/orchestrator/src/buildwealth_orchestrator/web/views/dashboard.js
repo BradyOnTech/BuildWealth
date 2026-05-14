@@ -212,7 +212,7 @@ async function loadRecommendationTrend(dashboardPayload) {
   renderRecommendationTrend({ global: globalPayload, plan: planPayload }, { activePlanTitle });
 }
 
-function engineProbeAgeMinutes(asOf) {
+function serviceStatusAgeMinutes(asOf) {
   if (!asOf) return null;
   const parsed = new Date(asOf);
   if (Number.isNaN(parsed.getTime())) return null;
@@ -220,7 +220,7 @@ function engineProbeAgeMinutes(asOf) {
   return Math.max(0, Math.floor(deltaMs / 60000));
 }
 
-function renderEngineStatus(payload, errorMessage = null) {
+function renderServiceStatus(payload, errorMessage = null) {
   const enabledEl = byId('today-engine-enabled');
   const reachableEl = byId('today-engine-reachable');
   const degradedEl = byId('today-engine-degraded');
@@ -228,7 +228,7 @@ function renderEngineStatus(payload, errorMessage = null) {
   const asOfEl = byId('today-engines-as-of');
   const listEl = byId('today-engines-list');
 
-  if (!payload || !Array.isArray(payload.engines)) {
+  if (!payload || !Array.isArray(payload.services)) {
     enabledEl.textContent = '-';
     reachableEl.textContent = '-';
     degradedEl.textContent = '-';
@@ -238,11 +238,11 @@ function renderEngineStatus(payload, errorMessage = null) {
     return;
   }
 
-  const engines = payload.engines;
-  const enabled = engines.filter((item) => item.enabled).length;
-  const reachable = engines.filter((item) => item.enabled && item.reachable).length;
-  const degradedTotal = engines.reduce((acc, item) => acc + Number(item.degraded_count || 0), 0);
-  const probeAge = engineProbeAgeMinutes(payload.as_of);
+  const services = payload.services;
+  const enabled = services.filter((item) => item.enabled).length;
+  const reachable = services.filter((item) => item.enabled && item.reachable).length;
+  const degradedTotal = services.reduce((acc, item) => acc + Number(item.degraded_count || 0), 0);
+  const probeAge = serviceStatusAgeMinutes(payload.as_of);
 
   enabledEl.textContent = String(enabled);
   reachableEl.textContent = `${reachable}/${enabled}`;
@@ -252,31 +252,31 @@ function renderEngineStatus(payload, errorMessage = null) {
   probeAgeEl.textContent = probeAge == null ? '-' : fmtAgeMinutes(probeAge);
   asOfEl.textContent = `Last checked: ${fmtDate(payload.as_of)}`;
 
-  if (!engines.length) {
+  if (!services.length) {
     listEl.innerHTML = '<article class="list-item incomplete"><p class="list-item-title">No services configured.</p></article>';
     return;
   }
 
   listEl.innerHTML = '';
-  for (const engine of engines) {
+  for (const service of services) {
     const row = document.createElement('article');
-    const statusLabel = !engine.enabled
+    const statusLabel = !service.enabled
       ? 'DISABLED'
-      : engine.reachable
+      : service.reachable
         ? 'READY'
         : 'UNAVAILABLE';
-    const statusClass = !engine.enabled
+    const statusClass = !service.enabled
       ? 'attention'
-      : engine.reachable
+      : service.reachable
         ? 'complete'
         : 'incomplete';
-    const engineName = String(engine.name || 'service').replace(/_/g, ' ');
-    const checkedText = engine.last_checked_at ? fmtDate(engine.last_checked_at) : 'never';
+    const serviceName = String(service.name || 'service').replace(/_/g, ' ');
+    const checkedText = service.last_checked_at ? fmtDate(service.last_checked_at) : 'never';
     row.className = `list-item ${statusClass}`;
     row.innerHTML = `
-      <p class="list-item-title">${engineName} <span class="status-badge ${statusClass}">${statusLabel}</span></p>
-      <p class="list-item-meta">Issue count: ${Number(engine.degraded_count || 0)} • Checked: ${checkedText}</p>
-      ${engine.last_error ? `<p class="list-item-meta">Last error: ${engine.last_error}</p>` : ''}
+      <p class="list-item-title">${serviceName} <span class="status-badge ${statusClass}">${statusLabel}</span></p>
+      <p class="list-item-meta">Issue count: ${Number(service.degraded_count || 0)} • Checked: ${checkedText}</p>
+      ${service.last_error ? `<p class="list-item-meta">Last error: ${service.last_error}</p>` : ''}
     `;
     listEl.appendChild(row);
   }
@@ -393,11 +393,11 @@ function renderRuntimeTelemetry(payload, errorMessage = null) {
 }
 
 export async function load(options = {}) {
-  const refreshEngines = Boolean(options.refreshEngines);
+  const refreshServices = Boolean(options.refreshServices);
   try {
-    const [dashboardResult, enginesResult, telemetryResult] = await Promise.allSettled([
+    const [dashboardResult, servicesResult, telemetryResult] = await Promise.allSettled([
       fetchJson('/api/dashboard/today'),
-      fetchJson(`/api/engines/status${refreshEngines ? '?refresh=true' : ''}`),
+      fetchJson(`/api/services/status${refreshServices ? '?refresh=true' : ''}`),
       fetchJson('/api/telemetry/runtime'),
     ]);
 
@@ -408,10 +408,10 @@ export async function load(options = {}) {
       throw dashboardResult.reason;
     }
 
-    if (enginesResult.status === 'fulfilled') {
-      renderEngineStatus(enginesResult.value);
+    if (servicesResult.status === 'fulfilled') {
+      renderServiceStatus(servicesResult.value);
     } else {
-      renderEngineStatus(null, enginesResult.reason?.message || 'unknown error');
+      renderServiceStatus(null, servicesResult.reason?.message || 'unknown error');
     }
 
     if (telemetryResult.status === 'fulfilled') {
@@ -425,7 +425,7 @@ export async function load(options = {}) {
     byId('today-context-banner').textContent = 'Context readiness unavailable.';
     ['today-total-value', 'today-snapshot-freshness', 'today-concentration', 'today-active-plan'].forEach(id => { const el = byId(id); if (el) el.textContent = '-'; });
     renderRecommendationTrend(null);
-    renderEngineStatus(null, error.message);
+    renderServiceStatus(null, error.message);
     renderRuntimeTelemetry(null, error.message);
   }
 }
@@ -441,7 +441,7 @@ async function runSync() {
 
 export function init() {
   byId('reload-today').addEventListener('click', () => load().catch(e => writeLog(e.message, null, true)));
-  byId('today-refresh-engines').addEventListener('click', () => load({ refreshEngines: true }).catch(e => writeLog(e.message, null, true)));
+  byId('today-refresh-engines').addEventListener('click', () => load({ refreshServices: true }).catch(e => writeLog(e.message, null, true)));
   byId('today-refresh-recommendation-trend').addEventListener('click', () => load().catch(e => writeLog(e.message, null, true)));
   byId('today-refresh-runtime-telemetry').addEventListener('click', () => load().catch(e => writeLog(e.message, null, true)));
   byId('today-run-sync').addEventListener('click', runSync);

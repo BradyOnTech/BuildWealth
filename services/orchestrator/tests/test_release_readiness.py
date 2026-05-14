@@ -160,30 +160,28 @@ class RecordingActivityStore:
         return {"summary": {"total_matched": len(self.events)}, "events": list(reversed(self.events))}
 
 
-def _ready_engine_status() -> main.EngineStatusResponse:
-    return main.EngineStatusResponse(
+def _ready_service_status() -> main.ServiceStatusResponse:
+    return main.ServiceStatusResponse(
         as_of=main.utc_now(),
-        engines=[
+        services=[
             {
                 "name": "plan_simulation",
                 "enabled": True,
                 "reachable": True,
-                "contract_compatible": True,
             }
         ],
     )
 
 
-def _degraded_engine_status() -> main.EngineStatusResponse:
-    return main.EngineStatusResponse(
+def _degraded_service_status() -> main.ServiceStatusResponse:
+    return main.ServiceStatusResponse(
         as_of=main.utc_now(),
-        engines=[
+        services=[
             {
                 "name": "plan_simulation",
                 "enabled": True,
                 "reachable": False,
-                "contract_compatible": False,
-                "last_error": "calculation unavailable",
+                "last_error": "service unavailable",
             }
         ],
     )
@@ -196,7 +194,7 @@ def test_release_readiness_contract_reports_ready_state(monkeypatch) -> None:
     monkeypatch.setattr(main, "_git_policy", lambda: {"enabled": True})
     monkeypatch.setattr(main, "_git_repository_service", lambda _policy: GitReady())
     monkeypatch.setattr(main, "_git_activity_store", lambda: ActivityReady())
-    monkeypatch.setattr(main, "_engine_status_snapshot_sync", _ready_engine_status)
+    monkeypatch.setattr(main, "_service_status_snapshot_sync", _ready_service_status)
 
     response = main.build_release_readiness_response()
     checks = {check.id: check for check in response.checks}
@@ -221,7 +219,7 @@ def test_release_readiness_contract_blocks_on_missing_trust_evidence(monkeypatch
     monkeypatch.setattr(main, "_git_policy", lambda: {"enabled": True})
     monkeypatch.setattr(main, "_git_repository_service", lambda _policy: GitDirty())
     monkeypatch.setattr(main, "_git_activity_store", lambda: ActivityEmpty())
-    monkeypatch.setattr(main, "_engine_status_snapshot_sync", _degraded_engine_status)
+    monkeypatch.setattr(main, "_service_status_snapshot_sync", _degraded_service_status)
 
     response = main.build_release_readiness_response(now=main.utc_now() + timedelta(days=1))
     checks = {check.id: check for check in response.checks}
@@ -253,7 +251,7 @@ def test_release_readiness_warns_when_workflow_verification_is_missing(monkeypat
     monkeypatch.setattr(main, "_git_policy", lambda: {"enabled": True})
     monkeypatch.setattr(main, "_git_repository_service", lambda _policy: GitReady())
     monkeypatch.setattr(main, "_git_activity_store", lambda: ActivityMissingWorkflow())
-    monkeypatch.setattr(main, "_engine_status_snapshot_sync", _ready_engine_status)
+    monkeypatch.setattr(main, "_service_status_snapshot_sync", _ready_service_status)
 
     response = main.build_release_readiness_response()
     checks = {check.id: check for check in response.checks}

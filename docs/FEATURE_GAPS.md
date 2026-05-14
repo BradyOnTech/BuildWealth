@@ -171,7 +171,7 @@ Current prompt is 2 generic sentences. Should guide the copilot to:
 
 ### Dashboard & Context
 - `get_today_dashboard` — Complete daily summary
-- `get_sync_status` — Sync engine status
+- `get_sync_status` — Sync service status
 - `run_sync` — Trigger full sync pipeline
 
 ### Recommendations

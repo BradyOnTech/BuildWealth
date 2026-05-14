@@ -66,6 +66,28 @@ def test_workspace_settings_store_encrypts_api_key(tmp_path: Path) -> None:
     )
 
 
+def test_service_status_endpoint_uses_buildwealth_service_language(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+
+    with TestClient(main.app) as client:
+        service_response = client.get("/api/services/status")
+        compatibility_response = client.get("/api/engines/status")
+
+    assert service_response.status_code == 200
+    assert compatibility_response.status_code == 200
+    service_payload = service_response.json()
+    compatibility_payload = compatibility_response.json()
+    assert [item["name"] for item in service_payload["services"]] == [
+        "portfolio_benchmark",
+        "portfolio_attribution",
+        "plan_simulation",
+    ]
+    assert "engines" not in service_payload
+    assert all(not key.startswith("contract_") for key in service_payload["services"][0])
+    assert "engines" in compatibility_payload
+    assert compatibility_payload["engines"] == compatibility_payload["services"]
+
+
 def test_profile_route_uses_active_workspace_context(monkeypatch, tmp_path: Path) -> None:
     _install_temp_workspace_spine(monkeypatch, tmp_path)
 
@@ -183,6 +205,79 @@ def test_settings_route_uses_workspace_secret_store(monkeypatch, tmp_path: Path)
     assert "sk-demo-secret-9876" not in (
         tmp_path / "demo" / "settings" / "workspace_secrets.json"
     ).read_text(encoding="utf-8")
+
+
+def test_registered_users_get_separate_masked_api_key_settings(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "local"
+
+    with TestClient(main.app) as alice, TestClient(main.app) as bob:
+        alice_register = alice.post(
+            "/api/auth/register",
+            json={
+                "email": "settings-alice@example.test",
+                "password": "correct-horse-1",
+                "display_name": "Settings Alice",
+            },
+        )
+        bob_register = bob.post(
+            "/api/auth/register",
+            json={
+                "email": "settings-bob@example.test",
+                "password": "correct-horse-2",
+                "display_name": "Settings Bob",
+            },
+        )
+        alice_csrf = _csrf_headers(alice)
+        bob_csrf = _csrf_headers(bob)
+
+        blocked_missing_csrf = alice.put(
+            "/api/settings",
+            json={"llm_provider": "openai", "llm_api_key": "sk-blocked-secret-0000"},
+        )
+        alice_save = alice.put(
+            "/api/settings",
+            headers=alice_csrf,
+            json={"llm_provider": "openai", "llm_api_key": "sk-alice-secret-1111"},
+        )
+        bob_save = bob.put(
+            "/api/settings",
+            headers=bob_csrf,
+            json={"llm_provider": "openai", "llm_api_key": "sk-bob-secret-2222"},
+        )
+        alice_loaded = alice.get("/api/settings")
+        bob_loaded = bob.get("/api/settings")
+
+        alice_context = main.control_plane_store.request_context_for_token(
+            token=alice.cookies.get(main.settings.auth_session_cookie_name),
+            auth_mode="local",
+        )
+        bob_context = main.control_plane_store.request_context_for_token(
+            token=bob.cookies.get(main.settings.auth_session_cookie_name),
+            auth_mode="local",
+        )
+        alice_services = main.workspace_service_factory.for_context(alice_context)
+        bob_services = main.workspace_service_factory.for_context(bob_context)
+
+    assert alice_register.status_code == 200
+    assert bob_register.status_code == 200
+    assert blocked_missing_csrf.status_code == 403
+    assert alice_save.status_code == 200
+    assert bob_save.status_code == 200
+    assert alice_loaded.json()["llm_api_key"] == "••••••••1111"
+    assert bob_loaded.json()["llm_api_key"] == "••••••••2222"
+    assert alice_loaded.json()["llm_api_key_configured"] is True
+    assert bob_loaded.json()["llm_api_key_configured"] is True
+
+    alice_settings = alice_services.paths.settings_path.read_text(encoding="utf-8")
+    alice_secrets = alice_services.paths.secrets_path.read_text(encoding="utf-8")
+    bob_settings = bob_services.paths.settings_path.read_text(encoding="utf-8")
+    bob_secrets = bob_services.paths.secrets_path.read_text(encoding="utf-8")
+    for raw_secret in ("sk-alice-secret-1111", "sk-bob-secret-2222", "sk-blocked-secret-0000"):
+        assert raw_secret not in alice_settings
+        assert raw_secret not in alice_secrets
+        assert raw_secret not in bob_settings
+        assert raw_secret not in bob_secrets
 
 
 def test_registered_users_get_separate_portfolio_transactions(monkeypatch, tmp_path: Path) -> None:

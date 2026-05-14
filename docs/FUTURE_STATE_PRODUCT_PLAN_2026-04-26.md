@@ -50,7 +50,7 @@ The durable product loop is:
 
 1. Local-first and private by default.
 2. The Python orchestrator remains the system of record for persistent state, migrations, API contracts, and product behavior.
-3. Optional native modules are stateless compute specialists, not product surfaces or durable data owners.
+3. Optional retired calculation modules are stateless compute specialists, not product surfaces or durable data owners.
 4. BuildWealth UI and API are the single user entrypoint.
 5. Copilot operates through the same contracts as the rest of the app.
 6. Copilot may draft important financial changes, but the user reviews and applies them.

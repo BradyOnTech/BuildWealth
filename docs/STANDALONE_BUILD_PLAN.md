@@ -17,7 +17,7 @@ Notes:
 
 ## Strategic Direction
 
-**BuildWealth is becoming a standalone single-user financial command center with targeted engine reuse.** Python remains the control plane and system of record, while selected high-complexity calculations are delegated to local TypeScript native modules adapted from Portfolio Analysis (portfolio analytics) and Simulations (planning/tax simulation).
+**BuildWealth is becoming a standalone single-user financial command center with targeted engine reuse.** Python remains the control plane and system of record, while selected high-complexity calculations are delegated to local TypeScript retired calculation modules adapted from Portfolio Analysis (portfolio analytics) and Simulations (planning/tax simulation).
 
 License note:
 - This historical plan was originally written under an MIT-license assumption for upstream reuse.
@@ -45,8 +45,8 @@ Maintain complete local rewrite while also preserving integration stack.
 - **Pros:** Flexibility
 - **Cons:** Highest complexity and long-term maintenance cost
 
-### Option D: Targeted Native Module Reuse (CHOSEN)
-Keep Python as source of truth; use local native modules for high-complexity domains behind strict versioned adapter contracts.
+### Option D: Targeted Retired Calculation Module Reuse (CHOSEN)
+Keep Python as source of truth; use local retired calculation modules for high-complexity domains behind strict versioned retired adapter interfaces.
 - **Pros:** Single BuildWealth UX, faster parity in hard domains, bounded operational complexity
 - **Cons:** Requires robust contract governance and degraded-mode handling
 
@@ -57,10 +57,10 @@ Keep Python as source of truth; use local native modules for high-complexity dom
 These decisions refine the build plan based on the current repository and upstream source reality:
 
 - **Breaking schema/API changes are allowed early.** We will move schema, migration, and UI contract changes into Sprint 1 instead of deferring them.
-- **portfolio and planning modules native modules are intentional architecture, not temporary shims.** We will keep native modules only for high-complexity domains where reuse beats rewrite, with explicit contracts and fallback behavior.
+- **portfolio and planning modules retired calculation modules are intentional architecture, not temporary shims.** We will keep retired calculation modules only for high-complexity domains where reuse beats rewrite, with explicit contracts and fallback behavior.
 - **Upstream reuse should be selective, not literal.** Portfolio Analysis is most useful for import/account/asset metadata patterns and test fixtures; Simulations is most useful for tax, account, contribution, and simulation logic.
 - **Migration is a foundation task, not polish.** New ledger and planner models should replace the current simplified contracts early, with explicit migrations for stored portfolio, plan, and profile data.
-- **Contract-first integration is mandatory.** Adapter/native module payloads must be schema-versioned under `contracts/engine/v{n}` and validated on request/response boundaries.
+- **Contract-first integration is mandatory.** Adapter/retired calculation module payloads must be schema-versioned under `retired-calculation-contracts/v{n}` and validated on request/response boundaries.
 
 ---
 
@@ -147,14 +147,14 @@ These decisions refine the build plan based on the current repository and upstre
   - style: `ruff check src/buildwealth_orchestrator/schemas.py` (`All checks passed`)
   - full: `pytest -q` in `services/orchestrator` passes (`476 passed`).
 
-### 2026-04-20 (Completed - Cross-Cutting Follow-up, Slice D Planning Native Module Decomposition)
+### 2026-04-20 (Completed - Cross-Cutting Follow-up, Slice D Planning Retired Calculation Module Decomposition)
 - Decomposed `plan_simulation_service.py` orchestration flow into focused internal helpers while keeping external contracts stable:
   - local scenario execution helper
   - local projection update helper
-  - native module request execution helper
-  - native module merge response helper
+  - retired calculation module request execution helper
+  - retired calculation module merge response helper
   - degraded local fallback helper
-- Added `_ScenarioRunInputs` dataclass to centralize run-time native module input state and reduce inline argument fan-out.
+- Added `_ScenarioRunInputs` dataclass to centralize run-time retired calculation module input state and reduce inline argument fan-out.
 - Added local-path regression coverage in `test_plan_simulation_service.py` to confirm projection payload preservation under local-only execution.
 - Verification:
   - targeted: `pytest -q tests/test_plan_simulation_service.py` (`8 passed`)
@@ -204,15 +204,15 @@ These decisions refine the build plan based on the current repository and upstre
   - targeted: `pytest -q tests/test_storage_reliability_smoke.py tests/test_backup_restore.py tests/test_data_protection.py` (`5 passed`)
   - full: `pytest -q` in `services/orchestrator` passes (`474 passed`).
 
-### 2026-04-15 (Completed - Cross-Cutting Follow-up, Engine Policy/Envelope Unification + Native Module Matrix Tests)
-- Added shared engine policy/envelope helper module (`engine_policy.py`) to centralize native module call disposition and degraded-response metadata assembly.
-- Unified native module eligibility/fallback handling in:
+### 2026-04-15 (Completed - Cross-Cutting Follow-up, Engine Policy/Envelope Unification + Retired Calculation Module Matrix Tests)
+- Added shared engine policy/envelope helper module (`engine_policy.py`) to centralize retired calculation module call disposition and degraded-response metadata assembly.
+- Unified retired calculation module eligibility/fallback handling in:
   - `portfolio_benchmark.py`
   - `portfolio_attribution.py`
   - `plan_simulation_service.py`
-- Added native module execution matrix coverage:
+- Added retired calculation module execution matrix coverage:
   - new `test_engine_policy.py`
-  - adapter-missing path tests for benchmark/attribution/planning native module services.
+  - adapter-missing path tests for benchmark/attribution/planning retired calculation module services.
 - Verification:
   - targeted: `pytest -q tests/test_engine_policy.py tests/test_portfolio_benchmark.py tests/test_portfolio_attribution.py tests/test_plan_simulation_service.py` (`22 passed`)
   - full: `pytest -q` in `services/orchestrator` passes (`473 passed`).
@@ -301,7 +301,7 @@ These decisions refine the build plan based on the current repository and upstre
 - Verification: `pytest -q` in `services/orchestrator` passes (`444 passed`).
 
 ### 2026-04-15 (Completed - Phase 5.1 Slice 3, Portfolio Drift/Risk Alerts)
-- Added a new portfolio risk-alert native module (`portfolio_risk_alerts.py`) that computes concentration/allocation alerts from local holdings with threshold-driven `breach`/`watch` states, severity, drift, and action guidance.
+- Added a new portfolio risk-alert retired calculation module (`portfolio_risk_alerts.py`) that computes concentration/allocation alerts from local holdings with threshold-driven `breach`/`watch` states, severity, drift, and action guidance.
 - Added persistent threshold policy storage via `risk_policy.json`:
   - new normalized threshold contract (`single_holding`, `top3`, `account`, `asset_class`, `sector`, `region`, `hhi`, `effective_positions`)
   - `PortfolioStore` read/update methods with deterministic rebuild integration.
@@ -374,9 +374,9 @@ These decisions refine the build plan based on the current repository and upstre
 
 ### 2026-04-15 (Completed - Phase 5.0 Slice 5, Simulation Mode Expansion)
 - Added simulation mode controls (`fixed`, `stochastic`, `historical`, `monte_carlo`) plus Monte Carlo variant/start-year/seed settings across plan settings, assumption sets, API requests, and Copilot tool contracts.
-- Completed end-to-end mode wiring through scenario execution, plan diff/branch/withdrawal comparison paths, and planning native module metadata.
+- Completed end-to-end mode wiring through scenario execution, plan diff/branch/withdrawal comparison paths, and planning retired calculation module metadata.
 - Added simulation comparison visibility in responses (`simulation_delta`) and Plan Workspace UI (settings selectors + diff/branch output context).
-- Regression coverage extended for scenario engine simulation behavior, assumption-set parsing/application, workspace validation, native module metadata, and Copilot tool contracts.
+- Regression coverage extended for scenario engine simulation behavior, assumption-set parsing/application, workspace validation, retired calculation module metadata, and Copilot tool contracts.
 - Verification: `pytest -q` in `services/orchestrator` passes (`427 passed`).
 
 ### 2026-04-14 (Completed - Post-3.7 Slice 9, One-Click Bridge Artifact Control)
@@ -541,8 +541,8 @@ These decisions refine the build plan based on the current repository and upstre
 - Updated Copilot unified-context UI status text to surface coverage %, snapshot freshness/stale state, summary truncation, and cache read/write behavior.
 
 ### 2026-04-14 (Completed - Phase 3.6 Documentation and Ops Cleanup)
-- Rewrote root README for standalone-first operation with explicit runtime modes (orchestrator-only default, optional native modules, optional legacy-upstream profile).
-- Added dedicated operator runbook in `docs/OPERATIONS_STANDALONE.md` covering startup paths, native module enablement, contract compatibility checks, degraded-mode behavior, and triage commands.
+- Rewrote root README for standalone-first operation with explicit runtime modes (orchestrator-only default, optional retired calculation modules, optional legacy-upstream profile).
+- Added dedicated operator runbook in `docs/OPERATIONS_STANDALONE.md` covering startup paths, retired calculation module enablement, service readiness checks, degraded-mode behavior, and triage commands.
 - Added `docs/MIGRATION_AND_COMPATIBILITY.md` documenting current schema versions, on-read migration behavior, compatibility window policy, and upgrade guidance.
 - Updated architecture docs to reflect current shipped boundaries and removed stale near-term language.
 - Reconciled roadmap/planning docs that had pre-standalone assumptions:
@@ -574,16 +574,10 @@ These decisions refine the build plan based on the current repository and upstre
 - Updated frontend defaults so empty profiles always initialize `physical_assets` to prevent partial legacy payload shape issues.
 - Verification: `pytest -q services/orchestrator/tests` passed (`330 passed, 4 warnings`).
 
-### 2026-04-14 (Completed - Phase 3.3 Native Module Boundary Hardening)
-- Added explicit expected contract-version tracking on engine probes (`expected_contract_version`, `contract_compatible`) so native module status now reports compatibility, not just reachability.
-- Added native module guard evaluation (`contract_guard_reason`) to block benchmark/attribution/planning native module calls when probe state detects contract mismatch.
-- Benchmark, attribution, and planning services now support contract-guarded local fallback with explicit `contract_version_guard` fallback metadata/warnings.
-- Engine adapter now only allows versioned contract paths (`/v{n}/...`) to prevent accidental fallback to legacy full-app endpoints.
-- Removed remaining legacy full-app bridge assumptions from orchestrator runtime/UI settings (direct Portfolio Analysis API + Simulations Convex settings are no longer part of active runtime configuration paths).
-- Dashboard engine telemetry now surfaces contract mismatch state with actual-vs-expected version visibility per engine.
-- Added focused regression coverage for contract mismatch and guarded native module skip paths in:
-  - `test_engine_status.py`
-  - `test_engine_adapter.py`
+### 2026-04-14 (Historical - Retired Calculation Boundary)
+- Superseded: earlier builds tracked calculation-service contract compatibility during migration.
+- Current direction: BuildWealth-owned benchmark, attribution, and plan simulation services run directly in the orchestrator.
+- Removed remaining legacy full-app bridge assumptions from orchestrator runtime/UI settings.
   - `test_portfolio_benchmark.py`
   - `test_portfolio_attribution.py`
   - `test_plan_simulation_service.py`
@@ -720,46 +714,38 @@ These decisions refine the build plan based on the current repository and upstre
 - Added focused unit coverage in `test_buildwealth_context.py` for research-symbol derivation and summary construction behavior
 
 ### 2026-04-10 (Completed - Architecture Draft)
-- Added architecture decision update in `docs/DECISIONS.md` selecting targeted native module reuse
+- Added architecture decision update in `docs/DECISIONS.md` selecting targeted retired calculation module reuse
 - Added `docs/NATIVE_CAPABILITY_ARCHITECTURE.md` blueprint for adapter boundaries, contracts, fallback, and rollout
-- Added initial engine contract schemas under `contracts/engine/v1` for Portfolio Analysis benchmark and Simulations scenario endpoints
+- Added initial engine contract schemas under `retired-calculation-contracts/v1` for Portfolio Analysis benchmark and Simulations scenario endpoints
 
-### 2026-04-10 (Completed - Native Module Foundation v1)
-- Added adapter base utility (`engine_adapter.py`) with contract validation, timeout handling, and retry policy for native module calls
-- Added Portfolio Analysis benchmark service (`portfolio_benchmark.py`) that builds contract payloads from local snapshot history and supports native module + local degraded fallback
-- Added portfolio benchmark API endpoint (`GET /api/portfolio/benchmark`) and associated native module feature flags/settings
-- Added unit coverage for adapter transport/validation behavior and benchmark service native module/fallback execution paths
+### 2026-04-10 (Completed - Retired Calculation Module Foundation v1)
+- Added adapter base utility (`engine_adapter.py`) with contract validation, timeout handling, and retry policy for retired calculation module calls
+- Added Portfolio Analysis benchmark service (`portfolio_benchmark.py`) that builds contract payloads from local snapshot history and supports retired calculation module + local degraded fallback
+- Added portfolio benchmark API endpoint (`GET /api/portfolio/benchmark`) and associated retired calculation module feature flags/settings
+- Added unit coverage for adapter transport/validation behavior and benchmark service retired calculation module/fallback execution paths
 
-### 2026-04-10 (Completed - Planning Native Module v1)
-- Added Simulations scenario native module service (`plan_simulation_service.py`) with contract payload construction, response mapping, and local fallback behavior
-- `/api/planning/scenarios` now routes through native module integration when enabled and falls back to local scenario engine when unavailable
+### 2026-04-10 (Completed - Planning Retired Calculation Module v1)
+- Added Simulations scenario retired calculation module service (`plan_simulation_service.py`) with contract payload construction, response mapping, and local fallback behavior
+- `/api/planning/scenarios` now routes through retired calculation module integration when enabled and falls back to local scenario engine when unavailable
 - Planning response now includes engine metadata (`engine`, `engine_status`, `fallback_method`, `warnings`) for degraded-path transparency
-- Added unit coverage for native module disabled/success/failure paths in `test_plan_simulation_service.py`
+- Added unit coverage for retired calculation module disabled/success/failure paths in `test_plan_simulation_service.py`
 
 ### 2026-04-10 (Completed - Benchmark Overlay UI)
 - Portfolio history panel now fetches benchmark comparison data from `GET /api/portfolio/benchmark` alongside snapshot history
 - Added benchmark symbol controls and chart overlay rendering (portfolio value line + benchmark-scaled line)
-- Added benchmark summary line showing benchmark return, alpha, and engine status/fallback metadata
+- Added benchmark summary line showing benchmark return, alpha, and service status/fallback metadata
 
-### 2026-04-11 (Completed - Engine Health Hardening)
-- Added `EngineStatusTracker` with startup and periodic native module probes plus degraded-path counters for benchmark/planning engines
-- Added `GET /api/engines/status` for runtime engine visibility (`enabled`, `reachable`, `contract_version`, `degraded_count`, `last_error`)
-- Probes now use upstream-informed health conventions:
-  - Portfolio Analysis supports `GET /api/v1/health`
-  - Simulations self-hosting health checks use `GET /api/health` for app and `/version` for Convex backend
-- Benchmark and planning routes now increment degraded counters whenever native module execution falls back to local logic
+### 2026-04-11 (Historical - Retired Runtime Health)
+- Superseded: earlier builds exposed calculation-runtime visibility for migration status.
+- Current direction: `GET /api/services/status` reports BuildWealth-owned service readiness.
+- Today dashboard renders service readiness cards and no longer exposes calculation-runtime probe details.
 
-### 2026-04-11 (Completed - Engine Status UI)
-- Today dashboard now fetches `GET /api/engines/status` and renders engine telemetry cards (enabled, reachable, degraded events, probe age)
-- Added engine detail panel with per-engine health badge, contract version, degraded count, and last error visibility
-- Added explicit “Refresh Engine Status” action that triggers live probe refresh via `?refresh=true`
-
-### 2026-04-11 (Completed - Attribution Native Module Foundation)
+### 2026-04-11 (Completed - Attribution Retired Calculation Module Foundation)
 - Added Portfolio Analysis attribution adapter service (`portfolio_attribution.py`) with request/response contracts and local degraded fallback
 - Added `GET /api/portfolio/attribution` endpoint plus engine degraded counter wiring under `portfolio_analysis_attribution`
 - Added v1 engine contracts for attribution (`portfolio_analysis.attribution.request/response.schema.json`)
 - Portfolio UI now fetches attribution payloads and renders top contributors/detractors with contribution and allocation context
-- Added unit coverage for native module disabled/success/failure paths in `test_portfolio_attribution.py`
+- Added unit coverage for retired calculation module disabled/success/failure paths in `test_portfolio_attribution.py`
 
 ### 2026-04-11 (Completed - Tax Engine Foundation)
 - Added federal tax engine foundation (`tax_engine.py`) adapted from Simulations tax calculators and tax-data tables
@@ -770,9 +756,9 @@ These decisions refine the build plan based on the current repository and upstre
 ### 2026-04-11 (Completed - Contribution Rule Prioritization Foundation)
 - Added contribution allocation engine (`contribution_rules.py`) adapted from Simulations ranked-rule and shared-limit logic (`contribution-rules.ts`, `contribution-form-schema.ts`)
 - Added planning endpoint `POST /api/planning/contribution-allocation` with support for rule-based allocation and default `tax_optimized_high_earner` profile generation
-- Planner scenario-diff flows now consume plan contribution rules and pass per-account annual contributions into the Simulations native module request payload when rules are present
+- Planner scenario-diff flows now consume plan contribution rules and pass per-account annual contributions into the Simulations retired calculation module request payload when rules are present
 - Planning responses now include `contribution_allocation` metadata so scenario output can show effective employee + employer funded contribution totals
-- Added focused coverage in `test_contribution_rules.py` and extended native module request coverage in `test_plan_simulation_service.py`
+- Added focused coverage in `test_contribution_rules.py` and extended retired calculation module request coverage in `test_plan_simulation_service.py`
 
 ### 2026-04-11 (Completed - Physical Assets Foundation)
 - Financial health model now includes `physical_assets` from financial profile in net-worth computation (`net_worth = portfolio + physical_assets - debt`)
@@ -784,7 +770,7 @@ These decisions refine the build plan based on the current repository and upstre
 ### 2026-04-11 (Completed - Income Modeling Foundation)
 - Added income projection service (`income_projection.py`) with growth-rate and active-date window handling for profile income items
 - Added planning endpoint `POST /api/planning/income-projection` to generate year-by-year income curves from either provided inputs or saved profile data
-- Planning scenario route now includes projected first-year income in Simulations baseline assumptions and attaches projection payload in native module metadata
+- Planning scenario route now includes projected first-year income in Simulations baseline assumptions and attaches projection payload in retired calculation module metadata
 - Plan scenario-diff flows now generate and pass base/candidate income projections so planning responses include model context for income assumptions
 - Added `income_projection` field on planning responses and focused coverage in `test_income_projection.py` and `test_plan_simulation_service.py`
 
@@ -796,24 +782,24 @@ These decisions refine the build plan based on the current repository and upstre
 ### 2026-04-11 (Completed - Expense Modeling Foundation)
 - Added expense projection service (`expense_projection.py`) with inflation-rate and active-date window handling for profile expense items
 - Added planning endpoint `POST /api/planning/expense-projection` to generate year-by-year expense curves from either provided inputs or saved profile data
-- Planning scenario route and plan scenario-diff flows now generate and pass base/candidate expense projections so native module baseline assumptions include first-year annual expenses
+- Planning scenario route and plan scenario-diff flows now generate and pass base/candidate expense projections so retired calculation module baseline assumptions include first-year annual expenses
 - Planning responses now include `expense_projection` metadata, and scenario-diff output surfaces base/candidate expense projection summaries
 - Profile UI expense builder now captures `inflation_rate`, `start_date`, and `end_date` and renders those assumptions after save/reload
-- Added focused coverage in `test_expense_projection.py` and extended native module request coverage in `test_plan_simulation_service.py`
+- Added focused coverage in `test_expense_projection.py` and extended retired calculation module request coverage in `test_plan_simulation_service.py`
 
 ### 2026-04-11 (Completed - Debt Payoff Modeling Foundation)
 - Added debt payoff projection service (`debt_projection.py`) with minimum/snowball/avalanche/custom strategy handling and month-by-month amortization output
 - Added planning endpoint `POST /api/planning/debt-projection` plus Copilot tool `project_debt_payoff` for strategy and payoff comparisons from profile or explicit inputs
-- Planning scenario route and plan scenario-diff flows now generate and pass base/candidate debt projections; native module baseline assumptions now include first-year annual debt payments and debt projection metadata
+- Planning scenario route and plan scenario-diff flows now generate and pass base/candidate debt projections; retired calculation module baseline assumptions now include first-year annual debt payments and debt projection metadata
 - Planning responses now include `debt_projection` metadata, and scenario-diff output surfaces base/candidate debt strategy/payoff summaries
 - Profile UI debt builder now captures payoff strategy and optional custom monthly payment per debt item
-- Added focused coverage in `test_debt_projection.py`, extended native module payload coverage in `test_plan_simulation_service.py`, and profile migration coverage for new debt fields
+- Added focused coverage in `test_debt_projection.py`, extended retired calculation module payload coverage in `test_plan_simulation_service.py`, and profile migration coverage for new debt fields
 
 ### 2026-04-12 (Completed - Plan Timeline Events Foundation)
 - Added timeline impact projection service (`timeline_projection.py`) with support for dated `purchase`, `windfall`, `job_change`, `retirement`, and `milestone` events, including one-time/monthly/yearly recurrence and year-by-year impact aggregation
 - Plan Workspace now persists validated plan timelines in `timeline.json`, supports read/update operations, and includes timeline previews in generated plan context output
 - Added plan timeline API endpoints (`GET/PUT /api/plans/{plan_id}/timeline`) plus Copilot tools (`get_plan_timeline`, `update_plan_timeline`) for timeline modeling workflows
-- Planning and scenario-diff flows now compute and pass timeline projections into Simulations native module metadata and baseline assumptions; first-year portfolio/contribution impacts are applied to scenario setup and income/expense/debt impacts are applied to native module assumptions
+- Planning and scenario-diff flows now compute and pass timeline projections into Simulations retired calculation module metadata and baseline assumptions; first-year portfolio/contribution impacts are applied to scenario setup and income/expense/debt impacts are applied to retired calculation module assumptions
 - Plan Workspace UI now includes timeline JSON editing/saving and scenario-diff output now surfaces base/candidate timeline impact summaries
 - Added focused coverage in `test_timeline_projection.py`, `test_plan_workspace.py`, and `test_plan_simulation_service.py`
 
@@ -821,14 +807,14 @@ These decisions refine the build plan based on the current repository and upstre
 - Replaced the local planning fallback projection engine with a year-by-year tax-aware model (`scenario_engine.py`) that consumes income, expense, debt, timeline, and contribution-allocation inputs
 - Added per-scenario yearly cashflow/tax timeline outputs and per-account balance timeline outputs (contribution, withdrawal, growth, ending balance)
 - Implemented tax-aware withdrawal handling (taxable-first, then tax-deferred, then tax-free) plus tax-deferred withdrawal tax reconciliation
-- Planning native module local fallback now receives full projection inputs (accounts, income/expense/debt/timeline/contribution context, filing status) so degraded mode behavior remains meaningful
+- Planning retired calculation module local fallback now receives full projection inputs (accounts, income/expense/debt/timeline/contribution context, filing status) so degraded mode behavior remains meaningful
 - Plan and planning endpoints now pass account/filling-status context through to scenario execution and apply timeline first-year portfolio/contribution effects consistently
 - Added focused coverage for tax-aware timeline/account behavior in `test_scenario_engine.py` and extended integration coverage in `test_plan_simulation_service.py`
 
 ### 2026-04-12 (Completed - Withdrawal Strategies Foundation)
 - Added strategy-aware retirement withdrawals in local planning simulation (`scenario_engine.py`) with `cashflow_only`, `four_percent_rule`, `dynamic_guardrails`, `bond_tent`, and `bucket_strategy`
 - Reused Simulations planning patterns from `src/lib/calc/{portfolio,simulation-engine,account,phase}.ts` for age-aware withdrawal ordering and phase-aware retirement behavior
-- Planning native module/local fallback wiring now carries `withdrawal_strategy` and `retirement_age` (`plan_simulation_service.py`) so degraded mode and native module mode share the same strategy assumptions
+- Planning retired calculation module/local fallback wiring now carries `withdrawal_strategy` and `retirement_age` (`plan_simulation_service.py`) so degraded mode and retired calculation module mode share the same strategy assumptions
 - Plan scenario APIs now resolve strategy from plan settings with timeline retirement fallback and pass it through scenario execution (`main.py`)
 - Added focused coverage in `test_scenario_engine.py` and `test_plan_simulation_service.py` for strategy normalization, guardrail behavior, bucket ordering, and strategy metadata propagation
 
@@ -836,7 +822,7 @@ These decisions refine the build plan based on the current repository and upstre
 - Added Social Security projection service (`social_security_projection.py`) with FRA-benefit estimation from earnings, claim-age comparisons (`62/67/70`), and year-by-year benefit projection output
 - Added planning endpoint `POST /api/planning/social-security-projection` plus Copilot tool `project_social_security` for explicit SS benefit estimation workflows
 - Extended plan timeline retirement schema/sanitization to carry SS planning assumptions (birth year, claiming age, life expectancy, FRA monthly benefit override, estimated earnings)
-- Planning and scenario-diff flows now generate and pass Social Security projections into scenario execution; native module metadata and local fallback now both carry `social_security_projection`
+- Planning and scenario-diff flows now generate and pass Social Security projections into scenario execution; retired calculation module metadata and local fallback now both carry `social_security_projection`
 - Local tax-aware scenario engine now applies Social Security income in annual cashflow and federal tax calculations (`social_security_income_usd`) instead of hardcoded zero
 - Plan scenario-diff UI output now includes Social Security context summaries for base/candidate comparisons
 - Added focused coverage in `test_social_security_projection.py`, `test_scenario_engine.py`, `test_plan_simulation_service.py`, and `test_plan_workspace.py`
@@ -845,7 +831,7 @@ These decisions refine the build plan based on the current repository and upstre
 - Added RMD projection service (`rmd_projection.py`) adapted from Simulations RMD table/simulation patterns (`src/lib/calc/historical-data/rmd-table.ts`, `src/lib/calc/simulation-engine.ts`, `src/lib/calc/portfolio.ts`)
 - Added planning endpoint `POST /api/planning/rmd-projection` plus Copilot tool `project_rmd_schedule` for explicit required-minimum-distribution projections
 - Extended plan timeline retirement schema/sanitization to carry RMD assumptions (`rmd_birth_year`, `rmd_start_age`) with SECURE 2.0 start-age handling
-- Planning and scenario-diff flows now generate/pass `rmd_projection` metadata into native module/local execution and return it in planning responses
+- Planning and scenario-diff flows now generate/pass `rmd_projection` metadata into retired calculation module/local execution and return it in planning responses
 - Local tax-aware scenario engine now enforces per-account RMD withdrawals for eligible tax-deferred accounts (401k/403b/IRA), tracks yearly `rmds_usd`, and reconciles tax impact from forced distributions
 - Plan scenario-diff UI output now includes RMD context summaries for base/candidate comparisons
 - Added focused coverage in `test_rmd_projection.py`, `test_scenario_engine.py`, `test_plan_simulation_service.py`, and `test_plan_workspace.py`
@@ -854,7 +840,7 @@ These decisions refine the build plan based on the current repository and upstre
 - Added plan assumption-set schema and APIs (`GET/PUT /api/plans/{plan_id}/assumption-sets`) with validation and decision-log integration in Plan Workspace
 - Added default named assumption presets aligned to Simulations market-assumption patterns (`default`, `historical_average`, `conservative`, `stagflation`, `japan_scenario`)
 - Plan scenario execution now applies the active assumption set by default; scenario-diff now supports separate base/candidate assumption-set selection
-- Planning and native module execution now propagate assumption-set identity (`assumption_set_id`, `assumption_set_name`) into scenario assumptions and native module metadata for traceability
+- Planning and retired calculation module execution now propagate assumption-set identity (`assumption_set_id`, `assumption_set_name`) into scenario assumptions and retired calculation module metadata for traceability
 - Plan Workspace UI now includes assumption-set JSON editing/saving and scenario-diff base/candidate assumption-set selectors
 - Added focused coverage in `test_plan_workspace.py`, `test_plan_assumption_sets.py`, `test_scenario_engine.py`, and `test_plan_simulation_service.py`
 
@@ -965,7 +951,7 @@ These decisions refine the build plan based on the current repository and upstre
 | Historical price backfill | Built (foundation) | ~35% |
 | Total return (incl. dividends) | Built (foundation) | ~45% |
 | Performance attribution | Built (foundation) | ~35% |
-| Benchmark comparison | Built (native module-backed + UI) | ~55% |
+| Benchmark comparison | Built (retired calculation module-backed + UI) | ~55% |
 | Activity types beyond buy/sell/div | Built (foundation) | ~40% |
 | Watchlists | NOT BUILT | 0% |
 | Custom asset types | Built (foundation) | ~40% |
@@ -1273,11 +1259,11 @@ These decisions refine the build plan based on the current repository and upstre
 - Remove stale license claims from code paths that now describe BuildWealth-native logic.
 - **Why:** The repo should explain the current implementation without preserving old product boundaries.
 
-#### 3.3 Native Module Boundary Hardening
+#### 3.3 Retired Calculation Module Boundary Hardening
 - Remove legacy full-app bridge assumptions from runtime and docs
-- Keep only contract-bound native module endpoints with health/version checks
+- Keep only service-owned retired calculation module endpoints with health/version checks
 - Add degraded-mode observability and fallback regression coverage
-- **Why:** Keep native module usage intentional, bounded, and operationally safe
+- **Why:** Keep retired calculation module usage intentional, bounded, and operationally safe
 
 #### 3.4 UI Updates
 - Portfolio view: Add account selector, allocation charts, TWR/IRR display
@@ -1293,7 +1279,7 @@ These decisions refine the build plan based on the current repository and upstre
 
 #### 3.6 Documentation and Ops Cleanup
 - Rewrite README and local run instructions for standalone mode
-- Document native module startup and contract compatibility guarantees
+- Document retired calculation module startup and service readiness guarantees
 - Document migration steps and compatibility windows
 - **Why:** The repo should describe the architecture we actually ship
 
@@ -1311,8 +1297,8 @@ These decisions refine the build plan based on the current repository and upstre
 1. `ATTRIBUTIONS.md`
 2. New standalone portfolio + planning schemas
 3. Migration for existing transactions, plans, and profile data
-4. Native Module adapter foundation:
-   establish `contracts/engine/v1` schemas and adapter validation utilities
+4. Retired Calculation Module adapter foundation:
+   establish `retired-calculation-contracts/v1` schemas and adapter validation utilities
 5. Phase 1.1 — Time-Weighted Return calculator
 6. Phase 1.2 — Money-Weighted Return (IRR/XIRR)
 7. Update portfolio view and tracking view to consume the new schema and show TWR/IRR
@@ -1363,7 +1349,7 @@ These decisions refine the build plan based on the current repository and upstre
 3. Phase 1.13 — Custom Asset Types
 4. Phase 1.17 — Watchlists
 5. Phase 1.18 — Broker-Specific CSV Templates
-6. Phase 3.3 — Native Module Boundary Hardening
+6. Phase 3.3 — Retired Calculation Module Boundary Hardening
 7. Phase 3.6 — Documentation and Ops Cleanup
 8. Phase 3.7 — Unified Context Packaging
 
@@ -1379,8 +1365,8 @@ When deepening BuildWealth-native logic:
 
 **Tools to use:**
 - `WebFetch` to read GitHub source files when needed
-- Prefer native module reuse for high-complexity benchmark/attribution and planning/tax logic
-- Translate TypeScript algorithms to Python only when native module integration is not the best fit
+- Prefer retired calculation module reuse for high-complexity benchmark/attribution and planning/tax logic
+- Translate TypeScript algorithms to Python only when retired calculation module integration is not the best fit
 - Use upstream test cases as reference for correctness whenever they map cleanly to our standalone model
 
 ---
@@ -1401,8 +1387,8 @@ We will know this plan is succeeding when:
 
 - **Phase 1 complete:** A user can track a real multi-account portfolio with proper TWR/IRR, asset allocation breakdowns, and accurate cost basis. Feature parity with Portfolio Analysis core functionality.
 - **Phase 2 complete:** A user can build a real retirement plan with tax-aware projections, contribution prioritization, timeline events, and withdrawal strategies. Feature parity with Simulations core functionality.
-- **Phase 3 complete:** Native Module boundaries are hardened, docs match shipped architecture, polished UI, copilot has access to all new tools.
-- **Overall:** A single-user can run BuildWealth as one local application entrypoint with Python-owned data and optional local engine native modules, delivering stronger portfolio and planning intelligence than any single upstream tool alone.
+- **Phase 3 complete:** Retired Calculation Module boundaries are hardened, docs match shipped architecture, polished UI, copilot has access to all new tools.
+- **Overall:** A single-user can run BuildWealth as one local application entrypoint with Python-owned data and optional local engine retired calculation modules, delivering stronger portfolio and planning intelligence than any single upstream tool alone.
 
 ---
 

@@ -2,7 +2,7 @@
 
 **Status**
 
-Active architecture summary. This document supersedes earlier native module-first architecture language.
+Active architecture summary. This document supersedes earlier retired calculation module-first architecture language.
 
 **Overview**
 
@@ -64,7 +64,7 @@ Providers enrich or operate BuildWealth-owned workflows. They do not own user-fa
 
 **Legacy And Migration Notes**
 
-Earlier architecture used portfolio and planning modules native module language for targeted reuse. That direction is superseded by ADR 0003. External app references are historical scaffolding and should be removed from runtime paths, UI labels, module names, recommendation text, Copilot answers, and default operations.
+Earlier architecture used portfolio and planning modules retired calculation module language for targeted reuse. That direction is superseded by ADR 0003. External app references are historical scaffolding and should be removed from runtime paths, UI labels, module names, recommendation text, Copilot answers, and default operations.
 
 Classic/v1 UI remains temporary migration scaffolding. It should be removed only after the Classic Removal Gate passes and the product owner explicitly approves removal.
 

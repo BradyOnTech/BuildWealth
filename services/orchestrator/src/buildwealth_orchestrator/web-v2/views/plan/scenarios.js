@@ -173,6 +173,8 @@ export function renderSimulationExplanation(state = {}) {
   const yearly = Array.isArray(payload.yearly_metrics) ? payload.yearly_metrics : [];
   const phases = Array.isArray(payload.phase_summaries) ? payload.phase_summaries : [];
   const bands = Array.isArray(payload.percentile_bands) ? payload.percentile_bands : [];
+  const planStrength = objectValue(payload.plan_strength);
+  const failureAnalysis = objectValue(payload.failure_analysis);
   const reviewLinks = Array.isArray(payload.field_review_links) ? payload.field_review_links : [];
   if (state.busy) {
     return html`
@@ -211,7 +213,7 @@ export function renderSimulationExplanation(state = {}) {
           `).join(''))}
         </div>
       ` : ''}
-      ${raw(renderSimulationDepth({ yearly, phases, bands, reviewLinks }))}
+      ${raw(renderSimulationDepth({ yearly, phases, bands, planStrength, failureAnalysis, reviewLinks }))}
       ${assumptions.length ? html`
         <details class="simulation-trace">
           <summary>Inputs used</summary>
@@ -232,12 +234,33 @@ export function renderSimulationExplanation(state = {}) {
   `;
 }
 
-function renderSimulationDepth({ yearly = [], phases = [], bands = [], reviewLinks = [] } = {}) {
-  if (!yearly.length && !phases.length && !bands.length && !reviewLinks.length) return '';
+function renderSimulationDepth({ yearly = [], phases = [], bands = [], planStrength = {}, failureAnalysis = {}, reviewLinks = [] } = {}) {
+  const hasPlanStrength = Object.keys(planStrength).length > 0;
+  const failureModes = Array.isArray(failureAnalysis.failure_modes) ? failureAnalysis.failure_modes : [];
+  const failureYears = Array.isArray(failureAnalysis.first_failure_year_distribution)
+    ? failureAnalysis.first_failure_year_distribution
+    : [];
+  if (!yearly.length && !phases.length && !bands.length && !hasPlanStrength && !failureModes.length && !reviewLinks.length) return '';
   const first = yearly[0] || {};
   const last = yearly[yearly.length - 1] || {};
   return html`
     <div class="simulation-depth">
+      ${hasPlanStrength ? html`
+        <dl class="scenario-change-list">
+          <div>
+            <dt>Plan Strength</dt>
+            <dd>${esc(clean(planStrength.label) || 'Needs review')}</dd>
+          </div>
+          <div>
+            <dt>Funded simulations</dt>
+            <dd>${formatPercentValue(planStrength.funded_trial_rate_pct)}</dd>
+          </div>
+          <div>
+            <dt>Meaning</dt>
+            <dd>${esc(clean(planStrength.summary) || 'Simulation funding strength needs review.')}</dd>
+          </div>
+        </dl>
+      ` : ''}
       ${yearly.length ? html`
         <dl class="scenario-change-list">
           <div>
@@ -279,6 +302,24 @@ function renderSimulationDepth({ yearly = [], phases = [], bands = [], reviewLin
           </ul>
         </details>
       ` : ''}
+      ${failureModes.length ? html`
+        <details class="simulation-trace" ${failureAnalysis.failed_trial_count ? 'open' : ''}>
+          <summary>Failure-mode check</summary>
+          <ul>
+            ${raw(failureModes.map(mode => html`
+              <li>${esc(clean(mode.label) || 'Result')}: ${esc(clean(mode.detail))}</li>
+            `).join(''))}
+            ${failureAnalysis.most_common_first_failure_year ? html`
+              <li>Most common first shortfall year: ${esc(failureAnalysis.most_common_first_failure_year)}</li>
+            ` : ''}
+          </ul>
+          ${failureYears.length ? html`
+            <p class="marginalia">
+              ${raw(failureYears.slice(0, 3).map(row => `${esc(row.year)} (${esc(row.trial_share_pct)}%)`).join(' · '))}
+            </p>
+          ` : ''}
+        </details>
+      ` : ''}
       ${reviewLinks.length ? html`
         <details class="simulation-trace">
           <summary>Fields to review</summary>
@@ -289,6 +330,12 @@ function renderSimulationDepth({ yearly = [], phases = [], bands = [], reviewLin
       ` : ''}
     </div>
   `;
+}
+
+function formatPercentValue(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 'Needs review';
+  return `${numeric.toFixed(numeric % 1 === 0 ? 0 : 1)}%`;
 }
 
 export function renderWhatIfReviewLevel(state = {}) {

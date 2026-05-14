@@ -43,6 +43,8 @@ def explain_plan_simulation(
     yearly_metrics = _yearly_metrics(result)
     phase_summaries = _phase_summaries(yearly_metrics, inputs, result)
     percentile_bands = _percentile_bands(result)
+    plan_strength = _plan_strength(result)
+    failure_analysis = _failure_analysis(result)
     field_review_links = _field_review_links(plan_id, assumption_traces, warnings)
     outcome_label = _outcome_label(metrics)
     confidence_level, confidence_reasons = _confidence(
@@ -67,6 +69,8 @@ def explain_plan_simulation(
         "yearly_metrics": yearly_metrics,
         "phase_summaries": phase_summaries,
         "percentile_bands": percentile_bands,
+        "plan_strength": plan_strength,
+        "failure_analysis": failure_analysis,
         "field_review_links": field_review_links,
         "trace": {
             "source_code": str(source or "simulation"),
@@ -250,7 +254,7 @@ def _percentile_bands(result: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _percentile_rows(monte: dict[str, Any]) -> list[dict[str, Any]]:
     rows = []
-    for percentile in ("p10", "p50", "p90"):
+    for percentile in ("p10", "p25", "p50", "p75", "p90"):
         future = _number(monte.get(f"{percentile}_future_value_usd"))
         if future is None:
             continue
@@ -263,6 +267,66 @@ def _percentile_rows(monte: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+def _plan_strength(result: dict[str, Any]) -> dict[str, Any]:
+    monte = _monte_carlo_payload(result)
+    label = str(monte.get("plan_strength_label") or "").strip()
+    score = _number(monte.get("plan_strength_score"))
+    funded = _number(monte.get("funded_trial_rate_pct"))
+    summary = str(monte.get("plan_strength_summary") or "").strip()
+    if not label and score is None and funded is None:
+        return {}
+    return {
+        "label": label or _label_from_score(score),
+        "score": score,
+        "funded_trial_rate_pct": funded,
+        "summary": summary or "Plan Strength summarizes how often the simulation stayed funded.",
+    }
+
+
+def _failure_analysis(result: dict[str, Any]) -> dict[str, Any]:
+    monte = _monte_carlo_payload(result)
+    failure = _object(monte.get("failure_analysis"))
+    if not failure:
+        return {}
+    modes = failure.get("failure_modes")
+    distribution = failure.get("first_failure_year_distribution")
+    return {
+        "failure_definition": str(failure.get("failure_definition") or "").strip(),
+        "failed_trial_count": _number(failure.get("failed_trial_count")),
+        "funded_trial_count": _number(failure.get("funded_trial_count")),
+        "funded_trial_rate_pct": _number(failure.get("funded_trial_rate_pct")),
+        "first_failure_year_median": _number(failure.get("first_failure_year_median")),
+        "most_common_first_failure_year": _number(failure.get("most_common_first_failure_year")),
+        "first_failure_year_distribution": [
+            item for item in distribution if isinstance(item, dict)
+        ][:8] if isinstance(distribution, list) else [],
+        "failure_modes": [item for item in modes if isinstance(item, dict)][:4]
+        if isinstance(modes, list)
+        else [],
+    }
+
+
+def _monte_carlo_payload(result: dict[str, Any]) -> dict[str, Any]:
+    for section_name in ("candidate_result", "branch_result", "result"):
+        section = _object(result.get(section_name))
+        monte = _object(section.get("monte_carlo"))
+        if monte:
+            return monte
+    return _object(result.get("monte_carlo"))
+
+
+def _label_from_score(score: float | None) -> str:
+    if score is None:
+        return "Needs review"
+    if score >= 90:
+        return "Strong"
+    if score >= 75:
+        return "Workable"
+    if score >= 60:
+        return "Needs attention"
+    return "Fragile"
 
 
 def _field_review_links(

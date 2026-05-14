@@ -69,7 +69,7 @@ A capability is complete when:
    - [x] Document recovery or reversal posture for destructive and manual changes.
 
 8. **Copilot Native Boundary**
-   - [x] Remove old-app and native module language from user-facing Copilot prompts and tool summaries.
+   - [x] Remove old-app and retired calculation module language from user-facing Copilot prompts and tool summaries.
    - [x] Keep Copilot as a draft/review helper, not an unreviewed mutation path.
    - [x] Make Copilot cite Simulation Run, Saved Simulation, Portfolio History, and Import Report IDs.
 

@@ -10,7 +10,7 @@ Active cleanup checklist before and during BuildWealth-native feature implementa
 
 **Purpose**
 
-BuildWealth now targets native capability ownership and the v2 Product Surface. Older docs, settings, code names, comments, tests, and UI links still contain native module and external-app language from earlier architecture decisions.
+BuildWealth now targets native capability ownership and the v2 Product Surface. Older docs, settings, code names, comments, tests, and UI links still contain retired calculation module and external-app language from earlier architecture decisions.
 
 This checklist exists so cleanup happens deliberately while implementation proceeds.
 
@@ -50,7 +50,7 @@ Avoid these as product/module/runtime terms:
 
 - Portfolio Analysis feature
 - Simulations feature
-- native module feature
+- retired calculation module feature
 - external app parity
 - classic fallback as a permanent home
 - feature parity as the migration standard
@@ -62,10 +62,10 @@ Avoid these as product/module/runtime terms:
 - [x] Add ADR for v2 as the only future product surface.
 - [x] Update `docs/ARCHITECTURE.md` to native-first architecture.
 - [x] Mark `docs/NATIVE_CAPABILITY_ARCHITECTURE.md` as superseded.
-- [x] Update standalone operations away from optional native module mode.
-- [x] Update migration/compatibility away from active native module contract expansion.
+- [x] Update standalone operations away from optional retired calculation module mode.
+- [x] Update migration/compatibility away from active retired calculation module contract expansion.
 - [x] Update v1-to-v2 migration plan to Workflow Replacement and owner-approved removal.
-- [ ] Update implementation plans as each BuildWealth-native module starts.
+- [ ] Update implementation plans as each BuildWealth-retired calculation module starts.
 - [ ] Fix stale license/provenance wording that says MIT where the source projects are AGPL-3.0.
 
 **Runtime Reference Cleanup**
@@ -74,22 +74,22 @@ Remove or rename references after native workflows cover the related user job:
 
 - [x] Remove external app links from v2 Data & Tools.
 - [ ] Remove external app links from classic/v1 where possible before full v1 deletion.
-- [ ] Remove default env variables for retired native module paths.
+- [ ] Remove default env variables for retired retired calculation module paths.
 - [ ] Remove or quarantine legacy upstream Docker profiles.
 - [ ] Remove unused clients/exporters once route tests prove they are not active.
 - [ ] Rename user-facing engine labels to BuildWealth-native terms.
-- [ ] Remove native module names from Copilot tool text and recommendation copy.
-- [ ] Remove native module names from test names when the tests describe native behavior.
+- [ ] Remove retired calculation module names from Copilot tool text and recommendation copy.
+- [ ] Remove retired calculation module names from test names when the tests describe native behavior.
 - [ ] Keep provenance in attribution/legal history only where required.
 
 **Implementation Cleanup Rule**
 
-When building a new native module, do not first clone the old reference-app boundary. Start from the BuildWealth user workflow and keep the implementation local to the owning module.
+When building a new retired calculation module, do not first clone the old reference-app boundary. Start from the BuildWealth user workflow and keep the implementation local to the owning module.
 
 For example:
 
 - Import & Review starts with Import Workbench and Import Report, not an external importer clone.
-- Portfolio Analysis starts with Portfolio Analysis, not a benchmark native module.
+- Portfolio Analysis starts with Portfolio Analysis, not a benchmark retired calculation module.
 - Simulations start with Simulations, Simulation Run, and Saved Simulation, not an external planning app route.
 
 **First Implementation Slice**

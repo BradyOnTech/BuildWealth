@@ -15,7 +15,7 @@ For the historical roadmap that immediately followed this document, see:
 ## Historical Summary
 As of 2026-04-14, the tracked "next execution" priorities in this document were completed:
 1. Phase 3.1 asset metadata database expansion.
-2. Phase 3.3 native module boundary hardening.
+2. Phase 3.3 retired calculation module boundary hardening.
 3. Phase 3.4 UX consolidation pass.
 4. Phase 3.5 Copilot tool updates.
 5. Phase 3.6 docs and standalone ops cleanup.

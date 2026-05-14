@@ -16,7 +16,7 @@ The right model for this codebase is:
 - Git versions a curated, reviewable projection of high-value artifacts.
 - Remote sync stays opt-in and defaults to off.
 
-This preserves the architecture in which the orchestrator owns persistence and contracts while native modules stay stateless compute engines.
+This preserves the architecture in which the orchestrator owns persistence, service logic, and audit history.
 
 ## Why Git Helps BuildWealth
 BuildWealth is not a note-taking app. Its value comes from trusted financial context, recommendations, planning artifacts, and decision trails. Git is useful here because it adds:

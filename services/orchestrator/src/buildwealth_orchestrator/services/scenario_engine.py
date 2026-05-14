@@ -141,6 +141,13 @@ MONTE_CARLO_VARIANT_ALIASES: dict[str, MonteCarloVariant] = {
 }
 
 DEFAULT_SIMULATION_SEED = 9521
+MONTE_CARLO_PERCENTILES: tuple[tuple[str, float], ...] = (
+    ("p10", 0.10),
+    ("p25", 0.25),
+    ("p50", 0.50),
+    ("p75", 0.75),
+    ("p90", 0.90),
+)
 
 # Historical market dataset used by BuildWealth simulation paths:
 # src/lib/calc/historical-data/nyu-returns.ts
@@ -521,6 +528,43 @@ def _resolve_rmd_start_age(rmd_projection: dict[str, Any] | None) -> int:
         birth_year=birth_year,
         override_start_age=override_start_age,
     )
+
+
+def _percentile_value(sorted_values: list[float], percentile: float) -> float:
+    if not sorted_values:
+        return 0.0
+    if len(sorted_values) == 1:
+        return float(sorted_values[0])
+    bounded = max(0.0, min(1.0, float(percentile)))
+    position = bounded * (len(sorted_values) - 1)
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return float(sorted_values[lower])
+    lower_weight = upper - position
+    upper_weight = position - lower
+    return float(sorted_values[lower] * lower_weight + sorted_values[upper] * upper_weight)
+
+
+def _plan_strength_label(funded_trial_rate: float) -> str:
+    if funded_trial_rate >= 0.90:
+        return "Strong"
+    if funded_trial_rate >= 0.75:
+        return "Workable"
+    if funded_trial_rate >= 0.60:
+        return "Needs attention"
+    return "Fragile"
+
+
+def _plan_strength_summary(label: str, funded_trial_rate: float) -> str:
+    pct = round(max(0.0, min(1.0, funded_trial_rate)) * 100, 1)
+    if label == "Strong":
+        return f"Most simulated paths stayed funded through the full horizon ({pct}%)."
+    if label == "Workable":
+        return f"Most simulated paths stayed funded, but the plan still has years worth reviewing ({pct}%)."
+    if label == "Needs attention":
+        return f"Several simulated paths ran short before the horizon ended ({pct}% stayed funded)."
+    return f"Too many simulated paths ran short before the horizon ended ({pct}% stayed funded)."
 
 
 class ScenarioEngine:
@@ -1586,31 +1630,205 @@ class ScenarioEngine:
         effective_tax_rate: float,
         expected_return: float,
         simulation_seed: int,
-    ) -> dict[str, float | int]:
+        timeline_points: list[ScenarioTimelinePoint] | None = None,
+        inflation: float | None = None,
+    ) -> dict[str, Any]:
         outcomes: list[float] = []
+        paths: list[list[float]] = []
+        first_failure_years: list[int] = []
         drag = min(max(float(effective_tax_rate), 0.0), 0.5)
         rng = random.Random(simulation_seed)
+        resolved_years = max(0, int(years))
+        profiles = self._monte_carlo_year_profiles(
+            timeline_points=timeline_points,
+            years=resolved_years,
+            annual_contribution=annual_contribution,
+        )
 
         for _ in range(self.monte_carlo_runs):
             value = max(0.0, float(current_value))
-            for _ in range(max(0, years)):
+            path: list[float] = []
+            first_failure_year: int | None = None
+            for profile in profiles:
+                value += max(0.0, float(profile["contribution_usd"]))
+                withdrawal = max(0.0, float(profile["withdrawal_usd"]))
+                if withdrawal > value and first_failure_year is None:
+                    first_failure_year = int(profile["year"])
+                value = max(0.0, value - withdrawal)
                 yearly_return = rng.gauss(float(expected_return), float(self.return_volatility))
                 yearly_return = max(-0.95, yearly_return)
                 if yearly_return > 0:
                     yearly_return *= 1.0 - drag * 0.5
-                value = max(0.0, (value * (1 + yearly_return)) + annual_contribution)
+                value = max(0.0, value * (1 + yearly_return))
+                if value <= 0 and first_failure_year is None:
+                    first_failure_year = int(profile["year"])
+                path.append(value)
+            if first_failure_year is not None:
+                first_failure_years.append(first_failure_year)
             outcomes.append(value)
+            paths.append(path)
 
         outcomes.sort()
-        p10 = outcomes[max(0, math.floor(len(outcomes) * 0.10) - 1)] if outcomes else 0.0
-        p50 = median(outcomes) if outcomes else 0.0
-        p90 = outcomes[min(len(outcomes) - 1, math.ceil(len(outcomes) * 0.90) - 1)] if outcomes else 0.0
+        percentile_values = {
+            key: _percentile_value(outcomes, percentile)
+            for key, percentile in MONTE_CARLO_PERCENTILES
+        }
+        funded_count = max(0, len(paths) - len(first_failure_years))
+        funded_trial_rate = (funded_count / len(paths)) if paths else 0.0
+        plan_strength_label = _plan_strength_label(funded_trial_rate)
+        resolved_inflation = self.inflation if inflation is None else float(inflation)
 
-        return {
+        payload: dict[str, Any] = {
             "runs": self.monte_carlo_runs,
-            "p10_future_value_usd": round(float(p10), 2),
-            "p50_future_value_usd": round(float(p50), 2),
-            "p90_future_value_usd": round(float(p90), 2),
+            "funded_trial_rate": round(funded_trial_rate, 4),
+            "funded_trial_rate_pct": round(funded_trial_rate * 100, 1),
+            "plan_strength_label": plan_strength_label,
+            "plan_strength_score": round(funded_trial_rate * 100, 1),
+            "plan_strength_summary": _plan_strength_summary(plan_strength_label, funded_trial_rate),
+            "percentile_timeline": self._monte_carlo_percentile_timeline(
+                paths=paths,
+                profiles=profiles,
+                inflation=resolved_inflation,
+            ),
+            "failure_analysis": self._monte_carlo_failure_analysis(
+                first_failure_years=first_failure_years,
+                runs=len(paths),
+                funded_trial_rate=funded_trial_rate,
+            ),
+        }
+        for key, value in percentile_values.items():
+            payload[f"{key}_future_value_usd"] = round(float(value), 2)
+            payload[f"{key}_real_value_usd"] = round(
+                self._real_value(
+                    nominal_future_value=float(value),
+                    years=resolved_years,
+                    inflation=resolved_inflation,
+                ),
+                2,
+            )
+        return payload
+
+    @staticmethod
+    def _monte_carlo_year_profiles(
+        *,
+        timeline_points: list[ScenarioTimelinePoint] | None,
+        years: int,
+        annual_contribution: float,
+    ) -> list[dict[str, float | int]]:
+        profiles: list[dict[str, float | int]] = []
+        points = timeline_points or []
+        for offset in range(max(0, years)):
+            point = points[offset] if offset < len(points) else None
+            year = _safe_int(getattr(point, "year", None), datetime.now().year + offset)
+            age = _safe_int(getattr(point, "age", None), 0)
+            contribution = _safe_float(
+                getattr(point, "contributions_usd", None),
+                annual_contribution,
+            )
+            withdrawal = _safe_float(getattr(point, "withdrawals_usd", None), 0.0)
+            profiles.append(
+                {
+                    "year": year,
+                    "age": age,
+                    "contribution_usd": max(0.0, contribution),
+                    "withdrawal_usd": max(0.0, withdrawal),
+                }
+            )
+        return profiles
+
+    def _monte_carlo_percentile_timeline(
+        self,
+        *,
+        paths: list[list[float]],
+        profiles: list[dict[str, float | int]],
+        inflation: float,
+    ) -> list[dict[str, float | int]]:
+        rows: list[dict[str, float | int]] = []
+        for offset, profile in enumerate(profiles):
+            values = sorted(path[offset] for path in paths if offset < len(path))
+            if not values:
+                continue
+            row: dict[str, float | int] = {
+                "year": int(profile["year"]),
+                "age": int(profile["age"]),
+            }
+            for key, percentile in MONTE_CARLO_PERCENTILES:
+                value = _percentile_value(values, percentile)
+                row[f"{key}_ending_balance_usd"] = round(value, 2)
+                row[f"{key}_ending_balance_real_usd"] = round(
+                    self._real_value(
+                        nominal_future_value=value,
+                        years=offset + 1,
+                        inflation=inflation,
+                    ),
+                    2,
+                )
+            rows.append(row)
+        return rows
+
+    @staticmethod
+    def _monte_carlo_failure_analysis(
+        *,
+        first_failure_years: list[int],
+        runs: int,
+        funded_trial_rate: float,
+    ) -> dict[str, Any]:
+        counts: dict[int, int] = {}
+        for year in first_failure_years:
+            counts[year] = counts.get(year, 0) + 1
+        distribution = [
+            {
+                "year": year,
+                "count": count,
+                "trial_share_pct": round((count / runs) * 100, 1) if runs else 0.0,
+            }
+            for year, count in sorted(counts.items())
+        ]
+        failed_count = len(first_failure_years)
+        common_year = None
+        if counts:
+            common_year = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+        median_failure = None
+        if first_failure_years:
+            median_failure = int(round(median(sorted(first_failure_years))))
+        if failed_count:
+            failure_modes = [
+                {
+                    "label": "Portfolio depletion",
+                    "level": "high" if funded_trial_rate < 0.75 else "medium",
+                    "detail": (
+                        f"{failed_count} of {runs} simulated paths ran out before the horizon ended."
+                    ),
+                }
+            ]
+            if common_year is not None:
+                failure_modes.append(
+                    {
+                        "label": "Most fragile year",
+                        "level": "medium",
+                        "detail": f"The most common first shortfall year was {common_year}.",
+                    }
+                )
+        else:
+            failure_modes = [
+                {
+                    "label": "No depletion in sampled paths",
+                    "level": "low",
+                    "detail": "Every simulated path stayed funded through the projection horizon.",
+                }
+            ]
+        return {
+            "failure_definition": (
+                "A run is marked unfunded when planned portfolio withdrawals exhaust the projected portfolio before the projection horizon ends."
+            ),
+            "failed_trial_count": failed_count,
+            "funded_trial_count": max(0, runs - failed_count),
+            "funded_trial_rate": round(funded_trial_rate, 4),
+            "funded_trial_rate_pct": round(funded_trial_rate * 100, 1),
+            "first_failure_year_distribution": distribution,
+            "first_failure_year_median": median_failure,
+            "most_common_first_failure_year": common_year,
+            "failure_modes": failure_modes,
         }
 
     def run(
@@ -1786,6 +2004,8 @@ class ScenarioEngine:
                     ),
                     expected_return=float(expected_return_for_label),
                     simulation_seed=resolved_simulation_seed,
+                    timeline_points=scenario.timeline_points,
+                    inflation=float(scenario.assumptions.get("inflation") or self.inflation),
                 )
                 monte_carlo_by_label[label] = monte_carlo_for_scenario
                 selected_future_value = _safe_float(
@@ -1817,6 +2037,14 @@ class ScenarioEngine:
                 )
                 updated_assumptions["simulation_monte_carlo_p90_future_value_usd"] = _safe_float(
                     monte_carlo_for_scenario.get("p90_future_value_usd"),
+                    0.0,
+                )
+                updated_assumptions["simulation_plan_strength_score"] = _safe_float(
+                    monte_carlo_for_scenario.get("plan_strength_score"),
+                    0.0,
+                )
+                updated_assumptions["simulation_funded_trial_rate_pct"] = _safe_float(
+                    monte_carlo_for_scenario.get("funded_trial_rate_pct"),
                     0.0,
                 )
                 updated_assumptions["simulation_selected_future_value_usd"] = round(
@@ -1856,6 +2084,12 @@ class ScenarioEngine:
                     ),
                     expected_return=float(self.baseline_return),
                     simulation_seed=resolved_simulation_seed,
+                    timeline_points=baseline.timeline_points if baseline is not None else None,
+                    inflation=(
+                        float(baseline.assumptions.get("inflation") or self.inflation)
+                        if baseline is not None
+                        else self.inflation
+                    ),
                 )
         else:
             monte_carlo = self._monte_carlo(
@@ -1870,6 +2104,12 @@ class ScenarioEngine:
                 ),
                 expected_return=float(self.baseline_return),
                 simulation_seed=resolved_simulation_seed,
+                timeline_points=baseline.timeline_points if baseline is not None else None,
+                inflation=(
+                    float(baseline.assumptions.get("inflation") or self.inflation)
+                    if baseline is not None
+                    else self.inflation
+                ),
             )
 
         monte_carlo["mode"] = resolved_simulation_mode
@@ -1891,6 +2131,15 @@ class ScenarioEngine:
             simulation_summary["resolved_historical_start_year_by_scenario"] = (
                 resolved_historical_start_year_by_label
             )
+        simulation_summary["plan_strength_label"] = monte_carlo.get("plan_strength_label")
+        simulation_summary["plan_strength_score"] = monte_carlo.get("plan_strength_score")
+        simulation_summary["funded_trial_rate_pct"] = monte_carlo.get("funded_trial_rate_pct")
+        failure_analysis = monte_carlo.get("failure_analysis")
+        if isinstance(failure_analysis, dict):
+            simulation_summary["first_failure_year_median"] = failure_analysis.get(
+                "first_failure_year_median"
+            )
+            simulation_summary["failed_trial_count"] = failure_analysis.get("failed_trial_count")
 
         return PlanningResponse(
             scenarios=ordered_scenarios,

@@ -138,12 +138,12 @@ test('Today daily review routes command cards into review flows', async ({ page 
       return;
     }
 
-    if (url.pathname === '/api/engines/status') {
+    if (url.pathname === '/api/services/status') {
       await route.fulfill(jsonResponse({
         enabled_count: 2,
         reachable_count: 1,
         degraded_count: 1,
-        engines: [],
+        services: [],
       }));
       return;
     }

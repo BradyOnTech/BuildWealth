@@ -26,8 +26,32 @@ def test_simulation_explainer_reports_better_outcome_with_high_confidence() -> N
             "candidate_result": {
                 "monte_carlo": {
                     "p10_future_value_usd": 850_000,
+                    "p25_future_value_usd": 960_000,
                     "p50_future_value_usd": 1_080_000,
+                    "p75_future_value_usd": 1_190_000,
                     "p90_future_value_usd": 1_300_000,
+                    "plan_strength_label": "Workable",
+                    "plan_strength_score": 82.5,
+                    "funded_trial_rate_pct": 82.5,
+                    "plan_strength_summary": "Most simulated paths stayed funded, but the plan still has years worth reviewing (82.5%).",
+                    "failure_analysis": {
+                        "failure_definition": "A run is marked unfunded when planned portfolio withdrawals exhaust the projected portfolio before the projection horizon ends.",
+                        "failed_trial_count": 35,
+                        "funded_trial_count": 165,
+                        "funded_trial_rate_pct": 82.5,
+                        "first_failure_year_median": 2054,
+                        "most_common_first_failure_year": 2052,
+                        "first_failure_year_distribution": [
+                            {"year": 2052, "count": 12, "trial_share_pct": 6.0}
+                        ],
+                        "failure_modes": [
+                            {
+                                "label": "Portfolio depletion",
+                                "level": "medium",
+                                "detail": "35 of 200 simulated paths ran out before the horizon ended.",
+                            }
+                        ],
+                    },
                 },
                 "scenarios": [
                     {
@@ -90,7 +114,10 @@ def test_simulation_explainer_reports_better_outcome_with_high_confidence() -> N
     assert explanation["phase_summaries"][0]["label"] == "Accumulation"
     assert explanation["phase_summaries"][1]["label"] == "Transition"
     assert explanation["phase_summaries"][2]["total_rmds_usd"] == 18_000
-    assert explanation["percentile_bands"][1]["percentile"] == "P50"
+    assert explanation["percentile_bands"][2]["percentile"] == "P50"
+    assert explanation["plan_strength"]["label"] == "Workable"
+    assert explanation["plan_strength"]["funded_trial_rate_pct"] == 82.5
+    assert explanation["failure_analysis"]["most_common_first_failure_year"] == 2052
     assert explanation["field_review_links"][0]["field"] == "annual_contribution_usd"
 
 

@@ -8,7 +8,7 @@
 
 Active implementation guide for BuildWealth-native Portfolio, Plan, and Data & Tools workflows.
 
-This guide follows [ADR 0003](./adr/0003-buildwealth-native-capability-ownership.md) and [ADR 0004](./adr/0004-v2-is-the-only-future-product-surface.md). Do not use external app names, native module labels, or classic/v1 fallback language for new product surfaces.
+This guide follows [ADR 0003](./adr/0003-buildwealth-native-capability-ownership.md) and [ADR 0004](./adr/0004-v2-is-the-only-future-product-surface.md). Do not use external app names, retired calculation module labels, or classic/v1 fallback language for new product surfaces.
 
 **Guiding Idea**
 
@@ -172,7 +172,7 @@ The user opens Portfolio from Today or Inbox after a performance, risk, or recom
 
 - Keep `portfolio_performance.py`, `portfolio_benchmark.py`, `portfolio_attribution.py`, `portfolio_metrics.py`, `portfolio_risk_alerts.py`, and `portfolio_simulator.py`.
 - Add `portfolio_analytics.py` only if it becomes useful as a shallow Interface that composes those services for UI/API responses.
-- Avoid leaking native module terms through the response body unless debugging metadata is explicitly requested.
+- Avoid leaking retired calculation module terms through the response body unless debugging metadata is explicitly requested.
 
 **API shape:**
 
@@ -381,7 +381,7 @@ Copilot should help the user reach these workflows, not replace them.
 
 **Build Order**
 
-1. **Native framing and cleanup.** Remove external app links once replacement links exist, rename user-facing native module labels, and update stale license/provenance docs.
+1. **Native framing and cleanup.** Remove external app links once replacement links exist, rename user-facing retired calculation module labels, and update stale license/provenance docs.
 2. **Import Workbench.** This unlocks trustworthy data and removes one of the strongest reasons old external portfolio workflows remained reachable.
 3. **Portfolio Analytics and Asset Registry.** This turns Portfolio into the complete capital workspace and removes another major old external portfolio workflow.
 4. **Plan Templates and Saved Simulations.** This gives users a fast way into meaningful what-if work and removes another major old external planning workflow.
@@ -396,4 +396,4 @@ Copilot should help the user reach these workflows, not replace them.
 - Today, Inbox, Portfolio, Plan, Profile, or Data & Tools links to it when context calls for it.
 - Copilot uses the same API and review boundaries.
 - Tests cover service behavior, route contracts, and the main UI interaction.
-- User-facing labels say BuildWealth concepts, not Portfolio Analysis, Simulations, or native module.
+- User-facing labels say BuildWealth concepts, not Portfolio Analysis, Simulations, or retired calculation module.

@@ -2,8 +2,10 @@
 // Forked from web/lib/api.js — kept tiny on purpose; v2 grows its own surface.
 
 const CSRF_STORAGE_KEY = 'buildwealth.csrf_token';
+const WORKSPACE_STORAGE_KEY = 'buildwealth.active_workspace_id';
 
 let csrfToken = readStoredCsrfToken();
+let activeWorkspaceId = readStoredWorkspaceId();
 
 function readStoredCsrfToken() {
   try { return window.sessionStorage.getItem(CSRF_STORAGE_KEY) || ''; }
@@ -20,11 +22,29 @@ export function setCsrfToken(token) {
   }
 }
 
+function readStoredWorkspaceId() {
+  try { return window.sessionStorage.getItem(WORKSPACE_STORAGE_KEY) || ''; }
+  catch { return ''; }
+}
+
+export function setActiveWorkspaceId(workspaceId) {
+  activeWorkspaceId = String(workspaceId || '');
+  try {
+    if (activeWorkspaceId) window.sessionStorage.setItem(WORKSPACE_STORAGE_KEY, activeWorkspaceId);
+    else window.sessionStorage.removeItem(WORKSPACE_STORAGE_KEY);
+  } catch {
+    // Workspace selection still works for signed-in sessions via the server cookie.
+  }
+}
+
 function withAuthHeaders(options = {}) {
   const method = String(options.method || 'GET').toUpperCase();
   const headers = { ...(options.headers || {}) };
   if (csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
     headers['x-buildwealth-csrf-token'] = csrfToken;
+  }
+  if (activeWorkspaceId && !headers['x-buildwealth-workspace-id']) {
+    headers['x-buildwealth-workspace-id'] = activeWorkspaceId;
   }
   return {
     credentials: 'same-origin',
@@ -160,31 +180,41 @@ export const api = {
   authLogin: async (body = {}) => {
     const result = await postJson('/api/auth/login', body);
     setCsrfToken(result?.csrf_token || '');
+    setActiveWorkspaceId(result?.workspace_id || '');
     return result;
   },
   authRegister: async (body = {}) => {
     const result = await postJson('/api/auth/register', body);
     setCsrfToken(result?.csrf_token || '');
+    setActiveWorkspaceId(result?.workspace_id || '');
     return result;
   },
   authLogout: async () => {
     try { return await postJson('/api/auth/logout', {}); }
-    finally { setCsrfToken(''); }
+    finally {
+      setCsrfToken('');
+      setActiveWorkspaceId('');
+    }
   },
   authSession: async () => {
     const result = await fetchJson('/api/auth/session');
     if (result?.csrf_token) setCsrfToken(result.csrf_token);
+    if (!activeWorkspaceId && result?.workspace?.id) setActiveWorkspaceId(result.workspace.id);
     return result;
   },
   workspaces: () => fetchJson('/api/workspaces'),
   currentWorkspace: () => fetchJson('/api/workspaces/current'),
-  selectWorkspace: (workspaceId) => postJson(`/api/workspaces/${encodeURIComponent(workspaceId)}/select`, {}),
+  selectWorkspace: async (workspaceId) => {
+    const result = await postJson(`/api/workspaces/${encodeURIComponent(workspaceId)}/select`, {});
+    setActiveWorkspaceId(workspaceId);
+    return result;
+  },
   resetDemoWorkspace: (workspaceId) => postJson(`/api/workspaces/${encodeURIComponent(workspaceId)}/demo/reset`, {}),
 
   today:        () => fetchJson('/api/dashboard/today'),
   recordTodayReview: () => postJson('/api/dashboard/today/review-checkpoint', {}),
   refreshTodayResearch: () => postJson('/api/dashboard/today/research-readiness/refresh', {}),
-  engines:      () => fetchJson('/api/engines/status'),
+  services:     () => fetchJson('/api/services/status'),
   telemetry:    () => fetchJson('/api/telemetry/runtime'),
   syncStatus:   () => fetchJson('/api/sync/status'),
   durableStorageStatus: () => fetchJson('/api/storage/durable/status'),

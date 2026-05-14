@@ -152,7 +152,7 @@ from buildwealth_orchestrator.schemas import (
     FinancialHealthResponse,
     GoalProgressResponse,
     PlanTrackingResponse,
-    EngineStatusResponse,
+    ServiceStatusResponse,
     DurableStorageStatusResponse,
     DurableStorageMigrationRequest,
     DurableStorageMigrationResponse,
@@ -5094,40 +5094,37 @@ def _release_readiness_check(
     )
 
 
-def _engine_status_snapshot_sync() -> EngineStatusResponse:
-    return build_native_engine_status()
+def _service_status_snapshot_sync() -> ServiceStatusResponse:
+    return build_native_service_status()
 
 
-def build_native_engine_status() -> EngineStatusResponse:
-    engines = [
+def build_native_service_status() -> ServiceStatusResponse:
+    services = [
         {
             "name": "portfolio_benchmark",
             "enabled": True,
             "reachable": True,
-            "contract_compatible": True,
             "last_checked_at": utc_now(),
         },
         {
             "name": "portfolio_attribution",
             "enabled": True,
             "reachable": True,
-            "contract_compatible": True,
             "last_checked_at": utc_now(),
         },
         {
             "name": "plan_simulation",
             "enabled": True,
             "reachable": True,
-            "contract_compatible": True,
             "last_checked_at": utc_now(),
         },
     ]
-    return EngineStatusResponse(
+    return ServiceStatusResponse(
         as_of=utc_now(),
-        enabled_count=len(engines),
-        reachable_count=len(engines),
+        enabled_count=len(services),
+        reachable_count=len(services),
         degraded_count=0,
-        engines=engines,
+        services=services,
     )
 
 
@@ -5563,13 +5560,13 @@ def build_release_readiness_response(
         ))
 
     try:
-        engine_status = _engine_status_snapshot_sync()
+        service_status = _service_status_snapshot_sync()
         degraded = [
-            engine for engine in engine_status.engines
-            if engine.enabled and (not engine.reachable or engine.contract_compatible is False or engine.degraded_count > 0)
+            service for service in service_status.services
+            if service.enabled and (not service.reachable or service.degraded_count > 0)
         ]
         if degraded:
-            names = ", ".join(engine.name for engine in degraded[:3])
+            names = ", ".join(service.name for service in degraded[:3])
             checks.append(_release_readiness_check(
                 id="providers",
                 title="Provider and service readiness",
@@ -5577,8 +5574,8 @@ def build_release_readiness_response(
                 detail=f"Provider or service issues are present: {names}.",
                 domain="provider",
                 action_kind="review_provider_status",
-                last_verified_at=engine_status.as_of,
-                metadata={"degraded_services": [engine.model_dump(mode="json") for engine in degraded]},
+                last_verified_at=service_status.as_of,
+                metadata={"degraded_services": [service.model_dump(mode="json") for service in degraded]},
             ))
             actions.append(_release_readiness_action(
                 "review_provider_status",
@@ -5593,8 +5590,8 @@ def build_release_readiness_response(
                 status="ready",
                 detail="No enabled provider or service issues are currently recorded.",
                 domain="provider",
-                last_verified_at=engine_status.as_of,
-                metadata={"service_count": len(engine_status.engines)},
+                last_verified_at=service_status.as_of,
+                metadata={"service_count": len(service_status.services)},
             ))
     except Exception as exc:
         checks.append(_release_readiness_check(
@@ -14910,7 +14907,7 @@ def configure_copilot_tools() -> None:
     )
     copilot.register_tool(
         name="get_sync_status",
-        description="Read sync engine status, counters, and latest run timestamps.",
+        description="Read sync process status, counters, and latest run timestamps.",
         parameters=empty_schema,
         handler=tool_get_sync_status,
     )
@@ -17085,9 +17082,17 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/api/engines/status", response_model=EngineStatusResponse)
-async def get_engine_status(refresh: bool = False) -> EngineStatusResponse:
-    return build_native_engine_status()
+@app.get("/api/services/status", response_model=ServiceStatusResponse)
+async def get_service_status(refresh: bool = False) -> ServiceStatusResponse:
+    return build_native_service_status()
+
+
+@app.get("/api/engines/status")
+async def get_deprecated_engine_status(refresh: bool = False) -> dict[str, Any]:
+    status = build_native_service_status()
+    payload = status.model_dump(mode="json")
+    payload["engines"] = payload.get("services", [])
+    return payload
 
 
 def _fallback_context_freshness_payload() -> dict[str, Any]:

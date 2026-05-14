@@ -71,31 +71,27 @@ class SnapshotHistoryResponse(BaseModel):
     top_holding_value_changes: list[dict[str, Any]] = Field(default_factory=list)
 
 
-class EngineStatusItem(BaseModel):
+class ServiceStatusItem(BaseModel):
     name: str
     enabled: bool
     reachable: bool
-    contract_version: int | None = None
-    expected_contract_version: int | None = None
-    contract_compatible: bool | None = None
     degraded_count: int = 0
     last_error: str | None = None
     last_checked_at: datetime | None = None
 
 
-class EngineStatusResponse(BaseModel):
+class ServiceStatusResponse(BaseModel):
     as_of: datetime
     enabled_count: int = 0
     reachable_count: int = 0
     degraded_count: int = 0
-    engines: list[EngineStatusItem] = Field(default_factory=list)
+    services: list[ServiceStatusItem] = Field(default_factory=list)
 
 
 # Internal shared response envelopes.
 # Guardrail: keep inheritance depth to one internal base layer.
 # Public inheritors: PortfolioBenchmarkResponse, PortfolioAttributionResponse.
-class _EngineContractResponseBase(BaseModel):
-    contract_version: Literal[1] = 1
+class _ServiceResponseBase(BaseModel):
     request_id: str
     engine_status: Literal["ok", "degraded"]
     fallback_method: str | None = None
@@ -118,7 +114,7 @@ class PortfolioBenchmarkSeriesPoint(BaseModel):
     alpha_index_by_symbol: dict[str, float] = Field(default_factory=dict)
 
 
-class PortfolioBenchmarkResponse(_EngineContractResponseBase):
+class PortfolioBenchmarkResponse(_ServiceResponseBase):
     engine: str
     benchmark_symbols: list[str] = Field(default_factory=list)
     start_date: date
@@ -151,7 +147,7 @@ class PortfolioAttributionPosition(BaseModel):
     allocation_pct: float = 0.0
 
 
-class PortfolioAttributionResponse(_EngineContractResponseBase):
+class PortfolioAttributionResponse(_ServiceResponseBase):
     engine: str
     as_of: datetime | None = None
     top_n: int = 5
