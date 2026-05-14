@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from contextlib import suppress
 from copy import copy
 from dataclasses import dataclass
 from pathlib import Path
+import secrets
 
 from buildwealth_orchestrator.services.control_plane import (
     ControlPlaneStore,
@@ -24,6 +26,7 @@ from buildwealth_orchestrator.services.workspace_settings import (
     WorkspaceSecretStore,
     WorkspaceSettingsStore,
     load_or_create_local_secret_key,
+    write_local_secret_key,
 )
 
 
@@ -161,3 +164,67 @@ class WorkspaceServiceFactory:
             settings_store=settings_store,
             secret_store=secret_store,
         )
+
+    def preview_secret_key_rotation(self) -> dict[str, object]:
+        items: list[dict[str, object]] = []
+        total_secrets = 0
+        for record in self.control_plane.list_active_workspaces():
+            paths = self.paths_for_record(record)
+            secret_store = WorkspaceSecretStore(paths.secrets_path, self.secret_key)
+            exported = secret_store.export_plaintext_secrets()
+            total_secrets += len(exported)
+            items.append(
+                {
+                    "workspace_id": record.id,
+                    "workspace_name": record.name,
+                    "workspace_type": record.workspace_type,
+                    "secret_count": len(exported),
+                }
+            )
+        return {
+            "can_rotate": True,
+            "workspace_count": len(items),
+            "secret_count": total_secrets,
+            "items": items,
+        }
+
+    def rotate_secret_key(self) -> dict[str, object]:
+        preview = self.preview_secret_key_rotation()
+        new_key = secrets.token_bytes(32)
+        rotated_items: list[dict[str, object]] = []
+        records = self.control_plane.list_active_workspaces()
+        backups: list[tuple[Path, str | None]] = []
+        for record in records:
+            path = self.paths_for_record(record).secrets_path
+            backups.append((path, path.read_text(encoding="utf-8") if path.exists() else None))
+        try:
+            for record in records:
+                paths = self.paths_for_record(record)
+                secret_store = WorkspaceSecretStore(paths.secrets_path, self.secret_key)
+                result = secret_store.rotate_key(new_key)
+                rotated_items.append(
+                    {
+                        "workspace_id": record.id,
+                        "workspace_name": record.name,
+                        "workspace_type": record.workspace_type,
+                        "secret_count": result["secret_count"],
+                        "rotated_at": result["rotated_at"],
+                    }
+                )
+            write_local_secret_key(self.settings.secret_key_path, new_key)
+            self.secret_key = new_key
+        except Exception as exc:
+            for path, backup in backups:
+                if backup is None:
+                    with suppress(FileNotFoundError):
+                        path.unlink()
+                    continue
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(backup, encoding="utf-8")
+            raise RuntimeError("Secret key rotation failed; workspace secret files were restored") from exc
+        return {
+            "rotated": True,
+            "workspace_count": preview["workspace_count"],
+            "secret_count": preview["secret_count"],
+            "items": rotated_items,
+        }

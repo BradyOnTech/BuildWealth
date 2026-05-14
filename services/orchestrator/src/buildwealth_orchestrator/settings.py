@@ -16,6 +16,36 @@ class Settings(BaseSettings):
     auth_session_cookie_name: str = Field(default="buildwealth_session", alias="AUTH_SESSION_COOKIE_NAME")
     auth_session_days: int = Field(default=14, alias="AUTH_SESSION_DAYS")
     auth_dev_email: str = Field(default="owner@buildwealth.local", alias="AUTH_DEV_EMAIL")
+    auth_oidc_provider_name: str = Field(default="Hosted Identity", alias="AUTH_OIDC_PROVIDER_NAME")
+    auth_oidc_issuer_url: str = Field(default="", alias="AUTH_OIDC_ISSUER_URL")
+    auth_oidc_client_id: str = Field(default="", alias="AUTH_OIDC_CLIENT_ID")
+    auth_oidc_client_secret: str = Field(default="", alias="AUTH_OIDC_CLIENT_SECRET")
+    auth_oidc_token_auth_method: str = Field(
+        default="client_secret_basic",
+        alias="AUTH_OIDC_TOKEN_AUTH_METHOD",
+    )
+    auth_oidc_redirect_uri: str = Field(default="", alias="AUTH_OIDC_REDIRECT_URI")
+    auth_oidc_scopes: str = Field(default="openid email profile", alias="AUTH_OIDC_SCOPES")
+    auth_oidc_jwks_uri: str = Field(default="", alias="AUTH_OIDC_JWKS_URI")
+    auth_oidc_allowed_id_token_algs: str = Field(
+        default="RS256 ES256",
+        alias="AUTH_OIDC_ALLOWED_ID_TOKEN_ALGS",
+    )
+    auth_oidc_require_id_token: bool = Field(default=True, alias="AUTH_OIDC_REQUIRE_ID_TOKEN")
+    auth_oidc_require_mfa: bool = Field(default=False, alias="AUTH_OIDC_REQUIRE_MFA")
+    auth_oidc_authorization_endpoint: str = Field(
+        default="",
+        alias="AUTH_OIDC_AUTHORIZATION_ENDPOINT",
+    )
+    auth_oidc_token_endpoint: str = Field(default="", alias="AUTH_OIDC_TOKEN_ENDPOINT")
+    auth_oidc_userinfo_endpoint: str = Field(default="", alias="AUTH_OIDC_USERINFO_ENDPOINT")
+    auth_oidc_logout_url: str = Field(default="", alias="AUTH_OIDC_LOGOUT_URL")
+    auth_post_login_redirect_path: str = Field(default="/v2", alias="AUTH_POST_LOGIN_REDIRECT_PATH")
+    auth_post_logout_redirect_uri: str = Field(default="", alias="AUTH_POST_LOGOUT_REDIRECT_URI")
+    auth_account_management_url: str = Field(default="", alias="AUTH_ACCOUNT_MANAGEMENT_URL")
+    auth_password_reset_url: str = Field(default="", alias="AUTH_PASSWORD_RESET_URL")
+    auth_mfa_enrollment_url: str = Field(default="", alias="AUTH_MFA_ENROLLMENT_URL")
+    auth_passkey_enrollment_url: str = Field(default="", alias="AUTH_PASSKEY_ENROLLMENT_URL")
     control_db_path: Path = Field(default=Path("data/control/control.db"), alias="CONTROL_DB_PATH")
     workspace_root_dir: Path = Field(default=Path("data/workspaces"), alias="WORKSPACE_ROOT_DIR")
     secret_key_path: Path = Field(default=Path("data/control/local_secret.key"), alias="SECRET_KEY_PATH")

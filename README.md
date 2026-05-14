@@ -16,6 +16,58 @@ Portfolio analytics, import review, asset maintenance, and plan simulation run t
 - Uses local calculations and local JSON stores.
 - Does not require external financial app containers.
 
+## Auth Modes
+
+BuildWealth supports local development auth and a hosted OIDC sign-in foundation.
+
+- `AUTH_MODE=dev` keeps the default local developer workspace.
+- `AUTH_MODE=local` enables local email/password registration and login.
+- `AUTH_MODE=hosted` or `AUTH_MODE=oidc` disables local password login and uses a configured OIDC provider.
+
+Recommended first private-beta hosted provider: **Auth0**, because it fits
+BuildWealth's server-side OIDC adapter without adding a vendor SDK to the product
+boundary. See
+[`docs/HOSTED_IDENTITY_PROVIDER_DECISION_2026-05-14.md`](./docs/HOSTED_IDENTITY_PROVIDER_DECISION_2026-05-14.md).
+
+Hosted OIDC configuration:
+
+```bash
+AUTH_MODE=hosted
+AUTH_OIDC_PROVIDER_NAME="Auth0"
+AUTH_OIDC_ISSUER_URL="https://tenant.region.auth0.com"
+AUTH_OIDC_CLIENT_ID="..."
+AUTH_OIDC_CLIENT_SECRET="..."
+AUTH_OIDC_REDIRECT_URI="https://your-buildwealth-host/api/auth/hosted/callback"
+# Optional: client_secret_basic (default) or client_secret_post
+AUTH_OIDC_TOKEN_AUTH_METHOD="client_secret_basic"
+# Optional hardening controls
+AUTH_OIDC_REQUIRE_ID_TOKEN="true"
+AUTH_OIDC_ALLOWED_ID_TOKEN_ALGS="RS256 ES256"
+AUTH_OIDC_REQUIRE_MFA="false"
+AUTH_OIDC_LOGOUT_URL="https://tenant.region.auth0.com/oidc/logout"
+AUTH_POST_LOGOUT_REDIRECT_URI="https://your-buildwealth-host/v2"
+AUTH_ACCOUNT_MANAGEMENT_URL=""
+AUTH_PASSWORD_RESET_URL=""
+AUTH_MFA_ENROLLMENT_URL=""
+AUTH_PASSKEY_ENROLLMENT_URL=""
+```
+
+If discovery is not available, set `AUTH_OIDC_AUTHORIZATION_ENDPOINT`,
+`AUTH_OIDC_TOKEN_ENDPOINT`, `AUTH_OIDC_USERINFO_ENDPOINT`, and
+`AUTH_OIDC_JWKS_URI` explicitly. Hosted mode validates ID tokens by default,
+including issuer, audience, expiry, nonce, signing algorithm, and UserInfo
+subject matching.
+
+Hosted secret-key rotation drill:
+
+```bash
+curl -s http://localhost:8090/api/security/secrets/rotation/preview | jq
+curl -s -X POST http://localhost:8090/api/security/secrets/rotation/apply \
+  -H "content-type: application/json" \
+  -H "x-buildwealth-csrf-token: ..." \
+  -d '{"confirm":"rotate"}' | jq
+```
+
 ## Quick Start (Standalone Default)
 
 1. Initialize environment files:

@@ -606,11 +606,26 @@ function renderAuthGate(mode = 'login', error = '') {
   state.session = null;
   state.workspaces = [];
   state.activeWorkspaceId = null;
-  document.body.innerHTML = authScreen({ mode, error });
+  document.body.innerHTML = authScreen({ mode, error, authConfig: state.authConfig });
+}
+
+function consumeAuthErrorFromLocation() {
+  try {
+    const params = new URLSearchParams(window.location.search || '');
+    const message = params.get('auth_error') || '';
+    if (!message) return '';
+    params.delete('auth_error');
+    const nextQuery = params.toString();
+    const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash || ''}`;
+    window.history.replaceState({}, '', nextUrl);
+    return message;
+  } catch {
+    return '';
+  }
 }
 
 function setAuthBusy(mode, busy, error = '') {
-  document.body.innerHTML = authScreen({ mode, busy, error });
+  document.body.innerHTML = authScreen({ mode, busy, error, authConfig: state.authConfig });
 }
 
 function wireAuthEvents() {
@@ -640,12 +655,15 @@ function wireAuthEvents() {
 }
 
 async function signOut() {
+  let redirectTo = '';
   try {
-    await api.authLogout();
+    const result = await api.authLogout();
+    redirectTo = result?.redirect_to || '';
   } catch (err) {
     console.warn('[v2 auth] logout failed:', err.message);
   } finally {
-    renderAuthGate('login');
+    if (redirectTo) window.location.assign(redirectTo);
+    else renderAuthGate('login');
   }
 }
 
@@ -681,10 +699,16 @@ async function boot() {
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
   wireAuthEvents();
   try {
+    state.authConfig = await api.authConfig();
+  } catch (err) {
+    console.warn('[v2 boot] auth config failed:', err.message);
+    state.authConfig = null;
+  }
+  try {
     await refreshWorkspaceState({ requireSession: true });
   } catch (err) {
     if (err?.status === 401) {
-      renderAuthGate('login');
+      renderAuthGate('login', consumeAuthErrorFromLocation());
       return;
     }
     console.warn('[v2 boot] auth preflight failed:', err.message);

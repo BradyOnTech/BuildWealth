@@ -185,6 +185,7 @@ function contextCandidatesUrl({
 }
 
 export const api = {
+  authConfig: () => fetchJson('/api/auth/config'),
   authLogin: async (body = {}) => {
     const result = await postJson('/api/auth/login', body);
     setCsrfToken(result?.csrf_token || '');
@@ -219,6 +220,8 @@ export const api = {
       setActiveWorkspaceId('');
     }
   },
+  previewSecretKeyRotation: () => fetchJson('/api/security/secrets/rotation/preview'),
+  applySecretKeyRotation: (body = {}) => postJson('/api/security/secrets/rotation/apply', body),
   workspaces: () => fetchJson('/api/workspaces'),
   currentWorkspace: () => fetchJson('/api/workspaces/current'),
   selectWorkspace: async (workspaceId) => {

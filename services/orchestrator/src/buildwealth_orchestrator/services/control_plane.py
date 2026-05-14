@@ -221,6 +221,22 @@ class ControlPlaneStore:
                     metadata_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS auth_login_flows (
+                    id TEXT PRIMARY KEY,
+                    provider TEXT NOT NULL,
+                    state_token_hash TEXT NOT NULL UNIQUE,
+                    code_verifier TEXT NOT NULL,
+                    nonce TEXT NOT NULL,
+                    redirect_to TEXT NOT NULL DEFAULT '/v2',
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    consumed_at TEXT
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_users_auth_provider_subject
+                ON users(auth_provider, auth_provider_subject)
+                WHERE auth_provider_subject IS NOT NULL AND auth_provider_subject != '';
                 """
             )
 
@@ -328,6 +344,86 @@ class ControlPlaneStore:
             (workspace_id, organization_id, name, workspace_type, str(storage_path), now, now),
         )
 
+    def _create_owned_household(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        user_id: str,
+        organization_id: str,
+        household_workspace_id: str,
+        demo_workspace_id: str,
+        root_dir: Path,
+        now: str,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO organizations (id, name, org_type, status, created_at, updated_at)
+            VALUES (?, ?, 'household', 'active', ?, ?)
+            """,
+            (organization_id, "My Household", now, now),
+        )
+        connection.execute(
+            """
+            INSERT INTO memberships (
+                id, user_id, organization_id, role, status, created_at, updated_at
+            )
+            VALUES (?, ?, ?, 'owner', 'active', ?, ?)
+            """,
+            (f"mem_{uuid.uuid4().hex[:16]}", user_id, organization_id, now, now),
+        )
+        self._upsert_workspace(
+            connection,
+            workspace_id=household_workspace_id,
+            organization_id=organization_id,
+            name="My Household",
+            workspace_type="household",
+            storage_path=root_dir / household_workspace_id,
+            now=now,
+        )
+        self._upsert_workspace(
+            connection,
+            workspace_id=demo_workspace_id,
+            organization_id=organization_id,
+            name="Demo Household",
+            workspace_type="demo",
+            storage_path=root_dir / demo_workspace_id,
+            now=now,
+        )
+
+    def _ensure_user_has_household(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        user_id: str,
+        root_dir: Path,
+        now: str,
+    ) -> None:
+        existing = connection.execute(
+            """
+            SELECT m.organization_id
+            FROM memberships m
+            JOIN organizations o ON o.id = m.organization_id
+            WHERE m.user_id = ?
+              AND m.status = 'active'
+              AND o.status = 'active'
+            LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
+        if existing is not None:
+            return
+        household_workspace_id = f"ws_{uuid.uuid4().hex[:16]}_household"
+        demo_workspace_id = f"ws_{uuid.uuid4().hex[:16]}_demo"
+        self._create_owned_household(
+            connection,
+            user_id=user_id,
+            organization_id=f"org_{uuid.uuid4().hex[:16]}",
+            household_workspace_id=household_workspace_id,
+            demo_workspace_id=demo_workspace_id,
+            root_dir=root_dir,
+            now=now,
+        )
+
     def create_owner_user(
         self,
         *,
@@ -366,38 +462,13 @@ class ControlPlaneStore:
                     now,
                 ),
             )
-            connection.execute(
-                """
-                INSERT INTO organizations (id, name, org_type, status, created_at, updated_at)
-                VALUES (?, ?, 'household', 'active', ?, ?)
-                """,
-                (organization_id, "My Household", now, now),
-            )
-            connection.execute(
-                """
-                INSERT INTO memberships (
-                    id, user_id, organization_id, role, status, created_at, updated_at
-                )
-                VALUES (?, ?, ?, 'owner', 'active', ?, ?)
-                """,
-                (f"mem_{uuid.uuid4().hex[:16]}", user_id, organization_id, now, now),
-            )
-            self._upsert_workspace(
+            self._create_owned_household(
                 connection,
-                workspace_id=household_workspace_id,
+                user_id=user_id,
                 organization_id=organization_id,
-                name="My Household",
-                workspace_type="household",
-                storage_path=root_dir / household_workspace_id,
-                now=now,
-            )
-            self._upsert_workspace(
-                connection,
-                workspace_id=demo_workspace_id,
-                organization_id=organization_id,
-                name="Demo Household",
-                workspace_type="demo",
-                storage_path=root_dir / demo_workspace_id,
+                household_workspace_id=household_workspace_id,
+                demo_workspace_id=demo_workspace_id,
+                root_dir=root_dir,
                 now=now,
             )
             connection.execute(
@@ -417,6 +488,198 @@ class ControlPlaneStore:
                     "{}",
                     now,
                 ),
+            )
+        return self.get_user(user_id)
+
+    def create_hosted_login_flow(
+        self,
+        *,
+        provider: str,
+        code_verifier: str,
+        nonce: str,
+        redirect_to: str,
+        ttl_minutes: int = 10,
+    ) -> dict[str, str]:
+        state = secrets.token_urlsafe(32)
+        now = utc_now()
+        expires_at = now + timedelta(minutes=max(1, ttl_minutes))
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO auth_login_flows (
+                    id, provider, state_token_hash, code_verifier, nonce,
+                    redirect_to, created_at, expires_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    f"alf_{uuid.uuid4().hex[:16]}",
+                    provider,
+                    _token_hash(state),
+                    code_verifier,
+                    nonce,
+                    _safe_redirect_path(redirect_to),
+                    now.isoformat(),
+                    expires_at.isoformat(),
+                ),
+            )
+        return {"state": state, "nonce": nonce, "code_verifier": code_verifier}
+
+    def consume_hosted_login_flow(self, *, provider: str, state: str) -> dict[str, str]:
+        if not provider or not state:
+            raise AuthenticationError("Hosted login request is not active")
+        now = utc_now_iso()
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM auth_login_flows
+                WHERE provider = ?
+                  AND state_token_hash = ?
+                  AND consumed_at IS NULL
+                  AND expires_at > ?
+                """,
+                (provider, _token_hash(state), now),
+            ).fetchone()
+            if row is None:
+                raise AuthenticationError("Hosted login request is not active")
+            connection.execute(
+                "UPDATE auth_login_flows SET consumed_at = ? WHERE id = ?",
+                (now, row["id"]),
+            )
+        return {
+            "code_verifier": str(row["code_verifier"]),
+            "nonce": str(row["nonce"]),
+            "redirect_to": _safe_redirect_path(str(row["redirect_to"] or "/v2")),
+        }
+
+    def upsert_hosted_owner_user(
+        self,
+        *,
+        provider: str,
+        subject: str,
+        email: str,
+        display_name: str,
+        email_verified: bool,
+        mfa_enabled: bool,
+        workspace_root_dir: Path | None = None,
+    ) -> dict[str, Any]:
+        provider = str(provider or "").strip()
+        subject = str(subject or "").strip()
+        normalized = self.normalize_email(email)
+        if not provider or not subject:
+            raise AuthenticationError("Hosted identity did not include a stable subject")
+        if not normalized:
+            raise AuthenticationError("Hosted identity did not include an email")
+        if not email_verified:
+            raise AuthenticationError("Hosted identity email must be verified")
+
+        now = utc_now_iso()
+        root_dir = workspace_root_dir or (self.database_path.parent.parent / "workspaces")
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM users
+                WHERE auth_provider = ?
+                  AND auth_provider_subject = ?
+                  AND status = 'active'
+                """,
+                (provider, subject),
+            ).fetchone()
+            if row is not None:
+                user_id = str(row["id"])
+                connection.execute(
+                    """
+                    UPDATE users
+                    SET email = ?, email_normalized = ?, display_name = ?,
+                        mfa_enabled = ?, updated_at = ?, last_login_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        normalized,
+                        normalized,
+                        display_name.strip() or str(row["display_name"] or "") or normalized,
+                        1 if mfa_enabled else 0,
+                        now,
+                        now,
+                        user_id,
+                    ),
+                )
+                self._ensure_user_has_household(connection, user_id=user_id, root_dir=root_dir, now=now)
+                return dict(connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
+
+            email_row = connection.execute(
+                "SELECT * FROM users WHERE email_normalized = ? AND status = 'active'",
+                (normalized,),
+            ).fetchone()
+            if email_row is not None:
+                existing_provider = str(email_row["auth_provider"] or "local")
+                existing_subject = str(email_row["auth_provider_subject"] or "")
+                if existing_subject and (
+                    existing_provider != provider or existing_subject != subject
+                ):
+                    raise AuthenticationError("Email is already linked to a different identity provider")
+                user_id = str(email_row["id"])
+                connection.execute(
+                    """
+                    UPDATE users
+                    SET auth_provider = ?, auth_provider_subject = ?, display_name = ?,
+                        mfa_enabled = ?, updated_at = ?, last_login_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        provider,
+                        subject,
+                        display_name.strip() or str(email_row["display_name"] or "") or normalized,
+                        1 if mfa_enabled else 0,
+                        now,
+                        now,
+                        user_id,
+                    ),
+                )
+                self._ensure_user_has_household(connection, user_id=user_id, root_dir=root_dir, now=now)
+                self._record_audit_event_with_connection(
+                    connection,
+                    action="auth.hosted_identity_linked",
+                    actor_user_id=user_id,
+                    target_type="user",
+                    target_id=user_id,
+                    metadata_json=json.dumps({"provider": provider}),
+                )
+                return dict(connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
+
+            user_id = f"usr_{uuid.uuid4().hex[:16]}"
+            connection.execute(
+                """
+                INSERT INTO users (
+                    id, email, email_normalized, display_name, password_hash,
+                    auth_provider, auth_provider_subject, mfa_enabled, status,
+                    created_at, updated_at, last_login_at
+                )
+                VALUES (?, ?, ?, ?, '', ?, ?, ?, 'active', ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    normalized,
+                    normalized,
+                    display_name.strip() or normalized,
+                    provider,
+                    subject,
+                    1 if mfa_enabled else 0,
+                    now,
+                    now,
+                    now,
+                ),
+            )
+            self._ensure_user_has_household(connection, user_id=user_id, root_dir=root_dir, now=now)
+            self._record_audit_event_with_connection(
+                connection,
+                action="auth.hosted_user_created",
+                actor_user_id=user_id,
+                target_type="user",
+                target_id=user_id,
+                metadata_json=json.dumps({"provider": provider}),
             )
         return self.get_user(user_id)
 
@@ -699,6 +962,18 @@ class ControlPlaneStore:
             ).fetchall()
         return [self._workspace_from_row(row) for row in rows]
 
+    def list_active_workspaces(self) -> list[WorkspaceRecord]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM workspaces
+                WHERE status = 'active'
+                ORDER BY created_at, name
+                """
+            ).fetchall()
+        return [self._workspace_from_row(row) for row in rows]
+
     def get_workspace_for_user(self, *, user_id: str, workspace_id: str) -> tuple[WorkspaceRecord, str]:
         with self._connect() as connection:
             row = connection.execute(
@@ -886,3 +1161,10 @@ def _json_object(value: Any) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _safe_redirect_path(value: str) -> str:
+    path = str(value or "").strip()
+    if not path.startswith("/") or path.startswith("//") or "\r" in path or "\n" in path:
+        return "/v2"
+    return path

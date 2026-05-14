@@ -82,3 +82,24 @@ test('account helpers use protected routes and clear session state after deactiv
   assert.equal(requests[3].url, '/api/dashboard/today');
   assert.equal(requests[3].options.headers['x-buildwealth-workspace-id'], undefined);
 });
+
+test('security helpers call secret key rotation preview and apply routes', async () => {
+  const requests = [];
+  globalThis.fetch = async (url, options = {}) => {
+    requests.push({ url, options });
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+
+  setCsrfToken('csrf-token-rotation');
+  await api.previewSecretKeyRotation();
+  await api.applySecretKeyRotation({ confirm: 'rotate' });
+
+  assert.equal(requests[0].url, '/api/security/secrets/rotation/preview');
+  assert.equal(requests[0].options.method || 'GET', 'GET');
+  assert.equal(requests[1].url, '/api/security/secrets/rotation/apply');
+  assert.equal(requests[1].options.method, 'POST');
+  assert.equal(requests[1].options.headers['x-buildwealth-csrf-token'], 'csrf-token-rotation');
+});

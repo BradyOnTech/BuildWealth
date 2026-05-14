@@ -122,3 +122,25 @@ test('accountCard: exposes export password and deactivation controls', () => {
   assert.match(markup, /Deactivate account/);
   assert.match(markup, /Account export ready/);
 });
+
+test('accountCard: keeps hosted sign-in security provider managed', () => {
+  const markup = String(accountCard({
+    session: { user: { auth_provider: 'Test OIDC' } },
+    authConfig: {
+      account_management_url: 'https://identity.example.test/account',
+      password_reset_url: 'https://identity.example.test/reset',
+      mfa_enrollment_url: 'https://identity.example.test/mfa',
+      passkey_enrollment_url: 'https://identity.example.test/passkeys',
+    },
+    accountExporting: false,
+    passwordChanging: false,
+    deactivateBusy: false,
+  }));
+
+  assert.match(markup, /Sign-in security is managed by Test OIDC/);
+  assert.match(markup, /password reset, multi-factor sign-in, and passkeys/);
+  assert.match(markup, /Account security/);
+  assert.match(markup, /Set up passkeys/);
+  assert.doesNotMatch(markup, /Change password/);
+  assert.doesNotMatch(markup, /Deactivate account/);
+});

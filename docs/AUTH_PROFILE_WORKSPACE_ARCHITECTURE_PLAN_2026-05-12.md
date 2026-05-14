@@ -65,14 +65,25 @@ Implemented after this plan was approved:
 - Settings > Account & data card for account export, password change, and local account deactivation
 - audit events for sensitive account and workspace actions
 - regression tests for service naming, removed compatibility routes, workspace isolation, encrypted key storage, and account controls
+- generic hosted OIDC sign-in foundation with provider discovery/explicit endpoints, PKCE, one-time login state, secure BuildWealth sessions, local-login disablement in hosted mode, and v2 hosted sign-in UI
+- hosted OIDC ID-token validation for issuer, audience, expiry, nonce, allowed signing algorithm, UserInfo subject matching, optional MFA enforcement, and clean v2 callback error handling
+- provider-managed account security links for password reset, MFA, passkeys, and hosted account management
+- hosted logout URL support for provider-managed sign-out when the selected provider exposes one
+- workspace secret-key rotation preview/apply drill with CSRF, owner permission checks, audit logging, and regression coverage
+
+Hosted provider decision:
+
+- Auth0 is the recommended first private-beta hosted identity provider.
+- Provider-specific setup and validation live in `docs/HOSTED_IDENTITY_PROVIDER_DECISION_2026-05-14.md`.
 
 Still intentionally future-facing:
 
-- hosted identity provider integration
-- password reset by email or hosted provider
-- optional MFA/passkeys
-- formal key-rotation drill for hosted deployments
-- privacy/legal review before real hosted users
+- Auth0 tenant creation and production tenant setup
+- production validation of the selected provider's account-management URLs
+- production validation of provider logout behavior and post-logout redirect requirements
+- KMS-backed replacement for the current dependency-light local secret encryption primitive
+- scheduled/offline hosted key-rotation runbook using the implemented preview/apply path
+- privacy/legal review before real hosted users, tracked in `docs/HOSTED_PRIVACY_SECURITY_LAUNCH_REVIEW_2026-05-14.md`
 
 ## Target Model
 

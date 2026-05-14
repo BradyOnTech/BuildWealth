@@ -8,6 +8,7 @@ export const state = {
   plans: [],
   activePlanId: null,
   session: null,
+  authConfig: null,
   workspaces: [],
   activeWorkspaceId: null,
   authRequired: false,

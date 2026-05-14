@@ -53,6 +53,8 @@ const ui = {
   contextTestResult: null,
   workspaces:       [],
   activeWorkspaceId:null,
+  session:          null,
+  authConfig:       null,
   demoResetting:    false,
   demoResetResult:  null,
   demoResetError:   null,
@@ -102,10 +104,12 @@ async function load() {
   ui.loaded = false;
   ui.loadError = null;
   try {
-    const [settings, contextSettings, workspaces] = await Promise.all([
+    const [settings, contextSettings, workspaces, session, authConfig] = await Promise.all([
       api.settings(),
       api.contextSettings().catch(() => null),
       api.workspaces().catch(() => null),
+      api.authSession().catch(() => null),
+      api.authConfig().catch(() => null),
     ]);
     ui.loadedSettings = settings;
     ui.draft = toDraft(settings);
@@ -120,6 +124,8 @@ async function load() {
     ui.contextTestResult = null;
     ui.workspaces = Array.isArray(workspaces?.items) ? workspaces.items : [];
     ui.activeWorkspaceId = workspaces?.active_workspace_id || null;
+    ui.session = session;
+    ui.authConfig = authConfig;
     ui.demoResetting = false;
     ui.demoResetResult = null;
     ui.demoResetError = null;
@@ -561,12 +567,22 @@ export function accountCard(model) {
   const exported = model.accountExportResult || null;
   const exportedWorkspaces = Number(exported?.workspaces?.length || 0);
   const exportedAudit = Number(exported?.audit_events?.length || 0);
+  const authProvider = model.session?.user?.auth_provider || 'local';
+  const localAccount = authProvider === 'local';
+  const providerLabel = localAccount ? 'BuildWealth local sign-in' : authProvider;
+  const authConfig = model.authConfig || {};
+  const providerLinks = [
+    ['Account security', authConfig.account_management_url],
+    ['Reset password', authConfig.password_reset_url],
+    ['Set up multi-factor sign-in', authConfig.mfa_enrollment_url],
+    ['Set up passkeys', authConfig.passkey_enrollment_url],
+  ].filter(([, href]) => href);
   return html`
     <section class="settings-card">
       <header class="settings-card-head">
         <h2 class="settings-card-title">Account &amp; data</h2>
         <p class="settings-card-lede">
-          Export your local account record, change your password, or deactivate access to this account.
+          Export your local account record${localAccount ? ', change your password, or deactivate access to this account' : ''}.
         </p>
       </header>
 
@@ -583,37 +599,51 @@ export function accountCard(model) {
         </div>
       ` : ''}
 
-      <form id="account-password-form" class="settings-grid">
-        <label class="settings-field">
-          <span class="settings-label">Current password</span>
-          <input class="settings-input" name="current_password" type="password" autocomplete="current-password" />
-        </label>
-        <label class="settings-field">
-          <span class="settings-label">New password</span>
-          <input class="settings-input" name="new_password" type="password" autocomplete="new-password" minlength="8" />
-        </label>
-        <div class="settings-actions span-2">
-          <button class="btn btn-primary" type="submit" ${model.passwordChanging ? 'disabled' : ''}>
-            ${model.passwordChanging ? 'Changing…' : 'Change password'}
-          </button>
-        </div>
-      </form>
+      ${localAccount ? html`
+        <form id="account-password-form" class="settings-grid">
+          <label class="settings-field">
+            <span class="settings-label">Current password</span>
+            <input class="settings-input" name="current_password" type="password" autocomplete="current-password" />
+          </label>
+          <label class="settings-field">
+            <span class="settings-label">New password</span>
+            <input class="settings-input" name="new_password" type="password" autocomplete="new-password" minlength="8" />
+          </label>
+          <div class="settings-actions span-2">
+            <button class="btn btn-primary" type="submit" ${model.passwordChanging ? 'disabled' : ''}>
+              ${model.passwordChanging ? 'Changing…' : 'Change password'}
+            </button>
+          </div>
+        </form>
 
-      <form id="account-deactivate-form" class="settings-grid">
-        <label class="settings-field">
-          <span class="settings-label">Password</span>
-          <input class="settings-input" name="current_password" type="password" autocomplete="current-password" />
-        </label>
-        <label class="settings-field">
-          <span class="settings-label">Type deactivate</span>
-          <input class="settings-input" name="confirm" type="text" autocomplete="off" />
-        </label>
-        <div class="settings-actions span-2">
-          <button class="btn btn-danger" type="submit" ${model.deactivateBusy ? 'disabled' : ''}>
-            ${model.deactivateBusy ? 'Deactivating…' : 'Deactivate account'}
-          </button>
+        <form id="account-deactivate-form" class="settings-grid">
+          <label class="settings-field">
+            <span class="settings-label">Password</span>
+            <input class="settings-input" name="current_password" type="password" autocomplete="current-password" />
+          </label>
+          <label class="settings-field">
+            <span class="settings-label">Type deactivate</span>
+            <input class="settings-input" name="confirm" type="text" autocomplete="off" />
+          </label>
+          <div class="settings-actions span-2">
+            <button class="btn btn-danger" type="submit" ${model.deactivateBusy ? 'disabled' : ''}>
+              ${model.deactivateBusy ? 'Deactivating…' : 'Deactivate account'}
+            </button>
+          </div>
+        </form>
+      ` : html`
+        <div class="settings-test-result">
+          <p class="settings-test-headline">Sign-in security is managed by ${providerLabel}.</p>
+          <p>Use your identity provider for password reset, multi-factor sign-in, and passkeys.</p>
         </div>
-      </form>
+        ${providerLinks.length ? html`
+          <div class="settings-actions">
+            ${providerLinks.map(([label, href]) => html`
+              <a class="btn btn-quiet" href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>
+            `)}
+          </div>
+        ` : ''}
+      `}
 
       ${model.passwordResult ? html`<p class="success-banner">${esc(model.passwordResult.message || 'Password changed.')}</p>` : ''}
       ${model.deactivateResult ? html`<p class="success-banner">${esc(model.deactivateResult.message || 'Account deactivated.')}</p>` : ''}

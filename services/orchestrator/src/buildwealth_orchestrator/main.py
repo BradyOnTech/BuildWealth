@@ -14,7 +14,7 @@ from contextvars import ContextVar
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import quote as url_quote
+from urllib.parse import quote as url_quote, urlencode
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
@@ -314,6 +314,14 @@ from buildwealth_orchestrator.services.git_restore_tokens import (
     GitRestorePreviewTokenError,
     GitRestorePreviewTokenStore,
 )
+from buildwealth_orchestrator.services.hosted_identity import (
+    HostedIdentityConfigError,
+    HostedIdentityExchangeError,
+    OIDCAuthProvider,
+    code_challenge_for,
+    generate_code_verifier,
+    generate_nonce,
+)
 from buildwealth_orchestrator.services.versioned_workspace import (
     VersionedWorkspacePolicy,
     VersionedWorkspaceService,
@@ -421,6 +429,7 @@ git_integration_settings_store = GitIntegrationSettingsStore(
     default_workspace_dir=settings.versioned_workspace_dir,
 )
 control_plane_store = ControlPlaneStore(settings.control_db_path)
+hosted_identity_provider = OIDCAuthProvider(settings)
 control_plane_store.bootstrap_default_household(
     owner_email=settings.auth_dev_email,
     default_storage_root=settings.snapshot_dir.parent,
@@ -518,6 +527,44 @@ if "context_embedding_timeout_seconds" in _user_context_keys:
 
 def _auth_mode() -> str:
     return str(settings.auth_mode or "dev").strip().lower()
+
+
+def _local_auth_enabled() -> bool:
+    return _auth_mode() in {"dev", "test", "local"}
+
+
+def _hosted_auth_enabled() -> bool:
+    return _auth_mode() in {"hosted", "oidc"} and hosted_identity_provider.is_configured()
+
+
+def _safe_post_login_redirect(value: str | None = None) -> str:
+    redirect_to = str(value or settings.auth_post_login_redirect_path or "/v2").strip()
+    if not redirect_to.startswith("/") or redirect_to.startswith("//") or "\r" in redirect_to or "\n" in redirect_to:
+        return "/v2"
+    return redirect_to
+
+
+def _auth_error_redirect(message: str, *, status_code: int = 307) -> RedirectResponse:
+    detail = str(message or "Hosted sign-in could not be completed.").strip()
+    params = urlencode({"auth_error": detail[:180]})
+    return RedirectResponse(url=f"/v2?{params}", status_code=status_code)
+
+
+def _hosted_logout_redirect_url() -> str:
+    logout_url = str(settings.auth_oidc_logout_url or "").strip()
+    if not logout_url:
+        return ""
+    params: dict[str, str] = {}
+    post_logout_redirect_uri = str(settings.auth_post_logout_redirect_uri or "").strip()
+    if post_logout_redirect_uri:
+        params["post_logout_redirect_uri"] = post_logout_redirect_uri
+    client_id = str(settings.auth_oidc_client_id or "").strip()
+    if client_id:
+        params["client_id"] = client_id
+    if not params:
+        return logout_url
+    separator = "&" if "?" in logout_url else "?"
+    return f"{logout_url}{separator}{urlencode(params)}"
 
 
 def _session_cookie_kwargs() -> dict[str, Any]:
@@ -16482,9 +16529,111 @@ def pull_git_remote(
     return GitRemoteOperationResponse.model_validate(result)
 
 
+@app.get("/api/auth/config")
+def auth_config() -> dict[str, Any]:
+    hosted_enabled = _hosted_auth_enabled()
+    return {
+        "auth_mode": _auth_mode(),
+        "local_auth_enabled": _local_auth_enabled(),
+        "hosted_auth_enabled": hosted_enabled,
+        "hosted_provider_name": hosted_identity_provider.provider_name,
+        "hosted_login_url": "/api/auth/hosted/login" if hosted_enabled else "",
+        "hosted_logout_url": "/api/auth/hosted/logout" if hosted_enabled and _hosted_logout_redirect_url() else "",
+        "id_token_validation_required": bool(getattr(settings, "auth_oidc_require_id_token", True)),
+        "mfa_required": bool(getattr(settings, "auth_oidc_require_mfa", False)),
+        "password_reset_managed_by_provider": hosted_enabled,
+        "mfa_managed_by_provider": hosted_enabled,
+        "passkeys_managed_by_provider": hosted_enabled,
+        "account_management_url": str(settings.auth_account_management_url or "").strip(),
+        "password_reset_url": str(settings.auth_password_reset_url or "").strip(),
+        "mfa_enrollment_url": str(settings.auth_mfa_enrollment_url or "").strip(),
+        "passkey_enrollment_url": str(settings.auth_passkey_enrollment_url or "").strip(),
+    }
+
+
+@app.get("/api/auth/hosted/login")
+async def hosted_login(redirect_to: str = "") -> Response:
+    if not _hosted_auth_enabled():
+        raise HTTPException(status_code=404, detail="Hosted identity is not configured")
+    code_verifier = generate_code_verifier()
+    nonce = generate_nonce()
+    flow = control_plane_store.create_hosted_login_flow(
+        provider=hosted_identity_provider.provider_name,
+        code_verifier=code_verifier,
+        nonce=nonce,
+        redirect_to=_safe_post_login_redirect(redirect_to),
+    )
+    try:
+        authorization_url = await hosted_identity_provider.authorization_url(
+            state=flow["state"],
+            nonce=nonce,
+            code_challenge=code_challenge_for(code_verifier),
+        )
+    except (HostedIdentityConfigError, httpx.HTTPError) as exc:
+        raise HTTPException(status_code=502, detail=f"Hosted identity login is unavailable: {exc}") from exc
+    return RedirectResponse(url=authorization_url, status_code=307)
+
+
+@app.get("/api/auth/hosted/callback")
+async def hosted_callback(
+    request: Request,
+    response: Response,
+    code: str = "",
+    state: str = "",
+    error: str = "",
+    error_description: str = "",
+) -> Response:
+    if not _hosted_auth_enabled():
+        return _auth_error_redirect("Hosted identity is not configured")
+    if error:
+        detail = error_description or error
+        return _auth_error_redirect(f"Hosted identity rejected sign-in: {detail}")
+    if not code or not state:
+        return _auth_error_redirect("Hosted identity callback is missing code or state")
+    try:
+        flow = control_plane_store.consume_hosted_login_flow(
+            provider=hosted_identity_provider.provider_name,
+            state=state,
+        )
+        profile = await hosted_identity_provider.exchange_code_for_profile(
+            code=code,
+            code_verifier=flow["code_verifier"],
+            expected_nonce=flow["nonce"],
+        )
+        user = control_plane_store.upsert_hosted_owner_user(
+            provider=profile.provider,
+            subject=profile.subject,
+            email=profile.email,
+            display_name=profile.display_name,
+            email_verified=profile.email_verified,
+            mfa_enabled=profile.mfa_enabled,
+            workspace_root_dir=settings.workspace_root_dir,
+        )
+    except (AuthenticationError, HostedIdentityExchangeError) as exc:
+        return _auth_error_redirect(str(exc))
+    except (HostedIdentityConfigError, httpx.HTTPError) as exc:
+        return _auth_error_redirect(f"Hosted identity callback failed: {exc}")
+
+    workspace = control_plane_store.default_workspace_for_user(str(user["id"]))
+    session = control_plane_store.create_session(
+        user_id=str(user["id"]),
+        active_workspace_id=workspace.id,
+        ttl_days=settings.auth_session_days,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    response = RedirectResponse(url=flow["redirect_to"], status_code=307)
+    response.set_cookie(
+        settings.auth_session_cookie_name,
+        session["session_token"],
+        **_session_cookie_kwargs(),
+    )
+    return response
+
+
 @app.post("/api/auth/register")
 def register_owner(request: Request, response: Response, payload: dict[str, Any]) -> dict[str, Any]:
-    if _auth_mode() not in {"dev", "test", "local"}:
+    if not _local_auth_enabled():
         raise HTTPException(status_code=403, detail="Local registration is disabled")
     try:
         user = control_plane_store.create_owner_user(
@@ -16515,6 +16664,8 @@ def register_owner(request: Request, response: Response, payload: dict[str, Any]
             "id": user["id"],
             "email": user["email"],
             "display_name": user.get("display_name") or "",
+            "auth_provider": user.get("auth_provider") or "local",
+            "mfa_enabled": bool(user.get("mfa_enabled")),
         },
         "workspace_id": workspace.id,
         "csrf_token": session["csrf_token"],
@@ -16523,6 +16674,8 @@ def register_owner(request: Request, response: Response, payload: dict[str, Any]
 
 @app.post("/api/auth/login")
 def login(request: Request, response: Response, payload: dict[str, Any]) -> dict[str, Any]:
+    if not _local_auth_enabled():
+        raise HTTPException(status_code=403, detail="Local password login is disabled")
     try:
         user = control_plane_store.authenticate_local(
             email=str(payload.get("email") or ""),
@@ -16548,6 +16701,8 @@ def login(request: Request, response: Response, payload: dict[str, Any]) -> dict
             "id": user["id"],
             "email": user["email"],
             "display_name": user.get("display_name") or "",
+            "auth_provider": user.get("auth_provider") or "local",
+            "mfa_enabled": bool(user.get("mfa_enabled")),
         },
         "workspace_id": workspace.id,
         "csrf_token": session["csrf_token"],
@@ -16558,7 +16713,16 @@ def login(request: Request, response: Response, payload: dict[str, Any]) -> dict
 def logout(request: Request, response: Response) -> dict[str, Any]:
     control_plane_store.revoke_session(request.cookies.get(settings.auth_session_cookie_name) or "")
     response.delete_cookie(settings.auth_session_cookie_name, path="/")
-    return {"ok": True}
+    return {"ok": True, "redirect_to": _hosted_logout_redirect_url() if _hosted_auth_enabled() else ""}
+
+
+@app.get("/api/auth/hosted/logout")
+def hosted_logout(request: Request) -> Response:
+    control_plane_store.revoke_session(request.cookies.get(settings.auth_session_cookie_name) or "")
+    redirect_to = _hosted_logout_redirect_url() or "/v2"
+    response = RedirectResponse(url=redirect_to, status_code=307)
+    response.delete_cookie(settings.auth_session_cookie_name, path="/")
+    return response
 
 
 @app.get("/api/auth/session")
@@ -16578,6 +16742,8 @@ def auth_session(
             "id": user["id"],
             "email": user["email"],
             "display_name": user.get("display_name") or "",
+            "auth_provider": user.get("auth_provider") or "local",
+            "mfa_enabled": bool(user.get("mfa_enabled")),
         },
         "workspace": {
             "id": workspace.id,
@@ -16653,6 +16819,42 @@ def deactivate_account(
         "requires_login": True,
         "message": "Account deactivated. Local workspace files were left in place for manual recovery.",
     }
+
+
+@app.get("/api/security/secrets/rotation/preview")
+def preview_secret_key_rotation(
+    context: RequestContext = Depends(get_request_context),
+) -> dict[str, Any]:
+    require_permission(context, "workspace.manage")
+    return workspace_service_factory.preview_secret_key_rotation()
+
+
+@app.post("/api/security/secrets/rotation/apply")
+def apply_secret_key_rotation(
+    request: Request,
+    payload: dict[str, Any],
+    context: RequestContext = Depends(get_request_context),
+) -> dict[str, Any]:
+    require_csrf(request)
+    require_permission(context, "workspace.manage")
+    if str(payload.get("confirm") or "").strip().lower() != "rotate":
+        raise HTTPException(status_code=400, detail='Type "rotate" to confirm secret key rotation')
+    result = workspace_service_factory.rotate_secret_key()
+    control_plane_store.record_audit_event(
+        action="security.workspace_secret_key_rotated",
+        actor_user_id=context.user_id,
+        organization_id=context.organization_id,
+        workspace_id=context.workspace_id,
+        target_type="secret_key",
+        target_id="workspace_secret_key",
+        metadata_json=json.dumps(
+            {
+                "workspace_count": result.get("workspace_count"),
+                "secret_count": result.get("secret_count"),
+            }
+        ),
+    )
+    return result
 
 
 @app.get("/api/workspaces")

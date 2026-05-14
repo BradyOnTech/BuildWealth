@@ -1,16 +1,25 @@
 from __future__ import annotations
 
 from copy import copy
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 
+import jwt
 from fastapi.testclient import TestClient
 
 from buildwealth_orchestrator import main
+from buildwealth_orchestrator.services import workspace_services as workspace_services_module
 from buildwealth_orchestrator.services.control_plane import (
     ControlPlaneStore,
     DEFAULT_HOUSEHOLD_WORKSPACE_ID,
     DEMO_HOUSEHOLD_WORKSPACE_ID,
+)
+from buildwealth_orchestrator.services.hosted_identity import (
+    HostedIdentityExchangeError,
+    HostedIdentityProfile,
+    OIDCAuthProvider,
 )
 from buildwealth_orchestrator.services.workspace_services import WorkspaceServiceFactory
 from buildwealth_orchestrator.services.workspace_settings import (
@@ -24,6 +33,11 @@ def _install_temp_workspace_spine(monkeypatch, tmp_path: Path) -> None:
     test_settings = copy(main.settings)
     test_settings.auth_mode = "dev"
     test_settings.auth_dev_email = "owner@example.test"
+    test_settings.auth_oidc_client_id = ""
+    test_settings.auth_oidc_client_secret = ""
+    test_settings.auth_oidc_issuer_url = ""
+    test_settings.auth_oidc_logout_url = ""
+    test_settings.auth_post_logout_redirect_uri = ""
     test_settings.control_db_path = tmp_path / "control" / "control.db"
     test_settings.workspace_root_dir = tmp_path / "workspaces"
     test_settings.secret_key_path = tmp_path / "control" / "local_secret.key"
@@ -64,6 +78,15 @@ def test_workspace_settings_store_encrypts_api_key(tmp_path: Path) -> None:
     assert "sk-test-secret-1234" not in (tmp_path / "workspace_secrets.json").read_text(
         encoding="utf-8"
     )
+
+    new_key = b"1" * 32
+    rotation = secret_store.rotate_key(new_key)
+    rotated_store = WorkspaceSecretStore(tmp_path / "workspace_secrets.json", new_key)
+    stale_store = WorkspaceSecretStore(tmp_path / "workspace_secrets.json", key)
+
+    assert rotation["secret_count"] == 1
+    assert rotated_store.get_secret("llm_api_key") == "sk-test-secret-1234"
+    assert stale_store.get_secret("llm_api_key") == ""
 
 
 def test_service_status_endpoint_uses_buildwealth_service_language(monkeypatch, tmp_path: Path) -> None:
@@ -350,6 +373,297 @@ def test_account_export_password_change_and_deactivation_controls(monkeypatch, t
     assert deactivate.status_code == 200
     assert deactivate.json()["requires_login"] is True
     assert blocked_login.status_code == 401
+
+
+def test_hosted_oidc_login_creates_buildwealth_session(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "hosted"
+    main.settings.auth_post_login_redirect_path = "/v2"
+
+    class FakeHostedIdentityProvider:
+        provider_name = "Test OIDC"
+
+        def is_configured(self) -> bool:
+            return True
+
+        async def authorization_url(self, *, state: str, nonce: str, code_challenge: str) -> str:
+            assert state
+            assert nonce
+            assert code_challenge
+            return f"https://identity.example.test/authorize?state={state}"
+
+        async def exchange_code_for_profile(
+            self,
+            *,
+            code: str,
+            code_verifier: str,
+            expected_nonce: str,
+        ) -> HostedIdentityProfile:
+            assert code == "auth-code-123"
+            assert code_verifier
+            assert expected_nonce
+            return HostedIdentityProfile(
+                provider=self.provider_name,
+                subject="provider-user-123",
+                email="hosted@example.test",
+                display_name="Hosted User",
+                email_verified=True,
+                mfa_enabled=True,
+            )
+
+    monkeypatch.setattr(main, "hosted_identity_provider", FakeHostedIdentityProvider())
+
+    with TestClient(main.app, base_url="https://testserver") as client:
+        config = client.get("/api/auth/config")
+        local_login = client.post(
+            "/api/auth/login",
+            json={"email": "hosted@example.test", "password": "password-123"},
+        )
+        start = client.get(
+            "/api/auth/hosted/login?redirect_to=/v2/settings",
+            follow_redirects=False,
+        )
+        state = parse_qs(urlparse(start.headers["location"]).query)["state"][0]
+        callback = client.get(
+            f"/api/auth/hosted/callback?code=auth-code-123&state={state}",
+            follow_redirects=False,
+        )
+        session = client.get("/api/auth/session")
+
+    assert config.status_code == 200
+    assert config.json()["hosted_auth_enabled"] is True
+    assert config.json()["local_auth_enabled"] is False
+    assert config.json()["id_token_validation_required"] is True
+    assert local_login.status_code == 403
+    assert start.status_code == 307
+    assert callback.status_code == 307
+    assert callback.headers["location"] == "/v2/settings"
+    assert "secure" in callback.headers["set-cookie"].lower()
+    assert session.status_code == 200
+    payload = session.json()
+    assert payload["auth_mode"] == "hosted"
+    assert payload["user"]["email"] == "hosted@example.test"
+    assert payload["user"]["auth_provider"] == "Test OIDC"
+    assert payload["user"]["mfa_enabled"] is True
+    assert payload["workspace"]["name"] == "My Household"
+    assert payload["csrf_token"]
+
+
+def test_hosted_oidc_callback_errors_redirect_to_v2_auth_gate(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "hosted"
+
+    class FakeHostedIdentityProvider:
+        provider_name = "Test OIDC"
+
+        def is_configured(self) -> bool:
+            return True
+
+    monkeypatch.setattr(main, "hosted_identity_provider", FakeHostedIdentityProvider())
+
+    with TestClient(main.app, base_url="https://testserver") as client:
+        missing_flow = client.get(
+            "/api/auth/hosted/callback?code=auth-code-123&state=unknown",
+            follow_redirects=False,
+        )
+        rejected = client.get(
+            "/api/auth/hosted/callback?error=access_denied&error_description=Nope",
+            follow_redirects=False,
+        )
+
+    assert missing_flow.status_code == 307
+    assert missing_flow.headers["location"].startswith("/v2?auth_error=")
+    assert "Hosted+login+request+is+not+active" in missing_flow.headers["location"]
+    assert rejected.status_code == 307
+    assert "Hosted+identity+rejected+sign-in" in rejected.headers["location"]
+
+
+def test_hosted_logout_uses_provider_logout_url(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "hosted"
+    main.settings.auth_oidc_client_id = "buildwealth-client"
+    main.settings.auth_oidc_logout_url = "https://identity.example.test/logout"
+    main.settings.auth_post_logout_redirect_uri = "https://app.example.test/v2"
+
+    class FakeHostedIdentityProvider:
+        provider_name = "Test OIDC"
+
+        def is_configured(self) -> bool:
+            return True
+
+    monkeypatch.setattr(main, "hosted_identity_provider", FakeHostedIdentityProvider())
+
+    with TestClient(main.app, base_url="https://testserver") as client:
+        config = client.get("/api/auth/config")
+        logout = client.get("/api/auth/hosted/logout", follow_redirects=False)
+
+    assert config.status_code == 200
+    assert config.json()["hosted_logout_url"] == "/api/auth/hosted/logout"
+    assert logout.status_code == 307
+    assert logout.headers["location"].startswith("https://identity.example.test/logout?")
+    assert "post_logout_redirect_uri=https%3A%2F%2Fapp.example.test%2Fv2" in logout.headers["location"]
+    assert "client_id=buildwealth-client" in logout.headers["location"]
+
+
+def test_oidc_id_token_validation_checks_issuer_audience_nonce_and_subject() -> None:
+    settings = SimpleNamespace(
+        auth_oidc_provider_name="Test OIDC",
+        auth_oidc_client_id="buildwealth-client",
+        auth_oidc_client_secret="super-secret",
+        auth_oidc_allowed_id_token_algs="HS256",
+        auth_oidc_require_id_token=True,
+        auth_oidc_require_mfa=False,
+        auth_oidc_issuer_url="https://issuer.example.test",
+        auth_oidc_jwks_uri="",
+    )
+    provider = OIDCAuthProvider(settings)
+    now = datetime.now(timezone.utc)
+    token = jwt.encode(
+        {
+            "iss": "https://issuer.example.test",
+            "sub": "provider-user-123",
+            "aud": "buildwealth-client",
+            "iat": now,
+            "exp": now + timedelta(minutes=5),
+            "nonce": "nonce-123",
+            "email": "hosted@example.test",
+            "email_verified": True,
+        },
+        "super-secret",
+        algorithm="HS256",
+    )
+
+    claims = provider._validate_id_token(
+        token,
+        access_token="access-token-123",
+        metadata={"issuer": "https://issuer.example.test"},
+        expected_nonce="nonce-123",
+    )
+    profile = provider._profile_from_claims(
+        {"sub": "provider-user-123", "name": "Hosted User"},
+        id_token_claims=claims,
+        expected_nonce="nonce-123",
+    )
+
+    assert claims["sub"] == "provider-user-123"
+    assert profile.email == "hosted@example.test"
+    assert profile.display_name == "Hosted User"
+
+    try:
+        provider._validate_id_token(
+            token,
+            access_token="access-token-123",
+            metadata={"issuer": "https://issuer.example.test"},
+            expected_nonce="other-nonce",
+        )
+    except HostedIdentityExchangeError as exc:
+        assert "nonce" in str(exc)
+    else:
+        raise AssertionError("Expected nonce mismatch to fail")
+
+    try:
+        provider._profile_from_claims(
+            {"sub": "different-user"},
+            id_token_claims=claims,
+            expected_nonce="nonce-123",
+        )
+    except HostedIdentityExchangeError as exc:
+        assert "subject" in str(exc)
+    else:
+        raise AssertionError("Expected userinfo subject mismatch to fail")
+
+
+def test_workspace_secret_key_rotation_preview_and_apply(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "local"
+
+    with TestClient(main.app) as client:
+        register = client.post(
+            "/api/auth/register",
+            json={
+                "email": "rotation-owner@example.test",
+                "password": "correct-horse-1",
+                "display_name": "Rotation Owner",
+            },
+        )
+        csrf = _csrf_headers(client)
+        save_secret = client.put(
+            "/api/settings",
+            headers=csrf,
+            json={"llm_provider": "openai", "llm_api_key": "sk-rotation-secret-1234"},
+        )
+        preview = client.get("/api/security/secrets/rotation/preview")
+        rejected = client.post(
+            "/api/security/secrets/rotation/apply",
+            headers=csrf,
+            json={"confirm": "nope"},
+        )
+        old_key_text = main.settings.secret_key_path.read_text(encoding="utf-8")
+        applied = client.post(
+            "/api/security/secrets/rotation/apply",
+            headers=csrf,
+            json={"confirm": "rotate"},
+        )
+        new_key_text = main.settings.secret_key_path.read_text(encoding="utf-8")
+        loaded = client.get("/api/settings")
+
+    assert register.status_code == 200
+    assert save_secret.status_code == 200
+    assert preview.status_code == 200
+    assert preview.json()["workspace_count"] == 4
+    assert preview.json()["secret_count"] == 1
+    assert rejected.status_code == 400
+    assert applied.status_code == 200
+    assert applied.json()["rotated"] is True
+    assert applied.json()["secret_count"] == 1
+    assert old_key_text != new_key_text
+    assert loaded.status_code == 200
+    assert loaded.json()["llm_api_key"] == "••••••••1234"
+    assert loaded.json()["llm_api_key_configured"] is True
+
+
+def test_workspace_secret_key_rotation_rolls_back_on_key_write_failure(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "local"
+
+    def fail_key_write(_secret_key_path: Path, _secret_key: bytes) -> None:
+        raise OSError("simulated key write failure")
+
+    with TestClient(main.app, raise_server_exceptions=False) as client:
+        register = client.post(
+            "/api/auth/register",
+            json={
+                "email": "rollback-owner@example.test",
+                "password": "correct-horse-1",
+                "display_name": "Rollback Owner",
+            },
+        )
+        csrf = _csrf_headers(client)
+        save_secret = client.put(
+            "/api/settings",
+            headers=csrf,
+            json={"llm_provider": "openai", "llm_api_key": "sk-rollback-secret-5678"},
+        )
+        old_key_text = main.settings.secret_key_path.read_text(encoding="utf-8")
+        monkeypatch.setattr(workspace_services_module, "write_local_secret_key", fail_key_write)
+        failed_rotation = client.post(
+            "/api/security/secrets/rotation/apply",
+            headers=csrf,
+            json={"confirm": "rotate"},
+        )
+        restored_key_text = main.settings.secret_key_path.read_text(encoding="utf-8")
+        loaded = client.get("/api/settings")
+
+    assert register.status_code == 200
+    assert save_secret.status_code == 200
+    assert failed_rotation.status_code == 500
+    assert restored_key_text == old_key_text
+    assert loaded.status_code == 200
+    assert loaded.json()["llm_api_key"] == "••••••••5678"
+    assert loaded.json()["llm_api_key_configured"] is True
 
 
 def test_registered_users_get_separate_portfolio_transactions(monkeypatch, tmp_path: Path) -> None:

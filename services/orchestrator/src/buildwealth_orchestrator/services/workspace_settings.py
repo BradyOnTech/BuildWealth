@@ -41,6 +41,17 @@ def load_or_create_local_secret_key(secret_key_path: Path) -> bytes:
     return key
 
 
+def write_local_secret_key(secret_key_path: Path, secret_key: bytes) -> None:
+    secret_key_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = secret_key_path.with_suffix(secret_key_path.suffix + ".tmp")
+    temp_path.write_text(base64.urlsafe_b64encode(secret_key).decode("ascii"), encoding="utf-8")
+    try:
+        os.chmod(temp_path, 0o600)
+    except OSError:
+        pass
+    temp_path.replace(secret_key_path)
+
+
 def _is_masked(value: str | None) -> bool:
     return bool(value and value.startswith(MASKED_PLACEHOLDER))
 
@@ -92,16 +103,30 @@ class WorkspaceSecretStore:
         return b"".join(blocks)[:length]
 
     def _encrypt(self, value: str) -> dict[str, str]:
+        return self._encrypt_with_key(value, self.secret_key)
+
+    @classmethod
+    def _encrypt_with_key(cls, value: str, secret_key: bytes) -> dict[str, str]:
         nonce = secrets.token_bytes(16)
         plaintext = value.encode("utf-8")
-        keystream = self._keystream(nonce, len(plaintext))
+        keystream = cls._keystream_for(secret_key, nonce, len(plaintext))
         ciphertext = bytes(a ^ b for a, b in zip(plaintext, keystream, strict=True))
-        tag = hmac.new(self.secret_key, nonce + ciphertext, hashlib.sha256).digest()
+        tag = hmac.new(secret_key, nonce + ciphertext, hashlib.sha256).digest()
         return {
             "nonce": base64.urlsafe_b64encode(nonce).decode("ascii"),
             "ciphertext": base64.urlsafe_b64encode(ciphertext).decode("ascii"),
             "tag": base64.urlsafe_b64encode(tag).decode("ascii"),
         }
+
+    @staticmethod
+    def _keystream_for(secret_key: bytes, nonce: bytes, length: int) -> bytes:
+        blocks: list[bytes] = []
+        counter = 0
+        while sum(len(block) for block in blocks) < length:
+            counter_bytes = counter.to_bytes(4, "big")
+            blocks.append(hmac.new(secret_key, nonce + counter_bytes, hashlib.sha256).digest())
+            counter += 1
+        return b"".join(blocks)[:length]
 
     def _decrypt(self, payload: dict[str, Any]) -> str | None:
         try:
@@ -141,6 +166,34 @@ class WorkspaceSecretStore:
         payload = self._read()
         payload.get("secrets", {}).pop(key, None)
         self._write(payload)
+
+    def export_plaintext_secrets(self) -> dict[str, str]:
+        payload = self._read()
+        exported: dict[str, str] = {}
+        for key, entry in payload.get("secrets", {}).items():
+            if not isinstance(entry, dict):
+                continue
+            value = self._decrypt(entry)
+            if value is None:
+                raise ValueError(f"secret could not be decrypted: {key}")
+            exported[str(key)] = value
+        return exported
+
+    def rotate_key(self, new_secret_key: bytes) -> dict[str, Any]:
+        exported = self.export_plaintext_secrets()
+        payload = self._read()
+        rotated = {"schema_version": payload.get("schema_version", 1), "secrets": {}}
+        now = utc_now_iso()
+        for key, value in exported.items():
+            rotated["secrets"][key] = {
+                **self._encrypt_with_key(value, new_secret_key),
+                "last4": value[-VISIBLE_SUFFIX_LEN:] if len(value) >= VISIBLE_SUFFIX_LEN else value,
+                "updated_at": now,
+                "rotated_at": now,
+            }
+        self._write(rotated)
+        self.secret_key = new_secret_key
+        return {"rotated": True, "secret_count": len(exported), "rotated_at": now}
 
     def secret_metadata(self, key: str) -> dict[str, Any]:
         payload = self._read()
