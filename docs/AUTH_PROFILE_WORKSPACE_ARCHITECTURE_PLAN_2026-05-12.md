@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-12
 
-**Status:** Approved direction; implementation planning document.
+**Status:** Approved direction; implementation reference with completed local-auth slices noted.
 
 ## Purpose
 
@@ -36,14 +36,14 @@ The user should experience this as:
 
 ## Current State
 
-BuildWealth currently runs as a local-first single-user app.
+BuildWealth started this plan as a local-first single-user app. The first implementation slices now add local auth, household workspaces, encrypted workspace secrets, demo workspace reset, account export, password change, and local account deactivation. The notes below remain useful because they describe the legacy data shapes that conversion work had to move away from.
 
 Important current code shapes:
 
 - `services/orchestrator/src/buildwealth_orchestrator/main.py` creates process-global stores at import time.
 - `services/orchestrator/src/buildwealth_orchestrator/settings.py` defines global data paths under `data/`.
-- `UserSettingsStore` persists AI/provider settings to `data/settings/user_settings.json`.
-- API keys are masked in API responses but stored locally in plaintext.
+- `WorkspaceSettingsStore` now persists AI/provider settings per active workspace.
+- API keys are masked in API responses and stored in the workspace secret store instead of plaintext workspace settings.
 - `FinancialProfileStore` reads and writes `data/profile/financial_profile.json`.
 - `PortfolioStore` reads and writes `data/portfolio/*.json`.
 - `PlanWorkspace` reads and writes `data/plans`.
@@ -52,6 +52,27 @@ Important current code shapes:
 - `ContextIntelligenceService` uses a local context index under `data/storage`.
 
 This is acceptable for local single-user development, but it is not enough for real users, hosted access, shared households, demo workspaces, or advisor-ready permissions.
+
+## Completed Local Controls
+
+Implemented after this plan was approved:
+
+- local register/login/logout/session routes
+- internal `RequestContext` and workspace-aware service resolution
+- owner membership permissions for workspace-scoped routes
+- encrypted workspace provider secrets
+- demo household reset and profile readiness surfaces
+- Settings > Account & data card for account export, password change, and local account deactivation
+- audit events for sensitive account and workspace actions
+- regression tests for service naming, removed compatibility routes, workspace isolation, encrypted key storage, and account controls
+
+Still intentionally future-facing:
+
+- hosted identity provider integration
+- password reset by email or hosted provider
+- optional MFA/passkeys
+- formal key-rotation drill for hosted deployments
+- privacy/legal review before real hosted users
 
 ## Target Model
 
@@ -445,11 +466,11 @@ Implementation note:
 
 ## Settings and Secrets
 
-### Current Problem
+### Original Problem
 
 `UserSettingsStore` stores API keys in plaintext. API responses mask sensitive values, but the raw key remains in the local settings JSON.
 
-This should be replaced before real hosted users enter API keys.
+This has been replaced for workspace-scoped Settings flows by `WorkspaceSettingsStore` plus workspace secrets. The legacy store can still exist as a fallback for old local-only code paths, but new product routes should not save provider keys there.
 
 ### Target Model
 
@@ -1123,7 +1144,7 @@ Before public launch:
 - financial guidance/advice language review
 - hosted backup restore drills
 - key rotation plan
-- account deletion/export controls
+- account deletion/export controls for hosted-provider accounts
 
 ## Implementation Notes by File Area
 
@@ -1160,16 +1181,16 @@ Temporary bridge:
 
 ### `services/user_settings.py`
 
-Change:
+Completed direction:
 
 - keep provider defaults and masking helpers if useful
-- stop storing raw keys in plaintext settings
-- split into non-secret workspace settings and encrypted workspace secrets
+- route new Settings flows through non-secret workspace settings and encrypted workspace secrets
+- keep the legacy store only for compatibility until old local-only code paths are retired
 
 Potential new modules:
 
-- `services/workspace_settings.py`
-- `services/workspace_secrets.py`
+- `services/workspace_settings.py` implemented
+- workspace secrets implemented in `services/workspace_settings.py`
 
 ### `services/financial_profile.py`
 

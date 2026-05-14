@@ -4,13 +4,13 @@
 2026-05-08
 
 ## Status
-Active planning document for replacing classic v1 workflows with the v2 Product Surface.
+Completed migration record for replacing classic v1 workflows with the v2 Product Surface.
 
-This document follows [ADR 0004](./adr/0004-v2-is-the-only-future-product-surface.md): v2 is the only future BuildWealth product surface, and classic/v1 is temporary migration scaffolding.
+This document follows [ADR 0004](./adr/0004-v2-is-the-only-future-product-surface.md): v2 is the BuildWealth product surface. The public classic/v1 fallback route has been removed after replacement coverage and product-owner approval.
 
 ## Why This Exists
 
-The v2 UI is the right product direction, but the classic v1 UI still carries important user-facing capability. We should phase away from v1 deliberately, not by hiding or dropping features before v2 has a clear replacement path.
+The v2 UI is the product direction. This record documents the deliberate migration away from the earlier UI without dropping user jobs before v2 had a clear replacement path.
 
 The migration rule should be Workflow Replacement:
 
@@ -475,7 +475,7 @@ The v2 Portfolio page should not become a single giant form. Use tabs or sub-sec
 
 ## Migration Gates
 
-Do not remove or hide classic UI links until these gates pass.
+These gates were used to decide when classic UI links could be removed.
 
 ### Gate 1: Discoverability
 
@@ -505,16 +505,16 @@ Do not remove or hide classic UI links until these gates pass.
 - telemetry or audit logs show classic routes are no longer needed for routine tasks
 - v2 browser tests cover each migrated user job
 - docs point users to v2 routes
-- classic UI is still accessible only as an advanced fallback
+- no public classic UI fallback is required for routine tasks
 - product owner explicitly confirms v2 covers the needed workflow outcomes
 
 ### Gate 5: Classic Removal
 
-Only after Gate 4 and explicit product-owner approval:
+Completed after Gate 4 and explicit product-owner approval:
 
 - remove classic from primary footer
-- keep a hidden emergency route for one release cycle
-- then remove classic assets if desired
+- remove the public classic route
+- keep historical assets only as inert source history unless a later cleanup deletes them
 
 ## Implementation Slices
 
@@ -665,11 +665,11 @@ Purpose: safely retire v1 as a primary surface.
 
 Tasks:
 
-- Add route-level notices in classic UI that link to v2 replacements.
-- Add docs that map old routes to new routes.
-- Add browser tests for every v2 replacement route.
-- Keep `/` classic route available during transition.
-- Once parity gates pass, make `/v2` the default UI route and keep classic as `/classic`.
+- [x] Add route-level notices in classic UI that link to v2 replacements.
+- [x] Add docs that map old routes to new routes.
+- [x] Add browser tests for every v2 replacement route.
+- [x] Make `/` route to v2.
+- [x] Remove the public classic fallback route after parity gates passed.
 
 Acceptance:
 

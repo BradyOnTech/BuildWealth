@@ -79,7 +79,7 @@ A capability is complete when:
    - [x] Remove unused adapters and exporters after native route tests prove coverage.
    - [x] Rename tests/classes that now describe native behavior.
    - [x] Keep only intentional provenance/legal references.
-   - [ ] Remove compatibility contract files after final v1/classic removal approval.
+   - [x] Remove compatibility route aliases after final v1/classic removal approval.
 
 **Deletion Gates**
 
@@ -91,4 +91,4 @@ Do not remove a legacy runtime component until:
 - Copilot has a native tool/API path for the same job
 - a scan confirms no user-facing old-app copy remains
 
-Final classic/v1 removal remains a product-owner decision.
+Final classic/v1 removal was approved and the explicit fallback route plus deprecated service-status alias have been removed.

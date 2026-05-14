@@ -20,7 +20,7 @@ Notes:
 **BuildWealth is becoming a standalone single-user financial command center with targeted engine reuse.** Python remains the control plane and system of record, while selected high-complexity calculations are delegated to local TypeScript retired calculation modules adapted from Portfolio Analysis (portfolio analytics) and Simulations (planning/tax simulation).
 
 License note:
-- This historical plan was originally written under an MIT-license assumption for upstream reuse.
+- This historical plan was originally written under an earlier source-license assumption for upstream reuse.
 - Upstream licenses should now be treated as version-specific and verified at implementation time.
 - See active guidance in:
   - `docs/ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md` (Licensing and Compliance Gate)
@@ -551,7 +551,7 @@ These decisions refine the build plan based on the current repository and upstre
   - marked `FEATURE_GAPS.md` as a historical snapshot with pointers to active execution documents
 - Updated local ops defaults to match standalone mode:
   - `infra/docker-compose.yml` now starts orchestrator by default and moves full portfolio and planning modules app stack under `legacy-upstream` profile
-  - `Makefile` updated with `up` (orchestrator default), `up-legacy`, and `engine-status` targets
+  - `Makefile` updated with `up` (orchestrator default) and service-readiness targets
   - `scripts/init-env.sh` post-init guidance updated for standalone-first startup
 
 ### 2026-04-14 (Completed - Phase 3.5 Copilot Tool Updates)

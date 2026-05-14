@@ -278,7 +278,7 @@ Result:
 
 ### 4. Normalize Engine Metadata Vocabulary
 Problem:
-- fallback and engine-status concepts are consistent in spirit, but still scattered
+- fallback and service-status concepts are now centralized around BuildWealth service readiness
 
 Fix:
 1. Define canonical enums/constants for:

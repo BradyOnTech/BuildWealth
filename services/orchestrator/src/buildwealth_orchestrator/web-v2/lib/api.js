@@ -125,6 +125,14 @@ function patchJson(url, body = {}) {
   });
 }
 
+function deleteJson(url, body = {}) {
+  return fetchJson(url, {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
 function recommendationsUrl({ status = '', planId = '', sort = 'ranked', limit = 200 } = {}) {
   const params = new URLSearchParams();
   params.set('limit', String(limit));
@@ -201,6 +209,15 @@ export const api = {
     if (result?.csrf_token) setCsrfToken(result.csrf_token);
     if (!activeWorkspaceId && result?.workspace?.id) setActiveWorkspaceId(result.workspace.id);
     return result;
+  },
+  changeAccountPassword: (body = {}) => postJson('/api/account/password', body),
+  exportAccount: () => fetchJson('/api/account/export'),
+  deactivateAccount: async (body = {}) => {
+    try { return await deleteJson('/api/account', body); }
+    finally {
+      setCsrfToken('');
+      setActiveWorkspaceId('');
+    }
   },
   workspaces: () => fetchJson('/api/workspaces'),
   currentWorkspace: () => fetchJson('/api/workspaces/current'),

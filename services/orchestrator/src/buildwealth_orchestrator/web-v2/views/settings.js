@@ -56,6 +56,13 @@ const ui = {
   demoResetting:    false,
   demoResetResult:  null,
   demoResetError:   null,
+  accountExporting: false,
+  accountExportResult: null,
+  accountError: null,
+  passwordChanging: false,
+  passwordResult: null,
+  deactivateResult: null,
+  deactivateBusy: false,
 };
 
 const EMBEDDING_PROVIDERS = [
@@ -116,6 +123,13 @@ async function load() {
     ui.demoResetting = false;
     ui.demoResetResult = null;
     ui.demoResetError = null;
+    ui.accountExporting = false;
+    ui.accountExportResult = null;
+    ui.accountError = null;
+    ui.passwordChanging = false;
+    ui.passwordResult = null;
+    ui.deactivateResult = null;
+    ui.deactivateBusy = false;
     ui.loaded = true;
   } catch (err) {
     ui.loadError = err.message || 'Could not load settings.';
@@ -148,6 +162,7 @@ function render() {
     ${raw(providerCard())}
     ${raw(contextCard())}
     ${raw(demoWorkspaceCard(ui))}
+    ${raw(accountCard(ui))}
     ${raw(handoffCard())}
   `);
 }
@@ -542,6 +557,71 @@ export function demoWorkspaceCard(model) {
   `;
 }
 
+export function accountCard(model) {
+  const exported = model.accountExportResult || null;
+  const exportedWorkspaces = Number(exported?.workspaces?.length || 0);
+  const exportedAudit = Number(exported?.audit_events?.length || 0);
+  return html`
+    <section class="settings-card">
+      <header class="settings-card-head">
+        <h2 class="settings-card-title">Account &amp; data</h2>
+        <p class="settings-card-lede">
+          Export your local account record, change your password, or deactivate access to this account.
+        </p>
+      </header>
+
+      <div class="settings-actions">
+        <button class="btn btn-quiet" id="account-export" ${model.accountExporting ? 'disabled' : ''}>
+          ${model.accountExporting ? 'Preparing…' : 'Prepare account export'}
+        </button>
+      </div>
+
+      ${exported ? html`
+        <div class="settings-test-result ok">
+          <p class="settings-test-headline">Account export ready.</p>
+          <p>${exportedWorkspaces} workspace${exportedWorkspaces === 1 ? '' : 's'} · ${exportedAudit} recent audit event${exportedAudit === 1 ? '' : 's'} · exported ${esc(fmtRelative(exported.exported_at) || 'now')}</p>
+        </div>
+      ` : ''}
+
+      <form id="account-password-form" class="settings-grid">
+        <label class="settings-field">
+          <span class="settings-label">Current password</span>
+          <input class="settings-input" name="current_password" type="password" autocomplete="current-password" />
+        </label>
+        <label class="settings-field">
+          <span class="settings-label">New password</span>
+          <input class="settings-input" name="new_password" type="password" autocomplete="new-password" minlength="8" />
+        </label>
+        <div class="settings-actions span-2">
+          <button class="btn btn-primary" type="submit" ${model.passwordChanging ? 'disabled' : ''}>
+            ${model.passwordChanging ? 'Changing…' : 'Change password'}
+          </button>
+        </div>
+      </form>
+
+      <form id="account-deactivate-form" class="settings-grid">
+        <label class="settings-field">
+          <span class="settings-label">Password</span>
+          <input class="settings-input" name="current_password" type="password" autocomplete="current-password" />
+        </label>
+        <label class="settings-field">
+          <span class="settings-label">Type deactivate</span>
+          <input class="settings-input" name="confirm" type="text" autocomplete="off" />
+        </label>
+        <div class="settings-actions span-2">
+          <button class="btn btn-danger" type="submit" ${model.deactivateBusy ? 'disabled' : ''}>
+            ${model.deactivateBusy ? 'Deactivating…' : 'Deactivate account'}
+          </button>
+        </div>
+      </form>
+
+      ${model.passwordResult ? html`<p class="success-banner">${esc(model.passwordResult.message || 'Password changed.')}</p>` : ''}
+      ${model.deactivateResult ? html`<p class="success-banner">${esc(model.deactivateResult.message || 'Account deactivated.')}</p>` : ''}
+      ${model.accountError ? html`<p class="inline-warning">${esc(model.accountError)}</p>` : ''}
+    </section>
+  `;
+}
+
 /* ─────────────  Events  ───────────── */
 
 // init() runs once per route; #settings-page is a fresh node each time, so the
@@ -612,6 +692,9 @@ function attachHandlers() {
   delegate(root, 'click',  '#context-test', (e) => { e.preventDefault(); testEmbedding(); });
   delegate(root, 'click',  '#demo-reset', (e) => { e.preventDefault(); resetDemoWorkspace(); });
   delegate(root, 'click',  '#demo-switch', (e) => { e.preventDefault(); switchToDemoWorkspace(); });
+  delegate(root, 'click',  '#account-export', (e) => { e.preventDefault(); prepareAccountExport(); });
+  delegate(root, 'submit', '#account-password-form', (e, form) => { e.preventDefault(); changeAccountPassword(form); });
+  delegate(root, 'submit', '#account-deactivate-form', (e, form) => { e.preventDefault(); deactivateAccount(form); });
 }
 
 /* ─────────────  Actions  ───────────── */
@@ -741,6 +824,64 @@ async function switchToDemoWorkspace() {
     location.reload();
   } catch (err) {
     ui.demoResetError = err?.message || 'Could not switch to demo workspace.';
+    render();
+  }
+}
+
+async function prepareAccountExport() {
+  if (ui.accountExporting) return;
+  ui.accountExporting = true;
+  ui.accountError = null;
+  ui.accountExportResult = null;
+  render();
+  try {
+    ui.accountExportResult = await api.exportAccount();
+  } catch (err) {
+    ui.accountError = err?.message || 'Could not prepare account export.';
+  } finally {
+    ui.accountExporting = false;
+    render();
+  }
+}
+
+async function changeAccountPassword(form) {
+  if (ui.passwordChanging) return;
+  const data = new FormData(form);
+  ui.passwordChanging = true;
+  ui.accountError = null;
+  ui.passwordResult = null;
+  render();
+  try {
+    ui.passwordResult = await api.changeAccountPassword({
+      current_password: data.get('current_password') || '',
+      new_password: data.get('new_password') || '',
+    });
+    form.reset();
+  } catch (err) {
+    ui.accountError = err?.message || 'Could not change password.';
+  } finally {
+    ui.passwordChanging = false;
+    render();
+  }
+}
+
+async function deactivateAccount(form) {
+  if (ui.deactivateBusy) return;
+  const data = new FormData(form);
+  ui.deactivateBusy = true;
+  ui.accountError = null;
+  ui.deactivateResult = null;
+  render();
+  try {
+    ui.deactivateResult = await api.deactivateAccount({
+      current_password: data.get('current_password') || '',
+      confirm: data.get('confirm') || '',
+    });
+    form.reset();
+  } catch (err) {
+    ui.accountError = err?.message || 'Could not deactivate account.';
+  } finally {
+    ui.deactivateBusy = false;
     render();
   }
 }

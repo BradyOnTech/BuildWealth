@@ -2,7 +2,7 @@ SHELL := /bin/zsh
 
 COMPOSE := docker compose -f infra/docker-compose.yml
 
-.PHONY: init-env up down restart ps logs sync sync-status engine-status telemetry-runtime backup backup-list backup-restore protection-status protection-apply reliability-smoke-storage import-csv test
+.PHONY: init-env up down restart ps logs sync sync-status service-status telemetry-runtime backup backup-list backup-restore protection-status protection-apply reliability-smoke-storage import-csv test
 
 init-env:
 	./scripts/init-env.sh
@@ -28,8 +28,8 @@ sync:
 sync-status:
 	curl -s http://localhost:8090/api/sync/status | jq
 
-engine-status:
-	curl -s http://localhost:8090/api/engines/status | jq
+service-status:
+	curl -s http://localhost:8090/api/services/status | jq
 
 telemetry-runtime:
 	curl -s http://localhost:8090/api/telemetry/runtime | jq

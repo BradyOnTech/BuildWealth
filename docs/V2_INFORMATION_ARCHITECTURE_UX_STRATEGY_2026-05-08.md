@@ -675,8 +675,8 @@ This is the smallest set that still covers the app's core promise.
 ### Phase 4: Deprecate Classic
 
 - Set `/v2` as the default product UI.
-- Keep `/classic` as emergency fallback.
-- Remove primary classic links after parity gates pass.
+- Keep v2 as the only public product route.
+- Do not reintroduce primary classic links after parity gates have passed.
 
 ## Final Recommendation
 

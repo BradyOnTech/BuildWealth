@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import secrets
 import sqlite3
 import uuid
@@ -101,6 +102,8 @@ class ControlPlaneStore:
             "backup.read",
             "backup.write",
             "export.create",
+            "account.export",
+            "account.delete",
             "demo.reset",
         }
     )
@@ -430,12 +433,149 @@ class ControlPlaneStore:
             connection.execute("UPDATE users SET last_login_at = ? WHERE id = ?", (now, row["id"]))
         return self.get_user(str(row["id"]))
 
+    def verify_local_password(self, *, user_id: str, password: str) -> None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT password_hash, auth_provider, status FROM users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
+        if row is None or str(row["status"]) != "active":
+            raise AuthenticationError("User not found")
+        if str(row["auth_provider"] or "local") != "local":
+            raise AuthenticationError("Password confirmation is unavailable for this account")
+        if not _verify_password(password, str(row["password_hash"] or "")):
+            raise AuthenticationError("Password confirmation failed")
+
+    def change_local_password(
+        self,
+        *,
+        user_id: str,
+        current_password: str,
+        new_password: str,
+    ) -> None:
+        self.verify_local_password(user_id=user_id, password=current_password)
+        if len(str(new_password or "")) < 8:
+            raise ValueError("new password must be at least 8 characters")
+        now = utc_now_iso()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE users
+                SET password_hash = ?, updated_at = ?
+                WHERE id = ? AND status = 'active'
+                """,
+                (_hash_password(new_password), now, user_id),
+            )
+            connection.execute(
+                "UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+                (now, user_id),
+            )
+            self._record_audit_event_with_connection(
+                connection,
+                action="account.password_changed",
+                actor_user_id=user_id,
+                target_type="user",
+                target_id=user_id,
+                metadata_json="{}",
+            )
+
     def get_user(self, user_id: str) -> dict[str, Any]:
         with self._connect() as connection:
             row = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         if row is None:
             raise AuthenticationError("User not found")
         return dict(row)
+
+    def export_account_bundle(self, user_id: str) -> dict[str, Any]:
+        with self._connect() as connection:
+            user_row = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+            if user_row is None:
+                raise AuthenticationError("User not found")
+            memberships = connection.execute(
+                """
+                SELECT m.id, m.organization_id, m.role, m.status, m.created_at, m.updated_at,
+                       o.name AS organization_name, o.org_type
+                FROM memberships m
+                JOIN organizations o ON o.id = m.organization_id
+                WHERE m.user_id = ?
+                ORDER BY m.created_at
+                """,
+                (user_id,),
+            ).fetchall()
+            workspaces = connection.execute(
+                """
+                SELECT w.id, w.organization_id, w.name, w.workspace_type, w.storage_mode,
+                       w.storage_path, w.encryption_status, w.status, w.created_at, w.updated_at
+                FROM workspaces w
+                JOIN memberships m ON m.organization_id = w.organization_id
+                WHERE m.user_id = ?
+                ORDER BY w.created_at
+                """,
+                (user_id,),
+            ).fetchall()
+            sessions = connection.execute(
+                """
+                SELECT id, active_workspace_id, created_at, last_seen_at, expires_at, revoked_at
+                FROM sessions
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+                """,
+                (user_id,),
+            ).fetchall()
+            audit_events = connection.execute(
+                """
+                SELECT action, organization_id, workspace_id, target_type, target_id,
+                       outcome, metadata_json, created_at
+                FROM audit_events
+                WHERE actor_user_id = ?
+                ORDER BY created_at DESC
+                LIMIT 250
+                """,
+                (user_id,),
+            ).fetchall()
+        user = dict(user_row)
+        user.pop("password_hash", None)
+        user.pop("auth_provider_subject", None)
+        return {
+            "schema_version": 1,
+            "exported_at": utc_now_iso(),
+            "user": user,
+            "memberships": [dict(row) for row in memberships],
+            "workspaces": [dict(row) for row in workspaces],
+            "sessions": [dict(row) for row in sessions],
+            "audit_events": [
+                {
+                    **{key: value for key, value in dict(row).items() if key != "metadata_json"},
+                    "metadata": _json_object(row["metadata_json"]),
+                }
+                for row in audit_events
+            ],
+        }
+
+    def deactivate_user_account(self, *, user_id: str, current_password: str) -> None:
+        self.verify_local_password(user_id=user_id, password=current_password)
+        now = utc_now_iso()
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE users SET status = 'deleted', updated_at = ? WHERE id = ?",
+                (now, user_id),
+            )
+            connection.execute(
+                "UPDATE memberships SET status = 'inactive', updated_at = ? WHERE user_id = ?",
+                (now, user_id),
+            )
+            connection.execute(
+                "UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+                (now, user_id),
+            )
+            self._record_audit_event_with_connection(
+                connection,
+                action="account.deactivated",
+                actor_user_id=user_id,
+                target_type="user",
+                target_id=user_id,
+                metadata_json="{}",
+            )
 
     def create_session(
         self,
@@ -681,27 +821,52 @@ class ControlPlaneStore:
         metadata_json: str = "{}",
     ) -> None:
         with self._connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO audit_events (
-                    id, actor_user_id, organization_id, workspace_id, action,
-                    target_type, target_id, outcome, metadata_json, created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    f"evt_{uuid.uuid4().hex[:16]}",
-                    actor_user_id,
-                    organization_id,
-                    workspace_id,
-                    action,
-                    target_type,
-                    target_id,
-                    outcome,
-                    metadata_json,
-                    utc_now_iso(),
-                ),
+            self._record_audit_event_with_connection(
+                connection,
+                action=action,
+                actor_user_id=actor_user_id,
+                organization_id=organization_id,
+                workspace_id=workspace_id,
+                target_type=target_type,
+                target_id=target_id,
+                outcome=outcome,
+                metadata_json=metadata_json,
             )
+
+    @staticmethod
+    def _record_audit_event_with_connection(
+        connection: sqlite3.Connection,
+        *,
+        action: str,
+        actor_user_id: str | None = None,
+        organization_id: str | None = None,
+        workspace_id: str | None = None,
+        target_type: str | None = None,
+        target_id: str | None = None,
+        outcome: str = "ok",
+        metadata_json: str = "{}",
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO audit_events (
+                id, actor_user_id, organization_id, workspace_id, action,
+                target_type, target_id, outcome, metadata_json, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f"evt_{uuid.uuid4().hex[:16]}",
+                actor_user_id,
+                organization_id,
+                workspace_id,
+                action,
+                target_type,
+                target_id,
+                outcome,
+                metadata_json,
+                utc_now_iso(),
+            ),
+        )
 
     @staticmethod
     def _workspace_from_row(row: sqlite3.Row) -> WorkspaceRecord:
@@ -713,3 +878,11 @@ class ControlPlaneStore:
             storage_path=Path(str(row["storage_path"])),
             status=str(row["status"]),
         )
+
+
+def _json_object(value: Any) -> dict[str, Any]:
+    try:
+        parsed = json.loads(str(value or "{}"))
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}

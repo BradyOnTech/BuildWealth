@@ -60,19 +60,20 @@ provider settings in one step:
 LLM_API_KEY=... ./scripts/seed-demo-data.py
 ```
 
-The key is stored only in the local `data/settings/user_settings.json` file.
+The key is stored in the active workspace's encrypted local secret store and is only returned
+to the UI as a masked value.
 
-## Engine Status
+## Service Status
 
-BuildWealth runs standalone by default. Engine status is available for native runtime checks:
+BuildWealth runs standalone by default. Service status is available for native runtime checks:
 ```bash
-curl -s http://localhost:8090/api/engines/status | jq
+curl -s http://localhost:8090/api/services/status | jq
 ```
 
 ## Key API Endpoints
 
 - `GET /health`
-- `GET /api/engines/status`
+- `GET /api/services/status`
 - `GET /api/telemetry/runtime`
 - `GET /api/storage/durable/status`
 - `POST /api/storage/durable/migrate`

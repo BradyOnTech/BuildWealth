@@ -1,4 +1,4 @@
-"""Single-user settings store for API keys and service configuration."""
+"""Legacy single-user settings store for local-only compatibility paths."""
 
 from __future__ import annotations
 
@@ -67,7 +67,8 @@ def _is_masked(value: str | None) -> bool:
 class UserSettingsStore:
     """Read/write user settings from a local JSON file.
 
-    Keys are stored in plaintext (single-user, local-only app).
+    Keys are stored in plaintext for legacy single-user paths only. Workspace
+    Settings flows use WorkspaceSettingsStore and encrypted workspace secrets.
     API responses mask sensitive values.
     """
 

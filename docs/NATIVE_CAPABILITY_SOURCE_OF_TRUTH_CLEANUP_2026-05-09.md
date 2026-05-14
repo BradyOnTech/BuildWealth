@@ -22,7 +22,7 @@ Functional completion and deletion gates are tracked in [Native Completion and D
 - v2 is the only future product surface: [ADR 0004](./adr/0004-v2-is-the-only-future-product-surface.md)
 - Outcome Parity is the standard, not feature or screen cloning.
 - Workflow Replacement is the v2 migration standard.
-- Classic/v1 removal requires the Classic Removal Gate and explicit product-owner approval.
+- Classic/v1 removal was approved during implementation; the public fallback route and deprecated service-status alias are removed.
 
 **Canonical BuildWealth Terms**
 
@@ -65,22 +65,22 @@ Avoid these as product/module/runtime terms:
 - [x] Update standalone operations away from optional retired calculation module mode.
 - [x] Update migration/compatibility away from active retired calculation module contract expansion.
 - [x] Update v1-to-v2 migration plan to Workflow Replacement and owner-approved removal.
-- [ ] Update implementation plans as each BuildWealth-retired calculation module starts.
-- [ ] Fix stale license/provenance wording that says MIT where the source projects are AGPL-3.0.
+- [x] Update implementation plans as each BuildWealth-native replacement slice starts.
+- [x] Fix stale license/provenance wording that overstates earlier source-license assumptions.
 
 **Runtime Reference Cleanup**
 
 Remove or rename references after native workflows cover the related user job:
 
 - [x] Remove external app links from v2 Data & Tools.
-- [ ] Remove external app links from classic/v1 where possible before full v1 deletion.
-- [ ] Remove default env variables for retired retired calculation module paths.
-- [ ] Remove or quarantine legacy upstream Docker profiles.
-- [ ] Remove unused clients/exporters once route tests prove they are not active.
-- [ ] Rename user-facing engine labels to BuildWealth-native terms.
-- [ ] Remove retired calculation module names from Copilot tool text and recommendation copy.
-- [ ] Remove retired calculation module names from test names when the tests describe native behavior.
-- [ ] Keep provenance in attribution/legal history only where required.
+- [x] Remove external app links from classic/v1 where possible before full v1 deletion.
+- [x] Remove default env variables for retired calculation module paths.
+- [x] Remove or quarantine legacy upstream Docker profiles.
+- [x] Remove unused clients/exporters once route tests prove they are not active.
+- [x] Rename user-facing engine labels to BuildWealth-native terms.
+- [x] Remove retired calculation module names from Copilot tool text and recommendation copy.
+- [x] Remove retired calculation module names from test names when the tests describe native behavior.
+- [x] Keep provenance in attribution/legal history only where required.
 
 **Implementation Cleanup Rule**
 

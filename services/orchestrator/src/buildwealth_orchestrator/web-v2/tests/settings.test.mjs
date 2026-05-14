@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { toDraft, buildPayloadFor, parseTestError, demoWorkspaceCard } from '../views/settings.js';
+import { toDraft, buildPayloadFor, parseTestError, demoWorkspaceCard, accountCard } from '../views/settings.js';
 
 test('toDraft: reads provider settings with sensible defaults', () => {
   const draft = toDraft({
@@ -103,4 +103,22 @@ test('demoWorkspaceCard: labels active demo workspace clearly', () => {
   }));
   assert.match(markup, /Active now/);
   assert.match(markup, /disabled/);
+});
+
+test('accountCard: exposes export password and deactivation controls', () => {
+  const markup = String(accountCard({
+    accountExporting: false,
+    passwordChanging: false,
+    deactivateBusy: false,
+    accountExportResult: {
+      exported_at: '2026-05-14T12:00:00Z',
+      workspaces: [{ id: 'ws_1' }],
+      audit_events: [{ action: 'auth.login' }],
+    },
+  }));
+  assert.match(markup, /Account &amp; data/);
+  assert.match(markup, /Prepare account export/);
+  assert.match(markup, /Change password/);
+  assert.match(markup, /Deactivate account/);
+  assert.match(markup, /Account export ready/);
 });

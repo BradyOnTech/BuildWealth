@@ -71,12 +71,13 @@ def test_service_status_endpoint_uses_buildwealth_service_language(monkeypatch, 
 
     with TestClient(main.app) as client:
         service_response = client.get("/api/services/status")
-        compatibility_response = client.get("/api/engines/status")
+        removed_compatibility_response = client.get("/api/engines/status")
+        removed_classic_response = client.get("/classic")
 
     assert service_response.status_code == 200
-    assert compatibility_response.status_code == 200
+    assert removed_compatibility_response.status_code == 404
+    assert removed_classic_response.status_code == 404
     service_payload = service_response.json()
-    compatibility_payload = compatibility_response.json()
     assert [item["name"] for item in service_payload["services"]] == [
         "portfolio_benchmark",
         "portfolio_attribution",
@@ -84,8 +85,6 @@ def test_service_status_endpoint_uses_buildwealth_service_language(monkeypatch, 
     ]
     assert "engines" not in service_payload
     assert all(not key.startswith("contract_") for key in service_payload["services"][0])
-    assert "engines" in compatibility_payload
-    assert compatibility_payload["engines"] == compatibility_payload["services"]
 
 
 def test_profile_route_uses_active_workspace_context(monkeypatch, tmp_path: Path) -> None:
@@ -278,6 +277,79 @@ def test_registered_users_get_separate_masked_api_key_settings(monkeypatch, tmp_
         assert raw_secret not in alice_secrets
         assert raw_secret not in bob_settings
         assert raw_secret not in bob_secrets
+
+
+def test_account_export_password_change_and_deactivation_controls(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "local"
+
+    with TestClient(main.app) as client:
+        register = client.post(
+            "/api/auth/register",
+            json={
+                "email": "account-owner@example.test",
+                "password": "correct-horse-1",
+                "display_name": "Account Owner",
+            },
+        )
+        csrf = _csrf_headers(client)
+        export_response = client.get("/api/account/export")
+        missing_csrf = client.post(
+            "/api/account/password",
+            json={
+                "current_password": "correct-horse-1",
+                "new_password": "correct-horse-2",
+            },
+        )
+        password_change = client.post(
+            "/api/account/password",
+            headers=csrf,
+            json={
+                "current_password": "correct-horse-1",
+                "new_password": "correct-horse-2",
+            },
+        )
+        old_login = client.post(
+            "/api/auth/login",
+            json={"email": "account-owner@example.test", "password": "correct-horse-1"},
+        )
+        new_login = client.post(
+            "/api/auth/login",
+            json={"email": "account-owner@example.test", "password": "correct-horse-2"},
+        )
+        deactivate_csrf = _csrf_headers(client)
+        bad_deactivate = client.request(
+            "DELETE",
+            "/api/account",
+            headers=deactivate_csrf,
+            json={"current_password": "correct-horse-2", "confirm": "delete"},
+        )
+        deactivate = client.request(
+            "DELETE",
+            "/api/account",
+            headers=deactivate_csrf,
+            json={"current_password": "correct-horse-2", "confirm": "deactivate"},
+        )
+        blocked_login = client.post(
+            "/api/auth/login",
+            json={"email": "account-owner@example.test", "password": "correct-horse-2"},
+        )
+
+    assert register.status_code == 200
+    assert export_response.status_code == 200
+    exported = export_response.json()
+    assert exported["user"]["email"] == "account-owner@example.test"
+    assert "password_hash" not in exported["user"]
+    assert len(exported["workspaces"]) == 2
+    assert missing_csrf.status_code == 403
+    assert password_change.status_code == 200
+    assert password_change.json()["requires_login"] is True
+    assert old_login.status_code == 401
+    assert new_login.status_code == 200
+    assert bad_deactivate.status_code == 400
+    assert deactivate.status_code == 200
+    assert deactivate.json()["requires_login"] is True
+    assert blocked_login.status_code == 401
 
 
 def test_registered_users_get_separate_portfolio_transactions(monkeypatch, tmp_path: Path) -> None:

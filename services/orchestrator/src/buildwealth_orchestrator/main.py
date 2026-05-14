@@ -16597,6 +16597,64 @@ def auth_session(
     return payload
 
 
+@app.post("/api/account/password")
+def change_account_password(
+    request: Request,
+    response: Response,
+    payload: dict[str, Any],
+    context: RequestContext = Depends(get_request_context),
+) -> dict[str, Any]:
+    require_csrf(request)
+    try:
+        control_plane_store.change_local_password(
+            user_id=context.user_id,
+            current_password=str(payload.get("current_password") or ""),
+            new_password=str(payload.get("new_password") or ""),
+        )
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    response.delete_cookie(settings.auth_session_cookie_name, path="/")
+    return {
+        "ok": True,
+        "requires_login": True,
+        "message": "Password changed. Sign in again on this device.",
+    }
+
+
+@app.get("/api/account/export")
+def export_account_bundle(context: RequestContext = Depends(get_request_context)) -> dict[str, Any]:
+    require_permission(context, "account.export")
+    return control_plane_store.export_account_bundle(context.user_id)
+
+
+@app.delete("/api/account")
+def deactivate_account(
+    request: Request,
+    response: Response,
+    payload: dict[str, Any],
+    context: RequestContext = Depends(get_request_context),
+) -> dict[str, Any]:
+    require_csrf(request)
+    require_permission(context, "account.delete")
+    if str(payload.get("confirm") or "").strip().lower() != "deactivate":
+        raise HTTPException(status_code=400, detail='Type "deactivate" to confirm account deactivation')
+    try:
+        control_plane_store.deactivate_user_account(
+            user_id=context.user_id,
+            current_password=str(payload.get("current_password") or ""),
+        )
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    response.delete_cookie(settings.auth_session_cookie_name, path="/")
+    return {
+        "ok": True,
+        "requires_login": True,
+        "message": "Account deactivated. Local workspace files were left in place for manual recovery.",
+    }
+
+
 @app.get("/api/workspaces")
 def list_workspaces(context: RequestContext = Depends(get_request_context)) -> dict[str, Any]:
     workspaces = control_plane_store.list_workspaces_for_user(context.user_id)
@@ -17034,32 +17092,12 @@ async def on_shutdown() -> None:
 
 @app.get("/", include_in_schema=False)
 def ui_root() -> Response:
-    """Phase 4 default: send root visitors to v2 if it's available, with a
-    fallback to classic if v2 is missing. /classic remains the explicit path
-    to the legacy surface."""
+    """Send root visitors to the canonical v2 product surface."""
     v2_index = web_v2_dir / "index.html"
     if v2_index.exists():
         return RedirectResponse(url="/v2", status_code=307)
-    classic_index = web_dir / "index.html"
-    if classic_index.exists():
-        return FileResponse(classic_index)
     return HTMLResponse(
-        "<h1>BuildWealth UI not found</h1><p>Expected index.html in orchestrator web or web-v2 directory.</p>",
-        status_code=500,
-    )
-
-
-@app.get("/classic", include_in_schema=False)
-@app.get("/classic/", include_in_schema=False)
-def ui_root_classic() -> Response:
-    """Explicit fallback for the legacy v1 UI. Bookmarks this if you prefer
-    the classic surface; we keep it indefinitely as the safety net while
-    v2 absorbs the remaining utility pages."""
-    index_file = web_dir / "index.html"
-    if index_file.exists():
-        return FileResponse(index_file)
-    return HTMLResponse(
-        "<h1>BuildWealth classic UI not found</h1><p>Expected index.html in orchestrator web directory.</p>",
+        "<h1>BuildWealth v2 UI not found</h1><p>Expected index.html in orchestrator web-v2 directory.</p>",
         status_code=500,
     )
 
@@ -17085,14 +17123,6 @@ def health() -> dict[str, str]:
 @app.get("/api/services/status", response_model=ServiceStatusResponse)
 async def get_service_status(refresh: bool = False) -> ServiceStatusResponse:
     return build_native_service_status()
-
-
-@app.get("/api/engines/status")
-async def get_deprecated_engine_status(refresh: bool = False) -> dict[str, Any]:
-    status = build_native_service_status()
-    payload = status.model_dump(mode="json")
-    payload["engines"] = payload.get("services", [])
-    return payload
 
 
 def _fallback_context_freshness_payload() -> dict[str, Any]:

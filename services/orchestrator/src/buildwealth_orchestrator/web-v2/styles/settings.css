@@ -272,6 +272,16 @@
   margin-top: var(--s-2);
 }
 
+.success-banner {
+  margin: var(--s-3) 0 0;
+  padding: var(--s-3) var(--s-4);
+  border-left: 2px solid var(--forest);
+  background: var(--paper-bright);
+  color: var(--ink-soft);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+  font-size: var(--t-body-sm);
+}
+
 /* ───────────  Test result block  ─────────── */
 
 .settings-test-block {

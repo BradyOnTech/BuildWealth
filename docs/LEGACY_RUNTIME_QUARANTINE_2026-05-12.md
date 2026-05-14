@@ -16,12 +16,14 @@ BuildWealth no longer exposes the old upstream applications as a default or opti
 - Default orchestrator env examples no longer include retired app paths or app-named runtime variables.
 - The unused plan-export bridge was deleted.
 
-**Still Intentionally Retained**
+**Final Cleanup**
 
-- Contract-adapter modules remain for now as disabled compatibility scaffolding while final v1/classic removal waits for product-owner approval.
+- Deprecated compatibility route aliases were removed after product-owner approval.
+- `/api/services/status` is the canonical service readiness endpoint.
+- Root navigation points to v2 only; no public `/classic` route is retained.
 - Historical provenance comments may reference source projects where required for attribution.
 - Historical docs may mention prior decisions; current source of truth is the native completion plan plus ADR 0003 and ADR 0004.
 
 **Removal Gate**
 
-Delete the remaining compatibility contracts only after native route tests, v2 workflow tests, and Copilot tool tests cover the same behavior without needing fallback adapters.
+Do not reintroduce compatibility route aliases or old runtime profiles unless a new product-owner decision explicitly reopens the migration window.

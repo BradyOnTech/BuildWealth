@@ -66,7 +66,7 @@ Providers enrich or operate BuildWealth-owned workflows. They do not own user-fa
 
 Earlier architecture used portfolio and planning modules retired calculation module language for targeted reuse. That direction is superseded by ADR 0003. External app references are historical scaffolding and should be removed from runtime paths, UI labels, module names, recommendation text, Copilot answers, and default operations.
 
-Classic/v1 UI remains temporary migration scaffolding. It should be removed only after the Classic Removal Gate passes and the product owner explicitly approves removal.
+Classic/v1 route scaffolding has been removed after product-owner approval. New user workflows must land on the v2 product surface.
 
 See:
 
