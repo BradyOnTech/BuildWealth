@@ -55,6 +55,8 @@ const ui = {
   activeWorkspaceId:null,
   session:          null,
   authConfig:       null,
+  hostedReadiness:  null,
+  hostedReadinessError: null,
   demoResetting:    false,
   demoResetResult:  null,
   demoResetError:   null,
@@ -65,6 +67,8 @@ const ui = {
   passwordResult: null,
   deactivateResult: null,
   deactivateBusy: false,
+  hostedCloseResult: null,
+  hostedCloseBusy: false,
 };
 
 const EMBEDDING_PROVIDERS = [
@@ -111,6 +115,9 @@ async function load() {
       api.authSession().catch(() => null),
       api.authConfig().catch(() => null),
     ]);
+    const hostedReadiness = authConfig?.hosted_auth_enabled
+      ? await api.hostedAuthReadiness().catch((err) => ({ error: err.message || 'Could not load hosted readiness.' }))
+      : null;
     ui.loadedSettings = settings;
     ui.draft = toDraft(settings);
     ui.apiKeyDirty = false;
@@ -126,6 +133,8 @@ async function load() {
     ui.activeWorkspaceId = workspaces?.active_workspace_id || null;
     ui.session = session;
     ui.authConfig = authConfig;
+    ui.hostedReadiness = hostedReadiness?.error ? null : hostedReadiness;
+    ui.hostedReadinessError = hostedReadiness?.error || null;
     ui.demoResetting = false;
     ui.demoResetResult = null;
     ui.demoResetError = null;
@@ -643,12 +652,74 @@ export function accountCard(model) {
             `)}
           </div>
         ` : ''}
+        ${raw(hostedReadinessPanel(model.hostedReadiness, model.hostedReadinessError))}
+        <form id="account-hosted-close-form" class="settings-grid">
+          <label class="settings-field span-2">
+            <span class="settings-label">Type close buildwealth access</span>
+            <input class="settings-input" name="confirm" type="text" autocomplete="off" />
+          </label>
+          <div class="settings-actions span-2">
+            <button class="btn btn-danger" type="submit" ${model.hostedCloseBusy ? 'disabled' : ''}>
+              ${model.hostedCloseBusy ? 'Closing…' : 'Close BuildWealth access'}
+            </button>
+          </div>
+        </form>
       `}
 
       ${model.passwordResult ? html`<p class="success-banner">${esc(model.passwordResult.message || 'Password changed.')}</p>` : ''}
       ${model.deactivateResult ? html`<p class="success-banner">${esc(model.deactivateResult.message || 'Account deactivated.')}</p>` : ''}
+      ${model.hostedCloseResult ? html`<p class="success-banner">${esc(model.hostedCloseResult.message || 'BuildWealth access closed.')}</p>` : ''}
       ${model.accountError ? html`<p class="inline-warning">${esc(model.accountError)}</p>` : ''}
     </section>
+  `;
+}
+
+export function hostedReadinessPanel(readiness, error = '') {
+  if (error) {
+    return html`
+      <div class="settings-test-block fail">
+        <p class="settings-test-headline">Hosted sign-in readiness could not be loaded.</p>
+        <p class="settings-test-detail">${esc(error)}</p>
+      </div>
+    `;
+  }
+  if (!readiness) return '';
+  const checks = Array.isArray(readiness.checks) ? readiness.checks : [];
+  const visible = checks.filter(check => check.status !== 'ready').slice(0, 5);
+  const readyCount = checks.filter(check => check.status === 'ready').length;
+  const blockedCount = checks.filter(check => check.status === 'blocked').length;
+  const warningCount = checks.filter(check => check.status === 'warning').length;
+  const status = readiness.status || 'warning';
+  const tone = status === 'ready' ? 'ok' : (status === 'blocked' ? 'fail' : '');
+  const headline = status === 'ready'
+    ? `${readiness.provider || 'Hosted sign-in'} is ready for browser testing.`
+    : (status === 'blocked'
+      ? `${readiness.provider || 'Hosted sign-in'} has setup blockers.`
+      : `${readiness.provider || 'Hosted sign-in'} has review items.`);
+  return html`
+    <div class="settings-test-block ${tone}">
+      <p class="settings-test-headline">${headline}</p>
+      <p class="settings-test-detail">
+        ${readyCount} ready · ${warningCount} warning${warningCount === 1 ? '' : 's'} · ${blockedCount} blocker${blockedCount === 1 ? '' : 's'}
+      </p>
+      ${visible.length ? html`
+        <div class="settings-readiness-list">
+          ${raw(visible.map(readinessCheckRow).join(''))}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function readinessCheckRow(check) {
+  const status = check?.status || 'warning';
+  const tone = status === 'blocked' ? 'rejected' : (status === 'ready' ? 'applied' : 'proposed');
+  return html`
+    <div class="settings-context-row settings-field span-2">
+      <span class="status-pill ${tone}"><span class="dot"></span>${esc(status)}</span>
+      <span class="settings-context-label">${esc(check?.summary || check?.id || 'Readiness check')}</span>
+      <span class="settings-context-value">${esc(truncate(check?.detail || '', 88))}</span>
+    </div>
   `;
 }
 
@@ -725,6 +796,7 @@ function attachHandlers() {
   delegate(root, 'click',  '#account-export', (e) => { e.preventDefault(); prepareAccountExport(); });
   delegate(root, 'submit', '#account-password-form', (e, form) => { e.preventDefault(); changeAccountPassword(form); });
   delegate(root, 'submit', '#account-deactivate-form', (e, form) => { e.preventDefault(); deactivateAccount(form); });
+  delegate(root, 'submit', '#account-hosted-close-form', (e, form) => { e.preventDefault(); closeHostedAccount(form); });
 }
 
 /* ─────────────  Actions  ───────────── */
@@ -912,6 +984,26 @@ async function deactivateAccount(form) {
     ui.accountError = err?.message || 'Could not deactivate account.';
   } finally {
     ui.deactivateBusy = false;
+    render();
+  }
+}
+
+async function closeHostedAccount(form) {
+  if (ui.hostedCloseBusy) return;
+  const data = new FormData(form);
+  ui.hostedCloseBusy = true;
+  ui.accountError = null;
+  ui.hostedCloseResult = null;
+  render();
+  try {
+    ui.hostedCloseResult = await api.closeHostedAccount({
+      confirm: data.get('confirm') || '',
+    });
+    form.reset();
+  } catch (err) {
+    ui.accountError = err?.message || 'Could not close BuildWealth access.';
+  } finally {
+    ui.hostedCloseBusy = false;
     render();
   }
 }

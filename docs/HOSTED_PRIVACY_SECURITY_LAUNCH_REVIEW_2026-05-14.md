@@ -35,6 +35,7 @@ The hosted product should only make promises the implementation can support:
 - Hosted password reset, MFA, and passkeys are managed by the configured identity provider.
 - Account exports exclude password hashes and hosted provider subjects.
 - Local account deactivation revokes sessions and disables memberships.
+- Hosted account closure revokes BuildWealth sessions, disables memberships, and retains workspace files, backups, and audit records under the current retention policy.
 - Secret-key rotation can be previewed and applied without exposing raw secrets.
 
 ## Required Launch Decisions
@@ -83,11 +84,14 @@ Before hosted launch, users should be able to:
 
 Future hosted account deletion should define whether financial workspace files are immediately deleted, soft-deleted, or retained for a defined recovery window.
 
+The current hosted closure policy is defined in [Hosted Account Closure and Retention Policy](./HOSTED_ACCOUNT_CLOSURE_RETENTION_POLICY_2026-05-14.md).
+
 ## Security Review Checklist
 
 Before inviting real hosted users:
 
 - [ ] Hosted identity provider configured in production tenant.
+- [ ] Hosted provider readiness endpoint reports no blocked checks.
 - [ ] Local password login disabled in hosted mode.
 - [ ] Hosted callback tested with PKCE and one-time state.
 - [ ] Hosted ID token validation tested for issuer, audience, expiry, nonce, allowed signing algorithm, and UserInfo subject matching.
@@ -100,7 +104,7 @@ Before inviting real hosted users:
 - [ ] Secret-key rotation preview/apply tested against hosted-like data.
 - [ ] Backup restore is scoped to the active workspace.
 - [ ] Account export excludes password hashes and hosted provider subjects.
-- [ ] Audit events exist for hosted identity linking, account deactivation, demo reset, and secret-key rotation.
+- [ ] Audit events exist for hosted identity linking, hosted access closure, account deactivation, demo reset, and secret-key rotation.
 - [ ] Production logs do not include raw provider keys, portfolio imports, Copilot prompts, or full financial profile payloads.
 
 ## AI and Financial Guidance Review
@@ -133,7 +137,7 @@ A privacy policy should accurately describe:
 ## Open Items
 
 - Create and validate the first Auth0 hosted tenant.
-- Define account deletion semantics for hosted users.
+- Define destructive workspace-data deletion semantics for hosted users.
 - Decide whether hosted MFA is optional or required.
 - Replace the dependency-light local secret encryption primitive with KMS or a standard audited encryption library before production scale.
 - Draft public privacy policy, terms, financial guidance disclaimer, and AI-use disclosure.

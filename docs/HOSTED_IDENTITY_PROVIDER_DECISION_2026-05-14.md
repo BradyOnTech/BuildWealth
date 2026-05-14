@@ -161,8 +161,12 @@ Settings should continue to show:
 - provider-managed MFA
 - provider-managed passkeys
 - provider-managed account/security page when available
+- BuildWealth account export
+- BuildWealth access closure
 
 If a provider URL is not available, the UI should say the control is managed by the identity provider instead of showing a dead link.
+
+BuildWealth access closure is not the same as provider-side account deletion. The first implementation disables the BuildWealth user, inactivates memberships, revokes sessions, records an audit event, and retains workspace files/backups/audit records under the hosted closure policy.
 
 ### Logout
 
@@ -197,6 +201,7 @@ Before inviting real hosted users:
 - [ ] Passkeys enabled if included in beta.
 - [ ] `AUTH_MODE=hosted` tested locally through a tunnel or staging host.
 - [ ] `/api/auth/config` reports hosted auth enabled, local auth disabled, ID-token validation required.
+- [ ] `/api/auth/hosted/readiness` reports no blocked checks.
 - [ ] Hosted sign-in succeeds with a verified email.
 - [ ] Hosted sign-in fails cleanly for callback replay or invalid state.
 - [ ] Hosted sign-in fails cleanly for unverified email.
@@ -218,6 +223,28 @@ Keep this boundary:
 - BuildWealth does not store provider refresh tokens in the first hosted beta.
 
 If deeper provider account management is needed later, add it as an optional provider-management service behind BuildWealth-owned routes, not directly in v2 views.
+
+## Readiness Check
+
+BuildWealth exposes a safe, no-secret provider readiness endpoint:
+
+```bash
+curl -s https://<buildwealth-host>/api/auth/hosted/readiness | jq
+```
+
+Use it after setting Auth0 env vars and before running a real login. The response reports:
+
+- hosted auth mode
+- required client settings, without returning the secret
+- discovery/explicit endpoint availability
+- authorization, token, UserInfo, and JWKS readiness
+- required scopes
+- ID-token signing algorithm policy
+- logout configuration
+- MFA policy
+- provider-managed account-security links
+
+The first private beta can proceed to browser testing when readiness has no `blocked` checks. Warnings are acceptable only when they match an explicit decision, such as MFA encouraged but not required.
 
 ## Sources
 

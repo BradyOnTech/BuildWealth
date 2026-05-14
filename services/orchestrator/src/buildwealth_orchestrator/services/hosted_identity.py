@@ -70,6 +70,206 @@ class OIDCAuthProvider:
             ]
         )
 
+    async def readiness_report(self) -> dict[str, Any]:
+        """Return a safe, no-secret hosted-identity configuration report."""
+        checks: list[dict[str, Any]] = []
+
+        def add_check(
+            check_id: str,
+            status: str,
+            summary: str,
+            detail: str = "",
+            metadata: dict[str, Any] | None = None,
+        ) -> None:
+            checks.append(
+                {
+                    "id": check_id,
+                    "status": status,
+                    "summary": summary,
+                    "detail": detail,
+                    "metadata": metadata or {},
+                }
+            )
+
+        auth_mode = str(getattr(self.settings, "auth_mode", "dev") or "dev").strip().lower()
+        if auth_mode in {"hosted", "oidc"}:
+            add_check("auth_mode", "ready", "Hosted auth mode is enabled.")
+        else:
+            add_check(
+                "auth_mode",
+                "warning",
+                "Hosted auth mode is not active.",
+                "Set AUTH_MODE=hosted or AUTH_MODE=oidc when validating the provider tenant.",
+            )
+
+        self._required_setting_check(
+            checks=checks,
+            check_id="client_id",
+            value=getattr(self.settings, "auth_oidc_client_id", ""),
+            summary="OIDC client ID is configured.",
+            missing="AUTH_OIDC_CLIENT_ID is required for hosted sign-in.",
+        )
+        self._required_setting_check(
+            checks=checks,
+            check_id="client_secret",
+            value=getattr(self.settings, "auth_oidc_client_secret", ""),
+            summary="OIDC client secret is configured.",
+            missing="AUTH_OIDC_CLIENT_SECRET is required for the confidential web app flow.",
+        )
+        self._required_setting_check(
+            checks=checks,
+            check_id="redirect_uri",
+            value=getattr(self.settings, "auth_oidc_redirect_uri", ""),
+            summary="Hosted callback redirect URI is configured.",
+            missing="AUTH_OIDC_REDIRECT_URI must match the provider callback URL exactly.",
+        )
+
+        has_discovery = self._has_discovery()
+        has_explicit = self._has_explicit_endpoints()
+        if has_discovery:
+            add_check("issuer", "ready", "OIDC issuer URL is configured.")
+        elif has_explicit:
+            add_check(
+                "issuer",
+                "warning",
+                "Using explicit OIDC endpoints without issuer discovery.",
+                "ID-token validation still needs AUTH_OIDC_ISSUER_URL.",
+            )
+        else:
+            add_check(
+                "issuer",
+                "blocked",
+                "No OIDC discovery or explicit endpoint configuration found.",
+                "Set AUTH_OIDC_ISSUER_URL or all explicit OIDC endpoint overrides.",
+            )
+
+        metadata: dict[str, Any] = {}
+        if has_discovery or has_explicit:
+            try:
+                metadata = await self._metadata()
+            except (HostedIdentityConfigError, httpx.HTTPError) as exc:
+                add_check(
+                    "metadata",
+                    "blocked",
+                    "OIDC metadata could not be loaded.",
+                    str(exc),
+                )
+            else:
+                add_check(
+                    "metadata",
+                    "ready",
+                    "OIDC metadata is available.",
+                    metadata={
+                        "issuer": bool(metadata.get("issuer")),
+                        "authorization_endpoint": bool(metadata.get("authorization_endpoint")),
+                        "token_endpoint": bool(metadata.get("token_endpoint")),
+                        "userinfo_endpoint": bool(metadata.get("userinfo_endpoint")),
+                        "jwks_uri": bool(metadata.get("jwks_uri")),
+                    },
+                )
+                self._metadata_endpoint_checks(checks, metadata)
+
+        scopes = {item.strip() for item in self._scopes().split() if item.strip()}
+        missing_scopes = [scope for scope in ("openid", "email", "profile") if scope not in scopes]
+        if missing_scopes:
+            add_check(
+                "scopes",
+                "blocked",
+                "OIDC scopes are missing required claims.",
+                f"Add: {', '.join(missing_scopes)}.",
+            )
+        else:
+            add_check("scopes", "ready", "OIDC scopes include openid, email, and profile.")
+
+        allowed_algs = self._allowed_id_token_algs()
+        if any(algorithm.lower() == "none" for algorithm in allowed_algs):
+            add_check("id_token_algs", "blocked", "Unsigned ID tokens are not allowed.")
+        elif any(algorithm.startswith("HS") for algorithm in allowed_algs):
+            add_check(
+                "id_token_algs",
+                "warning",
+                "Symmetric ID-token algorithms are enabled.",
+                "Prefer RS256 or ES256 for hosted providers such as Auth0.",
+                {"allowed_algs": allowed_algs},
+            )
+        else:
+            add_check(
+                "id_token_algs",
+                "ready",
+                "ID-token signing algorithms are restricted to asymmetric algorithms.",
+                metadata={"allowed_algs": allowed_algs},
+            )
+
+        require_id_token = bool(getattr(self.settings, "auth_oidc_require_id_token", True))
+        if require_id_token:
+            jwks_source = str(
+                metadata.get("jwks_uri") or getattr(self.settings, "auth_oidc_jwks_uri", "") or ""
+            ).strip()
+            if not jwks_source:
+                add_check(
+                    "jwks",
+                    "blocked",
+                    "ID-token validation is required but no JWKS URI is available.",
+                    "Use provider discovery or set AUTH_OIDC_JWKS_URI.",
+                )
+            else:
+                add_check("jwks", "ready", "ID-token validation is required and JWKS is configured.")
+        else:
+            add_check(
+                "jwks",
+                "warning",
+                "ID-token validation is optional.",
+                "Keep AUTH_OIDC_REQUIRE_ID_TOKEN=true for hosted beta.",
+            )
+
+        if str(getattr(self.settings, "auth_oidc_logout_url", "") or "").strip():
+            add_check("logout", "ready", "Hosted provider logout URL is configured.")
+        else:
+            add_check(
+                "logout",
+                "warning",
+                "Hosted provider logout URL is not configured.",
+                "BuildWealth can revoke its local session, but the provider session may remain active.",
+            )
+
+        if bool(getattr(self.settings, "auth_oidc_require_mfa", False)):
+            add_check("mfa_policy", "ready", "Hosted sign-in requires MFA claims.")
+        else:
+            add_check(
+                "mfa_policy",
+                "warning",
+                "MFA is encouraged but not required.",
+                "This matches the first private-beta policy; flip AUTH_OIDC_REQUIRE_MFA=true later if needed.",
+            )
+
+        managed_links = [
+            getattr(self.settings, "auth_account_management_url", ""),
+            getattr(self.settings, "auth_password_reset_url", ""),
+            getattr(self.settings, "auth_mfa_enrollment_url", ""),
+            getattr(self.settings, "auth_passkey_enrollment_url", ""),
+        ]
+        if any(str(value or "").strip() for value in managed_links):
+            add_check("managed_links", "ready", "At least one provider-managed account-security link is configured.")
+        else:
+            add_check(
+                "managed_links",
+                "warning",
+                "No provider-managed account-security links are configured.",
+                "This is acceptable until exact tenant-supported URLs are validated.",
+            )
+
+        status = "ready"
+        if any(check["status"] == "blocked" for check in checks):
+            status = "blocked"
+        elif any(check["status"] == "warning" for check in checks):
+            status = "warning"
+        return {
+            "status": status,
+            "provider": self.provider_name,
+            "hosted_auth_enabled": self.is_configured() and auth_mode in {"hosted", "oidc"},
+            "checks": checks,
+        }
+
     async def authorization_url(
         self,
         *,
@@ -206,6 +406,46 @@ class OIDCAuthProvider:
     def _scopes(self) -> str:
         scopes = str(self.settings.auth_oidc_scopes or "").strip()
         return scopes or "openid email profile"
+
+    def _required_setting_check(
+        self,
+        *,
+        checks: list[dict[str, Any]],
+        check_id: str,
+        value: Any,
+        summary: str,
+        missing: str,
+    ) -> None:
+        checks.append(
+            {
+                "id": check_id,
+                "status": "ready" if str(value or "").strip() else "blocked",
+                "summary": summary if str(value or "").strip() else missing,
+                "detail": "",
+                "metadata": {},
+            }
+        )
+
+    def _metadata_endpoint_checks(
+        self,
+        checks: list[dict[str, Any]],
+        metadata: dict[str, Any],
+    ) -> None:
+        required = {
+            "authorization_endpoint": "Authorization endpoint is available.",
+            "token_endpoint": "Token endpoint is available.",
+            "userinfo_endpoint": "UserInfo endpoint is available.",
+        }
+        for key, summary in required.items():
+            checks.append(
+                {
+                    "id": key,
+                    "status": "ready" if str(metadata.get(key) or "").strip() else "blocked",
+                    "summary": summary if str(metadata.get(key) or "").strip() else f"OIDC {key} is missing.",
+                    "detail": "",
+                    "metadata": {},
+                }
+            )
 
     def _validate_id_token(
         self,

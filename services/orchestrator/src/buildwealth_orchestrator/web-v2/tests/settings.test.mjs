@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { toDraft, buildPayloadFor, parseTestError, demoWorkspaceCard, accountCard } from '../views/settings.js';
+import {
+  toDraft,
+  buildPayloadFor,
+  parseTestError,
+  demoWorkspaceCard,
+  accountCard,
+  hostedReadinessPanel,
+} from '../views/settings.js';
 
 test('toDraft: reads provider settings with sensible defaults', () => {
   const draft = toDraft({
@@ -141,6 +148,46 @@ test('accountCard: keeps hosted sign-in security provider managed', () => {
   assert.match(markup, /password reset, multi-factor sign-in, and passkeys/);
   assert.match(markup, /Account security/);
   assert.match(markup, /Set up passkeys/);
+  assert.match(markup, /Type close buildwealth access/);
+  assert.match(markup, /Close BuildWealth access/);
   assert.doesNotMatch(markup, /Change password/);
   assert.doesNotMatch(markup, /Deactivate account/);
+});
+
+test('hostedReadinessPanel: renders blockers in plain language', () => {
+  const markup = String(hostedReadinessPanel({
+    status: 'blocked',
+    provider: 'Auth0',
+    checks: [
+      { id: 'auth_mode', status: 'ready', summary: 'Hosted auth mode is enabled.' },
+      { id: 'client_id', status: 'blocked', summary: 'AUTH_OIDC_CLIENT_ID is required for hosted sign-in.' },
+      { id: 'mfa_policy', status: 'warning', summary: 'MFA is encouraged but not required.' },
+    ],
+  }));
+
+  assert.match(markup, /Auth0 has setup blockers/);
+  assert.match(markup, /1 ready · 1 warning · 1 blocker/);
+  assert.match(markup, /AUTH_OIDC_CLIENT_ID is required/);
+  assert.match(markup, /MFA is encouraged/);
+});
+
+test('accountCard: includes hosted readiness for provider-managed sign-in', () => {
+  const markup = String(accountCard({
+    session: { user: { auth_provider: 'Auth0' } },
+    authConfig: {},
+    hostedReadiness: {
+      status: 'ready',
+      provider: 'Auth0',
+      checks: [
+        { id: 'metadata', status: 'ready', summary: 'OIDC metadata is available.' },
+      ],
+    },
+    accountExporting: false,
+    passwordChanging: false,
+    deactivateBusy: false,
+  }));
+
+  assert.match(markup, /Sign-in security is managed by Auth0/);
+  assert.match(markup, /Auth0 is ready for browser testing/);
+  assert.match(markup, /1 ready · 0 warnings · 0 blockers/);
 });

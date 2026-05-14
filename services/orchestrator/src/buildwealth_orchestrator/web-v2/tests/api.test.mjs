@@ -65,6 +65,9 @@ test('account helpers use protected routes and clear session state after deactiv
   await api.exportAccount();
   await api.changeAccountPassword({ current_password: 'old-password', new_password: 'new-password' });
   await api.deactivateAccount({ current_password: 'new-password', confirm: 'deactivate' });
+  setCsrfToken('csrf-token-456');
+  setActiveWorkspaceId('ws_demo_household');
+  await api.closeHostedAccount({ confirm: 'close buildwealth access' });
   await api.today();
 
   assert.equal(requests[0].url, '/api/account/export');
@@ -79,8 +82,12 @@ test('account helpers use protected routes and clear session state after deactiv
   assert.equal(requests[2].options.method, 'DELETE');
   assert.equal(requests[2].options.headers['x-buildwealth-csrf-token'], 'csrf-token-123');
 
-  assert.equal(requests[3].url, '/api/dashboard/today');
-  assert.equal(requests[3].options.headers['x-buildwealth-workspace-id'], undefined);
+  assert.equal(requests[3].url, '/api/account/hosted/close');
+  assert.equal(requests[3].options.method, 'POST');
+  assert.equal(requests[3].options.headers['x-buildwealth-csrf-token'], 'csrf-token-456');
+
+  assert.equal(requests[4].url, '/api/dashboard/today');
+  assert.equal(requests[4].options.headers['x-buildwealth-workspace-id'], undefined);
 });
 
 test('security helpers call secret key rotation preview and apply routes', async () => {

@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
+import asyncio
 import jwt
 from fastapi.testclient import TestClient
 
@@ -17,6 +18,7 @@ from buildwealth_orchestrator.services.control_plane import (
     DEMO_HOUSEHOLD_WORKSPACE_ID,
 )
 from buildwealth_orchestrator.services.hosted_identity import (
+    HostedIdentityConfigError,
     HostedIdentityExchangeError,
     HostedIdentityProfile,
     OIDCAuthProvider,
@@ -449,6 +451,116 @@ def test_hosted_oidc_login_creates_buildwealth_session(monkeypatch, tmp_path: Pa
     assert payload["csrf_token"]
 
 
+def test_hosted_account_closure_revokes_access_and_retains_workspace_metadata(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "hosted"
+
+    class FakeHostedIdentityProvider:
+        provider_name = "Test OIDC"
+
+        def is_configured(self) -> bool:
+            return True
+
+        async def authorization_url(self, *, state: str, nonce: str, code_challenge: str) -> str:
+            assert state
+            assert nonce
+            assert code_challenge
+            return f"https://identity.example.test/authorize?state={state}"
+
+        async def exchange_code_for_profile(
+            self,
+            *,
+            code: str,
+            code_verifier: str,
+            expected_nonce: str,
+        ) -> HostedIdentityProfile:
+            assert code == "auth-code-123"
+            assert code_verifier
+            assert expected_nonce
+            return HostedIdentityProfile(
+                provider=self.provider_name,
+                subject="provider-user-123",
+                email="hosted-close@example.test",
+                display_name="Hosted Close User",
+                email_verified=True,
+                mfa_enabled=True,
+            )
+
+    monkeypatch.setattr(main, "hosted_identity_provider", FakeHostedIdentityProvider())
+
+    with TestClient(main.app, base_url="https://testserver") as client:
+        start = client.get("/api/auth/hosted/login", follow_redirects=False)
+        state = parse_qs(urlparse(start.headers["location"]).query)["state"][0]
+        callback = client.get(
+            f"/api/auth/hosted/callback?code=auth-code-123&state={state}",
+            follow_redirects=False,
+        )
+        session = client.get("/api/auth/session")
+        csrf = {"x-buildwealth-csrf-token": session.json()["csrf_token"]}
+        user_id = session.json()["user"]["id"]
+        export_before_close = client.get("/api/account/export")
+        missing_csrf = client.post(
+            "/api/account/hosted/close",
+            json={"confirm": "close buildwealth access"},
+        )
+        bad_confirm = client.post(
+            "/api/account/hosted/close",
+            headers=csrf,
+            json={"confirm": "delete"},
+        )
+        close = client.post(
+            "/api/account/hosted/close",
+            headers=csrf,
+            json={"confirm": "close buildwealth access"},
+        )
+        session_after_close = client.get("/api/auth/session")
+
+    with main.control_plane_store._connect() as connection:
+        user_row = connection.execute("SELECT status FROM users WHERE id = ?", (user_id,)).fetchone()
+        membership_rows = connection.execute(
+            "SELECT status FROM memberships WHERE user_id = ?",
+            (user_id,),
+        ).fetchall()
+        workspace_count = connection.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM workspaces w
+            JOIN memberships m ON m.organization_id = w.organization_id
+            WHERE m.user_id = ?
+            """,
+            (user_id,),
+        ).fetchone()["count"]
+        audit_row = connection.execute(
+            """
+            SELECT metadata_json
+            FROM audit_events
+            WHERE actor_user_id = ? AND action = 'account.hosted_access_closed'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
+
+    assert callback.status_code == 307
+    assert session.status_code == 200
+    assert export_before_close.status_code == 200
+    assert len(export_before_close.json()["workspaces"]) == 2
+    assert missing_csrf.status_code == 403
+    assert bad_confirm.status_code == 400
+    assert close.status_code == 200
+    assert close.json()["requires_login"] is True
+    assert "retained" in close.json()["message"]
+    assert session_after_close.status_code == 401
+    assert user_row["status"] == "deleted"
+    assert {row["status"] for row in membership_rows} == {"inactive"}
+    assert workspace_count == 2
+    assert audit_row is not None
+    assert "workspace_files_backups_and_audit_records_retained" in audit_row["metadata_json"]
+
+
 def test_hosted_oidc_callback_errors_redirect_to_v2_auth_gate(monkeypatch, tmp_path: Path) -> None:
     _install_temp_workspace_spine(monkeypatch, tmp_path)
     main.settings.auth_mode = "hosted"
@@ -503,6 +615,95 @@ def test_hosted_logout_uses_provider_logout_url(monkeypatch, tmp_path: Path) -> 
     assert logout.headers["location"].startswith("https://identity.example.test/logout?")
     assert "post_logout_redirect_uri=https%3A%2F%2Fapp.example.test%2Fv2" in logout.headers["location"]
     assert "client_id=buildwealth-client" in logout.headers["location"]
+
+
+def test_hosted_readiness_reports_missing_configuration(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "hosted"
+    monkeypatch.setattr(main, "hosted_identity_provider", OIDCAuthProvider(main.settings))
+
+    with TestClient(main.app, base_url="https://testserver") as client:
+        readiness = client.get("/api/auth/hosted/readiness")
+
+    assert readiness.status_code == 200
+    payload = readiness.json()
+    assert payload["status"] == "blocked"
+    by_id = {check["id"]: check for check in payload["checks"]}
+    assert by_id["auth_mode"]["status"] == "ready"
+    assert by_id["client_id"]["status"] == "blocked"
+    assert by_id["client_secret"]["status"] == "blocked"
+    assert by_id["issuer"]["status"] == "blocked"
+
+
+def test_hosted_readiness_reports_ready_auth0_configuration(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "hosted"
+    main.settings.auth_oidc_provider_name = "Auth0"
+    main.settings.auth_oidc_issuer_url = "https://tenant.us.auth0.com"
+    main.settings.auth_oidc_client_id = "buildwealth-client"
+    main.settings.auth_oidc_client_secret = "client-secret"
+    main.settings.auth_oidc_redirect_uri = "https://app.example.test/api/auth/hosted/callback"
+    main.settings.auth_oidc_allowed_id_token_algs = "RS256"
+    main.settings.auth_oidc_require_id_token = True
+    main.settings.auth_oidc_logout_url = "https://tenant.us.auth0.com/oidc/logout"
+    provider = OIDCAuthProvider(main.settings)
+
+    async def fake_metadata() -> dict[str, str]:
+        return {
+            "issuer": "https://tenant.us.auth0.com",
+            "authorization_endpoint": "https://tenant.us.auth0.com/authorize",
+            "token_endpoint": "https://tenant.us.auth0.com/oauth/token",
+            "userinfo_endpoint": "https://tenant.us.auth0.com/userinfo",
+            "jwks_uri": "https://tenant.us.auth0.com/.well-known/jwks.json",
+        }
+
+    monkeypatch.setattr(provider, "_metadata", fake_metadata)
+    report = asyncio.run(provider.readiness_report())
+    by_id = {check["id"]: check for check in report["checks"]}
+
+    assert report["status"] == "warning"
+    assert report["hosted_auth_enabled"] is True
+    assert by_id["metadata"]["status"] == "ready"
+    assert by_id["authorization_endpoint"]["status"] == "ready"
+    assert by_id["jwks"]["status"] == "ready"
+    assert by_id["id_token_algs"]["metadata"]["allowed_algs"] == ["RS256"]
+    assert by_id["mfa_policy"]["status"] == "warning"
+
+
+def test_hosted_readiness_blocks_discovery_issuer_mismatch(monkeypatch) -> None:
+    settings = SimpleNamespace(
+        auth_mode="hosted",
+        auth_oidc_provider_name="Auth0",
+        auth_oidc_issuer_url="https://tenant.us.auth0.com",
+        auth_oidc_client_id="buildwealth-client",
+        auth_oidc_client_secret="client-secret",
+        auth_oidc_redirect_uri="https://app.example.test/api/auth/hosted/callback",
+        auth_oidc_scopes="openid email profile",
+        auth_oidc_allowed_id_token_algs="RS256",
+        auth_oidc_require_id_token=True,
+        auth_oidc_require_mfa=False,
+        auth_oidc_jwks_uri="",
+        auth_oidc_authorization_endpoint="",
+        auth_oidc_token_endpoint="",
+        auth_oidc_userinfo_endpoint="",
+        auth_oidc_logout_url="",
+        auth_account_management_url="",
+        auth_password_reset_url="",
+        auth_mfa_enrollment_url="",
+        auth_passkey_enrollment_url="",
+    )
+    provider = OIDCAuthProvider(settings)
+
+    async def fake_metadata() -> dict[str, str]:
+        raise HostedIdentityConfigError("OIDC discovery issuer did not match the configured issuer")
+
+    monkeypatch.setattr(provider, "_metadata", fake_metadata)
+    report = asyncio.run(provider.readiness_report())
+    by_id = {check["id"]: check for check in report["checks"]}
+
+    assert report["status"] == "blocked"
+    assert by_id["metadata"]["status"] == "blocked"
+    assert "issuer" in by_id["metadata"]["detail"]
 
 
 def test_oidc_id_token_validation_checks_issuer_audience_nonce_and_subject() -> None:

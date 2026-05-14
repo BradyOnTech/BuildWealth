@@ -186,6 +186,7 @@ function contextCandidatesUrl({
 
 export const api = {
   authConfig: () => fetchJson('/api/auth/config'),
+  hostedAuthReadiness: () => fetchJson('/api/auth/hosted/readiness'),
   authLogin: async (body = {}) => {
     const result = await postJson('/api/auth/login', body);
     setCsrfToken(result?.csrf_token || '');
@@ -215,6 +216,13 @@ export const api = {
   exportAccount: () => fetchJson('/api/account/export'),
   deactivateAccount: async (body = {}) => {
     try { return await deleteJson('/api/account', body); }
+    finally {
+      setCsrfToken('');
+      setActiveWorkspaceId('');
+    }
+  },
+  closeHostedAccount: async (body = {}) => {
+    try { return await postJson('/api/account/hosted/close', body); }
     finally {
       setCsrfToken('');
       setActiveWorkspaceId('');

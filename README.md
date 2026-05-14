@@ -61,6 +61,7 @@ subject matching.
 Hosted secret-key rotation drill:
 
 ```bash
+curl -s http://localhost:8090/api/auth/hosted/readiness | jq
 curl -s http://localhost:8090/api/security/secrets/rotation/preview | jq
 curl -s -X POST http://localhost:8090/api/security/secrets/rotation/apply \
   -H "content-type: application/json" \

@@ -5145,6 +5145,81 @@ def _service_status_snapshot_sync() -> ServiceStatusResponse:
     return build_native_service_status()
 
 
+def _hosted_identity_relevant_for_release() -> bool:
+    if _auth_mode() in {"hosted", "oidc"}:
+        return True
+    return any(
+        str(value or "").strip()
+        for value in (
+            settings.auth_oidc_issuer_url,
+            settings.auth_oidc_client_id,
+            settings.auth_oidc_redirect_uri,
+            settings.auth_oidc_authorization_endpoint,
+            settings.auth_oidc_token_endpoint,
+            settings.auth_oidc_userinfo_endpoint,
+        )
+    )
+
+
+def _hosted_identity_readiness_snapshot_sync() -> dict[str, Any]:
+    return asyncio.run(hosted_identity_provider.readiness_report())
+
+
+def _hosted_identity_release_readiness_check() -> tuple[
+    ReleaseReadinessCheck,
+    ReleaseReadinessRecommendedAction | None,
+]:
+    report = _hosted_identity_readiness_snapshot_sync()
+    provider = str(report.get("provider") or "Hosted identity").strip()
+    status = str(report.get("status") or "warning").strip().lower()
+    checks = report.get("checks") if isinstance(report.get("checks"), list) else []
+    ready_count = sum(1 for check in checks if isinstance(check, dict) and check.get("status") == "ready")
+    warning_count = sum(1 for check in checks if isinstance(check, dict) and check.get("status") == "warning")
+    blocked_count = sum(1 for check in checks if isinstance(check, dict) and check.get("status") == "blocked")
+    non_ready = [
+        check for check in checks
+        if isinstance(check, dict) and str(check.get("status") or "") != "ready"
+    ]
+    first_gap = str(
+        (non_ready[0].get("summary") if non_ready else "")
+        or (non_ready[0].get("detail") if non_ready else "")
+        or ""
+    ).strip()
+    detail = (
+        f"{provider} hosted sign-in readiness checks are passing."
+        if status == "ready"
+        else f"{provider} hosted sign-in has {blocked_count} blocker(s) and {warning_count} warning(s)."
+    )
+    if first_gap:
+        detail = f"{detail} First item: {first_gap}"
+    check = _release_readiness_check(
+        id="hosted_identity",
+        title="Hosted identity provider",
+        status=status,
+        detail=detail,
+        domain="provider",
+        action_kind=None if status == "ready" else "review_hosted_identity",
+        href="#settings",
+        metadata={
+            "provider": provider,
+            "hosted_auth_enabled": bool(report.get("hosted_auth_enabled")),
+            "ready_count": ready_count,
+            "warning_count": warning_count,
+            "blocked_count": blocked_count,
+            "checks": checks,
+        },
+    )
+    action = None
+    if status != "ready":
+        action = _release_readiness_action(
+            "review_hosted_identity",
+            "Review hosted sign-in",
+            "Open Settings and resolve hosted identity provider readiness before inviting hosted users.",
+            href="#settings",
+        )
+    return check, action
+
+
 def build_native_service_status() -> ServiceStatusResponse:
     services = [
         {
@@ -5650,6 +5725,29 @@ def build_release_readiness_response(
             action_kind="review_provider_status",
             href="#today",
         ))
+
+    if _hosted_identity_relevant_for_release():
+        try:
+            hosted_identity_check, hosted_identity_action = _hosted_identity_release_readiness_check()
+            checks.append(hosted_identity_check)
+            if hosted_identity_action is not None:
+                actions.append(hosted_identity_action)
+        except Exception as exc:
+            checks.append(_release_readiness_check(
+                id="hosted_identity",
+                title="Hosted identity provider",
+                status="blocked",
+                detail=f"Hosted identity readiness unavailable: {exc}",
+                domain="provider",
+                action_kind="review_hosted_identity",
+                href="#settings",
+            ))
+            actions.append(_release_readiness_action(
+                "review_hosted_identity",
+                "Review hosted sign-in",
+                "Hosted identity readiness could not be verified.",
+                href="#settings",
+            ))
 
     try:
         activity_store = (
@@ -16551,6 +16649,11 @@ def auth_config() -> dict[str, Any]:
     }
 
 
+@app.get("/api/auth/hosted/readiness")
+async def hosted_auth_readiness() -> dict[str, Any]:
+    return await hosted_identity_provider.readiness_report()
+
+
 @app.get("/api/auth/hosted/login")
 async def hosted_login(redirect_to: str = "") -> Response:
     if not _hosted_auth_enabled():
@@ -16818,6 +16921,35 @@ def deactivate_account(
         "ok": True,
         "requires_login": True,
         "message": "Account deactivated. Local workspace files were left in place for manual recovery.",
+    }
+
+
+@app.post("/api/account/hosted/close")
+def close_hosted_account_access(
+    request: Request,
+    response: Response,
+    payload: dict[str, Any],
+    context: RequestContext = Depends(get_request_context),
+) -> dict[str, Any]:
+    require_csrf(request)
+    require_permission(context, "account.delete")
+    try:
+        control_plane_store.close_hosted_user_access(
+            user_id=context.user_id,
+            confirm=str(payload.get("confirm") or ""),
+        )
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    response.delete_cookie(settings.auth_session_cookie_name, path="/")
+    return {
+        "ok": True,
+        "requires_login": True,
+        "message": (
+            "BuildWealth access closed. Workspace files, backups, and audit records were retained "
+            "under the current hosted retention policy."
+        ),
     }
 
 

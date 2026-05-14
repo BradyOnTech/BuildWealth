@@ -840,6 +840,53 @@ class ControlPlaneStore:
                 metadata_json="{}",
             )
 
+    def close_hosted_user_access(
+        self,
+        *,
+        user_id: str,
+        confirm: str,
+    ) -> None:
+        if confirm.strip().lower() != "close buildwealth access":
+            raise ValueError('Type "close buildwealth access" to confirm hosted account closure')
+
+        now = utc_now_iso()
+        with self._connect() as connection:
+            user_row = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+            if user_row is None:
+                raise AuthenticationError("User not found")
+            if str(user_row["status"] or "") != "active":
+                raise AuthenticationError("User is not active")
+
+            auth_provider = str(user_row["auth_provider"] or "local")
+            if auth_provider == "local":
+                raise ValueError("Use password confirmation to deactivate a local account")
+
+            connection.execute(
+                "UPDATE users SET status = 'deleted', updated_at = ? WHERE id = ?",
+                (now, user_id),
+            )
+            connection.execute(
+                "UPDATE memberships SET status = 'inactive', updated_at = ? WHERE user_id = ?",
+                (now, user_id),
+            )
+            connection.execute(
+                "UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+                (now, user_id),
+            )
+            self._record_audit_event_with_connection(
+                connection,
+                action="account.hosted_access_closed",
+                actor_user_id=user_id,
+                target_type="user",
+                target_id=user_id,
+                metadata_json=json.dumps(
+                    {
+                        "auth_provider": auth_provider,
+                        "retention": "workspace_files_backups_and_audit_records_retained",
+                    }
+                ),
+            )
+
     def create_session(
         self,
         *,

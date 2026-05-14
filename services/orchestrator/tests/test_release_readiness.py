@@ -263,6 +263,70 @@ def test_release_readiness_warns_when_workflow_verification_is_missing(monkeypat
     assert "run_product_testing" in action_kinds
 
 
+def test_release_readiness_includes_hosted_identity_when_hosted_mode_is_enabled(monkeypatch) -> None:
+    monkeypatch.setattr(main.settings, "auth_mode", "hosted")
+    monkeypatch.setattr(main, "durable_storage_service", DurableReady())
+    monkeypatch.setattr(main, "backup_restore_service", BackupReady())
+    monkeypatch.setattr(main, "data_protection_service", ProtectionReady())
+    monkeypatch.setattr(main, "_git_policy", lambda: {"enabled": True})
+    monkeypatch.setattr(main, "_git_repository_service", lambda _policy: GitReady())
+    monkeypatch.setattr(main, "_git_activity_store", lambda: ActivityReady())
+    monkeypatch.setattr(main, "_service_status_snapshot_sync", _ready_service_status)
+    monkeypatch.setattr(
+        main,
+        "_hosted_identity_readiness_snapshot_sync",
+        lambda: {
+            "status": "blocked",
+            "provider": "Auth0",
+            "hosted_auth_enabled": False,
+            "checks": [
+                {"id": "auth_mode", "status": "ready", "summary": "Hosted auth mode is enabled."},
+                {
+                    "id": "client_id",
+                    "status": "blocked",
+                    "summary": "AUTH_OIDC_CLIENT_ID is required for hosted sign-in.",
+                },
+                {"id": "mfa_policy", "status": "warning", "summary": "MFA is encouraged but not required."},
+            ],
+        },
+    )
+
+    response = main.build_release_readiness_response()
+    checks = {check.id: check for check in response.checks}
+    action_kinds = {action.action_kind for action in response.recommended_actions}
+
+    assert response.status == "blocked"
+    assert checks["hosted_identity"].status == "blocked"
+    assert checks["hosted_identity"].title == "Hosted identity provider"
+    assert "AUTH_OIDC_CLIENT_ID" in checks["hosted_identity"].detail
+    assert checks["hosted_identity"].href == "#settings"
+    assert checks["hosted_identity"].metadata["blocked_count"] == 1
+    assert "review_hosted_identity" in action_kinds
+
+
+def test_release_readiness_skips_hosted_identity_in_plain_local_mode(monkeypatch) -> None:
+    monkeypatch.setattr(main.settings, "auth_mode", "local")
+    monkeypatch.setattr(main.settings, "auth_oidc_issuer_url", "")
+    monkeypatch.setattr(main.settings, "auth_oidc_client_id", "")
+    monkeypatch.setattr(main.settings, "auth_oidc_redirect_uri", "")
+    monkeypatch.setattr(main.settings, "auth_oidc_authorization_endpoint", "")
+    monkeypatch.setattr(main.settings, "auth_oidc_token_endpoint", "")
+    monkeypatch.setattr(main.settings, "auth_oidc_userinfo_endpoint", "")
+    monkeypatch.setattr(main, "durable_storage_service", DurableReady())
+    monkeypatch.setattr(main, "backup_restore_service", BackupReady())
+    monkeypatch.setattr(main, "data_protection_service", ProtectionReady())
+    monkeypatch.setattr(main, "_git_policy", lambda: {"enabled": True})
+    monkeypatch.setattr(main, "_git_repository_service", lambda _policy: GitReady())
+    monkeypatch.setattr(main, "_git_activity_store", lambda: ActivityReady())
+    monkeypatch.setattr(main, "_service_status_snapshot_sync", _ready_service_status)
+
+    response = main.build_release_readiness_response()
+    checks = {check.id: check for check in response.checks}
+
+    assert "hosted_identity" not in checks
+    assert response.status == "ready"
+
+
 def test_release_readiness_workflow_endpoint_records_audit_evidence(monkeypatch) -> None:
     activity = RecordingActivityStore()
     monkeypatch.setattr(main, "_git_activity_store", lambda: activity)
