@@ -1463,6 +1463,17 @@ class _FakeResearchDossierPlanWorkspace(_FakePlanWorkspace):
 
 
 class _FakeCurrentResearchDossierPlanWorkspace(_FakePlanWorkspace):
+    """A dossier that is always CURRENT relative to wall-clock.
+
+    The route under test has no `now` override, so fixed dates rot: once real
+    time passed the hardcoded expiry, the generator correctly preferred the
+    stale-refresh candidate over policy-material-change and the assertion
+    broke. Dates derive from now so the thesis stays fresh forever.
+    """
+
+    _reviewed_at = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+    _expires_at = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+
     def get_plan(self, plan_id: str) -> dict[str, object]:
         payload = super().get_plan(plan_id)
         payload["artifacts"] = [
@@ -1470,7 +1481,7 @@ class _FakeCurrentResearchDossierPlanWorkspace(_FakePlanWorkspace):
                 "id": "artifact-dossier-msft",
                 "file_name": "20260420T120000Z-research-dossier-msft.md",
                 "title": "Research Dossier - MSFT",
-                "created_at": "2026-04-20T12:00:00+00:00",
+                "created_at": self._reviewed_at,
             }
         ]
         return payload
@@ -1480,13 +1491,13 @@ class _FakeCurrentResearchDossierPlanWorkspace(_FakePlanWorkspace):
             "id": artifact_id,
             "file_name": "20260420T120000Z-research-dossier-msft.md",
             "title": "Research Dossier - MSFT",
-            "created_at": "2026-04-20T12:00:00+00:00",
+            "created_at": self._reviewed_at,
             "content": (
                 "# Research Dossier: MSFT\n\n"
                 "## Thesis\nMSFT remains a candidate while policy context supports more equity exposure.\n\n"
                 "## Thesis Review Metadata\n"
-                "- Reviewed at: 2026-04-20T12:00:00+00:00\n"
-                "- Expires at: 2026-05-20T12:00:00+00:00\n\n"
+                f"- Reviewed at: {self._reviewed_at}\n"
+                f"- Expires at: {self._expires_at}\n\n"
                 "| Symbol | Packet | Provider | Freshness | Confidence | Coverage | Blocking gaps |\n"
                 "| MSFT | research-evidence:yfinance:MSFT:6mo:1d | yfinance | fresh | high | 100% | none |\n"
             ),
