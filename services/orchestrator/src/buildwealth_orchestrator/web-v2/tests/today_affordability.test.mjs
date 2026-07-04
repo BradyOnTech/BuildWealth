@@ -114,3 +114,12 @@ test('delta decomposition labels import-dominated windows honestly', async () =>
   } });
   assert.deepEqual(normal.map(t => t.label), ['market', 'added']);
 });
+
+test('empty workspaces get a doorway, not a zero', async () => {
+  const { isEmptyWorkspace } = await import('../views/today.js');
+  assert.equal(isEmptyWorkspace({}, null), true);
+  assert.equal(isEmptyWorkspace({ net_worth_usd: 0 }, { net_worth_usd: 0, gross_monthly_income_usd: 0 }), true);
+  assert.equal(isEmptyWorkspace({ net_worth_usd: 582985 }, null), false);
+  // profile-only households (income, no portfolio) are not "empty"
+  assert.equal(isEmptyWorkspace({ net_worth_usd: 0 }, { net_worth_usd: 0, gross_monthly_income_usd: 8200 }), false);
+});

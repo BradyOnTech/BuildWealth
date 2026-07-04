@@ -18261,6 +18261,7 @@ async def get_portfolio_analytics(
     except ValueError as exc:
         attribution_error = str(exc)
 
+    registry_payload = services.asset_registry.search(limit=500)
     return PortfolioAnalyticsResponse(
         **build_portfolio_analytics_payload(
             holdings_payload=holdings_payload,
@@ -18270,6 +18271,7 @@ async def get_portfolio_analytics(
             attribution_error=attribution_error,
             period=normalized_period,
             snapshot_limit=benchmark_limit,
+            registry_rows=registry_payload.get("items") if isinstance(registry_payload, dict) else None,
         )
     )
 

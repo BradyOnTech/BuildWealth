@@ -165,6 +165,7 @@ class PortfolioAnalyticsResponse(BaseModel):
     benchmark: dict[str, Any] = Field(default_factory=dict)
     attribution: dict[str, Any] = Field(default_factory=dict)
     risk_explanations: dict[str, Any] = Field(default_factory=dict)
+    fees: dict[str, Any] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
 
 

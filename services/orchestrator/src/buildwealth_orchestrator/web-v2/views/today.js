@@ -90,10 +90,43 @@ async function load(params = {}) {
 
 /* ─────────────  THE STANDING (hero)  ───────────── */
 
+// A workspace with no money data yet gets a doorway, not a $0.
+export function isEmptyWorkspace(payload = {}, health = null) {
+  const value = Number(payload.net_worth_usd ?? payload.total_value_usd ?? 0);
+  const healthWorth = Number(health?.net_worth_usd ?? 0);
+  const income = Number(health?.gross_monthly_income_usd ?? 0);
+  return value === 0 && healthWorth === 0 && income === 0;
+}
+
+function renderWelcomeHero(generated) {
+  return html`
+    <section class="hero-stack">
+      ${raw(heroEyebrow(generated))}
+      <h1 class="section-title" style="font-size: var(--t-display);">The Almanac opens with your reality.</h1>
+      <p class="section-lede">Three steps and this page becomes yours — the number, what changed, and what to do next.</p>
+      <ul class="ledger-list" style="max-width: 560px;">
+        <li class="ledger-row">
+          <span class="ledger-label">I. Tell it who you are</span>
+          <span class="ledger-value"><a class="link-editorial" href="#profile">Add income, expenses, debts</a></span>
+        </li>
+        <li class="ledger-row">
+          <span class="ledger-label">II. Bring in your accounts</span>
+          <span class="ledger-value"><a class="link-editorial" href="#import-sync">Import a statement</a></span>
+        </li>
+        <li class="ledger-row">
+          <span class="ledger-label">III. Come back Today</span>
+          <span class="ledger-value muted">The standing, the move, the room</span>
+        </li>
+      </ul>
+    </section>
+  `;
+}
+
 function renderHero(payload, health = null, analytics = null) {
   const value = payload.net_worth_usd ?? payload.total_value_usd ?? 0;
   const { currency, number } = splitUsd(value);
   const generated = payload.generated_at ? new Date(payload.generated_at) : new Date();
+  if (isEmptyWorkspace(payload, health)) return renderWelcomeHero(generated);
 
   const performance = payload.net_performance_usd;
   const surplus = payload.monthly_surplus_usd;

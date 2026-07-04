@@ -27,10 +27,68 @@ export function renderAnalytics(analytics = null) {
       </div>
       ${raw(renderReturnPartsPanel(performance))}
       ${raw(renderAttributionPanel(attribution))}
+      ${raw(renderFeesPanel(analytics.fees || {}))}
       ${raw(renderRiskExplanationPanel(risk))}
       ${raw(renderAnalyticsWarnings(analytics.warnings))}
     </section>
   `;
+}
+
+// The cost of holding — Sharpe's arithmetic in the user's own dollars.
+// Percentages don't hurt; dollars per year do.
+export function renderFeesPanel(fees = {}) {
+  const rows = Array.isArray(fees.rows) ? fees.rows : [];
+  const uncovered = Array.isArray(fees.uncovered_symbols) ? fees.uncovered_symbols : [];
+  if (fees.status !== 'ready') {
+    if (!uncovered.length) return '';
+    return html`
+      <article class="analytics-panel wide">
+        <span class="analytics-kicker">The cost of holding</span>
+        <p class="fit-empty">
+          No expense ratios recorded yet. Add them on ${raw(uncoveredLinks(uncovered))}
+          to see what your funds cost per year.
+        </p>
+      </article>
+    `;
+  }
+  const weighted = Number(fees.weighted_expense_ratio_pct);
+  const excess = Number(fees.total_excess_vs_index_usd);
+  return html`
+    <article class="analytics-panel wide">
+      <span class="analytics-kicker">The cost of holding</span>
+      <dl class="analytics-metrics compact">
+        ${raw(metric('Fees per year', fmtUsd(numberOr(fees.total_annual_fee_usd, 0))))}
+        ${Number.isFinite(weighted) ? raw(metric('Weighted expense ratio', `${weighted.toFixed(2)}%`)) : ''}
+        ${excess > 0 ? raw(metric('Above index-fund cost', fmtUsd(excess) + '/yr')) : ''}
+      </dl>
+      <div class="benchmark-rows">
+        ${raw(rows.slice(0, 6).map(row => html`
+          <div class="benchmark-row">
+            <strong>${esc(String(row.symbol || ''))}</strong>
+            <span>${Number(row.expense_ratio_pct).toFixed(2)}% · ${fmtUsd(row.annual_fee_usd)}/yr</span>
+            <span class="${Number(row.excess_fee_usd) > 0 ? 'delta-down' : 'delta-up'}">
+              ${Number(row.excess_fee_usd) > 0 ? `${fmtUsd(row.excess_fee_usd)}/yr above an index equivalent` : 'index-fund cheap'}
+            </span>
+          </div>
+        `).join(''))}
+      </div>
+      ${excess > 0 ? html`
+        <p class="marginalia">
+          At today's balance that difference is ${fmtUsd(numberOr(fees.ten_year_excess_usd, 0))} over ten years —
+          before compounding works against you.
+        </p>
+      ` : html`<p class="marginalia">Your funds are already at or near index-fund cost. Nothing to fix here.</p>`}
+      ${uncovered.length ? html`
+        <p class="marginalia">No expense ratio yet for ${raw(uncoveredLinks(uncovered))} — add one on the asset page for full coverage.</p>
+      ` : ''}
+    </article>
+  `;
+}
+
+function uncoveredLinks(symbols = []) {
+  return symbols.slice(0, 4)
+    .map(symbol => html`<a class="link-editorial" href="#portfolio?asset=${encodeURIComponent(String(symbol))}">${esc(String(symbol))}</a>`.toString())
+    .join(', ');
 }
 
 function renderPeriodSwitch(period = {}) {

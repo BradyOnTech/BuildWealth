@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from buildwealth_orchestrator.services.portfolio_fees import build_portfolio_fee_payload
+
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -281,6 +283,7 @@ def build_portfolio_analytics_payload(
     period: str = "1y",
     snapshot_limit: int = 180,
     generated_at: str | None = None,
+    registry_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     benchmark = _benchmark_payload(benchmark_response, benchmark_error)
     attribution = _attribution_payload(attribution_response, attribution_error)
@@ -290,6 +293,7 @@ def build_portfolio_analytics_payload(
             warnings.append(error)
     ready_count = sum(1 for item in (benchmark, attribution) if item.get("status") == "ready")
     status = "ready" if ready_count == 2 else ("partial" if ready_count else "unavailable")
+    holdings_map = holdings_payload.get("holdings") if isinstance(holdings_payload.get("holdings"), dict) else {}
     return {
         "generated_at": generated_at or _utc_now_iso(),
         "status": status,
@@ -298,5 +302,9 @@ def build_portfolio_analytics_payload(
         "benchmark": benchmark,
         "attribution": attribution,
         "risk_explanations": _risk_explanations(holdings_payload),
+        "fees": build_portfolio_fee_payload(
+            [row for row in holdings_map.values() if isinstance(row, dict)],
+            registry_rows=registry_rows,
+        ),
         "warnings": warnings,
     }
