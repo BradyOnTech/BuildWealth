@@ -21,6 +21,8 @@ Do not call the first implementation "delete my account" in the UI, because it d
 
 Future destructive flows can use "Delete workspace data" or "Delete household data" after recovery windows, backup retention, and legal/privacy requirements are finalized.
 
+Product/legal/privacy wording for the hosted UI and public policy pages is tracked in [Hosted Product, Legal, and Privacy Wording Draft](./HOSTED_PRODUCT_LEGAL_PRIVACY_WORDING_DRAFT_2026-05-14.md).
+
 ## First Implementation
 
 Hosted users can close their BuildWealth access from v2 Settings.
@@ -181,7 +183,36 @@ The UI does not expose raw secret values. It can show secret key names so a user
 
 This is still not the final purge layer. Remaining work:
 
-- final purge worker
-- backup archive pruning
-- encrypted secret shredding
+## Purge Worker
+
+BuildWealth now has an irreversible purge worker service for due deletion requests.
+
+The worker:
+
+- reads pending deletion requests whose `purge_after` has passed
+- resolves affected workspace records from the control plane
+- refuses broad unsafe filesystem roots
+- counts files, bytes, backup archives, and encrypted secret keys before deletion
+- writes an empty shredded secrets file before removing the workspace tree
+- removes the workspace root, including backup archives inside that workspace
+- marks the deletion request `completed` with result JSON when all workspace purges succeed
+- marks the deletion request `failed` with result JSON and `failure_reason` when any filesystem step fails
+- records `account.data_deletion_completed` or `account.data_deletion_failed` audit events
+
+The app exposes a callable helper, `purge_due_account_data_deletions`, and a maintenance CLI:
+
+```bash
+buildwealth-maintenance purge-due-account-data-deletions --pretty
+```
+
+For Docker Compose deployments, run the same job through the maintenance profile:
+
+```bash
+docker compose -f infra/docker-compose.yml --profile maintenance run --rm account-data-deletion-purge
+```
+
+Hosted deployments should schedule this command as a private maintenance job. It is not wired to a public user button.
+
+Remaining work:
+
 - hosted/legal/privacy review copy

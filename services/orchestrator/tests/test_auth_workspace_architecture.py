@@ -12,6 +12,8 @@ from fastapi.testclient import TestClient
 
 from buildwealth_orchestrator import main
 from buildwealth_orchestrator.services import workspace_services as workspace_services_module
+from buildwealth_orchestrator.services import account_data_deletion as account_data_deletion_module
+from buildwealth_orchestrator.services.account_data_deletion import AccountDataDeletionPurgeWorker
 from buildwealth_orchestrator.services.control_plane import (
     ControlPlaneStore,
     DEFAULT_HOUSEHOLD_WORKSPACE_ID,
@@ -544,6 +546,143 @@ def test_account_data_deletion_preview_request_and_cancel_routes(
     assert canceled.json()["request"]["status"] == "canceled"
     assert workspaces_after_cancel.status_code == 200
     assert context.workspace_id in {item["id"] for item in workspaces_after_cancel.json()["items"]}
+
+
+def test_account_data_deletion_purge_worker_deletes_workspace_files_and_completes_request(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    context = main.control_plane_store.dev_request_context(auth_mode="dev")
+    workspace, _role = main.control_plane_store.get_workspace_for_user(
+        user_id=context.user_id,
+        workspace_id=context.workspace_id,
+    )
+    paths = main.workspace_service_factory.paths_for_record(workspace)
+    paths.profile_path.parent.mkdir(parents=True, exist_ok=True)
+    paths.profile_path.write_text('{"household_name":"Purge Test"}', encoding="utf-8")
+    paths.portfolio_dir.mkdir(parents=True, exist_ok=True)
+    (paths.portfolio_dir / "holdings.json").write_text("[]", encoding="utf-8")
+    paths.backup_archive_dir.mkdir(parents=True, exist_ok=True)
+    (paths.backup_archive_dir / "buildwealth-backup-purge.tar.gz").write_bytes(b"backup")
+    paths.secrets_path.parent.mkdir(parents=True, exist_ok=True)
+    paths.secrets_path.write_text(
+        '{"schema_version":1,"secrets":{"llm_api_key":{},"openai_api_key":{}}}',
+        encoding="utf-8",
+    )
+    purge_after = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    request = main.control_plane_store.create_account_data_deletion_request(
+        user_id=context.user_id,
+        requested_by_user_id=context.user_id,
+        organization_id=context.organization_id,
+        workspace_id=context.workspace_id,
+        scope="workspace",
+        purge_after=purge_after,
+        preview={"affected_workspace_count": 1},
+    )
+
+    result = AccountDataDeletionPurgeWorker(
+        control_plane=main.control_plane_store,
+        workspace_service_factory=main.workspace_service_factory,
+    ).purge_due(due_at=datetime.now(timezone.utc).isoformat())
+
+    with main.control_plane_store._connect() as connection:
+        request_row = connection.execute(
+            "SELECT status, result_json FROM account_data_deletion_requests WHERE id = ?",
+            (request.id,),
+        ).fetchone()
+        workspace_row = connection.execute(
+            "SELECT status, deletion_completed_at FROM workspaces WHERE id = ?",
+            (context.workspace_id,),
+        ).fetchone()
+        audit_row = connection.execute(
+            """
+            SELECT metadata_json
+            FROM audit_events
+            WHERE action = 'account.data_deletion_completed'
+              AND target_id = ?
+            """,
+            (request.id,),
+        ).fetchone()
+
+    result_item = result["items"][0]
+    assert result["ok"] is True
+    assert result_item["status"] == "completed"
+    assert result_item["workspace_count"] == 1
+    assert result_item["backup_archives_pruned"] == 1
+    assert result_item["secrets_shredded"] == 2
+    assert result_item["file_count"] >= 4
+    assert not paths.root.exists()
+    assert request_row["status"] == "completed"
+    assert '"secrets_shredded": 2' in request_row["result_json"]
+    assert workspace_row["status"] == "deleted"
+    assert workspace_row["deletion_completed_at"]
+    assert audit_row is not None
+    assert "backup_archives_pruned" in audit_row["metadata_json"]
+
+
+def test_account_data_deletion_purge_worker_marks_failed_when_filesystem_fails(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    context = main.control_plane_store.dev_request_context(auth_mode="dev")
+    workspace, _role = main.control_plane_store.get_workspace_for_user(
+        user_id=context.user_id,
+        workspace_id=context.workspace_id,
+    )
+    paths = main.workspace_service_factory.paths_for_record(workspace)
+    paths.profile_path.parent.mkdir(parents=True, exist_ok=True)
+    paths.profile_path.write_text("{}", encoding="utf-8")
+    purge_after = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    request = main.control_plane_store.create_account_data_deletion_request(
+        user_id=context.user_id,
+        requested_by_user_id=context.user_id,
+        organization_id=context.organization_id,
+        workspace_id=context.workspace_id,
+        scope="workspace",
+        purge_after=purge_after,
+        preview={"affected_workspace_count": 1},
+    )
+
+    def fail_rmtree(_path: Path) -> None:
+        raise OSError("simulated delete failure")
+
+    monkeypatch.setattr(account_data_deletion_module.shutil, "rmtree", fail_rmtree)
+    result = AccountDataDeletionPurgeWorker(
+        control_plane=main.control_plane_store,
+        workspace_service_factory=main.workspace_service_factory,
+    ).purge_due(due_at=datetime.now(timezone.utc).isoformat())
+
+    with main.control_plane_store._connect() as connection:
+        request_row = connection.execute(
+            "SELECT status, failure_reason, result_json FROM account_data_deletion_requests WHERE id = ?",
+            (request.id,),
+        ).fetchone()
+        workspace_row = connection.execute(
+            "SELECT status FROM workspaces WHERE id = ?",
+            (context.workspace_id,),
+        ).fetchone()
+        audit_row = connection.execute(
+            """
+            SELECT outcome, metadata_json
+            FROM audit_events
+            WHERE action = 'account.data_deletion_failed'
+              AND target_id = ?
+            """,
+            (request.id,),
+        ).fetchone()
+
+    result_item = result["items"][0]
+    assert result["ok"] is False
+    assert result_item["status"] == "failed"
+    assert "simulated delete failure" in result_item["failure_reason"]
+    assert request_row["status"] == "failed"
+    assert "simulated delete failure" in request_row["failure_reason"]
+    assert workspace_row["status"] == "pending_deletion"
+    assert paths.root.exists()
+    assert audit_row["outcome"] == "error"
+    assert "simulated delete failure" in audit_row["metadata_json"]
 
 
 def test_hosted_oidc_login_creates_buildwealth_session(monkeypatch, tmp_path: Path) -> None:

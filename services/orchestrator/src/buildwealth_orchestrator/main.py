@@ -301,6 +301,7 @@ from buildwealth_orchestrator.services.backup_restore import (
     BackupRestoreService,
 )
 from buildwealth_orchestrator.services.account_data_deletion import (
+    AccountDataDeletionPurgeWorker,
     RECOVERY_WINDOW_DAYS,
     build_account_data_deletion_preview,
     purge_after_for_recovery_window,
@@ -622,6 +623,13 @@ def get_authenticated_account_user(request: Request) -> dict[str, Any]:
     except AuthenticationError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     raise HTTPException(status_code=401, detail="Authentication required")
+
+
+def purge_due_account_data_deletions(*, due_at: str | None = None, limit: int = 20) -> dict[str, Any]:
+    return AccountDataDeletionPurgeWorker(
+        control_plane=control_plane_store,
+        workspace_service_factory=workspace_service_factory,
+    ).purge_due(due_at=due_at, limit=limit)
 
 
 def require_permission(context: RequestContext, permission: str) -> None:
@@ -17562,6 +17570,34 @@ def ui_root_v2() -> Response:
         "<h1>BuildWealth v2 UI not found</h1><p>Expected index.html in orchestrator web-v2 directory.</p>",
         status_code=500,
     )
+
+
+def _hosted_static_page(filename: str, title: str) -> Response:
+    page_file = web_v2_dir / filename
+    if page_file.exists():
+        return FileResponse(page_file)
+    return HTMLResponse(
+        f"<h1>{title} not found</h1><p>Expected {filename} in orchestrator web-v2 directory.</p>",
+        status_code=500,
+    )
+
+
+@app.get("/privacy", include_in_schema=False)
+@app.get("/privacy/", include_in_schema=False)
+def privacy_notice_page() -> Response:
+    return _hosted_static_page("privacy.html", "BuildWealth privacy notice")
+
+
+@app.get("/terms", include_in_schema=False)
+@app.get("/terms/", include_in_schema=False)
+def terms_page() -> Response:
+    return _hosted_static_page("terms.html", "BuildWealth terms")
+
+
+@app.get("/ai-disclosure", include_in_schema=False)
+@app.get("/ai-disclosure/", include_in_schema=False)
+def ai_disclosure_page() -> Response:
+    return _hosted_static_page("ai-disclosure.html", "BuildWealth AI disclosure")
 
 
 @app.get("/health")

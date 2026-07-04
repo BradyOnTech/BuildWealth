@@ -116,6 +116,16 @@ LLM_API_KEY=... ./scripts/seed-demo-data.py
 The key is stored in the active workspace's encrypted local secret store and is only returned
 to the UI as a masked value.
 
+## Maintenance Jobs
+
+Due account-data deletion requests are purged by a private maintenance command, not a public API button:
+
+```bash
+docker compose -f infra/docker-compose.yml --profile maintenance run --rm account-data-deletion-purge
+```
+
+The job deletes due workspace data after the recovery window and records completion or failure in the control-plane deletion ledger.
+
 ## Service Status
 
 BuildWealth runs standalone by default. Service status is available for native runtime checks:

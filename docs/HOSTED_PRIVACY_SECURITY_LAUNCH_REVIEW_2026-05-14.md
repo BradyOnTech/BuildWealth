@@ -122,6 +122,9 @@ Before public hosted launch, review product copy with qualified counsel or compl
 
 ## Privacy Policy Inputs
 
+Draft public wording is now tracked in [Hosted Product, Legal, and Privacy Wording Draft](./HOSTED_PRODUCT_LEGAL_PRIVACY_WORDING_DRAFT_2026-05-14.md).
+Hosted draft pages are exposed at `/privacy`, `/terms`, and `/ai-disclosure`.
+
 A privacy policy should accurately describe:
 
 - what data BuildWealth collects
@@ -137,7 +140,8 @@ A privacy policy should accurately describe:
 ## Open Items
 
 - Create and validate the first Auth0 hosted tenant.
-- Define destructive workspace-data deletion semantics for hosted users.
+- Review and publish hosted product/legal/privacy wording.
+- Choose legal operator name, privacy contact, terms contact, support path, jurisdiction, and minimum user age.
 - Decide whether hosted MFA is optional or required.
 - Replace the dependency-light local secret encryption primitive with KMS or a standard audited encryption library before production scale.
-- Draft public privacy policy, terms, financial guidance disclaimer, and AI-use disclosure.
+- Confirm whether no-sale/no-share, sensitive-data, vendor/subprocessor, AI-provider, and hosted identity-provider disclosures are sufficient for launch.

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>BuildWealth Privacy Notice</title>
+    <meta name="theme-color" content="#efe9dd" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232d5d3e'/%3E%3Cpath d='M9 21h14M10 17l4-4 4 3 4-6' stroke='%23efe9dd' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://api.fontshare.com" />
+    <link rel="preconnect" href="https://cdn.fontshare.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500;1,9..144,600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://api.fontshare.com/v2/css?f[]=switzer@400,500,600,700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static-v2/styles/tokens.css" />
+    <link rel="stylesheet" href="/static-v2/styles/base.css" />
+    <link rel="stylesheet" href="/static-v2/styles/legal.css" />
+  </head>
+  <body>
+    <main class="legal-shell">
+      <article class="legal-page">
+        <nav class="legal-nav" aria-label="Legal pages">
+          <a class="legal-brand" href="/v2">
+            <strong>BuildWealth</strong>
+            <span>Hosted private beta</span>
+          </a>
+          <div class="legal-links">
+            <a href="/privacy">Privacy</a>
+            <a href="/terms">Terms</a>
+            <a href="/ai-disclosure">AI disclosure</a>
+            <a href="/v2">Return to app</a>
+          </div>
+        </nav>
+
+        <header class="legal-hero">
+          <span class="legal-kicker">Privacy notice</span>
+          <h1>Your data in BuildWealth</h1>
+          <p class="legal-summary">
+            BuildWealth stores the information needed to run your household workspace: account details,
+            profile inputs, portfolio records, simulations, Copilot conversations, imports, reports,
+            backups, and security records.
+          </p>
+          <p class="legal-notice">
+            Private beta draft. This page reflects the current hosted implementation and must be reviewed
+            by qualified legal or compliance support before public launch.
+          </p>
+        </header>
+
+        <div class="legal-body">
+          <section class="legal-section">
+            <h2>Information BuildWealth Collects</h2>
+            <p>BuildWealth may collect and store information you provide or generate while using the app.</p>
+            <ul>
+              <li>Account information, such as email address, display name, hosted sign-in provider ID, account status, and workspace role.</li>
+              <li>Household profile information, such as income, expenses, debts, goals, tax-related planning inputs, retirement assumptions, and notes.</li>
+              <li>Portfolio information, such as accounts, holdings, transactions, prices, benchmarks, allocation targets, risk guardrails, and performance views.</li>
+              <li>Simulation information, such as saved scenarios, contribution assumptions, withdrawal comparisons, retirement settings, tax settings, and results.</li>
+              <li>Research and recommendation information, such as watchlist items, evidence packets, thesis notes, recommendation drafts, accepted decisions, rejected decisions, and review history.</li>
+              <li>Copilot information, such as messages, tool traces, context packets, drafts, recommendations, and profile-update proposals.</li>
+              <li>Import, export, backup, recovery, audit, session, and maintenance records needed to operate and protect the service.</li>
+            </ul>
+          </section>
+
+          <section class="legal-section">
+            <h2>How BuildWealth Uses Data</h2>
+            <p>BuildWealth uses data to provide private household workspaces, portfolio analysis, simulations, imports, reconciliation, exports, backups, recovery, Copilot responses, security checks, permission enforcement, and audit records for sensitive actions.</p>
+          </section>
+
+          <section class="legal-section">
+            <h2>Hosted Sign-In</h2>
+            <p>BuildWealth may use a hosted identity provider for sign-in, password reset, multi-factor sign-in, passkeys, email verification, and provider-side account security controls.</p>
+            <p>BuildWealth receives identity information needed to create or link a BuildWealth account, such as email address, display name, provider user ID, and sign-in or security status signals. Closing BuildWealth access does not automatically delete the hosted identity-provider account.</p>
+          </section>
+
+          <section class="legal-section">
+            <h2>AI Providers and Copilot</h2>
+            <p>If you configure an AI provider or use Copilot, BuildWealth may send the information needed to answer your request to the configured provider. That context may include financial profile details, portfolio data, simulation inputs, research notes, or conversation history when those details are relevant to the request.</p>
+            <p>BuildWealth stores provider API keys as encrypted workspace secrets. After a key is saved, BuildWealth does not return the raw key value through the UI or API.</p>
+          </section>
+
+          <section class="legal-section">
+            <h2>Deletion and Retention</h2>
+            <p>You can close BuildWealth access, export available account data, remove provider keys, and request deletion of BuildWealth workspace data through Settings.</p>
+            <p>Closing BuildWealth access disables your BuildWealth account and removes active workspace memberships. It does not delete workspace files, backups, encrypted provider secrets, audit records, or your hosted identity-provider account.</p>
+            <p>Data deletion is a separate delayed flow. During the recovery window, affected workspaces are unavailable in normal app workflows and you can cancel the request. After the recovery window ends, a private maintenance job removes due workspace files, backups inside those workspaces, and encrypted workspace secrets.</p>
+            <p>BuildWealth may retain limited security, audit, legal, operational, abuse-prevention, accounting, dispute, or proof-of-deletion records when needed.</p>
+          </section>
+
+          <section class="legal-section">
+            <h2>Sharing</h2>
+            <p>Draft public-language position: BuildWealth does not sell household financial data. This statement must be reviewed against analytics, identity, AI, infrastructure, support, and vendor contracts before public launch.</p>
+          </section>
+
+          <section class="legal-section">
+            <h2>Security</h2>
+            <p>BuildWealth uses workspace isolation, access controls, encrypted provider secrets, protected session cookies, CSRF protection for sensitive actions, and audit records for important account and data events. No online service can promise perfect security.</p>
+          </section>
+
+          <section class="legal-section">
+            <h2>Your Choices</h2>
+            <p>Depending on where you live, you may have rights to request access, correction, deletion, portability, restriction, objection, opt-out of sale or sharing, or appeal of certain privacy decisions. BuildWealth may need to verify your identity before completing a request.</p>
+            <p>Privacy contact: to be assigned before public launch.</p>
+          </section>
+        </div>
+
+        <footer class="legal-footer">
+          <span>Last updated May 14, 2026</span>
+          <span>Private beta draft, not legal advice.</span>
+        </footer>
+      </article>
+    </main>
+  </body>
+</html>

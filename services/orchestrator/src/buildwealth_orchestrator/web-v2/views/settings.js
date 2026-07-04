@@ -608,7 +608,7 @@ export function accountCard(model) {
       <header class="settings-card-head">
         <h2 class="settings-card-title">Account &amp; data</h2>
         <p class="settings-card-lede">
-          Export your local account record${localAccount ? ', change your password, or deactivate access to this account' : ''}.
+          Manage exports, sign-in, access closure, and BuildWealth data deletion.
         </p>
       </header>
 
@@ -624,6 +624,18 @@ export function accountCard(model) {
           <p>${exportedWorkspaces} workspace${exportedWorkspaces === 1 ? '' : 's'} · ${exportedAudit} recent audit event${exportedAudit === 1 ? '' : 's'} · exported ${esc(fmtRelative(exported.exported_at) || 'now')}</p>
         </div>
       ` : ''}
+
+      <div class="settings-test-block">
+        <p class="settings-test-headline">Hosted policy pages</p>
+        <p class="settings-test-detail">
+          Review how BuildWealth describes privacy, terms, AI use, access closure, and data deletion.
+        </p>
+        <div class="settings-actions">
+          <a class="btn btn-quiet" href="/privacy" target="_blank" rel="noopener noreferrer">Privacy notice</a>
+          <a class="btn btn-quiet" href="/terms" target="_blank" rel="noopener noreferrer">Terms</a>
+          <a class="btn btn-quiet" href="/ai-disclosure" target="_blank" rel="noopener noreferrer">AI disclosure</a>
+        </div>
+      </div>
 
       ${raw(accountDataDeletionPanel(model))}
 
@@ -672,6 +684,13 @@ export function accountCard(model) {
           </div>
         ` : ''}
         ${raw(hostedReadinessPanel(model.hostedReadiness, model.hostedReadinessError))}
+        <div class="settings-test-block">
+          <p class="settings-test-headline">Close BuildWealth access</p>
+          <p class="settings-test-detail">
+            This signs you out, disables your BuildWealth account, and removes active workspace memberships.
+            It does not delete workspace data or your identity-provider account.
+          </p>
+        </div>
         <form id="account-hosted-close-form" class="settings-grid">
           <label class="settings-field span-2">
             <span class="settings-label">Type close buildwealth access</span>
@@ -705,6 +724,7 @@ export function accountDataDeletionPanel(model) {
       <p class="settings-test-headline">Delete BuildWealth data</p>
       <p class="settings-test-detail">
         Preview first. Deletion is delayed for ${esc(preview?.recovery_window_days || 30)} days and can be canceled during that window.
+        After the window ends, a private purge job removes due workspace files, backups, and encrypted workspace secrets.
       </p>
       <div class="settings-grid">
         <label class="settings-field">
@@ -752,6 +772,11 @@ export function accountDataDeletionPanel(model) {
             <span class="status-pill archived"><span class="dot"></span></span>
             <span class="settings-context-label">Retained</span>
             <span class="settings-context-value">${esc((preview.will_retain || []).join(' · '))}</span>
+          </div>
+          <div class="settings-context-row">
+            <span class="status-pill archived"><span class="dot"></span></span>
+            <span class="settings-context-label">Important</span>
+            <span class="settings-context-value">Limited security, audit, legal, and operational records may remain.</span>
           </div>
         </div>
 

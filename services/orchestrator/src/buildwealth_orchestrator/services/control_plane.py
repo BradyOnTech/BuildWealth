@@ -1410,6 +1410,37 @@ class ControlPlaneStore:
             ).fetchall()
         return [self._deletion_request_from_row(row) for row in rows]
 
+    def workspaces_for_account_data_deletion_request(self, *, request_id: str) -> list[WorkspaceRecord]:
+        with self._connect() as connection:
+            request_row = connection.execute(
+                "SELECT * FROM account_data_deletion_requests WHERE id = ?",
+                (request_id,),
+            ).fetchone()
+            if request_row is None:
+                raise ValueError("Deletion request not found")
+            if request_row["workspace_id"]:
+                rows = connection.execute(
+                    """
+                    SELECT *
+                    FROM workspaces
+                    WHERE id = ?
+                    ORDER BY created_at, name
+                    """,
+                    (request_row["workspace_id"],),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT *
+                    FROM workspaces
+                    WHERE organization_id = ?
+                      AND status IN ('pending_deletion', 'deleted')
+                    ORDER BY CASE workspace_type WHEN 'household' THEN 0 WHEN 'demo' THEN 1 ELSE 2 END, name
+                    """,
+                    (request_row["organization_id"],),
+                ).fetchall()
+        return [self._workspace_from_row(row) for row in rows]
+
     def create_session(
         self,
         *,

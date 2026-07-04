@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>BuildWealth AI Disclosure</title>
+    <meta name="theme-color" content="#efe9dd" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232d5d3e'/%3E%3Cpath d='M9 21h14M10 17l4-4 4 3 4-6' stroke='%23efe9dd' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://api.fontshare.com" />
+    <link rel="preconnect" href="https://cdn.fontshare.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500;1,9..144,600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://api.fontshare.com/v2/css?f[]=switzer@400,500,600,700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static-v2/styles/tokens.css" />
+    <link rel="stylesheet" href="/static-v2/styles/base.css" />
+    <link rel="stylesheet" href="/static-v2/styles/legal.css" />
+  </head>
+  <body>
+    <main class="legal-shell">
+      <article class="legal-page">
+        <nav class="legal-nav" aria-label="Legal pages">
+          <a class="legal-brand" href="/v2">
+            <strong>BuildWealth</strong>
+            <span>Hosted private beta</span>
+          </a>
+          <div class="legal-links">
+            <a href="/privacy">Privacy</a>
+            <a href="/terms">Terms</a>
+            <a href="/ai-disclosure">AI disclosure</a>
+            <a href="/v2">Return to app</a>
+          </div>
+        </nav>
+
+        <header class="legal-hero">
+          <span class="legal-kicker">AI disclosure</span>
+          <h1>How Copilot uses context</h1>
+          <p class="legal-summary">
+            Copilot can help draft, explain, compare, and review financial information. It is a helper
+            inside BuildWealth, not a decision maker.
+          </p>
+          <p class="legal-notice">
+            Private beta draft. Provider-specific wording must be reviewed against each supported AI
+            provider's terms and data-handling settings before public launch.
+          </p>
+        </header>
+
+        <div class="legal-body">
+          <section class="legal-section">
+            <h2>What Copilot Can Do</h2>
+            <p>Copilot can summarize context, explain simulations, draft recommendations, prepare profile updates, compare options, and help you review assumptions.</p>
+            <p>Copilot output is a draft or suggestion. You can accept, reject, edit, or ignore it.</p>
+          </section>
+
+          <section class="legal-section">
+            <h2>What May Be Sent to a Provider</h2>
+            <p>If you configure an AI provider or use Copilot, BuildWealth may send the information needed to answer your request to that provider.</p>
+            <ul>
+              <li>Conversation messages and instructions.</li>
+              <li>Financial profile details relevant to the request.</li>
+              <li>Portfolio, holding, transaction, benchmark, allocation, or risk context.</li>
+              <li>Simulation inputs and outputs.</li>
+              <li>Research notes, evidence packets, recommendations, and decision history.</li>
+              <li>Tool results needed to explain what BuildWealth found or changed.</li>
+            </ul>
+          </section>
+
+          <section class="legal-section">
+            <h2>Provider Keys</h2>
+            <p>BuildWealth stores provider API keys as encrypted workspace secrets. Raw key values are not returned after saving. Removing a key stops BuildWealth from using that provider for the current workspace, but it does not close the provider account.</p>
+          </section>
+
+          <section class="legal-section">
+            <h2>Limits</h2>
+            <p>AI-generated content can be incomplete, inaccurate, outdated, or based on misunderstood context. BuildWealth does not guarantee Copilot output.</p>
+            <p>Use Copilot to understand options and prepare drafts. Do not treat Copilot output as financial, investment, tax, legal, accounting, or brokerage advice.</p>
+          </section>
+
+          <section class="legal-callout">
+            <strong>Plain-language rule:</strong>
+            Copilot can help you think, but you decide. For major decisions, review the assumptions and talk with a qualified professional.
+          </section>
+        </div>
+
+        <footer class="legal-footer">
+          <span>Last updated May 14, 2026</span>
+          <span>Private beta draft, not legal advice.</span>
+        </footer>
+      </article>
+    </main>
+  </body>
+</html>

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -100,6 +101,116 @@ def build_account_data_deletion_preview(
 def serialize_deletion_request(request: Any) -> dict[str, Any]:
     payload = asdict(request)
     return payload
+
+
+class AccountDataDeletionPurgeError(RuntimeError):
+    pass
+
+
+class AccountDataDeletionPurgeWorker:
+    def __init__(
+        self,
+        *,
+        control_plane: ControlPlaneStore,
+        workspace_service_factory: WorkspaceServiceFactory,
+    ):
+        self.control_plane = control_plane
+        self.workspace_service_factory = workspace_service_factory
+
+    def purge_due(self, *, due_at: str | None = None, limit: int = 20) -> dict[str, Any]:
+        started_at = utc_now_iso()
+        requests = self.control_plane.list_pending_account_data_deletion_requests(
+            due_at=due_at or utc_now_iso(),
+        )[: max(1, limit)]
+        items = []
+        for request in requests:
+            items.append(self.purge_request(request))
+        return {
+            "ok": all(item.get("status") == "completed" for item in items),
+            "started_at": started_at,
+            "completed_at": utc_now_iso(),
+            "request_count": len(items),
+            "items": items,
+        }
+
+    def purge_request(self, request: Any) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "request_id": request.id,
+            "scope": request.scope,
+            "started_at": utc_now_iso(),
+            "workspace_count": 0,
+            "workspaces": [],
+            "deleted_paths": [],
+            "skipped_paths": [],
+            "file_count": 0,
+            "size_bytes": 0,
+            "backup_archives_pruned": 0,
+            "secrets_shredded": 0,
+        }
+        try:
+            if request.status != "pending":
+                raise AccountDataDeletionPurgeError("Only pending deletion requests can be purged")
+            workspaces = self.control_plane.workspaces_for_account_data_deletion_request(
+                request_id=request.id,
+            )
+            if not workspaces:
+                raise AccountDataDeletionPurgeError("Deletion request has no workspace records to purge")
+            for workspace in workspaces:
+                workspace_result = self._purge_workspace(workspace)
+                result["workspaces"].append(workspace_result)
+                result["deleted_paths"].extend(workspace_result["deleted_paths"])
+                result["skipped_paths"].extend(workspace_result["skipped_paths"])
+                result["file_count"] += workspace_result["file_count"]
+                result["size_bytes"] += workspace_result["size_bytes"]
+                result["backup_archives_pruned"] += workspace_result["backup_archives_pruned"]
+                result["secrets_shredded"] += workspace_result["secrets_shredded"]
+            result["workspace_count"] = len(workspaces)
+            result["completed_at"] = utc_now_iso()
+            completed = self.control_plane.complete_account_data_deletion_request(
+                request_id=request.id,
+                result=result,
+            )
+            result["status"] = completed.status
+            return result
+        except Exception as exc:
+            result["completed_at"] = utc_now_iso()
+            result["status"] = "failed"
+            result["failure_reason"] = str(exc)
+            self.control_plane.fail_account_data_deletion_request(
+                request_id=request.id,
+                failure_reason=str(exc),
+                result=result,
+            )
+            return result
+
+    def _purge_workspace(self, workspace: WorkspaceRecord) -> dict[str, Any]:
+        paths = self.workspace_service_factory.paths_for_record(workspace)
+        root = paths.root.resolve()
+        _assert_safe_workspace_root(root)
+        before = _path_stats(root)
+        backup_archives = _backup_archive_count(paths.backup_archive_dir)
+        secrets_shredded = _shred_workspace_secrets(paths.secrets_path)
+        result = {
+            "workspace_id": workspace.id,
+            "workspace_name": workspace.name,
+            "workspace_type": workspace.workspace_type,
+            "storage_path": str(root),
+            "deleted_paths": [],
+            "skipped_paths": [],
+            "file_count": int(before["file_count"]),
+            "size_bytes": int(before["size_bytes"]),
+            "backup_archives_pruned": backup_archives,
+            "secrets_shredded": secrets_shredded,
+        }
+        if root.exists():
+            if root.is_dir():
+                shutil.rmtree(root)
+            else:
+                root.unlink()
+            result["deleted_paths"].append(str(root))
+        else:
+            result["skipped_paths"].append(str(root))
+        return result
 
 
 def _normalize_scope(scope: str) -> str:
@@ -207,6 +318,12 @@ def _backup_category(backup_dir: Path) -> dict[str, Any]:
     }
 
 
+def _backup_archive_count(backup_dir: Path) -> int:
+    if not backup_dir.exists():
+        return 0
+    return sum(1 for path in backup_dir.glob(f"{BACKUP_ARCHIVE_PREFIX}*{BACKUP_ARCHIVE_SUFFIX}") if path.is_file())
+
+
 def _path_stats(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {"exists": False, "file_count": 0, "size_bytes": 0}
@@ -232,6 +349,35 @@ def _secret_keys(secrets_path: Path) -> list[str]:
     if not isinstance(secrets, dict):
         return []
     return sorted(str(key) for key in secrets)
+
+
+def _shred_workspace_secrets(secrets_path: Path) -> int:
+    secret_keys = _secret_keys(secrets_path)
+    if not secrets_path.exists():
+        return 0
+    secrets_path.write_text(
+        json.dumps({"schema_version": 1, "secrets": {}, "shredded_at": utc_now_iso()}, indent=2),
+        encoding="utf-8",
+    )
+    return len(secret_keys)
+
+
+def _assert_safe_workspace_root(path: Path) -> None:
+    resolved = path.resolve()
+    if str(resolved) in {"", "/", "."}:
+        raise AccountDataDeletionPurgeError(f"Unsafe workspace path: {resolved}")
+    forbidden = {
+        Path.home().resolve(),
+        Path.cwd().resolve(),
+        Path("/tmp").resolve(),
+        Path("/private/tmp").resolve(),
+        Path("/var").resolve(),
+        Path("/private/var").resolve(),
+    }
+    if resolved in forbidden:
+        raise AccountDataDeletionPurgeError(f"Refusing to purge unsafe workspace path: {resolved}")
+    if len(resolved.parts) < 4:
+        raise AccountDataDeletionPurgeError(f"Workspace path is too broad to purge: {resolved}")
 
 
 def _sum_categories(categories: list[dict[str, Any]]) -> dict[str, Any]:

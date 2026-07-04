@@ -24,6 +24,19 @@ services:
     networks:
       - platform
 
+  account-data-deletion-purge:
+    profiles: ["maintenance"]
+    build:
+      context: ../services/orchestrator
+      dockerfile: Dockerfile
+    env_file:
+      - ./env/orchestrator.env
+    volumes:
+      - ../data:/app/data
+    command: ["buildwealth-maintenance", "purge-due-account-data-deletions", "--pretty"]
+    networks:
+      - platform
+
 networks:
   platform:
     driver: bridge

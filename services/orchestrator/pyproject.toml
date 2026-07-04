@@ -26,6 +26,9 @@ openbb = [
   "openbb>=4.7.1"
 ]
 
+[project.scripts]
+buildwealth-maintenance = "buildwealth_orchestrator.maintenance:main"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 

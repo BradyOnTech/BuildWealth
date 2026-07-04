@@ -320,6 +320,9 @@ function renderAccountDropdown(user) {
         <span>${state.session?.role || 'owner'}</span>
       </div>
       <a class="account-link" href="#settings" data-route>Account settings</a>
+      <a class="account-link" href="/privacy" target="_blank" rel="noopener noreferrer">Privacy notice</a>
+      <a class="account-link" href="/terms" target="_blank" rel="noopener noreferrer">Terms</a>
+      <a class="account-link" href="/ai-disclosure" target="_blank" rel="noopener noreferrer">AI disclosure</a>
       <button class="account-link danger" id="auth-logout" type="button">Sign out</button>
     </div>
   `;
