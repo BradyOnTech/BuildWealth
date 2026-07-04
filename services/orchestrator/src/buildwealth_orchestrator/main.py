@@ -1258,17 +1258,41 @@ async def execute_sync(
             sync_state["running"] = False
 
 
+def snapshot_age_seconds(snapshots: SnapshotStore | None = None) -> float | None:
+    """Age of the latest snapshot, or None when no snapshot exists yet."""
+    resolved = snapshots or snapshot_store
+    try:
+        as_of = resolved.latest().as_of
+    except Exception:
+        return None
+    if as_of.tzinfo is None:
+        as_of = as_of.replace(tzinfo=timezone.utc)
+    return max(0.0, (utc_now() - as_of).total_seconds())
+
+
+def scheduled_sync_is_due(age_seconds: float | None, interval_seconds: float) -> bool:
+    return age_seconds is None or age_seconds >= interval_seconds
+
+
 async def scheduled_sync_loop() -> None:
+    """Heartbeat: keep prices and snapshots no staler than the sync interval.
+
+    Wakes hourly (or faster for short intervals) and syncs only when the
+    latest snapshot has aged past the interval — so restarts and laptop
+    sleeps self-heal stale data without hammering market-data providers.
+    """
     interval_seconds = max(60, int(settings.sync_interval_minutes * 60))
+    poll_seconds = min(interval_seconds, 3600)
 
     while True:
-        try:
-            await execute_sync(trigger="scheduled")
-        except Exception:
-            # Failures are captured in sync_state for observability.
-            pass
+        if scheduled_sync_is_due(snapshot_age_seconds(), interval_seconds):
+            try:
+                await execute_sync(trigger="scheduled")
+            except Exception:
+                # Failures are captured in sync_state for observability.
+                pass
 
-        await asyncio.sleep(interval_seconds)
+        await asyncio.sleep(poll_seconds)
 
 
 async def autogit_checkpoint_loop() -> None:

@@ -1,0 +1,37 @@
+"""Heartbeat scheduling: staleness-aware sync decisions."""
+
+from datetime import timedelta
+
+from buildwealth_orchestrator.main import (
+    scheduled_sync_is_due,
+    snapshot_age_seconds,
+    utc_now,
+)
+from buildwealth_orchestrator.schemas import PortfolioSnapshot
+from buildwealth_orchestrator.services.snapshot_store import SnapshotStore
+from buildwealth_orchestrator.settings import Settings
+
+
+def test_scheduled_sync_is_due_semantics() -> None:
+    day = 1440 * 60
+    assert scheduled_sync_is_due(None, day) is True  # no snapshot yet: bootstrap
+    assert scheduled_sync_is_due(day + 1, day) is True
+    assert scheduled_sync_is_due(float(day), day) is True
+    assert scheduled_sync_is_due(day - 60, day) is False
+    assert scheduled_sync_is_due(0.0, day) is False
+
+
+def test_snapshot_age_seconds_reads_latest_snapshot(tmp_path) -> None:
+    store = SnapshotStore(snapshot_dir=tmp_path)
+    assert snapshot_age_seconds(store) is None
+
+    stale_time = utc_now() - timedelta(hours=30)
+    store.write(PortfolioSnapshot(as_of=stale_time, total_value_usd=1000.0, holdings=[]))
+    age = snapshot_age_seconds(store)
+    assert age is not None
+    assert 29 * 3600 < age < 31 * 3600
+
+
+def test_sync_interval_defaults_to_daily(monkeypatch) -> None:
+    monkeypatch.delenv("SYNC_INTERVAL_MINUTES", raising=False)
+    assert Settings().sync_interval_minutes == 1440.0

@@ -138,7 +138,9 @@ class Settings(BaseSettings):
 
     openbb_provider: str = Field(default="yfinance", alias="OPENBB_PROVIDER")
 
-    sync_interval_minutes: float = Field(default=0.0, alias="SYNC_INTERVAL_MINUTES")
+    # Heartbeat cadence for scheduled price/snapshot sync. Daily by default so
+    # freshness does not depend on the user clicking refresh; 0 disables.
+    sync_interval_minutes: float = Field(default=1440.0, alias="SYNC_INTERVAL_MINUTES")
 
 
 @lru_cache(maxsize=1)
