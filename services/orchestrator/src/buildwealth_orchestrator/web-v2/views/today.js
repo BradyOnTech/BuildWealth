@@ -8,6 +8,8 @@ import {
   fmtUsd, splitUsd, fmtUsdSigned, fmtPctSigned, fmtRelative,
   fmtDateLong, fmtTimeShort, roman,
 } from '../lib/format.js';
+import { compactUsd } from '../lib/chart.js';
+import { renderAffordabilitySection, bindAffordabilitySection } from './today/affordability.js';
 
 export const meta = {
   id: 'today',
@@ -23,7 +25,8 @@ export function template() {
         ${raw(skeletonHero())}
         ${raw(skeletonSection('II', 'Command center'))}
         ${raw(skeletonSection('III', 'The move'))}
-        ${raw(skeletonSection('IV', 'The room'))}
+        ${raw(skeletonSection('IV', 'Price a decision'))}
+        ${raw(skeletonSection('V', 'The room'))}
       </div>
     </section>
   `;
@@ -39,16 +42,18 @@ async function load(params = {}) {
 
   let payload = null;
   let services = null;
+  let health = null;
   try {
     const shouldRefreshResearch = String(params.refresh || '').toLowerCase() === 'research';
     const shouldRecordReview = String(params.review || '').toLowerCase() === 'complete';
-    [payload, services] = await Promise.all([
+    [payload, services, health] = await Promise.all([
       shouldRecordReview
         ? api.recordTodayReview()
         : shouldRefreshResearch
           ? api.refreshTodayResearch()
           : api.today(),
       api.services().catch(() => null),
+      api.financialHealth().catch(() => null),
     ]);
     state.today = payload;
     state.services = services;
@@ -66,11 +71,13 @@ async function load(params = {}) {
   }
 
   setView(root, html`
-    ${raw(renderHero(payload))}
+    ${raw(renderHero(payload, health))}
     ${raw(renderCommandCards(payload, services))}
     ${raw(renderMove(payload))}
+    ${raw(renderAffordabilitySection())}
     ${raw(renderRoom(payload, services))}
   `);
+  bindAffordabilitySection(root);
   if (
     String(params.refresh || '').toLowerCase() === 'research'
     || String(params.review || '').toLowerCase() === 'complete'
@@ -81,7 +88,7 @@ async function load(params = {}) {
 
 /* ─────────────  THE STANDING (hero)  ───────────── */
 
-function renderHero(payload) {
+function renderHero(payload, health = null) {
   const value = payload.net_worth_usd ?? payload.total_value_usd ?? 0;
   const { currency, number } = splitUsd(value);
   const generated = payload.generated_at ? new Date(payload.generated_at) : new Date();
@@ -90,12 +97,14 @@ function renderHero(payload) {
   const surplus = payload.monthly_surplus_usd;
   const savings = payload.savings_rate_pct;
   const runway = computeRunway(payload);
+  const fi = computeFiProgress(health);
 
   const marginalia = [
     performance != null ? marginaliaItem('net performance', fmtUsdSigned(performance), performance >= 0 ? 'up' : 'down') : null,
     surplus != null ? marginaliaItem('monthly surplus', fmtUsd(surplus), surplus >= 0 ? 'up' : 'down') : null,
     savings != null ? marginaliaItem('savings rate', `${Math.round(savings)}%`, 'up') : null,
     runway != null ? marginaliaItem('runway', `${runway} mo`, 'up') : null,
+    fi != null ? marginaliaItem(`to FI (${compactUsd(fi.targetUsd)} at 4%)`, `${fi.progressPct}%`, 'up') : null,
   ].filter(Boolean);
 
   return html`
@@ -128,6 +137,21 @@ function marginaliaItem(label, value, dir) {
       <span class="marginalia"> ${label}</span>
     </span>
   `;
+}
+
+// FI target = 25x annual expenses (the 4% rule), progress = net worth against it.
+// Directional by design: uses today's profile expenses, not plan simulations.
+export function computeFiProgress(health) {
+  const monthlyExpenses = Number(health?.total_monthly_expenses_usd);
+  const netWorth = Number(health?.net_worth_usd);
+  if (!Number.isFinite(monthlyExpenses) || monthlyExpenses <= 0) return null;
+  if (!Number.isFinite(netWorth) || netWorth < 0) return null;
+  const targetUsd = monthlyExpenses * 12 * 25;
+  if (targetUsd <= 0) return null;
+  return {
+    targetUsd,
+    progressPct: Math.min(999, Math.round((netWorth / targetUsd) * 100)),
+  };
 }
 
 export function computeRunway(payload) {
@@ -383,7 +407,7 @@ function renderRoom(payload, services) {
 
   return html`
     <section>
-      ${raw(sectionHead('IV', 'The room', null))}
+      ${raw(sectionHead('V', 'The room', null))}
       <div class="quiet-panel">
         <p class="quiet-statement">
           <span class="glyph">§</span>
