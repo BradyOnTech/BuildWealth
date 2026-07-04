@@ -1,0 +1,148 @@
+/* ─────────────────────────────────────────────────
+   Charts — ledger-quiet SVG treatment.
+   Fan bands in printed-ink green, hairline grid,
+   mono axis labels, gilt markers, oxblood loss bars.
+   ───────────────────────────────────────────────── */
+
+.chart-figure {
+  margin: var(--s-5) 0 var(--s-4);
+}
+
+.chart-figure .chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.chart-caption {
+  margin-top: var(--s-2);
+  font-family: var(--mono);
+  font-size: var(--t-marginalia);
+  color: var(--ink-faint);
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-4);
+  margin-bottom: var(--s-2);
+  font-family: var(--mono);
+  font-size: var(--t-caption);
+  color: var(--ink-soft);
+}
+
+.chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.legend-swatch.band-outer { background: rgba(45, 93, 62, 0.14); }
+.legend-swatch.band-inner { background: rgba(45, 93, 62, 0.28); }
+.legend-swatch.line-median {
+  height: 2px;
+  border-radius: 0;
+  background: var(--ink-strong);
+}
+.legend-swatch.line-compare {
+  height: 0;
+  border-radius: 0;
+  border-top: 2px dashed var(--ink-faint);
+  background: none;
+}
+
+/* SVG internals */
+.chart-grid {
+  stroke: var(--rule-soft);
+  stroke-width: 1;
+}
+
+.chart-grid.chart-baseline {
+  stroke: var(--rule-strong);
+}
+
+.chart-axis-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  fill: var(--ink-faint);
+}
+
+.chart-band-outer {
+  fill: var(--forest);
+  fill-opacity: 0.12;
+}
+
+.chart-band-inner {
+  fill: var(--forest);
+  fill-opacity: 0.24;
+}
+
+.chart-line-median {
+  fill: none;
+  stroke: var(--ink-strong);
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+
+.chart-line-compare {
+  fill: none;
+  stroke: var(--ink-faint);
+  stroke-width: 1.2;
+  stroke-dasharray: 5 4;
+  stroke-linejoin: round;
+}
+
+.chart-marker {
+  stroke: var(--gilt);
+  stroke-width: 1.2;
+  stroke-dasharray: 2 3;
+}
+
+.chart-marker-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  fill: var(--brass);
+}
+
+.chart-marker.chart-marker-coast { stroke: var(--forest-soft); }
+.chart-marker-label.chart-marker-coast { fill: var(--forest-soft); }
+
+.chart-bar {
+  fill: var(--oxblood);
+  fill-opacity: 0.72;
+}
+
+/* Multi-series lines (strategy comparison) */
+.chart-line-s0, .chart-line-s1, .chart-line-s2, .chart-line-s3, .chart-line-s4 {
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
+.chart-line-s0 { stroke: var(--ink-strong); }
+.chart-line-s1 { stroke: var(--forest); }
+.chart-line-s2 { stroke: var(--oxblood-soft); }
+.chart-line-s3 { stroke: var(--brass); }
+.chart-line-s4 { stroke: var(--forest-soft); stroke-dasharray: 6 3; }
+
+.legend-swatch.line-swatch {
+  height: 0;
+  border-radius: 0;
+  background: none;
+  border-top: 2.5px solid var(--ink-strong);
+}
+
+.legend-swatch.line-swatch.chart-line-s0 { border-top-color: var(--ink-strong); }
+.legend-swatch.line-swatch.chart-line-s1 { border-top-color: var(--forest); }
+.legend-swatch.line-swatch.chart-line-s2 { border-top-color: var(--oxblood-soft); }
+.legend-swatch.line-swatch.chart-line-s3 { border-top-color: var(--brass); }
+.legend-swatch.line-swatch.chart-line-s4 { border-top-color: var(--forest-soft); border-top-style: dashed; }

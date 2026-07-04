@@ -1,0 +1,247 @@
+// Chart primitives — dependency-free SVG builders for the Almanac.
+// Pure functions: data in, markup string out. Visual style lives in styles/charts.css.
+
+import { esc } from './dom.js';
+
+const FAN_MARGIN = { top: 14, right: 18, bottom: 30, left: 62 };
+
+export function compactUsd(value) {
+  if (value == null || value === '') return '—';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '—';
+  const abs = Math.abs(n);
+  const sign = n < 0 ? '-' : '';
+  if (abs >= 1e9) return `${sign}$${trimTo(abs / 1e9)}B`;
+  if (abs >= 1e6) return `${sign}$${trimTo(abs / 1e6)}M`;
+  if (abs >= 1e3) return `${sign}$${trimTo(abs / 1e3)}k`;
+  return `${sign}$${Math.round(abs)}`;
+}
+
+function trimTo(value) {
+  const rounded = value >= 100 ? Math.round(value) : Math.round(value * 10) / 10;
+  return String(rounded);
+}
+
+export function linearScale([d0, d1], [r0, r1]) {
+  const span = d1 - d0;
+  if (!Number.isFinite(span) || span === 0) return () => (r0 + r1) / 2;
+  return value => r0 + ((value - d0) / span) * (r1 - r0);
+}
+
+// Round-numbered axis ticks covering [min, max].
+export function niceTicks(min, max, count = 4) {
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return [];
+  const rawStep = (max - min) / Math.max(1, count);
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+  const residual = rawStep / magnitude;
+  const step = (residual >= 5 ? 10 : residual >= 2 ? 5 : residual >= 1 ? 2 : 1) * magnitude;
+  const ticks = [];
+  for (let tick = Math.ceil(min / step) * step; tick <= max + step * 1e-6; tick += step) {
+    ticks.push(Math.round(tick * 1e6) / 1e6);
+  }
+  return ticks;
+}
+
+export function linePath(points) {
+  const usable = points.filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
+  if (usable.length < 2) return '';
+  return usable
+    .map(([x, y], index) => `${index === 0 ? 'M' : 'L'}${rnd(x)},${rnd(y)}`)
+    .join('');
+}
+
+// Closed region between an upper and lower series (same x order).
+export function bandPath(upper, lower) {
+  const top = linePath(upper);
+  if (!top) return '';
+  const bottom = lower
+    .filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y))
+    .reverse()
+    .map(([x, y]) => `L${rnd(x)},${rnd(y)}`)
+    .join('');
+  return bottom ? `${top}${bottom}Z` : '';
+}
+
+function rnd(value) {
+  return Math.round(value * 10) / 10;
+}
+
+// Percentile fan: layered bands (outermost first), overlay lines, x markers.
+// rows: [{ [xKey], [band.lo], [band.hi], [line.key], ... }]
+export function fanChart({
+  rows = [],
+  xKey = 'year',
+  bands = [],
+  lines = [],
+  markers = [],
+  width = 720,
+  height = 300,
+  formatX = String,
+  formatY = compactUsd,
+  yTickCount = 4,
+  ariaLabel = 'Chart',
+} = {}) {
+  const usable = rows.filter(row => Number.isFinite(Number(row?.[xKey])));
+  if (usable.length < 2) return '';
+  const xValues = usable.map(row => Number(row[xKey]));
+  const valueKeys = [
+    ...bands.flatMap(band => [band.lo, band.hi]),
+    ...lines.map(line => line.key),
+  ];
+  const yValues = usable
+    .flatMap(row => valueKeys.map(key => Number(row[key])))
+    .filter(Number.isFinite);
+  if (!yValues.length) return '';
+
+  const plot = plotArea(width, height);
+  const yMax = Math.max(...yValues);
+  const yMin = Math.min(0, Math.min(...yValues));
+  if (yMax <= yMin) return '';
+  const x = linearScale([xValues[0], xValues[xValues.length - 1]], [plot.left, plot.right]);
+  const y = linearScale([yMin, yMax * 1.04], [plot.bottom, plot.top]);
+
+  const bandShapes = bands
+    .map(band => {
+      const upper = seriesPoints(usable, xKey, band.hi, x, y);
+      const lower = seriesPoints(usable, xKey, band.lo, x, y);
+      const d = bandPath(upper, lower);
+      return d ? `<path class="${esc(band.cls || 'chart-band-outer')}" d="${d}"></path>` : '';
+    })
+    .join('');
+  const lineShapes = lines
+    .map(line => {
+      const d = linePath(seriesPoints(usable, xKey, line.key, x, y));
+      return d ? `<path class="${esc(line.cls || 'chart-line-median')}" d="${d}"></path>` : '';
+    })
+    .join('');
+  const markerShapes = markers
+    .filter(marker => Number.isFinite(Number(marker?.x)))
+    .filter(marker => Number(marker.x) >= xValues[0] && Number(marker.x) <= xValues[xValues.length - 1])
+    .map((marker, index) => {
+      const mx = rnd(x(Number(marker.x)));
+      const cls = marker.cls ? ` ${esc(marker.cls)}` : '';
+      // Stagger label rows so adjacent markers stay legible.
+      const labelY = plot.top + 11 + (index % 2) * 14;
+      const label = marker.label
+        ? `<text class="chart-marker-label${cls}" x="${mx + 5}" y="${labelY}">${esc(marker.label)}</text>`
+        : '';
+      return `<line class="chart-marker${cls}" x1="${mx}" y1="${plot.top}" x2="${mx}" y2="${plot.bottom}"></line>${label}`;
+    })
+    .join('');
+
+  return svgShell({
+    width,
+    height,
+    ariaLabel,
+    content: [
+      yAxis({ ticks: niceTicks(yMin, yMax, yTickCount), y, plot, formatY }),
+      xAxis({ values: xValues, x, plot, formatX }),
+      bandShapes,
+      lineShapes,
+      markerShapes,
+    ].join(''),
+  });
+}
+
+// Vertical bars over an ordinal x (one bar per row).
+export function barChart({
+  rows = [],
+  xKey = 'year',
+  yKey = 'count',
+  width = 720,
+  height = 180,
+  formatX = String,
+  formatY = String,
+  yTickCount = 3,
+  barCls = 'chart-bar',
+  ariaLabel = 'Bar chart',
+} = {}) {
+  const usable = rows.filter(row => Number.isFinite(Number(row?.[yKey])));
+  if (!usable.length) return '';
+  const plot = plotArea(width, height);
+  const yMax = Math.max(...usable.map(row => Number(row[yKey])));
+  if (yMax <= 0) return '';
+  const y = linearScale([0, yMax * 1.08], [plot.bottom, plot.top]);
+  const slot = (plot.right - plot.left) / usable.length;
+  const barWidth = Math.max(2, Math.min(28, slot * 0.62));
+
+  const barShapes = usable
+    .map((row, index) => {
+      const value = Number(row[yKey]);
+      const cx = plot.left + slot * (index + 0.5);
+      const top = y(value);
+      return `<rect class="${esc(barCls)}" x="${rnd(cx - barWidth / 2)}" y="${rnd(top)}" width="${rnd(barWidth)}" height="${rnd(plot.bottom - top)}"></rect>`;
+    })
+    .join('');
+  const labelStep = Math.max(1, Math.ceil(usable.length / 8));
+  const barLabels = usable
+    .map((row, index) => {
+      if (index % labelStep !== 0 && index !== usable.length - 1) return '';
+      const cx = plot.left + slot * (index + 0.5);
+      return `<text class="chart-axis-label" text-anchor="middle" x="${rnd(cx)}" y="${plot.bottom + 16}">${esc(formatX(row[xKey]))}</text>`;
+    })
+    .join('');
+
+  return svgShell({
+    width,
+    height,
+    ariaLabel,
+    content: [
+      yAxis({ ticks: niceTicks(0, yMax, yTickCount), y, plot, formatY }),
+      barShapes,
+      barLabels,
+    ].join(''),
+  });
+}
+
+function plotArea(width, height) {
+  return {
+    top: FAN_MARGIN.top,
+    right: width - FAN_MARGIN.right,
+    bottom: height - FAN_MARGIN.bottom,
+    left: FAN_MARGIN.left,
+  };
+}
+
+function seriesPoints(rows, xKey, yKey, x, y) {
+  return rows
+    .map(row => {
+      const value = Number(row[yKey]);
+      return Number.isFinite(value) ? [x(Number(row[xKey])), y(value)] : null;
+    })
+    .filter(Boolean);
+}
+
+function yAxis({ ticks, y, plot, formatY }) {
+  return ticks
+    .map(tick => {
+      const ty = rnd(y(tick));
+      return (
+        `<line class="chart-grid" x1="${plot.left}" y1="${ty}" x2="${plot.right}" y2="${ty}"></line>` +
+        `<text class="chart-axis-label" text-anchor="end" x="${plot.left - 8}" y="${ty + 3}">${esc(formatY(tick))}</text>`
+      );
+    })
+    .join('');
+}
+
+function xAxis({ values, x, plot, formatX }) {
+  const step = Math.max(1, Math.ceil(values.length / 6));
+  const last = values[values.length - 1];
+  const picked = values
+    .filter((_, index) => index % step === 0 || index === values.length - 1)
+    .filter((value, index, list) =>
+      index === list.length - 1 || Math.abs(x(value) - x(last)) >= 44);
+  return (
+    `<line class="chart-grid chart-baseline" x1="${plot.left}" y1="${plot.bottom}" x2="${plot.right}" y2="${plot.bottom}"></line>` +
+    picked
+      .map(value => `<text class="chart-axis-label" text-anchor="middle" x="${rnd(x(value))}" y="${plot.bottom + 16}">${esc(formatX(value))}</text>`)
+      .join('')
+  );
+}
+
+function svgShell({ width, height, ariaLabel, content }) {
+  return (
+    `<svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(ariaLabel)}" preserveAspectRatio="xMidYMid meet">` +
+    `<title>${esc(ariaLabel)}</title>${content}</svg>`
+  );
+}

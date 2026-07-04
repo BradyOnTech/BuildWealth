@@ -563,13 +563,15 @@ function attachHandlers() {
   delegate(page, 'click', '[data-assumption-action="save"]', () => saveAssumptions());
 
   delegate(page, 'change', '[data-scenario-field]', (_, el) => stageScenarioEdit(el));
-  delegate(page, 'input', '[data-scenario-field]', (_, el) => stageScenarioEdit(el));
+  // 'input' stages without re-rendering: replacing the DOM mid-keystroke
+  // destroys the focused field and silently drops the rest of the digits.
+  delegate(page, 'input', '[data-scenario-field]', (_, el) => stageScenarioEdit(el, { rerender: false }));
   delegate(page, 'click', '[data-scenario-action="run"]', () => runScenarioDiff());
   delegate(page, 'click', '[data-scenario-action="save-simulation"]', () => saveScenarioSimulation());
   delegate(page, 'click', '[data-scenario-action="save-decision"]', () => saveScenarioDecisionNote());
 
   delegate(page, 'change', '[data-branch-field]', (_, el) => stageBranchEdit(el));
-  delegate(page, 'input', '[data-branch-field]', (_, el) => stageBranchEdit(el));
+  delegate(page, 'input', '[data-branch-field]', (_, el) => stageBranchEdit(el, { rerender: false }));
   delegate(page, 'click', '[data-branch-action="run"]', () => runScenarioBranch());
   delegate(page, 'click', '[data-branch-action="save-simulation"]', () => saveBranchSimulation());
   delegate(page, 'click', '[data-branch-action="save-decision"]', () => saveBranchDecisionNote());
@@ -636,7 +638,7 @@ function resetAssumptionEdits() {
   rerenderAssumptions();
 }
 
-function stageScenarioEdit(el) {
+function stageScenarioEdit(el, { rerender = true } = {}) {
   const field = String(el.dataset.scenarioField || '').trim();
   if (!field) return;
   ui.scenarios.draft = {
@@ -645,10 +647,10 @@ function stageScenarioEdit(el) {
   };
   ui.scenarios.dirty = true;
   ui.scenarios.error = null;
-  rerenderScenarios();
+  if (rerender) rerenderScenarios();
 }
 
-function stageBranchEdit(el) {
+function stageBranchEdit(el, { rerender = true } = {}) {
   const field = String(el.dataset.branchField || '').trim();
   if (!field) return;
   if (field === 'template_id') {
@@ -666,7 +668,7 @@ function stageBranchEdit(el) {
   };
   ui.branches.dirty = true;
   ui.branches.error = null;
-  rerenderBranches();
+  if (rerender) rerenderBranches();
 }
 
 function stageWithdrawalEdit(el) {
@@ -742,6 +744,8 @@ async function runWithdrawalComparison() {
   const payload = buildWithdrawalComparePayload({
     ...(ui.withdrawals.draft || {}),
     selectedStrategies: ui.withdrawals.selectedStrategies || [],
+    // Raw per-strategy results feed the drawdown trajectory chart.
+    include_raw_results: true,
   });
 
   ui.withdrawals.busy = true;

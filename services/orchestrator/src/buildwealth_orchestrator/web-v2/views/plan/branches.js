@@ -3,7 +3,7 @@
 
 import { html, raw, esc } from '../../lib/dom.js';
 import { fmtPctSigned, fmtUsd, fmtUsdSigned } from '../../lib/format.js';
-import { renderSimulationExplanation, renderWhatIfReviewLevel } from './scenarios.js';
+import { renderSimulationExplanation, renderTrajectoryFan, renderWhatIfReviewLevel } from './scenarios.js';
 
 const BRANCH_COMPARE_FIELDS = [
   { key: 'annual_contribution_usd', label: 'Annual contribution', type: 'money' },
@@ -203,6 +203,8 @@ function renderBranchResult(planId = '', result = {}, explanation = null, review
         <h3 class="section-title">Simulation compared.</h3>
         <p class="section-lede">${esc(name)}</p>
       </header>
+
+      ${raw(renderTrajectoryFan(result.branch_result, result.base_result))}
 
       ${deltas.length ? html`
         <div class="scenario-delta-table">

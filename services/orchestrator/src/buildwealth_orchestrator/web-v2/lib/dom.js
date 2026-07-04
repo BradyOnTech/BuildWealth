@@ -23,9 +23,14 @@ export function el(tag, attrs = {}, ...children) {
 }
 
 const ESCAPE_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+// Escapes once and marks the result already-safe, so `html\`\`` will not
+// escape it a second time. (esc() inside html`` used to double-escape —
+// visible whenever a value contained & < >, e.g. API validation messages.)
+// Coerces to the escaped string in plain template literals via toString().
 export function esc(str) {
-  if (str == null) return '';
-  return String(str).replace(/[&<>"']/g, ch => ESCAPE_MAP[ch]);
+  if (str == null) return rawObj('');
+  const escaped = String(str).replace(/[&<>"']/g, ch => ESCAPE_MAP[ch]);
+  return rawObj(escaped);
 }
 
 // Strip HTML to plain text. Some backend payloads (notably recommendation

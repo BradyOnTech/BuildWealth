@@ -3,6 +3,7 @@
 
 import { html, raw, esc } from '../../lib/dom.js';
 import { fmtPct, fmtUsd } from '../../lib/format.js';
+import { fanChart, compactUsd } from '../../lib/chart.js';
 
 export const WITHDRAWAL_STRATEGIES = [
   {
@@ -148,6 +149,7 @@ function renderWithdrawalResult(planId = '', result = {}) {
       </header>
 
       ${Object.keys(best).length ? raw(renderBestStrategies(best)) : ''}
+      ${raw(renderDrawdownTrajectories(result))}
       ${raw(renderStrategyExplanation(result.explanation))}
 
       ${warnings.length ? html`
@@ -168,6 +170,90 @@ function renderWithdrawalResult(planId = '', result = {}) {
       </div>
     </div>
   `;
+}
+
+// Overlaid deterministic paths, one line per compared strategy: balances
+// ("which path survives") and annual taxes ("what does each path cost in
+// bracket creep, RMDs, and IRMAA"). Same colors across both charts.
+function renderDrawdownTrajectories(result = {}) {
+  const rawResults = objectValue(result.raw_results);
+  const comparisons = Array.isArray(result.comparisons) ? result.comparisons : [];
+  const ordered = comparisons.map(row => clean(row.strategy)).filter(id => rawResults[id]);
+  if (ordered.length < 2) return '';
+
+  const byYear = new Map();
+  const series = [];
+  let drawdownYear = null;
+  let hasTaxes = false;
+  ordered.forEach((strategy, index) => {
+    const points = baselineTimelinePoints(rawResults[strategy]);
+    if (!points.length) return;
+    const cls = `chart-line-s${index % 5}`;
+    series.push({ key: strategy, cls, label: strategyLabel(strategy) });
+    for (const point of points) {
+      const year = Number(point.year);
+      const balance = Number(point.ending_balance_usd);
+      if (!Number.isFinite(year) || !Number.isFinite(balance)) continue;
+      if (!byYear.has(year)) byYear.set(year, { year });
+      const row = byYear.get(year);
+      row[strategy] = balance;
+      const taxes = Number(point.taxes_usd);
+      if (Number.isFinite(taxes)) {
+        row[`tax_${strategy}`] = taxes;
+        if (taxes > 0) hasTaxes = true;
+      }
+      if (drawdownYear == null && Number(point.withdrawals_usd) > 0) drawdownYear = year;
+    }
+  });
+  if (series.length < 2) return '';
+  const rows = [...byYear.values()].sort((a, b) => a.year - b.year);
+  const markers = drawdownYear != null ? [{ x: drawdownYear, label: 'Drawdown' }] : [];
+
+  const balanceChart = fanChart({
+    rows,
+    xKey: 'year',
+    lines: series.map(({ key, cls }) => ({ key, cls })),
+    markers,
+    formatY: compactUsd,
+    ariaLabel: 'Projected portfolio balance by year for each withdrawal strategy',
+  });
+  if (!balanceChart) return '';
+
+  const taxChart = hasTaxes
+    ? fanChart({
+        rows,
+        xKey: 'year',
+        lines: series.map(({ key, cls }) => ({ key: `tax_${key}`, cls })),
+        height: 200,
+        formatY: compactUsd,
+        ariaLabel: 'Projected annual taxes by year for each withdrawal strategy',
+      })
+    : '';
+
+  return html`
+    <figure class="chart-figure">
+      <div class="chart-legend">
+        ${raw(series.map(({ cls, label }) => html`<span><i class="legend-swatch line-swatch ${esc(cls)}"></i>${esc(label)}</span>`).join(''))}
+      </div>
+      ${raw(balanceChart)}
+      <figcaption class="chart-caption">Nominal dollars · deterministic baseline path per strategy</figcaption>
+    </figure>
+    ${taxChart ? html`
+      <figure class="chart-figure">
+        <span class="story-block-eyebrow">Annual taxes</span>
+        ${raw(taxChart)}
+        <figcaption class="chart-caption">Federal + state + IRMAA per year · same strategy colors · spikes mark RMD and conversion years</figcaption>
+      </figure>
+    ` : ''}
+  `.toString();
+}
+
+function baselineTimelinePoints(planningResult = {}) {
+  const scenarios = Array.isArray(planningResult?.scenarios) ? planningResult.scenarios : [];
+  const baseline = scenarios.find(item => clean(item?.label).toLowerCase() === 'baseline') || scenarios[0];
+  return Array.isArray(baseline?.timeline_points)
+    ? baseline.timeline_points.filter(point => point && typeof point === 'object')
+    : [];
 }
 
 function renderStrategyExplanation(explanation = {}) {

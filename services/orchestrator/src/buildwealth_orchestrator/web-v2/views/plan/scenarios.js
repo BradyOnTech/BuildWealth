@@ -3,6 +3,8 @@
 
 import { html, raw, esc } from '../../lib/dom.js';
 import { fmtPctSigned, fmtUsd, fmtUsdSigned } from '../../lib/format.js';
+import { fanChart, barChart, compactUsd } from '../../lib/chart.js';
+import { firstDrawdownYear, crossoverYear, coastFireYear } from './milestones.js';
 
 export const SCENARIO_FIELDS = [
   { key: 'annual_contribution_usd', label: 'Annual contribution', type: 'money' },
@@ -142,6 +144,8 @@ function renderScenarioResult(plan, result, { focusId = '', planId = '', explana
         </dl>
       ` : html`<p class="marginalia">No setting differences were returned.</p>`}
 
+      ${raw(renderTrajectoryFan(result.candidate_result, result.base_result))}
+
       ${deltas.length ? html`
         <div class="scenario-delta-table">
           ${raw(deltas.map(row => renderDeltaRow(row)).join(''))}
@@ -161,6 +165,91 @@ function renderScenarioResult(plan, result, { focusId = '', planId = '', explana
       </div>
     </div>
   `;
+}
+
+// The headline visual: candidate Monte Carlo fan (P10–P90) with the current
+// plan's median dashed underneath, and a marker where drawdown begins.
+// Shared by the Simulations and What-ifs surfaces.
+export function renderTrajectoryFan(candidateResult, baseResult) {
+  const candidate = objectValue(candidateResult);
+  const base = objectValue(baseResult);
+  const candMonte = objectValue(candidate.monte_carlo);
+  const rows = Array.isArray(candMonte.percentile_timeline) ? candMonte.percentile_timeline : [];
+  if (rows.length < 2) return '';
+
+  const baseMonte = objectValue(base.monte_carlo);
+  const baseRows = Array.isArray(baseMonte.percentile_timeline) ? baseMonte.percentile_timeline : [];
+  const baseByYear = new Map(
+    baseRows.map(row => [Number(row.year), Number(row.p50_ending_balance_usd)]),
+  );
+  const merged = rows.map(row => ({
+    ...row,
+    base_p50_ending_balance_usd: baseByYear.get(Number(row.year)),
+  }));
+  const hasBaseline = merged.some(row => Number.isFinite(row.base_p50_ending_balance_usd));
+
+  const timelinePoints = baselineTimelinePoints(candidate);
+  const markers = [];
+  const drawdownYear = firstDrawdownYear(timelinePoints);
+  const coastYear = coastFireYear(timelinePoints);
+  const crossover = crossoverYear(timelinePoints);
+  if (coastYear != null && coastYear !== drawdownYear) {
+    markers.push({ x: coastYear, label: 'Coast FI', cls: 'chart-marker-coast' });
+  }
+  if (drawdownYear != null) markers.push({ x: drawdownYear, label: 'Retirement' });
+
+  const chart = fanChart({
+    rows: merged,
+    xKey: 'year',
+    bands: [
+      { lo: 'p10_ending_balance_usd', hi: 'p90_ending_balance_usd', cls: 'chart-band-outer' },
+      { lo: 'p25_ending_balance_usd', hi: 'p75_ending_balance_usd', cls: 'chart-band-inner' },
+    ],
+    lines: [
+      ...(hasBaseline ? [{ key: 'base_p50_ending_balance_usd', cls: 'chart-line-compare' }] : []),
+      { key: 'p50_ending_balance_usd', cls: 'chart-line-median' },
+    ],
+    markers,
+    formatY: compactUsd,
+    ariaLabel: 'Projected portfolio balance range by year across Monte Carlo simulations',
+  });
+  if (!chart) return '';
+
+  const runs = Number(candMonte.runs);
+  const firstRow = merged[0];
+  const lastRow = merged[merged.length - 1];
+  const ageSpan = Number.isFinite(Number(firstRow.age)) && Number(firstRow.age) > 0
+    ? ` · ages ${firstRow.age}–${lastRow.age}`
+    : '';
+  return html`
+    <figure class="chart-figure">
+      <div class="chart-legend">
+        <span><i class="legend-swatch band-outer"></i>10th–90th percentile</span>
+        <span><i class="legend-swatch band-inner"></i>25th–75th</span>
+        <span><i class="legend-swatch line-median"></i>Median (this simulation)</span>
+        ${hasBaseline ? html`<span><i class="legend-swatch line-compare"></i>Current plan median</span>` : ''}
+      </div>
+      ${raw(chart)}
+      <figcaption class="chart-caption">
+        Nominal dollars${Number.isFinite(runs) && runs > 0 ? ` · ${runs.toLocaleString('en-US')} simulated paths` : ''}${ageSpan}${milestoneCaption(coastYear, crossover)}
+      </figcaption>
+    </figure>
+  `.toString();
+}
+
+function milestoneCaption(coastYear, crossover) {
+  const parts = [];
+  if (coastYear != null) parts.push(`coast estimate: contributions optional from ${coastYear}`);
+  if (crossover != null) parts.push(`growth outpaces contributions from ${crossover}`);
+  return parts.length ? ` · ${parts.join(' · ')}` : '';
+}
+
+function baselineTimelinePoints(planningResult = {}) {
+  const scenarios = Array.isArray(planningResult.scenarios) ? planningResult.scenarios : [];
+  const baseline = scenarios.find(item => clean(item?.label).toLowerCase() === 'baseline') || scenarios[0];
+  return Array.isArray(baseline?.timeline_points)
+    ? baseline.timeline_points.filter(point => point && typeof point === 'object')
+    : [];
 }
 
 export function renderSimulationExplanation(state = {}) {
@@ -313,11 +402,7 @@ function renderSimulationDepth({ yearly = [], phases = [], bands = [], planStren
               <li>Most common first shortfall year: ${esc(failureAnalysis.most_common_first_failure_year)}</li>
             ` : ''}
           </ul>
-          ${failureYears.length ? html`
-            <p class="marginalia">
-              ${raw(failureYears.slice(0, 3).map(row => `${esc(row.year)} (${esc(row.trial_share_pct)}%)`).join(' · '))}
-            </p>
-          ` : ''}
+          ${raw(renderFailureHistogram(failureYears))}
         </details>
       ` : ''}
       ${reviewLinks.length ? html`
@@ -330,6 +415,26 @@ function renderSimulationDepth({ yearly = [], phases = [], bands = [], planStren
       ` : ''}
     </div>
   `;
+}
+
+function renderFailureHistogram(failureYears = []) {
+  const rows = failureYears.filter(row => Number.isFinite(Number(row?.trial_share_pct)));
+  if (!rows.length) return '';
+  const chart = barChart({
+    rows,
+    xKey: 'year',
+    yKey: 'trial_share_pct',
+    height: 160,
+    formatY: value => `${value}%`,
+    ariaLabel: 'Share of simulated paths first running short, by year',
+  });
+  if (!chart) return '';
+  return html`
+    <figure class="chart-figure">
+      ${raw(chart)}
+      <figcaption class="chart-caption">Share of simulated paths first running short, by year.</figcaption>
+    </figure>
+  `.toString();
 }
 
 function formatPercentValue(value) {

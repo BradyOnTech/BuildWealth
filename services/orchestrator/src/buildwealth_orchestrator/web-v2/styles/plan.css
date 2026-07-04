@@ -1198,3 +1198,16 @@
   gap: var(--s-3);
 }
 .append-form-actions { display: flex; gap: var(--s-3); }
+
+/* Affordability verdict (Today · Price a decision) */
+.today-affordability {
+  margin-top: var(--s-7);
+}
+
+.affordability-highlights {
+  margin: var(--s-3) 0 0;
+  padding-left: var(--s-4);
+  color: var(--ink-soft);
+  font-size: var(--t-body-sm);
+  line-height: var(--lh-body);
+}
