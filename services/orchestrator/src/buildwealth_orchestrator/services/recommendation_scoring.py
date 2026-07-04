@@ -140,6 +140,23 @@ def _normalized_source(row: dict[str, Any]) -> str:
     return str(row.get("source") or "manual").strip().lower() or "manual"
 
 
+def _decision_signal(row: dict[str, Any]) -> str | None:
+    """How the user decided on this recommendation, if they have.
+
+    Declines are the most common feedback a user gives; the calibration
+    profile counts them so repeatedly-refused sources stop shouting.
+    """
+    closure_status = str(_decision_closure(row).get("decision_status") or "").strip().lower()
+    if closure_status in ("accepted", "rejected"):
+        return "applied" if closure_status == "accepted" else "rejected"
+    row_status = str(row.get("status") or "").strip().lower()
+    if row_status == "applied":
+        return "applied"
+    if row_status == "rejected":
+        return "rejected"
+    return None
+
+
 def _empty_calibration_bucket(key: str) -> dict[str, Any]:
     return {
         "key": key,
@@ -150,6 +167,8 @@ def _empty_calibration_bucket(key: str) -> dict[str, Any]:
         "process_score_total": 0.0,
         "useful_process_count": 0,
         "weak_process_count": 0,
+        "applied_count": 0,
+        "rejected_count": 0,
     }
 
 
@@ -209,6 +228,18 @@ def _finalize_calibration_bucket(bucket: dict[str, Any]) -> dict[str, Any]:
             adjustment -= 8.0
         elif process_score <= -0.25:
             adjustment -= 4.0
+    # Declines are feedback too: a source the user keeps refusing quiets
+    # down. Deliberately small next to measured-outcome signals — a decline
+    # says "not this one", not "the analysis was wrong".
+    applied_count = int(bucket.get("applied_count") or 0)
+    rejected_count = int(bucket.get("rejected_count") or 0)
+    decided_count = applied_count + rejected_count
+    rejection_rate = round((rejected_count / decided_count) * 100.0, 2) if decided_count else None
+    if decided_count >= 3 and rejection_rate is not None:
+        if rejection_rate >= 75.0:
+            adjustment -= 4.0
+        elif rejection_rate >= 50.0:
+            adjustment -= 2.0
     return {
         "key": str(bucket.get("key") or ""),
         "measured_count": measured_count,
@@ -220,6 +251,10 @@ def _finalize_calibration_bucket(bucket: dict[str, Any]) -> dict[str, Any]:
         "weak_process_count": weak_process_count,
         "process_useful_rate_pct": process_useful_rate,
         "process_score": process_score,
+        "applied_count": applied_count,
+        "rejected_count": rejected_count,
+        "decided_count": decided_count,
+        "rejection_rate_pct": rejection_rate,
         "confidence_adjustment": round(_clamp(adjustment, min_value=-12.0, max_value=10.0), 2),
     }
 
@@ -231,12 +266,13 @@ def build_recommendation_calibration_profile(rows: list[dict[str, Any]]) -> dict
     for row in rows:
         metrics = _expected_vs_realized_metrics(row)
         process_calibration = _decision_process_calibration(row)
+        decision_signal = _decision_signal(row)
         has_measured_metrics = str(metrics.get("status") or "").strip().lower() == "measured"
         has_process_calibration = (
             str(process_calibration.get("process_outcome") or "").strip().lower()
             in PROCESS_OUTCOME_WEIGHTS
         )
-        if not has_measured_metrics and not has_process_calibration:
+        if not has_measured_metrics and not has_process_calibration and decision_signal is None:
             continue
 
         source = _normalized_source(row)
@@ -249,6 +285,10 @@ def build_recommendation_calibration_profile(rows: list[dict[str, Any]]) -> dict
         if has_process_calibration:
             _add_process_calibration_observation(source_bucket, process_calibration)
             _add_process_calibration_observation(type_bucket, process_calibration)
+        if decision_signal is not None:
+            counter = "applied_count" if decision_signal == "applied" else "rejected_count"
+            source_bucket[counter] = int(source_bucket.get(counter) or 0) + 1
+            type_bucket[counter] = int(type_bucket.get(counter) or 0) + 1
 
     return {
         "model_version": RECOMMENDATION_CALIBRATION_MODEL_VERSION,
@@ -297,6 +337,9 @@ def _append_calibration_reason(reasons: list[str], calibration: dict[str, Any]) 
     type_count = int(type_bucket.get("measured_count") or 0) if type_bucket else 0
     type_rate = type_bucket.get("future_value_direction_match_rate_pct") if type_bucket else None
 
+    source_decided_count = int(source_bucket.get("decided_count") or 0) if source_bucket else 0
+    source_rejection_rate = source_bucket.get("rejection_rate_pct") if source_bucket else None
+
     if source_count >= 2 and source_rate is not None:
         _append_reason(
             reasons,
@@ -306,6 +349,11 @@ def _append_calibration_reason(reasons: list[str], calibration: dict[str, Any]) 
         _append_reason(
             reasons,
             f"Calibration adjusted confidence {confidence_delta:+.1f}: {calibration.get('source_key')} has {float(source_process_rate):.1f}% useful process outcomes across {source_process_count} calibrated reviews.",
+        )
+    elif source_decided_count >= 3 and source_rejection_rate is not None and float(source_rejection_rate) >= 50.0:
+        _append_reason(
+            reasons,
+            f"Calibration adjusted confidence {confidence_delta:+.1f}: you declined {int(source_bucket.get('rejected_count') or 0)} of {source_decided_count} decided {calibration.get('source_key')} suggestions.",
         )
     elif type_count >= 2 and type_rate is not None:
         _append_reason(

@@ -379,3 +379,81 @@ def test_quality_metadata_promotes_decision_grade_actions_over_context_gathering
     assert ranked[0]["score"]["confidence"] > ranked[1]["score"]["confidence"]
     assert any("decision-grade" in reason.lower() for reason in ranked[0]["score"]["reasons"])
     assert any("missing context" in reason.lower() for reason in ranked[1]["score"]["reasons"])
+
+
+def _rejected_row(source: str, index: int) -> dict:
+    return {
+        "id": f"rec-declined-{index}",
+        "title": f"Declined suggestion {index}",
+        "status": "rejected",
+        "source": source,
+        "recommendation_type": "workflow_action",
+        "created_at": "2026-06-01T00:00:00+00:00",
+        "action_payload": {"decision_closure": {"decision_status": "rejected"}},
+    }
+
+
+def test_calibration_counts_declines_and_penalizes_refused_sources() -> None:
+    rows = [_rejected_row("generator:noisy", index) for index in range(3)]
+    profile = build_recommendation_calibration_profile(rows)
+    bucket = profile["by_source"]["generator:noisy"]
+
+    assert bucket["rejected_count"] == 3
+    assert bucket["decided_count"] == 3
+    assert bucket["rejection_rate_pct"] == 100.0
+    assert bucket["confidence_adjustment"] == -4.0
+
+    # two declines are not yet a pattern
+    thin = build_recommendation_calibration_profile(rows[:2])
+    assert thin["by_source"]["generator:noisy"]["confidence_adjustment"] == 0.0
+
+    # a 50% rejection rate earns the smaller penalty
+    mixed_rows = rows[:2] + [
+        {
+            "id": f"rec-applied-{index}",
+            "title": f"Applied suggestion {index}",
+            "status": "applied",
+            "source": "generator:noisy",
+            "recommendation_type": "workflow_action",
+            "created_at": "2026-06-01T00:00:00+00:00",
+            "action_payload": {"decision_closure": {"decision_status": "accepted"}},
+        }
+        for index in range(2)
+    ]
+    mixed = build_recommendation_calibration_profile(mixed_rows)
+    assert mixed["by_source"]["generator:noisy"]["rejection_rate_pct"] == 50.0
+    assert mixed["by_source"]["generator:noisy"]["confidence_adjustment"] == -2.0
+
+
+def test_ranking_quiets_repeatedly_declined_sources() -> None:
+    history = [_rejected_row("generator:noisy", index) for index in range(4)]
+    proposed = [
+        {
+            "id": "rec-noisy-new",
+            "title": "Another noisy suggestion",
+            "status": "proposed",
+            "priority": "medium",
+            "source": "generator:noisy",
+            "recommendation_type": "workflow_action",
+            "created_at": "2026-07-01T00:00:00+00:00",
+            "action_payload": {},
+        },
+        {
+            "id": "rec-quiet-new",
+            "title": "A suggestion from a source with no decline history",
+            "status": "proposed",
+            "priority": "medium",
+            "source": "generator:quiet",
+            "recommendation_type": "workflow_action",
+            "created_at": "2026-07-01T00:00:00+00:00",
+            "action_payload": {},
+        },
+    ]
+
+    ranked = score_and_sort_recommendations(history + proposed, sort="ranked")
+    ranked_proposed = [row for row in ranked if row["status"] == "proposed"]
+
+    assert ranked_proposed[0]["id"] == "rec-quiet-new"
+    noisy = next(row for row in ranked_proposed if row["id"] == "rec-noisy-new")
+    assert noisy["score"]["calibration"]["confidence_delta"] < 0
+    assert any("declined" in reason for reason in noisy["score"]["reasons"])
