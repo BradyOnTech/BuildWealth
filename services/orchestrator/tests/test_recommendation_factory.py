@@ -1715,13 +1715,14 @@ def test_run_all_recommendation_factories_groups_results_and_applies(
 
     assert dry_run.dry_run is True
     assert dry_run.errors == []
-    assert dry_run.factory_count == 7
+    assert dry_run.factory_count == 8
     assert set(dry_run.factories) == {
         "portfolio_risk",
         "plan_tracking",
         "cash_liquidity",
         "profile_completeness",
         "stale_assumptions",
+        "due_outcome_review",
         "watchlist_research",
         "research_thesis_expiration",
     }
@@ -1740,7 +1741,7 @@ def test_run_all_recommendation_factories_groups_results_and_applies(
     )
 
     assert applied.dry_run is False
-    assert applied.factory_count == 7
+    assert applied.factory_count == 8
     assert applied.errors == []
     assert applied.generated_count == dry_run.generated_count
     assert len(inbox.list(limit=None, status="proposed")) == applied.generated_count
@@ -1765,11 +1766,12 @@ def test_run_all_recommendation_factories_keeps_portfolio_results_when_plan_miss
         main.RecommendationFactoryRunAllRequest(dry_run=True, limit=2),
     )
 
-    assert response.factory_count == 4
+    assert response.factory_count == 5
     assert set(response.factories) == {
         "portfolio_risk",
         "cash_liquidity",
         "profile_completeness",
+        "due_outcome_review",
         "watchlist_research",
     }
     assert response.generated_count == 4

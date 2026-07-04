@@ -2751,3 +2751,213 @@ def generate_research_thesis_expiration_recommendations(
         skipped=skipped,
         dry_run=dry_run,
     )
+
+
+# ─── Due outcome reviews ────────────────────────────────────────────────────
+# A decision with a pre-mortem carries a promise: check what actually happened
+# on the review date. This factory turns due, unmeasured promises into Inbox
+# entries so the outcome loop closes without the user having to remember.
+
+DUE_OUTCOME_REVIEW_FACTORY_ID = "due_outcome_review_recommendation_factory"
+DUE_OUTCOME_REVIEW_FACTORY_VERSION = "v1"
+DUE_OUTCOME_REVIEW_SOURCE = "generator:due_outcome_review"
+
+
+def _due_outcome_review_dedupe_key(recommendation_id: str) -> str:
+    return f"due_outcome_review:{_clean_key(recommendation_id)}"
+
+
+def _parse_review_date(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _closure_outcome_measured(closure: dict[str, Any]) -> bool:
+    realized = closure.get("realized_outcome")
+    if isinstance(realized, dict) and str(realized.get("observed_at") or "").strip():
+        return True
+    comparison = closure.get("expected_vs_realized")
+    return isinstance(comparison, dict) and str(comparison.get("status") or "").strip() == "measured"
+
+
+def _due_outcome_review_candidate(
+    *,
+    source_recommendation: dict[str, Any],
+    now: datetime,
+    generated_at: str,
+) -> dict[str, Any] | None:
+    action_payload = source_recommendation.get("action_payload")
+    closure = action_payload.get("decision_closure") if isinstance(action_payload, dict) else None
+    if not isinstance(closure, dict):
+        return None
+    if str(closure.get("decision_status") or "").strip() != "accepted":
+        return None
+    if _closure_outcome_measured(closure):
+        return None
+    pre_mortem = closure.get("pre_mortem")
+    if not isinstance(pre_mortem, dict):
+        return None
+    review_date = _parse_review_date(pre_mortem.get("review_date"))
+    if review_date is None or review_date > now:
+        return None
+
+    source_id = str(source_recommendation.get("id") or "").strip()
+    if not source_id:
+        return None
+    source_title = str(source_recommendation.get("title") or "a past decision").strip()
+    days_overdue = max(0, (now - review_date).days)
+    priority = "high" if days_overdue >= 30 else "medium"
+    disconfirming = str(pre_mortem.get("disconfirming_signal") or "").strip()
+    expected_benefit = str(pre_mortem.get("expected_benefit") or "").strip()
+
+    detail_parts = [
+        f'When you applied "{source_title}" you promised a review on {review_date.date().isoformat()}.',
+    ]
+    if expected_benefit:
+        detail_parts.append(f"Expected benefit: {expected_benefit}")
+    if disconfirming:
+        detail_parts.append(f"Disconfirming signal to check: {disconfirming}")
+    detail_parts.append("Record what actually happened so future recommendations learn from it.")
+
+    evidence = {
+        "summary": f"Pre-mortem review date {review_date.date().isoformat()} has passed without a measured outcome.",
+        "data_keys": ["recommendations.decision_closure.pre_mortem"],
+        "source_recommendation_id": source_id,
+        "source_recommendation_title": source_title,
+        "review_date": review_date.isoformat(),
+        "days_overdue": days_overdue,
+        "expected_benefit": expected_benefit,
+        "main_risk": str(pre_mortem.get("main_risk") or "").strip(),
+        "disconfirming_signal": disconfirming,
+    }
+    suggested_action = {
+        "kind": "capture_decision_outcome",
+        "subject": source_id,
+        "title": f"Review the outcome: {source_title}",
+        "detail": "Open the decision and record the realized outcome against the pre-mortem.",
+    }
+    expected_outcome = {
+        "expected_delta_context_quality": "decision_outcome_measured",
+        "enabled_recommendation_sources": ["closure_analytics"],
+    }
+    return {
+        "title": f"Outcome review due: {source_title}",
+        "detail": " ".join(detail_parts),
+        "priority": priority,
+        "recommendation_type": "workflow_action",
+        "source": DUE_OUTCOME_REVIEW_SOURCE,
+        "plan_id": source_recommendation.get("plan_id"),
+        "action_payload": {
+            "generator": {
+                "id": DUE_OUTCOME_REVIEW_FACTORY_ID,
+                "version": DUE_OUTCOME_REVIEW_FACTORY_VERSION,
+                "generated_at": generated_at,
+                "signal_key": source_id,
+                "signal_type": "due_outcome_review",
+                "dedupe_key": _due_outcome_review_dedupe_key(source_id),
+                "severity": "overdue" if days_overdue >= 30 else "due",
+            },
+            "evidence": evidence,
+            "suggested_action": suggested_action,
+            "expected_outcome": expected_outcome,
+            "quality": _quality_metadata(
+                source=DUE_OUTCOME_REVIEW_SOURCE,
+                priority=priority,
+                evidence=evidence,
+                suggested_action=suggested_action,
+                expected_outcome=expected_outcome,
+                actionability="review_only",
+                confidence_level="high",
+                confidence_reasons=[
+                    "Review date and outcome status come directly from the recorded decision closure.",
+                ],
+                reversibility="high",
+            ),
+        },
+    }
+
+
+def generate_due_outcome_review_recommendations(
+    *,
+    existing_recommendations: list[dict[str, Any]],
+    creator: RecommendationCreator | None = None,
+    dry_run: bool = True,
+    limit: int = 10,
+    now: datetime | None = None,
+) -> RecommendationFactoryResult:
+    resolved_now = now or datetime.now(timezone.utc)
+    generated_at = _now_iso(now)
+    active_keys = _active_dedupe_keys(existing_recommendations)
+    bounded_limit = max(1, min(int(limit), 50))
+
+    candidates: list[dict[str, Any]] = []
+    created: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+
+    for item in existing_recommendations:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("source") or "").strip() == DUE_OUTCOME_REVIEW_SOURCE:
+            continue
+        candidate = _due_outcome_review_candidate(
+            source_recommendation=item,
+            now=resolved_now,
+            generated_at=generated_at,
+        )
+        if candidate is None:
+            continue
+        generator = candidate.get("action_payload", {}).get("generator", {})
+        dedupe_key = str(generator.get("dedupe_key") or "").strip()
+        signal_key = str(generator.get("signal_key") or "").strip()
+        if dedupe_key in active_keys:
+            skipped.append(
+                {
+                    "dedupe_key": dedupe_key,
+                    "reason": "active_duplicate",
+                    "title": candidate["title"],
+                    "signal_key": signal_key,
+                }
+            )
+            continue
+        if len(candidates) >= bounded_limit:
+            skipped.append(
+                {
+                    "dedupe_key": dedupe_key,
+                    "reason": "limit_exceeded",
+                    "title": candidate["title"],
+                    "signal_key": signal_key,
+                }
+            )
+            continue
+        candidates.append(candidate)
+        active_keys.add(dedupe_key)
+        if not dry_run and creator is not None:
+            created.append(
+                creator.create(
+                    title=candidate["title"],
+                    detail=candidate["detail"],
+                    priority=candidate["priority"],
+                    recommendation_type=candidate["recommendation_type"],
+                    source=candidate["source"],
+                    plan_id=candidate["plan_id"],
+                    action_payload=candidate["action_payload"],
+                    status="proposed",
+                )
+            )
+
+    return RecommendationFactoryResult(
+        generated_count=len(created) if not dry_run else len(candidates),
+        skipped_count=len(skipped),
+        candidates=candidates,
+        created=created,
+        skipped=skipped,
+        dry_run=dry_run,
+    )

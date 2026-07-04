@@ -1608,6 +1608,11 @@ class StaleAssumptionRecommendationGenerateRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=50)
 
 
+class DueOutcomeReviewRecommendationGenerateRequest(BaseModel):
+    dry_run: bool = True
+    limit: int = Field(default=10, ge=1, le=50)
+
+
 class WatchlistResearchRecommendationGenerateRequest(BaseModel):
     dry_run: bool = True
     plan_id: str | None = None

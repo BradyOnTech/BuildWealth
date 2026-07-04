@@ -139,6 +139,7 @@ from buildwealth_orchestrator.schemas import (
     RecommendationFactoryRunAllRequest,
     RecommendationFactoryRunAllResponse,
     ResearchThesisExpirationRecommendationGenerateRequest,
+    DueOutcomeReviewRecommendationGenerateRequest,
     StaleAssumptionRecommendationGenerateRequest,
     WatchlistResearchRecommendationGenerateRequest,
     RecommendationPreviewRequest,
@@ -385,6 +386,7 @@ from buildwealth_orchestrator.services.recommendation_factory import (
     generate_cash_liquidity_recommendations,
     generate_plan_tracking_recommendations,
     generate_portfolio_risk_recommendations,
+    generate_due_outcome_review_recommendations,
     generate_profile_completeness_recommendations,
     generate_research_thesis_expiration_recommendations,
     generate_stale_assumption_recommendations,
@@ -1291,8 +1293,34 @@ async def scheduled_sync_loop() -> None:
             except Exception:
                 # Failures are captured in sync_state for observability.
                 pass
+            try:
+                sweep_due_outcome_reviews()
+            except Exception:
+                # Best-effort: the Inbox sweep must never kill the heartbeat.
+                pass
 
         await asyncio.sleep(poll_seconds)
+
+
+def sweep_due_outcome_reviews() -> int:
+    """Turn due, unmeasured pre-mortem reviews into Inbox entries.
+
+    Runs on the heartbeat for the default household workspace so review
+    dates surface without requiring a visit to Today.
+    """
+    existing = recommendation_inbox.list(
+        limit=None,
+        status=None,
+        plan_id=None,
+        include_archived=True,
+        sort="none",
+    )
+    result = generate_due_outcome_review_recommendations(
+        existing_recommendations=existing,
+        creator=recommendation_inbox,
+        dry_run=False,
+    )
+    return len(result.created)
 
 
 async def autogit_checkpoint_loop() -> None:
@@ -19246,6 +19274,34 @@ def generate_stale_assumption_recommendation_candidates(
     return RecommendationFactoryResponse(**result.to_dict())
 
 
+@app.post("/api/recommendations/generate/due-outcome-review", response_model=RecommendationFactoryResponse)
+def generate_due_outcome_review_recommendation_candidates(
+    request: DueOutcomeReviewRecommendationGenerateRequest,
+    http_request: Request = Depends(get_current_request),
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> RecommendationFactoryResponse:
+    services = workspace_services_or_legacy(services)
+    if http_request is not None:
+        require_csrf(http_request)
+    require_permission(services.context, "recommendations.write")
+    existing_recommendations = services.recommendation_inbox.list(
+        limit=None,
+        status=None,
+        plan_id=None,
+        include_archived=True,
+        sort="none",
+    )
+    result = generate_due_outcome_review_recommendations(
+        existing_recommendations=existing_recommendations,
+        creator=services.recommendation_inbox if not request.dry_run else None,
+        dry_run=request.dry_run,
+        limit=request.limit,
+    )
+    if not request.dry_run and result.created:
+        _queue_autogit_event("due_outcome_review_recommendations_generated")
+    return RecommendationFactoryResponse(**result.to_dict())
+
+
 @app.post("/api/recommendations/generate/watchlist-research", response_model=RecommendationFactoryResponse)
 def generate_watchlist_research_recommendation_candidates(
     request: WatchlistResearchRecommendationGenerateRequest,
@@ -19479,6 +19535,20 @@ def run_all_recommendation_factories(
         errors.append({"factory": "stale_assumptions", "reason": str(exc.detail)})
     except Exception as exc:
         errors.append({"factory": "stale_assumptions", "reason": str(exc)})
+
+    try:
+        factories["due_outcome_review"] = generate_due_outcome_review_recommendation_candidates(
+            DueOutcomeReviewRecommendationGenerateRequest(
+                dry_run=request.dry_run,
+                limit=request.limit,
+            ),
+            http_request=http_request,
+            services=services,
+        )
+    except HTTPException as exc:
+        errors.append({"factory": "due_outcome_review", "reason": str(exc.detail)})
+    except Exception as exc:
+        errors.append({"factory": "due_outcome_review", "reason": str(exc)})
 
     try:
         factories["watchlist_research"] = generate_watchlist_research_recommendation_candidates(
