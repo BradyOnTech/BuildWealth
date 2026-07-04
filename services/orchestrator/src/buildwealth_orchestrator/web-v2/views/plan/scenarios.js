@@ -144,7 +144,7 @@ function renderScenarioResult(plan, result, { focusId = '', planId = '', explana
         </dl>
       ` : html`<p class="marginalia">No setting differences were returned.</p>`}
 
-      ${raw(renderTrajectoryFan(result.candidate_result, result.base_result))}
+      ${raw(renderTrajectoryFan(result.candidate_result, result.base_result, { planId: planId || clean(plan.id) }))}
 
       ${deltas.length ? html`
         <div class="scenario-delta-table">
@@ -170,7 +170,7 @@ function renderScenarioResult(plan, result, { focusId = '', planId = '', explana
 // The headline visual: candidate Monte Carlo fan (P10–P90) with the current
 // plan's median dashed underneath, and a marker where drawdown begins.
 // Shared by the Simulations and What-ifs surfaces.
-export function renderTrajectoryFan(candidateResult, baseResult) {
+export function renderTrajectoryFan(candidateResult, baseResult, { planId = '' } = {}) {
   const candidate = objectValue(candidateResult);
   const base = objectValue(baseResult);
   const candMonte = objectValue(candidate.monte_carlo);
@@ -232,9 +232,16 @@ export function renderTrajectoryFan(candidateResult, baseResult) {
       ${raw(chart)}
       <figcaption class="chart-caption">
         Nominal dollars${Number.isFinite(runs) && runs > 0 ? ` · ${runs.toLocaleString('en-US')} simulated paths` : ''}${ageSpan}${milestoneCaption(coastYear, crossover)}
+        ${raw(explainChartLink('trajectory-fan', planId))}
       </figcaption>
     </figure>
   `.toString();
+}
+
+export function explainChartLink(chart, planId = '') {
+  const params = new URLSearchParams({ intent: 'explain-chart', chart });
+  if (clean(planId)) params.set('plan', clean(planId));
+  return html` · <a class="link-editorial" href="#copilot?${params.toString()}">Explain this chart</a>`.toString();
 }
 
 function milestoneCaption(coastYear, crossover) {
@@ -432,7 +439,7 @@ function renderFailureHistogram(failureYears = []) {
   return html`
     <figure class="chart-figure">
       ${raw(chart)}
-      <figcaption class="chart-caption">Share of simulated paths first running short, by year.</figcaption>
+      <figcaption class="chart-caption">Share of simulated paths first running short, by year.${raw(explainChartLink('failure-histogram'))}</figcaption>
     </figure>
   `.toString();
 }

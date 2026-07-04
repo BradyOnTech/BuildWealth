@@ -43,10 +43,11 @@ async function load(params = {}) {
   let payload = null;
   let services = null;
   let health = null;
+  let analytics = null;
   try {
     const shouldRefreshResearch = String(params.refresh || '').toLowerCase() === 'research';
     const shouldRecordReview = String(params.review || '').toLowerCase() === 'complete';
-    [payload, services, health] = await Promise.all([
+    [payload, services, health, analytics] = await Promise.all([
       shouldRecordReview
         ? api.recordTodayReview()
         : shouldRefreshResearch
@@ -54,6 +55,7 @@ async function load(params = {}) {
           : api.today(),
       api.services().catch(() => null),
       api.financialHealth().catch(() => null),
+      api.portfolioAnalytics({ period: '1m', limit: 40 }).catch(() => null),
     ]);
     state.today = payload;
     state.services = services;
@@ -71,11 +73,11 @@ async function load(params = {}) {
   }
 
   setView(root, html`
-    ${raw(renderHero(payload, health))}
+    ${raw(renderHero(payload, health, analytics))}
     ${raw(renderCommandCards(payload, services))}
     ${raw(renderMove(payload))}
     ${raw(renderAffordabilitySection())}
-    ${raw(renderRoom(payload, services))}
+    ${raw(renderRoom(payload, services, health))}
   `);
   bindAffordabilitySection(root);
   if (
@@ -88,7 +90,7 @@ async function load(params = {}) {
 
 /* ─────────────  THE STANDING (hero)  ───────────── */
 
-function renderHero(payload, health = null) {
+function renderHero(payload, health = null, analytics = null) {
   const value = payload.net_worth_usd ?? payload.total_value_usd ?? 0;
   const { currency, number } = splitUsd(value);
   const generated = payload.generated_at ? new Date(payload.generated_at) : new Date();
@@ -116,8 +118,40 @@ function renderHero(payload, health = null) {
       <p class="hero-marginalia">
         ${raw(marginalia.join(''))}
       </p>
+      ${raw(renderDeltaDecomposition(analytics))}
     </section>
   `;
+}
+
+// "Why did my number move" — the one sentence that builds literacy per glance.
+function renderDeltaDecomposition(analytics) {
+  const terms = buildDeltaDecomposition(analytics);
+  if (!terms.length) return '';
+  return html`
+    <p class="hero-decomposition marginalia">
+      Past month:
+      ${raw(terms.map(term => html`
+        <span class="${term.value >= 0 ? 'delta-up' : 'delta-down'}">
+          <b class="num-mono">${fmtUsdSigned(term.value)}</b> ${term.label}
+        </span>
+      `).join(' · '))}
+    </p>
+  `;
+}
+
+// Decompose the recent portfolio change into its causes from the analytics
+// performance payload. Terms are omitted when zero; order: what the market
+// did, what the holdings paid, what the household did.
+export function buildDeltaDecomposition(analytics) {
+  const performance = analytics?.performance;
+  if (!performance || typeof performance !== 'object') return [];
+  const terms = [
+    { label: 'market', value: Number(performance.price_return_usd) },
+    { label: 'income', value: Number(performance.income_return_usd) },
+    { label: 'added', value: Number(performance.net_contributions) },
+    { label: 'fees', value: -Math.abs(Number(performance.fees_paid_usd)) },
+  ].filter(term => Number.isFinite(term.value) && Math.round(term.value) !== 0);
+  return terms.length >= 2 ? terms : [];
 }
 
 function heroEyebrow(date) {
@@ -387,7 +421,7 @@ function humanSource(source) {
 
 /* ─────────────  THE ROOM  ───────────── */
 
-function renderRoom(payload, services) {
+function renderRoom(payload, services, health = null) {
   const sync = payload.sync_status || {};
   const servicesEnabled = services?.enabled_count ?? 0;
   const servicesReachable = services?.reachable_count ?? 0;
@@ -416,6 +450,11 @@ function renderRoom(payload, services) {
             Last sync ${lastSync ? fmtRelative(lastSync) : '—'} · ${servicesReachable}/${servicesEnabled} services ready
           </span>
         </p>
+        ${Array.isArray(health?.highlights) && health.highlights.length ? html`
+          <ul class="affordability-highlights">
+            ${raw(health.highlights.slice(0, 5).map(item => html`<li>${item}</li>`).join(''))}
+          </ul>
+        ` : ''}
         <details class="diagnostics-toggle">
           <summary>Show diagnostics</summary>
           <div class="diagnostics">

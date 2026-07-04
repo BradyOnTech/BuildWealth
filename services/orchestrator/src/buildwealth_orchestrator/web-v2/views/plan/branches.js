@@ -204,7 +204,7 @@ function renderBranchResult(planId = '', result = {}, explanation = null, review
         <p class="section-lede">${esc(name)}</p>
       </header>
 
-      ${raw(renderTrajectoryFan(result.branch_result, result.base_result))}
+      ${raw(renderTrajectoryFan(result.branch_result, result.base_result, { planId }))}
 
       ${deltas.length ? html`
         <div class="scenario-delta-table">

@@ -79,10 +79,29 @@ const INVESTMENT_POLICY_SETUP_PROMPT = [
   'do not save anything with update_financial_profile until I explicitly confirm the draft.',
 ].join(' ');
 
-export function buildPlanReviewPrompt(intent, { planId = '' } = {}) {
+const CHART_DESCRIPTIONS = {
+  'trajectory-fan': 'the Monte Carlo trajectory fan (10th–90th percentile bands, the median line, and the retirement / coast-FI markers)',
+  'failure-histogram': 'the failure-year histogram (share of simulated paths first running short, by year)',
+  'strategy-balances': 'the withdrawal strategy balance trajectories (one line per strategy)',
+  'strategy-taxes': 'the annual taxes by withdrawal strategy chart',
+};
+
+export function buildPlanReviewPrompt(intent, { planId = '', chart = '' } = {}) {
   const normalizedIntent = String(intent || '').trim().toLowerCase();
   const id = String(planId || '').trim();
   const planPhrase = id ? `plan ${id}` : 'the active plan';
+  if (normalizedIntent === 'explain-chart') {
+    const chartPhrase = CHART_DESCRIPTIONS[String(chart || '').trim().toLowerCase()]
+      || 'the chart I am looking at';
+    return [
+      `Explain ${chartPhrase} for ${planPhrase} in plain language, as if to someone new to investing.`,
+      id
+        ? `First call get_plan_review_context with plan_id="${id}" and max_health_signals=5.`
+        : 'First call get_plan_review_context with max_health_signals=5.',
+      'Walk through what the shape of the chart says about my situation, what would change it, and what — if anything — it suggests I review next.',
+      'Do not apply plan settings automatically.',
+    ].join(' ');
+  }
   const base = [
     `Review ${planPhrase} with bounded Plan context.`,
     id
@@ -161,7 +180,7 @@ export async function init(params = {}) {
     fillDraft(INVESTMENT_POLICY_SETUP_PROMPT);
   }
   if (isPlanReviewIntent(params.intent)) {
-    fillDraft(buildPlanReviewPrompt(params.intent, { planId: ui.planId }));
+    fillDraft(buildPlanReviewPrompt(params.intent, { planId: ui.planId, chart: params.chart }));
   }
   if (params.focus) {
     // Linked from inbox: prefill question. Conversation stays empty until sent.
@@ -479,7 +498,8 @@ function isPlanReviewIntent(intent) {
   return normalized === 'review_plan_assumptions'
     || normalized === 'explain_scenario_diff'
     || normalized === 'review_stale_assumptions'
-    || normalized === 'plan-scenario';
+    || normalized === 'plan-scenario'
+    || normalized === 'explain-chart';
 }
 
 function onboardingActionLabel(status) {

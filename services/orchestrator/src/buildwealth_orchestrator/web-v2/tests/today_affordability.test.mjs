@@ -76,3 +76,28 @@ test('computeFiProgress derives 25x target from monthly expenses', () => {
   assert.equal(computeFiProgress(null), null);
   assert.equal(computeFiProgress({ total_monthly_expenses_usd: 6000, net_worth_usd: -5 }), null);
 });
+
+test('buildDeltaDecomposition explains the move in causes', async () => {
+  const { buildDeltaDecomposition } = await import('../views/today.js');
+  const terms = buildDeltaDecomposition({ performance: {
+    price_return_usd: 8900, income_return_usd: 410, net_contributions: 4200, fees_paid_usd: 35,
+  } });
+  assert.deepEqual(terms.map(t => t.label), ['market', 'income', 'added', 'fees']);
+  assert.equal(terms[3].value, -35);
+
+  assert.deepEqual(buildDeltaDecomposition(null), []);
+  assert.deepEqual(buildDeltaDecomposition({ performance: {} }), []);
+  // a single non-zero term is not a decomposition
+  assert.deepEqual(buildDeltaDecomposition({ performance: { price_return_usd: 100 } }), []);
+});
+
+test('explain-chart intent builds a plain-language copilot prompt', async () => {
+  const { buildPlanReviewPrompt } = await import('../views/copilot.js');
+  const prompt = buildPlanReviewPrompt('explain-chart', { planId: 'plan-9', chart: 'trajectory-fan' });
+  assert.match(prompt, /trajectory fan/);
+  assert.match(prompt, /plan plan-9/);
+  assert.match(prompt, /plain language/);
+  assert.match(prompt, /get_plan_review_context/);
+  const generic = buildPlanReviewPrompt('explain-chart', {});
+  assert.match(generic, /the chart I am looking at/);
+});

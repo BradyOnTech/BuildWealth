@@ -4,6 +4,7 @@
 import { html, raw, esc } from '../../lib/dom.js';
 import { fmtPct, fmtUsd } from '../../lib/format.js';
 import { fanChart, compactUsd } from '../../lib/chart.js';
+import { explainChartLink } from './scenarios.js';
 
 export const WITHDRAWAL_STRATEGIES = [
   {
@@ -149,7 +150,7 @@ function renderWithdrawalResult(planId = '', result = {}) {
       </header>
 
       ${Object.keys(best).length ? raw(renderBestStrategies(best)) : ''}
-      ${raw(renderDrawdownTrajectories(result))}
+      ${raw(renderDrawdownTrajectories(result, planId))}
       ${raw(renderStrategyExplanation(result.explanation))}
 
       ${warnings.length ? html`
@@ -175,7 +176,7 @@ function renderWithdrawalResult(planId = '', result = {}) {
 // Overlaid deterministic paths, one line per compared strategy: balances
 // ("which path survives") and annual taxes ("what does each path cost in
 // bracket creep, RMDs, and IRMAA"). Same colors across both charts.
-function renderDrawdownTrajectories(result = {}) {
+function renderDrawdownTrajectories(result = {}, planId = '') {
   const rawResults = objectValue(result.raw_results);
   const comparisons = Array.isArray(result.comparisons) ? result.comparisons : [];
   const ordered = comparisons.map(row => clean(row.strategy)).filter(id => rawResults[id]);
@@ -236,13 +237,13 @@ function renderDrawdownTrajectories(result = {}) {
         ${raw(series.map(({ cls, label }) => html`<span><i class="legend-swatch line-swatch ${esc(cls)}"></i>${esc(label)}</span>`).join(''))}
       </div>
       ${raw(balanceChart)}
-      <figcaption class="chart-caption">Nominal dollars · deterministic baseline path per strategy</figcaption>
+      <figcaption class="chart-caption">Nominal dollars · deterministic baseline path per strategy${raw(explainChartLink('strategy-balances', planId))}</figcaption>
     </figure>
     ${taxChart ? html`
       <figure class="chart-figure">
         <span class="story-block-eyebrow">Annual taxes</span>
         ${raw(taxChart)}
-        <figcaption class="chart-caption">Federal + state + IRMAA per year · same strategy colors · spikes mark RMD and conversion years</figcaption>
+        <figcaption class="chart-caption">Federal + state + IRMAA per year · same strategy colors · spikes mark RMD and conversion years${raw(explainChartLink('strategy-taxes', planId))}</figcaption>
       </figure>
     ` : ''}
   `.toString();
