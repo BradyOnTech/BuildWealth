@@ -75,8 +75,9 @@ function renderTagRow({ status, priority, source, recoType, planLabel, score, up
       </span>
     `);
   }
-  if (source) parts.push(html`<span class="entry-tag">${source}</span>`);
-  if (recoType && recoType !== 'general') parts.push(html`<span class="entry-tag">${recoType}</span>`);
+  // Curated on purpose: the source system ("from generator:x") and the
+  // recommendation-type jargon ("workflow action") describe plumbing, not
+  // the decision. Plan, score, and age are what a scanning eye needs.
   if (planLabel) parts.push(html`<span class="entry-tag">${planLabel}</span>`);
   if (score != null) parts.push(html`<span class="entry-tag">score ${score}</span>`);
   if (updated) parts.push(html`<span class="entry-tag">${updated}</span>`);

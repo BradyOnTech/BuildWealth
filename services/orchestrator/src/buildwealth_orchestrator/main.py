@@ -1261,6 +1261,25 @@ async def execute_sync(
             sync_state["running"] = False
 
 
+def restore_sync_state_from_disk(snapshots: SnapshotStore | None = None) -> bool:
+    """Seed in-memory sync state from the newest snapshot on disk.
+
+    sync_state resets on every restart; without this, status surfaces claim
+    'never synced' while snapshots on disk prove otherwise — a small lie
+    that costs trust. Returns True when a prior sync was restored.
+    """
+    resolved = snapshots or snapshot_store
+    try:
+        latest = resolved.latest()
+    except Exception:
+        return False
+    as_of = latest.as_of if latest.as_of.tzinfo is not None else latest.as_of.replace(tzinfo=timezone.utc)
+    sync_state["last_trigger"] = "restored"
+    sync_state["last_completed_at"] = as_of
+    sync_state["last_snapshot_path"] = None
+    return True
+
+
 def snapshot_age_seconds(snapshots: SnapshotStore | None = None) -> float | None:
     """Age of the latest snapshot, or None when no snapshot exists yet."""
     resolved = snapshots or snapshot_store
@@ -17701,6 +17720,7 @@ async def on_startup() -> None:
 
     global scheduler_task, autogit_task
 
+    restore_sync_state_from_disk()
     if settings.sync_interval_minutes > 0:
         scheduler_task = asyncio.create_task(scheduled_sync_loop())
     autogit_task = asyncio.create_task(autogit_checkpoint_loop())

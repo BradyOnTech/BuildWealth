@@ -101,3 +101,16 @@ test('explain-chart intent builds a plain-language copilot prompt', async () => 
   const generic = buildPlanReviewPrompt('explain-chart', {});
   assert.match(generic, /the chart I am looking at/);
 });
+
+test('delta decomposition labels import-dominated windows honestly', async () => {
+  const { buildDeltaDecomposition } = await import('../views/today.js');
+  const terms = buildDeltaDecomposition({ performance: {
+    price_return_usd: 11212, net_contributions: 1014545,
+  } });
+  assert.deepEqual(terms.map(t => t.label), ['market', 'added (incl. imported history)']);
+
+  const normal = buildDeltaDecomposition({ performance: {
+    price_return_usd: 8900, net_contributions: 4200,
+  } });
+  assert.deepEqual(normal.map(t => t.label), ['market', 'added']);
+});

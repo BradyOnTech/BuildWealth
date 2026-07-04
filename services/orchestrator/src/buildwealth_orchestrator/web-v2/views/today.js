@@ -151,7 +151,16 @@ export function buildDeltaDecomposition(analytics) {
     { label: 'added', value: Number(performance.net_contributions) },
     { label: 'fees', value: -Math.abs(Number(performance.fees_paid_usd)) },
   ].filter(term => Number.isFinite(term.value) && Math.round(term.value) !== 0);
-  return terms.length >= 2 ? terms : [];
+  if (terms.length < 2) return [];
+  // A freshly imported workspace books its whole history as "added" in one
+  // window, which dwarfs the market term and reads as nonsense. Keep the
+  // honest number, but say what it likely is.
+  const added = terms.find(term => term.label === 'added');
+  const market = terms.find(term => term.label === 'market');
+  if (added && market && Math.abs(added.value) > 10 * Math.abs(market.value)) {
+    added.label = 'added (incl. imported history)';
+  }
+  return terms;
 }
 
 function heroEyebrow(date) {

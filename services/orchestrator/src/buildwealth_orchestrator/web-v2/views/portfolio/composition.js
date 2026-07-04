@@ -28,8 +28,35 @@ export function renderComposition(data) {
   `;
 }
 
+// Backend breakdowns can carry raw keys ("real_estate") and case-duplicates
+// ("Cash" and "cash" as separate rows). Merge and humanize before display —
+// a flagship screen should never leak storage keys.
+export function normalizeAllocationRows(rows) {
+  const merged = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const rawKey = String(row?.key || row?.label || '—');
+    const normKey = rawKey.trim().toLowerCase().replace(/[_\s]+/g, ' ');
+    const entry = merged.get(normKey) || { key: humanizeAllocationKey(rawKey), value: 0, allocation: 0 };
+    entry.value += Number(row?.value || 0);
+    entry.allocation += Number(row?.allocation || row?.allocation_pct || 0);
+    merged.set(normKey, entry);
+  }
+  return [...merged.values()];
+}
+
+export function humanizeAllocationKey(key) {
+  const text = String(key || '').trim().replace(/_+/g, ' ');
+  if (!text) return '—';
+  return text
+    .split(/\s+/)
+    .map(word => (word === word.toUpperCase() && word.length <= 3
+      ? word
+      : word[0].toUpperCase() + word.slice(1).toLowerCase()))
+    .join(' ');
+}
+
 function allocationBlock(label, rows, total) {
-  const entries = Array.isArray(rows) ? rows : [];
+  const entries = normalizeAllocationRows(rows);
   if (!entries.length) {
     return html`
       <div class="composition-block">
