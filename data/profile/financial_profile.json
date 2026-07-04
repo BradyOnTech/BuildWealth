@@ -1,5 +1,6 @@
 {
   "schema_version": 2,
+  "household_members": [],
   "income_items": [
     {
       "id": "demo-income-alex-salary",
