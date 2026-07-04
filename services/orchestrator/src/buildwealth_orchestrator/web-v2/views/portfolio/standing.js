@@ -26,8 +26,8 @@ export function renderStanding(data) {
       netPerf >= 0 ? 'up' : 'down',
     ));
   }
-  if (twr != null)  marginalia.push(margin(`${fmtPctSigned(twr)}`, 'TWR annualized', twr >= 0 ? 'up' : 'down'));
-  if (xirr != null) marginalia.push(margin(`${fmtPctSigned(xirr)}`, 'XIRR annualized', xirr >= 0 ? 'up' : 'down'));
+  if (twr != null)  marginalia.push(margin(`${fmtPctSigned(twr)}`, 'annualized return', twr >= 0 ? 'up' : 'down'));
+  if (xirr != null) marginalia.push(margin(`${fmtPctSigned(xirr)}`, 'your money-weighted return', xirr >= 0 ? 'up' : 'down'));
   if (positions > 0) marginalia.push(margin(`${positions}`, `position${positions === 1 ? '' : 's'}`, 'up'));
   if (cash > 0)      marginalia.push(margin(fmtUsd(cash), 'in cash', 'up'));
   if (pricesAt)      marginalia.push(margin(fmtRelative(pricesAt), 'prices refreshed', 'up'));

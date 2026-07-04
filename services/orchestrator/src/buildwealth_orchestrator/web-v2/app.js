@@ -360,7 +360,7 @@ function copilotChip() {
   const status = state.systemStatus?.copilot;
   if (!status) return { tone: 'quiet', label: 'copilot · …', href: '#settings' };
   if (status.configured) return { tone: 'ok', label: 'copilot · ready', href: '#settings', hint: status.provider ? `${status.provider} · ${status.model || 'configured'}` : 'configured' };
-  return { tone: 'warn', label: 'copilot · fallback', href: '#settings', hint: 'API key missing — set in Connections & AI' };
+  return { tone: 'warn', label: 'copilot · needs setup', href: '#settings', hint: 'API key missing — set in Connections & AI' };
 }
 
 function dataChip() {

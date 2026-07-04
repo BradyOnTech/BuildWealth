@@ -5,7 +5,7 @@
 import { html, raw, esc, stripHtml } from '../../lib/dom.js';
 import { fmtUsd, fmtPctSigned, roman } from '../../lib/format.js';
 
-export function renderStory(plan) {
+export function renderStory(plan, assumptionState = {}, timelineState = {}) {
   return html`
     <section>
       <header class="section-head">
@@ -17,7 +17,7 @@ export function renderStory(plan) {
       <div class="story-grid">
         <div>
           <span class="story-block-eyebrow">Key assumptions</span>
-          ${renderLedger(plan.settings || {})}
+          ${renderLedger(effectivePlanSettings(plan, assumptionState, timelineState))}
         </div>
         <div class="story-actions">
           <span class="story-block-eyebrow">You should know</span>
@@ -26,6 +26,29 @@ export function renderStory(plan) {
       </div>
     </section>
   `;
+}
+
+// What the engine will actually use: plan settings overlaid with the active
+// assumption set, plus retirement fields from the timeline. Without this the
+// ledger renders the raw (often empty) base settings as a wall of dashes.
+export function effectivePlanSettings(plan = {}, assumptionState = {}, timelineState = {}) {
+  const merged = { ...(plan.settings || {}) };
+  const sets = assumptionState?.assumptionSets;
+  const activeId = String(sets?.active_assumption_set_id || '').trim();
+  const active = Array.isArray(sets?.sets)
+    ? sets.sets.find(item => String(item?.id || '') === activeId) || null
+    : null;
+  if (active) {
+    for (const [key, value] of Object.entries(active)) {
+      if (key === 'id' || key === 'name' || value == null) continue;
+      merged[key] = value;
+    }
+  }
+  const retirement = timelineState?.timeline?.retirement || timelineState?.retirement || {};
+  for (const key of ['withdrawal_strategy', 'drawdown_order']) {
+    if (merged[key] == null && retirement[key] != null) merged[key] = retirement[key];
+  }
+  return merged;
 }
 
 function renderLedger(settings) {
@@ -56,7 +79,7 @@ function renderLedger(settings) {
       ${rows.map(([label, value]) => html`
         <li class="ledger-row">
           <span class="ledger-label">${label}</span>
-          <span class="ledger-value ${value === '—' ? 'muted' : ''}">${value}</span>
+          <span class="ledger-value ${value === 'app default' ? 'muted' : ''}">${value}</span>
         </li>
       `)}
     </ul>
@@ -125,4 +148,6 @@ function humanText(v) {
   return String(v).replace(/_/g, ' ');
 }
 
-function dash() { return '—'; }
+// An unset assumption is not missing data — the engine falls back to app
+// defaults. Say that, instead of a dash a normal person can't interpret.
+function dash() { return 'app default'; }

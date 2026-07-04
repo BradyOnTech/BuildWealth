@@ -25,7 +25,7 @@ import { derivePlanHealth, renderPlanHealth } from './plan/health.js';
 import { renderTrajectory } from './plan/trajectory.js';
 import { renderArtifacts } from './plan/artifacts.js';
 import { buildScenarioBranchPayload, renderBranches } from './plan/branches.js';
-import { buildScenarioDiffPayload, renderScenarios } from './plan/scenarios.js';
+import { buildScenarioDiffPayload, renderScenarios, renderTrajectoryPreview } from './plan/scenarios.js';
 import { buildWithdrawalComparePayload, renderWithdrawals } from './plan/withdrawals.js';
 import { buildTimelinePayload, renderTimeline } from './plan/timeline.js';
 import { buildContributionRulesPayload, renderContributions } from './plan/contributions.js';
@@ -45,6 +45,7 @@ const ui = {
   assumptions: { busy: false, assumptionSets: null, draft: {}, dirty: false, saving: false, error: null },
   health: { busy: false, recommendations: [], error: null },
   trajectory: { busy: false, tracking: null, error: null },
+  trajectoryPreview: { busy: false, result: null, planId: '' },
   artifacts: { focusedArtifactId: '', focusedArtifact: null, busy: false, error: null },
   scenarios: { draft: {}, dirty: false, busy: false, saveBusy: false, result: null, explanation: null, reviewLevel: null, lastPayload: null, error: null, focusedRecommendationId: '' },
   branches: { busy: false, saveBusy: false, branchTemplates: null, selectedTemplateId: '', draft: {}, dirty: false, result: null, explanation: null, reviewLevel: null, lastPayload: null, error: null },
@@ -92,6 +93,36 @@ export async function init(params = {}) {
   rerenderAll();
   focusRequestedSection(params.section);
   loadTrajectory(ui.selectedId);
+  loadTrajectoryPreview(ui.selectedId);
+}
+
+// Auto-run the baseline so the landing answers "am I going to be OK?"
+// without a form. Cached per plan for the session; failures stay silent —
+// the full Simulations section below is always available.
+async function loadTrajectoryPreview(planId) {
+  const id = String(planId || '').trim();
+  if (!id) return;
+  if (ui.trajectoryPreview.planId === id && (ui.trajectoryPreview.result || ui.trajectoryPreview.busy)) return;
+  ui.trajectoryPreview = { busy: true, result: null, planId: id };
+  rerenderTrajectoryPreview();
+  try {
+    const result = await api.planScenarioDiff(id, { compare_settings: {} });
+    if (ui.trajectoryPreview.planId === id) {
+      ui.trajectoryPreview = { busy: false, result, planId: id };
+      rerenderTrajectoryPreview();
+    }
+  } catch {
+    if (ui.trajectoryPreview.planId === id) {
+      ui.trajectoryPreview = { busy: false, result: null, planId: id };
+      rerenderTrajectoryPreview();
+    }
+  }
+}
+
+function rerenderTrajectoryPreview() {
+  const root = $('#plan-trajectory-preview');
+  if (!root || !ui.plan) return;
+  root.innerHTML = renderTrajectoryPreview(ui.trajectoryPreview, ui.plan?.id);
 }
 
 /* ─────────────  data  ───────────── */
@@ -367,7 +398,8 @@ function rerenderBody() {
   }
 
   root.innerHTML = html`
-    ${raw(renderStory(ui.plan))}
+    ${raw(renderStory(ui.plan, ui.assumptions, ui.timeline))}
+    <div id="plan-trajectory-preview">${raw(renderTrajectoryPreview(ui.trajectoryPreview, ui.plan?.id))}</div>
     <div id="plan-assumptions">${raw(renderAssumptions(ui.plan, ui.assumptions))}</div>
     <div id="plan-health" data-plan-section="health">${raw(renderPlanHealth(ui.plan, currentPlanHealth()))}</div>
     <div id="plan-trajectory" data-plan-section="trajectory">${raw(renderTrajectory(ui.trajectory))}</div>
@@ -520,6 +552,7 @@ function attachHandlers() {
     ui.plan = null;
     ui.assumptions = { busy: false, assumptionSets: null, draft: {}, dirty: false, saving: false, error: null };
     ui.health = { busy: false, recommendations: [], error: null };
+    ui.trajectoryPreview = { busy: false, result: null, planId: '' };
     ui.artifacts = { focusedArtifactId: '', focusedArtifact: null, busy: false, error: null };
     ui.scenarios = { draft: {}, dirty: false, busy: false, saveBusy: false, result: null, explanation: null, lastPayload: null, error: null, focusedRecommendationId: '' };
     ui.branches = { busy: false, saveBusy: false, branchTemplates: null, selectedTemplateId: '', draft: {}, dirty: false, result: null, explanation: null, lastPayload: null, error: null };

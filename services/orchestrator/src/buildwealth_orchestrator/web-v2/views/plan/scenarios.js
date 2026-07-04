@@ -170,7 +170,39 @@ function renderScenarioResult(plan, result, { focusId = '', planId = '', explana
 // The headline visual: candidate Monte Carlo fan (P10–P90) with the current
 // plan's median dashed underneath, and a marker where drawdown begins.
 // Shared by the Simulations and What-ifs surfaces.
-export function renderTrajectoryFan(candidateResult, baseResult, { planId = '' } = {}) {
+// The plan landing answers "am I going to be OK?" without a form: the
+// baseline runs automatically and the verdict + fan render here.
+export function renderTrajectoryPreview(state = {}, planId = '') {
+  if (state?.busy) {
+    return html`
+      <section class="plan-trajectory-preview">
+        <header class="section-head compact">
+          <span class="section-eyebrow">The trajectory</span>
+        </header>
+        <p class="marginalia">Running your plan through 2,000 possible futures…</p>
+      </section>
+    `.toString();
+  }
+  const result = objectValue(state?.result);
+  const base = objectValue(result.base_result);
+  const monte = objectValue(base.monte_carlo);
+  const fan = renderTrajectoryFan(result.base_result, null, { planId, medianLabel: 'Most likely path' });
+  if (!fan) return '';
+  const label = clean(monte.plan_strength_label);
+  return html`
+    <section class="plan-trajectory-preview">
+      <header class="section-head compact">
+        <span class="section-eyebrow">The trajectory</span>
+        <h2 class="section-title">${label ? `${label}.` : 'Where this plan points.'}</h2>
+        <p class="section-lede">${clean(monte.plan_strength_summary) || 'Your plan, run through simulated market histories.'}</p>
+      </header>
+      ${raw(fan)}
+      <p class="marginalia">Adjust an assumption in Simulations below to see how this picture moves.</p>
+    </section>
+  `.toString();
+}
+
+export function renderTrajectoryFan(candidateResult, baseResult, { planId = '', medianLabel = 'Median (this simulation)' } = {}) {
   const candidate = objectValue(candidateResult);
   const base = objectValue(baseResult);
   const candMonte = objectValue(candidate.monte_carlo);
@@ -226,7 +258,7 @@ export function renderTrajectoryFan(candidateResult, baseResult, { planId = '' }
       <div class="chart-legend">
         <span><i class="legend-swatch band-outer"></i>10th–90th percentile</span>
         <span><i class="legend-swatch band-inner"></i>25th–75th</span>
-        <span><i class="legend-swatch line-median"></i>Median (this simulation)</span>
+        <span><i class="legend-swatch line-median"></i>${medianLabel}</span>
         ${hasBaseline ? html`<span><i class="legend-swatch line-compare"></i>Current plan median</span>` : ''}
       </div>
       ${raw(chart)}
