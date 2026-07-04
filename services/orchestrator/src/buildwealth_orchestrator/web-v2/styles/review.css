@@ -1,0 +1,137 @@
+/* ─────────────────────────────────────────────────
+   The Annual Edition — an editorial document.
+   Reads like a printed almanac page; prints like one too.
+   ───────────────────────────────────────────────── */
+
+.review-document {
+  max-width: 860px;
+  margin: 0 auto;
+  padding-bottom: var(--s-9);
+}
+
+.review-masthead {
+  text-align: center;
+  border-top: 3px double var(--rule-strong);
+  border-bottom: var(--hair) solid var(--rule-strong);
+  padding: var(--s-5) 0 var(--s-4);
+  margin-bottom: var(--s-7);
+}
+
+.review-folio {
+  font-family: var(--mono);
+  font-size: var(--t-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.review-title {
+  font-family: var(--serif);
+  font-size: var(--t-display);
+  font-weight: 600;
+  letter-spacing: var(--track-tight);
+  color: var(--ink-strong);
+  margin: var(--s-2) 0;
+}
+
+.review-dateline {
+  font-family: var(--mono);
+  font-size: var(--t-caption);
+  color: var(--ink-soft);
+  display: flex;
+  justify-content: center;
+  gap: var(--s-4);
+  align-items: baseline;
+}
+
+.review-section {
+  margin-bottom: var(--s-7);
+}
+
+.review-number {
+  font-size: clamp(48px, 6vw, 80px);
+}
+
+.review-decomposition {
+  margin-top: var(--s-2);
+}
+
+.review-journey {
+  max-width: 560px;
+}
+
+.review-attribution {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-5);
+  margin-top: var(--s-4);
+  max-width: 620px;
+}
+
+.review-attribution-col h4 {
+  font-family: var(--mono);
+  font-size: var(--t-eyebrow);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: var(--s-2);
+}
+
+.review-attribution-col p {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--t-body-sm);
+  border-bottom: var(--hair) solid var(--rule-soft);
+  padding: var(--s-1) 0;
+}
+
+.review-decision {
+  border-left: 2px solid var(--rule-strong);
+  padding-left: var(--s-4);
+  margin: var(--s-4) 0;
+}
+
+.review-decision-title {
+  font-size: var(--t-body);
+}
+
+.review-decision-note {
+  font-size: var(--t-body-sm);
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+
+.review-closing {
+  margin-top: var(--s-4);
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ink-soft);
+  max-width: var(--measure);
+  line-height: var(--lh-loose);
+}
+
+/* Print: the edition is the page. */
+@media print {
+  .sidebar,
+  .topbar,
+  .review-print {
+    display: none !important;
+  }
+
+  body,
+  .page {
+    background: #fff !important;
+  }
+
+  main,
+  .page,
+  .review-document {
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .review-section {
+    break-inside: avoid;
+  }
+}
