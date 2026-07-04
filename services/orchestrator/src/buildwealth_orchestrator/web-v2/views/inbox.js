@@ -290,8 +290,22 @@ async function expandEntry(id, mode) {
     closeExpanded();
     return;
   }
-  inbox.expanded = { id, mode, busy: false, preview: null, error: null };
+  inbox.expanded = { id, mode, busy: false, preview: null, prefill: null, error: null };
   rerenderList();
+
+  if (mode === 'outcome') {
+    // Pre-measure from portfolio history so capturing an outcome is a
+    // confirmation, not a homework assignment. Failure is non-blocking.
+    try {
+      const prefill = await api.outcomePrefill(id);
+      if (inbox.expanded?.id === id && inbox.expanded.mode === 'outcome') {
+        inbox.expanded.prefill = prefill;
+        rerenderList();
+      }
+    } catch {
+      // The form works without a prefill.
+    }
+  }
 
   if (mode === 'apply') {
     inbox.expanded.busy = true;

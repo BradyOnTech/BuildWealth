@@ -1613,6 +1613,23 @@ class DueOutcomeReviewRecommendationGenerateRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=50)
 
 
+class RecommendationOutcomePrefillResponse(BaseModel):
+    recommendation_id: str
+    source_recommendation_id: str | None = None
+    status: Literal["ready", "unavailable"]
+    detail: str = ""
+    applied_at: datetime | None = None
+    observation_window_days: int | None = None
+    baseline_snapshot_at: datetime | None = None
+    baseline_value_usd: float | None = None
+    current_snapshot_at: datetime | None = None
+    current_value_usd: float | None = None
+    suggested_future_value_delta_usd: float | None = None
+    expected_future_value_delta_usd: float | None = None
+    measurement_source: str = "portfolio_sync"
+    warnings: list[str] = Field(default_factory=list)
+
+
 class WatchlistResearchRecommendationGenerateRequest(BaseModel):
     dry_run: bool = True
     plan_id: str | None = None

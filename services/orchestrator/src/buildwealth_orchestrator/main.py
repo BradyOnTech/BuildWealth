@@ -130,6 +130,7 @@ from buildwealth_orchestrator.schemas import (
     RecommendationClosureAnalyticsResponse,
     RecommendationCreateRequest,
     RecommendationItem,
+    RecommendationOutcomePrefillResponse,
     RecommendationOutcomeUpdateRequest,
     CashLiquidityRecommendationGenerateRequest,
     PlanTrackingRecommendationGenerateRequest,
@@ -9206,6 +9207,127 @@ def _build_decision_process_calibration(
                 ),
             }
     return {key: value for key, value in payload.items() if value is not None}
+
+
+def _closure_for_outcome_prefill(
+    recommendation: dict[str, Any],
+    inbox: Any,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Resolve the decision closure to measure against.
+
+    A due-outcome-review entry points at the original recommendation via
+    evidence.source_recommendation_id; otherwise the closure lives on the
+    recommendation itself.
+    """
+    payload = recommendation.get("action_payload") if isinstance(recommendation.get("action_payload"), dict) else {}
+    closure = payload.get("decision_closure")
+    if isinstance(closure, dict) and str(closure.get("applied_at") or "").strip():
+        return closure, None
+    evidence = payload.get("evidence") if isinstance(payload.get("evidence"), dict) else {}
+    source_id = str(evidence.get("source_recommendation_id") or "").strip() or None
+    if source_id:
+        try:
+            source = inbox.get(source_id)
+        except Exception:
+            return None, source_id
+        source_payload = source.get("action_payload") if isinstance(source.get("action_payload"), dict) else {}
+        source_closure = source_payload.get("decision_closure")
+        if isinstance(source_closure, dict):
+            return source_closure, source_id
+    return None, source_id
+
+
+def _expected_future_delta_for_prefill(closure: dict[str, Any]) -> float | None:
+    expected = closure.get("expected_outcome")
+    if isinstance(expected, dict):
+        for key in ("delta_future_value_usd", "expected_delta_future_value_usd", "future_value_delta_usd"):
+            value = expected.get(key)
+            if isinstance(value, (int, float)):
+                return float(value)
+    preview = closure.get("scenario_diff_preview")
+    if isinstance(preview, dict):
+        deltas = preview.get("scenario_deltas")
+        if isinstance(deltas, list) and deltas and isinstance(deltas[0], dict):
+            value = deltas[0].get("delta_future_value_usd")
+            if isinstance(value, (int, float)):
+                return float(value)
+    return None
+
+
+def build_recommendation_outcome_prefill_payload(
+    recommendation_id: str,
+    *,
+    services: WorkspaceServices | None = None,
+    now: datetime | None = None,
+) -> RecommendationOutcomePrefillResponse:
+    """Suggest measured outcome values from snapshot history.
+
+    The suggestion is the observable portfolio-level change since the
+    decision was applied — deliberately labeled with caveats, because a
+    portfolio delta includes contributions and market moves, not only the
+    decision's effect. The user confirms or edits; the app never pretends
+    the attribution is exact.
+    """
+    resolved_services = workspace_services_or_legacy(services)
+    resolved_now = now or datetime.now(timezone.utc)
+    recommendation = resolved_services.recommendation_inbox.get(recommendation_id)
+
+    def unavailable(detail: str, source_id: str | None = None) -> RecommendationOutcomePrefillResponse:
+        return RecommendationOutcomePrefillResponse(
+            recommendation_id=recommendation_id,
+            source_recommendation_id=source_id,
+            status="unavailable",
+            detail=detail,
+        )
+
+    closure, source_id = _closure_for_outcome_prefill(recommendation, resolved_services.recommendation_inbox)
+    if not isinstance(closure, dict):
+        return unavailable("No applied decision closure found to measure against.", source_id)
+    applied_at_text = str(closure.get("applied_at") or "").strip()
+    try:
+        applied_at = datetime.fromisoformat(applied_at_text.replace("Z", "+00:00"))
+    except ValueError:
+        return unavailable("The decision closure has no parseable applied_at date.", source_id)
+    if applied_at.tzinfo is None:
+        applied_at = applied_at.replace(tzinfo=timezone.utc)
+
+    snapshots = resolved_services.snapshot_store.recent(limit=730)
+    if len(snapshots) < 2:
+        return unavailable("Not enough portfolio snapshots to measure a change.", source_id)
+
+    def as_utc(value: datetime) -> datetime:
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+    current = snapshots[0]
+    baseline = next((snap for snap in snapshots if as_utc(snap.as_of) <= applied_at), snapshots[-1])
+    if as_utc(baseline.as_of) >= as_utc(current.as_of):
+        return unavailable("No snapshot history spans the period since the decision.", source_id)
+
+    warnings = [
+        "Portfolio-level change includes contributions and market moves — attribute it to this decision with judgment.",
+    ]
+    baseline_gap_days = abs((as_utc(baseline.as_of) - applied_at).days)
+    if baseline_gap_days > 7:
+        warnings.append(
+            f"Nearest baseline snapshot is {baseline_gap_days} days from the decision date; the measured change is approximate."
+        )
+
+    return RecommendationOutcomePrefillResponse(
+        recommendation_id=recommendation_id,
+        source_recommendation_id=source_id,
+        status="ready",
+        detail="Measured from portfolio snapshot history.",
+        applied_at=applied_at,
+        observation_window_days=max(0, (resolved_now - applied_at).days),
+        baseline_snapshot_at=as_utc(baseline.as_of),
+        baseline_value_usd=float(baseline.total_value_usd),
+        current_snapshot_at=as_utc(current.as_of),
+        current_value_usd=float(current.total_value_usd),
+        suggested_future_value_delta_usd=round(float(current.total_value_usd) - float(baseline.total_value_usd), 2),
+        expected_future_value_delta_usd=_expected_future_delta_for_prefill(closure),
+        measurement_source="portfolio_sync",
+        warnings=warnings,
+    )
 
 
 def update_recommendation_outcome(
@@ -19749,6 +19871,21 @@ def update_recommendation_outcome_route(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     _queue_autogit_event("recommendation_outcome_updated")
     return response
+
+
+@app.get(
+    "/api/recommendations/{recommendation_id}/outcome/prefill",
+    response_model=RecommendationOutcomePrefillResponse,
+)
+def get_recommendation_outcome_prefill(
+    recommendation_id: str,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> RecommendationOutcomePrefillResponse:
+    require_permission(services.context, "recommendations.read")
+    try:
+        return build_recommendation_outcome_prefill_payload(recommendation_id, services=services)
+    except RecommendationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/api/recommendations/{recommendation_id}/archive", response_model=RecommendationActionResponse)

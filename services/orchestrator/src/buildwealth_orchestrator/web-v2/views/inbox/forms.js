@@ -3,13 +3,13 @@
 // in inbox.js via delegated event handlers.
 
 import { html, raw, esc } from '../../lib/dom.js';
-import { fmtUsdSigned } from '../../lib/format.js';
+import { fmtUsd, fmtUsdSigned, fmtDateLong } from '../../lib/format.js';
 
 export function renderInlineForm(item, expanded, ctx) {
-  const { mode, busy, preview, error } = expanded;
+  const { mode, busy, preview, prefill, error } = expanded;
   if (mode === 'apply')   return renderApplyForm(item, { busy, preview, error });
   if (mode === 'decline') return renderDeclineForm(item, { busy, error });
-  if (mode === 'outcome') return renderOutcomeForm(item, { busy, error });
+  if (mode === 'outcome') return renderOutcomeForm(item, { busy, error, prefill });
   return '';
 }
 
@@ -101,14 +101,16 @@ function renderDeclineForm(item, { busy, error }) {
   `;
 }
 
-function renderOutcomeForm(item, { busy, error }) {
+function renderOutcomeForm(item, { busy, error, prefill = null }) {
   const nowLocal = toLocalDatetime(new Date());
   const guidance = outcomeGuidance(item);
+  const measured = prefill && prefill.status === 'ready' ? prefill : null;
   return html`
     <div class="inline-form muted" data-form="outcome" data-id="${item.id}">
       <p class="inline-form-title">${guidance.title}</p>
       ${guidance.summary ? html`<p class="marginalia">${guidance.summary}</p>` : ''}
       ${raw(renderPreMortemBaseline(item))}
+      ${raw(renderMeasuredPrefill(measured))}
       ${guidance.calibrationDomain ? html`
         <input type="hidden" name="process_outcome" value="" />
         <input type="hidden" name="evidence_sufficiency" value="" />
@@ -131,7 +133,7 @@ function renderOutcomeForm(item, { busy, error }) {
       <div class="inline-form-row cols-2">
         <div>
           <label class="inline-label" for="outcome-fv-${item.id}">Future-value delta (USD)</label>
-          <input id="outcome-fv-${item.id}" name="future_value_delta_usd" type="number" step="any" placeholder="+12500" />
+          <input id="outcome-fv-${item.id}" name="future_value_delta_usd" type="number" step="any" placeholder="+12500"${measured && measured.suggested_future_value_delta_usd != null ? raw(` value="${Number(measured.suggested_future_value_delta_usd)}"`) : ''} />
         </div>
         <div>
           <label class="inline-label" for="outcome-rv-${item.id}">Real-value delta (USD)</label>
@@ -145,12 +147,12 @@ function renderOutcomeForm(item, { busy, error }) {
         </div>
         <div>
           <label class="inline-label" for="outcome-window-${item.id}">Window (days)</label>
-          <input id="outcome-window-${item.id}" name="measurement_window_days" type="number" step="1" placeholder="30" />
+          <input id="outcome-window-${item.id}" name="measurement_window_days" type="number" step="1" placeholder="30"${measured && measured.observation_window_days != null ? raw(` value="${Number(measured.observation_window_days)}"`) : ''} />
         </div>
       </div>
       <div class="inline-form-row">
         <label class="inline-label" for="outcome-source-${item.id}">Measurement source</label>
-        <input id="outcome-source-${item.id}" name="measurement_source" type="text" placeholder="${guidance.measurementPlaceholder}" />
+        <input id="outcome-source-${item.id}" name="measurement_source" type="text" placeholder="${guidance.measurementPlaceholder}"${measured ? raw(' value="portfolio_sync"') : ''} />
       </div>
       <div class="inline-form-row">
         <label class="inline-label" for="outcome-note-${item.id}">Note (optional)</label>
@@ -163,6 +165,30 @@ function renderOutcomeForm(item, { busy, error }) {
         </button>
         <button class="btn btn-ghost" data-cancel data-id="${item.id}" ${busy ? 'disabled' : ''}>Cancel</button>
       </div>
+    </div>
+  `;
+}
+
+// Measured suggestion from portfolio history: the fields below arrive
+// pre-filled; this block says where the numbers came from and what they
+// do NOT prove. Confirmation over computation, honesty over precision.
+function renderMeasuredPrefill(measured) {
+  if (!measured) return '';
+  const expected = Number(measured.expected_future_value_delta_usd);
+  return html`
+    <div class="inline-form-row">
+      <p class="inline-form-title">Measured for you</p>
+      <p class="marginalia">
+        Portfolio moved ${fmtUsdSigned(measured.suggested_future_value_delta_usd)}
+        (${fmtUsd(measured.baseline_value_usd)} -> ${fmtUsd(measured.current_value_usd)})
+        since ${fmtDateLong(measured.applied_at)} · ${Number(measured.observation_window_days)} days
+        ${Number.isFinite(expected) ? html` · expected ${fmtUsdSigned(expected)}` : ''}
+      </p>
+      ${Array.isArray(measured.warnings) && measured.warnings.length ? html`
+        <ul class="marginalia">
+          ${raw(measured.warnings.map(warning => html`<li>${warning}</li>`).join(''))}
+        </ul>
+      ` : ''}
     </div>
   `;
 }

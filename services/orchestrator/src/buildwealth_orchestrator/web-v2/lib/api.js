@@ -409,6 +409,7 @@ export const api = {
   reject:          (id, body = {}) => postJson(`/api/recommendations/${encodeURIComponent(id)}/reject`, body),
   archive:         (id, body = {}) => postJson(`/api/recommendations/${encodeURIComponent(id)}/archive`, body),
   outcome:         (id, body = {}) => postJson(`/api/recommendations/${encodeURIComponent(id)}/outcome`, body),
+  outcomePrefill:  (id)            => fetchJson(`/api/recommendations/${encodeURIComponent(id)}/outcome/prefill`),
   closure:         (planId)        => fetchJson(planId ? `/api/recommendations/closure-analytics?plan_id=${encodeURIComponent(planId)}` : '/api/recommendations/closure-analytics'),
   sweepPreview:    (body = {})     => postJson('/api/recommendations/generate/run-all', { ...body, dry_run: true }),
   sweepCreate:     (body = {})     => postJson('/api/recommendations/generate/run-all', { ...body, dry_run: false }),
