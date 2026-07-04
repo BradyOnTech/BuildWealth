@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "orchestrator",
+      "runtimeExecutable": "make",
+      "runtimeArgs": ["up"],
+      "port": 8090
+    }
+  ]
+}

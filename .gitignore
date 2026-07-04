@@ -30,3 +30,6 @@ services/orchestrator/data/
 
 # Logs
 *.log
+data/settings/workspace_secrets.json
+data/settings/workspace_settings.json
+.claude/settings.local.json
