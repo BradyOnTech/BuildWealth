@@ -48,6 +48,7 @@ export function renderDiversificationPanel(diversification = {}) {
       <dl class="analytics-metrics compact">
         ${raw(metric('Diversification', Number.isFinite(score) ? `${score.toFixed(0)}/100` : '—'))}
         ${diversification.label ? raw(metric('Reading', diversification.label)) : ''}
+        ${Number(diversification.investable_value_usd) > 0 ? raw(metric('Invested money', fmtUsd(diversification.investable_value_usd))) : ''}
       </dl>
       <div class="benchmark-rows">
         ${raw(components.map(component => html`

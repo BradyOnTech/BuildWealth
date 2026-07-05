@@ -12,7 +12,7 @@ def _entry(symbol, value, asset_class="equity", region="united states", asset_ty
     }
 
 
-def test_concentrated_single_asset_scores_low_with_plain_reasons() -> None:
+def test_primary_home_is_housing_not_invested_money() -> None:
     payload = build_diversification_payload({
         "a:HOME": _entry("HOME", 420_000, asset_class="real_estate", asset_type="property"),
         "a:VTI": _entry("VTI", 40_000),
@@ -20,10 +20,15 @@ def test_concentrated_single_asset_scores_low_with_plain_reasons() -> None:
     })
 
     assert payload["status"] == "ready"
-    assert payload["score"] < 40
-    assert payload["label"] == "Concentrated"
-    sentences = " ".join(payload["reasons"])
-    assert "behaves like about" in sentences
+    # The home is excluded from the score, named with its value...
+    assert payload["investable_value_usd"] == 80_000.0
+    assert payload["excluded"] == [{"symbol": "HOME", "value_usd": 420_000.0}]
+    assert any("housing / personal property" in caveat for caveat in payload["caveats"])
+    # ...and the score describes the invested 80k (two positions, two classes),
+    # not a portfolio "dominated" by a kitchen.
+    assert 20 <= payload["score"] < 60
+    sentences = " ".join(c["sentence"] for c in payload["components"])
+    assert "84%" not in sentences
     assert any("look-through" in caveat for caveat in payload["caveats"])
 
 

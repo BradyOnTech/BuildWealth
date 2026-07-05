@@ -9,12 +9,21 @@ plain-language reasons, weighted by what actually protects a household:
   - spread across regions (20%)
   - funds versus single stocks (20%)
 
+Scope: INVESTABLE money only. A primary residence is housing first — you
+cannot rebalance a kitchen — so personal, illiquid, custom-valued property is
+excluded from the score and named separately. (Home/equity/location risk is a
+real exposure, but it is a different lens, not a seat in this score. REIT
+funds remain investable; the discriminator is personal illiquidity, not the
+real-estate asset class.)
+
 Known limit, stated rather than hidden: without fund look-through the score
 treats each fund as one diversified unit. Three overlapping S&P 500 funds
 will look more varied than they are.
 """
 
 from typing import Any
+
+from buildwealth_orchestrator.services.portfolio_rebalancing import is_untradable_position
 
 _WEIGHTS = {
     "effective_positions": 0.35,
@@ -26,18 +35,22 @@ _FUND_TYPES = {"etf", "fund", "mutual_fund", "index_fund"}
 
 
 def build_diversification_payload(holdings: dict[str, Any]) -> dict[str, Any]:
-    values: list[float] = []
     by_symbol: dict[str, float] = {}
     by_class: dict[str, float] = {}
     by_region: dict[str, float] = {}
     fund_value = 0.0
     total = 0.0
+    excluded: dict[str, float] = {}
 
     for entry in holdings.values():
         if not isinstance(entry, dict):
             continue
         value = _safe(entry.get("current_value"))
         if value <= 0:
+            continue
+        if is_untradable_position(entry):
+            symbol = str(entry.get("symbol") or "?").strip().upper()
+            excluded[symbol] = excluded.get(symbol, 0.0) + value
             continue
         total += value
         symbol = str(entry.get("symbol") or "?").strip().upper()
@@ -49,8 +62,20 @@ def build_diversification_payload(holdings: dict[str, Any]) -> dict[str, Any]:
         if str(entry.get("asset_type") or "").strip().lower() in _FUND_TYPES:
             fund_value += value
 
+    excluded_rows = [
+        {"symbol": symbol, "value_usd": round(value, 2)}
+        for symbol, value in sorted(excluded.items(), key=lambda item: -item[1])
+    ]
     if total <= 0:
-        return {"status": "no_data", "score": None, "label": None, "components": [], "reasons": []}
+        return {
+            "status": "no_data",
+            "score": None,
+            "label": None,
+            "components": [],
+            "reasons": [],
+            "investable_value_usd": 0.0,
+            "excluded": excluded_rows,
+        }
 
     effective = _effective_positions(list(by_symbol.values()), total)
     components = [
@@ -85,15 +110,27 @@ def build_diversification_payload(holdings: dict[str, Any]) -> dict[str, Any]:
     score = round(sum(c["score"] * _WEIGHTS[c["key"]] for c in components), 1)
     reasons = [c["sentence"] for c in sorted(components, key=lambda c: c["score"])[:3]]
 
+    caveats = [
+        "Funds are scored as single diversified units — overlapping funds are not yet examined (no holdings look-through).",
+    ]
+    if excluded_rows:
+        excluded_total = sum(row["value_usd"] for row in excluded_rows)
+        names = ", ".join(row["symbol"] for row in excluded_rows[:3])
+        caveats.insert(
+            0,
+            f"Scored on invested money only: {names} (~${excluded_total:,.0f}) is treated as "
+            "housing / personal property, not part of the investable mix.",
+        )
+
     return {
         "status": "ready",
         "score": score,
         "label": _label(score),
         "components": components,
         "reasons": reasons,
-        "caveats": [
-            "Funds are scored as single diversified units — overlapping funds are not yet examined (no holdings look-through)."
-        ],
+        "investable_value_usd": round(total, 2),
+        "excluded": excluded_rows,
+        "caveats": caveats,
     }
 
 

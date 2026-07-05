@@ -24,7 +24,7 @@ from buildwealth_orchestrator.services.contribution_rules import (
 # Sell-preference by tax treatment: lower sells first.
 _SELL_RANK = {"tax_deferred": 0, "tax_free": 1, "taxable": 2}
 _LONG_TERM = timedelta(days=365)
-_UNTRADABLE_ASSET_TYPES = {"property", "real_estate", "collectible", "private"}
+_UNTRADABLE_ASSET_TYPES = {"property", "real_estate", "collectible", "private"}  # asset TYPES, not classes
 
 
 def build_trim_plan(
@@ -66,7 +66,7 @@ def build_trim_plan(
         value = _safe(entry.get("current_value"))
         if value <= 0:
             continue
-        if _untradable(entry):
+        if is_untradable_position(entry):
             notes.append(
                 f"{symbol} in {entry.get('account')} is not a market-tradable position; "
                 "reduce its weight by directing future contributions elsewhere."
@@ -189,12 +189,18 @@ def _is_long_term(acquired_date: Any, as_of: datetime) -> bool:
     return (as_of - acquired) >= _LONG_TERM
 
 
-def _untradable(entry: dict[str, Any]) -> bool:
+def is_untradable_position(entry: dict[str, Any]) -> bool:
+    """Personal, illiquid, or custom-valued — not market-tradable money.
+
+    Shared discriminator: the rebalancing engine skips these for trades and
+    the diversification score excludes them from the investable universe.
+    """
     if bool(entry.get("is_custom_asset")) and str(entry.get("valuation_method") or "").strip():
         return True
+    # asset_TYPE only: direct property is type real_estate/property, while a
+    # REIT fund is type etf with asset_class real_estate — and fully tradable.
     asset_type = str(entry.get("asset_type") or "").strip().lower()
-    asset_class = str(entry.get("asset_class") or "").strip().lower()
-    return asset_type in _UNTRADABLE_ASSET_TYPES or asset_class in _UNTRADABLE_ASSET_TYPES
+    return asset_type in _UNTRADABLE_ASSET_TYPES
 
 
 def _treatments(accounts: list[dict[str, Any]] | None) -> dict[str, str]:
@@ -246,7 +252,7 @@ def build_allocation_drift_plan(
             continue
         klass = _class_key(entry.get("asset_class"))
         value_by_class[klass] = value_by_class.get(klass, 0.0) + value
-        if not _untradable(entry):
+        if not is_untradable_position(entry):
             largest_tradable.setdefault(klass, []).append((value, str(entry.get("symbol") or "")))
 
     rows: list[dict[str, Any]] = []
