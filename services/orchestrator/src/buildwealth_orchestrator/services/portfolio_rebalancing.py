@@ -215,3 +215,100 @@ def _safe(value: Any) -> float:
     except (TypeError, ValueError):
         return 0.0
     return result if result == result else 0.0
+
+
+# ─── Allocation drift ───────────────────────────────────────────────────────
+# Targets say where the household wants to be; drift guidance says how far
+# off it is and where the next dollar (or the next trim) should go. Research
+# framing only — the app never trades.
+
+DRIFT_TOLERANCE_PCT = 5.0
+
+
+def build_allocation_drift_plan(
+    *,
+    holdings: dict[str, Any],
+    targets_pct: dict[str, Any],
+    total_market_value: float,
+    tolerance_pct: float = DRIFT_TOLERANCE_PCT,
+) -> dict[str, Any]:
+    targets = _normalized_targets(targets_pct)
+    if not targets or total_market_value <= 0:
+        return {"status": "no_targets", "rows": [], "tolerance_pct": tolerance_pct}
+
+    value_by_class: dict[str, float] = {}
+    largest_tradable: dict[str, list[tuple[float, str]]] = {}
+    for entry in holdings.values():
+        if not isinstance(entry, dict):
+            continue
+        value = _safe(entry.get("current_value"))
+        if value <= 0:
+            continue
+        klass = _class_key(entry.get("asset_class"))
+        value_by_class[klass] = value_by_class.get(klass, 0.0) + value
+        if not _untradable(entry):
+            largest_tradable.setdefault(klass, []).append((value, str(entry.get("symbol") or "")))
+
+    rows: list[dict[str, Any]] = []
+    for klass, target in targets.items():
+        current = round(value_by_class.get(klass, 0.0) / total_market_value * 100.0, 2)
+        drift = round(current - target, 2)
+        if abs(drift) <= tolerance_pct:  # at tolerance is close enough — no nagging
+            continue
+        gap_usd = round(abs(drift) / 100.0 * total_market_value, 2)
+        direction = "overweight" if drift > 0 else "underweight"
+        candidates = [
+            symbol
+            for _, symbol in sorted(largest_tradable.get(klass, []), reverse=True)[:2]
+            if symbol
+        ]
+        rows.append(
+            {
+                "asset_class": klass,
+                "target_pct": target,
+                "current_pct": current,
+                "drift_pct": drift,
+                "gap_usd": gap_usd,
+                "direction": direction,
+                "trim_candidates": candidates if direction == "overweight" else [],
+            }
+        )
+
+    rows.sort(key=lambda row: abs(row["drift_pct"]), reverse=True)
+    return {
+        "status": "ready" if rows else "on_target",
+        "rows": rows,
+        "tolerance_pct": tolerance_pct,
+        "targets_pct": targets,
+    }
+
+
+def allocation_drift_sentence(row: dict[str, Any]) -> str:
+    klass = str(row.get("asset_class") or "").replace("_", " ")
+    gap = _safe(row.get("gap_usd"))
+    if row.get("direction") == "underweight":
+        return (
+            f"{klass.title()} is {abs(_safe(row.get('drift_pct'))):.1f} points under your "
+            f"{_safe(row.get('target_pct')):.0f}% target — directing roughly ${gap:,.0f} of future "
+            "contributions there closes the gap without selling anything."
+        )
+    candidates = ", ".join(row.get("trim_candidates") or [])
+    tail = f" Largest positions there: {candidates}." if candidates else ""
+    return (
+        f"{klass.title()} is {abs(_safe(row.get('drift_pct'))):.1f} points over your "
+        f"{_safe(row.get('target_pct')):.0f}% target (≈${gap:,.0f}).{tail}"
+    )
+
+
+def _normalized_targets(targets_pct: dict[str, Any]) -> dict[str, float]:
+    result: dict[str, float] = {}
+    for key, value in (targets_pct or {}).items():
+        pct = _safe(value)
+        klass = _class_key(key)
+        if klass and 0 < pct <= 100:
+            result[klass] = pct
+    return result
+
+
+def _class_key(value: Any) -> str:
+    return str(value or "unclassified").strip().lower().replace(" ", "_")

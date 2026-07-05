@@ -146,3 +146,93 @@ def test_factory_attaches_trades_to_risk_recommendations() -> None:
     assert action["trim_plan_status"] == "ready"
     assert action["trades"][0]["account_id"] == "my_401k"
     assert "Sell ~$10,000 of NVDA from my_401k" in result.candidates[0]["detail"]
+
+
+def test_allocation_drift_plan_flags_over_and_under_weights() -> None:
+    from buildwealth_orchestrator.services.portfolio_rebalancing import (
+        allocation_drift_sentence,
+        build_allocation_drift_plan,
+    )
+
+    holdings = {
+        "a:VTI": {"symbol": "VTI", "asset_class": "equity", "current_value": 90_000.0, "asset_type": "etf"},
+        "a:BND": {"symbol": "BND", "asset_class": "fixed_income", "current_value": 5_000.0, "asset_type": "etf"},
+        "a:CASH": {"symbol": "CASH", "asset_class": "cash", "current_value": 5_000.0, "asset_type": "cash"},
+    }
+    plan = build_allocation_drift_plan(
+        holdings=holdings,
+        targets_pct={"equity": 70, "fixed_income": 20, "cash": 10},
+        total_market_value=100_000.0,
+    )
+
+    assert plan["status"] == "ready"
+    by_class = {row["asset_class"]: row for row in plan["rows"]}
+    assert by_class["equity"]["direction"] == "overweight"
+    assert by_class["equity"]["drift_pct"] == 20.0
+    assert by_class["equity"]["trim_candidates"] == ["VTI"]
+    assert by_class["fixed_income"]["direction"] == "underweight"
+    assert by_class["fixed_income"]["gap_usd"] == 15_000.0
+    assert "cash" not in by_class  # exactly on target
+
+    under = allocation_drift_sentence(by_class["fixed_income"])
+    assert "under your 20% target" in under
+    assert "without selling anything" in under
+    over = allocation_drift_sentence(by_class["equity"])
+    assert "over your 70% target" in over and "VTI" in over
+
+
+def test_allocation_drift_plan_without_targets_or_within_tolerance() -> None:
+    from buildwealth_orchestrator.services.portfolio_rebalancing import build_allocation_drift_plan
+
+    empty = build_allocation_drift_plan(holdings={}, targets_pct={}, total_market_value=100_000.0)
+    assert empty["status"] == "no_targets"
+
+    on_target = build_allocation_drift_plan(
+        holdings={"a:VTI": {"symbol": "VTI", "asset_class": "equity", "current_value": 68_000.0}},
+        targets_pct={"equity": 70},
+        total_market_value=100_000.0,
+    )
+    assert on_target["status"] == "on_target"
+
+
+def test_allocation_drift_generator_emits_contribution_first_guidance() -> None:
+    from buildwealth_orchestrator.services.recommendation_factory import (
+        generate_allocation_drift_recommendations,
+    )
+
+    holdings_payload = {
+        "holdings": {
+            "a:VTI": {"symbol": "VTI", "asset_class": "equity", "current_value": 90_000.0, "asset_type": "etf"},
+            "a:BND": {"symbol": "BND", "asset_class": "fixed_income", "current_value": 10_000.0, "asset_type": "etf"},
+        },
+        "total_value": 100_000.0,
+        "risk_alerts": {"metrics": {"total_market_value": 100_000.0}},
+    }
+    result = generate_allocation_drift_recommendations(
+        holdings_payload=holdings_payload,
+        investment_policy={"target_asset_class_allocation_pct": {"equity": 70, "fixed_income": 30}},
+        existing_recommendations=[],
+        dry_run=True,
+        now=AS_OF,
+    )
+
+    assert result.generated_count == 2
+    titles = [c["title"] for c in result.candidates]
+    assert any("drifted above target" in t for t in titles)
+    assert any(t.startswith("Direct new contributions toward fixed income") for t in titles)
+    under = next(c for c in result.candidates if "Direct new" in c["title"])
+    assert "without selling anything" in under["detail"]
+    assert under["action_payload"]["generator"]["dedupe_key"] == "allocation_drift:fixed_income:underweight"
+
+    # second run against the created set dedupes
+    second = generate_allocation_drift_recommendations(
+        holdings_payload=holdings_payload,
+        investment_policy={"target_asset_class_allocation_pct": {"equity": 70, "fixed_income": 30}},
+        existing_recommendations=[
+            {"status": "proposed", "action_payload": c["action_payload"]} for c in result.candidates
+        ],
+        dry_run=True,
+        now=AS_OF,
+    )
+    assert second.generated_count == 0
+    assert {item["reason"] for item in second.skipped} == {"active_duplicate"}

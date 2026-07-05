@@ -5,7 +5,12 @@ from datetime import datetime, timedelta, timezone
 import re
 from typing import Any, Protocol
 
-from buildwealth_orchestrator.services.portfolio_rebalancing import build_trim_plan, trim_plan_summary
+from buildwealth_orchestrator.services.portfolio_rebalancing import (
+    allocation_drift_sentence,
+    build_allocation_drift_plan,
+    build_trim_plan,
+    trim_plan_summary,
+)
 from buildwealth_orchestrator.services.value_coercion import safe_float, utc_now_iso
 
 PORTFOLIO_RISK_FACTORY_ID = "portfolio_risk_recommendation_factory"
@@ -2970,6 +2975,168 @@ def generate_due_outcome_review_recommendations(
                     "signal_key": signal_key,
                 }
             )
+            continue
+        candidates.append(candidate)
+        active_keys.add(dedupe_key)
+        if not dry_run and creator is not None:
+            created.append(
+                creator.create(
+                    title=candidate["title"],
+                    detail=candidate["detail"],
+                    priority=candidate["priority"],
+                    recommendation_type=candidate["recommendation_type"],
+                    source=candidate["source"],
+                    plan_id=candidate["plan_id"],
+                    action_payload=candidate["action_payload"],
+                    status="proposed",
+                )
+            )
+
+    return RecommendationFactoryResult(
+        generated_count=len(created) if not dry_run else len(candidates),
+        skipped_count=len(skipped),
+        candidates=candidates,
+        created=created,
+        skipped=skipped,
+        dry_run=dry_run,
+    )
+
+
+# ─── Allocation drift ───────────────────────────────────────────────────────
+# Targets live in the investment policy; this factory says how far reality
+# has drifted and where the next dollar should go. Contributions-first
+# framing — BuildWealth researches decisions, it never trades.
+
+ALLOCATION_DRIFT_FACTORY_ID = "allocation_drift_recommendation_factory"
+ALLOCATION_DRIFT_FACTORY_VERSION = "v1"
+ALLOCATION_DRIFT_SOURCE = "generator:allocation_drift"
+
+
+def _allocation_drift_dedupe_key(asset_class: str, direction: str) -> str:
+    return f"allocation_drift:{_clean_key(asset_class)}:{_clean_key(direction)}"
+
+
+def _allocation_drift_candidate(
+    row: dict[str, Any],
+    *,
+    generated_at: str,
+    plan_id: str | None,
+    snapshot_as_of: Any,
+) -> dict[str, Any]:
+    asset_class = str(row.get("asset_class") or "unclassified")
+    direction = str(row.get("direction") or "underweight")
+    sentence = allocation_drift_sentence(row)
+    title = (
+        f"Direct new contributions toward {asset_class.replace('_', ' ')}"
+        if direction == "underweight"
+        else f"{asset_class.replace('_', ' ').title()} has drifted above target"
+    )
+    priority = "high" if abs(safe_float(row.get("drift_pct"), 0.0)) >= 15 else "medium"
+    evidence = {
+        "summary": sentence,
+        "data_keys": ["portfolio.holdings", "financial_profile.investment_policy"],
+        "snapshot_as_of": snapshot_as_of,
+        "target_pct": row.get("target_pct"),
+        "current_pct": row.get("current_pct"),
+        "drift_pct": row.get("drift_pct"),
+        "gap_usd": row.get("gap_usd"),
+        "trim_candidates": row.get("trim_candidates") or [],
+    }
+    suggested_action = {
+        "kind": "rebalance_toward_target_allocation",
+        "subject": asset_class,
+        "direction": direction,
+        "gap_usd": row.get("gap_usd"),
+        "trim_candidates": row.get("trim_candidates") or [],
+    }
+    expected_outcome = {
+        "expected_delta_context_quality": "allocation_closer_to_target",
+        "expected_value_after": row.get("target_pct"),
+        "unit": "pct",
+    }
+    return {
+        "title": title,
+        "detail": sentence,
+        "priority": priority,
+        "recommendation_type": "workflow_action",
+        "source": ALLOCATION_DRIFT_SOURCE,
+        "plan_id": plan_id,
+        "action_payload": {
+            "generator": {
+                "id": ALLOCATION_DRIFT_FACTORY_ID,
+                "version": ALLOCATION_DRIFT_FACTORY_VERSION,
+                "generated_at": generated_at,
+                "signal_key": f"{asset_class}:{direction}",
+                "signal_type": "allocation_drift",
+                "dedupe_key": _allocation_drift_dedupe_key(asset_class, direction),
+                "severity": "drift",
+            },
+            "evidence": evidence,
+            "suggested_action": suggested_action,
+            "expected_outcome": expected_outcome,
+            "quality": _quality_metadata(
+                source=ALLOCATION_DRIFT_SOURCE,
+                priority=priority,
+                evidence=evidence,
+                suggested_action=suggested_action,
+                expected_outcome=expected_outcome,
+                actionability="review_only",
+                confidence_level="high",
+                confidence_reasons=[
+                    "Drift measured directly against the target allocation saved in your investment policy.",
+                ],
+                reversibility="high",
+            ),
+        },
+    }
+
+
+def generate_allocation_drift_recommendations(
+    *,
+    holdings_payload: dict[str, Any],
+    investment_policy: dict[str, Any],
+    existing_recommendations: list[dict[str, Any]],
+    creator: RecommendationCreator | None = None,
+    dry_run: bool = True,
+    plan_id: str | None = None,
+    limit: int = 10,
+    now: datetime | None = None,
+) -> RecommendationFactoryResult:
+    generated_at = _now_iso(now)
+    active_keys = _active_dedupe_keys(existing_recommendations)
+    bounded_limit = max(1, min(int(limit), 50))
+
+    holdings_map = holdings_payload.get("holdings") if isinstance(holdings_payload.get("holdings"), dict) else {}
+    risk_payload = holdings_payload.get("risk_alerts") if isinstance(holdings_payload.get("risk_alerts"), dict) else {}
+    metrics = risk_payload.get("metrics") if isinstance(risk_payload.get("metrics"), dict) else {}
+    total_value = safe_float(metrics.get("total_market_value") or holdings_payload.get("total_value"), 0.0)
+    targets = investment_policy.get("target_asset_class_allocation_pct") if isinstance(investment_policy, dict) else {}
+
+    plan = build_allocation_drift_plan(
+        holdings=holdings_map,
+        targets_pct=targets if isinstance(targets, dict) else {},
+        total_market_value=total_value,
+    )
+
+    candidates: list[dict[str, Any]] = []
+    created: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+
+    for row in plan.get("rows") or []:
+        candidate = _allocation_drift_candidate(
+            row,
+            generated_at=generated_at,
+            plan_id=plan_id,
+            snapshot_as_of=holdings_payload.get("updated_at") or risk_payload.get("generated_at"),
+        )
+        generator = candidate["action_payload"]["generator"]
+        dedupe_key = generator["dedupe_key"]
+        signal_key = generator["signal_key"]
+        if dedupe_key in active_keys:
+            skipped.append({"dedupe_key": dedupe_key, "reason": "active_duplicate", "title": candidate["title"], "signal_key": signal_key})
+            continue
+        if len(candidates) >= bounded_limit:
+            skipped.append({"dedupe_key": dedupe_key, "reason": "limit_exceeded", "title": candidate["title"], "signal_key": signal_key})
             continue
         candidates.append(candidate)
         active_keys.add(dedupe_key)

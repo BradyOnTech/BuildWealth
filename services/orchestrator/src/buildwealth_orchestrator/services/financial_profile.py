@@ -20,6 +20,7 @@ PROFILE_METADATA_DEFAULT_STALE_AFTER_DAYS = {
     "investment_policy.minimum_research_confidence": 365,
     "investment_policy.minimum_cash_runway_months": 365,
     "investment_policy.max_asset_class_exposure_pct": 365,
+    "investment_policy.target_asset_class_allocation_pct": 365,
     "investment_policy.simplicity_preference": 365,
     "investment_policy.tax_sensitivity": 365,
     "investment_policy.risk_tolerance": 365,
@@ -295,6 +296,7 @@ class FinancialProfileStore:
                 "minimum_research_confidence": None,
                 "minimum_cash_runway_months": None,
                 "max_asset_class_exposure_pct": {},
+                "target_asset_class_allocation_pct": {},
                 "simplicity_preference": None,
                 "tax_sensitivity": None,
                 "risk_tolerance": None,
@@ -333,8 +335,17 @@ class FinancialProfileStore:
 
     def _migrate_payload(self, raw: Any) -> dict[str, Any]:
         defaults = self._default_payload()
+        default_policy = dict(defaults.get("investment_policy") or {})
         if isinstance(raw, dict):
             defaults.update(raw)
+
+        # Profiles written before a policy field existed replace the whole
+        # investment_policy dict on update; backfill new keys from defaults.
+        raw_policy = defaults.get("investment_policy")
+        defaults["investment_policy"] = {
+            **default_policy,
+            **(raw_policy if isinstance(raw_policy, dict) else {}),
+        }
 
         defaults["schema_version"] = PROFILE_SCHEMA_VERSION
 

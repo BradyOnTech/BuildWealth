@@ -1389,6 +1389,9 @@ class InvestmentPolicy(BaseModel):
     minimum_research_confidence: Literal["low", "medium", "high"] | None = None
     minimum_cash_runway_months: float | None = Field(default=None, ge=0)
     max_asset_class_exposure_pct: dict[str, float] = Field(default_factory=dict)
+    # Where the household WANTS to be, not just what it must not exceed.
+    # Enables drift guidance: "equity is 12 points under target".
+    target_asset_class_allocation_pct: dict[str, float] = Field(default_factory=dict)
     simplicity_preference: Literal["low", "medium", "high"] | None = None
     tax_sensitivity: Literal["low", "medium", "high"] | None = None
     risk_tolerance: Literal["conservative", "moderate", "aggressive"] | None = None
@@ -1611,6 +1614,12 @@ class StaleAssumptionRecommendationGenerateRequest(BaseModel):
 
 class DueOutcomeReviewRecommendationGenerateRequest(BaseModel):
     dry_run: bool = True
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+class AllocationDriftRecommendationGenerateRequest(BaseModel):
+    dry_run: bool = True
+    plan_id: str | None = None
     limit: int = Field(default=10, ge=1, le=50)
 
 

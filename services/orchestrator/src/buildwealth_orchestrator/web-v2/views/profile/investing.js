@@ -48,6 +48,7 @@ export function renderInvesting(ui) {
       </header>
 
       ${raw(guardrailsCard(policy))}
+      ${raw(targetsCard(policy))}
       ${raw(restrictedCard(policy))}
       ${raw(handoffCard())}
 
@@ -58,6 +59,49 @@ export function renderInvesting(ui) {
         </button>
       </div>
     </div>
+  `;
+}
+
+/* ─────────────  Target mix card  ───────────── */
+
+const TARGET_CLASSES = [
+  ['equity', 'Stocks & stock funds'],
+  ['fixed_income', 'Bonds & bond funds'],
+  ['real_estate', 'Real estate'],
+  ['cash', 'Cash'],
+];
+
+export function targetsCard(policy) {
+  const targets = policy?.target_asset_class_allocation_pct || {};
+  const total = TARGET_CLASSES.reduce((sum, [key]) => sum + (Number(targets[key]) || 0), 0);
+  return html`
+    <article class="profile-card">
+      <header class="profile-card-head">
+        <h3 class="profile-card-title">Target mix</h3>
+        <p class="profile-table-lede">
+          Where you want the portfolio to sit. When reality drifts more than five
+          points from a target, BuildWealth suggests where the next contribution
+          should go — guidance only, it never trades.
+        </p>
+      </header>
+      <div class="profile-guardrails">
+        ${raw(TARGET_CLASSES.map(([key, label]) => html`
+          <label class="scenario-field">
+            <span class="assumption-label">${label}</span>
+            <input
+              data-investing-target-class="${key}"
+              type="number" step="1" min="0" max="100" inputmode="numeric"
+              value="${targets[key] != null ? Number(targets[key]) : ''}"
+              placeholder="—"
+            />
+            <span class="assumption-current">% of portfolio</span>
+          </label>
+        `.toString()).join(''))}
+      </div>
+      ${total > 0 && Math.round(total) !== 100 ? html`
+        <p class="marginalia">Targets add to ${Math.round(total)}% — that's allowed, but 100% reads cleanest.</p>
+      ` : ''}
+    </article>
   `;
 }
 
@@ -278,6 +322,15 @@ export async function submitInvestingForm(ui) {
   }
   if (!Array.isArray(policy.restricted_symbols)) policy.restricted_symbols = [];
   if (!Array.isArray(policy.restricted_sectors)) policy.restricted_sectors = [];
+
+  // Target mix inputs are a dict field; collect them separately.
+  const targets = {};
+  for (const el of root.querySelectorAll('[data-investing-target-class]')) {
+    const klass = el.getAttribute('data-investing-target-class');
+    const pct = Number(el.value);
+    if (el.value !== '' && Number.isFinite(pct) && pct > 0 && pct <= 100) targets[klass] = pct;
+  }
+  policy.target_asset_class_allocation_pct = targets;
 
   ui.profile.investment_policy = policy;
   pendingSave = true;

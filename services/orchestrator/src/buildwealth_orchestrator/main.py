@@ -140,6 +140,7 @@ from buildwealth_orchestrator.schemas import (
     RecommendationFactoryRunAllRequest,
     RecommendationFactoryRunAllResponse,
     ResearchThesisExpirationRecommendationGenerateRequest,
+    AllocationDriftRecommendationGenerateRequest,
     DueOutcomeReviewRecommendationGenerateRequest,
     StaleAssumptionRecommendationGenerateRequest,
     WatchlistResearchRecommendationGenerateRequest,
@@ -387,6 +388,7 @@ from buildwealth_orchestrator.services.recommendation_factory import (
     generate_cash_liquidity_recommendations,
     generate_plan_tracking_recommendations,
     generate_portfolio_risk_recommendations,
+    generate_allocation_drift_recommendations,
     generate_due_outcome_review_recommendations,
     generate_profile_completeness_recommendations,
     generate_research_thesis_expiration_recommendations,
@@ -19419,6 +19421,44 @@ def generate_stale_assumption_recommendation_candidates(
     return RecommendationFactoryResponse(**result.to_dict())
 
 
+@app.post("/api/recommendations/generate/allocation-drift", response_model=RecommendationFactoryResponse)
+def generate_allocation_drift_recommendation_candidates(
+    request: AllocationDriftRecommendationGenerateRequest,
+    http_request: Request = Depends(get_current_request),
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> RecommendationFactoryResponse:
+    services = workspace_services_or_legacy(services)
+    if http_request is not None:
+        require_csrf(http_request)
+    require_permission(services.context, "recommendations.write")
+    holdings_payload = services.portfolio_store.get_holdings()
+    profile_payload = get_financial_profile_payload(services.financial_profile_store)
+    investment_policy = (
+        profile_payload.get("investment_policy")
+        if isinstance(profile_payload.get("investment_policy"), dict)
+        else {}
+    )
+    existing_recommendations = services.recommendation_inbox.list(
+        limit=None,
+        status=None,
+        plan_id=None,
+        include_archived=True,
+        sort="none",
+    )
+    result = generate_allocation_drift_recommendations(
+        holdings_payload=holdings_payload,
+        investment_policy=investment_policy,
+        existing_recommendations=existing_recommendations,
+        creator=services.recommendation_inbox if not request.dry_run else None,
+        dry_run=request.dry_run,
+        plan_id=request.plan_id,
+        limit=request.limit,
+    )
+    if not request.dry_run and result.created:
+        _queue_autogit_event("allocation_drift_recommendations_generated")
+    return RecommendationFactoryResponse(**result.to_dict())
+
+
 @app.post("/api/recommendations/generate/due-outcome-review", response_model=RecommendationFactoryResponse)
 def generate_due_outcome_review_recommendation_candidates(
     request: DueOutcomeReviewRecommendationGenerateRequest,
@@ -19680,6 +19720,21 @@ def run_all_recommendation_factories(
         errors.append({"factory": "stale_assumptions", "reason": str(exc.detail)})
     except Exception as exc:
         errors.append({"factory": "stale_assumptions", "reason": str(exc)})
+
+    try:
+        factories["allocation_drift"] = generate_allocation_drift_recommendation_candidates(
+            AllocationDriftRecommendationGenerateRequest(
+                dry_run=request.dry_run,
+                plan_id=request.plan_id,
+                limit=request.limit,
+            ),
+            http_request=http_request,
+            services=services,
+        )
+    except HTTPException as exc:
+        errors.append({"factory": "allocation_drift", "reason": str(exc.detail)})
+    except Exception as exc:
+        errors.append({"factory": "allocation_drift", "reason": str(exc)})
 
     try:
         factories["due_outcome_review"] = generate_due_outcome_review_recommendation_candidates(
