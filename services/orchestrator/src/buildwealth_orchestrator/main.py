@@ -1320,6 +1320,10 @@ async def scheduled_sync_loop() -> None:
             except Exception:
                 # Best-effort: the Inbox sweep must never kill the heartbeat.
                 pass
+            try:
+                sweep_allocation_drift()
+            except Exception:
+                pass
 
         await asyncio.sleep(poll_seconds)
 
@@ -1338,6 +1342,35 @@ def sweep_due_outcome_reviews() -> int:
         sort="none",
     )
     result = generate_due_outcome_review_recommendations(
+        existing_recommendations=existing,
+        creator=recommendation_inbox,
+        dry_run=False,
+    )
+    return len(result.created)
+
+
+def sweep_allocation_drift() -> int:
+    """Surface target-allocation drift in the Inbox on the heartbeat.
+
+    Same contract as the outcome sweep: default household workspace,
+    dedupe keys prevent nagging, silence when no targets are set.
+    """
+    profile_payload = get_financial_profile_payload(financial_profile_store)
+    investment_policy = (
+        profile_payload.get("investment_policy")
+        if isinstance(profile_payload.get("investment_policy"), dict)
+        else {}
+    )
+    existing = recommendation_inbox.list(
+        limit=None,
+        status=None,
+        plan_id=None,
+        include_archived=True,
+        sort="none",
+    )
+    result = generate_allocation_drift_recommendations(
+        holdings_payload=portfolio_store.get_holdings(),
+        investment_policy=investment_policy,
         existing_recommendations=existing,
         creator=recommendation_inbox,
         dry_run=False,

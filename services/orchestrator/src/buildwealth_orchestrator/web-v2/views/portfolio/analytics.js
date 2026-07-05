@@ -27,10 +27,42 @@ export function renderAnalytics(analytics = null) {
       </div>
       ${raw(renderReturnPartsPanel(performance))}
       ${raw(renderAttributionPanel(attribution))}
+      ${raw(renderDiversificationPanel(analytics.diversification || {}))}
       ${raw(renderFeesPanel(analytics.fees || {}))}
       ${raw(renderRiskExplanationPanel(risk))}
       ${raw(renderAnalyticsWarnings(analytics.warnings))}
     </section>
+  `;
+}
+
+// One honest number for "how spread out am I?", with the weakest links named.
+export function renderDiversificationPanel(diversification = {}) {
+  if (diversification.status !== 'ready') return '';
+  const components = Array.isArray(diversification.components) ? diversification.components : [];
+  const reasons = Array.isArray(diversification.reasons) ? diversification.reasons : [];
+  const caveats = Array.isArray(diversification.caveats) ? diversification.caveats : [];
+  const score = Number(diversification.score);
+  return html`
+    <article class="analytics-panel wide">
+      <span class="analytics-kicker">How spread out is this?</span>
+      <dl class="analytics-metrics compact">
+        ${raw(metric('Diversification', Number.isFinite(score) ? `${score.toFixed(0)}/100` : '—'))}
+        ${diversification.label ? raw(metric('Reading', diversification.label)) : ''}
+      </dl>
+      <div class="benchmark-rows">
+        ${raw(components.map(component => html`
+          <div class="benchmark-row">
+            <strong>${esc(String(component.label || ''))}</strong>
+            <span>${Number(component.score).toFixed(0)}/100</span>
+            <span>${esc(String(component.sentence || ''))}</span>
+          </div>
+        `).join(''))}
+      </div>
+      ${reasons.length ? html`
+        <p class="marginalia">Weakest links: ${reasons.map(esc).join(' ')}</p>
+      ` : ''}
+      ${raw(caveats.map(caveat => html`<p class="marginalia">${caveat}</p>`.toString()).join(''))}
+    </article>
   `;
 }
 

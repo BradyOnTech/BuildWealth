@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from buildwealth_orchestrator.services.portfolio_diversification import build_diversification_payload
 from buildwealth_orchestrator.services.portfolio_fees import build_portfolio_fee_payload
 
 
@@ -306,5 +307,6 @@ def build_portfolio_analytics_payload(
             [row for row in holdings_map.values() if isinstance(row, dict)],
             registry_rows=registry_rows,
         ),
+        "diversification": build_diversification_payload(holdings_map),
         "warnings": warnings,
     }
