@@ -19224,6 +19224,7 @@ def generate_portfolio_risk_recommendation_candidates(
         dry_run=request.dry_run,
         plan_id=request.plan_id,
         limit=request.limit,
+        accounts=services.portfolio_store.get_accounts(),
     )
     if not request.dry_run and result.created:
         _queue_autogit_event("portfolio_risk_recommendations_generated")

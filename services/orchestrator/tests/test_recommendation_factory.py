@@ -1019,6 +1019,9 @@ class _FakePortfolioStore:
     def list_transactions(self, limit: int | None = None) -> list[dict[str, object]]:
         return []
 
+    def get_accounts(self) -> list[dict[str, object]]:
+        return []
+
 
 class _FakeFinancialProfileStore:
     def __init__(self, payload: dict[str, object]) -> None:

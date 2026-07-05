@@ -1,0 +1,217 @@
+"""Trim plans — a concentration breach becomes trades a person can execute.
+
+"Review your risk" is homework; "sell ~$5,200 of NVDA from the 401k — no tax
+due now" is an instruction. This service turns a breach alert into ranked,
+tax-aware sell suggestions:
+
+  - tax-advantaged accounts first (sales there are tax-neutral today),
+    traditional before Roth (Roth growth is the most precious to preserve),
+    taxable last, with the realized-gain split estimated from lots
+  - untradable positions (property, custom-valued assets) are named, not
+    pretended away — the honest advice is offsetting future contributions
+
+The app never executes trades. These are instructions for the human, and the
+numbers say exactly what each one costs.
+"""
+
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+from buildwealth_orchestrator.services.contribution_rules import (
+    tax_treatment_for_account_type,
+)
+
+# Sell-preference by tax treatment: lower sells first.
+_SELL_RANK = {"tax_deferred": 0, "tax_free": 1, "taxable": 2}
+_LONG_TERM = timedelta(days=365)
+_UNTRADABLE_ASSET_TYPES = {"property", "real_estate", "collectible", "private"}
+
+
+def build_trim_plan(
+    *,
+    alert: dict[str, Any],
+    holdings: dict[str, Any],
+    accounts: list[dict[str, Any]] | None = None,
+    total_market_value: float,
+    as_of: datetime | None = None,
+) -> dict[str, Any] | None:
+    """Concrete sell plan for a single-symbol concentration breach.
+
+    Returns None for alerts this engine does not understand (v1 handles
+    single-holding concentration only).
+    """
+    if str(alert.get("metric") or "").strip() != "single_holding":
+        return None
+    context = alert.get("context") if isinstance(alert.get("context"), dict) else {}
+    symbol = str(context.get("symbol") or "").strip().upper()
+    if not symbol:
+        return None
+
+    observed = _safe(alert.get("observed"))
+    threshold = _safe(alert.get("threshold"))
+    reduce_by = max(0.0, (observed - threshold) / 100.0 * total_market_value)
+    if reduce_by <= 0:
+        return None
+
+    resolved_as_of = as_of or datetime.now(timezone.utc)
+    treatment_by_account = _treatments(accounts)
+
+    positions = []
+    notes: list[str] = []
+    for entry in holdings.values():
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("symbol") or "").strip().upper() != symbol:
+            continue
+        value = _safe(entry.get("current_value"))
+        if value <= 0:
+            continue
+        if _untradable(entry):
+            notes.append(
+                f"{symbol} in {entry.get('account')} is not a market-tradable position; "
+                "reduce its weight by directing future contributions elsewhere."
+            )
+            continue
+        account_id = str(entry.get("account") or "").strip()
+        treatment = treatment_by_account.get(account_id, "taxable")
+        positions.append((entry, account_id, treatment, value))
+
+    if not positions:
+        return {
+            "status": "no_tradable_position",
+            "symbol": symbol,
+            "reduce_by_usd": round(reduce_by, 2),
+            "trades": [],
+            "residual_usd": round(reduce_by, 2),
+            "notes": notes or [f"No tradable {symbol} position was found to trim."],
+        }
+
+    positions.sort(key=lambda item: (_SELL_RANK.get(item[2], 3), -item[3]))
+
+    trades: list[dict[str, Any]] = []
+    remaining = reduce_by
+    for entry, account_id, treatment, value in positions:
+        if remaining <= 1.0:
+            break
+        sell_value = min(value, remaining)
+        price = _safe(entry.get("current_price"))
+        quantity = round(sell_value / price, 4) if price > 0 else None
+        long_gain, short_gain = _gain_split(entry, sell_value, resolved_as_of)
+        trades.append(
+            {
+                "symbol": symbol,
+                "account_id": account_id,
+                "tax_treatment": treatment,
+                "sell_value_usd": round(sell_value, 2),
+                "quantity": quantity,
+                "estimated_long_term_gain_usd": round(long_gain, 2) if treatment == "taxable" else 0.0,
+                "estimated_short_term_gain_usd": round(short_gain, 2) if treatment == "taxable" else 0.0,
+                "tax_due_now": treatment == "taxable" and (long_gain > 0 or short_gain > 0),
+                "note": (
+                    "No tax due now — sale stays inside the account."
+                    if treatment in ("tax_deferred", "tax_free")
+                    else "Taxable account — gains estimated from recorded lots (FIFO)."
+                ),
+            }
+        )
+        remaining -= sell_value
+
+    return {
+        "status": "ready",
+        "symbol": symbol,
+        "reduce_by_usd": round(reduce_by, 2),
+        "trades": trades,
+        "residual_usd": round(max(0.0, remaining), 2),
+        "notes": notes,
+    }
+
+
+def trim_plan_summary(plan: dict[str, Any]) -> str:
+    """One plain sentence for the recommendation detail."""
+    trades = plan.get("trades") if isinstance(plan.get("trades"), list) else []
+    if not trades:
+        notes = plan.get("notes") or []
+        return str(notes[0]) if notes else ""
+    parts = []
+    for trade in trades[:3]:
+        piece = f"sell ~${trade['sell_value_usd']:,.0f} of {trade['symbol']} from {trade['account_id']}"
+        if trade["tax_treatment"] in ("tax_deferred", "tax_free"):
+            piece += " (no tax due now)"
+        else:
+            gains = trade["estimated_long_term_gain_usd"] + trade["estimated_short_term_gain_usd"]
+            piece += f" (≈${gains:,.0f} in realized gains)" if gains > 0 else " (no gain at current basis)"
+        parts.append(piece)
+    sentence = "; then ".join(parts)
+    return sentence[0].upper() + sentence[1:] + "."
+
+
+def _gain_split(entry: dict[str, Any], sell_value: float, as_of: datetime) -> tuple[float, float]:
+    """Estimated (long_term, short_term) realized gains for a FIFO sale."""
+    price = _safe(entry.get("current_price"))
+    if price <= 0 or sell_value <= 0:
+        return 0.0, 0.0
+    quantity_to_sell = sell_value / price
+    lots = entry.get("lots") if isinstance(entry.get("lots"), list) else []
+    lots = sorted(
+        (lot for lot in lots if isinstance(lot, dict)),
+        key=lambda lot: str(lot.get("acquired_date") or "9999"),
+    )
+    long_gain = short_gain = 0.0
+    for lot in lots:
+        if quantity_to_sell <= 0:
+            break
+        available = _safe(lot.get("remaining_quantity") or lot.get("quantity"))
+        if available <= 0:
+            continue
+        take = min(available, quantity_to_sell)
+        gain = (price - _safe(lot.get("unit_cost"))) * take
+        if _is_long_term(lot.get("acquired_date"), as_of):
+            long_gain += gain
+        else:
+            short_gain += gain
+        quantity_to_sell -= take
+    if quantity_to_sell > 0:
+        # No lot coverage for part of the sale: fall back to average cost.
+        avg_cost = _safe(entry.get("avg_cost_per_share"))
+        if avg_cost > 0:
+            long_gain += (price - avg_cost) * quantity_to_sell
+    return long_gain, short_gain
+
+
+def _is_long_term(acquired_date: Any, as_of: datetime) -> bool:
+    text = str(acquired_date or "").strip()
+    try:
+        acquired = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return True  # unknown age: assume long-term, the kinder tax estimate
+    if acquired.tzinfo is None:
+        acquired = acquired.replace(tzinfo=timezone.utc)
+    return (as_of - acquired) >= _LONG_TERM
+
+
+def _untradable(entry: dict[str, Any]) -> bool:
+    if bool(entry.get("is_custom_asset")) and str(entry.get("valuation_method") or "").strip():
+        return True
+    asset_type = str(entry.get("asset_type") or "").strip().lower()
+    asset_class = str(entry.get("asset_class") or "").strip().lower()
+    return asset_type in _UNTRADABLE_ASSET_TYPES or asset_class in _UNTRADABLE_ASSET_TYPES
+
+
+def _treatments(accounts: list[dict[str, Any]] | None) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for account in accounts or []:
+        if not isinstance(account, dict):
+            continue
+        account_id = str(account.get("id") or "").strip()
+        if not account_id:
+            continue
+        result[account_id] = tax_treatment_for_account_type(str(account.get("type") or ""))
+    return result
+
+
+def _safe(value: Any) -> float:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return result if result == result else 0.0

@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import re
 from typing import Any, Protocol
 
+from buildwealth_orchestrator.services.portfolio_rebalancing import build_trim_plan, trim_plan_summary
 from buildwealth_orchestrator.services.value_coercion import safe_float, utc_now_iso
 
 PORTFOLIO_RISK_FACTORY_ID = "portfolio_risk_recommendation_factory"
@@ -312,6 +313,7 @@ def _candidate_from_alert(
     holdings_payload: dict[str, Any],
     generated_at: str,
     plan_id: str | None,
+    trim_plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     risk_payload = holdings_payload.get("risk_alerts") if isinstance(holdings_payload.get("risk_alerts"), dict) else {}
     metrics = risk_payload.get("metrics") if isinstance(risk_payload.get("metrics"), dict) else {}
@@ -345,6 +347,16 @@ def _candidate_from_alert(
             "threshold": threshold,
             "unit": str(alert.get("unit") or "").strip().lower(),
             "estimated_rebalance_usd": estimated_amount_usd,
+            **(
+                {
+                    "trades": trim_plan.get("trades"),
+                    "trim_plan_status": trim_plan.get("status"),
+                    "trim_plan_notes": trim_plan.get("notes"),
+                    "residual_usd": trim_plan.get("residual_usd"),
+                }
+                if isinstance(trim_plan, dict)
+                else {}
+            ),
         },
         "expected_outcome": {
             "expected_delta_risk_score": -1 if str(alert.get("state") or "").strip().lower() == "breach" else 0,
@@ -368,9 +380,15 @@ def _candidate_from_alert(
         reversibility="medium",
     )
 
+    detail = _detail_for_alert(alert, estimated_amount_usd=estimated_amount_usd)
+    if isinstance(trim_plan, dict):
+        plan_sentence = trim_plan_summary(trim_plan)
+        if plan_sentence:
+            detail = f"{detail} {plan_sentence}"
+
     return {
         "title": _title_for_alert(alert),
-        "detail": _detail_for_alert(alert, estimated_amount_usd=estimated_amount_usd),
+        "detail": detail,
         "priority": priority,
         "recommendation_type": "workflow_action",
         "source": PORTFOLIO_RISK_SOURCE,
@@ -388,6 +406,7 @@ def generate_portfolio_risk_recommendations(
     plan_id: str | None = None,
     limit: int = 10,
     now: datetime | None = None,
+    accounts: list[dict[str, Any]] | None = None,
 ) -> RecommendationFactoryResult:
     risk_payload = holdings_payload.get("risk_alerts") if isinstance(holdings_payload.get("risk_alerts"), dict) else {}
     alerts = risk_payload.get("alerts") if isinstance(risk_payload.get("alerts"), list) else []
@@ -427,7 +446,22 @@ def generate_portfolio_risk_recommendations(
             )
             continue
 
-        candidate = _candidate_from_alert(alert, holdings_payload=holdings_payload, generated_at=generated_at, plan_id=plan_id)
+        holdings_map = holdings_payload.get("holdings") if isinstance(holdings_payload.get("holdings"), dict) else {}
+        risk_metrics = risk_payload.get("metrics") if isinstance(risk_payload.get("metrics"), dict) else {}
+        trim_plan = build_trim_plan(
+            alert=alert,
+            holdings=holdings_map,
+            accounts=accounts,
+            total_market_value=safe_float(risk_metrics.get("total_market_value") or holdings_payload.get("total_value"), 0.0),
+            as_of=now,
+        )
+        candidate = _candidate_from_alert(
+            alert,
+            holdings_payload=holdings_payload,
+            generated_at=generated_at,
+            plan_id=plan_id,
+            trim_plan=trim_plan,
+        )
         candidates.append(candidate)
         active_keys.add(dedupe_key)
 

@@ -2,7 +2,7 @@
 // Inline action forms are rendered by ./forms.js.
 
 import { html, raw, esc, stripHtml } from '../../lib/dom.js';
-import { roman, fmtRelative } from '../../lib/format.js';
+import { roman, fmtRelative, fmtUsd } from '../../lib/format.js';
 import { renderInlineForm } from './forms.js';
 
 const STATUS_LABELS = {
@@ -47,6 +47,7 @@ function renderEntry(item, index, ctx) {
         <h3 class="entry-title">${stripHtml(item.title)}</h3>
         ${raw(detailMarkup(item.detail))}
         ${raw(renderQualitySummary(item.action_payload?.quality))}
+        ${raw(renderTrimTradesPanel(item))}
         ${raw(renderInvestmentRoutePanel(item))}
         ${raw(renderSavedSimulationRoutePanel(item))}
         ${reasons.length ? raw(`
@@ -211,6 +212,39 @@ function actionSemantics(item) {
     primaryLabel: 'Apply',
     intent: '',
   };
+}
+
+// Concrete trim trades from the rebalancing engine: the recommendation
+// stops saying "review your risk" and starts saying what to sell, from
+// where, and what it costs in tax.
+export function renderTrimTradesPanel(item) {
+  const action = item?.action_payload?.suggested_action;
+  const trades = Array.isArray(action?.trades) ? action.trades : [];
+  const notes = Array.isArray(action?.trim_plan_notes) ? action.trim_plan_notes.filter(Boolean) : [];
+  if (!trades.length && !notes.length) return '';
+  return html`
+    <div class="investment-route-panel">
+      <div>
+        <span class="investment-route-kicker">Suggested trades</span>
+        ${raw(trades.map(trade => {
+          const gains = Number(trade.estimated_long_term_gain_usd || 0) + Number(trade.estimated_short_term_gain_usd || 0);
+          const taxNote = trade.tax_treatment === 'taxable'
+            ? (gains > 0 ? `≈ ${fmtUsd(gains)} realized gains` : 'no gain at current basis')
+            : 'no tax due now';
+          return html`
+            <p>
+              Sell ${trade.quantity != null ? `${trade.quantity} sh · ` : ''}${fmtUsd(trade.sell_value_usd)}
+              of <strong>${trade.symbol}</strong> from ${trade.account_id}
+              <span class="marginalia"> · ${taxNote}</span>
+            </p>
+          `.toString();
+        }).join(''))}
+        ${Number(action?.residual_usd) > 0 ? html`<p class="marginalia">Remaining ${fmtUsd(action.residual_usd)} cannot be trimmed from tradable positions.</p>` : ''}
+        ${raw(notes.map(note => html`<p class="marginalia">${note}</p>`.toString()).join(''))}
+        <p class="marginalia">Estimates from recorded lots. Execute at your broker, then re-import.</p>
+      </div>
+    </div>
+  `;
 }
 
 function renderInvestmentRoutePanel(item) {
