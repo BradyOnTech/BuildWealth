@@ -65,13 +65,15 @@ export async function init(params = {}) {
   }
 
   setView(root, html`
-    ${raw(renderStanding(data))}
-    ${raw(renderComposition(data))}
-    ${raw(renderAnalytics(analytics))}
-    ${raw(renderWatch(data))}
-    ${raw(renderFitReview(null, { initialSymbol: params.fit || '' }))}
-    ${raw(renderLookCloser(maintenanceSection, maintenance))}
+    ${raw(renderSectionNav())}
+    <div id="pf-standing" class="pf-section">${raw(renderStanding(data))}</div>
+    <div id="pf-composition" class="pf-section">${raw(renderComposition(data))}</div>
+    <div id="pf-performance" class="pf-section">${raw(renderAnalytics(analytics))}</div>
+    <div id="pf-watch" class="pf-section">${raw(renderWatch(data))}</div>
+    <div id="pf-fit" class="pf-section">${raw(renderFitReview(null, { initialSymbol: params.fit || '' }))}</div>
+    <div id="pf-maintenance" class="pf-section">${raw(renderLookCloser(maintenanceSection, maintenance))}</div>
   `);
+  bindSectionNav(root);
   bindFitReview(root);
   bindMaintenanceTools(root);
   if (params.fit) {
@@ -83,6 +85,38 @@ export async function init(params = {}) {
     const maintenanceEl = root.querySelector('[data-portfolio-maintenance-detail]');
     if (maintenanceEl) maintenanceEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
+}
+
+// Six labels to scan instead of six screens to scroll. Buttons, not hash
+// links — the router owns the hash.
+const PORTFOLIO_SECTIONS = [
+  ['pf-standing', 'Standing'],
+  ['pf-composition', 'Composition'],
+  ['pf-performance', 'Performance'],
+  ['pf-watch', 'The watch'],
+  ['pf-fit', 'Fit review'],
+  ['pf-maintenance', 'Maintenance'],
+];
+
+function renderSectionNav() {
+  return html`
+    <nav class="portfolio-toc" aria-label="Portfolio sections">
+      ${raw(PORTFOLIO_SECTIONS.map(([id, label]) => html`
+        <button type="button" data-pf-jump="${id}">${label}</button>
+      `).join(''))}
+    </nav>
+  `;
+}
+
+function bindSectionNav(root) {
+  root.querySelectorAll('[data-pf-jump]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const target = root.querySelector(`#${button.dataset.pfJump}`);
+      // Instant, not smooth: a jump nav is for finding things fast, and long
+      // smooth scrolls stall on busy pages.
+      if (target) target.scrollIntoView({ block: 'start' });
+    });
+  });
 }
 
 export function renderFitReview(result = null, { loading = false, error = '', initialSymbol = '' } = {}) {

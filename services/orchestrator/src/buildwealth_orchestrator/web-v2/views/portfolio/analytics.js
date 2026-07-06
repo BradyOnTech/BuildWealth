@@ -36,6 +36,21 @@ export function renderAnalytics(analytics = null) {
   `;
 }
 
+// Verdict-first, evidence on demand: closed, each analytical panel is one
+// honest line a person can act on; open, the full reasoning appears. This is
+// what keeps six Movements from becoming six screens of scroll.
+function verdictPanel({ kicker, verdict, tone = 'info', body, open = false }) {
+  return html`
+    <details class="analytics-panel wide verdict-panel tone-${tone}"${raw(open ? ' open' : '')}>
+      <summary>
+        <span class="analytics-kicker">${kicker}</span>
+        <span class="verdict-line">${verdict}</span>
+      </summary>
+      <div class="verdict-body">${raw(body)}</div>
+    </details>
+  `;
+}
+
 // One honest number for "how spread out am I?", with the weakest links named.
 export function renderDiversificationPanel(diversification = {}) {
   if (diversification.status !== 'ready') return '';
@@ -43,11 +58,11 @@ export function renderDiversificationPanel(diversification = {}) {
   const reasons = Array.isArray(diversification.reasons) ? diversification.reasons : [];
   const caveats = Array.isArray(diversification.caveats) ? diversification.caveats : [];
   const score = Number(diversification.score);
-  return html`
-    <article class="analytics-panel wide">
-      <span class="analytics-kicker">How spread out is this?</span>
+  const scoreText = Number.isFinite(score) ? `${score.toFixed(0)}/100` : '—';
+  const tone = !Number.isFinite(score) ? 'info' : score >= 70 ? 'good' : score >= 40 ? 'warn' : 'bad';
+  const body = html`
       <dl class="analytics-metrics compact">
-        ${raw(metric('Diversification', Number.isFinite(score) ? `${score.toFixed(0)}/100` : '—'))}
+        ${raw(metric('Diversification', scoreText))}
         ${diversification.label ? raw(metric('Reading', diversification.label)) : ''}
         ${Number(diversification.investable_value_usd) > 0 ? raw(metric('Invested money', fmtUsd(diversification.investable_value_usd))) : ''}
       </dl>
@@ -64,8 +79,14 @@ export function renderDiversificationPanel(diversification = {}) {
         <p class="marginalia">Weakest links: ${reasons.map(esc).join(' ')}</p>
       ` : ''}
       ${raw(caveats.map(caveat => html`<p class="marginalia">${caveat}</p>`.toString()).join(''))}
-    </article>
   `;
+  return verdictPanel({
+    kicker: 'How spread out is this?',
+    verdict: `${scoreText}${diversification.label ? ` — ${diversification.label}` : ''}`,
+    tone,
+    body,
+    open: tone === 'bad',
+  });
 }
 
 // The home is housing, not a portfolio position — so it gets its own lens
@@ -80,9 +101,7 @@ export function renderHousingPanel(housing = {}) {
   const equity = housing.equity_usd == null ? NaN : Number(housing.equity_usd);
   const share = housing.share_of_total_assets_pct == null ? NaN : Number(housing.share_of_total_assets_pct);
   const ltv = housing.loan_to_value_pct == null ? NaN : Number(housing.loan_to_value_pct);
-  return html`
-    <article class="analytics-panel wide">
-      <span class="analytics-kicker">The roof over your head</span>
+  const body = html`
       <dl class="analytics-metrics compact">
         ${raw(metric('Home value', fmtUsd(numberOr(housing.home_value_usd, 0))))}
         ${Number(housing.mortgage_balance_usd) > 0 ? raw(metric('Mortgage', fmtUsd(housing.mortgage_balance_usd))) : ''}
@@ -101,8 +120,16 @@ export function renderHousingPanel(housing = {}) {
         </div>
       ` : ''}
       ${raw(notes.map(note => html`<p class="marginalia">${note}</p>`.toString()).join(''))}
-    </article>
   `;
+  const verdict = Number.isFinite(share)
+    ? `${share.toFixed(0)}% of what you own — housing, not investments`
+    : `${fmtUsd(numberOr(housing.home_value_usd, 0))} — housing, not investments`;
+  return verdictPanel({
+    kicker: 'The roof over your head',
+    verdict,
+    tone: 'info',
+    body,
+  });
 }
 
 // The cost of holding — Sharpe's arithmetic in the user's own dollars.
@@ -124,9 +151,7 @@ export function renderFeesPanel(fees = {}) {
   }
   const weighted = Number(fees.weighted_expense_ratio_pct);
   const excess = Number(fees.total_excess_vs_index_usd);
-  return html`
-    <article class="analytics-panel wide">
-      <span class="analytics-kicker">The cost of holding</span>
+  const body = html`
       <dl class="analytics-metrics compact">
         ${raw(metric('Fees per year', fmtUsd(numberOr(fees.total_annual_fee_usd, 0))))}
         ${Number.isFinite(weighted) ? raw(metric('Weighted expense ratio', `${weighted.toFixed(2)}%`)) : ''}
@@ -152,8 +177,20 @@ export function renderFeesPanel(fees = {}) {
       ${uncovered.length ? html`
         <p class="marginalia">No expense ratio yet for ${raw(uncoveredLinks(uncovered))} — add one on the asset page for full coverage.</p>
       ` : ''}
-    </article>
   `;
+  const totalText = fmtUsd(numberOr(fees.total_annual_fee_usd, 0));
+  // A few dollars above the index alternative is not a warning — brass tone
+  // is reserved for money a person would actually act on.
+  const material = excess >= 25;
+  return verdictPanel({
+    kicker: 'The cost of holding',
+    verdict: material
+      ? `${totalText}/yr — ${fmtUsd(excess)}/yr above index-fund cost`
+      : `${totalText}/yr — index-fund cheap`,
+    tone: material ? 'warn' : 'good',
+    body,
+    open: false,
+  });
 }
 
 function uncoveredLinks(symbols = []) {
@@ -273,9 +310,9 @@ function renderAttributionPanel(attribution = {}) {
 function renderRiskExplanationPanel(risk = {}) {
   const rows = Array.isArray(risk.rows) ? risk.rows : [];
   if (!rows.length) return '';
-  return html`
-    <article class="analytics-panel wide">
-      <span class="analytics-kicker">Risk explained plainly</span>
+  const breaches = Number(risk.breach_count) || 0;
+  const watching = Number(risk.watch_count) || 0;
+  const body = html`
       <div class="benchmark-rows">
         ${raw(rows.slice(0, 8).map(row => `
           <div class="benchmark-row">
@@ -286,8 +323,19 @@ function renderRiskExplanationPanel(risk = {}) {
         `).join(''))}
       </div>
       ${raw(renderRiskAlerts(risk.alerts || []))}
-    </article>
   `;
+  const verdict = breaches > 0
+    ? `${breaches} guardrail ${breaches === 1 ? 'breach' : 'breaches'}${watching ? `, ${watching} watching` : ''}`
+    : watching > 0
+      ? `Within guardrails — ${watching} worth watching`
+      : 'Within your guardrails';
+  return verdictPanel({
+    kicker: 'Risk explained plainly',
+    verdict,
+    tone: breaches > 0 ? 'bad' : watching > 0 ? 'warn' : 'good',
+    body,
+    open: breaches > 0,
+  });
 }
 
 function renderRiskAlerts(alerts = []) {

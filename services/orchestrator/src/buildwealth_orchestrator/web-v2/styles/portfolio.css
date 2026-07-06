@@ -557,6 +557,89 @@
   background: var(--shade);
 }
 
+/* ───────────  Verdict-first panels  ───────────
+   Closed: one honest line. Open: the evidence. */
+
+details.verdict-panel {
+  display: block;
+}
+
+details.verdict-panel > summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  cursor: pointer;
+  list-style: none;
+}
+
+details.verdict-panel > summary::-webkit-details-marker { display: none; }
+
+details.verdict-panel > summary::after {
+  content: '+';
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+
+details.verdict-panel[open] > summary::after { content: '\2212'; }
+
+details.verdict-panel > summary:hover .verdict-line { color: var(--ink-strong); }
+
+.verdict-line {
+  font-family: var(--serif);
+  font-size: var(--t-body);
+  color: var(--ink);
+}
+
+details.verdict-panel.tone-good .verdict-line { color: var(--forest); }
+details.verdict-panel.tone-warn .verdict-line { color: var(--brass); }
+details.verdict-panel.tone-bad  .verdict-line { color: var(--oxblood); }
+
+.verdict-body {
+  display: grid;
+  gap: var(--s-3);
+  margin-top: var(--s-3);
+  padding-top: var(--s-3);
+  border-top: var(--hair) dotted var(--rule-soft);
+}
+
+/* ───────────  In-page section nav  ───────────
+   Six labels to scan instead of six screens to scroll. Not sticky: the
+   topbar already owns the sticky top edge; two bars would fight for it. */
+
+.portfolio-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  padding: var(--s-2) 0;
+  border-bottom: var(--hair) solid var(--rule-soft);
+}
+
+/* Jump targets land below the sticky topbar, not underneath it. */
+.pf-section {
+  scroll-margin-top: 118px;
+}
+
+.portfolio-toc button {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--ink-soft);
+  background: none;
+  border: var(--hair) solid var(--rule);
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.portfolio-toc button:hover {
+  color: var(--ink-strong);
+  border-color: var(--rule-strong);
+  background: var(--paper-bright);
+}
+
 .analytics-warnings p {
   margin: 0;
 }

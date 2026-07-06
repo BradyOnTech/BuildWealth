@@ -17,6 +17,10 @@ test('diversification panel shows score, reading, components, and the look-throu
 
   assert.match(markup, /How spread out is this\?/);
   assert.match(markup, /23\/100/);
+  // Verdict-first: a concentrated score renders as an opened details panel
+  // with the verdict in the summary line.
+  assert.match(markup, /<details[^>]*verdict-panel[^>]*tone-bad[^>]*open/);
+  assert.match(markup, /verdict-line">23\/100 — Concentrated/);
   assert.match(markup, /Concentrated/);
   assert.match(markup, /behaves like about 1\.4 independent positions/);
   assert.match(markup, /Weakest links/);
