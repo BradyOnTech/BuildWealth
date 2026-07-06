@@ -242,26 +242,36 @@ def build_allocation_drift_plan(
     if not targets or total_market_value <= 0:
         return {"status": "no_targets", "rows": [], "tolerance_pct": tolerance_pct}
 
+    # Allocation targets govern INVESTABLE money. A home is housing — counting
+    # it here turns "you live in a house" into a fake 60-point real-estate
+    # overweight with a dollar figure nobody can act on.
     value_by_class: dict[str, float] = {}
     largest_tradable: dict[str, list[tuple[float, str]]] = {}
+    investable_total = 0.0
     for entry in holdings.values():
         if not isinstance(entry, dict):
             continue
         value = _safe(entry.get("current_value"))
         if value <= 0:
             continue
+        if is_untradable_position(entry):
+            continue
         klass = _class_key(entry.get("asset_class"))
         value_by_class[klass] = value_by_class.get(klass, 0.0) + value
-        if not is_untradable_position(entry):
-            largest_tradable.setdefault(klass, []).append((value, str(entry.get("symbol") or "")))
+        investable_total += value
+        largest_tradable.setdefault(klass, []).append((value, str(entry.get("symbol") or "")))
+
+    base_value = investable_total if investable_total > 0 else total_market_value
+    if base_value <= 0:
+        return {"status": "no_targets", "rows": [], "tolerance_pct": tolerance_pct}
 
     rows: list[dict[str, Any]] = []
     for klass, target in targets.items():
-        current = round(value_by_class.get(klass, 0.0) / total_market_value * 100.0, 2)
+        current = round(value_by_class.get(klass, 0.0) / base_value * 100.0, 2)
         drift = round(current - target, 2)
         if abs(drift) <= tolerance_pct:  # at tolerance is close enough — no nagging
             continue
-        gap_usd = round(abs(drift) / 100.0 * total_market_value, 2)
+        gap_usd = round(abs(drift) / 100.0 * base_value, 2)
         direction = "overweight" if drift > 0 else "underweight"
         candidates = [
             symbol
@@ -286,6 +296,7 @@ def build_allocation_drift_plan(
         "rows": rows,
         "tolerance_pct": tolerance_pct,
         "targets_pct": targets,
+        "investable_value_usd": round(base_value, 2),
     }
 
 

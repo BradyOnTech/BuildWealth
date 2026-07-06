@@ -5,9 +5,26 @@ import { html, raw, esc } from '../../lib/dom.js';
 import { fmtUsd } from '../../lib/format.js';
 
 export function renderQuality(closure) {
+  // Before any outcomes exist there's nothing to say — one quiet line, not a
+  // full Movement of display type about an empty state.
+  const summary = closure?.calibration_summary || {};
+  const measured = numberOrNull(summary.measured_count);
+  if (!measured) {
+    return html`
+      <section class="quality-section">
+        <span class="section-eyebrow">Quality</span>
+        <p class="marginalia">
+          ${closure?.count
+            ? `${closure.count} suggestion${closure.count === 1 ? '' : 's'} on file — apply one and log an outcome to start calibration.`
+            : 'How past suggestions played out will appear here once a few outcomes are logged.'}
+        </p>
+        ${raw(String(renderProcessCalibration(closure || {})))}
+      </section>
+    `;
+  }
   return html`
     <section>
-      ${raw(sectionHead('III', 'Quality.', 'How past suggestions actually played out.'))}
+      ${raw(sectionHead('II', 'Quality.', 'How past suggestions actually played out.'))}
       ${raw(renderQualityBody(closure))}
     </section>
   `;

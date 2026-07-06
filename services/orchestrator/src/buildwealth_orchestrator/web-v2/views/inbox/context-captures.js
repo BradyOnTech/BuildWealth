@@ -18,6 +18,25 @@ const SOURCE_REVIEW_DOMAINS = new Set(['profile', 'plan', 'research', 'recommend
 export function renderContextCaptures(ctx = {}) {
   const items = Array.isArray(ctx.items) ? ctx.items : [];
   const lifecycleState = ctx.lifecycleState || 'pending_review';
+
+  // Nothing waiting on the default lane collapses to one quiet line — the
+  // lane browser stays one click away instead of holding a screen of empty.
+  if (!items.length && !ctx.busy && !ctx.error && lifecycleState === 'pending_review') {
+    return html`
+      <section class="context-captures quiet" aria-labelledby="context-captures-title">
+        <span class="section-eyebrow" id="context-captures-title">Context capture</span>
+        <details class="diagnostics-toggle">
+          <summary>Nothing needs a decision — browse past captures</summary>
+          <div class="inbox-filters context-capture-filters">
+            <div class="filter-chips" role="tablist" aria-label="Context capture status">
+              ${raw(CONTEXT_CAPTURE_STATES.map(state => contextStateChip(state, state.key === lifecycleState)).join(''))}
+            </div>
+          </div>
+        </details>
+      </section>
+    `;
+  }
+
   const body = ctx.busy && !items.length
     ? html`<div class="skeleton" style="height: 180px;">.</div>`
     : renderContextCaptureBody(items, ctx);

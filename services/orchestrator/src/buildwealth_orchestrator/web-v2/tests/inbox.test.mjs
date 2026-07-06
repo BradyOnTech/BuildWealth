@@ -115,6 +115,73 @@ test('inbox entries render recommendation quality metadata', () => {
   assert.match(markup, /decision grade/);
 });
 
+test('inbox quality collapses to one quiet line before any outcomes exist', () => {
+  const markup = String(renderQuality({ count: 3, calibration_summary: { measured_count: 0 } }));
+  assert.match(markup, /3 suggestions on file — apply one and log an outcome/);
+  // No display-size Movement head for an empty state.
+  assert.doesNotMatch(markup, /section-title/);
+  assert.doesNotMatch(markup, /quality-quote/);
+
+  const empty = String(renderQuality(null));
+  assert.match(empty, /will appear here once a few outcomes are logged/);
+});
+
+test('context captures collapse to a one-line browser when nothing is pending', () => {
+  const markup = String(renderContextCaptures({
+    items: [],
+    lifecycleState: 'pending_review',
+    busy: false,
+    error: null,
+  }));
+  assert.match(markup, /Nothing needs a decision — browse past captures/);
+  assert.doesNotMatch(markup, /Context that needs a decision\./);
+  // Lane chips stay reachable inside the expander.
+  assert.match(markup, /data-context-state="applied"/);
+});
+
+test('entry score reasons that restate the quality line are dropped', () => {
+  const markup = String(renderEntries([
+    {
+      id: 'rec-dupe',
+      status: 'proposed',
+      priority: 'high',
+      title: 'Direct new contributions toward equity',
+      detail: 'Equity is under target.',
+      score: {
+        total: 92,
+        reasons: [
+          'Quality metadata marks this as high impact.',
+          'Recommendation includes structured evidence metadata.',
+          'Recommendation is decision-grade based on quality metadata.',
+          'Recommendation needs review before action.',
+          'Recommendation has remained open for multiple days.',
+        ],
+      },
+      action_payload: {
+        quality: { confidence_level: 'high', impact: { level: 'high' } },
+      },
+    },
+  ], { planLookup: new Map(), expanded: null, emptyMessage: '' }));
+
+  assert.doesNotMatch(markup, /Quality metadata marks this as high impact/);
+  assert.doesNotMatch(markup, /structured evidence metadata/);
+  assert.doesNotMatch(markup, /decision-grade based on quality metadata/);
+  assert.doesNotMatch(markup, /needs review before action/);
+  assert.match(markup, /remained open for multiple days/);
+  // Without a quality block the reasons are kept as-is.
+  const noQuality = String(renderEntries([
+    {
+      id: 'rec-plain',
+      status: 'proposed',
+      priority: 'medium',
+      title: 'Check contribution order',
+      detail: 'HSA and Roth first.',
+      score: { total: 60, reasons: ['Quality metadata reports fresh evidence.'] },
+    },
+  ], { planLookup: new Map(), expanded: null, emptyMessage: '' }));
+  assert.match(noQuality, /Quality metadata reports fresh evidence/);
+});
+
 test('inbox entries route saved simulation recommendations to Plan and Copilot', () => {
   const markup = String(renderEntries([
     {

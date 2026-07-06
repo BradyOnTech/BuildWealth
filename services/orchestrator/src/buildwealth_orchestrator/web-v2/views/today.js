@@ -450,7 +450,18 @@ export function renderMove(payload) {
 function renderAction(action, index) {
   const priority = (action.priority || 'medium').toLowerCase();
   const source = humanSource(action.source);
-  const reasons = (action.score_reasons || []).slice(0, 2);
+  // When a quality summary is shown, drop score reasons that restate it —
+  // same dedupe the Inbox applies (see inbox/entries.js informativeReasons).
+  const restatements = [
+    /^Quality metadata/,
+    /structured evidence metadata/,
+    /decision-grade based on quality metadata/,
+    /needs review before action/,
+  ];
+  const reasons = (action.score_reasons || [])
+    .map(String)
+    .filter(reason => !action.quality_summary || !restatements.some(pattern => pattern.test(reason)))
+    .slice(0, 2);
 
   return html`
     <li class="entry">

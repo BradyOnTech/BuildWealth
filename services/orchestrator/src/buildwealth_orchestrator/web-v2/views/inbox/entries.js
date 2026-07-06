@@ -35,7 +35,7 @@ function renderEntry(item, index, ctx) {
   const recoType = humanText(item.recommendation_type);
   const planLabel = ctx.planLookup.get(item.plan_id) || (item.plan_id ? 'plan' : '');
   const score = item.score?.total != null ? Math.round(item.score.total) : null;
-  const reasons = (item.score?.reasons || []).slice(0, 2);
+  const reasons = informativeReasons(item.score?.reasons, item.action_payload?.quality);
   const updated = item.updated_at ? fmtRelative(item.updated_at) : '';
   const expanded = ctx.expanded && ctx.expanded.id === item.id ? ctx.expanded : null;
 
@@ -427,6 +427,25 @@ function renderQualitySummary(quality) {
 function humanText(value) {
   if (!value) return '';
   return String(value).replace(/[_.]/g, ' ');
+}
+
+// Score reasons that merely restate the quality line ("Quality metadata marks
+// this as high impact", "decision-grade", "needs review") are noise when the
+// quality line is right above them. Keep only reasons carrying information
+// the quality summary doesn't — urgency, previewability, plan effects.
+const QUALITY_RESTATEMENTS = [
+  /^Quality metadata/,
+  /structured evidence metadata/,
+  /decision-grade based on quality metadata/,
+  /needs review before action/,
+];
+
+export function informativeReasons(reasons, quality) {
+  const list = Array.isArray(reasons) ? reasons.map(String) : [];
+  if (!quality || typeof quality !== 'object') return list.slice(0, 2);
+  return list
+    .filter(reason => !QUALITY_RESTATEMENTS.some(pattern => pattern.test(reason)))
+    .slice(0, 2);
 }
 
 function detailMarkup(raw) {

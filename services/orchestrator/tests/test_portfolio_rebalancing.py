@@ -188,11 +188,46 @@ def test_allocation_drift_plan_without_targets_or_within_tolerance() -> None:
     assert empty["status"] == "no_targets"
 
     on_target = build_allocation_drift_plan(
-        holdings={"a:VTI": {"symbol": "VTI", "asset_class": "equity", "current_value": 68_000.0}},
+        holdings={
+            "a:VTI": {"symbol": "VTI", "asset_class": "equity", "current_value": 68_000.0},
+            "a:CASH": {"symbol": "CASH", "asset_class": "cash", "current_value": 32_000.0, "asset_type": "cash"},
+        },
         targets_pct={"equity": 70},
         total_market_value=100_000.0,
     )
     assert on_target["status"] == "on_target"
+
+
+def test_allocation_drift_measures_investable_money_not_the_house() -> None:
+    from buildwealth_orchestrator.services.portfolio_rebalancing import build_allocation_drift_plan
+
+    holdings = {
+        "a:HOME": {
+            "symbol": "MY_HOME",
+            "asset_class": "real_estate",
+            "asset_type": "property",
+            "current_value": 420_000.0,
+        },
+        "a:VTI": {"symbol": "VTI", "asset_class": "equity", "current_value": 56_000.0, "asset_type": "etf"},
+        "a:BND": {"symbol": "BND", "asset_class": "fixed_income", "current_value": 24_000.0, "asset_type": "etf"},
+    }
+    plan = build_allocation_drift_plan(
+        holdings=holdings,
+        targets_pct={"equity": 70, "fixed_income": 30, "real_estate": 20},
+        total_market_value=500_000.0,
+    )
+
+    assert plan["investable_value_usd"] == 80_000.0
+    by_class = {row["asset_class"]: row for row in plan["rows"]}
+    # Equity is 70% of INVESTED money — exactly on target, no false alarm
+    # from the home diluting the base.
+    assert "equity" not in by_class
+    # The home never makes real estate "overweight"; with no tradable real
+    # estate the class simply reads underweight against its target.
+    real_estate = by_class.get("real_estate")
+    assert real_estate is not None
+    assert real_estate["direction"] == "underweight"
+    assert real_estate["trim_candidates"] == []
 
 
 def test_allocation_drift_generator_emits_contribution_first_guidance() -> None:

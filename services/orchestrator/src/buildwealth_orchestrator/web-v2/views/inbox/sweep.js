@@ -14,10 +14,12 @@ const SOURCE_LABELS = {
   research_thesis_expiration: 'research thesis refresh',
 };
 
+// Compact by design: a single action doesn't earn a Movement of its own —
+// the sweep rides directly under the list it feeds.
 export function renderSweep(sweep) {
   return html`
-    <section>
-      ${raw(sectionHead('II', 'A new sweep.', 'Look at the current state and surface fresh candidates.'))}
+    <section class="sweep-section">
+      <span class="section-eyebrow">A new sweep</span>
       <div class="sweep-card">
         ${raw(renderSweepBody(sweep))}
       </div>
