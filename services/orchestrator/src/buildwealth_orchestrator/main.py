@@ -448,11 +448,17 @@ git_integration_settings_store = GitIntegrationSettingsStore(
 )
 control_plane_store = ControlPlaneStore(settings.control_db_path)
 hosted_identity_provider = OIDCAuthProvider(settings)
-control_plane_store.bootstrap_default_household(
-    owner_email=settings.auth_dev_email,
-    default_storage_root=settings.snapshot_dir.parent,
-    demo_storage_root=settings.workspace_root_dir / "ws_demo_household",
-)
+# The auto-created default household is a dev/local convenience (it backs
+# dev auto-login). Hosted instances must start EMPTY: in secure/hosted/oidc
+# modes the first real registration or IdP login creates the owner and their
+# household — a pre-seeded local user would close secure-mode registration
+# before anyone registered, and is a credential that nobody owns.
+if str(settings.auth_mode or "dev").strip().lower() in {"dev", "test", "local", "disabled"}:
+    control_plane_store.bootstrap_default_household(
+        owner_email=settings.auth_dev_email,
+        default_storage_root=settings.snapshot_dir.parent,
+        demo_storage_root=settings.workspace_root_dir / "ws_demo_household",
+    )
 workspace_service_factory = WorkspaceServiceFactory(
     settings=settings,
     control_plane=control_plane_store,
@@ -548,7 +554,11 @@ def _auth_mode() -> str:
 
 
 def _local_auth_enabled() -> bool:
-    return _auth_mode() in {"dev", "test", "local"}
+    # "secure" is the private hosted-instance mode: password registration and
+    # login stay enabled (no identity provider required yet), while cookies
+    # are Secure and CSRF is enforced — see _session_cookie_kwargs and
+    # require_csrf. "hosted"/"oidc" replace local login with the IdP.
+    return _auth_mode() in {"dev", "test", "local", "secure"}
 
 
 def _hosted_auth_enabled() -> bool:
@@ -17006,6 +17016,15 @@ async def hosted_callback(
 def register_owner(request: Request, response: Response, payload: dict[str, Any]) -> dict[str, Any]:
     if not _local_auth_enabled():
         raise HTTPException(status_code=403, detail="Local registration is disabled")
+    # A private instance registers its owner on first visit and then closes
+    # the door: strangers who find the URL must not get accounts. Households
+    # that want more members set AUTH_ALLOW_OPEN_REGISTRATION=true.
+    if (
+        _auth_mode() == "secure"
+        and not settings.auth_allow_open_registration
+        and control_plane_store.count_active_local_users() > 0
+    ):
+        raise HTTPException(status_code=403, detail="Registration is closed on this instance")
     try:
         user = control_plane_store.create_owner_user(
             email=str(payload.get("email") or ""),

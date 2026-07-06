@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     auth_session_cookie_name: str = Field(default="buildwealth_session", alias="AUTH_SESSION_COOKIE_NAME")
     auth_session_days: int = Field(default=14, alias="AUTH_SESSION_DAYS")
     auth_dev_email: str = Field(default="owner@buildwealth.local", alias="AUTH_DEV_EMAIL")
+    # In secure mode, registration closes once the first account exists — a
+    # private instance must not accept strangers. Flip on deliberately for a
+    # multi-user household.
+    auth_allow_open_registration: bool = Field(default=False, alias="AUTH_ALLOW_OPEN_REGISTRATION")
     auth_oidc_provider_name: str = Field(default="Hosted Identity", alias="AUTH_OIDC_PROVIDER_NAME")
     auth_oidc_issuer_url: str = Field(default="", alias="AUTH_OIDC_ISSUER_URL")
     auth_oidc_client_id: str = Field(default="", alias="AUTH_OIDC_CLIENT_ID")

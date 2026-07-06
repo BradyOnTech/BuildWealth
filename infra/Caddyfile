@@ -1,0 +1,24 @@
+# Caddy fronts the orchestrator with automatic HTTPS.
+#
+# Set BUILDWEALTH_DOMAIN to your real domain (e.g. app.example.com) in the
+# environment Caddy runs with; certificates are obtained and renewed from
+# Let's Encrypt automatically once DNS points at this server. With the
+# default value "localhost", Caddy issues a locally-trusted certificate —
+# useful for verifying the production stack on a workstation.
+
+{$BUILDWEALTH_DOMAIN:localhost} {
+	encode gzip
+
+	# Everything is the orchestrator: API, the v2 app, and static assets.
+	reverse_proxy orchestrator:8090
+
+	header {
+		# The app is same-origin only; browsers should never frame it.
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# HSTS only makes sense once the domain serves real TLS; Caddy sets
+		# it on trusted-cert sites. Uncomment after the first clean deploy:
+		# Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+}

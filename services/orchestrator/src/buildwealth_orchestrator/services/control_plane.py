@@ -1338,6 +1338,13 @@ class ControlPlaneStore:
             )
         return {"session_id": session_id, "session_token": token, "csrf_token": csrf_token}
 
+    def count_active_local_users(self) -> int:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) AS n FROM users WHERE status = 'active' AND auth_provider = 'local' AND password_hash != ''",
+            ).fetchone()
+        return int(row["n"] or 0)
+
     def revoke_session(self, token: str) -> None:
         if not token:
             return

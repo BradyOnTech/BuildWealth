@@ -1,0 +1,73 @@
+# Production deployment: one VPS, two containers, HTTPS via Caddy.
+#
+#   docker compose -f infra/docker-compose.prod.yml up -d --build
+#
+# Differences from the dev compose, on purpose:
+#   - Caddy terminates TLS on 80/443; the orchestrator is NOT published on a
+#     host port — it is only reachable through the proxy.
+#   - No source bind-mounts: the image is the deployment artifact.
+#   - AUTH_MODE=secure (set in env/orchestrator.prod.env): password login
+#     with Secure cookies and CSRF; dev auto-login is off.
+#
+# See docs/DEPLOYMENT.md for the full walkthrough (DNS, backups, updates).
+
+name: buildwealth-prod
+
+services:
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Your real domain, e.g. app.example.com. Defaults to localhost so the
+      # stack can be verified on a workstation with a locally-trusted cert.
+      BUILDWEALTH_DOMAIN: ${BUILDWEALTH_DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - platform
+    depends_on:
+      orchestrator:
+        condition: service_healthy
+
+  orchestrator:
+    build:
+      context: ../services/orchestrator
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./env/orchestrator.prod.env
+    volumes:
+      - ../data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform
+
+  account-data-deletion-purge:
+    profiles: ["maintenance"]
+    build:
+      context: ../services/orchestrator
+      dockerfile: Dockerfile
+    env_file:
+      - ./env/orchestrator.prod.env
+    volumes:
+      - ../data:/app/data
+    command: ["buildwealth-maintenance", "purge-due-account-data-deletions", "--pretty"]
+    networks:
+      - platform
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  platform:
+    driver: bridge
