@@ -146,3 +146,42 @@
 .legend-swatch.line-swatch.chart-line-s2 { border-top-color: var(--oxblood-soft); }
 .legend-swatch.line-swatch.chart-line-s3 { border-top-color: var(--brass); }
 .legend-swatch.line-swatch.chart-line-s4 { border-top-color: var(--forest-soft); border-top-style: dashed; }
+
+/* Hover readout — crosshair + floating values (lib/chart_hover.js) */
+.chart-crosshair {
+  stroke: var(--rule-strong);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.chart-hover-readout {
+  position: fixed;
+  z-index: 40;
+  display: none;
+  pointer-events: none;
+  min-width: 132px;
+  padding: 7px 10px;
+  font-family: var(--mono);
+  font-size: var(--t-caption);
+  line-height: 1.55;
+  color: var(--ink);
+  background: var(--paper-bright);
+  border: 1px solid var(--rule-strong);
+  box-shadow: var(--shadow-quiet);
+}
+
+.chart-hover-readout .readout-x {
+  margin-bottom: 2px;
+  color: var(--ink-faint);
+  letter-spacing: var(--track-caps);
+}
+
+.chart-hover-readout .readout-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.chart-hover-readout .readout-val {
+  color: var(--ink-strong);
+}

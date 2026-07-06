@@ -216,6 +216,7 @@ function renderDrawdownTrajectories(result = {}, planId = '') {
     lines: series.map(({ key, cls }) => ({ key, cls })),
     markers,
     formatY: compactUsd,
+    seriesLabels: Object.fromEntries(series.map(({ key, label }) => [key, label])),
     ariaLabel: 'Projected portfolio balance by year for each withdrawal strategy',
   });
   if (!balanceChart) return '';
@@ -227,6 +228,7 @@ function renderDrawdownTrajectories(result = {}, planId = '') {
         lines: series.map(({ key, cls }) => ({ key: `tax_${key}`, cls })),
         height: 200,
         formatY: compactUsd,
+        seriesLabels: Object.fromEntries(series.map(({ key, label }) => [`tax_${key}`, label])),
         ariaLabel: 'Projected annual taxes by year for each withdrawal strategy',
       })
     : '';

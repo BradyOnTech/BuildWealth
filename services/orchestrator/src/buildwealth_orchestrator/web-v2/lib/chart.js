@@ -68,6 +68,7 @@ function rnd(value) {
 
 // Percentile fan: layered bands (outermost first), overlay lines, x markers.
 // rows: [{ [xKey], [band.lo], [band.hi], [line.key], ... }]
+// seriesLabels: { seriesKey: display label } for the hover readout.
 export function fanChart({
   rows = [],
   xKey = 'year',
@@ -80,6 +81,8 @@ export function fanChart({
   formatY = compactUsd,
   yTickCount = 4,
   ariaLabel = 'Chart',
+  seriesLabels = {},
+  hoverFormat = 'usd',
 } = {}) {
   const usable = rows.filter(row => Number.isFinite(Number(row?.[xKey])));
   if (usable.length < 2) return '';
@@ -129,10 +132,24 @@ export function fanChart({
     })
     .join('');
 
+  // Hover keys in top-to-bottom visual order: band highs, lines, band lows.
+  const hoverKeys = [...new Set([
+    ...bands.map(band => band.hi),
+    ...lines.map(line => line.key),
+    ...bands.map(band => band.lo).reverse(),
+  ])];
+
   return svgShell({
     width,
     height,
     ariaLabel,
+    hover: hoverAttr({
+      xKey,
+      formatY: hoverFormat,
+      plot,
+      labels: hoverLabels(hoverKeys, seriesLabels),
+      points: usable.map(row => hoverPoint(row, xKey, hoverKeys, x)),
+    }),
     content: [
       yAxis({ ticks: niceTicks(yMin, yMax, yTickCount), y, plot, formatY }),
       xAxis({ values: xValues, x, plot, formatX }),
@@ -155,6 +172,8 @@ export function barChart({
   yTickCount = 3,
   barCls = 'chart-bar',
   ariaLabel = 'Bar chart',
+  seriesLabels = {},
+  hoverFormat = 'usd',
 } = {}) {
   const usable = rows.filter(row => Number.isFinite(Number(row?.[yKey])));
   if (!usable.length) return '';
@@ -186,12 +205,62 @@ export function barChart({
     width,
     height,
     ariaLabel,
+    hover: hoverAttr({
+      xKey,
+      formatY: hoverFormat,
+      plot,
+      labels: hoverLabels([yKey], seriesLabels),
+      // Bars are ordinal: px is the slot center, not a linear scale of x.
+      points: usable.map((row, index) => ({
+        x: row[xKey],
+        px: rnd(plot.left + slot * (index + 0.5)),
+        values: { [yKey]: roundHover(Number(row[yKey])) },
+      })),
+    }),
     content: [
       yAxis({ ticks: niceTicks(0, yMax, yTickCount), y, plot, formatY }),
       barShapes,
       barLabels,
     ].join(''),
   });
+}
+
+/* ── Hover payload ──
+   Compact JSON that lib/chart_hover.js reads back off the DOM to drive the
+   crosshair readout. Each point carries its viewBox x (px) so hover code
+   never re-derives scales; values are rounded to keep the attribute small. */
+
+function hoverAttr({ xKey, formatY, plot, labels, points }) {
+  if (!points.length) return '';
+  const payload = { xKey, formatY, plot: { t: plot.top, b: plot.bottom }, labels, points };
+  return ` data-chart-hover="${esc(JSON.stringify(payload))}"`;
+}
+
+function hoverLabels(keys, seriesLabels = {}) {
+  const labels = {};
+  for (const key of keys) labels[key] = seriesLabels[key] || defaultSeriesLabel(key);
+  return labels;
+}
+
+function hoverPoint(row, xKey, keys, x) {
+  const values = {};
+  for (const key of keys) {
+    const value = Number(row[key]);
+    if (Number.isFinite(value)) values[key] = roundHover(value);
+  }
+  const dataX = Number(row[xKey]);
+  return { x: dataX, px: rnd(x(dataX)), values };
+}
+
+// P10/P90-style labels from percentile column names; fall back to the key.
+function defaultSeriesLabel(key) {
+  const match = /^(?:base_)?p(\d{1,2})_/.exec(key);
+  if (match) return match[1] === '50' ? 'Median' : `P${match[1]}`;
+  return String(key).replace(/_usd$/, '').replace(/_/g, ' ');
+}
+
+function roundHover(value) {
+  return Math.round(value * 100) / 100;
 }
 
 function plotArea(width, height) {
@@ -239,9 +308,9 @@ function xAxis({ values, x, plot, formatX }) {
   );
 }
 
-function svgShell({ width, height, ariaLabel, content }) {
+function svgShell({ width, height, ariaLabel, content, hover = '' }) {
   return (
-    `<svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(ariaLabel)}" preserveAspectRatio="xMidYMid meet">` +
+    `<svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(ariaLabel)}" preserveAspectRatio="xMidYMid meet"${hover}>` +
     `<title>${esc(ariaLabel)}</title>${content}</svg>`
   );
 }

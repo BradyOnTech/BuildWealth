@@ -16,6 +16,7 @@ import * as review from './views/review.js';
 import { authScreen } from './views/auth.js';
 
 import { state } from './lib/state.js';
+import './lib/chart_hover.js'; // side effect: binds chart hover readouts once at document level
 import { api, setActiveWorkspaceId } from './lib/api.js';
 import { html, raw, $, esc } from './lib/dom.js';
 import { fmtDateLong } from './lib/format.js';

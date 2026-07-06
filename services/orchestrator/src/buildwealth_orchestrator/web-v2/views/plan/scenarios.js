@@ -243,6 +243,14 @@ export function renderTrajectoryFan(candidateResult, baseResult, { planId = '', 
     ],
     markers,
     formatY: compactUsd,
+    seriesLabels: {
+      p90_ending_balance_usd: 'P90',
+      p75_ending_balance_usd: 'P75',
+      p50_ending_balance_usd: 'Most likely',
+      base_p50_ending_balance_usd: 'Current plan',
+      p25_ending_balance_usd: 'P25',
+      p10_ending_balance_usd: 'P10',
+    },
     ariaLabel: 'Projected portfolio balance range by year across Monte Carlo simulations',
   });
   if (!chart) return '';
@@ -465,6 +473,8 @@ function renderFailureHistogram(failureYears = []) {
     yKey: 'trial_share_pct',
     height: 160,
     formatY: value => `${value}%`,
+    seriesLabels: { trial_share_pct: 'Paths first short' },
+    hoverFormat: 'pct',
     ariaLabel: 'Share of simulated paths first running short, by year',
   });
   if (!chart) return '';
