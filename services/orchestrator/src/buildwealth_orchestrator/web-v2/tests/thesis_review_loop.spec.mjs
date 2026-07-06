@@ -271,14 +271,20 @@ test('Watchlist thesis review opens v2 Research and refreshes watchlist metadata
     },
   });
 
+  // The UI derives current/expired from expires_at vs the real clock, so
+  // these dates must stay relative to now — hardcoded dates rot into
+  // "Review due" and the test times out waiting for "Thesis current".
+  const dayMs = 86400000;
+  const iso = offsetDays => new Date(Date.now() + offsetDays * dayMs).toISOString();
+
   const watchlistItem = () => ({
     symbol: 'NVDA',
     data_source: 'OPENBB',
     thesis: 'Only consider NVDA if valuation and portfolio concentration both remain inside policy.',
     note: 'Watch for AI infrastructure demand and margin durability.',
     tags: ['semiconductors', 'ai'],
-    thesis_reviewed_at: thesisReviewed ? '2026-04-29T12:00:00Z' : '2026-03-17T12:00:00Z',
-    thesis_expires_at: thesisReviewed ? '2026-05-29T12:00:00Z' : '2026-04-16T12:00:00Z',
+    thesis_reviewed_at: thesisReviewed ? iso(-1) : iso(-45),
+    thesis_expires_at: thesisReviewed ? iso(29) : iso(-15),
     thesis_reference_price_usd: thesisReviewed ? 898 : 800,
     quote_price: 898,
     watchlist_score_total: 77,

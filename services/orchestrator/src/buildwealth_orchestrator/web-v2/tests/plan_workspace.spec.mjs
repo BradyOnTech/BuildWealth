@@ -470,7 +470,8 @@ test('v2 Plan workspace covers assumption save, evidence route, simulation decis
 
   assert.deepEqual(withdrawalPayload, {
     strategies: ['four_percent_rule', 'dynamic_guardrails'],
-    include_raw_results: false,
+    // Raw results feed the strategy balance and annual-tax charts.
+    include_raw_results: true,
   });
   await page.getByText('Withdrawal strategies compared.').waitFor({ state: 'visible' });
   await page.getByText('$1,250,000').waitFor({ state: 'visible' });
