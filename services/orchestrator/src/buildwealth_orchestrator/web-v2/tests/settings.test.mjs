@@ -27,6 +27,27 @@ test('toDraft: reads provider settings with sensible defaults', () => {
   assert.equal(draft.llm_parallel_tool_calls, false);
 });
 
+test('toDraft/buildPayloadFor: task routing keys round-trip', () => {
+  const draft = toDraft({
+    llm_provider: 'anthropic',
+    llm_task_summarize_provider: 'custom_openai_compatible',
+    llm_task_summarize_model: 'llama3.2',
+    llm_task_summarize_base_url: 'http://localhost:11434/v1',
+  });
+  assert.equal(draft.llm_task_summarize_provider, 'custom_openai_compatible');
+  assert.equal(draft.llm_task_summarize_model, 'llama3.2');
+  assert.equal(draft.llm_task_summarize_base_url, 'http://localhost:11434/v1');
+
+  const payload = buildPayloadFor({ draft, apiKeyDirty: false, loadedSettings: {} });
+  assert.equal(payload.llm_task_summarize_provider, 'custom_openai_compatible');
+  assert.equal(payload.llm_task_summarize_model, 'llama3.2');
+  assert.equal(payload.llm_task_summarize_base_url, 'http://localhost:11434/v1');
+
+  // Unset routing stays empty (= inherit), never undefined.
+  const inherit = buildPayloadFor({ draft: toDraft({}), apiKeyDirty: false, loadedSettings: {} });
+  assert.equal(inherit.llm_task_summarize_provider, '');
+});
+
 test('toDraft: fills missing fields with defaults', () => {
   const draft = toDraft({});
   assert.equal(draft.llm_provider, 'openai');

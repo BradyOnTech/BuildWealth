@@ -362,6 +362,7 @@ from buildwealth_orchestrator.services.embedding_clients import (
     apply_context_embedding_overrides,
     build_embedding_client_from_settings,
 )
+from buildwealth_orchestrator.services.llm_routing import LLMRouter, extract_task_overrides
 from buildwealth_orchestrator.services.runtime_telemetry import (
     RuntimeTelemetryTracker,
     summarize_cache_quality,
@@ -1064,12 +1065,16 @@ _initial_llm_explicit_keys = {
     for key, value in _initial_llm_payload.items()
     if value not in ("", None)
 } | _user_llm_override_keys
-llm_client = build_llm_client(
+# Router owns per-task model resolution; the chat client is what the
+# interactive Copilot uses and stays the default for everything unrouted.
+llm_router = LLMRouter(
     _llm_config_from_payload(
         _initial_llm_payload,
         explicit_keys=_initial_llm_explicit_keys,
-    )
+    ),
+    extract_task_overrides(_user_cfg),
 )
+llm_client = llm_router.client_for("chat")
 copilot = FinancialCopilot(
     conversation_store=conversation_store,
     llm_client=llm_client,
@@ -17456,7 +17461,7 @@ def update_user_settings(
     http_request: Request,
     services: WorkspaceServices = Depends(get_workspace_services),
 ) -> dict[str, Any]:
-    global llm_client
+    global llm_client, llm_router
 
     require_csrf(http_request)
     require_permission(services.context, "settings.write")
@@ -17468,12 +17473,14 @@ def update_user_settings(
         for key in services.settings_store.load_stored_raw()
         if key.startswith("llm_") or key.startswith("openai_")
     }
-    llm_client = build_llm_client(
+    llm_router = LLMRouter(
         _llm_config_from_payload(
             saved,
             explicit_keys=saved_explicit_keys,
-        )
+        ),
+        extract_task_overrides(saved),
     )
+    llm_client = llm_router.client_for("chat")
     copilot.llm_client = llm_client
 
     # Hot-reload context-embedding settings if any embedding key changed.
@@ -17687,6 +17694,15 @@ def test_embedding_settings(
     }
 
 
+@app.get("/api/settings/llm-routing")
+def get_llm_routing(
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    """Which model serves which task class, after inheritance is resolved."""
+    require_permission(services.context, "settings.read")
+    return {"tasks": llm_router.describe()}
+
+
 @app.get("/api/settings/context")
 def get_context_settings(
     services: WorkspaceServices = Depends(get_workspace_services),
@@ -17758,10 +17774,40 @@ async def on_startup() -> None:
 
     global scheduler_task, autogit_task
 
+    _reload_llm_router_from_default_workspace()
     restore_sync_state_from_disk()
     if settings.sync_interval_minutes > 0:
         scheduler_task = asyncio.create_task(scheduled_sync_loop())
     autogit_task = asyncio.create_task(autogit_checkpoint_loop())
+
+
+def _reload_llm_router_from_default_workspace() -> None:
+    """Rebuild the global LLM router from the default household's saved settings.
+
+    PUT /api/settings persists to the workspace settings store (encrypted keys
+    included), but the module-level router was built from env + the legacy
+    user store — so saved provider, key, and task routing silently vanished on
+    restart. Local single-household concern: in hosted auth modes the default
+    context can't be resolved and the boot configuration stands.
+    """
+    global llm_client, llm_router
+    try:
+        context = control_plane_store.dev_request_context(auth_mode=_auth_mode())
+        services = workspace_service_factory.for_context(context)
+        saved = services.settings_store.load_raw()
+        explicit_keys = {
+            key
+            for key in services.settings_store.load_stored_raw()
+            if key.startswith("llm_") or key.startswith("openai_")
+        }
+    except Exception:
+        return
+    llm_router = LLMRouter(
+        _llm_config_from_payload(saved, explicit_keys=explicit_keys),
+        extract_task_overrides(saved),
+    )
+    llm_client = llm_router.client_for("chat")
+    copilot.llm_client = llm_client
 
 
 async def on_shutdown() -> None:

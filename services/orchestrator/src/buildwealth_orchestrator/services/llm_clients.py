@@ -312,6 +312,11 @@ class OpenAICompatibleChatClient:
 
     @property
     def enabled(self) -> bool:
+        # Local OpenAI-compatible servers (Ollama, LM Studio, proxies) don't
+        # require a bearer token; a custom endpoint with a model and URL is
+        # usable keyless. Hosted providers still require their key.
+        if self.provider == LLM_PROVIDER_CUSTOM_OPENAI_COMPATIBLE:
+            return bool(self.model and self.base_url)
         return bool(self.api_key)
 
     async def complete(
@@ -331,10 +336,9 @@ class OpenAICompatibleChatClient:
             payload["tools"] = tools
             payload["parallel_tool_calls"] = self.parallel_tool_calls
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
 
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             response = await client.post(

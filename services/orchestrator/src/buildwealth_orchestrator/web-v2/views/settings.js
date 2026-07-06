@@ -343,6 +343,43 @@ function providerCard() {
             <span class="settings-hint">Lets Copilot batch tool calls when the provider supports it. Turn off only if you see ordering issues.</span>
           </span>
         </label>
+
+        <div class="settings-field span-2">
+          <span class="settings-label">Background tasks</span>
+          <span class="settings-hint">
+            Summaries and draft preparation can run on a cheaper or local model
+            (for example Ollama via the Custom endpoint) while chat keeps the
+            provider above. Uses your primary API key; local endpoints need none.
+            Leave on "Same as chat" to route everything to one model.
+          </span>
+        </div>
+
+        <label class="settings-field">
+          <span class="settings-label">Background provider</span>
+          <select id="settings-task-summarize-provider" class="settings-input">
+            <option value="" ${!d.llm_task_summarize_provider ? 'selected' : ''}>Same as chat</option>
+            ${raw(PROVIDERS.map(p => `
+              <option value="${esc(p.value)}" ${p.value === d.llm_task_summarize_provider ? 'selected' : ''}>
+                ${esc(p.label)}
+              </option>`).join(''))}
+          </select>
+        </label>
+
+        <label class="settings-field">
+          <span class="settings-label">Background model</span>
+          <input id="settings-task-summarize-model" class="settings-input mono"
+                 type="text" autocomplete="off" spellcheck="false"
+                 placeholder="inherit"
+                 value="${esc(d.llm_task_summarize_model || '')}" />
+        </label>
+
+        <label class="settings-field span-2">
+          <span class="settings-label">Background base URL</span>
+          <input id="settings-task-summarize-base-url" class="settings-input mono"
+                 type="text" autocomplete="off" spellcheck="false"
+                 placeholder="inherit (e.g. http://localhost:11434/v1 for Ollama)"
+                 value="${esc(d.llm_task_summarize_base_url || '')}" />
+        </label>
       </div>
 
       <footer class="settings-actions">
@@ -907,6 +944,9 @@ function attachHandlers() {
   delegate(root, 'input',  '#settings-max-tokens',(_, el) => { ui.draft.llm_max_tokens = parseIntOr(el.value, 2048); });
   delegate(root, 'input',  '#settings-timeout',   (_, el) => { ui.draft.llm_timeout_seconds = parseFloatOr(el.value, 60); });
   delegate(root, 'change', '#settings-parallel',  (_, el) => { ui.draft.llm_parallel_tool_calls = !!el.checked; });
+  delegate(root, 'change', '#settings-task-summarize-provider', (_, el) => { ui.draft.llm_task_summarize_provider = el.value; });
+  delegate(root, 'input',  '#settings-task-summarize-model',    (_, el) => { ui.draft.llm_task_summarize_model = el.value; });
+  delegate(root, 'input',  '#settings-task-summarize-base-url', (_, el) => { ui.draft.llm_task_summarize_base_url = el.value; });
 
   delegate(root, 'click',  '#settings-save',           (e) => { e.preventDefault(); save(); });
   delegate(root, 'click',  '#settings-test',           (e) => { e.preventDefault(); testProvider(); });
@@ -1253,6 +1293,9 @@ export function toDraft(settings) {
     llm_max_tokens:           Number(settings.llm_max_tokens ?? 2048),
     llm_timeout_seconds:      Number(settings.llm_timeout_seconds ?? 60),
     llm_parallel_tool_calls:  Boolean(settings.llm_parallel_tool_calls ?? true),
+    llm_task_summarize_provider: settings.llm_task_summarize_provider || '',
+    llm_task_summarize_model:    settings.llm_task_summarize_model || '',
+    llm_task_summarize_base_url: settings.llm_task_summarize_base_url || '',
   };
 }
 
@@ -1264,6 +1307,9 @@ export function buildPayloadFor({ draft, apiKeyDirty, loadedSettings }) {
     llm_max_tokens:          draft.llm_max_tokens,
     llm_timeout_seconds:     draft.llm_timeout_seconds,
     llm_parallel_tool_calls: draft.llm_parallel_tool_calls,
+    llm_task_summarize_provider: draft.llm_task_summarize_provider || '',
+    llm_task_summarize_model:    draft.llm_task_summarize_model || '',
+    llm_task_summarize_base_url: draft.llm_task_summarize_base_url || '',
   };
   // If the user hasn't typed over the masked key, send the mask back so the
   // server preserves the stored value (UserSettingsStore.save understands this).

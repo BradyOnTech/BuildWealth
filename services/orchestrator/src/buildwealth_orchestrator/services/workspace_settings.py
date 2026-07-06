@@ -226,6 +226,14 @@ class WorkspaceSettingsStore:
         "context_embedding_model": "nomic-embed-text",
         "context_embedding_base_url": "http://localhost:11434",
         "context_embedding_timeout_seconds": 5.0,
+        # Per-task LLM routing overrides. Empty = inherit the primary
+        # llm_provider/llm_model/llm_base_url above (see llm_routing.py).
+        "llm_task_chat_provider": "",
+        "llm_task_chat_model": "",
+        "llm_task_chat_base_url": "",
+        "llm_task_summarize_provider": "",
+        "llm_task_summarize_model": "",
+        "llm_task_summarize_base_url": "",
     }
 
     ALLOWED_KEYS = frozenset(
