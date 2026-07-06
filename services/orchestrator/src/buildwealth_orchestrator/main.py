@@ -358,7 +358,10 @@ from buildwealth_orchestrator.services.context_intelligence import (
     ContextAssembler,
     ContextIntelligenceService,
 )
-from buildwealth_orchestrator.services.embedding_clients import build_embedding_client_from_settings
+from buildwealth_orchestrator.services.embedding_clients import (
+    apply_context_embedding_overrides,
+    build_embedding_client_from_settings,
+)
 from buildwealth_orchestrator.services.runtime_telemetry import (
     RuntimeTelemetryTracker,
     summarize_cache_quality,
@@ -17500,23 +17503,7 @@ def update_user_settings(
 def _apply_context_embedding_settings(saved: dict[str, Any]) -> None:
     """Push saved user-settings into the live `settings` object so the next
     embedding-client build sees them. Called from PUT /api/settings."""
-    enabled = saved.get("context_embeddings_enabled")
-    if isinstance(enabled, bool):
-        settings.context_embeddings_enabled = enabled
-    elif isinstance(enabled, str):
-        settings.context_embeddings_enabled = enabled.strip().lower() in {"true", "1", "yes", "on"}
-    if saved.get("context_embedding_provider"):
-        settings.context_embedding_provider = str(saved["context_embedding_provider"])
-    if saved.get("context_embedding_model"):
-        settings.context_embedding_model = str(saved["context_embedding_model"])
-    if saved.get("context_embedding_base_url"):
-        settings.context_embedding_base_url = str(saved["context_embedding_base_url"])
-    timeout = saved.get("context_embedding_timeout_seconds")
-    if timeout is not None:
-        try:
-            settings.context_embedding_timeout_seconds = float(timeout)
-        except (TypeError, ValueError):
-            pass
+    apply_context_embedding_overrides(settings, saved)
 
 
 def _settings_payload_for_probe(
@@ -17713,13 +17700,29 @@ def get_context_settings(
     """
     require_permission(services.context, "settings.read")
     registry_status = services.context_intelligence_service.get_status()
+    # Report the client the workspace actually uses — global settings can lag
+    # behind the workspace store after a restart.
+    embedding_client = getattr(services.context_intelligence_service, "embedding_client", None)
+    client_enabled = bool(getattr(embedding_client, "enabled", False))
     return {
         "context_engine_enabled": True,
-        "embeddings_enabled": bool(settings.context_embeddings_enabled),
-        "embedding_provider": settings.context_embedding_provider,
-        "embedding_model": settings.context_embedding_model,
-        "embedding_base_url": settings.context_embedding_base_url,
-        "embedding_timeout_seconds": float(settings.context_embedding_timeout_seconds),
+        "embeddings_enabled": client_enabled,
+        "embedding_provider": (
+            str(getattr(embedding_client, "provider", "disabled"))
+            if client_enabled
+            else settings.context_embedding_provider
+        ),
+        "embedding_model": (
+            str(getattr(embedding_client, "model", ""))
+            if client_enabled
+            else settings.context_embedding_model
+        ),
+        "embedding_base_url": str(
+            getattr(embedding_client, "base_url", settings.context_embedding_base_url)
+        ),
+        "embedding_timeout_seconds": float(
+            getattr(embedding_client, "timeout_seconds", settings.context_embedding_timeout_seconds)
+        ),
         "registry": {
             "item_count": int(registry_status.get("item_count", 0) or 0),
             "embedded_count": int(((registry_status.get("embeddings") or {}).get("embedded_count")) or 0),

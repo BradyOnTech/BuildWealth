@@ -12,6 +12,7 @@ from buildwealth_orchestrator.services.control_plane import (
     WorkspaceRecord,
 )
 from buildwealth_orchestrator.services.context_intelligence import ContextIntelligenceService
+from buildwealth_orchestrator.services.embedding_clients import apply_context_embedding_overrides
 from buildwealth_orchestrator.services.copilot_runtime import ConversationStore
 from buildwealth_orchestrator.services.financial_profile import FinancialProfileStore
 from buildwealth_orchestrator.services.import_workbench import ImportWorkbenchStore
@@ -136,6 +137,13 @@ class WorkspaceServiceFactory:
         snapshot_store = SnapshotStore(paths.snapshot_dir)
         conversation_store = ConversationStore(paths.conversation_dir)
         workspace_settings = self.settings_for_paths(paths)
+        # Saved workspace settings are authoritative for embeddings — the
+        # global settings object may still carry stale legacy-store overrides
+        # applied at boot.
+        try:
+            apply_context_embedding_overrides(workspace_settings, settings_store.load_stored_raw())
+        except Exception:
+            pass
         context_intelligence_service = ContextIntelligenceService.from_settings(
             workspace_settings,
             financial_profile_store=profile_store,

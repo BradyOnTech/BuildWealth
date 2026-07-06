@@ -11,7 +11,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Iterable, Mapping
 
-from buildwealth_orchestrator.services.embedding_clients import DisabledEmbeddingClient, EmbeddingClient
+from buildwealth_orchestrator.services.embedding_clients import (
+    DisabledEmbeddingClient,
+    EmbeddingClient,
+    build_embedding_client_from_settings,
+)
 from buildwealth_orchestrator.services.financial_profile import profile_metadata_quality_for_field
 
 
@@ -1676,6 +1680,14 @@ class ContextIntelligenceService:
         portfolio_store: Any | None = None,
         embedding_client: EmbeddingClient | None = None,
     ) -> "ContextIntelligenceService":
+        # Default the embedding client from the same settings object rather
+        # than DisabledEmbeddingClient — per-workspace services are rebuilt on
+        # every request, so this is what makes saved embedding settings stick.
+        if embedding_client is None:
+            try:
+                embedding_client = build_embedding_client_from_settings(settings)
+            except Exception:
+                embedding_client = None
         return cls(
             database_path=settings.durable_storage_dir / "context_index.db",
             financial_profile_store=financial_profile_store,
