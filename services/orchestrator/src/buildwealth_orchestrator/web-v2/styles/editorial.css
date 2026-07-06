@@ -804,3 +804,33 @@ details.diagnostics-toggle > summary::after {
 }
 details.diagnostics-toggle[open] > summary::after { transform: rotate(180deg); }
 details.diagnostics-toggle > summary:hover { color: var(--ink); }
+
+/* Command-center overflow: quiet cards and the confidence map live one
+   click away, in the same visual language as the diagnostics toggle. */
+details.command-overflow > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+  list-style: none;
+  border-bottom: var(--hair) solid var(--rule);
+  padding-bottom: 1px;
+  width: max-content;
+  transition: color var(--d-fast) var(--ease-press);
+}
+details.command-overflow > summary::-webkit-details-marker { display: none; }
+details.command-overflow > summary::after {
+  content: '↓';
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 11px;
+  transition: transform var(--d-fast) var(--ease-press);
+}
+details.command-overflow[open] > summary::after { transform: rotate(180deg); }
+details.command-overflow > summary:hover { color: var(--ink); }
+details.command-overflow { margin-top: var(--s-3); display: grid; gap: var(--s-4); }

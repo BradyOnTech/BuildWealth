@@ -165,4 +165,30 @@ test('today command cards render decision state with actions', () => {
   assert.match(markup, /Service readiness/);
   assert.match(markup, /1\/2/);
   assert.match(markup, /3 service issue/);
+
+  // Density contract: at most three attention cards sit in the scroll path;
+  // everything else (including the heat map) is behind the overflow expander.
+  const [beforeOverflow, insideOverflow] = markup.split('<details class="command-overflow">');
+  assert.ok(insideOverflow, 'overflow expander renders when there are quiet cards');
+  assert.match(beforeOverflow, /Portfolio risk/); // the one critical card leads
+  assert.doesNotMatch(beforeOverflow, /Research readiness/); // ready cards are tucked
+  assert.doesNotMatch(beforeOverflow, /Confidence heat map/);
+  assert.match(insideOverflow, /Research readiness/);
+  assert.match(insideOverflow, /Confidence heat map/);
+  const shownCount = (beforeOverflow.match(/command-card /g) || []).length;
+  assert.ok(shownCount <= 3, `expected at most 3 visible cards, saw ${shownCount}`);
+});
+
+test('today command center with all-quiet cards shows no cards in the scroll path', () => {
+  const markup = String(renderCommandCards({
+    command_cards: [
+      { id: 'a', title: 'Research readiness', status: 'ready', detail: 'Fresh.' },
+      { id: 'b', title: 'Profile readiness', status: 'ready', detail: 'Complete.' },
+    ],
+  }));
+  const [beforeOverflow, insideOverflow] = markup.split('<details class="command-overflow">');
+  assert.match(beforeOverflow, /inputs behind today’s advice are ready/);
+  assert.doesNotMatch(beforeOverflow, /command-card /);
+  assert.match(insideOverflow, /All 2 inputs are quiet/);
+  assert.match(insideOverflow, /Research readiness/);
 });

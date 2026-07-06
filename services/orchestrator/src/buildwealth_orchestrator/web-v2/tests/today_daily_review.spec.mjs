@@ -192,8 +192,16 @@ test('Today daily review routes command cards into review flows', async ({ page 
     await route.fulfill(jsonResponse({}));
   });
 
+  // Quiet cards and the confidence map live behind the command-center
+  // overflow expander; open it before asserting on their content.
+  const openOverflow = async () => {
+    const overflow = page.locator('details.command-overflow > summary');
+    if (await overflow.count()) await overflow.click();
+  };
+
   await page.goto('http://buildwealth-v2.test/');
   await page.getByText('Command center').waitFor({ state: 'visible' });
+  await openOverflow();
   await page.getByText('Confidence heat map').waitFor({ state: 'visible' });
   await page.getByText('Tax profile blocks decision-grade advice.').waitFor({ state: 'visible' });
   await page.getByText('Service readiness').waitFor({ state: 'visible' });
@@ -203,6 +211,7 @@ test('Today daily review routes command cards into review flows', async ({ page 
 
   await page.getByRole('link', { name: 'Mark reviewed' }).click();
   await page.waitForURL('**/#today');
+  await openOverflow();
   await page.getByText('No meaningful changes since the last completed daily review.').waitFor({ state: 'visible' });
   assert.equal(reviewRecorded, true);
 
@@ -211,6 +220,7 @@ test('Today daily review routes command cards into review flows', async ({ page 
   await page.getByText('Review stale assumptions').waitFor({ state: 'visible' });
 
   await page.goto('http://buildwealth-v2.test/');
+  await openOverflow();
   await page.getByRole('link', { name: 'Complete context' }).click();
   await page.waitForURL('**/#copilot?intent=complete-context');
 });

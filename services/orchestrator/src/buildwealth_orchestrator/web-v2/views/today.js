@@ -23,8 +23,8 @@ export function template() {
     <section class="page" id="today-page">
       <div class="today-shell" id="today-shell">
         ${raw(skeletonHero())}
-        ${raw(skeletonSection('II', 'Command center'))}
-        ${raw(skeletonSection('III', 'The move'))}
+        ${raw(skeletonSection('II', 'The move'))}
+        ${raw(skeletonSection('III', 'Command center'))}
         ${raw(skeletonSection('IV', 'Price a decision'))}
         ${raw(skeletonSection('V', 'The room'))}
       </div>
@@ -72,10 +72,12 @@ async function load(params = {}) {
     return;
   }
 
+  // Order answers "how am I doing and what's next?" first: the move directly
+  // under the number, decision pricing next, status housekeeping last.
   setView(root, html`
     ${raw(renderHero(payload, health, analytics))}
-    ${raw(renderCommandCards(payload, services))}
     ${raw(renderMove(payload))}
+    ${raw(renderCommandCards(payload, services))}
     ${raw(renderAffordabilitySection())}
     ${raw(renderRoom(payload, services, health))}
   `);
@@ -261,13 +263,49 @@ export function renderCommandCards(payload, services = null) {
       ? `${warningCount} area${warningCount === 1 ? '' : 's'} need review before high-confidence advice.`
       : 'The inputs behind today’s advice are ready.';
 
+  // Only what needs a human is worth a card in the scroll path — critical
+  // first, then warnings, at most three. Everything else (healthy cards and
+  // the confidence map) stays one click away, not one scroll away.
+  const rank = { critical: 0, warning: 1, ready: 2 };
+  const sorted = [...visibleCards].sort(
+    (a, b) => (rank[normalizeCardStatus(a.status)] ?? 3) - (rank[normalizeCardStatus(b.status)] ?? 3),
+  );
+  const attention = sorted.filter((card) => normalizeCardStatus(card.status) !== 'ready');
+  const shown = attention.slice(0, 3);
+  const tucked = sorted.filter((card) => !shown.includes(card));
+
+  const heatMap = String(renderConfidenceHeatMap(payload));
+  // Warnings that didn't fit the three visible slots are "to review", not
+  // "quiet" — the label must not launder attention items into silence.
+  const tuckedAttention = tucked.filter((card) => normalizeCardStatus(card.status) !== 'ready').length;
+  const tuckedQuiet = tucked.length - tuckedAttention;
+  const overflowSummary = !tucked.length
+    ? 'Confidence map'
+    : !shown.length
+      ? `All ${tucked.length} inputs are quiet — show them`
+      : tuckedAttention > 0
+        ? `Everything else (${tuckedAttention} to review · ${tuckedQuiet} quiet)`
+        : `Everything else (${tucked.length} quiet)`;
+
   return html`
     <section>
-      ${raw(sectionHead('II', 'Command center', lede))}
-      <div class="command-card-grid">
-        ${raw(visibleCards.map(renderCommandCard).join(''))}
-      </div>
-      ${raw(renderConfidenceHeatMap(payload))}
+      ${raw(sectionHead('III', 'Command center', lede))}
+      ${shown.length ? html`
+        <div class="command-card-grid">
+          ${raw(shown.map(renderCommandCard).join(''))}
+        </div>
+      ` : ''}
+      ${tucked.length || heatMap ? html`
+        <details class="command-overflow">
+          <summary>${overflowSummary}</summary>
+          ${tucked.length ? html`
+            <div class="command-card-grid">
+              ${raw(tucked.map(renderCommandCard).join(''))}
+            </div>
+          ` : ''}
+          ${raw(heatMap)}
+        </details>
+      ` : ''}
     </section>
   `;
 }
@@ -386,7 +424,7 @@ export function renderMove(payload) {
   if (!actions.length) {
     return html`
       <section>
-        ${raw(sectionHead('III', 'The move', 'Nothing pressing today.'))}
+        ${raw(sectionHead('II', 'The move', 'Nothing pressing today.'))}
         <div class="empty-block">
           <span class="glyph">¶</span>
           <p>The inbox is quiet. Come back tomorrow.</p>
@@ -401,7 +439,7 @@ export function renderMove(payload) {
 
   return html`
     <section>
-      ${raw(sectionHead('III', 'The move', lede))}
+      ${raw(sectionHead('II', 'The move', lede))}
       <ol class="entry-list">
         ${raw(actions.map((a, i) => renderAction(a, i + 1)).join(''))}
       </ol>
@@ -501,7 +539,7 @@ function renderRoom(payload, services, health = null) {
         </p>
         ${Array.isArray(health?.highlights) && health.highlights.length ? html`
           <ul class="affordability-highlights">
-            ${raw(health.highlights.slice(0, 5).map(item => html`<li>${item}</li>`).join(''))}
+            ${raw(health.highlights.slice(0, 3).map(item => html`<li>${item}</li>`).join(''))}
           </ul>
         ` : ''}
         <details class="diagnostics-toggle">
