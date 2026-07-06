@@ -61,6 +61,7 @@ def test_portfolio_analytics_route(monkeypatch) -> None:
     services = SimpleNamespace(
         context=SimpleNamespace(permissions=ControlPlaneStore.OWNER_PERMISSIONS),
         portfolio_store=FakePortfolioStore(),
+        asset_registry=SimpleNamespace(search=lambda limit=500: {"items": []}),
     )
     main.app.dependency_overrides[main.get_workspace_services] = lambda: services
     monkeypatch.setattr(main, "benchmark_service_for_workspace", lambda services: benchmark)

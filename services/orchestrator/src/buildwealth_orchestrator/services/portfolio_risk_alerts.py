@@ -1,9 +1,16 @@
-"""Portfolio drift/risk alert calculations from holdings concentration and allocation thresholds."""
+"""Portfolio drift/risk alert calculations from holdings concentration and allocation thresholds.
+
+Concentration is a statement about INVESTABLE money. A primary residence (or
+any personal/illiquid/custom-valued position) cannot be trimmed or rebalanced,
+so it is excluded from every concentration percentage here — housing exposure
+is real, but it is not concentration a person can trade away.
+"""
 
 from __future__ import annotations
 
 from typing import Any, Literal
 
+from buildwealth_orchestrator.services.portfolio_rebalancing import is_untradable_position
 from buildwealth_orchestrator.services.value_coercion import safe_float, utc_now_iso
 
 RISK_ALERTS_SCHEMA_VERSION = 1
@@ -232,50 +239,81 @@ def calculate_portfolio_risk_alerts(
     else:
         holding_rows = []
 
-    ranked_positions = sorted(
-        [
-            {
-                "symbol": str(row.get("symbol") or "").strip().upper() or "UNKNOWN",
-                "value": round(safe_float(row.get("current_value"), 0.0), 2),
-            }
+    # Housing-vs-investment scoping: only investable rows enter concentration
+    # math. total_market_value stays full-portfolio for other consumers.
+    investable_rows = [row for row in holding_rows if not is_untradable_position(row)]
+    total_market_value = round(
+        sum(
+            safe_float(row.get("current_value"), 0.0)
             for row in holding_rows
             if safe_float(row.get("current_value"), 0.0) > 0
-        ],
+        ),
+        2,
+    )
+
+    # A fund held in three accounts is still ONE concentration: aggregate by
+    # symbol before ranking, or per-account rows understate real exposure.
+    value_by_symbol: dict[str, float] = {}
+    for row in investable_rows:
+        value = safe_float(row.get("current_value"), 0.0)
+        if value <= 0:
+            continue
+        symbol = str(row.get("symbol") or "").strip().upper() or "UNKNOWN"
+        value_by_symbol[symbol] = value_by_symbol.get(symbol, 0.0) + value
+    ranked_positions = sorted(
+        [{"symbol": symbol, "value": round(value, 2)} for symbol, value in value_by_symbol.items()],
         key=lambda item: item["value"],
         reverse=True,
     )
-    total_market_value = round(sum(item["value"] for item in ranked_positions), 2)
+    investable_market_value = round(sum(item["value"] for item in ranked_positions), 2)
 
     top_holding_symbol = ranked_positions[0]["symbol"] if ranked_positions else None
     top_holding_pct = (
-        round((ranked_positions[0]["value"] / total_market_value) * 100, 2)
-        if ranked_positions and total_market_value > 0
+        round((ranked_positions[0]["value"] / investable_market_value) * 100, 2)
+        if ranked_positions and investable_market_value > 0
         else None
     )
     top3_holdings_pct = (
-        round((sum(item["value"] for item in ranked_positions[:3]) / total_market_value) * 100, 2)
-        if ranked_positions and total_market_value > 0
+        round((sum(item["value"] for item in ranked_positions[:3]) / investable_market_value) * 100, 2)
+        if ranked_positions and investable_market_value > 0
         else None
     )
 
-    if total_market_value > 0:
-        hhi = round(sum((item["value"] / total_market_value) ** 2 for item in ranked_positions), 4)
+    if investable_market_value > 0:
+        hhi = round(sum((item["value"] / investable_market_value) ** 2 for item in ranked_positions), 4)
         effective_positions = round((1 / hhi) if hhi > 0 else 0.0, 2)
     else:
         hhi = None
         effective_positions = None
 
+    # account_totals arrive pre-summed (holdings + cash), so the untradable
+    # slice has to be backed out per account; an account that only holds the
+    # house drops out of the concentration comparison entirely.
+    untradable_value_by_account: dict[str, float] = {}
+    for row in holding_rows:
+        if not is_untradable_position(row):
+            continue
+        value = safe_float(row.get("current_value"), 0.0)
+        if value <= 0:
+            continue
+        account_id = str(row.get("account") or "").strip()
+        if account_id:
+            untradable_value_by_account[account_id] = untradable_value_by_account.get(account_id, 0.0) + value
+
     account_leader_id: str | None = None
     account_leader_pct: float | None = None
+    investable_account_count = 0
     if isinstance(account_totals, dict) and account_totals:
         account_rows = []
         for account_id, values in account_totals.items():
             if not isinstance(values, dict):
                 continue
             total_value = safe_float(values.get("total_value"), 0.0)
-            if total_value <= 0:
+            investable_value = total_value - untradable_value_by_account.get(str(account_id), 0.0)
+            if investable_value <= 0:
                 continue
-            account_rows.append((str(account_id), total_value))
+            account_rows.append((str(account_id), investable_value))
+        investable_account_count = len(account_rows)
         if account_rows:
             account_total_value = sum(value for _, value in account_rows)
             account_rows.sort(key=lambda item: item[1], reverse=True)
@@ -285,26 +323,30 @@ def calculate_portfolio_risk_alerts(
 
     breakdowns = allocation_breakdowns if isinstance(allocation_breakdowns, dict) else {}
     largest_asset_class, largest_asset_class_pct = _largest_dimension_from_holdings(
-        holding_rows,
+        investable_rows,
         field="asset_class",
         fallback_label="Unclassified",
     )
     largest_sector, largest_sector_pct = _largest_dimension_from_holdings(
-        holding_rows,
+        investable_rows,
         field="sector",
         fallback_label="Unknown",
     )
     largest_region, largest_region_pct = _largest_dimension_from_holdings(
-        holding_rows,
+        investable_rows,
         field="region",
         fallback_label="Unknown",
     )
-    if largest_asset_class is None:
-        largest_asset_class, largest_asset_class_pct = _largest_bucket(breakdowns.get("asset_class"))
-    if largest_sector is None:
-        largest_sector, largest_sector_pct = _largest_bucket(breakdowns.get("sector"))
-    if largest_region is None:
-        largest_region, largest_region_pct = _largest_bucket(breakdowns.get("region"))
+    # The breakdown fallback covers callers that supplied no holdings detail
+    # at all. When holdings exist, breakdowns stay unused: they are computed
+    # over the full portfolio (house included), the wrong base for this lens.
+    if not holding_rows:
+        if largest_asset_class is None:
+            largest_asset_class, largest_asset_class_pct = _largest_bucket(breakdowns.get("asset_class"))
+        if largest_sector is None:
+            largest_sector, largest_sector_pct = _largest_bucket(breakdowns.get("sector"))
+        if largest_region is None:
+            largest_region, largest_region_pct = _largest_bucket(breakdowns.get("region"))
 
     alerts: list[dict[str, Any]] = []
 
@@ -336,7 +378,9 @@ def calculate_portfolio_risk_alerts(
     if top3_alert:
         alerts.append(top3_alert)
 
-    if account_leader_pct is not None and isinstance(account_totals, dict) and len(account_totals) > 1:
+    # More than one INVESTABLE account required: a brokerage next to a
+    # house-only "account" is not an account-concentration problem.
+    if account_leader_pct is not None and investable_market_value > 0 and investable_account_count > 1:
         account_alert = _max_threshold_alert(
             alert_id="account_cluster_risk",
             category="allocation",
@@ -351,7 +395,9 @@ def calculate_portfolio_risk_alerts(
         if account_alert:
             alerts.append(account_alert)
 
-    if largest_asset_class_pct is not None:
+    # investable_market_value > 0 guards the no-holdings fallback path: with a
+    # zero investable base, every concentration percentage is meaningless.
+    if largest_asset_class_pct is not None and investable_market_value > 0:
         asset_class_alert = _max_threshold_alert(
             alert_id="asset_class_cluster_risk",
             category="allocation",
@@ -366,7 +412,7 @@ def calculate_portfolio_risk_alerts(
         if asset_class_alert:
             alerts.append(asset_class_alert)
 
-    if largest_sector_pct is not None:
+    if largest_sector_pct is not None and investable_market_value > 0:
         sector_alert = _max_threshold_alert(
             alert_id="sector_cluster_risk",
             category="allocation",
@@ -381,7 +427,7 @@ def calculate_portfolio_risk_alerts(
         if sector_alert:
             alerts.append(sector_alert)
 
-    if largest_region_pct is not None:
+    if largest_region_pct is not None and investable_market_value > 0:
         region_alert = _max_threshold_alert(
             alert_id="regional_cluster_risk",
             category="allocation",
@@ -447,7 +493,10 @@ def calculate_portfolio_risk_alerts(
         status = "ok"
 
     metrics = {
+        # Full-portfolio value (house included) for consumers that need the
+        # household total; concentration percentages use the investable base.
         "total_market_value": total_market_value,
+        "investable_market_value": investable_market_value,
         "positions_count": len(ranked_positions),
         "top_holding_symbol": top_holding_symbol,
         "top_holding_pct": top_holding_pct,

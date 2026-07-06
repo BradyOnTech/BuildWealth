@@ -240,6 +240,20 @@ def _quality_metadata(
     }
 
 
+def _concentration_base_usd(metrics: dict[str, Any], holdings_payload: dict[str, Any]) -> float:
+    """Dollar base matching the alerts' percentage base.
+
+    Concentration alert percentages are computed on investable money (the
+    home is housing, not invested money), so converting drift percentages to
+    dollars must use the same base. Older stored payloads without
+    investable_market_value fall back to the full-portfolio total.
+    """
+    investable = metrics.get("investable_market_value")
+    if investable is not None:
+        return safe_float(investable, 0.0)
+    return safe_float(metrics.get("total_market_value") or holdings_payload.get("total_value"), 0.0)
+
+
 def _excess_amount_usd(alert: dict[str, Any], total_market_value: float) -> float | None:
     if total_market_value <= 0:
         return None
@@ -322,8 +336,8 @@ def _candidate_from_alert(
 ) -> dict[str, Any]:
     risk_payload = holdings_payload.get("risk_alerts") if isinstance(holdings_payload.get("risk_alerts"), dict) else {}
     metrics = risk_payload.get("metrics") if isinstance(risk_payload.get("metrics"), dict) else {}
-    total_market_value = safe_float(metrics.get("total_market_value") or holdings_payload.get("total_value"), 0.0)
-    estimated_amount_usd = _excess_amount_usd(alert, total_market_value)
+    concentration_base_usd = _concentration_base_usd(metrics, holdings_payload)
+    estimated_amount_usd = _excess_amount_usd(alert, concentration_base_usd)
     signal_key = _signal_key(alert)
     dedupe_key = _dedupe_key(alert)
     observed = safe_float(alert.get("observed"), 0.0)
@@ -457,7 +471,9 @@ def generate_portfolio_risk_recommendations(
             alert=alert,
             holdings=holdings_map,
             accounts=accounts,
-            total_market_value=safe_float(risk_metrics.get("total_market_value") or holdings_payload.get("total_value"), 0.0),
+            # Investable base: the alert's drift percentage is investable-based,
+            # so the reduce-by dollars must be too.
+            total_market_value=_concentration_base_usd(risk_metrics, holdings_payload),
             as_of=now,
         )
         candidate = _candidate_from_alert(

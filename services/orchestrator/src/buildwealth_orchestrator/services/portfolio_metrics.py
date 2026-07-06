@@ -47,24 +47,40 @@ def _to_optional_text(value: object) -> str | None:
 
 
 def concentration_metrics(holdings: Sequence[Mapping[str, object]]) -> ConcentrationMetrics:
+    """Concentration over INVESTABLE money, aggregated per symbol.
+
+    Same scoping as the risk alerts and diversification score: a primary
+    residence is housing, not a position a person can trim — and a fund held
+    in three accounts is one concentration, not three.
+    """
+    from buildwealth_orchestrator.services.portfolio_rebalancing import is_untradable_position
+
     if not holdings:
         return _empty_concentration_metrics()
 
-    ranked = sorted(holdings, key=lambda item: _to_float(item.get("value_usd")), reverse=True)
-    total_value = sum(_to_float(item.get("value_usd")) for item in ranked)
+    value_by_symbol: dict[str, float] = {}
+    name_by_symbol: dict[str, str | None] = {}
+    for item in holdings:
+        if is_untradable_position(dict(item)):
+            continue
+        value_usd = _to_float(item.get("value_usd"))
+        if value_usd <= 0:
+            continue
+        symbol = _to_optional_text(item.get("symbol")) or "UNKNOWN"
+        value_by_symbol[symbol] = value_by_symbol.get(symbol, 0.0) + value_usd
+        name_by_symbol.setdefault(symbol, _to_optional_text(item.get("name")))
 
+    total_value = sum(value_by_symbol.values())
     if total_value == 0:
         return _empty_concentration_metrics()
 
     normalized: list[ConcentrationPosition] = []
-    for item in ranked:
-        value_usd = _to_float(item.get("value_usd"))
-        weight = value_usd / total_value
+    for symbol, value_usd in sorted(value_by_symbol.items(), key=lambda pair: pair[1], reverse=True):
         normalized.append(
             {
-                "symbol": _to_optional_text(item.get("symbol")),
-                "name": _to_optional_text(item.get("name")),
-                "weight": round(weight, 4),
+                "symbol": symbol,
+                "name": name_by_symbol.get(symbol),
+                "weight": round(value_usd / total_value, 4),
                 "value_usd": round(value_usd, 2),
             }
         )

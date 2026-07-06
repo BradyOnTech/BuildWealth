@@ -91,6 +91,54 @@ def _holdings_payload() -> dict[str, object]:
     }
 
 
+def _home_heavy_holdings_payload() -> dict[str, object]:
+    """A demo-style household: dominant primary residence plus small funds."""
+    holdings = {
+        "home:DEMO_HOME": {
+            "symbol": "DEMO_HOME",
+            "account": "home",
+            "current_value": 420_000.0,
+            "asset_type": "property",
+            "asset_class": "Real Estate",
+            "is_custom_asset": True,
+            "valuation_method": "manual",
+        },
+        "default:AAPL": {
+            "symbol": "AAPL",
+            "account": "default",
+            "current_value": 40_000.0,
+            "current_price": 200.0,
+            "asset_class": "US Stocks",
+            "sector": "Technology",
+            "region": "US",
+        },
+        "default:BND": {
+            "symbol": "BND",
+            "account": "default",
+            "current_value": 10_000.0,
+            "asset_class": "US Bonds",
+            "sector": "Fixed Income",
+            "region": "US",
+        },
+    }
+    risk_alerts = calculate_portfolio_risk_alerts(
+        holdings=holdings,
+        account_totals={
+            "home": {"total_value": 420_000.0},
+            "default": {"total_value": 50_000.0},
+        },
+        allocation_breakdowns=None,
+        thresholds=None,
+        generated_at="2026-04-25T12:00:00+00:00",
+    )
+    return {
+        "updated_at": "2026-04-25T12:00:00+00:00",
+        "total_value": 470_000.0,
+        "holdings": holdings,
+        "risk_alerts": risk_alerts,
+    }
+
+
 def _cash_holdings_payload(total_cash: float) -> dict[str, object]:
     payload = _holdings_payload()
     payload["total_cash"] = total_cash
@@ -209,6 +257,39 @@ def test_portfolio_risk_factory_dry_run_generates_specific_candidates() -> None:
     assert payload["evidence"]["data_keys"] == ["portfolio.holdings", "portfolio.risk_alerts"]
     assert payload["suggested_action"]["estimated_rebalance_usd"] is not None
     _assert_quality_metadata(result.candidates[0], expected_source="generator:portfolio_risk")
+
+
+def test_portfolio_risk_factory_dollar_math_uses_investable_base() -> None:
+    result = generate_portfolio_risk_recommendations(
+        holdings_payload=_home_heavy_holdings_payload(),
+        existing_recommendations=[],
+        dry_run=True,
+        now=datetime(2026, 4, 25, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.generated_count > 0
+    subjects = {
+        candidate["action_payload"]["suggested_action"]["subject"]
+        for candidate in result.candidates
+    }
+    # The home never becomes a concentration recommendation.
+    assert "DEMO_HOME" not in subjects
+
+    single = next(
+        candidate
+        for candidate in result.candidates
+        if candidate["action_payload"]["suggested_action"]["kind"] == "reduce_single_holding_concentration"
+    )
+    action = single["action_payload"]["suggested_action"]
+    assert action["subject"] == "AAPL"
+    # AAPL is 80% of the $50k INVESTABLE base against the 25% threshold, so
+    # the excess is 55% of $50k — not 55% of the $470k full portfolio.
+    assert action["current_value"] == 80.0
+    assert action["estimated_rebalance_usd"] == pytest.approx(27_500.0)
+    # The trim plan's reduce-by dollars match the same investable base.
+    assert action["trim_plan_status"] == "ready"
+    assert action["trades"][0]["symbol"] == "AAPL"
+    assert action["trades"][0]["sell_value_usd"] == pytest.approx(27_500.0)
 
 
 def test_watchlist_research_factory_generates_refresh_candidate_for_partial_evidence() -> None:

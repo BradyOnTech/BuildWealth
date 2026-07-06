@@ -23,6 +23,19 @@ def _holding(
     }
 
 
+def _untradable_home(value: float, account: str = "home") -> dict[str, object]:
+    """A primary residence: housing, not invested money."""
+    return {
+        "symbol": "DEMO_HOME",
+        "account": account,
+        "current_value": value,
+        "asset_type": "property",
+        "asset_class": "Real Estate",
+        "is_custom_asset": True,
+        "valuation_method": "manual",
+    }
+
+
 def test_calculate_portfolio_risk_alerts_flags_breaches() -> None:
     holdings = {
         "default:AAPL": _holding("AAPL", 70000, "default"),
@@ -55,6 +68,104 @@ def test_calculate_portfolio_risk_alerts_flags_breaches() -> None:
     assert "hhi_concentration" in alert_ids
     assert payload["metrics"]["top_holding_symbol"] == "AAPL"
     assert payload["metrics"]["top_holding_pct"] == 70.0
+    # Fully investable portfolio: the investable base is the whole portfolio.
+    assert payload["metrics"]["total_market_value"] == 100_000.0
+    assert payload["metrics"]["investable_market_value"] == 100_000.0
+
+
+def test_untradable_home_is_excluded_from_concentration() -> None:
+    holdings = {
+        "home:DEMO_HOME": _untradable_home(420_000.0),
+        "default:AAPL": _holding("AAPL", 40_000.0, asset_class="US Stocks", sector="Technology", region="US"),
+        # REIT ETF: asset_class real estate, but asset TYPE etf — fully investable.
+        "default:VNQ": {
+            "symbol": "VNQ",
+            "account": "default",
+            "current_value": 10_000.0,
+            "asset_type": "etf",
+            "asset_class": "Real Estate",
+            "sector": "Real Estate",
+            "region": "US",
+        },
+    }
+    account_totals = {
+        "home": {"total_value": 420_000.0},
+        "default": {"total_value": 50_000.0},
+    }
+
+    payload = calculate_portfolio_risk_alerts(
+        holdings=holdings,
+        account_totals=account_totals,
+        allocation_breakdowns=None,
+        thresholds=None,
+    )
+
+    metrics = payload["metrics"]
+    # Both bases are reported: full portfolio for other consumers,
+    # investable for every concentration percentage.
+    assert metrics["total_market_value"] == 470_000.0
+    assert metrics["investable_market_value"] == 50_000.0
+    # The home is not the top holding — the largest FUND is, on the investable base.
+    assert metrics["top_holding_symbol"] == "AAPL"
+    assert metrics["top_holding_pct"] == 80.0
+    assert metrics["positions_count"] == 2  # home excluded, REIT ETF included
+    assert metrics["largest_asset_class"] == "US Stocks"
+    assert metrics["largest_asset_class_pct"] == 80.0
+
+    alert_ids = {item["id"] for item in payload["alerts"]}
+    assert "single_holding_concentration" in alert_ids
+    single = next(item for item in payload["alerts"] if item["id"] == "single_holding_concentration")
+    assert single["context"]["symbol"] == "AAPL"
+    for alert in payload["alerts"]:
+        assert "DEMO_HOME" not in str(alert)
+    # Only one investable account remains once the house-only account drops
+    # out, so account concentration is not compared at all.
+    assert "account_cluster_risk" not in alert_ids
+    assert metrics["largest_account_id"] == "default"
+
+
+def test_untradable_home_in_shared_account_reduces_account_base() -> None:
+    holdings = {
+        "default:DEMO_HOME": _untradable_home(420_000.0, account="default"),
+        "default:AAPL": _holding("AAPL", 30_000.0, account="default"),
+        "roth_ira:BND": _holding("BND", 20_000.0, account="roth_ira"),
+    }
+    account_totals = {
+        "default": {"total_value": 450_000.0},
+        "roth_ira": {"total_value": 20_000.0},
+    }
+
+    payload = calculate_portfolio_risk_alerts(
+        holdings=holdings,
+        account_totals=account_totals,
+        allocation_breakdowns=None,
+        thresholds=None,
+    )
+
+    metrics = payload["metrics"]
+    # default account: 450k total minus the 420k home leaves 30k investable
+    # against roth_ira's 20k -> 60% of the investable account base.
+    assert metrics["largest_account_id"] == "default"
+    assert metrics["largest_account_pct"] == 60.0
+
+
+def test_all_untradable_portfolio_produces_no_concentration_alerts() -> None:
+    holdings = {"home:DEMO_HOME": _untradable_home(420_000.0)}
+    payload = calculate_portfolio_risk_alerts(
+        holdings=holdings,
+        account_totals={"home": {"total_value": 420_000.0}, "cash": {"total_value": 5_000.0}},
+        allocation_breakdowns={
+            "asset_class": [{"key": "Real Estate", "value": 420_000.0, "allocation_pct": 100.0}],
+        },
+        thresholds=None,
+    )
+
+    assert payload["alerts"] == []
+    assert payload["status"] == "ok"
+    assert payload["metrics"]["total_market_value"] == 420_000.0
+    assert payload["metrics"]["investable_market_value"] == 0.0
+    assert payload["metrics"]["top_holding_symbol"] is None
+    assert payload["metrics"]["herfindahl_index"] is None
 
 
 def test_calculate_portfolio_risk_alerts_supports_watch_state() -> None:

@@ -578,6 +578,10 @@ def build_today_dashboard_payload(
                     "symbol": item.symbol,
                     "name": item.name,
                     "value_usd": item.value_usd,
+                    # concentration_metrics scopes to investable money; it
+                    # needs the type fields to recognize housing.
+                    "asset_type": item.asset_type,
+                    "asset_class": item.asset_class,
                 }
                 for item in latest_snapshot.holdings
             ]
