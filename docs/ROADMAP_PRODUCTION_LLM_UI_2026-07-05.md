@@ -36,13 +36,21 @@ More is in place than "local prototype" suggests:
 
 ### Sequence (smallest useful step first)
 
-1. **Storage abstraction seam, not a rewrite.** Introduce a thin repository
-   interface over the control plane so SQLite and Postgres are both backends.
-   SQLite stays the local-first default forever; Postgres is a deployment
-   choice for hosted. Workspace JSON payloads stay files initially — they are
-   per-tenant and small; move them only when metrics say otherwise.
-2. **Migration runner** (alembic for the control DB) before any Postgres
-   work, so the first hosted deploy starts disciplined.
+1. **Storage abstraction seam, not a rewrite.** ✅ *Done 2026-07-06.*
+   `ControlDatabase` connection seam (control_database.py): the store owns
+   SQL and business rules; the adapter owns connections, transactions, and
+   dialect quirks. SQLite stays the local-first default forever; adding
+   Postgres is a bounded task documented as a recipe in that module
+   (implement one adapter, review the marked `# dialect:` sites, run the
+   auth/workspace suite as the acceptance gate). Workspace JSON payloads
+   stay files — per-tenant and small; move them only when metrics say
+   otherwise.
+2. **Migration runner** ✅ *Done 2026-07-06.* Hand-rolled, not alembic —
+   eight tables of readable SQL don't justify an ORM dependency
+   (control_db_migrations.py): append-only numbered migrations, one explicit
+   transaction each (DDL-safe rollback), recorded in schema_migrations; the
+   pre-runner schema is baseline 0001 and existing databases adopt it
+   idempotently on boot.
 3. **Harden the hosted auth path**: finish OIDC end-to-end against the chosen
    IdP, add rate limiting on auth endpoints, session revocation list,
    and audit-log the permission denials that already exist.

@@ -147,163 +147,20 @@ class ControlPlaneStore:
         "admin": frozenset({"workspace.read", "workspace.manage", "settings.read"}),
     }
 
-    def __init__(self, database_path: Path):
+    def __init__(self, database_path: Path, *, database: "ControlDatabase | None" = None):
+        # The seam: all connection handling and schema migration lives behind
+        # the database object; this store owns SQL and business rules only.
+        # SQLite (one file, zero services) is the default and stays the
+        # local-first product; hosted deployments swap the adapter, not the
+        # store. See control_database.py for the contract and the recipe.
+        from buildwealth_orchestrator.services.control_database import SQLiteControlDatabase
+
         self.database_path = database_path
-        self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        self._initialize()
+        self.database = database if database is not None else SQLiteControlDatabase(database_path)
+        self.database.migrate()
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.database_path)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        return connection
-
-    def _initialize(self) -> None:
-        with self._connect() as connection:
-            connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                    id TEXT PRIMARY KEY,
-                    email TEXT NOT NULL UNIQUE,
-                    email_normalized TEXT NOT NULL UNIQUE,
-                    display_name TEXT NOT NULL DEFAULT '',
-                    password_hash TEXT NOT NULL DEFAULT '',
-                    auth_provider TEXT NOT NULL DEFAULT 'local',
-                    auth_provider_subject TEXT,
-                    mfa_enabled INTEGER NOT NULL DEFAULT 0,
-                    status TEXT NOT NULL DEFAULT 'active',
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    last_login_at TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS organizations (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    org_type TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'active',
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS memberships (
-                    id TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-                    role TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'active',
-                    invited_by_user_id TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    UNIQUE(user_id, organization_id)
-                );
-
-                CREATE TABLE IF NOT EXISTS workspaces (
-                    id TEXT PRIMARY KEY,
-                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-                    name TEXT NOT NULL,
-                    workspace_type TEXT NOT NULL,
-                    storage_mode TEXT NOT NULL DEFAULT 'file',
-                    storage_path TEXT NOT NULL,
-                    database_path TEXT,
-                    encryption_status TEXT NOT NULL DEFAULT 'not_configured',
-                    backup_policy_id TEXT,
-                    status TEXT NOT NULL DEFAULT 'active',
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS sessions (
-                    id TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    session_token_hash TEXT NOT NULL UNIQUE,
-                    csrf_token_hash TEXT NOT NULL,
-                    active_workspace_id TEXT REFERENCES workspaces(id),
-                    created_at TEXT NOT NULL,
-                    last_seen_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL,
-                    revoked_at TEXT,
-                    ip_hash TEXT,
-                    user_agent_hash TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS audit_events (
-                    id TEXT PRIMARY KEY,
-                    actor_user_id TEXT,
-                    organization_id TEXT,
-                    workspace_id TEXT,
-                    action TEXT NOT NULL,
-                    target_type TEXT,
-                    target_id TEXT,
-                    outcome TEXT NOT NULL DEFAULT 'ok',
-                    metadata_json TEXT NOT NULL DEFAULT '{}',
-                    created_at TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS auth_login_flows (
-                    id TEXT PRIMARY KEY,
-                    provider TEXT NOT NULL,
-                    state_token_hash TEXT NOT NULL UNIQUE,
-                    code_verifier TEXT NOT NULL,
-                    nonce TEXT NOT NULL,
-                    redirect_to TEXT NOT NULL DEFAULT '/v2',
-                    created_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL,
-                    consumed_at TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS account_data_deletion_requests (
-                    id TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-                    workspace_id TEXT REFERENCES workspaces(id) ON DELETE SET NULL,
-                    requested_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    status TEXT NOT NULL,
-                    scope TEXT NOT NULL,
-                    requested_at TEXT NOT NULL,
-                    purge_after TEXT NOT NULL,
-                    canceled_at TEXT,
-                    completed_at TEXT,
-                    preview_json TEXT NOT NULL DEFAULT '{}',
-                    result_json TEXT NOT NULL DEFAULT '{}',
-                    failure_reason TEXT NOT NULL DEFAULT ''
-                );
-
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_users_auth_provider_subject
-                ON users(auth_provider, auth_provider_subject)
-                WHERE auth_provider_subject IS NOT NULL AND auth_provider_subject != '';
-
-                CREATE INDEX IF NOT EXISTS idx_account_data_deletion_pending
-                ON account_data_deletion_requests(status, purge_after);
-
-                CREATE INDEX IF NOT EXISTS idx_account_data_deletion_org
-                ON account_data_deletion_requests(organization_id, status);
-                """
-            )
-            self._ensure_column(connection, "users", "deletion_requested_at", "TEXT")
-            self._ensure_column(connection, "users", "purge_after", "TEXT")
-            self._ensure_column(connection, "users", "deletion_completed_at", "TEXT")
-            self._ensure_column(connection, "organizations", "deletion_requested_at", "TEXT")
-            self._ensure_column(connection, "organizations", "purge_after", "TEXT")
-            self._ensure_column(connection, "organizations", "deletion_completed_at", "TEXT")
-            self._ensure_column(connection, "workspaces", "deletion_requested_at", "TEXT")
-            self._ensure_column(connection, "workspaces", "purge_after", "TEXT")
-            self._ensure_column(connection, "workspaces", "deletion_completed_at", "TEXT")
-
-    @staticmethod
-    def _ensure_column(
-        connection: sqlite3.Connection,
-        table_name: str,
-        column_name: str,
-        column_sql: str,
-    ) -> None:
-        columns = {
-            str(row["name"])
-            for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
-        }
-        if column_name in columns:
-            return
-        connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}")
+        return self.database.connect()
 
     @staticmethod
     def normalize_email(email: str) -> str:
@@ -347,6 +204,8 @@ class ControlPlaneStore:
                 )
             else:
                 owner_user_id = str(user["id"])
+            # dialect: INSERT OR IGNORE is SQLite; Postgres uses
+            # ON CONFLICT DO NOTHING (see control_database.py recipe).
             connection.execute(
                 """
                 INSERT OR IGNORE INTO organizations (id, name, org_type, status, created_at, updated_at)
