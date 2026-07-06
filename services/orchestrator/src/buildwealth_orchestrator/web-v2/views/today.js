@@ -139,7 +139,7 @@ function renderHero(payload, health = null, analytics = null) {
     surplus != null ? marginaliaItem('monthly surplus', fmtUsd(surplus), surplus >= 0 ? 'up' : 'down') : null,
     savings != null ? marginaliaItem('savings rate', `${Math.round(savings)}%`, 'up') : null,
     runway != null ? marginaliaItem('runway', `${runway} mo`, 'up') : null,
-    fi != null ? marginaliaItem(`to FI (${compactUsd(fi.targetUsd)} at 4%)`, `${fi.progressPct}%`, 'up') : null,
+    fi != null ? marginaliaItem(`to FI (${fi.basis} vs ${compactUsd(fi.targetUsd)})`, `${fi.progressPct}%`, 'up') : null,
   ].filter(Boolean);
 
   return html`
@@ -215,18 +215,25 @@ function marginaliaItem(label, value, dir) {
   `;
 }
 
-// FI target = 25x annual expenses (the 4% rule), progress = net worth against it.
+// FI target = 25x annual expenses (the 4% rule). Progress is measured on
+// invested money — the home is housing, not a balance that can fund
+// retirement without selling the roof. Falls back to net worth only when the
+// snapshot predates the investable breakdown.
 // Directional by design: uses today's profile expenses, not plan simulations.
 export function computeFiProgress(health) {
   const monthlyExpenses = Number(health?.total_monthly_expenses_usd);
-  const netWorth = Number(health?.net_worth_usd);
   if (!Number.isFinite(monthlyExpenses) || monthlyExpenses <= 0) return null;
-  if (!Number.isFinite(netWorth) || netWorth < 0) return null;
+  const investable = Number(health?.investable_assets_usd);
+  const netWorth = Number(health?.net_worth_usd);
+  const useInvestable = Number.isFinite(investable) && investable > 0;
+  const base = useInvestable ? investable : netWorth;
+  if (!Number.isFinite(base) || base < 0) return null;
   const targetUsd = monthlyExpenses * 12 * 25;
   if (targetUsd <= 0) return null;
   return {
     targetUsd,
-    progressPct: Math.min(999, Math.round((netWorth / targetUsd) * 100)),
+    basis: useInvestable ? 'invested money' : 'net worth',
+    progressPct: Math.min(999, Math.round((base / targetUsd) * 100)),
   };
 }
 

@@ -167,6 +167,7 @@ class PortfolioAnalyticsResponse(BaseModel):
     risk_explanations: dict[str, Any] = Field(default_factory=dict)
     fees: dict[str, Any] = Field(default_factory=dict)
     diversification: dict[str, Any] = Field(default_factory=dict)
+    housing: dict[str, Any] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -2680,6 +2681,9 @@ class FinancialHealthResponse(BaseModel):
     total_assets_usd: float
     total_debt_usd: float
     net_worth_usd: float
+    # Market-tradable money only — excludes the home, collectibles, and other
+    # custom-valued positions. This is the base FI progress is measured on.
+    investable_assets_usd: float = 0.0
 
     # Cash flow
     gross_monthly_income_usd: float

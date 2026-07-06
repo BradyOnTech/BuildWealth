@@ -71,10 +71,27 @@ test('computeFiProgress derives 25x target from monthly expenses', () => {
   const fi = computeFiProgress({ total_monthly_expenses_usd: 6000, net_worth_usd: 774000 });
   assert.equal(fi.targetUsd, 1800000);
   assert.equal(fi.progressPct, 43);
+  assert.equal(fi.basis, 'net worth');
 
   assert.equal(computeFiProgress({ total_monthly_expenses_usd: 0, net_worth_usd: 100000 }), null);
   assert.equal(computeFiProgress(null), null);
   assert.equal(computeFiProgress({ total_monthly_expenses_usd: 6000, net_worth_usd: -5 }), null);
+});
+
+test('computeFiProgress measures invested money, not the house', () => {
+  // Net worth includes $500k of home equity; FI progress must not.
+  const fi = computeFiProgress({
+    total_monthly_expenses_usd: 6000,
+    net_worth_usd: 774000,
+    investable_assets_usd: 274000,
+  });
+  assert.equal(fi.targetUsd, 1800000);
+  assert.equal(fi.progressPct, 15);
+  assert.equal(fi.basis, 'invested money');
+
+  // Older health payloads without the breakdown keep the net-worth behavior.
+  const legacy = computeFiProgress({ total_monthly_expenses_usd: 6000, net_worth_usd: 900000 });
+  assert.equal(legacy.progressPct, 50);
 });
 
 test('buildDeltaDecomposition explains the move in causes', async () => {

@@ -28,6 +28,7 @@ export function renderAnalytics(analytics = null) {
       ${raw(renderReturnPartsPanel(performance))}
       ${raw(renderAttributionPanel(attribution))}
       ${raw(renderDiversificationPanel(analytics.diversification || {}))}
+      ${raw(renderHousingPanel(analytics.housing || {}))}
       ${raw(renderFeesPanel(analytics.fees || {}))}
       ${raw(renderRiskExplanationPanel(risk))}
       ${raw(renderAnalyticsWarnings(analytics.warnings))}
@@ -63,6 +64,43 @@ export function renderDiversificationPanel(diversification = {}) {
         <p class="marginalia">Weakest links: ${reasons.map(esc).join(' ')}</p>
       ` : ''}
       ${raw(caveats.map(caveat => html`<p class="marginalia">${caveat}</p>`.toString()).join(''))}
+    </article>
+  `;
+}
+
+// The home is housing, not a portfolio position — so it gets its own lens
+// instead of a seat in the diversification score. Value, loan, equity, and
+// the plain fact that it all sits in one local market.
+export function renderHousingPanel(housing = {}) {
+  if (housing.status !== 'ready') return '';
+  const properties = Array.isArray(housing.properties) ? housing.properties : [];
+  const notes = Array.isArray(housing.notes) ? housing.notes : [];
+  // Number(null) is 0 — a home with no recorded mortgage has null equity,
+  // which must read as "unknown", not "$0 is yours".
+  const equity = housing.equity_usd == null ? NaN : Number(housing.equity_usd);
+  const share = housing.share_of_total_assets_pct == null ? NaN : Number(housing.share_of_total_assets_pct);
+  const ltv = housing.loan_to_value_pct == null ? NaN : Number(housing.loan_to_value_pct);
+  return html`
+    <article class="analytics-panel wide">
+      <span class="analytics-kicker">The roof over your head</span>
+      <dl class="analytics-metrics compact">
+        ${raw(metric('Home value', fmtUsd(numberOr(housing.home_value_usd, 0))))}
+        ${Number(housing.mortgage_balance_usd) > 0 ? raw(metric('Mortgage', fmtUsd(housing.mortgage_balance_usd))) : ''}
+        ${Number.isFinite(equity) ? raw(metric('Your equity', fmtUsd(equity))) : ''}
+        ${Number.isFinite(ltv) ? raw(metric('Loan to value', `${ltv.toFixed(0)}%`)) : ''}
+        ${Number.isFinite(share) ? raw(metric('Share of what you own', `${share.toFixed(0)}%`)) : ''}
+      </dl>
+      ${properties.length > 1 ? html`
+        <div class="benchmark-rows">
+          ${raw(properties.slice(0, 4).map(row => html`
+            <div class="benchmark-row">
+              <strong>${esc(String(row.label || ''))}</strong>
+              <span>${fmtUsd(numberOr(row.value_usd, 0))}</span>
+            </div>
+          `).join(''))}
+        </div>
+      ` : ''}
+      ${raw(notes.map(note => html`<p class="marginalia">${note}</p>`.toString()).join(''))}
     </article>
   `;
 }

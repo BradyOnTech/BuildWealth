@@ -97,7 +97,7 @@ function theStanding(health, analytics) {
 function theJourney(health) {
   const fi = computeFiProgress(health);
   const rows = [
-    fi ? ['Progress to financial independence', `${fi.progressPct}% of ${compactUsd(fi.targetUsd)}`] : null,
+    fi ? ['Progress to financial independence', `${fi.progressPct}% of ${compactUsd(fi.targetUsd)} (${fi.basis})`] : null,
     Number.isFinite(Number(health?.savings_rate_pct)) ? ['Savings rate', `${Number(health.savings_rate_pct).toFixed(1)}%`] : null,
     Number.isFinite(Number(health?.emergency_fund_months)) ? ['Emergency runway', `${Number(health.emergency_fund_months).toFixed(1)} months`] : null,
     Number.isFinite(Number(health?.debt_to_income_ratio_pct)) ? ['Debt to income', `${Number(health.debt_to_income_ratio_pct).toFixed(1)}%`] : null,

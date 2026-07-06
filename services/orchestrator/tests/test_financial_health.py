@@ -66,6 +66,27 @@ class TestNetWorth:
         r = _health(snapshot=None)
         assert r.portfolio_value_usd == 0
         assert r.net_worth_usd == 0
+        assert r.investable_assets_usd == 0
+
+
+class TestInvestableAssets:
+    def test_home_in_holdings_is_excluded_from_investable(self):
+        from buildwealth_orchestrator.schemas import Holding
+
+        snapshot = _snap(total_value=600000)
+        snapshot.holdings = [
+            Holding(symbol="VTI", name="Total Market", asset_type="etf", value_usd=90000),
+            Holding(symbol="CASH", name="Cash", asset_type="cash", value_usd=10000),
+            Holding(symbol="MY_HOME", name="Primary residence", asset_type="property", value_usd=500000),
+        ]
+        r = _health(snapshot=snapshot)
+        assert r.investable_assets_usd == 100000
+        # Net worth still counts the home — it's wealth, just not investable.
+        assert r.net_worth_usd == 600000
+
+    def test_snapshot_without_holdings_falls_back_to_total(self):
+        r = _health(snapshot=_snap(total_value=100000))
+        assert r.investable_assets_usd == 100000
 
 
 class TestCashFlow:

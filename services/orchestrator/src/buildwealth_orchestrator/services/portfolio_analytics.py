@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from buildwealth_orchestrator.services.housing_exposure import build_housing_exposure_payload
 from buildwealth_orchestrator.services.portfolio_diversification import build_diversification_payload
 from buildwealth_orchestrator.services.portfolio_fees import build_portfolio_fee_payload
 
@@ -285,6 +286,8 @@ def build_portfolio_analytics_payload(
     snapshot_limit: int = 180,
     generated_at: str | None = None,
     registry_rows: list[dict[str, Any]] | None = None,
+    debt_items: list[dict[str, Any]] | None = None,
+    physical_assets: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     benchmark = _benchmark_payload(benchmark_response, benchmark_error)
     attribution = _attribution_payload(attribution_response, attribution_error)
@@ -308,5 +311,10 @@ def build_portfolio_analytics_payload(
             registry_rows=registry_rows,
         ),
         "diversification": build_diversification_payload(holdings_map),
+        "housing": build_housing_exposure_payload(
+            holdings_map,
+            debt_items=debt_items,
+            physical_assets=physical_assets,
+        ),
         "warnings": warnings,
     }

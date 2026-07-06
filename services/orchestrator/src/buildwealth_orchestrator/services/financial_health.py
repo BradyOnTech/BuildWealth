@@ -62,6 +62,25 @@ def _estimate_emergency_fund_value(snapshot: PortfolioSnapshot | None) -> float:
     return float(snapshot.total_value_usd or 0.0)
 
 
+def _investable_assets_value(snapshot: PortfolioSnapshot | None) -> float:
+    """Market-tradable portfolio value: the home, collectibles, and other
+    custom-valued positions are housing/personal property, not money that can
+    fund retirement without selling the roof."""
+    from buildwealth_orchestrator.services.portfolio_rebalancing import is_untradable_position
+
+    if snapshot is None:
+        return 0.0
+    if not snapshot.holdings:
+        return float(snapshot.total_value_usd or 0.0)
+    total = 0.0
+    for holding in snapshot.holdings:
+        entry = {"asset_type": holding.asset_type, "asset_class": holding.asset_class}
+        if is_untradable_position(entry):
+            continue
+        total += float(holding.value_usd or 0.0)
+    return total
+
+
 def compute_financial_health(
     *,
     income_items: list[IncomeItem],
@@ -79,6 +98,7 @@ def compute_financial_health(
     total_assets = portfolio_value + physical_assets_value
     total_debt = sum(d.balance_usd for d in debt_items)
     net_worth = total_assets - total_debt
+    investable_assets = _investable_assets_value(snapshot)
 
     # --- Cash Flow ---
     gross_income = sum(i.monthly_amount_usd for i in income_items)
@@ -105,6 +125,7 @@ def compute_financial_health(
             total_assets_usd=0.0,
             total_debt_usd=0.0,
             net_worth_usd=0.0,
+            investable_assets_usd=0.0,
             gross_monthly_income_usd=0.0,
             total_monthly_expenses_usd=0.0,
             total_monthly_debt_payments_usd=0.0,
@@ -212,6 +233,7 @@ def compute_financial_health(
         total_assets_usd=round(total_assets, 2),
         total_debt_usd=round(total_debt, 2),
         net_worth_usd=round(net_worth, 2),
+        investable_assets_usd=round(investable_assets, 2),
         gross_monthly_income_usd=round(gross_income, 2),
         total_monthly_expenses_usd=round(total_expenses, 2),
         total_monthly_debt_payments_usd=round(total_debt_payments, 2),

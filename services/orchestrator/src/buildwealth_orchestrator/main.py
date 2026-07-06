@@ -18300,6 +18300,7 @@ async def get_portfolio_analytics(
         attribution_error = str(exc)
 
     registry_payload = services.asset_registry.search(limit=500)
+    profile_payload = services.financial_profile_store.get()
     return PortfolioAnalyticsResponse(
         **build_portfolio_analytics_payload(
             holdings_payload=holdings_payload,
@@ -18310,6 +18311,8 @@ async def get_portfolio_analytics(
             period=normalized_period,
             snapshot_limit=benchmark_limit,
             registry_rows=registry_payload.get("items") if isinstance(registry_payload, dict) else None,
+            debt_items=profile_payload.get("debt_items") if isinstance(profile_payload, dict) else None,
+            physical_assets=profile_payload.get("physical_assets") if isinstance(profile_payload, dict) else None,
         )
     )
 
