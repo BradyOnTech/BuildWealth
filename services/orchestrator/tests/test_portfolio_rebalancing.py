@@ -259,15 +259,23 @@ def test_allocation_drift_generator_emits_contribution_first_guidance() -> None:
     assert "without selling anything" in under["detail"]
     assert under["action_payload"]["generator"]["dedupe_key"] == "allocation_drift:fixed_income:underweight"
 
-    # second run against the created set dedupes
+    # second run against the created set dedupes — existing rows carry
+    # title/detail because the supersede check compares content, not just keys
     second = generate_allocation_drift_recommendations(
         holdings_payload=holdings_payload,
         investment_policy={"target_asset_class_allocation_pct": {"equity": 70, "fixed_income": 30}},
         existing_recommendations=[
-            {"status": "proposed", "action_payload": c["action_payload"]} for c in result.candidates
+            {
+                "status": "proposed",
+                "title": c["title"],
+                "detail": c["detail"],
+                "action_payload": c["action_payload"],
+            }
+            for c in result.candidates
         ],
         dry_run=True,
         now=AS_OF,
     )
     assert second.generated_count == 0
+    assert second.refreshed_count == 0
     assert {item["reason"] for item in second.skipped} == {"active_duplicate"}

@@ -19882,12 +19882,14 @@ def run_all_recommendation_factories(
 
     generated_count = sum(factory.generated_count for factory in factories.values())
     skipped_count = sum(factory.skipped_count for factory in factories.values())
-    if not request.dry_run and generated_count:
+    refreshed_count = sum(factory.refreshed_count for factory in factories.values())
+    if not request.dry_run and (generated_count or refreshed_count):
         _queue_autogit_event("recommendation_factories_generated")
 
     return RecommendationFactoryRunAllResponse(
         generated_count=generated_count,
         skipped_count=skipped_count,
+        refreshed_count=refreshed_count,
         factory_count=len(factories),
         factories=factories,
         errors=errors,

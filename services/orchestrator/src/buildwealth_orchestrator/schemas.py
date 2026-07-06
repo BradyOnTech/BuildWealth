@@ -1666,15 +1666,18 @@ class RecommendationFactoryRunAllRequest(BaseModel):
 class RecommendationFactoryResponse(BaseModel):
     generated_count: int = 0
     skipped_count: int = 0
+    refreshed_count: int = 0
     candidates: list[dict[str, Any]] = Field(default_factory=list)
     created: list[RecommendationItem] = Field(default_factory=list)
     skipped: list[dict[str, Any]] = Field(default_factory=list)
+    refreshed: list[dict[str, Any]] = Field(default_factory=list)
     dry_run: bool = True
 
 
 class RecommendationFactoryRunAllResponse(BaseModel):
     generated_count: int = 0
     skipped_count: int = 0
+    refreshed_count: int = 0
     factory_count: int = 0
     factories: dict[str, RecommendationFactoryResponse] = Field(default_factory=dict)
     errors: list[dict[str, Any]] = Field(default_factory=list)

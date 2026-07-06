@@ -62,18 +62,22 @@ class RecommendationCreator(Protocol):
 class RecommendationFactoryResult:
     generated_count: int = 0
     skipped_count: int = 0
+    refreshed_count: int = 0
     candidates: list[dict[str, Any]] = field(default_factory=list)
     created: list[dict[str, Any]] = field(default_factory=list)
     skipped: list[dict[str, Any]] = field(default_factory=list)
+    refreshed: list[dict[str, Any]] = field(default_factory=list)
     dry_run: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "generated_count": self.generated_count,
             "skipped_count": self.skipped_count,
+            "refreshed_count": self.refreshed_count,
             "candidates": self.candidates,
             "created": self.created,
             "skipped": self.skipped,
+            "refreshed": self.refreshed,
             "dry_run": self.dry_run,
         }
 
@@ -132,6 +136,88 @@ def _active_dedupe_keys(existing_recommendations: list[dict[str, Any]]) -> set[s
         if dedupe_key:
             keys.add(dedupe_key)
     return keys
+
+
+def _active_generated_index(existing_recommendations: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Active (proposed) generated recommendations keyed by dedupe key."""
+    index: dict[str, dict[str, Any]] = {}
+    for row in existing_recommendations:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("status") or "proposed").strip().lower() != "proposed":
+            continue
+        payload = row.get("action_payload")
+        generator = payload.get("generator") if isinstance(payload, dict) else None
+        dedupe_key = str(generator.get("dedupe_key") or "").strip() if isinstance(generator, dict) else ""
+        if dedupe_key:
+            index[dedupe_key] = row
+    return index
+
+
+def _refresh_or_skip_active(
+    candidate: dict[str, Any],
+    active_rec: dict[str, Any],
+    *,
+    creator: Any,
+    dry_run: bool,
+    refreshed: list[dict[str, Any]],
+    skipped: list[dict[str, Any]],
+) -> None:
+    """Supersede in place when the story changed; skip when it didn't.
+
+    A generator owns its active recommendations: when the same signal
+    (dedupe key) now reads differently — drift widened, concentration moved —
+    the old numbers are misleading and must not hold the slot. The refresh
+    keeps the recommendation's id, status, and created_at (links stay valid,
+    no inbox churn) and records provenance: first_generated_at and a
+    refresh_count inside the generator block.
+    """
+    generator = candidate.get("action_payload", {}).get("generator", {})
+    dedupe_key = str(generator.get("dedupe_key") or "")
+    signal_key = str(generator.get("signal_key") or "")
+
+    same_story = (
+        str(active_rec.get("title") or "").strip() == str(candidate.get("title") or "").strip()
+        and str(active_rec.get("detail") or "").strip() == str(candidate.get("detail") or "").strip()
+    )
+    if same_story:
+        skipped.append(
+            {
+                "dedupe_key": dedupe_key,
+                "reason": "active_duplicate",
+                "title": candidate.get("title"),
+                "signal_key": signal_key,
+            }
+        )
+        return
+
+    old_payload = active_rec.get("action_payload") if isinstance(active_rec.get("action_payload"), dict) else {}
+    old_generator = old_payload.get("generator") if isinstance(old_payload.get("generator"), dict) else {}
+    payload = dict(candidate.get("action_payload") or {})
+    payload["generator"] = {
+        **(payload.get("generator") or {}),
+        "first_generated_at": old_generator.get("first_generated_at") or old_generator.get("generated_at"),
+        "refresh_count": int(old_generator.get("refresh_count") or 0) + 1,
+    }
+
+    entry = {
+        "dedupe_key": dedupe_key,
+        "recommendation_id": active_rec.get("id"),
+        "previous_title": active_rec.get("title"),
+        "title": candidate.get("title"),
+        "signal_key": signal_key,
+    }
+    if not dry_run and creator is not None and hasattr(creator, "update"):
+        creator.update(
+            str(active_rec.get("id")),
+            {
+                "title": candidate.get("title"),
+                "detail": candidate.get("detail"),
+                "priority": candidate.get("priority"),
+                "action_payload": payload,
+            },
+        )
+    refreshed.append(entry)
 
 
 def _priority_for_alert(alert: dict[str, Any]) -> str:
@@ -435,26 +521,18 @@ def generate_portfolio_risk_recommendations(
         if isinstance(alert, dict) and str(alert.get("state") or "").strip().lower() in {"breach", "watch"}
     ]
     generated_at = _now_iso(now)
-    active_keys = _active_dedupe_keys(existing_recommendations)
+    active_index = _active_generated_index(existing_recommendations)
     bounded_limit = max(1, min(int(limit), 50))
 
     candidates: list[dict[str, Any]] = []
     created: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
+    refreshed: list[dict[str, Any]] = []
 
     for alert in active_alerts:
         dedupe_key = _dedupe_key(alert)
-        if dedupe_key in active_keys:
-            skipped.append(
-                {
-                    "dedupe_key": dedupe_key,
-                    "reason": "active_duplicate",
-                    "title": _title_for_alert(alert),
-                    "signal_key": _signal_key(alert),
-                }
-            )
-            continue
-        if len(candidates) >= bounded_limit:
+        is_active = dedupe_key in active_index
+        if not is_active and len(candidates) >= bounded_limit:
             skipped.append(
                 {
                     "dedupe_key": dedupe_key,
@@ -483,8 +561,20 @@ def generate_portfolio_risk_recommendations(
             plan_id=plan_id,
             trim_plan=trim_plan,
         )
+        if is_active:
+            # The signal already has an open recommendation — supersede it in
+            # place when the numbers moved rather than leaving stale guidance.
+            _refresh_or_skip_active(
+                candidate,
+                active_index[dedupe_key],
+                creator=creator,
+                dry_run=dry_run,
+                refreshed=refreshed,
+                skipped=skipped,
+            )
+            continue
         candidates.append(candidate)
-        active_keys.add(dedupe_key)
+        active_index[dedupe_key] = candidate
 
         if not dry_run and creator is not None:
             created.append(
@@ -503,9 +593,11 @@ def generate_portfolio_risk_recommendations(
     return RecommendationFactoryResult(
         generated_count=len(created) if not dry_run else len(candidates),
         skipped_count=len(skipped),
+        refreshed_count=len(refreshed),
         candidates=candidates,
         created=created,
         skipped=skipped,
+        refreshed=refreshed,
         dry_run=dry_run,
     )
 
@@ -3119,7 +3211,7 @@ def generate_allocation_drift_recommendations(
     now: datetime | None = None,
 ) -> RecommendationFactoryResult:
     generated_at = _now_iso(now)
-    active_keys = _active_dedupe_keys(existing_recommendations)
+    active_index = _active_generated_index(existing_recommendations)
     bounded_limit = max(1, min(int(limit), 50))
 
     holdings_map = holdings_payload.get("holdings") if isinstance(holdings_payload.get("holdings"), dict) else {}
@@ -3137,6 +3229,7 @@ def generate_allocation_drift_recommendations(
     candidates: list[dict[str, Any]] = []
     created: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
+    refreshed: list[dict[str, Any]] = []
 
     for row in plan.get("rows") or []:
         candidate = _allocation_drift_candidate(
@@ -3148,14 +3241,21 @@ def generate_allocation_drift_recommendations(
         generator = candidate["action_payload"]["generator"]
         dedupe_key = generator["dedupe_key"]
         signal_key = generator["signal_key"]
-        if dedupe_key in active_keys:
-            skipped.append({"dedupe_key": dedupe_key, "reason": "active_duplicate", "title": candidate["title"], "signal_key": signal_key})
+        if dedupe_key in active_index:
+            _refresh_or_skip_active(
+                candidate,
+                active_index[dedupe_key],
+                creator=creator,
+                dry_run=dry_run,
+                refreshed=refreshed,
+                skipped=skipped,
+            )
             continue
         if len(candidates) >= bounded_limit:
             skipped.append({"dedupe_key": dedupe_key, "reason": "limit_exceeded", "title": candidate["title"], "signal_key": signal_key})
             continue
         candidates.append(candidate)
-        active_keys.add(dedupe_key)
+        active_index[dedupe_key] = candidate
         if not dry_run and creator is not None:
             created.append(
                 creator.create(
@@ -3173,8 +3273,10 @@ def generate_allocation_drift_recommendations(
     return RecommendationFactoryResult(
         generated_count=len(created) if not dry_run else len(candidates),
         skipped_count=len(skipped),
+        refreshed_count=len(refreshed),
         candidates=candidates,
         created=created,
         skipped=skipped,
+        refreshed=refreshed,
         dry_run=dry_run,
     )
