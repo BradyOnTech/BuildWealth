@@ -362,6 +362,7 @@ from buildwealth_orchestrator.services.embedding_clients import (
     apply_context_embedding_overrides,
     build_embedding_client_from_settings,
 )
+from buildwealth_orchestrator.services.auth_rate_limit import SlidingWindowRateLimiter
 from buildwealth_orchestrator.services.llm_routing import LLMRouter, extract_task_overrides
 from buildwealth_orchestrator.services.llm_usage_ledger import LLMUsageLedger
 from buildwealth_orchestrator.services.runtime_telemetry import (
@@ -448,6 +449,7 @@ git_integration_settings_store = GitIntegrationSettingsStore(
 )
 control_plane_store = ControlPlaneStore(settings.control_db_path)
 hosted_identity_provider = OIDCAuthProvider(settings)
+auth_rate_limiter = SlidingWindowRateLimiter()
 # The auto-created default household is a dev/local convenience (it backs
 # dev auto-login). Hosted instances must start EMPTY: in secure/hosted/oidc
 # modes the first real registration or IdP login creates the owner and their
@@ -652,8 +654,62 @@ def purge_due_account_data_deletions(*, due_at: str | None = None, limit: int = 
     ).purge_due(due_at=due_at, limit=limit)
 
 
+def _audit_event(action: str, **kwargs: Any) -> None:
+    """Best-effort security audit trail — a failed audit write must never
+    turn into a failed request."""
+    try:
+        control_plane_store.record_audit_event(action=action, **kwargs)
+    except Exception:
+        pass
+
+
+def _client_ip(request: Request | None) -> str:
+    """Client address for rate limiting. Behind the production proxy the
+    socket peer is Caddy, which sets X-Forwarded-For; the first entry is the
+    client. Best-effort — rate limiting blunts abuse, it isn't identity."""
+    if request is None:
+        return "unknown"
+    forwarded = str(request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    if forwarded:
+        return forwarded
+    return request.client.host if request.client else "unknown"
+
+
+def _auth_rate_limits_enforced() -> bool:
+    return _auth_mode() not in {"dev", "test", "disabled"}
+
+
+def _enforce_auth_rate_limit(request: Request, *, key: str, limit: int, window_seconds: float, action: str) -> None:
+    if not _auth_rate_limits_enforced():
+        return
+    allowed, retry_after = auth_rate_limiter.allow(key, limit=limit, window_seconds=window_seconds)
+    if allowed:
+        return
+    _audit_event(
+        "auth.rate_limited",
+        outcome="denied",
+        target_type="rate_limit",
+        target_id=action,
+        metadata_json=json.dumps({"key": key, "retry_after_seconds": retry_after}),
+    )
+    raise HTTPException(
+        status_code=429,
+        detail="Too many attempts. Try again shortly.",
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
 def require_permission(context: RequestContext, permission: str) -> None:
     if permission not in context.permissions:
+        _audit_event(
+            "permission.denied",
+            actor_user_id=context.user_id,
+            organization_id=context.organization_id,
+            workspace_id=context.workspace_id,
+            target_type="permission",
+            target_id=permission,
+            outcome="denied",
+        )
         raise HTTPException(status_code=403, detail=f"Missing permission: {permission}")
 
 
@@ -667,6 +723,13 @@ def require_csrf(request: Request) -> None:
         session_token=session_token,
         csrf_token=csrf_token,
     ):
+        _audit_event(
+            "csrf.rejected",
+            outcome="denied",
+            target_type="request",
+            target_id=str(request.url.path),
+            metadata_json=json.dumps({"ip": _client_ip(request)}),
+        )
         raise HTTPException(status_code=403, detail="CSRF token is missing or invalid")
 
 
@@ -17016,6 +17079,13 @@ async def hosted_callback(
 def register_owner(request: Request, response: Response, payload: dict[str, Any]) -> dict[str, Any]:
     if not _local_auth_enabled():
         raise HTTPException(status_code=403, detail="Local registration is disabled")
+    _enforce_auth_rate_limit(
+        request,
+        key=f"register:ip:{_client_ip(request)}",
+        limit=5,
+        window_seconds=3600,
+        action="register",
+    )
     # A private instance registers its owner on first visit and then closes
     # the door: strangers who find the URL must not get accounts. Households
     # that want more members set AUTH_ALLOW_OPEN_REGISTRATION=true.
@@ -17066,13 +17136,39 @@ def register_owner(request: Request, response: Response, payload: dict[str, Any]
 def login(request: Request, response: Response, payload: dict[str, Any]) -> dict[str, Any]:
     if not _local_auth_enabled():
         raise HTTPException(status_code=403, detail="Local password login is disabled")
+    email = str(payload.get("email") or "")
+    email_key = f"login:email:{control_plane_store.normalize_email(email)}"
+    _enforce_auth_rate_limit(
+        request,
+        key=f"login:ip:{_client_ip(request)}",
+        limit=10,
+        window_seconds=60,
+        action="login",
+    )
+    # Per-account window counts attempts and is cleared on success, so only
+    # sustained failures accumulate — credential stuffing hits this wall.
+    _enforce_auth_rate_limit(
+        request,
+        key=email_key,
+        limit=8,
+        window_seconds=900,
+        action="login",
+    )
     try:
         user = control_plane_store.authenticate_local(
-            email=str(payload.get("email") or ""),
+            email=email,
             password=str(payload.get("password") or ""),
         )
     except AuthenticationError as exc:
+        _audit_event(
+            "auth.login_failed",
+            outcome="denied",
+            target_type="user_email",
+            target_id=control_plane_store.normalize_email(email),
+            metadata_json=json.dumps({"ip": _client_ip(request)}),
+        )
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+    auth_rate_limiter.clear(email_key)
     workspace = control_plane_store.default_workspace_for_user(str(user["id"]))
     session = control_plane_store.create_session(
         user_id=str(user["id"]),
@@ -17104,6 +17200,25 @@ def logout(request: Request, response: Response) -> dict[str, Any]:
     control_plane_store.revoke_session(request.cookies.get(settings.auth_session_cookie_name) or "")
     response.delete_cookie(settings.auth_session_cookie_name, path="/")
     return {"ok": True, "redirect_to": _hosted_logout_redirect_url() if _hosted_auth_enabled() else ""}
+
+
+@app.post("/api/auth/logout-all")
+def logout_all(
+    request: Request,
+    response: Response,
+    context: RequestContext = Depends(get_request_context),
+) -> dict[str, Any]:
+    """Sign out everywhere: revoke every live session for the current user,
+    including this one. The control for a lost device or a suspected leak."""
+    require_csrf(request)
+    revoked = control_plane_store.revoke_all_sessions_for_user(context.user_id)
+    response.delete_cookie(settings.auth_session_cookie_name, path="/")
+    _audit_event(
+        "auth.logout_all",
+        actor_user_id=context.user_id,
+        metadata_json=json.dumps({"revoked_sessions": revoked}),
+    )
+    return {"ok": True, "revoked_sessions": revoked, "requires_login": True}
 
 
 @app.get("/api/auth/hosted/logout")
@@ -17171,11 +17286,19 @@ def change_account_password(
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # A password change means the old credential may be compromised — every
+    # session dies with it, not just this device's.
+    revoked = control_plane_store.revoke_all_sessions_for_user(context.user_id)
+    _audit_event(
+        "auth.password_changed",
+        actor_user_id=context.user_id,
+        metadata_json=json.dumps({"revoked_sessions": revoked}),
+    )
     response.delete_cookie(settings.auth_session_cookie_name, path="/")
     return {
         "ok": True,
         "requires_login": True,
-        "message": "Password changed. Sign in again on this device.",
+        "message": "Password changed. Sign in again on all devices.",
     }
 
 

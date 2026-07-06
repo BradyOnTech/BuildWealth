@@ -30,6 +30,9 @@ def _install_secure_spine(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(main, "settings", test_settings)
     monkeypatch.setattr(main, "control_plane_store", control_plane)
     monkeypatch.setattr(main, "workspace_service_factory", factory)
+    # The rate limiter is process-global; earlier tests' attempts must not
+    # bleed into this spine.
+    main.auth_rate_limiter.reset_all()
 
 
 def test_secure_mode_full_auth_contract(monkeypatch, tmp_path: Path) -> None:
@@ -94,6 +97,92 @@ def test_secure_mode_full_auth_contract(monkeypatch, tmp_path: Path) -> None:
             "/api/auth/login",
             json={"email": "owner@example.test", "password": "wrong"},
         ).status_code == 401
+
+
+def test_login_rate_limit_blocks_credential_stuffing(monkeypatch, tmp_path: Path) -> None:
+    _install_secure_spine(monkeypatch, tmp_path)
+
+    with TestClient(main.app, base_url="https://testserver") as client:
+        assert client.post(
+            "/api/auth/register",
+            json={"email": "owner@example.test", "password": "a-long-passphrase-123"},
+        ).status_code == 200
+
+        # Sustained failures against one account hit the per-email wall.
+        # (The 10/min per-IP limit already absorbed register+failures, so the
+        # denial may come from either wall — both are 429 with Retry-After.)
+        last = None
+        for _ in range(12):
+            last = client.post(
+                "/api/auth/login",
+                json={"email": "owner@example.test", "password": "wrong-password"},
+            )
+            if last.status_code == 429:
+                break
+        assert last is not None
+        assert last.status_code == 429
+        assert int(last.headers.get("retry-after", "0")) >= 1
+
+        # The failure trail is on the audit log.
+        rows = main.control_plane_store.export_account_bundle  # noqa: F841 — presence only
+        import sqlite3
+
+        connection = sqlite3.connect(main.settings.control_db_path)
+        connection.row_factory = sqlite3.Row
+        actions = {row["action"] for row in connection.execute("SELECT action FROM audit_events").fetchall()}
+        assert "auth.login_failed" in actions
+        assert "auth.rate_limited" in actions
+
+
+def test_password_change_revokes_every_session(monkeypatch, tmp_path: Path) -> None:
+    _install_secure_spine(monkeypatch, tmp_path)
+
+    with TestClient(main.app, base_url="https://testserver") as device_a:
+        registered = device_a.post(
+            "/api/auth/register",
+            json={"email": "owner@example.test", "password": "a-long-passphrase-123"},
+        )
+        assert registered.status_code == 200
+
+        device_b = TestClient(main.app, base_url="https://testserver")
+        assert device_b.post(
+            "/api/auth/login",
+            json={"email": "owner@example.test", "password": "a-long-passphrase-123"},
+        ).status_code == 200
+        assert device_b.get("/api/auth/session").json()["authenticated"] is True
+
+        csrf = device_a.get("/api/auth/session").json()["csrf_token"]
+        changed = device_a.post(
+            "/api/account/password",
+            json={"current_password": "a-long-passphrase-123", "new_password": "an-even-longer-passphrase-456"},
+            headers={"x-buildwealth-csrf-token": csrf},
+        )
+        assert changed.status_code == 200
+
+        # The other device's session died with the old password.
+        assert device_b.get("/api/auth/session").status_code == 401
+
+
+def test_logout_all_revokes_other_devices(monkeypatch, tmp_path: Path) -> None:
+    _install_secure_spine(monkeypatch, tmp_path)
+
+    with TestClient(main.app, base_url="https://testserver") as device_a:
+        device_a.post(
+            "/api/auth/register",
+            json={"email": "owner@example.test", "password": "a-long-passphrase-123"},
+        )
+        device_b = TestClient(main.app, base_url="https://testserver")
+        device_b.post(
+            "/api/auth/login",
+            json={"email": "owner@example.test", "password": "a-long-passphrase-123"},
+        )
+
+        csrf = device_a.get("/api/auth/session").json()["csrf_token"]
+        result = device_a.post("/api/auth/logout-all", headers={"x-buildwealth-csrf-token": csrf})
+        assert result.status_code == 200
+        assert result.json()["revoked_sessions"] >= 2
+        assert device_a.get("/api/auth/session").status_code == 401
+        assert device_b.get("/api/auth/session").status_code == 401
 
 
 def test_secure_mode_open_registration_flag(monkeypatch, tmp_path: Path) -> None:

@@ -1354,6 +1354,28 @@ class ControlPlaneStore:
                 (utc_now_iso(), _token_hash(token)),
             )
 
+    def revoke_all_sessions_for_user(self, user_id: str, *, except_token: str | None = None) -> int:
+        """Kill every live session for a user — sign-out-everywhere, and the
+        blast radius control after a password change. Returns sessions revoked."""
+        if not user_id:
+            return 0
+        params: list[Any] = [utc_now_iso(), user_id]
+        exclusion = ""
+        if except_token:
+            exclusion = " AND session_token_hash != ?"
+            params.append(_token_hash(except_token))
+        with self._connect() as connection:
+            cursor = connection.execute(
+                f"""
+                UPDATE sessions
+                SET revoked_at = ?
+                WHERE user_id = ?
+                  AND revoked_at IS NULL{exclusion}
+                """,
+                tuple(params),
+            )
+        return int(cursor.rowcount or 0)
+
     def rotate_csrf_token(self, token: str) -> str:
         if not token:
             raise AuthenticationError("Session is not active")

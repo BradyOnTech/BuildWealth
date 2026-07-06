@@ -108,8 +108,11 @@ In rough order, per docs/ROADMAP_PRODUCTION_LLM_UI_2026-07-05.md:
    docs/HOSTED_IDENTITY_PROVIDER_DECISION_2026-05-14.md). Disables password
    login; the IdP owns MFA, resets, passkeys. Requires creating the Auth0
    tenant and filling the `AUTH_OIDC_*` values.
-2. **Abuse hardening** — rate limiting on auth endpoints, session revocation
-   list, audit-logging permission denials.
+2. ~~**Abuse hardening**~~ ✅ *shipped 2026-07-06 and active in secure mode*:
+   sliding-window rate limits on register/login (per-IP and per-account,
+   429 + Retry-After), password changes and `POST /api/auth/logout-all`
+   revoke every session, and the audit log records login failures,
+   rate-limit trips, CSRF rejections, and permission denials.
 3. **Operations** — uptime monitoring, error reporting, tested restores.
 4. **Legal surface** — the drafted privacy/terms/AI-disclosure pages served
    and accurate; account closure and data-deletion flows exercised for real.

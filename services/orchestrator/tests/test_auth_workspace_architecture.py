@@ -57,6 +57,9 @@ def _install_temp_workspace_spine(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(main, "settings", test_settings)
     monkeypatch.setattr(main, "control_plane_store", control_plane)
     monkeypatch.setattr(main, "workspace_service_factory", factory)
+    # Auth rate limits are enforced in "local"/"secure" modes and the limiter
+    # is process-global — a fresh spine starts with a clean slate.
+    main.auth_rate_limiter.reset_all()
 
 
 def _csrf_headers(client: TestClient) -> dict[str, str]:
