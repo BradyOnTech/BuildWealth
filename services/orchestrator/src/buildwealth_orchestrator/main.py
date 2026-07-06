@@ -363,6 +363,7 @@ from buildwealth_orchestrator.services.embedding_clients import (
     build_embedding_client_from_settings,
 )
 from buildwealth_orchestrator.services.llm_routing import LLMRouter, extract_task_overrides
+from buildwealth_orchestrator.services.llm_usage_ledger import LLMUsageLedger
 from buildwealth_orchestrator.services.runtime_telemetry import (
     RuntimeTelemetryTracker,
     summarize_cache_quality,
@@ -1067,12 +1068,15 @@ _initial_llm_explicit_keys = {
 } | _user_llm_override_keys
 # Router owns per-task model resolution; the chat client is what the
 # interactive Copilot uses and stays the default for everything unrouted.
+# The usage ledger meters every routed completion locally.
+llm_usage_ledger = LLMUsageLedger(settings.durable_storage_dir / "llm_usage_ledger.json")
 llm_router = LLMRouter(
     _llm_config_from_payload(
         _initial_llm_payload,
         explicit_keys=_initial_llm_explicit_keys,
     ),
     extract_task_overrides(_user_cfg),
+    usage_ledger=llm_usage_ledger,
 )
 llm_client = llm_router.client_for("chat")
 copilot = FinancialCopilot(
@@ -17479,6 +17483,7 @@ def update_user_settings(
             explicit_keys=saved_explicit_keys,
         ),
         extract_task_overrides(saved),
+        usage_ledger=llm_usage_ledger,
     )
     llm_client = llm_router.client_for("chat")
     copilot.llm_client = llm_client
@@ -17703,6 +17708,15 @@ def get_llm_routing(
     return {"tasks": llm_router.describe()}
 
 
+@app.get("/api/settings/llm-usage")
+def get_llm_usage(
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    """Local token ledger: what the household's key spent, by model and task."""
+    require_permission(services.context, "settings.read")
+    return llm_usage_ledger.summary()
+
+
 @app.get("/api/settings/context")
 def get_context_settings(
     services: WorkspaceServices = Depends(get_workspace_services),
@@ -17805,6 +17819,7 @@ def _reload_llm_router_from_default_workspace() -> None:
     llm_router = LLMRouter(
         _llm_config_from_payload(saved, explicit_keys=explicit_keys),
         extract_task_overrides(saved),
+        usage_ledger=llm_usage_ledger,
     )
     llm_client = llm_router.client_for("chat")
     copilot.llm_client = llm_client

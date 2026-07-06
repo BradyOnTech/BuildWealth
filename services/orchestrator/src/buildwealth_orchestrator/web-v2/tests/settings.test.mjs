@@ -8,6 +8,7 @@ import {
   accountCard,
   accountDataDeletionPanel,
   hostedReadinessPanel,
+  usageCard,
 } from '../views/settings.js';
 
 test('toDraft: reads provider settings with sensible defaults', () => {
@@ -25,6 +26,30 @@ test('toDraft: reads provider settings with sensible defaults', () => {
   assert.equal(draft.llm_max_tokens, 4096);
   assert.equal(draft.llm_timeout_seconds, 90);
   assert.equal(draft.llm_parallel_tool_calls, false);
+});
+
+test('usageCard renders monthly spend rows and hides when empty', () => {
+  const markup = String(usageCard({
+    month: '2026-07',
+    current: {
+      rows: [
+        { provider: 'openai', model: 'gpt-5.5', task: 'chat', requests: 14, prompt_tokens: 182000, completion_tokens: 24000, estimated_cost_usd: 0.4675 },
+        { provider: 'custom_openai_compatible', model: 'llama3.2', task: 'summarize', requests: 40, prompt_tokens: 900000, completion_tokens: 120000, estimated_cost_usd: 0 },
+      ],
+      requests: 54,
+      prompt_tokens: 1082000,
+      completion_tokens: 144000,
+      estimated_cost_usd: 0.4675,
+    },
+  }));
+  assert.match(markup, /AI usage · 2026-07/);
+  assert.match(markup, /~\$0\.47 estimated across 54 requests/);
+  assert.match(markup, /gpt-5\.5 · 182,000 in \/ 24,000 out/);
+  assert.match(markup, /free \/ local/);
+  assert.match(markup, /nothing leaves the machine/);
+
+  assert.equal(String(usageCard(null)), '');
+  assert.equal(String(usageCard({ month: '2026-07', current: { rows: [] } })), '');
 });
 
 test('toDraft/buildPayloadFor: task routing keys round-trip', () => {

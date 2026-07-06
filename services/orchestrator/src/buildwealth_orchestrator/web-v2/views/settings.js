@@ -115,13 +115,14 @@ async function load() {
   ui.loaded = false;
   ui.loadError = null;
   try {
-    const [settings, contextSettings, workspaces, session, authConfig, deletionRequests] = await Promise.all([
+    const [settings, contextSettings, workspaces, session, authConfig, deletionRequests, llmUsage] = await Promise.all([
       api.settings(),
       api.contextSettings().catch(() => null),
       api.workspaces().catch(() => null),
       api.authSession().catch(() => null),
       api.authConfig().catch(() => null),
       api.accountDataDeletionRequests().catch(() => null),
+      api.llmUsage().catch(() => null),
     ]);
     const hostedReadiness = authConfig?.hosted_auth_enabled
       ? await api.hostedAuthReadiness().catch((err) => ({ error: err.message || 'Could not load hosted readiness.' }))
@@ -132,6 +133,7 @@ async function load() {
     ui.testResult = null;
     ui.saveError = null;
     ui.contextSettings = contextSettings;
+    ui.llmUsage = llmUsage;
     ui.contextDraft = contextDraft(contextSettings);
     ui.contextSaving = false;
     ui.contextTesting = false;
@@ -192,11 +194,48 @@ function render() {
   setView(shell, html`
     ${raw(masthead())}
     ${raw(providerCard())}
+    ${raw(usageCard(ui.llmUsage))}
     ${raw(contextCard())}
     ${raw(demoWorkspaceCard(ui))}
     ${raw(accountCard(ui))}
     ${raw(handoffCard())}
   `);
+}
+
+/* ─────────────  Usage ledger card  ───────────── */
+
+// What the household's key actually spends — counts from the provider,
+// dollars as list-price estimates. Local file, nothing leaves the machine.
+export function usageCard(usage = null) {
+  const current = usage?.current;
+  if (!current || !Array.isArray(current.rows) || !current.rows.length) return '';
+  const monthLabel = usage.month || 'this month';
+  const cost = Number(current.estimated_cost_usd) || 0;
+  const costText = cost >= 0.01 ? `~$${cost.toFixed(2)}` : (cost > 0 ? '<$0.01' : '$0.00');
+  return html`
+    <section class="settings-card settings-card-quiet">
+      <header class="settings-card-head">
+        <h2 class="settings-card-title">AI usage · ${monthLabel}</h2>
+        <p class="settings-card-lede">
+          ${costText} estimated across ${current.requests} request${current.requests === 1 ? '' : 's'}.
+          Token counts come from the provider; dollars are list-price estimates.
+          This ledger is a local file — nothing leaves the machine.
+        </p>
+      </header>
+      <div class="benchmark-rows">
+        ${raw(current.rows.slice(0, 8).map(row => {
+          const rowCost = Number(row.estimated_cost_usd) || 0;
+          return html`
+            <div class="benchmark-row">
+              <strong>${esc(String(row.task || ''))}</strong>
+              <span>${esc(String(row.model || ''))} · ${Number(row.prompt_tokens || 0).toLocaleString('en-US')} in / ${Number(row.completion_tokens || 0).toLocaleString('en-US')} out</span>
+              <span>${rowCost >= 0.01 ? `~$${rowCost.toFixed(2)}` : (rowCost > 0 ? '<$0.01' : 'free / local')}</span>
+            </div>
+          `.toString();
+        }).join(''))}
+      </div>
+    </section>
+  `;
 }
 
 /* ─────────────  Composition  ───────────── */

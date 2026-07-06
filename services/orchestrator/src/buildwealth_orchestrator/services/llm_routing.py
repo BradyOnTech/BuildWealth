@@ -58,6 +58,43 @@ def extract_task_overrides(payload: dict[str, Any]) -> dict[str, dict[str, str]]
     return overrides
 
 
+class MeteredChatClient:
+    """Delegating wrapper that records token usage per task after each call.
+
+    Metering must never break a completion: ledger failures are swallowed.
+    """
+
+    def __init__(self, inner: Any, *, task: str, ledger: Any):
+        self._inner = inner
+        self._task = task
+        self._ledger = ledger
+
+    @property
+    def provider(self) -> str:
+        return getattr(self._inner, "provider", "unknown")
+
+    @property
+    def model(self) -> str:
+        return getattr(self._inner, "model", "")
+
+    @property
+    def enabled(self) -> bool:
+        return bool(getattr(self._inner, "enabled", False))
+
+    async def complete(self, messages: Any, tools: Any) -> dict[str, Any]:
+        completion = await self._inner.complete(messages, tools)
+        try:
+            self._ledger.record(
+                provider=str(completion.get("provider") or self.provider),
+                model=str(completion.get("model") or self.model),
+                task=self._task,
+                usage=completion.get("usage"),
+            )
+        except Exception:
+            pass
+        return completion
+
+
 class LLMRouter:
     """Resolves a task class to a chat client, caching one client per task."""
 
@@ -65,8 +102,11 @@ class LLMRouter:
         self,
         primary_config: LLMProviderConfig,
         task_overrides: dict[str, dict[str, str]] | None = None,
+        *,
+        usage_ledger: Any | None = None,
     ):
         self.primary_config = primary_config
+        self.usage_ledger = usage_ledger
         self.task_overrides = {
             task: dict(fields)
             for task, fields in (task_overrides or {}).items()
@@ -99,7 +139,10 @@ class LLMRouter:
     def client_for(self, task: str) -> Any:
         resolved_task = task if task in LLM_TASKS else "chat"
         if resolved_task not in self._clients:
-            self._clients[resolved_task] = build_llm_client(self.config_for(resolved_task))
+            client = build_llm_client(self.config_for(resolved_task))
+            if self.usage_ledger is not None:
+                client = MeteredChatClient(client, task=resolved_task, ledger=self.usage_ledger)
+            self._clients[resolved_task] = client
         return self._clients[resolved_task]
 
     def describe(self) -> list[dict[str, Any]]:

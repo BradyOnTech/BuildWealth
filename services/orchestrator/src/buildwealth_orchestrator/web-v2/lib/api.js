@@ -370,6 +370,7 @@ export const api = {
   testLlmSettings: (body = {}) => postJson('/api/settings/test-llm', body),
   contextSettings: () => fetchJson('/api/settings/context'),
   testEmbeddingSettings: (body = {}) => postJson('/api/settings/test-embedding', body),
+  llmUsage: () => fetchJson('/api/settings/llm-usage'),
 
   // Import & sync
   triggerSync:        () => postJson('/api/snapshot/sync', {}),
