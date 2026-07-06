@@ -31,6 +31,9 @@ class AssetMetadataRecord(TypedDict, total=False):
     region: str
     data_source: str
     metadata_source: str
+    # Fraction convention: 0.0003 = 3 bps. Prospectus values for well-known
+    # funds; a user-saved ratio always overrides the seed.
+    expense_ratio: float
 
 
 @lru_cache(maxsize=1)
@@ -58,6 +61,14 @@ def load_seed_asset_metadata() -> dict[str, AssetMetadataRecord]:
             if value is None:
                 continue
             normalized_record[key] = str(value).strip()
+        raw_ratio = record.get("expense_ratio")
+        if raw_ratio is not None:
+            try:
+                ratio = float(raw_ratio)
+            except (TypeError, ValueError):
+                ratio = None
+            if ratio is not None and 0 < ratio <= 0.05:
+                normalized_record["expense_ratio"] = ratio
         normalized[normalized_symbol] = normalized_record
 
     return normalized

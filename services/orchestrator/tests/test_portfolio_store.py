@@ -41,6 +41,14 @@ class TestAssetMetadataSeed:
         assert metadata["sector"] == "Custom Sector"
         assert metadata["metadata_source"] == "manual_override"
 
+    def test_seed_backfills_expense_ratio_but_never_overwrites(self, store):
+        # A fresh store picks up the seed's expense ratio for known funds.
+        assert store.get_asset_metadata_map()["VTI"]["expense_ratio"] == 0.0003
+
+        # A user-saved ratio wins over the seed on subsequent loads.
+        store.upsert_asset_metadata("VTI", {"expense_ratio": 0.001})
+        assert store.get_asset_metadata_map()["VTI"]["expense_ratio"] == 0.001
+
     def test_unknown_symbol_gets_deterministic_fallback_metadata(self, store):
         store.add_transaction(
             date="2026-01-01",
