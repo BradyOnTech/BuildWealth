@@ -363,6 +363,7 @@ from buildwealth_orchestrator.services.embedding_clients import (
     build_embedding_client_from_settings,
 )
 from buildwealth_orchestrator.services.auth_rate_limit import SlidingWindowRateLimiter
+from buildwealth_orchestrator.services.health_report import build_health_report
 from buildwealth_orchestrator.services.llm_routing import LLMRouter, extract_task_overrides
 from buildwealth_orchestrator.services.llm_usage_ledger import LLMUsageLedger
 from buildwealth_orchestrator.services.runtime_telemetry import (
@@ -18036,8 +18037,17 @@ def ai_disclosure_page() -> Response:
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health(response: Response) -> dict[str, Any]:
+    """Liveness that means something: database answers, data dir writable,
+    disk has headroom. Degraded → 503, which flips the Docker healthcheck
+    and any uptime monitor watching this URL."""
+    report = build_health_report(
+        connect=control_plane_store.database.connect,
+        data_dir=settings.control_db_path.parent.parent,
+    )
+    if report["status"] != "ok":
+        response.status_code = 503
+    return report
 
 
 @app.get("/api/services/status", response_model=ServiceStatusResponse)

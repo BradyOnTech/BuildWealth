@@ -92,6 +92,30 @@ Schema changes apply themselves at boot via the migration runner
 (`schema_migrations` in the control DB records what ran). Take a backup
 before updating; restore it if an update misbehaves.
 
+## Monitoring
+
+`GET https://app.example.com/health` verifies the things that actually take
+the instance down — the database answers, the data directory accepts writes,
+and the disk has headroom — and returns **503 when degraded** (the Docker
+healthcheck watches the same endpoint, so `docker ps` shows unhealthy too):
+
+```json
+{"status": "ok", "checks": {"database": "ok", "storage": "ok", "disk": "ok (62% free)"}}
+```
+
+Point any uptime monitor at it — [UptimeRobot](https://uptimerobot.com) or
+[healthchecks.io](https://healthchecks.io) free tiers are plenty for one
+instance: check every 5 minutes, alert on anything but HTTP 200. Disk
+pressure warns in the payload ("low disk") before it fails, so a monitor
+that also matches on the word "low" gives you lead time.
+
+For the backup cron, wrap it with a healthchecks.io ping so you learn when
+backups silently stop:
+
+```bash
+10 2 * * * root cd /root/buildwealth && tar czf ... && curl -fsS https://hc-ping.com/<your-uuid>
+```
+
 ## Maintenance jobs
 
 The deletion-purge worker runs as a compose profile, suitable for cron:
