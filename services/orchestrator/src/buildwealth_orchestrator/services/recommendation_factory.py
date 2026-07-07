@@ -9,6 +9,7 @@ from buildwealth_orchestrator.services.portfolio_rebalancing import (
     allocation_drift_sentence,
     build_allocation_drift_plan,
     build_trim_plan,
+    is_untradable_position,
     trim_plan_summary,
 )
 from buildwealth_orchestrator.services.value_coercion import safe_float, utc_now_iso
@@ -3253,6 +3254,215 @@ def generate_allocation_drift_recommendations(
             continue
         if len(candidates) >= bounded_limit:
             skipped.append({"dedupe_key": dedupe_key, "reason": "limit_exceeded", "title": candidate["title"], "signal_key": signal_key})
+            continue
+        candidates.append(candidate)
+        active_index[dedupe_key] = candidate
+        if not dry_run and creator is not None:
+            created.append(
+                creator.create(
+                    title=candidate["title"],
+                    detail=candidate["detail"],
+                    priority=candidate["priority"],
+                    recommendation_type=candidate["recommendation_type"],
+                    source=candidate["source"],
+                    plan_id=candidate["plan_id"],
+                    action_payload=candidate["action_payload"],
+                    status="proposed",
+                )
+            )
+
+    return RecommendationFactoryResult(
+        generated_count=len(created) if not dry_run else len(candidates),
+        skipped_count=len(skipped),
+        refreshed_count=len(refreshed),
+        candidates=candidates,
+        created=created,
+        skipped=skipped,
+        refreshed=refreshed,
+        dry_run=dry_run,
+    )
+
+
+FUND_OVERLAP_SOURCE = "generator:fund_overlap"
+FUND_OVERLAP_FACTORY_ID = "fund_overlap_recommendation_factory"
+FUND_OVERLAP_FACTORY_VERSION = "v1"
+
+
+def _fund_overlap_candidate(
+    finding: dict[str, Any],
+    *,
+    expense_ratio_by_symbol: dict[str, float],
+    value_by_symbol: dict[str, float],
+    generated_at: str,
+    plan_id: str | None,
+    snapshot_as_of: Any,
+) -> dict[str, Any]:
+    from buildwealth_orchestrator.services.fund_overlap import tracks_label
+
+    symbols = [str(s).upper() for s in (finding.get("symbols") or [])]
+    tracks = str(finding.get("tracks") or "")
+    combined = safe_float(finding.get("combined_value_usd"), 0.0)
+
+    # If expense ratios are known, name the cheapest copy and what the
+    # pricier copies cost per year relative to it. Research-only framing:
+    # new money can simply go to one fund; selling existing shares can have
+    # tax consequences and is never assumed.
+    known = [(s, expense_ratio_by_symbol[s]) for s in symbols if s in expense_ratio_by_symbol]
+    cheapest_symbol = min(known, key=lambda pair: pair[1])[0] if known else None
+    annual_excess = 0.0
+    if cheapest_symbol is not None:
+        cheapest_ratio = expense_ratio_by_symbol[cheapest_symbol]
+        for symbol, ratio in known:
+            if symbol != cheapest_symbol:
+                annual_excess += max(0.0, ratio - cheapest_ratio) * value_by_symbol.get(symbol, 0.0)
+
+    label = tracks_label(tracks)
+    sentence = str(finding.get("sentence") or "")
+    detail_parts = [sentence]
+    if cheapest_symbol and annual_excess >= 1:
+        detail_parts.append(
+            f"{cheapest_symbol} is the cheapest of them — holding the others costs about "
+            f"${annual_excess:,.0f}/yr more in fees for the same exposure."
+        )
+    detail_parts.append(
+        "Directing new money to just one of them simplifies the portfolio; "
+        "consolidating existing shares can have tax consequences, so review before acting."
+    )
+
+    priority = "medium" if combined >= 10_000 or annual_excess >= 25 else "low"
+    evidence = {
+        "summary": sentence,
+        "data_keys": ["portfolio.holdings", "asset_metadata.tracks"],
+        "snapshot_as_of": snapshot_as_of,
+        "tracks": tracks,
+        "tracks_label": label,
+        "symbols": symbols,
+        "combined_value_usd": round(combined, 2),
+        "cheapest_symbol": cheapest_symbol,
+        "annual_excess_fee_usd": round(annual_excess, 2),
+    }
+    suggested_action = {
+        "kind": "consolidate_duplicate_funds",
+        "subject": tracks,
+        "symbols": symbols,
+        "keep_symbol": cheapest_symbol,
+    }
+    expected_outcome = {
+        "expected_delta_context_quality": "duplicate_funds_consolidated",
+        "expected_value_after": 1,
+        "unit": "funds_per_index",
+    }
+    return {
+        "title": f"Two funds, one index: {' and '.join(symbols[:2])}" if len(symbols) == 2
+        else f"{len(symbols)} funds, one index: {', '.join(symbols[:3])}",
+        "detail": " ".join(detail_parts),
+        "priority": priority,
+        "recommendation_type": "workflow_action",
+        "source": FUND_OVERLAP_SOURCE,
+        "plan_id": plan_id,
+        "action_payload": {
+            "generator": {
+                "id": FUND_OVERLAP_FACTORY_ID,
+                "version": FUND_OVERLAP_FACTORY_VERSION,
+                "generated_at": generated_at,
+                "signal_key": tracks,
+                "signal_type": "fund_overlap",
+                "dedupe_key": f"fund_overlap:{tracks}",
+                "severity": "watch",
+            },
+            "evidence": evidence,
+            "suggested_action": suggested_action,
+            "expected_outcome": expected_outcome,
+            "quality": _quality_metadata(
+                source=FUND_OVERLAP_SOURCE,
+                priority=priority,
+                evidence=evidence,
+                suggested_action=suggested_action,
+                expected_outcome=expected_outcome,
+                actionability="review_only",
+                confidence_level="high",
+                confidence_reasons=[
+                    "Both funds' tracked indexes come from the built-in catalog — same index means near-identical holdings.",
+                ],
+                reversibility="high",
+            ),
+        },
+    }
+
+
+def generate_fund_overlap_recommendations(
+    *,
+    holdings_payload: dict[str, Any],
+    existing_recommendations: list[dict[str, Any]],
+    creator: RecommendationCreator | None = None,
+    dry_run: bool = True,
+    plan_id: str | None = None,
+    limit: int = 10,
+    now: datetime | None = None,
+) -> RecommendationFactoryResult:
+    """Same-index duplicates become gentle consolidation reviews.
+
+    Only exact-duplicate groups (same tracks key) file recommendations —
+    holding VOO next to SPY is almost always accidental. Containment
+    (QQQ next to VTI) can be a deliberate tilt, so it stays a Portfolio
+    panel insight and never nags here.
+    """
+    from buildwealth_orchestrator.services.asset_metadata_seed import load_seed_asset_metadata
+    from buildwealth_orchestrator.services.fund_overlap import build_overlap_findings
+
+    generated_at = _now_iso(now)
+    active_index = _active_generated_index(existing_recommendations)
+    bounded_limit = max(1, min(int(limit), 50))
+
+    holdings_map = holdings_payload.get("holdings") if isinstance(holdings_payload.get("holdings"), dict) else {}
+    value_by_symbol: dict[str, float] = {}
+    for entry in holdings_map.values():
+        if not isinstance(entry, dict) or is_untradable_position(entry):
+            continue
+        value = safe_float(entry.get("current_value"), 0.0)
+        if value <= 0:
+            continue
+        symbol = str(entry.get("symbol") or "").strip().upper()
+        if symbol:
+            value_by_symbol[symbol] = value_by_symbol.get(symbol, 0.0) + value
+
+    seed = load_seed_asset_metadata()
+    expense_ratio_by_symbol = {
+        symbol: float(record["expense_ratio"])
+        for symbol, record in seed.items()
+        if record.get("expense_ratio") is not None
+    }
+
+    duplicates = [f for f in build_overlap_findings(value_by_symbol) if f.get("kind") == "duplicate"]
+
+    candidates: list[dict[str, Any]] = []
+    created: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    refreshed: list[dict[str, Any]] = []
+
+    for finding in duplicates:
+        candidate = _fund_overlap_candidate(
+            finding,
+            expense_ratio_by_symbol=expense_ratio_by_symbol,
+            value_by_symbol=value_by_symbol,
+            generated_at=generated_at,
+            plan_id=plan_id,
+            snapshot_as_of=holdings_payload.get("updated_at"),
+        )
+        generator = candidate["action_payload"]["generator"]
+        dedupe_key = generator["dedupe_key"]
+        if dedupe_key in active_index:
+            _refresh_or_skip_active(
+                candidate,
+                active_index[dedupe_key],
+                creator=creator,
+                dry_run=dry_run,
+                refreshed=refreshed,
+                skipped=skipped,
+            )
+            continue
+        if len(candidates) >= bounded_limit:
+            skipped.append({"dedupe_key": dedupe_key, "reason": "limit_exceeded", "title": candidate["title"], "signal_key": generator["signal_key"]})
             continue
         candidates.append(candidate)
         active_index[dedupe_key] = candidate

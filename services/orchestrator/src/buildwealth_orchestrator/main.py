@@ -141,6 +141,7 @@ from buildwealth_orchestrator.schemas import (
     RecommendationFactoryRunAllResponse,
     ResearchThesisExpirationRecommendationGenerateRequest,
     AllocationDriftRecommendationGenerateRequest,
+    FundOverlapRecommendationGenerateRequest,
     DueOutcomeReviewRecommendationGenerateRequest,
     StaleAssumptionRecommendationGenerateRequest,
     WatchlistResearchRecommendationGenerateRequest,
@@ -399,6 +400,7 @@ from buildwealth_orchestrator.services.recommendation_factory import (
     generate_portfolio_risk_recommendations,
     generate_allocation_drift_recommendations,
     generate_due_outcome_review_recommendations,
+    generate_fund_overlap_recommendations,
     generate_profile_completeness_recommendations,
     generate_research_thesis_expiration_recommendations,
     generate_stale_assumption_recommendations,
@@ -19786,6 +19788,36 @@ def generate_allocation_drift_recommendation_candidates(
     return RecommendationFactoryResponse(**result.to_dict())
 
 
+@app.post("/api/recommendations/generate/fund-overlap", response_model=RecommendationFactoryResponse)
+def generate_fund_overlap_recommendation_candidates(
+    request: FundOverlapRecommendationGenerateRequest,
+    http_request: Request = Depends(get_current_request),
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> RecommendationFactoryResponse:
+    services = workspace_services_or_legacy(services)
+    if http_request is not None:
+        require_csrf(http_request)
+    require_permission(services.context, "recommendations.write")
+    existing_recommendations = services.recommendation_inbox.list(
+        limit=None,
+        status=None,
+        plan_id=None,
+        include_archived=True,
+        sort="none",
+    )
+    result = generate_fund_overlap_recommendations(
+        holdings_payload=services.portfolio_store.get_holdings(),
+        existing_recommendations=existing_recommendations,
+        creator=services.recommendation_inbox if not request.dry_run else None,
+        dry_run=request.dry_run,
+        plan_id=request.plan_id,
+        limit=request.limit,
+    )
+    if not request.dry_run and result.created:
+        _queue_autogit_event("fund_overlap_recommendations_generated")
+    return RecommendationFactoryResponse(**result.to_dict())
+
+
 @app.post("/api/recommendations/generate/due-outcome-review", response_model=RecommendationFactoryResponse)
 def generate_due_outcome_review_recommendation_candidates(
     request: DueOutcomeReviewRecommendationGenerateRequest,
@@ -20062,6 +20094,21 @@ def run_all_recommendation_factories(
         errors.append({"factory": "allocation_drift", "reason": str(exc.detail)})
     except Exception as exc:
         errors.append({"factory": "allocation_drift", "reason": str(exc)})
+
+    try:
+        factories["fund_overlap"] = generate_fund_overlap_recommendation_candidates(
+            FundOverlapRecommendationGenerateRequest(
+                dry_run=request.dry_run,
+                plan_id=request.plan_id,
+                limit=request.limit,
+            ),
+            http_request=http_request,
+            services=services,
+        )
+    except HTTPException as exc:
+        errors.append({"factory": "fund_overlap", "reason": str(exc.detail)})
+    except Exception as exc:
+        errors.append({"factory": "fund_overlap", "reason": str(exc)})
 
     try:
         factories["due_outcome_review"] = generate_due_outcome_review_recommendation_candidates(
