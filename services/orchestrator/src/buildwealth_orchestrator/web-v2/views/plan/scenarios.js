@@ -278,7 +278,8 @@ export function renderTrajectoryFan(candidateResult, baseResult, { planId = '', 
     markers.push({ x: coastYear, label: 'Coast FI', cls: 'chart-marker-coast' });
   }
   if (drawdownYear != null) markers.push({ x: drawdownYear, label: 'Retirement' });
-  markers.push(...timelineEventMarkers(new Set(markers.map(m => m.x))));
+  const eventMarkers = timelineEventMarkers(new Set(markers.map(m => m.x)));
+  markers.push(...eventMarkers);
   // The chart staggers label rows by position in this list; sorted by x,
   // horizontally adjacent markers land on alternating rows instead of
   // colliding when array order differs from screen order.
@@ -330,7 +331,7 @@ export function renderTrajectoryFan(candidateResult, baseResult, { planId = '', 
       </div>
       ${raw(chart)}
       <figcaption class="chart-caption">
-        Nominal dollars${Number.isFinite(runs) && runs > 0 ? ` · ${runs.toLocaleString('en-US')} simulated paths` : ''}${ageSpan}${milestoneCaption(coastYear, crossover)}
+        Nominal dollars${Number.isFinite(runs) && runs > 0 ? ` · ${runs.toLocaleString('en-US')} simulated paths` : ''}${ageSpan}${milestoneCaption(coastYear, crossover)}${eventMarkers.length ? ' · dashed uprights are your plan-timeline events, editable in The timeline' : ''}
         ${raw(explainChartLink('trajectory-fan', planId))}
       </figcaption>
     </figure>

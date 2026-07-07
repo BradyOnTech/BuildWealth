@@ -192,3 +192,39 @@ test('today command center with all-quiet cards shows no cards in the scroll pat
   assert.match(insideOverflow, /All 2 inputs are quiet/);
   assert.match(insideOverflow, /Research readiness/);
 });
+
+/* ─────────────  The income bend on Today  ───────────── */
+
+test('income bend: earliest recurring income reduction wins, noise ignored', async () => {
+  const { findIncomeBend, findCushionGoal } = await import('../views/today.js');
+  const bend = findIncomeBend([
+    { label: 'Raise', impact_type: 'income', amount_usd: 500, recurring_frequency: 'monthly', date: '2027-01-01' },
+    { label: 'Home down payment', impact_type: 'expense', amount_usd: 70000, recurring_frequency: 'one_time', date: '2029-01-01' },
+    { label: 'Part-time', impact_type: 'income', amount_usd: -1500, recurring_frequency: 'monthly', date: '2029-03-01' },
+    { label: 'Stay-at-home', impact_type: 'income', amount_usd: -2000, recurring_frequency: 'monthly', date: '2028-01-01' },
+    { label: 'Undated', impact_type: 'income', amount_usd: -900, recurring_frequency: 'monthly', date: '' },
+  ]);
+  assert.equal(bend.label, 'Stay-at-home');
+
+  assert.equal(findIncomeBend([]), null);
+  assert.equal(findIncomeBend(null), null);
+
+  const cushion = findCushionGoal([
+    { label: 'Home down payment', target_amount_usd: 70000 },
+    { label: 'Income step-down cushion', target_amount_usd: 12000 },
+  ]);
+  assert.equal(cushion.target_amount_usd, 12000);
+});
+
+test('today hero wires the income bend into the marginalia', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { resolve } = await import('node:path');
+  const source = readFileSync(resolve(import.meta.dirname, '../views/today.js'), 'utf8');
+  assert.match(source, /loadIncomeBend\(\)/);
+  assert.match(source, /incomeBendMarginaliaItem\(incomeBend\)/);
+  // Honest tense: a bend already underway reads as "since", not a forecast.
+  assert.match(source, /income stepped down \(since/);
+  assert.match(source, /income steps down/);
+  // The tooltip says the trajectory already models it.
+  assert.match(source, /already models this/);
+});

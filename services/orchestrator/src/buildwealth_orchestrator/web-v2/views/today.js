@@ -48,7 +48,8 @@ async function load(params = {}) {
     const shouldRefreshResearch = String(params.refresh || '').toLowerCase() === 'research';
     const shouldRecordReview = String(params.review || '').toLowerCase() === 'complete';
     let peers = null;
-    [payload, services, health, analytics, peers] = await Promise.all([
+    let incomeBend = null;
+    [payload, services, health, analytics, peers, incomeBend] = await Promise.all([
       shouldRecordReview
         ? api.recordTodayReview()
         : shouldRefreshResearch
@@ -58,8 +59,10 @@ async function load(params = {}) {
       api.financialHealth().catch(() => null),
       api.portfolioAnalytics({ period: '1m', limit: 40 }).catch(() => null),
       api.peerBenchmark().catch(() => null),
+      loadIncomeBend().catch(() => null),
     ]);
     state.peerBenchmark = peers;
+    state.incomeBend = incomeBend;
     state.today = payload;
     state.services = services;
     state.lastError = null;
@@ -78,7 +81,7 @@ async function load(params = {}) {
   // Order answers "how am I doing and what's next?" first: the move directly
   // under the number, decision pricing next, status housekeeping last.
   setView(root, html`
-    ${raw(renderHero(payload, health, analytics, state.peerBenchmark))}
+    ${raw(renderHero(payload, health, analytics, state.peerBenchmark, state.incomeBend))}
     ${raw(renderMove(payload))}
     ${raw(renderCommandCards(payload, services))}
     ${raw(renderAffordabilitySection())}
@@ -127,7 +130,7 @@ function renderWelcomeHero(generated) {
   `;
 }
 
-function renderHero(payload, health = null, analytics = null, peers = null) {
+function renderHero(payload, health = null, analytics = null, peers = null, incomeBend = null) {
   const value = payload.net_worth_usd ?? payload.total_value_usd ?? 0;
   const { currency, number } = splitUsd(value);
   const generated = payload.generated_at ? new Date(payload.generated_at) : new Date();
@@ -146,6 +149,7 @@ function renderHero(payload, health = null, analytics = null, peers = null) {
     runway != null ? marginaliaItem('runway', `${runway} mo`, 'up') : null,
     fi != null ? marginaliaItem(`to FI (${fi.basis} vs ${compactUsd(fi.targetUsd)})`, `${fi.progressPct}%`, 'up') : null,
     peerMarginaliaItem(peers),
+    incomeBendMarginaliaItem(incomeBend),
   ].filter(Boolean);
 
   return html`
@@ -213,6 +217,76 @@ function heroEyebrow(date) {
 // "Am I doing okay for my age?" — one glance, full context on hover.
 // Public survey data (SCF 2022), computed locally; the tooltip carries the
 // estimate label and the incl.-home comparability caveat.
+/* ─────────────  The income bend  ─────────────
+   A planned income step-down (a parent staying home, part-time, a deliberate
+   change) lives on the active plan's timeline as a recurring negative income
+   event. Today names it in the hero so the number's future context is one
+   glance away — with the cushion goal, if one exists, in the tooltip. */
+
+// Earliest recurring income reduction on the timeline, or null.
+export function findIncomeBend(events = []) {
+  return (Array.isArray(events) ? events : [])
+    .filter(event => event && typeof event === 'object')
+    .filter(event =>
+      String(event.impact_type) === 'income'
+      && Number(event.amount_usd) < 0
+      && String(event.recurring_frequency) === 'monthly'
+      && /^\d{4}/.test(String(event.date || '')))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))[0] || null;
+}
+
+// Cushion goal matching the bend, if the interview (or the user) created one.
+export function findCushionGoal(goals = []) {
+  return (Array.isArray(goals) ? goals : [])
+    .filter(goal => goal && typeof goal === 'object')
+    .find(goal => /cushion|step-down/i.test(String(goal.label || ''))) || null;
+}
+
+async function loadIncomeBend() {
+  const plansPayload = await api.plans().catch(() => null);
+  const plans = Array.isArray(plansPayload?.plans)
+    ? plansPayload.plans
+    : (Array.isArray(plansPayload) ? plansPayload : []);
+  const active = plans.find(plan => plan && plan.is_active) || plans[0];
+  if (!active) return null;
+  const timeline = await api.planTimeline(active.id).catch(() => null);
+  const bend = findIncomeBend(timeline?.events);
+  if (!bend) return null;
+  // The cushion is tooltip garnish — fetch goals only once a bend exists.
+  const profile = await api.profile().catch(() => null);
+  return { ...bend, cushion: findCushionGoal(profile?.goal_items) };
+}
+
+function bendMonthLabel(date) {
+  const parsed = new Date(String(date || ''));
+  return Number.isNaN(parsed.getTime())
+    ? String(date || '').slice(0, 7)
+    : parsed.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+
+function incomeBendMarginaliaItem(bend) {
+  if (!bend) return null;
+  const monthly = Math.abs(Number(bend.amount_usd));
+  if (!Number.isFinite(monthly) || monthly <= 0) return null;
+  const when = bendMonthLabel(bend.date);
+  const started = String(bend.date) <= new Date().toISOString().slice(0, 10);
+  const label = started ? `income stepped down (since ${when})` : `income steps down ${when}`;
+  const tooltipParts = [
+    `${bend.label || 'Planned income change'}: ${fmtUsd(monthly)}/month less from ${when} on — the plan's trajectory already models this.`,
+  ];
+  if (bend.cushion) {
+    const by = bend.cushion.target_date ? ` by ${bendMonthLabel(bend.cushion.target_date)}` : '';
+    tooltipParts.push(`Cushion goal: ${fmtUsd(bend.cushion.target_amount_usd)}${by}.`);
+  }
+  return html`
+    <span class="delta-down" title="${tooltipParts.join('\n')}">
+      <span class="glyph">·</span>
+      <b class="num-mono">-${fmtUsd(monthly)}/mo</b>
+      <span class="marginalia"> ${label}</span>
+    </span>
+  `.toString();
+}
+
 function peerMarginaliaItem(peers) {
   if (!peers || peers.status !== 'ready' || peers.percentile_estimate == null) return null;
   const tooltip = [peers.sentence, ...(peers.caveats || [])].join('\n');

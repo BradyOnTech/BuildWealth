@@ -332,6 +332,8 @@ test('trajectory fan marks plan-timeline events as vertical moments', async () =
   assert.doesNotMatch(markup, /Collides with retirement/);
   // ...and nonsense dates never reach the chart.
   assert.doesNotMatch(markup, /Ancient event/);
+  // The caption tells a fresh eye what the dashed uprights are.
+  assert.match(markup, /dashed uprights are your plan-timeline events/);
 
   // With no events set, no event markers render.
   const bare = String(renderTrajectoryFan(FIXTURE.candidate_result, FIXTURE.base_result));
