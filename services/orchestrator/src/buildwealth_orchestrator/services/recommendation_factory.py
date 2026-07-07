@@ -1298,8 +1298,9 @@ def _cash_liquidity_candidates(
         if not any(isinstance(goal, dict) and goal.get("target_date") for goal in goal_items):
             detail = (
                 f"{detail} No dated goals are on file — planning for anything in the next few years "
-                "(a home down payment, children, a big trip)? Recording it in Profile → Goals "
-                "reserves cash for it before investing suggestions."
+                "(a home down payment, children, a big trip)? The life-plans interview in "
+                "Profile → Goals turns answers into dated goals, and dated goals reserve "
+                "cash before investing suggestions."
             )
         candidates.append(
             _cash_liquidity_candidate(

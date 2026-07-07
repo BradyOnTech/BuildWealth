@@ -19,6 +19,13 @@ import { renderTable, sectionForKey, TABLE_SECTIONS } from './profile/tables.js'
 import { renderTaxes, submitTaxesForm } from './profile/taxes.js';
 import { renderInvesting, submitInvestingForm, addRestricted, removeRestricted } from './profile/investing.js';
 import { renderDataQuality, resolveConflict } from './profile/data_quality.js';
+import {
+  renderLifeInterview,
+  onInterviewAction,
+  onInterviewField,
+  onDraftPick,
+  onDraftField,
+} from './profile/life_plans.js';
 
 export const meta = {
   id: 'profile',
@@ -32,7 +39,7 @@ const SECTIONS = [
   { id: 'income',       label: 'Income',       kind: 'table',   tableKey: 'income_items' },
   { id: 'expenses',     label: 'Expenses',     kind: 'table',   tableKey: 'expense_items' },
   { id: 'debt',         label: 'Debt',         kind: 'table',   tableKey: 'debt_items' },
-  { id: 'goals',        label: 'Goals',        kind: 'table',   tableKey: 'goal_items' },
+  { id: 'goals',        label: 'Goals',        kind: 'goals',   tableKey: 'goal_items' },
   { id: 'taxes',        label: 'Taxes',        kind: 'taxes' },
   { id: 'investing',    label: 'Investing',    kind: 'investing' },
   { id: 'assets',       label: 'Assets',       kind: 'table',   tableKey: 'physical_assets' },
@@ -93,8 +100,10 @@ export function getProfile() {
   return ui.profile;
 }
 
+// Resolves true when the server accepted the save; callers that mutated
+// ui.profile optimistically must roll back when this returns false.
 export async function persist({ optimistic = true } = {}) {
-  if (!ui.profile) return;
+  if (!ui.profile) return false;
   ui.saving = true;
   ui.saveError = null;
   if (!optimistic) render();
@@ -103,8 +112,10 @@ export async function persist({ optimistic = true } = {}) {
     ui.profile = ensureShape(saved);
     state.financialProfile = ui.profile;
     api.onboarding().then((o) => { ui.onboarding = o; render(); }).catch(() => {});
+    return true;
   } catch (err) {
     ui.saveError = err.message || 'Could not save profile.';
+    return false;
   } finally {
     ui.saving = false;
     render();
@@ -228,6 +239,13 @@ function renderSectionBody(section) {
   if (section.kind === 'investing')    return renderInvesting(ui);
   if (section.kind === 'data-quality') return renderDataQuality(ui);
   if (section.kind === 'table')        return renderTable(ui, sectionForKey(section.tableKey));
+  // Goals: the life-plans interview sits above the editable table it feeds.
+  if (section.kind === 'goals') {
+    return html`
+      ${raw(renderLifeInterview(ui))}
+      ${raw(renderTable(ui, sectionForKey(section.tableKey)))}
+    `;
+  }
   if (section.kind === 'placeholder')  return renderPlaceholder(section);
   return '';
 }
@@ -299,6 +317,16 @@ function attachHandlers() {
       addRestricted(ui, el.getAttribute('data-investing-add-input'));
     }
   });
+
+  delegate(root, 'click', '[data-interview-action]', (e, el) => {
+    e.preventDefault();
+    onInterviewAction(ui, el.getAttribute('data-interview-action'));
+  });
+
+  delegate(root, 'change', '[data-interview-field]', (_, el) => onInterviewField(el));
+  delegate(root, 'change', '[data-draft-pick]', (_, el) => onDraftPick(el));
+  delegate(root, 'change', '[data-draft-field]', (_, el) => onDraftField(el));
+  delegate(root, 'input', '[data-draft-field]', (_, el) => onDraftField(el));
 
   delegate(root, 'click', '[data-conflict-action]', (e, el) => {
     e.preventDefault();

@@ -266,15 +266,21 @@ def _draft_for(
         months = min(months, 36.0)
         if monthly_expenses_usd and monthly_expenses_usd > 0:
             target = months * monthly_expenses_usd
-            basis = f"at your current spending (~${monthly_expenses_usd:,.0f}/month)"
+            sentence = (
+                f"{months:.0f} months away at your current spending "
+                f"(~${monthly_expenses_usd:,.0f}/month) needs about ${target:,.0f} banked first."
+            )
         else:
             target = DEFAULT_CAREER_BREAK_FALLBACK_USD
-            basis = "as a placeholder — add expenses to Profile for a personal number"
+            sentence = (
+                f"{months:.0f} months away needs about ${target:,.0f} banked first — "
+                "a placeholder until expenses are on file in Profile."
+            )
         return {
             "category": "career_break",
             "label": f"Career break ({months:.0f} months)",
             "target_amount_usd": target,
-            "sentence": f"{months:.0f} months away {basis} needs about ${target:,.0f} banked first.",
+            "sentence": sentence,
         }
     if question_id == "big_purchase":
         target = _amount(answer.get("amount_usd"), DEFAULT_BIG_PURCHASE_USD)

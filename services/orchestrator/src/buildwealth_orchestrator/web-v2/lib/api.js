@@ -362,6 +362,8 @@ export const api = {
   planArtifact: (planId, artifactId) => fetchJson(`/api/plans/${encodeURIComponent(planId)}/artifacts/${encodeURIComponent(artifactId)}`),
   profile:      () => fetchJson('/api/financial-profile'),
   peerBenchmark: () => fetchJson('/api/peer-benchmark'),
+  lifeInterview: () => fetchJson('/api/life-plans/interview'),
+  lifePlanDrafts: (answers = {}) => postJson('/api/life-plans/drafts', { answers }),
   updateProfile: (body, opts = {}) => putJson(financialProfileUrl(opts), body),
   onboarding:   () => fetchJson('/api/onboarding/status'),
 

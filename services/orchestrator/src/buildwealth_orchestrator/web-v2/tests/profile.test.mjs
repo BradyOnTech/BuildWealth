@@ -120,3 +120,43 @@ test('tables: renderTable lists existing rows with formatted currency and pre-ta
   assert.match(markup, /\$9,500/);
   assert.match(markup, /Yes/);  // pre-tax → "Yes" in the human column
 });
+
+/* ─────────────  Life-plans interview  ───────────── */
+
+test('life-plans interview: closed card invites and stays honest about state', async () => {
+  const { renderLifeInterview } = await import('../views/profile/life_plans.js');
+  const empty = String(renderLifeInterview({ profile: { goal_items: [] } }));
+  assert.match(empty, /Sit for the interview/);
+  assert.match(empty, /Nothing dated yet/);
+  assert.match(empty, /nothing is saved until you say so/);
+
+  const dated = String(renderLifeInterview({
+    profile: { goal_items: [{ id: 'g1', label: 'House', target_date: '2028-06-01' }] },
+  }));
+  assert.match(dated, /1 dated goal on file/);
+});
+
+test('life-plans interview: profile view wires actions, fields, and drafts', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { resolve } = await import('node:path');
+  const profileSource = readFileSync(resolve(import.meta.dirname, '../views/profile.js'), 'utf8');
+  assert.match(profileSource, /renderLifeInterview/);
+  assert.match(profileSource, /data-interview-action/);
+  assert.match(profileSource, /data-interview-field/);
+  assert.match(profileSource, /data-draft-pick/);
+  assert.match(profileSource, /data-draft-field/);
+
+  const moduleSource = readFileSync(resolve(import.meta.dirname, '../views/profile/life_plans.js'), 'utf8');
+  // Drafts come from the backend and are applied through the human gate.
+  assert.match(moduleSource, /api\.lifeInterview/);
+  assert.match(moduleSource, /api\.lifePlanDrafts/);
+  assert.match(moduleSource, /persist\(\{ optimistic: false \}\)/);
+  // Applied goals carry ids (GoalItem.id is required server-side) and a
+  // failed save rolls the optimistic push back instead of claiming success.
+  assert.match(moduleSource, /id: uid\(\)/);
+  assert.match(moduleSource, /goal_items = goalsBefore/);
+  // "Not now" across the board can pause goal nudges honestly.
+  assert.match(moduleSource, /no_goals: true/);
+  // Covered questions default to "not now" instead of asking again.
+  assert.match(moduleSource, /already_covered/);
+});

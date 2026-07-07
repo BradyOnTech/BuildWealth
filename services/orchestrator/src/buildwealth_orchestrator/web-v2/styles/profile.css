@@ -830,3 +830,116 @@
   .profile-table-head { grid-template-columns: 1fr; align-items: start; }
   .profile-table-meta { text-align: left; }
 }
+
+/* ───────────  The life-plans interview  ───────────
+   A few questions about the next chapter, above the goals table they feed.
+   Timeframe pills, one honest number per question, drafts to review. */
+
+.life-interview {
+  margin-bottom: var(--s-6);
+  padding: var(--s-4) var(--s-5);
+  border-left: 2px solid var(--gilt);
+  background: var(--paper-bright);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+}
+
+.life-questions,
+.life-drafts {
+  list-style: none;
+  margin: var(--s-4) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s-5);
+}
+
+.life-question-prompt {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 15.5px;
+  color: var(--ink-strong);
+}
+
+.life-question-covered {
+  margin: var(--s-1) 0 0;
+  font-size: var(--t-body-sm);
+  color: var(--ink-soft);
+}
+
+.life-timeframes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-top: var(--s-2);
+}
+
+.life-timeframe {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--ink-soft);
+  border: var(--hair) solid var(--rule);
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.life-timeframe input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.life-timeframe.selected {
+  color: var(--ink-strong);
+  border-color: var(--ink-quiet);
+  background: var(--paper);
+}
+
+.life-timeframe:hover {
+  border-color: var(--rule-strong);
+}
+
+.life-amount-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--s-4);
+  margin-top: var(--s-3);
+}
+
+.life-amount {
+  display: grid;
+  gap: 2px;
+}
+
+.life-amount input {
+  width: 150px;
+}
+
+.life-draft-keep {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  cursor: pointer;
+}
+
+.life-draft-priority {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--ink-faint);
+}
+
+.life-draft.dropped .life-draft-fields,
+.life-draft.dropped .marginalia {
+  opacity: 0.45;
+}
+
+.life-draft-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-4);
+  margin-top: var(--s-2);
+}
