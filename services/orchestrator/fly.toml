@@ -1,0 +1,51 @@
+# Fly.io deployment for BuildWealth (private instance).
+# See docs/PRODUCTION_HOSTING_PLAN.md for when to choose Fly vs a VPS.
+#
+#   cd services/orchestrator
+#   fly launch --no-deploy      # once; pick a region close to you
+#   fly volumes create buildwealth_data --size 3
+#   fly deploy
+#
+# app name is set by `fly launch`; add it here after the first run:
+# app = "your-buildwealth"
+
+primary_region = "ord"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  APP_ENV = "production"
+  # Private-instance auth: password login, Secure cookies, CSRF, and
+  # registration that locks after the first (owner) account.
+  AUTH_MODE = "secure"
+  AUTH_ALLOW_OPEN_REGISTRATION = "false"
+  SYNC_INTERVAL_MINUTES = "1440"
+  CONTEXT_EMBEDDINGS_ENABLED = "false"
+  CONTEXT_EMBEDDING_PROVIDER = "disabled"
+
+# The disk IS the app: SQLite + workspace JSON live here. Volumes are pinned
+# to one host in one region — correct for a single private instance.
+[mounts]
+  source = "buildwealth_data"
+  destination = "/app/data"
+
+[http_service]
+  internal_port = 8090
+  force_https = true
+  # The sync heartbeat and sweeps run in-process: a stopped machine is a
+  # silently dead scheduler. Never let this scale to zero.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
