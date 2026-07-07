@@ -228,3 +228,18 @@ test('today hero wires the income bend into the marginalia', async () => {
   // The tooltip says the trajectory already models it.
   assert.match(source, /already models this/);
 });
+
+test('first-run welcome path routes to the life-plans interview', async () => {
+  const { renderWelcomeHero } = await import('../views/today.js');
+  const markup = String(renderWelcomeHero(new Date('2026-07-07T00:00:00Z')));
+  // Four numbered rows: three actions plus the payoff.
+  for (const numeral of ['I.', 'II.', 'III.', 'IV.']) {
+    assert.match(markup, new RegExp(numeral.replace('.', '\\.')));
+  }
+  // The interview earns its own first-run step, pointing at Profile → Goals.
+  assert.match(markup, /Tell it what's coming/);
+  assert.match(markup, /The five-minute interview/);
+  assert.match(markup, /href="#profile\?section=goals"/);
+  // The lede promises foresight, not just the current number.
+  assert.match(markup, /what's ahead/);
+});

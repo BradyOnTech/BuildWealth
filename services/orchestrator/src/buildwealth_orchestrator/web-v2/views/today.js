@@ -106,12 +106,12 @@ export function isEmptyWorkspace(payload = {}, health = null) {
   return value === 0 && healthWorth === 0 && income === 0;
 }
 
-function renderWelcomeHero(generated) {
+export function renderWelcomeHero(generated) {
   return html`
     <section class="hero-stack">
       ${raw(heroEyebrow(generated))}
       <h1 class="section-title" style="font-size: var(--t-display);">The Almanac opens with your reality.</h1>
-      <p class="section-lede">Three steps and this page becomes yours — the number, what changed, and what to do next.</p>
+      <p class="section-lede">A few steps and this page becomes yours — the number, what changed, what's ahead, and what to do next.</p>
       <ul class="ledger-list" style="max-width: 560px;">
         <li class="ledger-row">
           <span class="ledger-label">I. Tell it who you are</span>
@@ -122,7 +122,11 @@ function renderWelcomeHero(generated) {
           <span class="ledger-value"><a class="link-editorial" href="#import-sync">Import a statement</a></span>
         </li>
         <li class="ledger-row">
-          <span class="ledger-label">III. Come back Today</span>
+          <span class="ledger-label">III. Tell it what's coming</span>
+          <span class="ledger-value"><a class="link-editorial" href="#profile?section=goals">The five-minute interview</a></span>
+        </li>
+        <li class="ledger-row">
+          <span class="ledger-label">IV. Come back Today</span>
           <span class="ledger-value muted">The standing, the move, the room</span>
         </li>
       </ul>
