@@ -392,6 +392,8 @@ from buildwealth_orchestrator.services.recommendation_scoring import (
     score_and_sort_recommendations,
 )
 from buildwealth_orchestrator.services.recommendation_factory import (
+    _closure_outcome_measured as _factory_closure_outcome_measured,
+    _parse_review_date as _factory_parse_review_date,
     generate_cash_liquidity_recommendations,
     generate_plan_tracking_recommendations,
     generate_portfolio_risk_recommendations,
@@ -1402,9 +1404,15 @@ async def scheduled_sync_loop() -> None:
                 # Failures are captured in sync_state for observability.
                 pass
             try:
+                # Measure first, nag second: outcomes the app can record
+                # itself never become review entries in the Inbox.
+                sweep_auto_measure_outcomes()
+            except Exception:
+                # Best-effort: sweeps must never kill the heartbeat.
+                pass
+            try:
                 sweep_due_outcome_reviews()
             except Exception:
-                # Best-effort: the Inbox sweep must never kill the heartbeat.
                 pass
             try:
                 sweep_allocation_drift()
@@ -1412,6 +1420,73 @@ async def scheduled_sync_loop() -> None:
                 pass
 
         await asyncio.sleep(poll_seconds)
+
+
+def sweep_auto_measure_outcomes(*, limit: int = 10, now: datetime | None = None) -> int:
+    """Record auto-measured outcomes for decisions whose review date passed.
+
+    The outcome loop only teaches the ranking if outcomes actually get
+    recorded, and most households will never fill a measurement form. When a
+    decision's pre-mortem review date passes unmeasured and portfolio history
+    can measure the observable delta, the heartbeat records it as the
+    realized outcome — labeled as auto-measured with the attribution caveat
+    (a portfolio delta includes contributions and market moves, not only the
+    decision's effect), and a human can edit or override it at any time.
+
+    Runs BEFORE sweep_due_outcome_reviews on purpose: what the app can
+    measure itself never becomes a nag in the Inbox.
+    """
+    resolved_now = now or datetime.now(timezone.utc)
+    measured = 0
+    rows = recommendation_inbox.list(limit=None, status="applied", plan_id=None, sort="none")
+    for row in rows:
+        if measured >= max(1, limit):
+            break
+        action_payload = row.get("action_payload")
+        closure = action_payload.get("decision_closure") if isinstance(action_payload, dict) else None
+        if not isinstance(closure, dict):
+            continue
+        if str(closure.get("decision_status") or "").strip() != "accepted":
+            continue
+        if _factory_closure_outcome_measured(closure):
+            continue
+        pre_mortem = closure.get("pre_mortem")
+        if not isinstance(pre_mortem, dict):
+            continue
+        review_date = _factory_parse_review_date(pre_mortem.get("review_date"))
+        if review_date is None or review_date > resolved_now:
+            continue
+
+        recommendation_id = str(row.get("id") or "").strip()
+        if not recommendation_id:
+            continue
+        try:
+            prefill = build_recommendation_outcome_prefill_payload(recommendation_id, now=resolved_now)
+        except Exception:
+            continue
+        if prefill.status != "ready" or prefill.suggested_future_value_delta_usd is None:
+            continue
+
+        try:
+            update_recommendation_outcome(
+                recommendation_id,
+                RecommendationOutcomeUpdateRequest(
+                    realized_delta_future_value_usd=prefill.suggested_future_value_delta_usd,
+                    observed_at=resolved_now,
+                    observation_window_days=prefill.observation_window_days,
+                    measurement_source=f"auto:{prefill.measurement_source}",
+                    note=(
+                        "Measured automatically from portfolio history. This is the "
+                        "observable portfolio change over the review window — it includes "
+                        "contributions and market moves, not only this decision. Edit the "
+                        "outcome if the attribution looks wrong."
+                    ),
+                ),
+            )
+        except Exception:
+            continue
+        measured += 1
+    return measured
 
 
 def sweep_due_outcome_reviews() -> int:
