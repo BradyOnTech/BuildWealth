@@ -75,6 +75,7 @@ export function fanChart({
   bands = [],
   lines = [],
   markers = [],
+  guides = [],
   width = 720,
   height = 300,
   formatX = String,
@@ -91,9 +92,14 @@ export function fanChart({
     ...bands.flatMap(band => [band.lo, band.hi]),
     ...lines.map(line => line.key),
   ];
+  // Horizontal guides (reference values like "median net worth, ages 45–54")
+  // join the y-domain so a guide is always visible when passed — callers
+  // decide relevance so an outsized guide can't flatten the fan.
+  const guideValues = guides.map(guide => Number(guide?.y)).filter(Number.isFinite);
   const yValues = usable
     .flatMap(row => valueKeys.map(key => Number(row[key])))
-    .filter(Number.isFinite);
+    .filter(Number.isFinite)
+    .concat(guideValues);
   if (!yValues.length) return '';
 
   const plot = plotArea(width, height);
@@ -131,6 +137,17 @@ export function fanChart({
       return `<line class="chart-marker${cls}" x1="${mx}" y1="${plot.top}" x2="${mx}" y2="${plot.bottom}"></line>${label}`;
     })
     .join('');
+  const guideShapes = guides
+    .filter(guide => Number.isFinite(Number(guide?.y)))
+    .map(guide => {
+      const gy = rnd(y(Number(guide.y)));
+      const cls = guide.cls ? ` ${esc(guide.cls)}` : '';
+      const label = guide.label
+        ? `<text class="chart-guide-label${cls}" x="${plot.right - 4}" y="${gy - 4}" text-anchor="end">${esc(guide.label)}</text>`
+        : '';
+      return `<line class="chart-guide${cls}" x1="${plot.left}" y1="${gy}" x2="${plot.right}" y2="${gy}"></line>${label}`;
+    })
+    .join('');
 
   // Hover keys in top-to-bottom visual order: band highs, lines, band lows.
   const hoverKeys = [...new Set([
@@ -153,6 +170,7 @@ export function fanChart({
     content: [
       yAxis({ ticks: niceTicks(yMin, yMax, yTickCount), y, plot, formatY }),
       xAxis({ values: xValues, x, plot, formatX }),
+      guideShapes,
       bandShapes,
       lineShapes,
       markerShapes,

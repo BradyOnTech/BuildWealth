@@ -265,6 +265,7 @@ from buildwealth_orchestrator.services.portfolio_simulator import simulate_trade
 from buildwealth_orchestrator.services.portfolio_fit import assess_portfolio_fit
 from buildwealth_orchestrator.services.goal_tracker import compute_goal_progress
 from buildwealth_orchestrator.services.financial_health import compute_financial_health
+from buildwealth_orchestrator.services.peer_benchmark import build_peer_benchmark
 from buildwealth_orchestrator.services.plan_tracker import compute_plan_tracking
 from buildwealth_orchestrator.services.portfolio_store import PortfolioStore
 from buildwealth_orchestrator.services.portfolio_review_packets import (
@@ -17918,6 +17919,35 @@ def test_embedding_settings(
         "vector_length": len(vector) if vector is not None else 0,
         "detail": "Embedding handshake succeeded.",
     }
+
+
+@app.get("/api/peer-benchmark")
+def get_peer_benchmark(
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    """Where the household stands versus US households its age (SCF 2022),
+    computed locally from public survey data — no peer network involved."""
+    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem, PhysicalAssetItem
+
+    resolved_services = route_workspace_services(services, permission="profile.read")
+    profile = resolved_services.financial_profile_store.load()
+    try:
+        snap = resolved_services.snapshot_store.latest()
+    except FileNotFoundError:
+        snap = None
+    health = compute_financial_health(
+        income_items=[IncomeItem(**i) for i in profile.get("income_items", [])],
+        expense_items=[ExpenseItem(**e) for e in profile.get("expense_items", [])],
+        debt_items=[DebtItem(**d) for d in profile.get("debt_items", [])],
+        goal_items=[GoalItem(**g) for g in profile.get("goal_items", [])],
+        physical_assets=[PhysicalAssetItem(**a) for a in profile.get("physical_assets", [])],
+        snapshot=snap,
+    )
+    return build_peer_benchmark(
+        net_worth_usd=health.net_worth_usd,
+        profile_payload=profile,
+        current_year=datetime.now(timezone.utc).year,
+    )
 
 
 @app.get("/api/settings/llm-routing")

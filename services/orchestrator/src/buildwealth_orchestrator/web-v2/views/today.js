@@ -47,7 +47,8 @@ async function load(params = {}) {
   try {
     const shouldRefreshResearch = String(params.refresh || '').toLowerCase() === 'research';
     const shouldRecordReview = String(params.review || '').toLowerCase() === 'complete';
-    [payload, services, health, analytics] = await Promise.all([
+    let peers = null;
+    [payload, services, health, analytics, peers] = await Promise.all([
       shouldRecordReview
         ? api.recordTodayReview()
         : shouldRefreshResearch
@@ -56,7 +57,9 @@ async function load(params = {}) {
       api.services().catch(() => null),
       api.financialHealth().catch(() => null),
       api.portfolioAnalytics({ period: '1m', limit: 40 }).catch(() => null),
+      api.peerBenchmark().catch(() => null),
     ]);
+    state.peerBenchmark = peers;
     state.today = payload;
     state.services = services;
     state.lastError = null;
@@ -75,7 +78,7 @@ async function load(params = {}) {
   // Order answers "how am I doing and what's next?" first: the move directly
   // under the number, decision pricing next, status housekeeping last.
   setView(root, html`
-    ${raw(renderHero(payload, health, analytics))}
+    ${raw(renderHero(payload, health, analytics, state.peerBenchmark))}
     ${raw(renderMove(payload))}
     ${raw(renderCommandCards(payload, services))}
     ${raw(renderAffordabilitySection())}
@@ -124,7 +127,7 @@ function renderWelcomeHero(generated) {
   `;
 }
 
-function renderHero(payload, health = null, analytics = null) {
+function renderHero(payload, health = null, analytics = null, peers = null) {
   const value = payload.net_worth_usd ?? payload.total_value_usd ?? 0;
   const { currency, number } = splitUsd(value);
   const generated = payload.generated_at ? new Date(payload.generated_at) : new Date();
@@ -142,6 +145,7 @@ function renderHero(payload, health = null, analytics = null) {
     savings != null ? marginaliaItem('savings rate', `${Math.round(savings)}%`, 'up') : null,
     runway != null ? marginaliaItem('runway', `${runway} mo`, 'up') : null,
     fi != null ? marginaliaItem(`to FI (${fi.basis} vs ${compactUsd(fi.targetUsd)})`, `${fi.progressPct}%`, 'up') : null,
+    peerMarginaliaItem(peers),
   ].filter(Boolean);
 
   return html`
@@ -204,6 +208,21 @@ function heroEyebrow(date) {
       As of ${fmtDateLong(date)} · ${fmtTimeShort(date)}
     </p>
   `;
+}
+
+// "Am I doing okay for my age?" — one glance, full context on hover.
+// Public survey data (SCF 2022), computed locally; the tooltip carries the
+// estimate label and the incl.-home comparability caveat.
+function peerMarginaliaItem(peers) {
+  if (!peers || peers.status !== 'ready' || peers.percentile_estimate == null) return null;
+  const tooltip = [peers.sentence, ...(peers.caveats || [])].join('\n');
+  return html`
+    <span class="delta-up" title="${tooltip}">
+      <span class="glyph">·</span>
+      <b class="num-mono">~p${peers.percentile_estimate}</b>
+      <span class="marginalia"> vs US households ${peers.bracket_label} (est.)</span>
+    </span>
+  `.toString();
 }
 
 function marginaliaItem(label, value, dir) {

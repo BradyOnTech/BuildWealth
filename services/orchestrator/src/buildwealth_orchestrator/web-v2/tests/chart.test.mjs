@@ -284,3 +284,33 @@ test('esc inside html`` escapes exactly once', async () => {
   assert.equal(`${esc('x < y')}`, 'x &lt; y');
   assert.equal(String(esc(null)), '');
 });
+
+test('fanChart draws horizontal guides and includes them in the y-domain', () => {
+  const rows = [
+    { year: 2026, p10: 100, p50: 150, p90: 200 },
+    { year: 2036, p10: 200, p50: 400, p90: 600 },
+  ];
+  const svg = fanChart({
+    rows,
+    xKey: 'year',
+    bands: [{ lo: 'p10', hi: 'p90' }],
+    lines: [{ key: 'p50' }],
+    guides: [{ y: 550, label: 'US median 45–54 (incl. home)', cls: 'chart-guide-peer' }],
+  });
+  assert.match(svg, /chart-guide chart-guide-peer/);
+  assert.match(svg, /US median 45–54 \(incl\. home\)/);
+
+  // A guide above the data extends the domain so it stays visible.
+  const tall = fanChart({
+    rows,
+    xKey: 'year',
+    bands: [{ lo: 'p10', hi: 'p90' }],
+    lines: [{ key: 'p50' }],
+    guides: [{ y: 900, label: 'above the fan' }],
+  });
+  assert.match(tall, /above the fan/);
+
+  // No guides → no guide markup.
+  const plain = fanChart({ rows, xKey: 'year', bands: [{ lo: 'p10', hi: 'p90' }], lines: [{ key: 'p50' }] });
+  assert.doesNotMatch(plain, /chart-guide/);
+});

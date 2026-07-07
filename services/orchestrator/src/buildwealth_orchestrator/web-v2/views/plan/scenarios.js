@@ -202,6 +202,25 @@ export function renderTrajectoryPreview(state = {}, planId = '') {
   `.toString();
 }
 
+// Peer context for trajectory overlays — set once by the plan view.
+// SCF medians include home equity; the guide labels say so.
+let peerBenchmark = null;
+export function setPeerBenchmark(payload) {
+  peerBenchmark = payload && payload.status === 'ready' ? payload : null;
+}
+
+function peerGuides(maxY) {
+  const milestones = Array.isArray(peerBenchmark?.milestones) ? peerBenchmark.milestones : [];
+  return milestones
+    .filter(m => Number.isFinite(Number(m.median_usd)) && Number(m.median_usd) <= maxY * 1.08)
+    .slice(-2)
+    .map(m => ({
+      y: Number(m.median_usd),
+      label: `US ${m.label} (incl. home)`,
+      cls: 'chart-guide-peer',
+    }));
+}
+
 export function renderTrajectoryFan(candidateResult, baseResult, { planId = '', medianLabel = 'Median (this simulation)' } = {}) {
   const candidate = objectValue(candidateResult);
   const base = objectValue(baseResult);
@@ -230,6 +249,9 @@ export function renderTrajectoryFan(candidateResult, baseResult, { planId = '', 
   }
   if (drawdownYear != null) markers.push({ x: drawdownYear, label: 'Retirement' });
 
+  const fanMax = Math.max(...merged.map(row => Number(row.p90_ending_balance_usd)).filter(Number.isFinite));
+  const guides = Number.isFinite(fanMax) ? peerGuides(fanMax) : [];
+
   const chart = fanChart({
     rows: merged,
     xKey: 'year',
@@ -242,6 +264,7 @@ export function renderTrajectoryFan(candidateResult, baseResult, { planId = '', 
       { key: 'p50_ending_balance_usd', cls: 'chart-line-median' },
     ],
     markers,
+    guides,
     formatY: compactUsd,
     seriesLabels: {
       p90_ending_balance_usd: 'P90',
@@ -267,6 +290,7 @@ export function renderTrajectoryFan(candidateResult, baseResult, { planId = '', 
         <span><i class="legend-swatch band-outer"></i>10th–90th percentile</span>
         <span><i class="legend-swatch band-inner"></i>25th–75th</span>
         <span><i class="legend-swatch line-median"></i>${medianLabel}</span>
+        ${guides.length ? html`<span><i class="legend-swatch guide-peer"></i>Typical US household net worth by age (SCF 2022, incl. home)</span>` : ''}
         ${hasBaseline ? html`<span><i class="legend-swatch line-compare"></i>Current plan median</span>` : ''}
       </div>
       ${raw(chart)}

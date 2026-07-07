@@ -25,7 +25,7 @@ import { derivePlanHealth, renderPlanHealth } from './plan/health.js';
 import { renderTrajectory } from './plan/trajectory.js';
 import { renderArtifacts } from './plan/artifacts.js';
 import { buildScenarioBranchPayload, renderBranches } from './plan/branches.js';
-import { buildScenarioDiffPayload, renderScenarios, renderTrajectoryPreview } from './plan/scenarios.js';
+import { buildScenarioDiffPayload, renderScenarios, renderTrajectoryPreview, setPeerBenchmark } from './plan/scenarios.js';
 import { buildWithdrawalComparePayload, renderWithdrawals } from './plan/withdrawals.js';
 import { buildTimelinePayload, renderTimeline } from './plan/timeline.js';
 import { buildContributionRulesPayload, renderContributions } from './plan/contributions.js';
@@ -74,6 +74,12 @@ export async function init(params = {}) {
   ui.scenarios.focusedRecommendationId = String(params.focus || params.recommendation || '').trim();
   ui.savedSimulations.focusedSimulationId = String(params.saved || '').trim();
   attachHandlers();
+  // Peer context for trajectory overlays — best-effort, before the fans draw.
+  try {
+    setPeerBenchmark(await api.peerBenchmark());
+  } catch {
+    setPeerBenchmark(null);
+  }
 
   if (!ui.selectedId) {
     renderEmptyState();

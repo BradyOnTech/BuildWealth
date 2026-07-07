@@ -361,6 +361,7 @@ export const api = {
   researchDossiers: (opts = {}) => fetchJson(researchDossiersUrl(opts)),
   planArtifact: (planId, artifactId) => fetchJson(`/api/plans/${encodeURIComponent(planId)}/artifacts/${encodeURIComponent(artifactId)}`),
   profile:      () => fetchJson('/api/financial-profile'),
+  peerBenchmark: () => fetchJson('/api/peer-benchmark'),
   updateProfile: (body, opts = {}) => putJson(financialProfileUrl(opts), body),
   onboarding:   () => fetchJson('/api/onboarding/status'),
 

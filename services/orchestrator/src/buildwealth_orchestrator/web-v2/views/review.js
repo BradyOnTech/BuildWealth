@@ -29,10 +29,11 @@ export async function init() {
   const root = $('#review-shell');
   if (!root) return;
 
-  const [health, analytics, plans] = await Promise.all([
+  const [health, analytics, plans, peers] = await Promise.all([
     api.financialHealth().catch(() => null),
     api.portfolioAnalytics({ period: '1y' }).catch(() => null),
     api.plans().catch(() => null),
+    api.peerBenchmark().catch(() => null),
   ]);
   const planList = Array.isArray(plans?.plans) ? plans.plans : (Array.isArray(plans) ? plans : []);
   const planId = String(planList[0]?.id || '');
@@ -41,18 +42,18 @@ export async function init() {
     planId ? api.planSavedSimulations(planId).catch(() => null) : null,
   ]);
 
-  setView(root, raw(renderReviewDocument({ health, analytics, plan, savedSims, now: new Date() })));
+  setView(root, raw(renderReviewDocument({ health, analytics, plan, savedSims, peers, now: new Date() })));
   delegate(root, 'click', '[data-review-action="print"]', () => window.print());
 }
 
 // Pure document render — testable without a DOM.
-export function renderReviewDocument({ health, analytics, plan, savedSims, now = new Date() } = {}) {
+export function renderReviewDocument({ health, analytics, plan, savedSims, peers = null, now = new Date() } = {}) {
   const year = now.getFullYear();
   return html`
     <article class="review-document">
       ${raw(masthead(year, now))}
       ${raw(theStanding(health, analytics))}
-      ${raw(theJourney(health))}
+      ${raw(theJourney(health, peers))}
       ${raw(thePortfolioYear(analytics))}
       ${raw(theDecisions(plan, year))}
       ${raw(theExperiments(savedSims))}
@@ -94,10 +95,14 @@ function theStanding(health, analytics) {
   `);
 }
 
-function theJourney(health) {
+function theJourney(health, peers = null) {
   const fi = computeFiProgress(health);
+  const peerRow = peers && peers.status === 'ready' && peers.percentile_estimate != null
+    ? ['Versus US households your age', `~${peers.percentile_estimate}th percentile (ages ${peers.bracket_label}, SCF 2022 — estimate, incl. home)`]
+    : null;
   const rows = [
     fi ? ['Progress to financial independence', `${fi.progressPct}% of ${compactUsd(fi.targetUsd)} (${fi.basis})`] : null,
+    peerRow,
     Number.isFinite(Number(health?.savings_rate_pct)) ? ['Savings rate', `${Number(health.savings_rate_pct).toFixed(1)}%`] : null,
     Number.isFinite(Number(health?.emergency_fund_months)) ? ['Emergency runway', `${Number(health.emergency_fund_months).toFixed(1)} months`] : null,
     Number.isFinite(Number(health?.debt_to_income_ratio_pct)) ? ['Debt to income', `${Number(health.debt_to_income_ratio_pct).toFixed(1)}%`] : null,
