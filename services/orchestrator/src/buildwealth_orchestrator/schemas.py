@@ -1369,6 +1369,12 @@ class GoalItem(BaseModel):
     notes: str = ""
 
 
+class LifePlanDraftRequest(BaseModel):
+    """Life-plans interview answers, keyed by question id."""
+
+    answers: dict[str, Any] = Field(default_factory=dict)
+
+
 class TaxProfile(BaseModel):
     filing_status: (
         Literal[

@@ -24,6 +24,7 @@ import httpx
 from buildwealth_orchestrator.schemas import (
     ChatRequest,
     ChatResponse,
+    LifePlanDraftRequest,
     CopilotChatRequest,
     CopilotChatResponse,
     CopilotContextCacheStatusResponse,
@@ -266,6 +267,7 @@ from buildwealth_orchestrator.services.portfolio_fit import assess_portfolio_fit
 from buildwealth_orchestrator.services.goal_tracker import compute_goal_progress
 from buildwealth_orchestrator.services.financial_health import compute_financial_health
 from buildwealth_orchestrator.services.peer_benchmark import build_peer_benchmark
+from buildwealth_orchestrator.services.life_plans import build_life_interview, build_life_plan_drafts
 from buildwealth_orchestrator.services.plan_tracker import compute_plan_tracking
 from buildwealth_orchestrator.services.portfolio_store import PortfolioStore
 from buildwealth_orchestrator.services.portfolio_review_packets import (
@@ -17919,6 +17921,57 @@ def test_embedding_settings(
         "vector_length": len(vector) if vector is not None else 0,
         "detail": "Embedding handshake succeeded.",
     }
+
+
+def _life_interview_context(resolved_services: WorkspaceServices) -> tuple[dict[str, Any], float | None]:
+    """Profile payload + the household's real monthly spend for the interview."""
+    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem, PhysicalAssetItem
+
+    profile = resolved_services.financial_profile_store.load()
+    try:
+        snap = resolved_services.snapshot_store.latest()
+    except FileNotFoundError:
+        snap = None
+    health = compute_financial_health(
+        income_items=[IncomeItem(**i) for i in profile.get("income_items", [])],
+        expense_items=[ExpenseItem(**e) for e in profile.get("expense_items", [])],
+        debt_items=[DebtItem(**d) for d in profile.get("debt_items", [])],
+        goal_items=[GoalItem(**g) for g in profile.get("goal_items", [])],
+        physical_assets=[PhysicalAssetItem(**a) for a in profile.get("physical_assets", [])],
+        snapshot=snap,
+    )
+    monthly_expenses = health.total_monthly_expenses_usd or None
+    return profile, monthly_expenses
+
+
+@app.get("/api/life-plans/interview")
+def get_life_plans_interview(
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    """The life-plans interview: a few questions about the next chapter,
+    tuned to what the household already recorded."""
+    resolved_services = route_workspace_services(services, permission="profile.read")
+    profile, monthly_expenses = _life_interview_context(resolved_services)
+    return build_life_interview(
+        profile,
+        monthly_expenses_usd=monthly_expenses,
+        current_year=datetime.now(timezone.utc).year,
+    )
+
+
+@app.post("/api/life-plans/drafts")
+def post_life_plans_drafts(
+    body: LifePlanDraftRequest,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    """Interview answers → draft dated goals. Computation only — nothing is
+    saved until the household reviews and applies through the profile."""
+    resolved_services = route_workspace_services(services, permission="profile.read")
+    _, monthly_expenses = _life_interview_context(resolved_services)
+    return build_life_plan_drafts(
+        body.answers,
+        monthly_expenses_usd=monthly_expenses,
+    )
 
 
 @app.get("/api/peer-benchmark")
