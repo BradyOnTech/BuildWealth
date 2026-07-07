@@ -304,19 +304,59 @@ def build_allocation_drift_plan(
     }
 
 
+GOAL_CASH_HORIZON_YEARS = 3.0  # money needed this soon shouldn't ride equities
+
+
+def _near_dated_goal_claims(
+    goal_items: list[dict[str, Any]] | None,
+    *,
+    now: Any = None,
+) -> list[dict[str, Any]]:
+    """Goals due within the cash horizon, in (priority, date) order."""
+    from datetime import datetime, timezone
+
+    resolved_now = now or datetime.now(timezone.utc)
+    horizon = resolved_now.timestamp() + GOAL_CASH_HORIZON_YEARS * 365.25 * 86400
+    priority_rank = {"high": 0, "medium": 1, "low": 2}
+    claims: list[tuple[int, float, dict[str, Any]]] = []
+    for goal in goal_items or []:
+        if not isinstance(goal, dict):
+            continue
+        target = _safe(goal.get("target_amount_usd"))
+        raw_date = goal.get("target_date")
+        if target <= 0 or not raw_date:
+            continue
+        try:
+            parsed = raw_date if hasattr(raw_date, "timestamp") else datetime.fromisoformat(str(raw_date).replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            continue
+        if parsed.timestamp() > horizon or parsed.timestamp() < resolved_now.timestamp():
+            continue
+        rank = priority_rank.get(str(goal.get("priority") or "medium").lower(), 1)
+        claims.append((rank, parsed.timestamp(), {"label": str(goal.get("label") or "goal"), "target_amount_usd": target, "target_year": parsed.year}))
+    return [claim for _, _, claim in sorted(claims, key=lambda item: (item[0], item[1]))]
+
+
 def build_excess_cash_deployment(
     *,
     excess_cash_usd: float,
     holdings: dict[str, Any],
     targets_pct: dict[str, Any],
     total_market_value: float,
+    goal_items: list[dict[str, Any]] | None = None,
+    now: Any = None,
 ) -> dict[str, Any]:
-    """One honest way to deploy spare cash against the saved targets.
+    """One honest way to deploy spare cash against goals and saved targets.
 
-    Underweight gaps are filled first (largest first), and whatever remains
-    follows the target weights — naming the household's OWN largest fund in
-    each class so "add to fixed income" reads as "add to BND". The cash class
-    itself never receives a deployment (the money is already cash).
+    Order of claims mirrors how a person should think about spare money:
+    1. Goals due within ~3 years reserve their cash FIRST (kept as cash —
+       money needed that soon shouldn't ride markets), in priority order.
+    2. Underweight allocation gaps fill next (largest first).
+    3. Whatever remains follows the target weights — naming the household's
+       OWN largest fund in each class so "add to fixed income" reads as
+       "add to BND". The cash class never receives an investing deployment.
 
     Static approximation on purpose: gaps are measured before any deployment,
     not re-solved after each dollar — this is a review-only suggestion, not
@@ -325,16 +365,45 @@ def build_excess_cash_deployment(
     excess = round(max(_safe(excess_cash_usd), 0.0), 2)
     if excess <= 0:
         return {"status": "no_excess", "rows": [], "sentence": ""}
+
+    rows: list[dict[str, Any]] = []
+    remaining = excess
+    goal_claims = _near_dated_goal_claims(goal_items, now=now)
+    for claim in goal_claims:
+        if remaining <= 0:
+            break
+        amount = round(min(claim["target_amount_usd"], remaining), 2)
+        if amount <= 0:
+            continue
+        rows.append(
+            {
+                "asset_class": "cash",
+                "amount_usd": amount,
+                "reason": "goal_reserve",
+                "goal_label": claim["label"],
+                "goal_year": claim["target_year"],
+                "add_candidates": [],
+            }
+        )
+        remaining = round(remaining - amount, 2)
+
     plan = build_allocation_drift_plan(
         holdings=holdings,
         targets_pct=targets_pct,
         total_market_value=total_market_value,
     )
     if plan.get("status") == "no_targets":
-        return {"status": "no_targets", "rows": [], "sentence": ""}
-
-    rows: list[dict[str, Any]] = []
-    remaining = excess
+        if not rows:
+            return {"status": "no_targets", "rows": [], "sentence": ""}
+        # Goals still claim their cash even without allocation targets.
+        parts = [
+            f"${_safe(row['amount_usd']):,.0f} set aside in cash for {row['goal_label']} (due {row['goal_year']})"
+            for row in rows
+        ]
+        sentence = (
+            "Before investing any of it: " + "; ".join(parts) + ". A suggestion to review, not an order."
+        )
+        return {"status": "ready", "rows": rows, "sentence": sentence}
 
     underweights = [
         row
@@ -389,10 +458,14 @@ def build_excess_cash_deployment(
     if not rows:
         return {"status": "no_targets", "rows": [], "sentence": ""}
 
-    # A class can receive money twice (gap fill + remainder); one line per
-    # class is what a person can actually read.
+    # Goal reserves stay as their own lines (each has a name and a date);
+    # invest rows merge per class — a class can receive money twice (gap fill
+    # + remainder) and one line per class is what a person can actually read.
+    goal_rows = [row for row in rows if row.get("reason") == "goal_reserve"]
     merged: dict[str, dict[str, Any]] = {}
     for row in rows:
+        if row.get("reason") == "goal_reserve":
+            continue
         klass = str(row["asset_class"])
         if klass in merged:
             merged[klass]["amount_usd"] = round(merged[klass]["amount_usd"] + _safe(row["amount_usd"]), 2)
@@ -400,20 +473,24 @@ def build_excess_cash_deployment(
                 merged[klass]["add_candidates"] = row["add_candidates"]
         else:
             merged[klass] = dict(row)
-    merged_rows = sorted(merged.values(), key=lambda row: -_safe(row["amount_usd"]))
+    invest_rows = sorted(merged.values(), key=lambda row: -_safe(row["amount_usd"]))
 
-    parts: list[str] = []
-    for row in merged_rows:
+    parts: list[str] = [
+        f"${_safe(row['amount_usd']):,.0f} set aside in cash for {row['goal_label']} (due {row['goal_year']})"
+        for row in goal_rows
+    ]
+    for row in invest_rows:
         klass = str(row["asset_class"]).replace("_", " ")
         candidates = ", ".join(row["add_candidates"][:2])
         suffix = f" (add to {candidates})" if candidates else ""
         parts.append(f"${_safe(row['amount_usd']):,.0f} to {klass}{suffix}")
-    sentence = (
-        "One way to deploy it against your saved targets: "
-        + "; ".join(parts)
-        + ". A suggestion to review, not an order."
+    lead = (
+        "One way to deploy it — goals first, then your saved targets: "
+        if goal_rows
+        else "One way to deploy it against your saved targets: "
     )
-    return {"status": "ready", "rows": merged_rows, "sentence": sentence}
+    sentence = lead + "; ".join(parts) + ". A suggestion to review, not an order."
+    return {"status": "ready", "rows": goal_rows + invest_rows, "sentence": sentence}
 
 
 def allocation_drift_sentence(row: dict[str, Any]) -> str:

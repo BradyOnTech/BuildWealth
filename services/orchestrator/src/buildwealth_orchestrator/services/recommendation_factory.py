@@ -1177,7 +1177,17 @@ def _cash_liquidity_candidates(
 
     cash_months = round(total_cash / monthly_outflow, 2)
     minimum_reserve = round(monthly_outflow * CASH_RESERVE_MIN_MONTHS, 2)
-    maximum_reserve = round(monthly_outflow * CASH_RESERVE_MAX_MONTHS, 2)
+    investment_policy = (
+        financial_profile_payload.get("investment_policy")
+        if isinstance(financial_profile_payload.get("investment_policy"), dict)
+        else {}
+    )
+    # Risk tolerance sets what counts as "excess": a conservative household's
+    # 8-month cushion is a choice, not idle money; an aggressive one accepts
+    # a thinner buffer. Saved in Profile -> Investing.
+    risk_tolerance = str(investment_policy.get("risk_tolerance") or "").strip().lower()
+    reserve_max_months = {"conservative": 9.0, "aggressive": 4.0}.get(risk_tolerance, CASH_RESERVE_MAX_MONTHS)
+    maximum_reserve = round(monthly_outflow * reserve_max_months, 2)
 
     if total_cash < 0:
         detail = (
@@ -1255,32 +1265,42 @@ def _cash_liquidity_candidates(
         )
         return candidates
 
-    if cash_months > CASH_RESERVE_MAX_MONTHS:
+    if cash_months > reserve_max_months:
         excess_cash = round(max(total_cash - maximum_reserve, 0.0), 2)
         if excess_cash <= 0:
             return candidates
         priority = "medium" if cash_months >= 12 else "low"
+        tolerance_note = f" that fits a {risk_tolerance} risk tolerance" if risk_tolerance in {"conservative", "aggressive"} else ""
         detail = (
-            f"Cash covers about {cash_months:.1f} months of outflows. That is above the 6-month reserve "
-            f"target of {_format_money(maximum_reserve)}, leaving about {_format_money(excess_cash)} to review for goals, debt payoff, or investing."
+            f"Cash covers about {cash_months:.1f} months of outflows. That is above the {reserve_max_months:.0f}-month reserve "
+            f"target of {_format_money(maximum_reserve)}{tolerance_note}, leaving about {_format_money(excess_cash)} to review for goals, debt payoff, or investing."
         )
         # Spare money deserves a destination, not just a flag: when targets
         # exist, say where this cash could go — underweight gaps first, then
         # target weights, naming the household's own funds. Review-only.
         holdings_map = holdings_payload.get("holdings") if isinstance(holdings_payload.get("holdings"), dict) else {}
-        investment_policy = (
-            financial_profile_payload.get("investment_policy")
-            if isinstance(financial_profile_payload.get("investment_policy"), dict)
-            else {}
+        goal_items = (
+            financial_profile_payload.get("goal_items")
+            if isinstance(financial_profile_payload.get("goal_items"), list)
+            else []
         )
         deployment = build_excess_cash_deployment(
             excess_cash_usd=excess_cash,
             holdings=holdings_map,
             targets_pct=investment_policy.get("target_asset_class_allocation_pct") or {},
             total_market_value=safe_float(holdings_payload.get("total_value"), 0.0),
+            goal_items=goal_items,
         )
         if deployment.get("status") == "ready":
             detail = f"{detail} {deployment['sentence']}"
+        # The life-planning question, asked exactly when it matters: spare
+        # money exists and no dated goal is on file to claim any of it.
+        if not any(isinstance(goal, dict) and goal.get("target_date") for goal in goal_items):
+            detail = (
+                f"{detail} No dated goals are on file — planning for anything in the next few years "
+                "(a home down payment, children, a big trip)? Recording it in Profile → Goals "
+                "reserves cash for it before investing suggestions."
+            )
         candidates.append(
             _cash_liquidity_candidate(
                 signal_key="excess_idle_cash",

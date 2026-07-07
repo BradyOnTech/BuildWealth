@@ -89,6 +89,77 @@ def test_excess_cash_recommendation_names_destinations() -> None:
     assert by_class["equity"]["reason"] == "target_weight"
 
 
+def test_near_dated_goals_claim_cash_before_investing() -> None:
+    plan = build_excess_cash_deployment(
+        excess_cash_usd=50_000.0,
+        holdings=_holdings(),
+        targets_pct=_TARGETS,
+        total_market_value=460_000.0,
+        goal_items=[
+            {"id": "g1", "label": "House down payment", "target_amount_usd": 30_000.0, "target_date": "2027-06-01T00:00:00+00:00", "priority": "high"},
+            {"id": "g2", "label": "Retirement", "target_amount_usd": 900_000.0, "target_date": "2060-01-01T00:00:00+00:00", "priority": "high"},
+        ],
+        now=__import__("datetime").datetime(2026, 7, 7, tzinfo=__import__("datetime").timezone.utc),
+    )
+    rows = plan["rows"]
+    # The 2027 goal claims its $30k first, held as cash; the 2060 goal is
+    # beyond the cash horizon and claims nothing.
+    assert rows[0]["reason"] == "goal_reserve"
+    assert rows[0]["goal_label"] == "House down payment"
+    assert rows[0]["amount_usd"] == 30_000.0
+    assert not any(row.get("goal_label") == "Retirement" for row in rows)
+    # Only the remaining $20k gets invest suggestions.
+    invested = sum(row["amount_usd"] for row in rows if row["reason"] != "goal_reserve")
+    assert round(invested, 0) == 20_000.0
+    assert "goals first" in plan["sentence"]
+    assert "set aside in cash for House down payment (due 2027)" in plan["sentence"]
+
+
+def test_risk_tolerance_scales_the_reserve_ceiling() -> None:
+    def run(policy: dict) -> object:
+        return generate_cash_liquidity_recommendations(
+            holdings_payload={"holdings": _holdings(), "total_cash": 28_000.0, "total_value": 460_000.0},
+            financial_profile_payload={
+                "expense_items": [{"id": "e1", "label": "Living", "monthly_amount_usd": 3_500.0}],
+                "debt_items": [],
+                "investment_policy": policy,
+            },
+            existing_recommendations=[],
+            dry_run=True,
+        )
+
+    # $28k on $3.5k/mo = 8 months of cash.
+    # Moderate (6-month ceiling): flagged as excess.
+    moderate = run({"risk_tolerance": "moderate", "target_asset_class_allocation_pct": _TARGETS})
+    assert moderate.generated_count == 1
+    assert "6-month reserve target" in moderate.candidates[0]["detail"]
+    # Conservative (9-month ceiling): an 8-month cushion is a choice, not idle.
+    conservative = run({"risk_tolerance": "conservative", "target_asset_class_allocation_pct": _TARGETS})
+    assert conservative.generated_count == 0
+    # Aggressive (4-month ceiling): flagged sooner, and the sentence says why.
+    aggressive = run({"risk_tolerance": "aggressive", "target_asset_class_allocation_pct": _TARGETS})
+    assert aggressive.generated_count == 1
+    assert "4-month reserve target" in aggressive.candidates[0]["detail"]
+    assert "fits a aggressive risk tolerance" in aggressive.candidates[0]["detail"]
+
+
+def test_missing_goals_prompt_the_life_planning_question() -> None:
+    result = generate_cash_liquidity_recommendations(
+        holdings_payload={"holdings": _holdings(), "total_cash": 71_000.0, "total_value": 460_000.0},
+        financial_profile_payload={
+            "expense_items": [{"id": "e1", "label": "Living", "monthly_amount_usd": 3_500.0}],
+            "debt_items": [],
+            "goal_items": [],
+            "investment_policy": {"target_asset_class_allocation_pct": _TARGETS},
+        },
+        existing_recommendations=[],
+        dry_run=True,
+    )
+    detail = result.candidates[0]["detail"]
+    assert "No dated goals are on file" in detail
+    assert "a home down payment, children" in detail
+
+
 def test_without_targets_the_recommendation_stays_generic() -> None:
     holdings_payload = {
         "holdings": _holdings(),
