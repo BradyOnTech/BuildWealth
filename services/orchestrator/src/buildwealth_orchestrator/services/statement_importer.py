@@ -228,6 +228,22 @@ def parse_statement_csv(
             parse_errors=errors or ["No valid transactions found."],
         )
 
+    return build_statement_result(transactions, parse_errors=errors)
+
+
+def build_statement_result(
+    transactions: list[ParsedTransaction],
+    *,
+    parse_errors: list[str] | None = None,
+) -> StatementParseResult:
+    """Aggregate parsed transactions into expense/income suggestions.
+
+    Shared by every extraction path (CSV today, LLM vision extraction of
+    screenshots) so a transaction is a transaction regardless of how it
+    entered the app.
+    """
+    errors = list(parse_errors or [])
+
     # Date range
     dated = [t for t in transactions if t.date]
     date_start = min(t.date for t in dated) if dated else None

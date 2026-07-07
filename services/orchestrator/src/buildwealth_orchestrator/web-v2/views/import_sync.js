@@ -6,6 +6,7 @@ import { api } from '../lib/api.js';
 import { state } from '../lib/state.js';
 import { html, raw, $, esc, setView, delegate } from '../lib/dom.js';
 import { fmtRelative } from '../lib/format.js';
+import { renderBudgetReaderCard, bindBudgetReader } from './import_sync/budget_reader.js';
 
 export const meta = {
   id: 'import-sync',
@@ -91,6 +92,7 @@ function render() {
   setView(shell, html`
     ${raw(masthead())}
     ${raw(workbenchCard())}
+    ${raw(renderBudgetReaderCard())}
     ${raw(reportsCard())}
     ${raw(syncCard())}
     <div class="import-secondary-grid">
@@ -591,6 +593,7 @@ function renderImportRow(row) {
 function attachHandlers() {
   const root = $('#import-sync-page');
   if (!root) return;
+  bindBudgetReader(root, render);
   delegate(root, 'click', '#import-sync-run', (e) => { e.preventDefault(); runSync(); });
   delegate(root, 'click', '#import-workbench-apply', (e) => { e.preventDefault(); applyPreview(); });
   delegate(root, 'click', '[data-import-report-id]', (e, target) => {

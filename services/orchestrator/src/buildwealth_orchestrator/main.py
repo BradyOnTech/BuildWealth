@@ -260,6 +260,7 @@ from buildwealth_orchestrator.services.snapshot_store import (
 from buildwealth_orchestrator.services.snapshot_backfill import backfill_snapshot_history
 from buildwealth_orchestrator.services.affordability import assess_affordability
 from buildwealth_orchestrator.services.statement_importer import parse_statement_csv
+from buildwealth_orchestrator.services.statement_vision import extract_statement_from_image
 from buildwealth_orchestrator.services.portfolio_simulator import simulate_trade
 from buildwealth_orchestrator.services.portfolio_fit import assess_portfolio_fit
 from buildwealth_orchestrator.services.goal_tracker import compute_goal_progress
@@ -18380,6 +18381,74 @@ async def upload_statement(
             for s in result.income_suggestions
         ],
         "parse_errors": result.parse_errors,
+    }
+
+
+@app.post("/api/import/statement-vision")
+async def upload_statement_image(
+    file: UploadFile = File(...),
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    """Read a statement screenshot/photo with the 'extract' vision model and
+    return the same reviewable suggestions as a CSV upload — nothing is saved
+    until the user applies them."""
+    require_permission(services.context, "imports.read")
+    image_bytes = await file.read()
+    result = await extract_statement_from_image(
+        image_bytes,
+        str(file.content_type or "").strip().lower(),
+        llm_client=llm_router.client_for("extract"),
+    )
+    if result.status != "ready":
+        return {
+            "status": result.status,
+            "detail": result.detail,
+            "file_name": file.filename,
+            "warnings": result.warnings,
+        }
+
+    parsed = result.parse_result
+    return {
+        "status": "ready",
+        "file_name": file.filename,
+        "measurement_source": "ai_vision_extraction",
+        "review_note": (
+            "Read by AI from your image — check the numbers against the statement "
+            "before applying. Nothing is saved until you apply."
+        ),
+        "account_name": result.account_name,
+        "account_type": result.account_type,
+        "institution": result.institution,
+        "ending_balance_usd": result.ending_balance_usd,
+        "statement_period_start": result.statement_period_start,
+        "statement_period_end": result.statement_period_end,
+        "transaction_count": len(parsed.transactions),
+        "date_range_start": parsed.date_range_start.isoformat() if parsed.date_range_start else None,
+        "date_range_end": parsed.date_range_end.isoformat() if parsed.date_range_end else None,
+        "months_covered": parsed.months_covered,
+        "total_monthly_expenses": parsed.total_expenses,
+        "total_monthly_income": parsed.total_income,
+        "expense_suggestions": [
+            {
+                "label": s.label,
+                "monthly_amount_usd": s.monthly_amount_usd,
+                "category": s.category,
+                "is_fixed": s.is_fixed,
+                "transaction_count": s.transaction_count,
+                "sample_descriptions": s.sample_descriptions,
+            }
+            for s in parsed.expense_suggestions
+        ],
+        "income_suggestions": [
+            {
+                "label": s.label,
+                "monthly_amount_usd": s.monthly_amount_usd,
+                "source_type": s.source_type,
+                "transaction_count": s.transaction_count,
+            }
+            for s in parsed.income_suggestions
+        ],
+        "warnings": [*result.warnings, *parsed.parse_errors],
     }
 
 

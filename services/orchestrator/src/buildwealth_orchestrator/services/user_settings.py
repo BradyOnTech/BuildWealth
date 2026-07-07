@@ -100,6 +100,9 @@ class UserSettingsStore:
         "llm_task_summarize_provider": "",
         "llm_task_summarize_model": "",
         "llm_task_summarize_base_url": "",
+        "llm_task_extract_provider": "",
+        "llm_task_extract_model": "",
+        "llm_task_extract_base_url": "",
     }
 
     ALLOWED_KEYS = frozenset((*DEFAULTS.keys(), "updated_at", "llm_settings_saved_at", "context_settings_saved_at"))

@@ -377,6 +377,9 @@ export const api = {
   importFiles:        () => fetchJson('/api/import/files'),
   csvTemplates:       () => fetchJson('/api/import/csv-templates'),
   importCsvUpload:    (formData) => postForm('/api/import/upload-csv', formData),
+  uploadStatement:    (formData) => postForm('/api/import/statement', formData),
+  uploadStatementImage: (formData) => postForm('/api/import/statement-vision', formData),
+  applyStatementSuggestions: (body = {}) => postJson('/api/import/statement/apply', body),
   importWorkbenchPreview: (formData) => postForm('/api/import/workbench/preview', formData),
   applyImportWorkbench: (sessionId, body = {}) => postJson(
     `/api/import/workbench/${encodeURIComponent(sessionId)}/apply`,

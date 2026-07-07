@@ -26,8 +26,10 @@ from buildwealth_orchestrator.services.llm_clients import (
 )
 
 # Task classes with a real or near-term consumer. 'chat' is the interactive
-# Copilot; 'summarize' covers background summaries and draft preparation.
-LLM_TASKS = ("chat", "summarize")
+# Copilot; 'summarize' covers background summaries and draft preparation;
+# 'extract' is document/statement vision extraction (needs a vision-capable
+# model — route it explicitly if the primary model can't read images).
+LLM_TASKS = ("chat", "summarize", "extract")
 
 _OVERRIDE_FIELDS = ("provider", "model", "base_url")
 
