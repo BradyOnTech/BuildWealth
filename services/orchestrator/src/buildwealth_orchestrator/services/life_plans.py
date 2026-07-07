@@ -52,6 +52,38 @@ _COVERED_KEYWORDS: dict[str, tuple[str, ...]] = {
 
 DRAFT_NOTES = "From the life-plans interview — starting-point estimate; edit to fit."
 
+# Category → (event_type, explicit impact_type or None for the type's default).
+# These are simulation-real semantics, not decoration: the projection engine
+# treats "expense" amounts as money leaving in that year, so a home answer
+# becomes a modeled outflow the trajectory fan can actually show.
+_TIMELINE_EVENT_BY_CATEGORY: dict[str, tuple[str, str | None]] = {
+    "home": ("purchase", None),          # purchase defaults to expense
+    "wedding": ("purchase", None),
+    "education": ("purchase", None),
+    "big_purchase": ("purchase", None),
+    "children": ("milestone", "expense"),
+    "career_break": ("milestone", "expense"),
+}
+
+
+def timeline_event_for_draft(draft: dict[str, Any]) -> dict[str, Any] | None:
+    """The Plan-timeline twin of a draft goal: same date, same dollars,
+    typed so projections subtract the money in the year it leaves."""
+    event_type, impact_type = _TIMELINE_EVENT_BY_CATEGORY.get(
+        str(draft.get("category") or ""), ("milestone", None)
+    )
+    event: dict[str, Any] = {
+        "date": draft.get("target_date"),
+        "label": draft.get("label"),
+        "event_type": event_type,
+        "amount_usd": draft.get("target_amount_usd"),
+        "recurring_frequency": "one_time",
+        "notes": DRAFT_NOTES,
+    }
+    if impact_type:
+        event["impact_type"] = impact_type
+    return event if event["date"] and event["label"] else None
+
 
 def _existing_goal_for(category: str, goal_items: list[Any]) -> dict[str, Any] | None:
     keywords = _COVERED_KEYWORDS.get(category, ())
@@ -201,6 +233,7 @@ def build_life_plan_drafts(
         draft["priority"] = timeframe["priority"]
         draft["notes"] = DRAFT_NOTES
         draft["target_amount_usd"] = round(draft["target_amount_usd"])
+        draft["timeline_event"] = timeline_event_for_draft(draft)
         drafts.append(draft)
 
     # Every chapter answered "not now": that is an answer, not a failure.

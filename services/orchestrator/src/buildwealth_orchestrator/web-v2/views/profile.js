@@ -25,6 +25,7 @@ import {
   onInterviewField,
   onDraftPick,
   onDraftField,
+  onDraftTimeline,
 } from './profile/life_plans.js';
 
 export const meta = {
@@ -325,6 +326,7 @@ function attachHandlers() {
 
   delegate(root, 'change', '[data-interview-field]', (_, el) => onInterviewField(el));
   delegate(root, 'change', '[data-draft-pick]', (_, el) => onDraftPick(el));
+  delegate(root, 'change', '[data-draft-timeline]', (_, el) => onDraftTimeline(el));
   delegate(root, 'change', '[data-draft-field]', (_, el) => onDraftField(el));
   delegate(root, 'input', '[data-draft-field]', (_, el) => onDraftField(el));
 

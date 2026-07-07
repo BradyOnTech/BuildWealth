@@ -221,6 +221,36 @@ function peerGuides(maxY) {
     }));
 }
 
+// The life drawn on the money: plan-timeline events become vertical moments
+// on the fan, so a median that dips in 2030 says WHY — "Home down payment".
+// Set once by the plan view whenever the timeline loads or saves.
+let planTimelineEvents = [];
+export function setPlanTimelineEvents(events) {
+  planTimelineEvents = Array.isArray(events) ? events : [];
+}
+
+const MAX_EVENT_MARKERS = 4;
+
+function timelineEventMarkers(usedYears) {
+  const markers = [];
+  for (const event of planTimelineEvents) {
+    if (markers.length >= MAX_EVENT_MARKERS) break;
+    const year = Number(String(event?.date || '').slice(0, 4));
+    if (!Number.isFinite(year) || year < 1900) continue;
+    // Coast FI / Retirement (and earlier events) own their year's label slot.
+    if (usedYears.has(year)) continue;
+    const label = String(event.label || '').trim();
+    if (!label) continue;
+    usedYears.add(year);
+    markers.push({
+      x: year,
+      label: label.length > 18 ? `${label.slice(0, 17)}…` : label,
+      cls: 'chart-marker-event',
+    });
+  }
+  return markers;
+}
+
 export function renderTrajectoryFan(candidateResult, baseResult, { planId = '', medianLabel = 'Median (this simulation)' } = {}) {
   const candidate = objectValue(candidateResult);
   const base = objectValue(baseResult);
@@ -248,6 +278,11 @@ export function renderTrajectoryFan(candidateResult, baseResult, { planId = '', 
     markers.push({ x: coastYear, label: 'Coast FI', cls: 'chart-marker-coast' });
   }
   if (drawdownYear != null) markers.push({ x: drawdownYear, label: 'Retirement' });
+  markers.push(...timelineEventMarkers(new Set(markers.map(m => m.x))));
+  // The chart staggers label rows by position in this list; sorted by x,
+  // horizontally adjacent markers land on alternating rows instead of
+  // colliding when array order differs from screen order.
+  markers.sort((a, b) => a.x - b.x);
 
   const fanMax = Math.max(...merged.map(row => Number(row.p90_ending_balance_usd)).filter(Number.isFinite));
   const guides = Number.isFinite(fanMax) ? peerGuides(fanMax) : [];

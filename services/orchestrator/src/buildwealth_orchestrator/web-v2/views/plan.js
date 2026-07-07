@@ -28,7 +28,13 @@ import { derivePlanHealth, renderPlanHealth } from './plan/health.js';
 import { renderTrajectory } from './plan/trajectory.js';
 import { renderArtifacts } from './plan/artifacts.js';
 import { buildScenarioBranchPayload, renderBranches } from './plan/branches.js';
-import { buildScenarioDiffPayload, renderScenarios, renderTrajectoryPreview, setPeerBenchmark } from './plan/scenarios.js';
+import {
+  buildScenarioDiffPayload,
+  renderScenarios,
+  renderTrajectoryPreview,
+  setPeerBenchmark,
+  setPlanTimelineEvents,
+} from './plan/scenarios.js';
 import { buildWithdrawalComparePayload, renderWithdrawals } from './plan/withdrawals.js';
 import { buildTimelinePayload, renderTimeline } from './plan/timeline.js';
 import { buildContributionRulesPayload, renderContributions } from './plan/contributions.js';
@@ -255,6 +261,8 @@ async function loadTimeline(id) {
       error: err.message,
     };
   }
+  // Life events annotate the trajectory fans.
+  setPlanTimelineEvents(ui.timeline.timeline?.events || []);
 }
 
 async function loadBranchTemplates(id) {
@@ -1296,6 +1304,7 @@ async function saveTimeline() {
   rerenderTimelineWorkspace();
   try {
     ui.timeline.timeline = await api.updatePlanTimeline(ui.plan.id, payload);
+    setPlanTimelineEvents(ui.timeline.timeline?.events || []);
     ui.plan = await api.plan(ui.plan.id);
     state.plan = ui.plan;
     ui.timeline.draft = {};

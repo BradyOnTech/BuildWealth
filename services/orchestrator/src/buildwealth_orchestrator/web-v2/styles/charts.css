@@ -206,3 +206,13 @@
 .chart-hover-readout .readout-val {
   color: var(--ink-strong);
 }
+
+/* Life events on the fan — softer than the milestone markers so the
+   money's own milestones (Coast FI, Retirement) keep visual rank. */
+.chart-marker.chart-marker-event {
+  stroke: var(--ink-faint);
+  stroke-dasharray: 2 4;
+}
+.chart-marker-label.chart-marker-event {
+  fill: var(--ink-soft);
+}

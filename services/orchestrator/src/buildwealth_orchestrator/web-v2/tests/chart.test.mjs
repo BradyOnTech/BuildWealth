@@ -314,3 +314,26 @@ test('fanChart draws horizontal guides and includes them in the y-domain', () =>
   const plain = fanChart({ rows, xKey: 'year', bands: [{ lo: 'p10', hi: 'p90' }], lines: [{ key: 'p50' }] });
   assert.doesNotMatch(plain, /chart-guide/);
 });
+
+test('trajectory fan marks plan-timeline events as vertical moments', async () => {
+  const { renderTrajectoryFan, setPlanTimelineEvents } = await import('../views/plan/scenarios.js');
+  setPlanTimelineEvents([
+    { date: '2033-04-01', label: 'Home down payment', event_type: 'purchase', amount_usd: 70000 },
+    { date: '1899-01-01', label: 'Ancient event' },
+    { date: '2035-06-01', label: 'Collides with retirement' },
+  ]);
+  const markup = String(renderTrajectoryFan(FIXTURE.candidate_result, FIXTURE.base_result));
+  setPlanTimelineEvents([]);
+
+  // The event lands as a soft vertical marker with its own label...
+  assert.match(markup, /chart-marker-event/);
+  assert.match(markup, /Home down payment/);
+  // ...the Retirement milestone keeps its year's label slot...
+  assert.doesNotMatch(markup, /Collides with retirement/);
+  // ...and nonsense dates never reach the chart.
+  assert.doesNotMatch(markup, /Ancient event/);
+
+  // With no events set, no event markers render.
+  const bare = String(renderTrajectoryFan(FIXTURE.candidate_result, FIXTURE.base_result));
+  assert.doesNotMatch(bare, /chart-marker-event/);
+});

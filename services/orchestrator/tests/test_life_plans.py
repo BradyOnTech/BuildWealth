@@ -127,3 +127,28 @@ def test_junk_answers_are_ignored_not_fatal() -> None:
     assert result["drafts"][0]["category"] == "children"
     assert result["drafts"][0]["target_amount_usd"] == 18_000
     assert result["no_plans"] is False
+
+
+def test_drafts_carry_timeline_event_twins() -> None:
+    result = build_life_plan_drafts(
+        {
+            "home": {"timeframe": "in_3_5y", "amount_usd": 400_000},
+            "career_break": {"timeframe": "within_2y", "months": 6},
+        },
+        monthly_expenses_usd=4_000.0,
+        now=NOW,
+    )
+    events = {d["category"]: d["timeline_event"] for d in result["drafts"]}
+    # A home is a purchase: the projection engine subtracts it as an expense.
+    home = events["home"]
+    assert home["event_type"] == "purchase"
+    assert "impact_type" not in home  # purchase already defaults to expense
+    assert home["amount_usd"] == 80_000
+    assert home["date"].endswith("-01")
+    assert home["recurring_frequency"] == "one_time"
+    # A career break is a milestone with explicit expense impact — job_change
+    # would ADD income; the break spends the banked runway instead.
+    career = events["career_break"]
+    assert career["event_type"] == "milestone"
+    assert career["impact_type"] == "expense"
+    assert career["amount_usd"] == 24_000

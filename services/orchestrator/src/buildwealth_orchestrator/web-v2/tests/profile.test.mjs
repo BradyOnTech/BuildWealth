@@ -155,6 +155,12 @@ test('life-plans interview: profile view wires actions, fields, and drafts', asy
   // failed save rolls the optimistic push back instead of claiming success.
   assert.match(moduleSource, /id: uid\(\)/);
   assert.match(moduleSource, /goal_items = goalsBefore/);
+  // Timeline twins: per-draft opt-out, appended to the active plan after the
+  // goals save, and a timeline failure never undoes the saved goals.
+  assert.match(profileSource, /data-draft-timeline/);
+  assert.match(moduleSource, /api\.planTimeline/);
+  assert.match(moduleSource, /api\.updatePlanTimeline/);
+  assert.match(moduleSource, /Goals saved, but the Plan timeline/);
   // "Not now" across the board can pause goal nudges honestly.
   assert.match(moduleSource, /no_goals: true/);
   // Covered questions default to "not now" instead of asking again.

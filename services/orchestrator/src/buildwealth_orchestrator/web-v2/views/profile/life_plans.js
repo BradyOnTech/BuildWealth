@@ -20,6 +20,9 @@ const st = {
   drafts: null,       // POST /api/life-plans/drafts payload
   dropped: new Set(), // draft indexes the user unchecked
   edits: {},          // draft index → { target_amount_usd, target_date }
+  timelinePlan: null,          // active plan {id, title} when one exists
+  timelineDropped: new Set(),  // draft indexes NOT marked on the timeline
+  timelineAdded: 0,
   appliedCount: 0,
   pausedNudges: false,
 };
@@ -32,8 +35,11 @@ export function renderLifeInterview(ui) {
 
 function renderClosedCard(ui) {
   const datedGoals = (ui.profile?.goal_items || []).filter(g => g && g.target_date).length;
+  const timelineNote = st.timelineAdded
+    ? ` ${st.timelineAdded} marked on the Plan timeline — the trajectory now shows them.`
+    : '';
   const note = st.appliedCount
-    ? `${st.appliedCount} goal${st.appliedCount === 1 ? '' : 's'} added — the table below has them.`
+    ? `${st.appliedCount} goal${st.appliedCount === 1 ? '' : 's'} added — the table below has them.${timelineNote}`
     : st.pausedNudges
       ? 'Goal nudges paused. Sit again whenever plans change.'
       : datedGoals
@@ -179,6 +185,8 @@ function renderDraft(draft, index) {
   const amount = edit.target_amount_usd ?? draft.target_amount_usd;
   const date = edit.target_date ?? draft.target_date;
   const kept = !st.dropped.has(index);
+  const timelineEligible = Boolean(st.timelinePlan && draft.timeline_event);
+  const onTimeline = timelineEligible && !st.timelineDropped.has(index);
   return html`
     <li class="life-draft ${kept ? '' : 'dropped'}">
       <label class="life-draft-keep">
@@ -198,6 +206,13 @@ function renderDraft(draft, index) {
                  data-draft-field="target_date" data-draft-index="${index}">
         </label>
       </div>
+      ${timelineEligible ? html`
+        <label class="life-draft-timeline">
+          <input type="checkbox" data-draft-timeline="${index}" ${onTimeline ? 'checked' : ''} ${kept ? '' : 'disabled'}>
+          Also mark on the “${esc(st.timelinePlan.title || 'Plan')}” timeline — the trajectory
+          will model this money leaving in ${esc(String(date || '').slice(0, 4))}.
+        </label>
+      ` : ''}
       <p class="marginalia">${esc(draft.sentence)}</p>
     </li>
   `;
@@ -255,6 +270,13 @@ export function onDraftPick(el) {
   renderProfile();
 }
 
+export function onDraftTimeline(el) {
+  const index = Number(el.dataset.draftTimeline);
+  if (!Number.isInteger(index)) return;
+  if (el.checked) st.timelineDropped.delete(index);
+  else st.timelineDropped.add(index);
+}
+
 export function onDraftField(el) {
   const index = Number(el.dataset.draftIndex);
   const field = String(el.dataset.draftField || '');
@@ -269,11 +291,26 @@ async function draftGoals() {
     st.drafts = await api.lifePlanDrafts(st.answers);
     st.dropped = new Set();
     st.edits = {};
+    st.timelineDropped = new Set();
+    st.timelinePlan = await resolveActivePlan();
   } catch (err) {
     st.error = err.message;
   }
   st.busy = false;
   renderProfile();
+}
+
+// The timeline bridge needs a plan to write to; without one the drafts
+// review simply doesn't offer it.
+async function resolveActivePlan() {
+  try {
+    const payload = await api.plans();
+    const plans = Array.isArray(payload?.plans) ? payload.plans : (Array.isArray(payload) ? payload : []);
+    const active = plans.find(plan => plan && plan.is_active) || plans[0] || null;
+    return active ? { id: String(active.id || ''), title: String(active.title || 'Plan') } : null;
+  } catch {
+    return null;
+  }
 }
 
 async function applyDrafts(ui) {
@@ -308,11 +345,45 @@ async function applyDrafts(ui) {
     return;
   }
   st.appliedCount = goals.length;
+  st.timelineAdded = await appendTimelineEvents(drafts);
   st.open = false;
   st.drafts = null;
   st.answers = {};
   st.interview = null; // Reload next time: covered-detection must see the new goals.
   renderProfile();
+}
+
+// Goals saved — now the timeline twins. A failure here must not undo the
+// goals; it reports separately and leaves the timeline untouched.
+async function appendTimelineEvents(drafts) {
+  const planId = st.timelinePlan?.id;
+  if (!planId) return 0;
+  const events = drafts
+    .map((draft, index) => ({ draft, index }))
+    .filter(({ draft, index }) =>
+      !st.dropped.has(index) && !st.timelineDropped.has(index) && draft.timeline_event)
+    .map(({ draft, index }) => {
+      const edit = st.edits[index] || {};
+      const amount = Number(edit.target_amount_usd ?? draft.timeline_event.amount_usd);
+      return {
+        ...draft.timeline_event,
+        date: String(edit.target_date ?? draft.timeline_event.date ?? ''),
+        amount_usd: Number.isFinite(amount) && amount > 0 ? amount : draft.timeline_event.amount_usd,
+      };
+    })
+    .filter(event => event.date);
+  if (!events.length) return 0;
+  try {
+    const current = await api.planTimeline(planId);
+    await api.updatePlanTimeline(planId, {
+      events: [...(Array.isArray(current?.events) ? current.events : []), ...events],
+      retirement: current?.retirement || {},
+    });
+    return events.length;
+  } catch (err) {
+    st.error = `Goals saved, but the Plan timeline could not be updated: ${err.message}`;
+    return 0;
+  }
 }
 
 async function pauseNudges(ui) {
