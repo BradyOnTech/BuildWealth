@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from buildwealth_orchestrator.services.portfolio_rebalancing import (
     allocation_drift_sentence,
     build_allocation_drift_plan,
+    build_excess_cash_deployment,
     build_trim_plan,
     is_untradable_position,
     trim_plan_summary,
@@ -1263,6 +1264,23 @@ def _cash_liquidity_candidates(
             f"Cash covers about {cash_months:.1f} months of outflows. That is above the 6-month reserve "
             f"target of {_format_money(maximum_reserve)}, leaving about {_format_money(excess_cash)} to review for goals, debt payoff, or investing."
         )
+        # Spare money deserves a destination, not just a flag: when targets
+        # exist, say where this cash could go — underweight gaps first, then
+        # target weights, naming the household's own funds. Review-only.
+        holdings_map = holdings_payload.get("holdings") if isinstance(holdings_payload.get("holdings"), dict) else {}
+        investment_policy = (
+            financial_profile_payload.get("investment_policy")
+            if isinstance(financial_profile_payload.get("investment_policy"), dict)
+            else {}
+        )
+        deployment = build_excess_cash_deployment(
+            excess_cash_usd=excess_cash,
+            holdings=holdings_map,
+            targets_pct=investment_policy.get("target_asset_class_allocation_pct") or {},
+            total_market_value=safe_float(holdings_payload.get("total_value"), 0.0),
+        )
+        if deployment.get("status") == "ready":
+            detail = f"{detail} {deployment['sentence']}"
         candidates.append(
             _cash_liquidity_candidate(
                 signal_key="excess_idle_cash",
@@ -1281,6 +1299,7 @@ def _cash_liquidity_candidates(
                     "target_cash_reserve_usd": maximum_reserve,
                     "excess_cash_usd": excess_cash,
                     "monthly_outflow_usd": monthly_outflow,
+                    "deployment_plan": deployment.get("rows") or [],
                 },
                 expected_outcome={
                     "expected_delta_cash_drag_usd": -excess_cash,

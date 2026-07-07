@@ -287,6 +287,10 @@ def build_allocation_drift_plan(
                 "gap_usd": gap_usd,
                 "direction": direction,
                 "trim_candidates": candidates if direction == "overweight" else [],
+                # For underweights the same largest-holdings list answers the
+                # opposite question: which of the household's OWN funds new
+                # money could go to.
+                "add_candidates": candidates if direction == "underweight" else [],
             }
         )
 
@@ -298,6 +302,118 @@ def build_allocation_drift_plan(
         "targets_pct": targets,
         "investable_value_usd": round(base_value, 2),
     }
+
+
+def build_excess_cash_deployment(
+    *,
+    excess_cash_usd: float,
+    holdings: dict[str, Any],
+    targets_pct: dict[str, Any],
+    total_market_value: float,
+) -> dict[str, Any]:
+    """One honest way to deploy spare cash against the saved targets.
+
+    Underweight gaps are filled first (largest first), and whatever remains
+    follows the target weights — naming the household's OWN largest fund in
+    each class so "add to fixed income" reads as "add to BND". The cash class
+    itself never receives a deployment (the money is already cash).
+
+    Static approximation on purpose: gaps are measured before any deployment,
+    not re-solved after each dollar — this is a review-only suggestion, not
+    an order ticket, and false precision would overstate what it is.
+    """
+    excess = round(max(_safe(excess_cash_usd), 0.0), 2)
+    if excess <= 0:
+        return {"status": "no_excess", "rows": [], "sentence": ""}
+    plan = build_allocation_drift_plan(
+        holdings=holdings,
+        targets_pct=targets_pct,
+        total_market_value=total_market_value,
+    )
+    if plan.get("status") == "no_targets":
+        return {"status": "no_targets", "rows": [], "sentence": ""}
+
+    rows: list[dict[str, Any]] = []
+    remaining = excess
+
+    underweights = [
+        row
+        for row in plan.get("rows") or []
+        if row.get("direction") == "underweight" and str(row.get("asset_class")) != "cash"
+    ]
+    for row in sorted(underweights, key=lambda item: -_safe(item.get("gap_usd"))):
+        if remaining <= 0:
+            break
+        amount = round(min(_safe(row.get("gap_usd")), remaining), 2)
+        if amount <= 0:
+            continue
+        rows.append(
+            {
+                "asset_class": row.get("asset_class"),
+                "amount_usd": amount,
+                "reason": "closes_gap",
+                "add_candidates": row.get("add_candidates") or [],
+            }
+        )
+        remaining = round(remaining - amount, 2)
+
+    if remaining > 0:
+        targets = {
+            klass: pct
+            for klass, pct in (plan.get("targets_pct") or {}).items()
+            if klass != "cash"
+        }
+        total_weight = sum(targets.values())
+        if total_weight > 0:
+            largest_by_class: dict[str, list[str]] = {}
+            for entry in holdings.values():
+                if not isinstance(entry, dict) or is_untradable_position(entry):
+                    continue
+                klass = _class_key(entry.get("asset_class"))
+                symbol = str(entry.get("symbol") or "").strip()
+                if symbol and klass in targets:
+                    largest_by_class.setdefault(klass, []).append(symbol)
+            for klass, pct in sorted(targets.items(), key=lambda item: -item[1]):
+                amount = round(remaining * pct / total_weight, 2)
+                if amount <= 0:
+                    continue
+                rows.append(
+                    {
+                        "asset_class": klass,
+                        "amount_usd": amount,
+                        "reason": "target_weight",
+                        "add_candidates": (largest_by_class.get(klass) or [])[:2],
+                    }
+                )
+
+    if not rows:
+        return {"status": "no_targets", "rows": [], "sentence": ""}
+
+    # A class can receive money twice (gap fill + remainder); one line per
+    # class is what a person can actually read.
+    merged: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        klass = str(row["asset_class"])
+        if klass in merged:
+            merged[klass]["amount_usd"] = round(merged[klass]["amount_usd"] + _safe(row["amount_usd"]), 2)
+            if not merged[klass]["add_candidates"]:
+                merged[klass]["add_candidates"] = row["add_candidates"]
+        else:
+            merged[klass] = dict(row)
+    merged_rows = sorted(merged.values(), key=lambda row: -_safe(row["amount_usd"]))
+
+    parts: list[str] = []
+    for row in merged_rows:
+        klass = str(row["asset_class"]).replace("_", " ")
+        candidates = ", ".join(row["add_candidates"][:2])
+        suffix = f" (add to {candidates})" if candidates else ""
+        parts.append(f"${_safe(row['amount_usd']):,.0f} to {klass}{suffix}")
+    sentence = (
+        "One way to deploy it against your saved targets: "
+        + "; ".join(parts)
+        + ". A suggestion to review, not an order."
+    )
+    return {"status": "ready", "rows": merged_rows, "sentence": sentence}
 
 
 def allocation_drift_sentence(row: dict[str, Any]) -> str:
