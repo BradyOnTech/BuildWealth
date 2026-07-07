@@ -404,7 +404,8 @@ test('v2 Plan workspace covers assumption save, evidence route, simulation decis
     await route.fulfill(jsonResponse({}));
   });
 
-  await page.goto('http://buildwealth-v2.test/#plan');
+  // The workbench folds closed by default; ?section= opens the one under test.
+  await page.goto('http://buildwealth-v2.test/#plan?section=assumptions');
   await page.getByRole('heading', { name: 'Plan assumptions' }).waitFor({ state: 'visible' });
 
   const contributionInput = page.locator('[data-assumption-field="annual_contribution_usd"]');
@@ -413,8 +414,11 @@ test('v2 Plan workspace covers assumption save, evidence route, simulation decis
   await page.getByRole('button', { name: /Save assumptions/ }).click();
 
   assert.deepEqual(settingsPatch, { annual_contribution_usd: 30000 });
+  // Decisions live in a closed workbench fold; open it to read the log.
+  await page.locator('details[data-plan-fold="decisions"] > summary').click();
   await page.getByText('Updated plan settings').waitFor({ state: 'visible' });
 
+  await page.locator('details[data-plan-fold="artifacts"] > summary').click();
   await page.getByRole('link', { name: 'Open dossier' }).click();
   await page.waitForURL('**/#research?dossier=artifact-dossier-msft&plan=plan-1');
   await page.getByText('Dossier detail').waitFor({ state: 'visible' });
@@ -444,6 +448,7 @@ test('v2 Plan workspace covers assumption save, evidence route, simulation decis
   await page.locator('#plan-scenarios').getByRole('button', { name: /Save decision note/ }).click();
   assert.equal(decisionPayload.summary, 'Reviewed simulation');
   assert.equal(decisionPayload.status, 'proposed');
+  await page.locator('details[data-plan-fold="decisions"] > summary').click();
   await page.getByText('Reviewed simulation').waitFor({ state: 'visible' });
 
   await page.goto('http://buildwealth-v2.test/#plan?id=plan-1&section=branches');
@@ -460,6 +465,7 @@ test('v2 Plan workspace covers assumption save, evidence route, simulation decis
   await page.locator('#plan-branches').getByRole('button', { name: /Save decision note/ }).click();
   assert.equal(decisionPayload.summary, 'Reviewed what-if simulation: Job Loss 6 Months');
   assert.equal(decisionPayload.status, 'proposed');
+  await page.locator('details[data-plan-fold="decisions"] > summary').click();
   await page.getByText('Reviewed what-if simulation: Job Loss 6 Months').waitFor({ state: 'visible' });
 
   await page.goto('http://buildwealth-v2.test/#plan?id=plan-1&section=withdrawals');
@@ -480,6 +486,7 @@ test('v2 Plan workspace covers assumption save, evidence route, simulation decis
   await page.locator('#plan-withdrawals').getByRole('button', { name: /Save decision note/ }).click();
   assert.equal(decisionPayload.summary, 'Reviewed withdrawal strategy comparison');
   assert.equal(decisionPayload.status, 'proposed');
+  await page.locator('details[data-plan-fold="decisions"] > summary').click();
   await page.getByText('Reviewed withdrawal strategy comparison').waitFor({ state: 'visible' });
 
   await page.getByRole('link', { name: 'Review with Copilot' }).click();
