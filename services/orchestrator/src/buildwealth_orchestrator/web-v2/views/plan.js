@@ -1,15 +1,17 @@
-// PLAN — masthead + movements + look-closer footer.
-//   I.   The story        — title, lede, key assumptions, top actions
+// PLAN — masthead + reading surface + workbench folds + look-closer footer.
+// The reading surface stays open (story, baseline trajectory, plan-vs-actual
+// tracking). The nine workbench tools fold into one-line rows whose summaries
+// carry the key fact, so the closed page still informs:
 //   IA.  The assumptions  — durable assumptions, active set, weak fields
 //   IB.  The health       — confidence and review gaps
-//   II.  The trajectory   — plan vs actual tracking
 //   IIA. The evidence     — typed artifacts and citations
-//   IIB. The scenarios    — simulation review surface
-//   IIC. The branches     — life-event what-if templates
+//   IIB. The simulations  — simulation review surface
+//   IIC. The what-ifs     — life-event branch templates
 //   IID. The withdrawals  — retirement drawdown strategy comparison
 //   IIE. The timeline     — retirement timing, drawdown posture, events
 //   IIF. The contributions — account priority and target rules
 //   III. The decisions    — decision log + append form
+// Deep links (?section=) and post-save focus open the matching fold.
 // Footer — Look closer (v2-first, with advanced planning fallbacks).
 
 import { api } from '../lib/api.js';
@@ -17,6 +19,7 @@ import { state } from '../lib/state.js';
 import { html, raw, esc, $, delegate } from '../lib/dom.js';
 import { renderStory } from './plan/story.js';
 import {
+  PLAN_ASSUMPTION_FIELDS,
   buildAssumptionSetsPayload,
   buildPlanSettingsPatch,
   renderAssumptions,
@@ -41,6 +44,7 @@ export const meta = {
 const ui = {
   selectedId: null,
   section: '',
+  openFolds: new Set(),
   plan: null,
   assumptions: { busy: false, assumptionSets: null, draft: {}, dirty: false, saving: false, error: null },
   health: { busy: false, recommendations: [], error: null },
@@ -73,6 +77,7 @@ export async function init(params = {}) {
   ui.artifacts.focusedArtifactId = String(params.artifact || '').trim();
   ui.scenarios.focusedRecommendationId = String(params.focus || params.recommendation || '').trim();
   ui.savedSimulations.focusedSimulationId = String(params.saved || '').trim();
+  seedOpenFolds(params);
   attachHandlers();
   // Peer context for trajectory overlays — best-effort, before the fans draw.
   try {
@@ -406,18 +411,153 @@ function rerenderBody() {
   root.innerHTML = html`
     ${raw(renderStory(ui.plan, ui.assumptions, ui.timeline))}
     <div id="plan-trajectory-preview">${raw(renderTrajectoryPreview(ui.trajectoryPreview, ui.plan?.id))}</div>
-    <div id="plan-assumptions">${raw(renderAssumptions(ui.plan, ui.assumptions))}</div>
-    <div id="plan-health" data-plan-section="health">${raw(renderPlanHealth(ui.plan, currentPlanHealth()))}</div>
     <div id="plan-trajectory" data-plan-section="trajectory">${raw(renderTrajectory(ui.trajectory))}</div>
-    <div id="plan-artifacts" data-plan-section="artifacts">${raw(renderArtifacts(ui.plan, ui.artifacts))}</div>
-    <div id="plan-scenarios" data-plan-section="scenarios">${raw(renderScenarios(ui.plan, { ...ui.scenarios, savedSimulations: ui.savedSimulations }, ui.assumptions))}</div>
-    <div id="plan-branches" data-plan-section="branches">${raw(renderBranches(ui.plan, ui.branches, ui.assumptions))}</div>
-    <div id="plan-withdrawals" data-plan-section="withdrawals">${raw(renderWithdrawals(ui.plan, ui.withdrawals, ui.assumptions))}</div>
-    <div id="plan-timeline" data-plan-section="timeline">${raw(renderTimeline(ui.plan, ui.timeline))}</div>
-    <div id="plan-contributions" data-plan-section="contributions">${raw(renderContributions(ui.plan, ui.contributions))}</div>
-    <div id="plan-decisions" data-plan-section="decisions">${raw(renderDecisions(ui.plan, ui.decisions))}</div>
+    <div class="plan-workbench">
+      <span class="section-eyebrow plan-workbench-eyebrow">The workbench</span>
+      ${raw(FOLDS.map(fold => renderFold(fold)).join(''))}
+    </div>
     ${raw(renderLookCloser(ui.plan))}
   `;
+}
+
+/* ─────────────  workbench folds  ─────────────
+   Nine tools condensed to nine scannable rows — the rows are the table of
+   contents. Bodies render up front (hidden while closed), so delegated
+   handlers and targeted rerenders keep working and opening is instant. */
+
+const FOLDS = [
+  { key: 'assumptions', id: 'plan-assumptions', numeral: 'IA', title: 'The assumptions',
+    summary: assumptionsFoldSummary,
+    body: () => renderAssumptions(ui.plan, ui.assumptions) },
+  { key: 'health', id: 'plan-health', numeral: 'IB', title: 'The health',
+    summary: healthFoldSummary,
+    body: () => renderPlanHealth(ui.plan, currentPlanHealth()) },
+  { key: 'artifacts', id: 'plan-artifacts', numeral: 'IIA', title: 'The evidence',
+    summary: artifactsFoldSummary,
+    body: () => renderArtifacts(ui.plan, ui.artifacts) },
+  { key: 'scenarios', id: 'plan-scenarios', numeral: 'IIB', title: 'The simulations',
+    summary: scenariosFoldSummary,
+    body: () => renderScenarios(ui.plan, { ...ui.scenarios, savedSimulations: ui.savedSimulations }, ui.assumptions) },
+  { key: 'branches', id: 'plan-branches', numeral: 'IIC', title: 'The what-ifs',
+    summary: branchesFoldSummary,
+    body: () => renderBranches(ui.plan, ui.branches, ui.assumptions) },
+  { key: 'withdrawals', id: 'plan-withdrawals', numeral: 'IID', title: 'The withdrawals',
+    summary: () => '4% rule vs guardrails vs buckets',
+    body: () => renderWithdrawals(ui.plan, ui.withdrawals, ui.assumptions) },
+  { key: 'timeline', id: 'plan-timeline', numeral: 'IIE', title: 'The timeline',
+    summary: timelineFoldSummary,
+    body: () => renderTimeline(ui.plan, ui.timeline) },
+  { key: 'contributions', id: 'plan-contributions', numeral: 'IIF', title: 'The contributions',
+    summary: contributionsFoldSummary,
+    body: () => renderContributions(ui.plan, ui.contributions) },
+  { key: 'decisions', id: 'plan-decisions', numeral: 'III', title: 'The decisions',
+    summary: decisionsFoldSummary,
+    body: () => renderDecisions(ui.plan, ui.decisions) },
+];
+
+function renderFold(fold) {
+  const open = ui.openFolds.has(fold.key);
+  return html`
+    <details class="plan-fold" data-plan-fold="${fold.key}" data-plan-section="${fold.key}" ${open ? 'open' : ''}>
+      <summary>
+        <span class="plan-fold-numeral">${fold.numeral}</span>
+        <span class="plan-fold-title">${fold.title}</span>
+        <span class="plan-fold-summary">${esc(foldSummaryText(fold))}</span>
+        <span class="plan-fold-caret" aria-hidden="true">&rsaquo;</span>
+      </summary>
+      <div class="plan-fold-body" id="${fold.id}">${raw(fold.body())}</div>
+    </details>
+  `;
+}
+
+function foldSummaryText(fold) {
+  try {
+    return String(fold.summary() || '');
+  } catch {
+    return '';
+  }
+}
+
+function seedOpenFolds(params = {}) {
+  ui.openFolds = new Set();
+  const section = String(params.section || '').trim().toLowerCase();
+  if (section) ui.openFolds.add(section);
+  if (String(params.artifact || '').trim()) ui.openFolds.add('artifacts');
+  if (String(params.focus || params.recommendation || '').trim()) ui.openFolds.add('scenarios');
+  if (String(params.saved || '').trim()) ui.openFolds.add('scenarios');
+}
+
+function openFold(key) {
+  if (!FOLDS.some(fold => fold.key === key)) return;
+  ui.openFolds.add(key);
+  const details = document.querySelector(`details[data-plan-fold="${key}"]`);
+  if (details) details.open = true;
+}
+
+// Targeted rerenders replace fold bodies without touching the summary rows;
+// recompute the rows so closed folds never show stale counts.
+function refreshFoldSummaries() {
+  FOLDS.forEach(fold => {
+    const el = document.querySelector(`details[data-plan-fold="${fold.key}"] .plan-fold-summary`);
+    if (el) el.textContent = foldSummaryText(fold);
+  });
+}
+
+function assumptionsFoldSummary() {
+  const settings = ui.plan?.settings && typeof ui.plan.settings === 'object' ? ui.plan.settings : {};
+  const set = PLAN_ASSUMPTION_FIELDS.filter(field => settings[field.key] != null && settings[field.key] !== '').length;
+  return `${set} of ${PLAN_ASSUMPTION_FIELDS.length} set`;
+}
+
+function healthFoldSummary() {
+  const health = currentPlanHealth();
+  const count = Array.isArray(health.signals) ? health.signals.length : 0;
+  return count ? `${health.label} · ${count} signal${count === 1 ? '' : 's'}` : (health.label || 'Ready');
+}
+
+function artifactsFoldSummary() {
+  const count = Array.isArray(ui.plan?.artifacts) ? ui.plan.artifacts.length : 0;
+  return count ? `${count} artifact${count === 1 ? '' : 's'} on file` : 'Nothing filed yet';
+}
+
+function scenariosFoldSummary() {
+  const count = Array.isArray(ui.savedSimulations.payload?.simulations)
+    ? ui.savedSimulations.payload.simulations.length
+    : 0;
+  return count ? `Run a comparison · ${count} saved` : 'Run a comparison';
+}
+
+function branchesFoldSummary() {
+  const count = Array.isArray(ui.branches.branchTemplates?.templates)
+    ? ui.branches.branchTemplates.templates.length
+    : 0;
+  return count ? `${count} life-event template${count === 1 ? '' : 's'}` : 'Life-event templates';
+}
+
+function timelineFoldSummary() {
+  const retirement = ui.timeline.timeline?.retirement || {};
+  const events = Array.isArray(ui.timeline.timeline?.events) ? ui.timeline.timeline.events.length : 0;
+  const parts = [];
+  const age = Number(retirement.target_retirement_age);
+  const year = Number(retirement.target_retirement_year);
+  if (Number.isFinite(age) && age > 0) parts.push(`Retire at ${age}`);
+  else if (Number.isFinite(year) && year > 0) parts.push(`Retire in ${year}`);
+  if (events) parts.push(`${events} event${events === 1 ? '' : 's'}`);
+  return parts.length ? parts.join(' · ') : 'Retirement timing and major events';
+}
+
+function contributionsFoldSummary() {
+  const count = Array.isArray(ui.contributions.contributionRules?.rules)
+    ? ui.contributions.contributionRules.rules.length
+    : 0;
+  return count ? `${count} account rule${count === 1 ? '' : 's'}` : 'Account priorities and targets';
+}
+
+function decisionsFoldSummary() {
+  const decisions = Array.isArray(ui.plan?.decisions) ? ui.plan.decisions : [];
+  if (!decisions.length) return 'Nothing recorded yet';
+  const measured = decisions.filter(item => item && item.outcome_captured).length;
+  return `${decisions.length} recorded · ${measured} measured`;
 }
 
 function currentPlanHealth() {
@@ -437,6 +577,7 @@ function rerenderHealth() {
   const root = $('#plan-health');
   if (!root || !ui.plan) return;
   root.innerHTML = renderPlanHealth(ui.plan, currentPlanHealth());
+  refreshFoldSummaries();
 }
 
 function rerenderTrajectory() {
@@ -449,18 +590,21 @@ function rerenderDecisions() {
   const root = $('#plan-decisions');
   if (!root || !ui.plan) return;
   root.innerHTML = renderDecisions(ui.plan, ui.decisions);
+  refreshFoldSummaries();
 }
 
 function rerenderScenarios() {
   const root = $('#plan-scenarios');
   if (!root || !ui.plan) return;
   root.innerHTML = renderScenarios(ui.plan, { ...ui.scenarios, savedSimulations: ui.savedSimulations }, ui.assumptions);
+  refreshFoldSummaries();
 }
 
 function rerenderBranches() {
   const root = $('#plan-branches');
   if (!root || !ui.plan) return;
   root.innerHTML = renderBranches(ui.plan, ui.branches, ui.assumptions);
+  refreshFoldSummaries();
 }
 
 function rerenderWithdrawals() {
@@ -473,12 +617,14 @@ function rerenderTimelineWorkspace() {
   const root = $('#plan-timeline');
   if (!root || !ui.plan) return;
   root.innerHTML = renderTimeline(ui.plan, ui.timeline);
+  refreshFoldSummaries();
 }
 
 function rerenderContributionsWorkspace() {
   const root = $('#plan-contributions');
   if (!root || !ui.plan) return;
   root.innerHTML = renderContributions(ui.plan, ui.contributions);
+  refreshFoldSummaries();
 }
 
 function planResearchDossierArtifacts(plan) {
@@ -550,11 +696,28 @@ function attachHandlers() {
   const page = $('#plan-page');
   if (!page) return;
 
+  // Manual toggle instead of the native <details> click behavior: fold state
+  // must live in ui.openFolds so full rerenders preserve what the reader opened.
+  delegate(page, 'click', '.plan-fold > summary', (event, el) => {
+    event.preventDefault();
+    const details = el.closest('details.plan-fold');
+    const key = String(details?.dataset.planFold || '');
+    if (!key) return;
+    if (ui.openFolds.has(key)) {
+      ui.openFolds.delete(key);
+      details.open = false;
+    } else {
+      ui.openFolds.add(key);
+      details.open = true;
+    }
+  });
+
   delegate(page, 'change', '#plan-select', async (_, el) => {
     const id = el.value;
     if (!id || id === ui.selectedId) return;
     ui.selectedId = id;
     ui.section = '';
+    ui.openFolds = new Set();
     ui.plan = null;
     ui.assumptions = { busy: false, assumptionSets: null, draft: {}, dirty: false, saving: false, error: null };
     ui.health = { busy: false, recommendations: [], error: null };
@@ -1297,9 +1460,11 @@ async function saveAssumptions() {
 function focusRequestedSection(section) {
   const requested = String(section || '').trim().toLowerCase();
   if (!requested) return;
+  openFold(requested);
   const target = document.querySelector(`[data-plan-section="${requested}"]`);
   if (!target) return;
-  target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  // Instant, not smooth: long smooth scrolls stall on busy pages.
+  target.scrollIntoView({ block: 'start' });
 }
 
 async function submitAppendDecision() {

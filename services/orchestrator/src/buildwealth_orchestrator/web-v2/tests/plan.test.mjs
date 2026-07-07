@@ -92,12 +92,39 @@ test('plan view wires typed artifact center into the page', () => {
   );
 
   assert.match(planSource, /renderArtifacts/);
-  assert.match(planSource, /id="plan-artifacts"/);
-  assert.match(planSource, /data-plan-section="artifacts"/);
+  assert.match(planSource, /id: 'plan-artifacts'/);
+  assert.match(planSource, /key: 'artifacts'/);
   assert.match(planSource, /params\.artifact/);
   assert.match(planSource, /loadFocusedArtifact/);
   assert.match(planSource, /api\.planArtifact/);
   assert.match(planSource, /focusedArtifactId/);
+});
+
+test('plan view condenses the workbench into folds', () => {
+  const planSource = readFileSync(
+    resolve(import.meta.dirname, '../views/plan.js'),
+    'utf8',
+  );
+
+  // The nine workbench tools render as disclosure rows.
+  assert.match(planSource, /class="plan-fold"/);
+  const foldKeys = [
+    'assumptions', 'health', 'artifacts', 'scenarios', 'branches',
+    'withdrawals', 'timeline', 'contributions', 'decisions',
+  ];
+  for (const key of foldKeys) {
+    assert.match(planSource, new RegExp(`key: '${key}'`), `fold key ${key}`);
+  }
+  // Open state survives full rerenders, deep links, and post-save focus.
+  assert.match(planSource, /openFolds/);
+  assert.match(planSource, /seedOpenFolds\(params\)/);
+  assert.match(planSource, /openFold\(requested\)/);
+  // Closed rows never show stale counts after targeted rerenders.
+  assert.match(planSource, /refreshFoldSummaries/);
+  // The reading surface stays open: story, baseline fan, plan-vs-actual.
+  assert.match(planSource, /renderStory/);
+  assert.match(planSource, /id="plan-trajectory-preview"/);
+  assert.match(planSource, /data-plan-section="trajectory"/);
 });
 
 test('plan view wires simulation workspace actions', () => {

@@ -1211,3 +1211,93 @@
   font-size: var(--t-body-sm);
   line-height: var(--lh-body);
 }
+
+/* ───────────  The workbench folds  ───────────
+   Nine tools condensed to nine scannable rows. The rows are the table of
+   contents — no separate jump nav — and each summary carries the key fact
+   so the closed page still informs. Bodies are rendered while closed, so
+   opening is instant and targeted rerenders keep working. */
+
+.plan-workbench {
+  margin-top: var(--s-7);
+}
+
+.plan-workbench-eyebrow {
+  padding-bottom: var(--s-2);
+}
+
+.plan-fold {
+  border-top: var(--hair) solid var(--rule-soft);
+  /* Jump targets land below the sticky topbar, not underneath it. */
+  scroll-margin-top: 118px;
+}
+
+.plan-fold:last-of-type {
+  border-bottom: var(--hair) solid var(--rule-soft);
+}
+
+.plan-fold > summary {
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-4);
+  padding: 10px 2px;
+  cursor: pointer;
+}
+
+.plan-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.plan-fold > summary:hover {
+  background: var(--paper-bright);
+}
+
+.plan-fold-numeral {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--ink-faint);
+  min-width: 26px;
+}
+
+.plan-fold-title {
+  font-family: var(--serif);
+  font-size: 15.5px;
+  font-weight: 550;
+  color: var(--ink-strong);
+  white-space: nowrap;
+}
+
+.plan-fold-summary {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  text-align: right;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.plan-fold-caret {
+  color: var(--ink-faint);
+  transition: transform 0.15s ease;
+}
+
+.plan-fold[open] > summary .plan-fold-caret {
+  transform: rotate(90deg);
+}
+
+.plan-fold-body {
+  padding: 0 2px var(--s-6);
+}
+
+@media (max-width: 640px) {
+  .plan-fold-numeral {
+    display: none;
+  }
+}
