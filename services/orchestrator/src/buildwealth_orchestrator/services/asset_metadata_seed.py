@@ -34,6 +34,9 @@ class AssetMetadataRecord(TypedDict, total=False):
     # Fraction convention: 0.0003 = 3 bps. Prospectus values for well-known
     # funds; a user-saved ratio always overrides the seed.
     expense_ratio: float
+    # What the fund tracks (index/asset key) — the basis for overlap
+    # detection: same key means near-duplicate holdings. See fund_overlap.py.
+    tracks: str
 
 
 @lru_cache(maxsize=1)
@@ -56,7 +59,7 @@ def load_seed_asset_metadata() -> dict[str, AssetMetadataRecord]:
         if not normalized_symbol or not isinstance(record, dict):
             continue
         normalized_record: AssetMetadataRecord = {}
-        for key in ("name", "asset_type", "asset_class", "sector", "region", "data_source"):
+        for key in ("name", "asset_type", "asset_class", "sector", "region", "data_source", "tracks"):
             value = record.get(key)
             if value is None:
                 continue

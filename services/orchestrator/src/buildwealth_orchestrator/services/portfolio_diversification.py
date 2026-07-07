@@ -23,6 +23,10 @@ will look more varied than they are.
 
 from typing import Any
 
+from buildwealth_orchestrator.services.fund_overlap import (
+    build_overlap_findings,
+    merge_duplicate_positions,
+)
 from buildwealth_orchestrator.services.portfolio_rebalancing import is_untradable_position
 
 _WEIGHTS = {
@@ -77,7 +81,11 @@ def build_diversification_payload(holdings: dict[str, Any]) -> dict[str, Any]:
             "excluded": excluded_rows,
         }
 
-    effective = _effective_positions(list(by_symbol.values()), total)
+    # Same-index funds are one bet bought several times — merge them before
+    # measuring independence, and name every overlap found (fund_overlap.py).
+    overlap_findings = build_overlap_findings(by_symbol)
+    merged_by_symbol = merge_duplicate_positions(by_symbol)
+    effective = _effective_positions(list(merged_by_symbol.values()), total)
     components = [
         _component(
             "effective_positions",
@@ -111,7 +119,9 @@ def build_diversification_payload(holdings: dict[str, Any]) -> dict[str, Any]:
     reasons = [c["sentence"] for c in sorted(components, key=lambda c: c["score"])[:3]]
 
     caveats = [
-        "Funds are scored as single diversified units — overlapping funds are not yet examined (no holdings look-through).",
+        "Funds tracking the same index are counted as one position; deeper "
+        "constituent-level look-through (partial overlaps between different "
+        "indexes) is not modeled.",
     ]
     if excluded_rows:
         excluded_total = sum(row["value_usd"] for row in excluded_rows)
@@ -130,6 +140,7 @@ def build_diversification_payload(holdings: dict[str, Any]) -> dict[str, Any]:
         "reasons": reasons,
         "investable_value_usd": round(total, 2),
         "excluded": excluded_rows,
+        "overlap": overlap_findings,
         "caveats": caveats,
     }
 

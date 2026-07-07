@@ -83,6 +83,13 @@ def test_disk_thresholds(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_health_endpoint_returns_503_when_degraded(monkeypatch, tmp_path: Path) -> None:
+    # Pin disk usage — this endpoint reads the REAL machine, and a genuinely
+    # full CI/dev disk must not fail this test (it already happened once).
+    class Usage:
+        total = 100
+        free = 50
+
+    monkeypatch.setattr(health_report.shutil, "disk_usage", lambda _: Usage)
     with TestClient(main.app) as client:
         healthy = client.get("/health")
         assert healthy.status_code == 200

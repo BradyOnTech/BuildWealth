@@ -31,3 +31,34 @@ test('diversification panel hides without data', () => {
   assert.equal(String(renderDiversificationPanel({ status: 'no_data' })), '');
   assert.equal(String(renderDiversificationPanel({})), '');
 });
+
+test('diversification panel names fund overlap findings', () => {
+  const markup = String(renderDiversificationPanel({
+    status: 'ready',
+    score: 55,
+    label: 'Reasonably spread',
+    components: [],
+    reasons: [],
+    caveats: [],
+    overlap: [
+      {
+        kind: 'duplicate',
+        symbols: ['VOO', 'SPY'],
+        combined_value_usd: 50000,
+        sentence: 'VOO and SPY track the S&P 500 — effectively one position ($50,000 combined).',
+      },
+      {
+        kind: 'contained',
+        symbols: ['QQQ', 'VTI'],
+        combined_value_usd: 15000,
+        sentence: 'QQQ (the Nasdaq-100) already lives inside VTI (the total US market) — $15,000 of doubled-up exposure.',
+      },
+    ],
+  }));
+  assert.match(markup, /VOO · SPY/);
+  assert.match(markup, /same index/);
+  assert.match(markup, /effectively one position/);
+  assert.match(markup, /QQQ · VTI/);
+  assert.match(markup, /overlapping/);
+  assert.match(markup, /already lives inside/);
+});

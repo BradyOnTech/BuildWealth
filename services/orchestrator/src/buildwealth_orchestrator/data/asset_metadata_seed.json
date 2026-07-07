@@ -135,7 +135,8 @@
       "sector": "Broad Bond Market",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0003
+      "expense_ratio": 0.0003,
+      "tracks": "us_agg_bond"
     },
     "AIG": {
       "name": "American International Group",
@@ -360,7 +361,8 @@
       "sector": "Bitcoin",
       "region": "Global",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0021
+      "expense_ratio": 0.0021,
+      "tracks": "bitcoin"
     },
     "ATO": {
       "name": "Atmos Energy",
@@ -513,7 +515,8 @@
       "sector": "Treasury Bills",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0014
+      "expense_ratio": 0.0014,
+      "tracks": "tbill_cash"
     },
     "BK": {
       "name": "BNY Mellon",
@@ -570,7 +573,8 @@
       "sector": "Broad Bond Market",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0003
+      "expense_ratio": 0.0003,
+      "tracks": "us_agg_bond"
     },
     "BNDX": {
       "name": "Vanguard Total International Bond ETF",
@@ -579,7 +583,8 @@
       "sector": "Broad Bond Market",
       "region": "International",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0007
+      "expense_ratio": 0.0007,
+      "tracks": "intl_bond"
     },
     "BR": {
       "name": "Broadridge Financial Solutions",
@@ -1116,7 +1121,8 @@
       "sector": "Broad Commodities",
       "region": "Global",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0085
+      "expense_ratio": 0.0085,
+      "tracks": "broad_commodities"
     },
     "DD": {
       "name": "DuPont",
@@ -1173,7 +1179,8 @@
       "sector": "Dividend",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0008
+      "expense_ratio": 0.0008,
+      "tracks": "us_dividend_growth"
     },
     "DGX": {
       "name": "Quest Diagnostics",
@@ -1342,7 +1349,8 @@
       "sector": "Emerging Markets",
       "region": "Emerging Markets",
       "data_source": "YAHOO",
-      "expense_ratio": 0.007
+      "expense_ratio": 0.007,
+      "tracks": "emerging_markets"
     },
     "EFX": {
       "name": "Equifax",
@@ -1479,7 +1487,8 @@
       "sector": "Ethereum",
       "region": "Global",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0025
+      "expense_ratio": 0.0025,
+      "tracks": "ethereum"
     },
     "ETN": {
       "name": "Eaton Corporation",
@@ -1584,7 +1593,8 @@
       "sector": "Bitcoin",
       "region": "Global",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0025
+      "expense_ratio": 0.0025,
+      "tracks": "bitcoin"
     },
     "FCX": {
       "name": "Freeport-McMoRan",
@@ -1793,7 +1803,8 @@
       "sector": "Gold",
       "region": "Global",
       "data_source": "YAHOO",
-      "expense_ratio": 0.004
+      "expense_ratio": 0.004,
+      "tracks": "gold"
     },
     "GLW": {
       "name": "Corning Inc.",
@@ -2034,7 +2045,8 @@
       "sector": "Gold",
       "region": "Global",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0025
+      "expense_ratio": 0.0025,
+      "tracks": "gold"
     },
     "IBIT": {
       "name": "iShares Bitcoin Trust ETF",
@@ -2043,7 +2055,8 @@
       "sector": "Bitcoin",
       "region": "Global",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0025
+      "expense_ratio": 0.0025,
+      "tracks": "bitcoin"
     },
     "IBKR": {
       "name": "Interactive Brokers",
@@ -2076,7 +2089,8 @@
       "sector": "Ultra Short Bond",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0008
+      "expense_ratio": 0.0008,
+      "tracks": "ultra_short_bond"
     },
     "IDXX": {
       "name": "Idexx Laboratories",
@@ -2093,7 +2107,8 @@
       "sector": "Treasury",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0015
+      "expense_ratio": 0.0015,
+      "tracks": "intermediate_treasury"
     },
     "IEFA": {
       "name": "iShares Core MSCI EAFE ETF",
@@ -2102,7 +2117,8 @@
       "sector": "Developed Markets",
       "region": "International",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0007
+      "expense_ratio": 0.0007,
+      "tracks": "intl_developed"
     },
     "IEMG": {
       "name": "iShares Core MSCI Emerging Markets ETF",
@@ -2111,7 +2127,8 @@
       "sector": "Emerging Markets",
       "region": "Emerging Markets",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0009
+      "expense_ratio": 0.0009,
+      "tracks": "emerging_markets"
     },
     "IEX": {
       "name": "IDEX Corporation",
@@ -2216,7 +2233,8 @@
       "sector": "Broad Market",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0003
+      "expense_ratio": 0.0003,
+      "tracks": "us_total_market"
     },
     "ITW": {
       "name": "Illinois Tool Works",
@@ -2233,7 +2251,8 @@
       "sector": "Broad Bond Market",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0006
+      "expense_ratio": 0.0006,
+      "tracks": "us_total_bond"
     },
     "IVV": {
       "name": "iShares Core S&P 500 ETF",
@@ -2242,7 +2261,8 @@
       "sector": "Broad Market",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0003
+      "expense_ratio": 0.0003,
+      "tracks": "sp500"
     },
     "IVZ": {
       "name": "Invesco",
@@ -2259,7 +2279,8 @@
       "sector": "Small Cap",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0019
+      "expense_ratio": 0.0019,
+      "tracks": "us_small_cap"
     },
     "IXUS": {
       "name": "iShares Core MSCI Total International Stock ETF",
@@ -2268,7 +2289,8 @@
       "sector": "Broad Market",
       "region": "International",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0007
+      "expense_ratio": 0.0007,
+      "tracks": "intl_total"
     },
     "IYR": {
       "name": "iShares U.S. Real Estate ETF",
@@ -2277,7 +2299,8 @@
       "sector": "Real Estate",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0039
+      "expense_ratio": 0.0039,
+      "tracks": "us_real_estate"
     },
     "J": {
       "name": "Jacobs Solutions",
@@ -3318,7 +3341,8 @@
       "sector": "Growth",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.002
+      "expense_ratio": 0.002,
+      "tracks": "nasdaq100"
     },
     "RCL": {
       "name": "Royal Caribbean Group",
@@ -3423,7 +3447,8 @@
       "sector": "Broad Market",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.002
+      "expense_ratio": 0.002,
+      "tracks": "sp500_equal_weight"
     },
     "RTX": {
       "name": "RTX Corporation",
@@ -3472,7 +3497,8 @@
       "sector": "Broad Market",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0003
+      "expense_ratio": 0.0003,
+      "tracks": "us_total_market"
     },
     "SCHD": {
       "name": "Schwab U.S. Dividend Equity ETF",
@@ -3481,7 +3507,8 @@
       "sector": "Dividend",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0006
+      "expense_ratio": 0.0006,
+      "tracks": "us_dividend_schwab"
     },
     "SCHH": {
       "name": "Schwab U.S. REIT ETF",
@@ -3490,7 +3517,8 @@
       "sector": "Real Estate",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0007
+      "expense_ratio": 0.0007,
+      "tracks": "us_reit"
     },
     "SCHP": {
       "name": "Schwab U.S. TIPS ETF",
@@ -3499,7 +3527,8 @@
       "sector": "Inflation-Protected",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0004
+      "expense_ratio": 0.0004,
+      "tracks": "us_tips"
     },
     "SCHW": {
       "name": "Charles Schwab Corporation",
@@ -3516,7 +3545,8 @@
       "sector": "Broad Bond Market",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0003
+      "expense_ratio": 0.0003,
+      "tracks": "us_agg_bond"
     },
     "SGOV": {
       "name": "iShares 0-3 Month Treasury Bond ETF",
@@ -3525,7 +3555,8 @@
       "sector": "Treasury Bills",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0009
+      "expense_ratio": 0.0009,
+      "tracks": "tbill_cash"
     },
     "SHV": {
       "name": "iShares Short Treasury Bond ETF",
@@ -3534,7 +3565,8 @@
       "sector": "Treasury Bills",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0015
+      "expense_ratio": 0.0015,
+      "tracks": "short_treasury"
     },
     "SHW": {
       "name": "Sherwin-Williams",
@@ -3551,7 +3583,8 @@
       "sector": "Treasury",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0015
+      "expense_ratio": 0.0015,
+      "tracks": "short_treasury"
     },
     "SJM": {
       "name": "J.M. Smucker Company (The)",
@@ -3576,7 +3609,8 @@
       "sector": "Silver",
       "region": "Global",
       "data_source": "YAHOO",
-      "expense_ratio": 0.005
+      "expense_ratio": 0.005,
+      "tracks": "silver"
     },
     "SMCI": {
       "name": "Supermicro",
@@ -3649,7 +3683,8 @@
       "sector": "Broad Market",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0009
+      "expense_ratio": 0.0009,
+      "tracks": "sp500"
     },
     "SRE": {
       "name": "Sempra",
@@ -3826,7 +3861,8 @@
       "sector": "Inflation-Protected",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0019
+      "expense_ratio": 0.0019,
+      "tracks": "us_tips"
     },
     "TJX": {
       "name": "TJX Companies",
@@ -3851,7 +3887,8 @@
       "sector": "Treasury",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0015
+      "expense_ratio": 0.0015,
+      "tracks": "long_treasury"
     },
     "TMO": {
       "name": "Thermo Fisher Scientific",
@@ -4084,7 +4121,8 @@
       "sector": "Developed Markets",
       "region": "International",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0005
+      "expense_ratio": 0.0005,
+      "tracks": "intl_developed"
     },
     "VICI": {
       "name": "Vici Properties",
@@ -4125,7 +4163,8 @@
       "sector": "Real Estate",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0013
+      "expense_ratio": 0.0013,
+      "tracks": "us_reit"
     },
     "VOO": {
       "name": "Vanguard S&P 500 ETF",
@@ -4134,7 +4173,8 @@
       "sector": "Broad Market",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0003
+      "expense_ratio": 0.0003,
+      "tracks": "sp500"
     },
     "VRSK": {
       "name": "Verisk Analytics",
@@ -4183,7 +4223,8 @@
       "sector": "Broad Market",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0003
+      "expense_ratio": 0.0003,
+      "tracks": "us_total_market"
     },
     "VTR": {
       "name": "Ventas",
@@ -4208,7 +4249,8 @@
       "sector": "Value",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0004
+      "expense_ratio": 0.0004,
+      "tracks": "us_large_value"
     },
     "VUG": {
       "name": "Vanguard Growth ETF",
@@ -4217,7 +4259,8 @@
       "sector": "Growth",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0004
+      "expense_ratio": 0.0004,
+      "tracks": "us_large_growth"
     },
     "VWO": {
       "name": "Vanguard FTSE Emerging Markets ETF",
@@ -4226,7 +4269,8 @@
       "sector": "Emerging Markets",
       "region": "Emerging Markets",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0008
+      "expense_ratio": 0.0008,
+      "tracks": "emerging_markets"
     },
     "VXUS": {
       "name": "Vanguard Total International Stock ETF",
@@ -4235,7 +4279,8 @@
       "sector": "Broad Market",
       "region": "International",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0008
+      "expense_ratio": 0.0008,
+      "tracks": "intl_total"
     },
     "VYM": {
       "name": "Vanguard High Dividend Yield ETF",
@@ -4244,7 +4289,8 @@
       "sector": "Dividend",
       "region": "US",
       "data_source": "YAHOO",
-      "expense_ratio": 0.0006
+      "expense_ratio": 0.0006,
+      "tracks": "us_dividend_high_yield"
     },
     "VZ": {
       "name": "Verizon",

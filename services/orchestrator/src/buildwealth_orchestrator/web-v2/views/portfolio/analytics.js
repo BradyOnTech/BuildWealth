@@ -57,6 +57,7 @@ export function renderDiversificationPanel(diversification = {}) {
   const components = Array.isArray(diversification.components) ? diversification.components : [];
   const reasons = Array.isArray(diversification.reasons) ? diversification.reasons : [];
   const caveats = Array.isArray(diversification.caveats) ? diversification.caveats : [];
+  const overlap = Array.isArray(diversification.overlap) ? diversification.overlap : [];
   const score = Number(diversification.score);
   const scoreText = Number.isFinite(score) ? `${score.toFixed(0)}/100` : '—';
   const tone = !Number.isFinite(score) ? 'info' : score >= 70 ? 'good' : score >= 40 ? 'warn' : 'bad';
@@ -75,6 +76,17 @@ export function renderDiversificationPanel(diversification = {}) {
           </div>
         `).join(''))}
       </div>
+      ${overlap.length ? html`
+        <div class="benchmark-rows">
+          ${raw(overlap.slice(0, 4).map(finding => html`
+            <div class="benchmark-row">
+              <strong>${esc((finding.symbols || []).slice(0, 3).join(' · '))}</strong>
+              <span class="${finding.kind === 'duplicate' ? 'delta-down' : ''}">${finding.kind === 'duplicate' ? 'same index' : 'overlapping'}</span>
+              <span>${esc(String(finding.sentence || ''))}</span>
+            </div>
+          `).join(''))}
+        </div>
+      ` : ''}
       ${reasons.length ? html`
         <p class="marginalia">Weakest links: ${reasons.map(esc).join(' ')}</p>
       ` : ''}
