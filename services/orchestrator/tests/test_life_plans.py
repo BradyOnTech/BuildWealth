@@ -26,12 +26,12 @@ def test_interview_asks_six_questions_with_reasons() -> None:
     assert payload["status"] == "ready"
     assert payload["age"] == 22
     ids = [q["id"] for q in payload["questions"]]
-    assert ids == ["home", "children", "wedding", "education", "career_break", "big_purchase"]
+    assert ids == ["home", "children", "wedding", "education", "income_change", "big_purchase"]
     # Every question explains what answering changes.
     assert all(q["why"] for q in payload["questions"])
-    # The career-break question is priced at the household's own spending.
-    career = next(q for q in payload["questions"] if q["id"] == "career_break")
-    assert "$4,200" in career["why"]
+    # The income question defaults its drop from the household's own spending.
+    income = next(q for q in payload["questions"] if q["id"] == "income_change")
+    assert income["amount_default_usd"] == 2_100  # half of $4,200/month, rounded
     # Retirement is deliberately out of scope, and says so.
     assert "Plan timeline" in payload["not_asked"]
 
@@ -77,26 +77,35 @@ def test_drafts_map_timeframes_to_dates_and_priorities() -> None:
     assert result["no_plans"] is False
 
 
-def test_career_break_is_priced_at_household_spending() -> None:
+def test_income_step_down_banks_a_cushion_and_bends_income() -> None:
     result = build_life_plan_drafts(
-        {"career_break": {"timeframe": "within_2y", "months": 6}},
+        {"income_change": {"timeframe": "within_2y", "amount_usd": 3_000}},
         monthly_expenses_usd=4_200.0,
         now=NOW,
     )
     draft = result["drafts"][0]
-    assert draft["target_amount_usd"] == 25_200
-    assert "$4,200/month" in draft["sentence"]
+    # The goal: six months of the drop banked before the step-down.
+    assert draft["target_amount_usd"] == 18_000
+    assert "new normal" in draft["sentence"]
+    # The timeline twin: income bends monthly from the date on, no end date —
+    # a stay-at-home transition is a new normal, not a blip.
+    event = draft["timeline_event"]
+    assert event["event_type"] == "job_change"
+    assert event["impact_type"] == "income"
+    assert event["amount_usd"] == -3_000
+    assert event["recurring_frequency"] == "monthly"
+    assert "end_date" not in event
 
 
-def test_career_break_without_expenses_uses_labeled_placeholder() -> None:
+def test_income_step_down_without_expenses_uses_flat_default() -> None:
     result = build_life_plan_drafts(
-        {"career_break": {"timeframe": "within_2y", "months": 6}},
+        {"income_change": {"timeframe": "within_2y"}},
         monthly_expenses_usd=None,
         now=NOW,
     )
     draft = result["drafts"][0]
-    assert draft["target_amount_usd"] == 15_000
-    assert "placeholder" in draft["sentence"]
+    assert draft["monthly_income_drop_usd"] == 2_000
+    assert draft["target_amount_usd"] == 12_000
 
 
 def test_all_not_now_is_an_answer_not_a_failure() -> None:
@@ -133,7 +142,7 @@ def test_drafts_carry_timeline_event_twins() -> None:
     result = build_life_plan_drafts(
         {
             "home": {"timeframe": "in_3_5y", "amount_usd": 400_000},
-            "career_break": {"timeframe": "within_2y", "months": 6},
+            "wedding": {"timeframe": "within_2y"},
         },
         monthly_expenses_usd=4_000.0,
         now=NOW,
@@ -146,9 +155,8 @@ def test_drafts_carry_timeline_event_twins() -> None:
     assert home["amount_usd"] == 80_000
     assert home["date"].endswith("-01")
     assert home["recurring_frequency"] == "one_time"
-    # A career break is a milestone with explicit expense impact — job_change
-    # would ADD income; the break spends the banked runway instead.
-    career = events["career_break"]
-    assert career["event_type"] == "milestone"
-    assert career["impact_type"] == "expense"
-    assert career["amount_usd"] == 24_000
+    # A wedding is a one-time purchase: spent in the year it happens.
+    wedding = events["wedding"]
+    assert wedding["event_type"] == "purchase"
+    assert wedding["amount_usd"] == 20_000
+    assert wedding["recurring_frequency"] == "one_time"

@@ -53,7 +53,7 @@ export function buildTimelinePayload(timeline = {}, draft = {}) {
 export function renderTimeline(plan = {}, state = {}) {
   const timeline = normalizeTimeline(state.timeline);
   const draft = objectValue(state.draft);
-  const events = timeline.events.slice(0, 6);
+  const events = timeline.events.slice(0, 12);
   const editing = Boolean(state.editing);
 
   return html`
@@ -95,7 +95,12 @@ export function renderTimeline(plan = {}, state = {}) {
         <span class="story-block-eyebrow">Major events</span>
         ${events.length ? html`
           ${raw(events.map(renderEventRow).join(''))}
-        ` : html`<p class="marginalia">No major events saved yet.</p>`}
+          <p class="marginalia">
+            Forecast freely: events shape the trajectory fans while they're here,
+            and removing one puts the plan back to reality. To try an event without
+            saving it at all, run it in What-ifs.
+          </p>
+        ` : html`<p class="marginalia">No major events saved yet. The life-plans interview in Profile → Goals can add them.</p>`}
       </div>
     </section>
   `;
@@ -145,6 +150,7 @@ function renderEventRow(event = {}) {
     titleText(event.recurring_frequency),
     amount,
   ].filter(Boolean).join(' - ');
+  const eventId = clean(event.id);
   return html`
     <article class="structure-row">
       <div>
@@ -152,6 +158,10 @@ function renderEventRow(event = {}) {
         <span>${esc(date)}</span>
       </div>
       <p>${esc(details || clean(event.notes) || 'Saved plan event')}</p>
+      ${eventId ? html`
+        <button class="action-link muted structure-row-remove" data-timeline-action="remove-event"
+                data-event-id="${esc(eventId)}">Remove <span class="arrow">&rsaquo;</span></button>
+      ` : ''}
     </article>
   `;
 }

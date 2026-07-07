@@ -1303,3 +1303,27 @@ test('plan health surfaces open research thesis recommendation reviews', () => {
   assert.match(markup, /Open research thesis reviews/);
   assert.match(markup, /href="#research\?thesisReview=artifact-dossier-msft&amp;plan=plan-1&amp;focus=rec-policy-thesis"/);
 });
+
+test('plan view wires life-event preview handoff and timeline event removal', () => {
+  const planSource = readFileSync(
+    resolve(import.meta.dirname, '../views/plan.js'),
+    'utf8',
+  );
+  // Deep-linked preview events become an ephemeral What-ifs template —
+  // simulation only, nothing saved to the plan.
+  assert.match(planSource, /parsePreviewEvent/);
+  assert.match(planSource, /pv_label/);
+  assert.match(planSource, /__life_preview__/);
+  assert.match(planSource, /start_year_offset/);
+  // Saved events can be removed, and the fans redraw without them.
+  assert.match(planSource, /removeTimelineEvent/);
+  assert.match(planSource, /data-timeline-action="remove-event"/);
+  assert.match(planSource, /setPlanTimelineEvents\(ui\.timeline\.timeline\?\.events \|\| \[\]\)/);
+
+  const timelineSource = readFileSync(
+    resolve(import.meta.dirname, '../views/plan/timeline.js'),
+    'utf8',
+  );
+  assert.match(timelineSource, /data-timeline-action="remove-event"/);
+  assert.match(timelineSource, /Forecast freely/);
+});

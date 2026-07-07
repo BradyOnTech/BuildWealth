@@ -16,7 +16,9 @@ const BRANCH_COMPARE_FIELDS = [
 export function buildScenarioBranchPayload(template = {}, draft = {}) {
   const payload = {
     branch_name: clean(draft.branch_name) || clean(template.branch_name) || clean(template.name) || 'What-If Branch',
-    branch_template_id: clean(template.id) || null,
+    // Ephemeral templates (life-plans previews) exist only in this session;
+    // the server validates template ids against saved ones, so send none.
+    branch_template_id: template.ephemeral ? null : (clean(template.id) || null),
     compare_settings: objectValue(template.compare_settings),
     branch_events: Array.isArray(template.branch_events) ? template.branch_events : [],
   };

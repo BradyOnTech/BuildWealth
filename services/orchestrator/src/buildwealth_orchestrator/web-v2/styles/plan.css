@@ -1301,3 +1301,9 @@
     display: none;
   }
 }
+
+/* Timeline event rows: removal keeps forecasting reversible. */
+.structure-row .structure-row-remove {
+  justify-self: end;
+  align-self: start;
+}

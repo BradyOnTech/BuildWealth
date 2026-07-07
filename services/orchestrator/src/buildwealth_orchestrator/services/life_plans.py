@@ -36,8 +36,8 @@ DEFAULT_HOME_PRICE_USD = 350_000.0
 DEFAULT_CHILD_FIRST_YEAR_USD = 18_000.0
 DEFAULT_WEDDING_USD = 20_000.0
 DEFAULT_EDUCATION_USD = 15_000.0
-DEFAULT_CAREER_BREAK_MONTHS = 6
-DEFAULT_CAREER_BREAK_FALLBACK_USD = 15_000.0
+INCOME_STEP_DOWN_CUSHION_MONTHS = 6
+DEFAULT_MONTHLY_INCOME_DROP_USD = 2_000.0
 DEFAULT_BIG_PURCHASE_USD = 12_000.0
 
 # Words that mean "this chapter is already written down" per category.
@@ -46,7 +46,7 @@ _COVERED_KEYWORDS: dict[str, tuple[str, ...]] = {
     "children": ("child", "kid", "baby"),
     "wedding": ("wedding", "engagement"),
     "education": ("college", "tuition", "school", "education", "degree"),
-    "career_break": ("sabbatical", "career break", "career change"),
+    "income_change": ("stay at home", "part-time", "sabbatical", "career", "income step"),
     "big_purchase": ("car", "vehicle", "travel", "trip", "relocation", "moving"),
 }
 
@@ -62,16 +62,30 @@ _TIMELINE_EVENT_BY_CATEGORY: dict[str, tuple[str, str | None]] = {
     "education": ("purchase", None),
     "big_purchase": ("purchase", None),
     "children": ("milestone", "expense"),
-    "career_break": ("milestone", "expense"),
 }
 
 
 def timeline_event_for_draft(draft: dict[str, Any]) -> dict[str, Any] | None:
-    """The Plan-timeline twin of a draft goal: same date, same dollars,
-    typed so projections subtract the money in the year it leaves."""
-    event_type, impact_type = _TIMELINE_EVENT_BY_CATEGORY.get(
-        str(draft.get("category") or ""), ("milestone", None)
-    )
+    """The Plan-timeline twin of a draft goal: same date, typed so projections
+    move the money the way the event actually moves it. One-time drafts spend
+    their dollars in the target year; an income step-down bends income monthly
+    from the date onward (negative amount, no end — a stay-at-home transition
+    is a new normal, not a blip; delete or end-date the event if it isn't)."""
+    category = str(draft.get("category") or "")
+    if category == "income_change":
+        monthly_drop = draft.get("monthly_income_drop_usd")
+        if not monthly_drop or not draft.get("target_date"):
+            return None
+        return {
+            "date": draft.get("target_date"),
+            "label": draft.get("label"),
+            "event_type": "job_change",
+            "impact_type": "income",
+            "amount_usd": -abs(float(monthly_drop)),
+            "recurring_frequency": "monthly",
+            "notes": DRAFT_NOTES,
+        }
+    event_type, impact_type = _TIMELINE_EVENT_BY_CATEGORY.get(category, ("milestone", None))
     event: dict[str, Any] = {
         "date": draft.get("target_date"),
         "label": draft.get("label"),
@@ -96,10 +110,10 @@ def _existing_goal_for(category: str, goal_items: list[Any]) -> dict[str, Any] |
     return None
 
 
-def _monthly_spend_phrase(monthly_expenses_usd: float | None) -> str:
+def _default_income_drop(monthly_expenses_usd: float | None) -> float:
     if monthly_expenses_usd and monthly_expenses_usd > 0:
-        return f"your current spending (~${monthly_expenses_usd:,.0f}/month)"
-    return "a placeholder — add expenses to Profile for a personal number"
+        return float(max(500, round(monthly_expenses_usd / 2, -2)))
+    return DEFAULT_MONTHLY_INCOME_DROP_USD
 
 
 def build_life_interview(
@@ -156,12 +170,18 @@ def build_life_interview(
             "amount_hint": "A certificate and a degree are different animals — edit freely.",
         },
         {
-            "id": "career_break",
-            "prompt": "A career break, a sabbatical, or a leap to something new?",
-            "why": f"Months without income are priced at {_monthly_spend_phrase(monthly_expenses_usd)}.",
-            "amount_label": "Months away",
-            "amount_default_usd": float(DEFAULT_CAREER_BREAK_MONTHS),
-            "amount_hint": "How many months of runway you'd want banked first.",
+            "id": "income_change",
+            "prompt": (
+                "Will household income step down for a stretch — a parent staying home "
+                "with kids, going part-time, or taking work you want more that pays less?"
+            ),
+            "why": (
+                "The plan should see income bend before it happens; a cushion banked "
+                "first makes the step-down calm instead of tight."
+            ),
+            "amount_label": "Monthly income drop",
+            "amount_default_usd": _default_income_drop(monthly_expenses_usd),
+            "amount_hint": "Roughly how much less per month. Raises need no cushion — record those on the Plan timeline.",
         },
         {
             "id": "big_purchase",
@@ -294,26 +314,19 @@ def _draft_for(
             "target_amount_usd": target,
             "sentence": f"${target:,.0f} toward tuition, dated to when the first bill would arrive.",
         }
-    if question_id == "career_break":
-        months = _amount(answer.get("months") or answer.get("amount_usd"), float(DEFAULT_CAREER_BREAK_MONTHS))
-        months = min(months, 36.0)
-        if monthly_expenses_usd and monthly_expenses_usd > 0:
-            target = months * monthly_expenses_usd
-            sentence = (
-                f"{months:.0f} months away at your current spending "
-                f"(~${monthly_expenses_usd:,.0f}/month) needs about ${target:,.0f} banked first."
-            )
-        else:
-            target = DEFAULT_CAREER_BREAK_FALLBACK_USD
-            sentence = (
-                f"{months:.0f} months away needs about ${target:,.0f} banked first — "
-                "a placeholder until expenses are on file in Profile."
-            )
+    if question_id == "income_change":
+        monthly_drop = _amount(answer.get("amount_usd"), _default_income_drop(monthly_expenses_usd))
+        target = INCOME_STEP_DOWN_CUSHION_MONTHS * monthly_drop
         return {
-            "category": "career_break",
-            "label": f"Career break ({months:.0f} months)",
+            "category": "income_change",
+            "label": "Income step-down cushion",
             "target_amount_usd": target,
-            "sentence": sentence,
+            "monthly_income_drop_usd": round(monthly_drop),
+            "sentence": (
+                f"Six months of the ${monthly_drop:,.0f}/month step-down banked first "
+                f"(${target:,.0f}) — and the plan models income bending from that date on, "
+                "so the trajectory tells the truth about the new normal."
+            ),
         }
     if question_id == "big_purchase":
         target = _amount(answer.get("amount_usd"), DEFAULT_BIG_PURCHASE_USD)

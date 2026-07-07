@@ -943,3 +943,19 @@
   gap: var(--s-4);
   margin-top: var(--s-2);
 }
+
+.life-draft-timeline {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  margin-top: var(--s-2);
+  font-size: var(--t-body-sm);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.life-draft-preview {
+  display: inline-block;
+  margin-top: var(--s-1);
+  font-size: var(--t-body-sm);
+}

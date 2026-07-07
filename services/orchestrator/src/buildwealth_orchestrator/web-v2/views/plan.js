@@ -83,6 +83,7 @@ export async function init(params = {}) {
   ui.artifacts.focusedArtifactId = String(params.artifact || '').trim();
   ui.scenarios.focusedRecommendationId = String(params.focus || params.recommendation || '').trim();
   ui.savedSimulations.focusedSimulationId = String(params.saved || '').trim();
+  ui.previewEvent = parsePreviewEvent(params);
   seedOpenFolds(params);
   attachHandlers();
   // Peer context for trajectory overlays — best-effort, before the fans draw.
@@ -276,11 +277,22 @@ async function loadBranchTemplates(id) {
     error: null,
   };
   try {
-    const branchTemplates = await api.planBranchTemplates(id);
+    let branchTemplates = await api.planBranchTemplates(id);
+    let selectedTemplateId = String(branchTemplates?.default_template_id || '');
+    // A life-plans preview arrives by deep link as an ephemeral template:
+    // run it as a simulation, save nothing, close the tab, reality untouched.
+    if (ui.previewEvent) {
+      const previewTemplate = previewBranchTemplate(ui.previewEvent);
+      branchTemplates = {
+        ...branchTemplates,
+        templates: [previewTemplate, ...(Array.isArray(branchTemplates?.templates) ? branchTemplates.templates : [])],
+      };
+      selectedTemplateId = previewTemplate.id;
+    }
     ui.branches = {
       busy: false,
       branchTemplates,
-      selectedTemplateId: String(branchTemplates?.default_template_id || ''),
+      selectedTemplateId,
       draft: {},
       dirty: false,
       result: null,
@@ -726,6 +738,7 @@ function attachHandlers() {
     ui.selectedId = id;
     ui.section = '';
     ui.openFolds = new Set();
+    ui.previewEvent = null;
     ui.plan = null;
     ui.assumptions = { busy: false, assumptionSets: null, draft: {}, dirty: false, saving: false, error: null };
     ui.health = { busy: false, recommendations: [], error: null };
@@ -798,6 +811,7 @@ function attachHandlers() {
   delegate(page, 'click', '[data-timeline-action="edit"]', () => openTimelineEditor());
   delegate(page, 'click', '[data-timeline-action="cancel"]', () => resetTimelineEditor());
   delegate(page, 'click', '[data-timeline-action="save"]', () => saveTimeline());
+  delegate(page, 'click', '[data-timeline-action="remove-event"]', (_, el) => removeTimelineEvent(el));
 
   delegate(page, 'change', '[data-contribution-field]', (_, el) => stageContributionEdit(el));
   delegate(page, 'click', '[data-contribution-action="edit"]', () => openContributionEditor());
@@ -1320,6 +1334,35 @@ async function saveTimeline() {
   }
 }
 
+// Forecast freely, then return to reality: any saved event can be removed,
+// and the fans redraw without it on the same rerender.
+async function removeTimelineEvent(el) {
+  if (!ui.plan || ui.timeline.saving) return;
+  const eventId = String(el.dataset.eventId || '').trim();
+  const timeline = ui.timeline.timeline || {};
+  const events = Array.isArray(timeline.events) ? timeline.events : [];
+  if (!eventId || !events.some(event => String(event?.id || '') === eventId)) return;
+  ui.timeline.saving = true;
+  ui.timeline.error = null;
+  rerenderTimelineWorkspace();
+  try {
+    ui.timeline.timeline = await api.updatePlanTimeline(ui.plan.id, {
+      events: events.filter(event => String(event?.id || '') !== eventId),
+      retirement: timeline.retirement || {},
+    });
+    setPlanTimelineEvents(ui.timeline.timeline?.events || []);
+    ui.timeline.saving = false;
+    rerenderTimelineWorkspace();
+    rerenderTrajectoryPreview();
+    rerenderScenarios();
+    rerenderBranches();
+  } catch (err) {
+    ui.timeline.saving = false;
+    ui.timeline.error = err.message;
+    rerenderTimelineWorkspace();
+  }
+}
+
 function openContributionEditor() {
   ui.contributions.editing = true;
   ui.contributions.error = null;
@@ -1411,6 +1454,37 @@ function withdrawalDecisionRationale(result = {}) {
     parts.push(`Warnings: ${result.warnings.slice(0, 2).join('; ')}.`);
   }
   return parts.join(' ');
+}
+
+function parsePreviewEvent(params = {}) {
+  const label = String(params.pv_label || '').trim();
+  const date = String(params.pv_date || '').trim();
+  if (!label || !/^\d{4}/.test(date)) return null;
+  const amount = Number(params.pv_amount);
+  const impact = String(params.pv_impact || '').trim();
+  return {
+    label,
+    event_type: String(params.pv_type || 'milestone').trim() || 'milestone',
+    impact_type: impact || null,
+    amount_usd: Number.isFinite(amount) ? amount : 0,
+    recurring_frequency: String(params.pv_freq || 'one_time').trim() || 'one_time',
+    start_year_offset: Math.max(0, Number(date.slice(0, 4)) - new Date().getFullYear()),
+    duration_months: null,
+    account_id: null,
+    notes: 'From the life-plans interview — simulation preview only; nothing saved.',
+  };
+}
+
+function previewBranchTemplate(event) {
+  return {
+    id: '__life_preview__',
+    ephemeral: true,
+    name: `Preview: ${event.label}`,
+    description: 'From the life-plans interview. Runs as a simulation only — nothing lands on the plan timeline.',
+    branch_name: `Preview: ${event.label}`,
+    compare_settings: {},
+    branch_events: [event],
+  };
 }
 
 function selectedBranchTemplate() {

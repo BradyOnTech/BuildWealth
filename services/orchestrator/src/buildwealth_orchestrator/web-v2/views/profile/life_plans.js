@@ -96,7 +96,6 @@ function renderQuestion(question, timeframes) {
   const answer = st.answers[question.id] || {};
   const covered = question.already_covered;
   const active = answer.timeframe && answer.timeframe !== 'not_now';
-  const isMonths = question.id === 'career_break';
   return html`
     <li class="life-question" data-life-question="${esc(question.id)}">
       <p class="life-question-prompt">${esc(question.prompt)}</p>
@@ -118,9 +117,9 @@ function renderQuestion(question, timeframes) {
         <div class="life-amount-row">
           <label class="life-amount">
             <span class="assumption-label">${esc(question.amount_label)}</span>
-            <input type="number" min="0" step="${isMonths ? '1' : '500'}" inputmode="decimal"
-                   value="${esc(answer[isMonths ? 'months' : 'amount_usd'] ?? question.amount_default_usd ?? '')}"
-                   data-interview-field="${isMonths ? 'months' : 'amount_usd'}"
+            <input type="number" min="0" step="100" inputmode="decimal"
+                   value="${esc(answer.amount_usd ?? question.amount_default_usd ?? '')}"
+                   data-interview-field="amount_usd"
                    data-question-id="${esc(question.id)}">
           </label>
           ${question.id === 'big_purchase' ? html`
@@ -209,13 +208,38 @@ function renderDraft(draft, index) {
       ${timelineEligible ? html`
         <label class="life-draft-timeline">
           <input type="checkbox" data-draft-timeline="${index}" ${onTimeline ? 'checked' : ''} ${kept ? '' : 'disabled'}>
-          Also mark on the “${esc(st.timelinePlan.title || 'Plan')}” timeline — the trajectory
-          will model this money leaving in ${esc(String(date || '').slice(0, 4))}.
+          ${draft.timeline_event.recurring_frequency === 'monthly' ? html`
+            Also mark on the “${esc(st.timelinePlan.title || 'Plan')}” timeline — the trajectory
+            will model income stepping down from ${esc(String(date || '').slice(0, 4))} on.
+          ` : html`
+            Also mark on the “${esc(st.timelinePlan.title || 'Plan')}” timeline — the trajectory
+            will model this money leaving in ${esc(String(date || '').slice(0, 4))}.
+          `}
         </label>
+        <a class="link-editorial life-draft-preview" href="${previewBranchHref(draft, index)}">
+          Preview first in What-ifs — run it as a simulation, save nothing <span class="arrow">›</span>
+        </a>
       ` : ''}
       <p class="marginalia">${esc(draft.sentence)}</p>
     </li>
   `;
+}
+
+// Deep link into Plan → What-ifs with this draft's event as an ephemeral
+// branch template: forecast without committing anything to the timeline.
+function previewBranchHref(draft, index) {
+  const edit = st.edits[index] || {};
+  const event = draft.timeline_event || {};
+  const params = new URLSearchParams();
+  if (st.timelinePlan?.id) params.set('id', st.timelinePlan.id);
+  params.set('section', 'branches');
+  params.set('pv_label', String(draft.label || 'Life event'));
+  params.set('pv_date', String(edit.target_date ?? event.date ?? ''));
+  params.set('pv_type', String(event.event_type || 'milestone'));
+  if (event.impact_type) params.set('pv_impact', String(event.impact_type));
+  params.set('pv_amount', String(event.amount_usd ?? 0));
+  params.set('pv_freq', String(event.recurring_frequency || 'one_time'));
+  return `#plan?${params.toString()}`;
 }
 
 /* ─────────────  Events (routed from profile.js)  ───────────── */
@@ -364,11 +388,16 @@ async function appendTimelineEvents(drafts) {
       !st.dropped.has(index) && !st.timelineDropped.has(index) && draft.timeline_event)
     .map(({ draft, index }) => {
       const edit = st.edits[index] || {};
-      const amount = Number(edit.target_amount_usd ?? draft.timeline_event.amount_usd);
+      const twin = draft.timeline_event;
+      // Amount edits apply only to one-time twins, where the goal target IS
+      // the event amount. A recurring income bend is a monthly figure the
+      // goal-target edit doesn't describe.
+      const editable = twin.recurring_frequency === 'one_time' && Number(twin.amount_usd) > 0;
+      const amount = Number(edit.target_amount_usd ?? twin.amount_usd);
       return {
-        ...draft.timeline_event,
-        date: String(edit.target_date ?? draft.timeline_event.date ?? ''),
-        amount_usd: Number.isFinite(amount) && amount > 0 ? amount : draft.timeline_event.amount_usd,
+        ...twin,
+        date: String(edit.target_date ?? twin.date ?? ''),
+        amount_usd: editable && Number.isFinite(amount) && amount > 0 ? amount : twin.amount_usd,
       };
     })
     .filter(event => event.date);
