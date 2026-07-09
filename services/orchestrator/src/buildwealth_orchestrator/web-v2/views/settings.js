@@ -7,73 +7,18 @@ import { api } from '../lib/api.js';
 import { state } from '../lib/state.js';
 import { html, raw, $, esc, setView, delegate } from '../lib/dom.js';
 import { fmtRelative } from '../lib/format.js';
+import {
+  PROVIDERS,
+  PROVIDER_DEFAULTS,
+  PROVIDER_MODELS,
+  buildLlmOptionsFromSettings,
+} from '../lib/llm_catalog.js';
 
 export const meta = {
   id: 'settings',
   label: 'Connections & AI',
   numeral: '·',
   group: 'utility',
-};
-
-const PROVIDERS = [
-  { value: 'openai',                   label: 'OpenAI',                       hint: 'gpt-5.5 · default' },
-  { value: 'anthropic',                label: 'Anthropic',                    hint: 'Claude family' },
-  { value: 'gemini',                   label: 'Google Gemini',                hint: 'gemini-3.1' },
-  { value: 'xai',                      label: 'xAI',                          hint: 'Grok 4.x' },
-  { value: 'openrouter',               label: 'OpenRouter',                   hint: 'Many models · one key · cheap' },
-  { value: 'custom_openai_compatible', label: 'Custom (OpenAI-compatible)',   hint: 'Self-hosted, proxies' },
-];
-
-// Mirrors services/user_settings.py LLM_PROVIDER_DEFAULTS so a provider switch
-// can pre-fill model + base URL inline without a server round-trip.
-const PROVIDER_DEFAULTS = {
-  openai:                   { llm_model: 'gpt-5.5',               llm_base_url: 'https://api.openai.com/v1' },
-  anthropic:                { llm_model: 'claude-opus-4-7',       llm_base_url: 'https://api.anthropic.com/v1' },
-  gemini:                   { llm_model: 'gemini-3.1-flash-lite', llm_base_url: 'https://generativelanguage.googleapis.com/v1beta/openai' },
-  xai:                      { llm_model: 'grok-4.5',              llm_base_url: 'https://api.x.ai/v1' },
-  openrouter:               { llm_model: 'openrouter/auto',       llm_base_url: 'https://openrouter.ai/api/v1' },
-  custom_openai_compatible: { llm_model: '',                      llm_base_url: '' },
-};
-
-// Curated chat models (mirrors llm_model_catalog.py). cost_band $, $$, $$$, $$$$
-// is relative guidance — not billing. Prefer GET /api/copilot/llm-options when available.
-const PROVIDER_MODELS = {
-  xai: [
-    { id: 'grok-4.5', label: 'Grok 4.5', cost: '$$$', blurb: 'Flagship · tools & reasoning', recommended: true, price: '$2 / $6' },
-    { id: 'grok-4.3', label: 'Grok 4.3', cost: '$$', blurb: 'Strong general chat', price: '$1.25 / $2.50' },
-    { id: 'grok-4.20-0309-reasoning', label: 'Grok 4.20 Reasoning', cost: '$$', blurb: 'Deeper multi-step reasoning', price: '$1.25 / $2.50' },
-    { id: 'grok-4.20-0309-non-reasoning', label: 'Grok 4.20 Fast', cost: '$$', blurb: 'Faster responses', price: '$1.25 / $2.50', cheap: true },
-    { id: 'grok-4.20-multi-agent-0309', label: 'Grok 4.20 Multi-agent', cost: '$$', blurb: 'Built-in multi-agent', price: '$1.25 / $2.50' },
-  ],
-  openai: [
-    { id: 'gpt-5.5', label: 'GPT-5.5', cost: '$$$', blurb: 'Latest flagship', recommended: true },
-    { id: 'gpt-5-mini', label: 'GPT-5 mini', cost: '$$', blurb: 'Cheaper everyday chat', cheap: true },
-    { id: 'gpt-4.1', label: 'GPT-4.1', cost: '$$$', blurb: 'Stable tools-capable' },
-    { id: 'gpt-4.1-mini', label: 'GPT-4.1 mini', cost: '$$', blurb: 'Fast / lower cost', cheap: true },
-    { id: 'gpt-4o-mini', label: 'GPT-4o mini', cost: '$', blurb: 'Very cheap tools model', cheap: true, price: '~$0.15 / $0.60' },
-  ],
-  anthropic: [
-    { id: 'claude-opus-4-7', label: 'Claude Opus 4.7', cost: '$$$$', blurb: 'Highest capability', recommended: true },
-    { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5', cost: '$$$', blurb: 'Balanced quality & cost' },
-    { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', cost: '$', blurb: 'Fast / economical', cheap: true },
-  ],
-  gemini: [
-    { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite', cost: '$', blurb: 'Fast & cheap', recommended: true, cheap: true },
-    { id: 'gemini-3.1-flash', label: 'Gemini 3.1 Flash', cost: '$$', blurb: 'Balanced', cheap: true },
-    { id: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro', cost: '$$$', blurb: 'Higher quality' },
-  ],
-  openrouter: [
-    { id: 'openrouter/auto', label: 'OpenRouter Auto', cost: '$', blurb: 'Router picks a capable cheap model', recommended: true, cheap: true },
-    { id: 'deepseek/deepseek-chat', label: 'DeepSeek Chat', cost: '$', blurb: 'Strong & very cheap', cheap: true, price: 'Often well under $1 / 1M' },
-    { id: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash', cost: '$', blurb: 'Fast via OpenRouter', cheap: true },
-    { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B', cost: '$', blurb: 'Open weights · low cost', cheap: true },
-    { id: 'qwen/qwen-2.5-72b-instruct', label: 'Qwen 2.5 72B', cost: '$', blurb: 'Capable open model', cheap: true },
-    { id: 'mistralai/mistral-small-3.1-24b-instruct', label: 'Mistral Small', cost: '$', blurb: 'Economical tools chat', cheap: true },
-    { id: 'openai/gpt-4o-mini', label: 'GPT-4o mini (via OR)', cost: '$', blurb: 'Cheap OpenAI-class tools', cheap: true },
-    { id: 'anthropic/claude-3.5-haiku', label: 'Claude Haiku (via OR)', cost: '$$', blurb: 'Fast Claude-class', cheap: true },
-    { id: 'x-ai/grok-3-mini', label: 'Grok mini (via OR)', cost: '$$', blurb: 'When available on OpenRouter', cheap: true },
-  ],
-  custom_openai_compatible: [],
 };
 
 const MASK = '••••••••';
@@ -394,7 +339,17 @@ function providerKeyMeta(provider) {
 function connectedProvidersSummary() {
   const s = ui.loadedSettings || {};
   const list = Array.isArray(s.llm_connected_providers) ? s.llm_connected_providers : [];
-  return list.filter(p => p.connected);
+  const fromApi = list.filter(p => p.connected);
+  if (fromApi.length) return fromApi;
+  // Older backends omit llm_connected_providers — derive from catalog + key badge.
+  const fallback = buildLlmOptionsFromSettings(s);
+  return (fallback.connected_providers || []).map(p => ({
+    id: p.id,
+    label: p.label,
+    connected: true,
+    last4: s.llm_api_key_last4 || null,
+    is_active_default: p.is_active_default,
+  }));
 }
 
 function modelsForProvider(provider) {

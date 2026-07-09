@@ -45,29 +45,28 @@
 
 .copilot-masthead {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s-3);
-  min-height: 48px;
-  padding: 8px 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 12px 0 14px;
 }
 
-.copilot-masthead-left {
+.copilot-masthead-top {
   display: flex;
   align-items: center;
-  gap: var(--s-3);
+  justify-content: space-between;
+  gap: 12px;
   min-width: 0;
-  flex: 1;
 }
 
 .copilot-title-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  max-width: min(280px, 42vw);
+  gap: 8px;
+  max-width: min(360px, 55vw);
   background: transparent;
   border: 0;
-  padding: 6px 8px 6px 2px;
+  padding: 6px 10px 6px 2px;
   cursor: pointer;
   color: var(--ink-strong);
   border-radius: 8px;
@@ -87,7 +86,7 @@
   font-style: italic;
   font-variation-settings: 'opsz' 24;
   font-weight: 500;
-  font-size: 15px;
+  font-size: 16px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -96,17 +95,19 @@
 .copilot-scope-pills {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   min-width: 0;
   flex-wrap: wrap;
+  padding: 2px 0 0;
 }
 
 .copilot-scope-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  max-width: 200px;
-  padding: 5px 10px;
+  gap: 8px;
+  max-width: min(240px, 42vw);
+  min-height: 34px;
+  padding: 7px 14px 7px 12px;
   border-radius: 999px;
   border: var(--hair) solid var(--rule);
   background: var(--paper-bright);
@@ -114,19 +115,22 @@
   transition:
     border-color var(--d-fast) var(--ease-press),
     background var(--d-fast) var(--ease-press),
-    transform var(--d-fast) var(--ease-press);
+    transform var(--d-fast) var(--ease-press),
+    box-shadow var(--d-fast) var(--ease-press);
 }
 .copilot-scope-pill:hover {
   border-color: var(--forest);
   background: color-mix(in srgb, var(--forest) 6%, var(--paper-bright));
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--ink) 4%, transparent);
 }
 .copilot-scope-pill:active {
-  transform: scale(0.96);
+  transform: scale(0.98);
 }
 .copilot-scope-pill::after {
   content: '▾';
   font-size: 9px;
   color: var(--ink-faint);
+  margin-left: 2px;
 }
 .copilot-scope-k {
   font-family: var(--mono);
@@ -135,24 +139,30 @@
   letter-spacing: 0.12em;
   color: var(--ink-faint);
   flex: 0 0 auto;
+  padding-right: 2px;
+  border-right: var(--hair) solid var(--rule-soft);
+  margin-right: 2px;
+  line-height: 1.2;
 }
 .copilot-scope-v {
   font-family: var(--sans, inherit);
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-strong);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+  padding-left: 2px;
 }
 
 .copilot-model-pill .copilot-scope-v {
-  max-width: 140px;
+  max-width: 160px;
 }
 
 .copilot-model-panel {
   min-width: 300px;
   max-width: 380px;
+  padding-bottom: 4px;
 }
 
 .copilot-model-group {
@@ -357,7 +367,7 @@
 .copilot-focus-panel {
   min-width: min(360px, 92vw);
   max-width: 400px;
-  padding: 12px 14px 14px;
+  padding: 14px 16px 16px;
   right: 0;
   left: auto;
 }
@@ -367,7 +377,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--s-3);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .copilot-focus-panel-title {
@@ -386,7 +396,7 @@
   color: var(--ink-faint);
   background: transparent;
   border: 0;
-  padding: 4px 6px;
+  padding: 6px 8px;
   cursor: pointer;
   border-radius: 6px;
 }
@@ -396,9 +406,9 @@
 }
 
 .copilot-focus-hint {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 1.5;
   color: var(--ink-faint);
 }
 
@@ -406,8 +416,8 @@
   display: inline-flex;
   gap: 4px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
-  padding: 3px;
+  margin-bottom: 12px;
+  padding: 4px;
   border-radius: 999px;
   background: var(--shade);
 }
@@ -421,7 +431,7 @@
   background: transparent;
   border: 0;
   border-radius: 999px;
-  padding: 6px 11px;
+  padding: 7px 12px;
   cursor: pointer;
   transition:
     color var(--d-fast) var(--ease-press),
@@ -440,7 +450,7 @@
 .copilot-focus-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 .copilot-focus-chip {
@@ -450,7 +460,7 @@
   background: var(--paper);
   border: var(--hair) solid var(--rule);
   border-radius: 999px;
-  padding: 5px 10px;
+  padding: 6px 12px;
   cursor: pointer;
   transition:
     border-color var(--d-fast) var(--ease-press),
@@ -480,8 +490,8 @@
 
 .copilot-focus-legend {
   display: flex;
-  gap: 12px;
-  margin: 10px 0 0;
+  gap: 14px;
+  margin: 12px 0 0;
   font-family: var(--mono);
   font-size: 9.5px;
   text-transform: uppercase;

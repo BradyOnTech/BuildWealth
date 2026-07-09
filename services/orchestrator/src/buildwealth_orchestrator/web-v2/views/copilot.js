@@ -5,6 +5,7 @@
 import { api } from '../lib/api.js';
 import { state } from '../lib/state.js';
 import { html, raw, esc, $, delegate } from '../lib/dom.js';
+import { buildLlmOptionsFromSettings } from '../lib/llm_catalog.js';
 import { renderThread } from './copilot/thread.js';
 import { renderComposer, attachComposerBehavior } from './copilot/composer.js';
 import { fmtRelative } from '../lib/format.js';
@@ -333,10 +334,24 @@ async function loadLlmOptions(conversationId = ui.conversationId) {
     const res = await api.llmOptions(conversationId || undefined);
     ui.llmOptions = res && typeof res === 'object' ? res : null;
     if (res?.resolved && typeof res.resolved === 'object') {
-      ui.conversationLlm = res.resolved;
+      // Don't clobber a user-picked model with workspace default on refresh.
+      if (!ui.conversationLlm || ui.conversationLlm.source !== 'conversation') {
+        ui.conversationLlm = res.resolved;
+      }
+    }
+    return;
+  } catch {
+    // Older containers may not expose /api/copilot/llm-options yet — fall back.
+  }
+  try {
+    const settings = await api.settings();
+    const fallback = buildLlmOptionsFromSettings(settings);
+    ui.llmOptions = fallback;
+    if (!ui.conversationLlm || ui.conversationLlm.source !== 'conversation') {
+      ui.conversationLlm = fallback.resolved;
     }
   } catch {
-    // Keep prior options; picker falls back to workspace labels.
+    // Keep prior options if settings also fail.
   }
 }
 
@@ -444,42 +459,42 @@ function renderMasthead() {
     : 'New chat';
   return html`
     <header class="copilot-masthead">
-      <div class="copilot-masthead-left">
+      <div class="copilot-masthead-top">
         <span class="copilot-picker">
           <button type="button" class="copilot-title-btn" data-picker="conversations" title="Conversations">
             <span class="copilot-title-text">${esc(title)}</span>
           </button>
           ${ui.pickerOpen === 'conversations' ? raw(renderConversationsMenu()) : ''}
         </span>
-        <div class="copilot-scope-pills">
-          ${plans.length ? html`
-            <span class="copilot-picker">
-              <button type="button" class="copilot-scope-pill" data-picker="plans" title="Plan scope">
-                <span class="copilot-scope-k">Plan</span>
-                <span class="copilot-scope-v">${esc(plan?.title || 'none')}</span>
-              </button>
-              ${ui.pickerOpen === 'plans' ? raw(renderPlansMenu(plans, plan?.id)) : ''}
-            </span>
-          ` : ''}
-          <span class="copilot-picker">
-            <button type="button" class="copilot-scope-pill" data-picker="focus" title="Session Focus — which domains expand in the brief">
-              <span class="copilot-scope-k">Focus</span>
-              <span class="copilot-scope-v">${esc(focusLabel)}</span>
-            </button>
-            ${ui.pickerOpen === 'focus' ? raw(renderFocusMenu()) : ''}
-          </span>
-          <span class="copilot-picker">
-            <button type="button" class="copilot-scope-pill copilot-model-pill" data-picker="model" title="Model for this conversation">
-              <span class="copilot-scope-k">Model</span>
-              <span class="copilot-scope-v">${esc(modelLabel)}</span>
-            </button>
-            ${ui.pickerOpen === 'model' ? raw(renderModelMenu()) : ''}
-          </span>
-        </div>
+        <button type="button" class="copilot-new-btn" data-action="new-chat" title="New conversation">
+          New chat
+        </button>
       </div>
-      <button type="button" class="copilot-new-btn" data-action="new-chat" title="New conversation">
-        New chat
-      </button>
+      <div class="copilot-scope-pills" role="toolbar" aria-label="Chat scope">
+        ${plans.length ? html`
+          <span class="copilot-picker">
+            <button type="button" class="copilot-scope-pill" data-picker="plans" title="Plan scope">
+              <span class="copilot-scope-k">Plan</span>
+              <span class="copilot-scope-v">${esc(plan?.title || 'none')}</span>
+            </button>
+            ${ui.pickerOpen === 'plans' ? raw(renderPlansMenu(plans, plan?.id)) : ''}
+          </span>
+        ` : ''}
+        <span class="copilot-picker">
+          <button type="button" class="copilot-scope-pill" data-picker="focus" title="Session Focus — which domains expand in the brief">
+            <span class="copilot-scope-k">Focus</span>
+            <span class="copilot-scope-v">${esc(focusLabel)}</span>
+          </button>
+          ${ui.pickerOpen === 'focus' ? raw(renderFocusMenu()) : ''}
+        </span>
+        <span class="copilot-picker">
+          <button type="button" class="copilot-scope-pill copilot-model-pill" data-picker="model" title="Model for this conversation">
+            <span class="copilot-scope-k">Model</span>
+            <span class="copilot-scope-v">${esc(modelLabel)}</span>
+          </button>
+          ${ui.pickerOpen === 'model' ? raw(renderModelMenu()) : ''}
+        </span>
+      </div>
     </header>
   `;
 }
