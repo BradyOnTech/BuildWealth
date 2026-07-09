@@ -152,7 +152,32 @@
 
 .copilot-model-panel {
   min-width: 300px;
-  max-width: 360px;
+  max-width: 380px;
+}
+
+.copilot-model-group {
+  padding-bottom: 4px;
+}
+
+.copilot-model-group + .copilot-model-group {
+  border-top: var(--hair) solid var(--rule-soft);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.copilot-model-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 4px;
+}
+
+.copilot-model-group-title {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-faint);
 }
 
 .copilot-model-filter {

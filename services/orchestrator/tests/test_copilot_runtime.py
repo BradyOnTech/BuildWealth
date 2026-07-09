@@ -505,7 +505,9 @@ def test_new_user_settings_file_does_not_persist_llm_defaults(tmp_path: Path) ->
     assert store.load_raw()["llm_provider"] == "openai"
 
 
-def test_user_settings_provider_switch_applies_preset_and_clears_masked_key(tmp_path: Path) -> None:
+def test_user_settings_provider_switch_applies_preset_and_keeps_other_vendor_keys(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "settings.json"
     store = UserSettingsStore(path)
     store.save(
@@ -525,7 +527,14 @@ def test_user_settings_provider_switch_applies_preset_and_clears_masked_key(tmp_
     )
 
     assert saved["llm_provider"] == "anthropic"
+    # Anthropic has no key yet; openai key remains in the multi-vendor map.
     assert saved["llm_api_key"] == ""
+    assert saved["llm_provider_api_keys"]["openai"] == "sk-openai"
     assert saved["llm_model"] == "claude-opus-4-7"
     assert saved["llm_base_url"] == "https://api.anthropic.com/v1"
     assert saved["llm_settings_saved_at"]
+
+    # Switching back restores the openai key without re-pasting.
+    restored = store.save({"llm_provider": "openai"})
+    assert restored["llm_api_key"] == "sk-openai"
+    assert restored["llm_provider_api_keys"]["openai"] == "sk-openai"

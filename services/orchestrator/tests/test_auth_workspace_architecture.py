@@ -91,8 +91,10 @@ def test_workspace_settings_store_encrypts_api_key(tmp_path: Path) -> None:
     rotated_store = WorkspaceSecretStore(tmp_path / "workspace_secrets.json", new_key)
     stale_store = WorkspaceSecretStore(tmp_path / "workspace_secrets.json", key)
 
-    assert rotation["secret_count"] == 1
+    # Multi-vendor vault may store per-provider + legacy mirrors of the same key.
+    assert rotation["secret_count"] >= 1
     assert rotated_store.get_secret("llm_api_key") == "sk-test-secret-1234"
+    assert rotated_store.get_secret("llm_api_key__openai") == "sk-test-secret-1234"
     assert stale_store.get_secret("llm_api_key") == ""
 
 
@@ -1123,11 +1125,12 @@ def test_workspace_secret_key_rotation_preview_and_apply(monkeypatch, tmp_path: 
     assert save_secret.status_code == 200
     assert preview.status_code == 200
     assert preview.json()["workspace_count"] == 4
-    assert preview.json()["secret_count"] == 1
+    # Multi-vendor vault stores per-provider + legacy mirrors of the same key.
+    assert preview.json()["secret_count"] >= 1
     assert rejected.status_code == 400
     assert applied.status_code == 200
     assert applied.json()["rotated"] is True
-    assert applied.json()["secret_count"] == 1
+    assert applied.json()["secret_count"] >= 1
     assert old_key_text != new_key_text
     assert loaded.status_code == 200
     assert loaded.json()["llm_api_key"] == "••••••••1234"

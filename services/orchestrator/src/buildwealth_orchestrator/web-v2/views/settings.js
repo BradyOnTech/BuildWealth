@@ -360,17 +360,41 @@ function truncate(value, n) {
 
 function keyIsConfigured() {
   const s = ui.loadedSettings || {};
-  if (s.llm_api_key_configured) return true;
-  const masked = String(s.llm_api_key || '');
-  return Boolean(masked && masked.startsWith(MASK));
+  const provider = ui.draft?.llm_provider || s.llm_provider;
+  const meta = providerKeyMeta(provider);
+  if (meta?.configured) return true;
+  if (provider === s.llm_provider && s.llm_api_key_configured) return true;
+  if (provider === s.llm_provider) {
+    const masked = String(s.llm_api_key || '');
+    return Boolean(masked && masked.startsWith(MASK));
+  }
+  return false;
 }
 
 function keyLast4() {
   const s = ui.loadedSettings || {};
-  if (s.llm_api_key_last4) return String(s.llm_api_key_last4);
-  const masked = String(s.llm_api_key || '');
-  if (masked.startsWith(MASK) && masked.length > MASK.length) return masked.slice(-4);
+  const provider = ui.draft?.llm_provider || s.llm_provider;
+  const meta = providerKeyMeta(provider);
+  if (meta?.last4) return String(meta.last4);
+  if (provider === s.llm_provider && s.llm_api_key_last4) return String(s.llm_api_key_last4);
+  if (provider === s.llm_provider) {
+    const masked = String(s.llm_api_key || '');
+    if (masked.startsWith(MASK) && masked.length > MASK.length) return masked.slice(-4);
+  }
   return '';
+}
+
+function providerKeyMeta(provider) {
+  const s = ui.loadedSettings || {};
+  const meta = s.llm_provider_keys_meta;
+  if (!meta || typeof meta !== 'object') return null;
+  return meta[provider] || null;
+}
+
+function connectedProvidersSummary() {
+  const s = ui.loadedSettings || {};
+  const list = Array.isArray(s.llm_connected_providers) ? s.llm_connected_providers : [];
+  return list.filter(p => p.connected);
 }
 
 function modelsForProvider(provider) {
@@ -402,31 +426,48 @@ function providerCard() {
   const selectedModel = d.llm_model || '';
   const knownModel = models.some(m => m.id === selectedModel);
   const showCustomModel = d.llm_provider === 'custom_openai_compatible' || (selectedModel && !knownModel) || d._modelCustom;
+  const connected = connectedProvidersSummary();
 
   return html`
     <section class="settings-card">
       <header class="settings-card-head">
         <div class="settings-card-kicker">Copilot</div>
-        <h2 class="settings-card-title">AI provider</h2>
+        <h2 class="settings-card-title">AI providers</h2>
         <p class="settings-card-lede">
-          Keys stay local. Used for chat, drafts, and explanations.
-          Want many cheap models under one key? Pick <strong>OpenRouter</strong>.
+          Keys stay local. Save a key for each vendor you want — several can stay connected at once.
+          Copilot’s model menu then lists every connected provider. Prefer <strong>OpenRouter</strong> for many cheap models under one key.
         </p>
       </header>
 
+      ${connected.length ? html`
+        <div class="settings-connected-strip" aria-label="Connected providers">
+          <span class="settings-connected-label">Connected</span>
+          ${connected.map(p => html`
+            <span class="settings-connected-chip ${p.is_active_default ? 'active' : ''}" title="${esc(p.id)}">
+              ${esc(p.label || p.id)}${p.last4 ? html`<span class="settings-connected-last4">…${esc(String(p.last4))}</span>` : ''}
+              ${p.is_active_default ? html`<span class="settings-connected-default">default</span>` : ''}
+            </span>
+          `)}
+        </div>
+      ` : ''}
+
       <div class="settings-grid">
         <label class="settings-field span-2">
-          <span class="settings-label">Provider</span>
+          <span class="settings-label">Default provider</span>
           <select id="settings-provider" class="settings-input">
-            ${raw(PROVIDERS.map(p => `
+            ${raw(PROVIDERS.map(p => {
+              const meta = providerKeyMeta(p.value);
+              const mark = meta?.configured ? ' · key saved' : '';
+              return `
               <option value="${esc(p.value)}" ${p.value === d.llm_provider ? 'selected' : ''}>
-                ${esc(p.label)} · ${esc(p.hint)}
-              </option>`).join(''))}
+                ${esc(p.label)} · ${esc(p.hint)}${esc(mark)}
+              </option>`;
+            }).join(''))}
           </select>
           <span class="settings-hint">
             ${d.llm_provider === 'openrouter'
               ? 'One OpenRouter key unlocks DeepSeek, Llama, mini models, and more — ideal for low cost.'
-              : 'Changing provider requires saving a key for that provider. Switch model per chat in Copilot.'}
+              : 'Default for new chats. Other connected providers stay available in the Copilot model picker.'}
           </span>
         </label>
 
@@ -1112,22 +1153,25 @@ function attachHandlers() {
     if (next === prev) return;
     const defaults = PROVIDER_DEFAULTS[next] || PROVIDER_DEFAULTS.openai;
     const prevDefaults = PROVIDER_DEFAULTS[prev] || {};
+    const prefs = (ui.loadedSettings && ui.loadedSettings.llm_provider_prefs) || {};
+    const nextPref = prefs[next] || {};
     ui.draft.llm_provider = next;
-    // Always jump to the new provider's recommended model unless the user already
-    // typed a custom non-default id for the previous provider they want to keep.
-    if (!ui.draft.llm_model || ui.draft.llm_model === prevDefaults.llm_model
+    // Restore this vendor's last model/base_url when known; else catalog defaults.
+    if (nextPref.model) {
+      ui.draft.llm_model = nextPref.model;
+    } else if (!ui.draft.llm_model || ui.draft.llm_model === prevDefaults.llm_model
         || modelsForProvider(prev).some(m => m.id === ui.draft.llm_model)) {
       ui.draft.llm_model = defaults.llm_model;
     }
-    if (!ui.draft.llm_base_url || ui.draft.llm_base_url === prevDefaults.llm_base_url) {
+    if (nextPref.base_url) {
+      ui.draft.llm_base_url = nextPref.base_url;
+    } else if (!ui.draft.llm_base_url || ui.draft.llm_base_url === prevDefaults.llm_base_url) {
       ui.draft.llm_base_url = defaults.llm_base_url;
     }
-    // Do not wipe a freshly typed key on provider change — only forget the dirty
-    // buffer if the field was empty. Saved keys are provider-bound on Save.
-    if (!String(ui.draft.llm_api_key || '').trim()) {
-      ui.draft.llm_api_key = '';
-      ui.apiKeyDirty = false;
-    }
+    // Multi-vendor: each provider keeps its own key. Clear only the in-field
+    // dirty buffer so the Saved badge reflects the vault for `next`.
+    ui.draft.llm_api_key = '';
+    ui.apiKeyDirty = false;
     ui.draft._modelCustom = false;
     ui.testResult = null;
     render();

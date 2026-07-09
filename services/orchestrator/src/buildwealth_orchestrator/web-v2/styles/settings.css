@@ -390,6 +390,59 @@
   color: var(--gilt, var(--ink-soft));
 }
 
+/* Multi-vendor connected strip */
+.settings-connected-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 var(--s-3);
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: var(--hair) solid var(--rule-soft);
+  background: color-mix(in srgb, var(--shade) 55%, transparent);
+}
+
+.settings-connected-label {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-faint);
+  margin-right: 2px;
+}
+
+.settings-connected-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: var(--hair) solid var(--rule);
+  background: var(--paper-bright);
+  font-size: 12px;
+  color: var(--ink-strong);
+}
+
+.settings-connected-chip.active {
+  border-color: color-mix(in srgb, var(--forest) 40%, var(--rule));
+  background: color-mix(in srgb, var(--forest) 8%, var(--paper-bright));
+}
+
+.settings-connected-last4 {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+
+.settings-connected-default {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--forest);
+}
+
 .is-hidden {
   display: none !important;
 }

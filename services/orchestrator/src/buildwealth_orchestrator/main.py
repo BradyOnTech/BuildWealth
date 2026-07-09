@@ -17926,9 +17926,9 @@ def _settings_payload_for_probe(
         if "llm_base_url" not in request or request_base_url in ("", previous_base_url):
             payload["llm_base_url"] = next_base_url
             explicit_keys.add("llm_base_url")
-        # Only clear the probe key when the client did not supply a fresh one.
-        # A masked placeholder means "keep stored key" for the same provider, but
-        # provider transitions must not silently probe with the previous key.
+        # Multi-vendor: use the vault key for the *requested* provider when the
+        # client sent a masked placeholder (keep) or omitted the key. Never probe
+        # with another vendor's key.
         request_key = request.get("llm_api_key")
         has_fresh_key = (
             isinstance(request_key, str)
@@ -17936,7 +17936,14 @@ def _settings_payload_for_probe(
             and "llm_api_key" not in masked_sensitive_keys
         )
         if not has_fresh_key:
-            payload["llm_api_key"] = ""
+            other_key = ""
+            if hasattr(resolved_store, "get_provider_api_key"):
+                other_key = str(resolved_store.get_provider_api_key(requested_provider) or "")
+            else:
+                keys = payload.get("llm_provider_api_keys")
+                if isinstance(keys, dict):
+                    other_key = str(keys.get(requested_provider) or "")
+            payload["llm_api_key"] = other_key
             explicit_keys.add("llm_api_key")
     if provider_changed:
         explicit_keys.update(provider_transition_keys - {"llm_model", "llm_base_url"})
@@ -22085,6 +22092,7 @@ def get_copilot_conversation(
         workspace_settings=workspace_settings,
         conversation_llm=conversation.get("llm") if isinstance(conversation, dict) else None,
         request_llm=None,
+        settings_store=services.settings_store,
     )
     payload = dict(conversation)
     payload["focus"] = public_focus(conversation.get("focus") if isinstance(conversation, dict) else None)
@@ -22124,7 +22132,7 @@ def patch_copilot_conversation_llm(
     request: ConversationLlmUpdateRequest,
     services: WorkspaceServices = Depends(get_workspace_services),
 ) -> ConversationLlm:
-    """Set or clear the model used for this conversation (under the workspace provider)."""
+    """Set or clear the model used for this conversation (any connected provider)."""
     require_permission(services.context, "copilot.use")
     try:
         conversation = services.conversation_store.get(conversation_id)
@@ -22135,25 +22143,25 @@ def patch_copilot_conversation_llm(
     workspace_provider = str(workspace_settings.get("llm_provider") or "openai").strip().lower()
     patch = request.model_dump(exclude_unset=True)
     provider = str(patch.get("provider") or workspace_provider).strip().lower()
-    # Single workspace key today: conversation may only steer models under the
-    # connected provider. OpenRouter is the multi-model cheap path.
-    if provider and provider != workspace_provider:
+    model = str(patch.get("model") or "").strip()
+    connected_ids = _connected_provider_ids(workspace_settings, services.settings_store)
+    if model and provider and provider not in connected_ids:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Conversation models must use the connected provider ({workspace_provider}). "
-                "Connect another provider in Settings, or use OpenRouter for many cheap models under one key."
+                f"Provider '{provider}' is not connected. "
+                "Add its API key in Settings — you can keep several vendors connected at once."
             ),
         )
-    model = str(patch.get("model") or "").strip()
     services.conversation_store.update_llm(
         conversation_id,
-        {"provider": workspace_provider if model else "", "model": model},
+        {"provider": provider if model else "", "model": model},
     )
     resolved = _resolve_conversation_llm(
         workspace_settings=workspace_settings,
-        conversation_llm={"provider": workspace_provider if model else "", "model": model},
+        conversation_llm={"provider": provider if model else "", "model": model},
         request_llm=None,
+        settings_store=services.settings_store,
     )
     return ConversationLlm(**resolved)
 
@@ -22163,7 +22171,7 @@ def get_copilot_llm_options(
     conversation_id: str | None = None,
     services: WorkspaceServices = Depends(get_workspace_services),
 ) -> dict[str, Any]:
-    """Catalog of providers/models plus which provider is connected for this workspace."""
+    """Catalog of providers/models plus which providers are connected for this workspace."""
     require_permission(services.context, "copilot.use")
     workspace_settings = services.settings_store.load_raw()
     conversation_llm = None
@@ -22174,7 +22182,7 @@ def get_copilot_llm_options(
                 conversation_llm = conversation.get("llm")
         except FileNotFoundError:
             conversation_llm = None
-    connected = _connected_providers_from_settings(workspace_settings)
+    connected = _connected_providers_from_settings(workspace_settings, services.settings_store)
     return build_llm_options_payload(
         active_provider=str(workspace_settings.get("llm_provider") or "openai"),
         active_model=str(workspace_settings.get("llm_model") or ""),
@@ -22191,23 +22199,63 @@ def list_copilot_focus_domains(
     return {"domains": sorted(FOCUS_DOMAIN_CATALOG)}
 
 
-def _connected_providers_from_settings(workspace_settings: dict[str, Any]) -> list[dict[str, Any]]:
+def _connected_providers_from_settings(
+    workspace_settings: dict[str, Any],
+    settings_store: Any | None = None,
+) -> list[dict[str, Any]]:
+    if settings_store is not None and hasattr(settings_store, "connected_providers_payload"):
+        payload = settings_store.connected_providers_payload()
+        # Ensure catalog labels.
+        for item in payload:
+            entry = get_provider_entry(item.get("id") or "") or {}
+            item["label"] = entry.get("label") or item.get("label") or item.get("id")
+            item.setdefault("hint", entry.get("hint") or "")
+        return payload
+
     active = str(workspace_settings.get("llm_provider") or "").strip().lower()
-    has_key = bool(str(workspace_settings.get("llm_api_key") or "").strip())
-    # Custom OpenAI-compatible endpoints can run keyless (Ollama, etc.).
-    connected = bool(has_key) or active == "custom_openai_compatible"
+    keys = workspace_settings.get("llm_provider_api_keys")
+    if not isinstance(keys, dict):
+        keys = {}
+    prefs = workspace_settings.get("llm_provider_prefs")
+    if not isinstance(prefs, dict):
+        prefs = {}
     out: list[dict[str, Any]] = []
     for provider_id in list_provider_ids():
         entry = get_provider_entry(provider_id) or {}
+        has_key = bool(str(keys.get(provider_id) or "").strip())
+        if not has_key and provider_id == active:
+            has_key = bool(str(workspace_settings.get("llm_api_key") or "").strip())
+        pref = prefs.get(provider_id) if isinstance(prefs.get(provider_id), dict) else {}
+        base_url = str((pref or {}).get("base_url") or "")
+        if provider_id == active and not base_url:
+            base_url = str(workspace_settings.get("llm_base_url") or "")
+        connected = has_key or (
+            provider_id == "custom_openai_compatible" and bool(base_url.strip())
+        )
         out.append(
             {
                 "id": provider_id,
                 "label": entry.get("label") or provider_id,
-                "connected": connected and provider_id == active,
+                "hint": entry.get("hint") or "",
+                "connected": connected,
+                "configured": has_key,
                 "is_active_default": provider_id == active,
+                "default_model": str((pref or {}).get("model") or entry.get("default_model") or ""),
+                "default_base_url": base_url or str(entry.get("default_base_url") or ""),
             }
         )
     return out
+
+
+def _connected_provider_ids(
+    workspace_settings: dict[str, Any],
+    settings_store: Any | None = None,
+) -> set[str]:
+    return {
+        str(item.get("id") or "").strip().lower()
+        for item in _connected_providers_from_settings(workspace_settings, settings_store)
+        if item.get("connected")
+    }
 
 
 def _resolve_conversation_llm(
@@ -22215,10 +22263,12 @@ def _resolve_conversation_llm(
     workspace_settings: dict[str, Any],
     conversation_llm: dict[str, Any] | None,
     request_llm: dict[str, Any] | None,
+    settings_store: Any | None = None,
 ) -> dict[str, Any]:
-    """Resolve model for a turn. Single-key workspaces lock provider to Settings."""
+    """Resolve model for a turn across any connected multi-vendor provider."""
     workspace_provider = str(workspace_settings.get("llm_provider") or "openai").strip().lower()
     workspace_model = str(workspace_settings.get("llm_model") or "").strip()
+    connected_ids = _connected_provider_ids(workspace_settings, settings_store)
     raw: dict[str, Any] = {}
     if isinstance(conversation_llm, dict):
         raw.update(
@@ -22232,13 +22282,12 @@ def _resolve_conversation_llm(
             raw["provider"] = str(request_llm.get("provider") or "").strip().lower()
         if request_llm.get("model") is not None:
             raw["model"] = str(request_llm.get("model") or "").strip()
-    # Drop cross-provider overrides until multi-key storage exists.
-    if raw.get("provider") and raw["provider"] != workspace_provider:
+    requested_provider = str(raw.get("provider") or "").strip().lower()
+    if requested_provider and requested_provider not in connected_ids:
+        # Unconnected provider → fall back to workspace default.
         raw = {"provider": workspace_provider, "model": ""}
-    elif raw.get("provider") == "":
+    elif not requested_provider:
         raw["provider"] = workspace_provider
-    else:
-        raw.setdefault("provider", workspace_provider)
     return normalize_conversation_llm(
         raw if (raw.get("model") or raw.get("provider")) else None,
         fallback_provider=workspace_provider,
@@ -22250,19 +22299,45 @@ def _chat_client_for_resolved_llm(
     *,
     workspace_settings: dict[str, Any],
     resolved: dict[str, Any],
+    settings_store: Any | None = None,
 ) -> Any:
-    """Build a chat client for the resolved conversation model using workspace credentials."""
+    """Build a chat client using the vault key for the resolved provider."""
+    provider = str(resolved.get("provider") or workspace_settings.get("llm_provider") or "openai").strip().lower()
+    model = str(resolved.get("model") or workspace_settings.get("llm_model") or "").strip()
+    active = str(workspace_settings.get("llm_provider") or "openai").strip().lower()
+
+    api_key = ""
+    keys = workspace_settings.get("llm_provider_api_keys")
+    if isinstance(keys, dict):
+        api_key = str(keys.get(provider) or "").strip()
+    if not api_key and settings_store is not None and hasattr(settings_store, "get_provider_api_key"):
+        api_key = str(settings_store.get_provider_api_key(provider) or "").strip()
+    if not api_key and provider == active:
+        api_key = str(workspace_settings.get("llm_api_key") or "").strip()
+
+    prefs = workspace_settings.get("llm_provider_prefs")
+    pref_entry = prefs.get(provider) if isinstance(prefs, dict) and isinstance(prefs.get(provider), dict) else {}
+    if provider == active:
+        base_url = str(workspace_settings.get("llm_base_url") or "").strip() or str(
+            (pref_entry or {}).get("base_url") or ""
+        )
+    else:
+        base_url = str((pref_entry or {}).get("base_url") or "").strip()
+    if not base_url:
+        base_url = default_base_url_for_provider(provider)
+
     payload = dict(workspace_settings)
-    payload["llm_provider"] = str(resolved.get("provider") or payload.get("llm_provider") or "openai")
-    payload["llm_model"] = str(resolved.get("model") or payload.get("llm_model") or "")
-    # Keep the workspace base URL when the provider matches; otherwise use catalog default.
-    if payload["llm_provider"] != str(workspace_settings.get("llm_provider") or "").strip().lower():
-        payload["llm_base_url"] = default_base_url_for_provider(payload["llm_provider"])
+    payload["llm_provider"] = provider
+    payload["llm_model"] = model
+    payload["llm_base_url"] = base_url
+    payload["llm_api_key"] = api_key
     explicit_keys = {
         key
         for key, value in payload.items()
         if (key.startswith("llm_") or key.startswith("openai_")) and value not in ("", None)
     }
+    # Always treat model/base_url/key as explicit for the resolved turn.
+    explicit_keys.update({"llm_provider", "llm_model", "llm_base_url", "llm_api_key"})
     config = _llm_config_from_payload(payload, explicit_keys=explicit_keys)
     return build_llm_client(config)
 
@@ -22300,13 +22375,18 @@ async def copilot_chat(
             workspace_settings=workspace_settings,
             conversation_llm=conversation.get("llm") if isinstance(conversation, dict) else None,
             request_llm=request_llm_payload,
+            settings_store=resolved_services.settings_store,
         )
         if request.persist_llm and request_llm_payload is not None:
             model_to_store = str(resolved_llm.get("model") or "").strip()
             provider_to_store = str(resolved_llm.get("provider") or "").strip().lower()
             # Persist only true overrides (not identical to workspace default).
             workspace_model = str(workspace_settings.get("llm_model") or "").strip()
-            if model_to_store and model_to_store != workspace_model:
+            workspace_provider = str(workspace_settings.get("llm_provider") or "").strip().lower()
+            is_default = (
+                provider_to_store == workspace_provider and model_to_store == workspace_model
+            )
+            if model_to_store and not is_default:
                 conversation = store.update_llm(
                     conversation["id"],
                     {"provider": provider_to_store, "model": model_to_store},
@@ -22316,6 +22396,7 @@ async def copilot_chat(
         turn_llm_client = _chat_client_for_resolved_llm(
             workspace_settings=workspace_settings,
             resolved=resolved_llm,
+            settings_store=resolved_services.settings_store,
         )
 
         stored_focus = conversation.get("focus") if isinstance(conversation, dict) else None

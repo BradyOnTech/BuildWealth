@@ -488,14 +488,53 @@ function renderModelMenu() {
   const opts = ui.llmOptions;
   const resolved = ui.conversationLlm || opts?.resolved || {};
   const activeProvider = String(opts?.active_provider || resolved.provider || '').toLowerCase();
+  const selectedProvider = String(resolved.provider || activeProvider).toLowerCase();
   const providers = Array.isArray(opts?.providers) ? opts.providers : [];
-  const connected = providers.find(p => p.connected) || providers.find(p => p.id === activeProvider);
-  const models = Array.isArray(connected?.models) ? connected.models : [];
-  const filtered = ui.showCheapOnly ? models.filter(m => m.cheap || m.cost_band === '$') : models;
+  const connectedProviders = providers.filter(p => p.connected);
+  const anyConnected = connectedProviders.length > 0;
   const selectedId = String(resolved.model || opts?.active_model || '');
-  const connectedLabel = connected?.label || activeProvider || 'provider';
-  const isConnected = Boolean(connected?.connected);
   const workspaceDefault = String(opts?.active_model || '');
+  const workspaceDefaultProvider = activeProvider;
+  const hasCheap = connectedProviders.some(p =>
+    (p.models || []).some(m => m.cheap || m.cost_band === '$'),
+  );
+  const connectedNames = connectedProviders.map(p => p.label || p.id).join(' · ');
+
+  function renderProviderModels(provider) {
+    const models = Array.isArray(provider.models) ? provider.models : [];
+    const filtered = ui.showCheapOnly
+      ? models.filter(m => m.cheap || m.cost_band === '$')
+      : models;
+    if (!filtered.length) return '';
+    return html`
+      <div class="copilot-model-group">
+        <div class="copilot-model-group-head">
+          <span class="copilot-model-group-title">${esc(provider.label || provider.id)}</span>
+          ${provider.is_active_default || provider.id === workspaceDefaultProvider
+            ? html`<span class="copilot-model-tag">workspace</span>`
+            : ''}
+        </div>
+        ${filtered.map(m => {
+          const cost = m.cost_band || '';
+          const active = m.id === selectedId && provider.id === selectedProvider;
+          const isDefault = m.id === workspaceDefault && provider.id === workspaceDefaultProvider;
+          return html`
+            <button type="button" class="copilot-picker-item copilot-model-item ${active ? 'active' : ''}"
+                    data-model-id="${esc(m.id)}" data-model-provider="${esc(provider.id)}">
+              <span class="copilot-picker-item-meta">
+                <span class="copilot-model-cost">${esc(cost)}</span>
+                ${m.cheap ? html`<span class="copilot-model-tag">cheap</span>` : ''}
+                ${m.recommended ? html`<span class="copilot-model-tag rec">rec</span>` : ''}
+                ${isDefault ? html`<span class="copilot-model-tag">default</span>` : ''}
+              </span>
+              <span class="copilot-picker-item-title">${esc(m.label || m.id)}</span>
+              ${m.blurb ? html`<span class="copilot-model-blurb">${esc(m.blurb)}</span>` : ''}
+            </button>
+          `;
+        })}
+      </div>
+    `;
+  }
 
   return html`
     <div class="copilot-picker-menu copilot-model-panel open" data-menu="model">
@@ -504,46 +543,29 @@ function renderModelMenu() {
         <button type="button" class="copilot-focus-reset" data-model-reset title="Use workspace default">Default</button>
       </div>
       <p class="copilot-focus-hint">
-        ${isConnected
-          ? `Connected: ${esc(connectedLabel)}. Choice applies to this chat.`
-          : 'No API key saved. Connect a provider in Settings — OpenRouter is great for cheap models.'}
+        ${anyConnected
+          ? `Connected: ${esc(connectedNames)}. Choice applies to this chat.`
+          : 'No API key saved. Connect providers in Settings — several can stay connected at once.'}
       </p>
-      ${isConnected && models.some(m => m.cheap) ? html`
+      ${anyConnected && hasCheap ? html`
         <label class="copilot-model-filter">
           <input type="checkbox" data-model-cheap-only ${ui.showCheapOnly ? 'checked' : ''} />
           Show cheap options only
         </label>
       ` : ''}
-      ${!isConnected ? html`
+      ${!anyConnected ? html`
         <a class="copilot-model-settings-link" href="#settings">Open Settings →</a>
       ` : ''}
-      ${filtered.length ? filtered.map(m => {
-        const cost = m.cost_band || '';
-        const active = m.id === selectedId;
-        const isDefault = m.id === workspaceDefault;
-        return html`
-          <button type="button" class="copilot-picker-item copilot-model-item ${active ? 'active' : ''}"
-                  data-model-id="${esc(m.id)}" data-model-provider="${esc(connected.id || activeProvider)}">
-            <span class="copilot-picker-item-meta">
-              <span class="copilot-model-cost">${esc(cost)}</span>
-              ${m.cheap ? html`<span class="copilot-model-tag">cheap</span>` : ''}
-              ${m.recommended ? html`<span class="copilot-model-tag rec">rec</span>` : ''}
-              ${isDefault ? html`<span class="copilot-model-tag">default</span>` : ''}
-            </span>
-            <span class="copilot-picker-item-title">${esc(m.label || m.id)}</span>
-            ${m.blurb ? html`<span class="copilot-model-blurb">${esc(m.blurb)}</span>` : ''}
-          </button>
-        `;
-      }) : html`
-        <p class="copilot-focus-hint" style="padding: 8px 14px;">
-          ${isConnected
-            ? 'No models in the catalog for this provider. Enter a custom model id in Settings.'
-            : 'Connect OpenRouter, xAI, OpenAI, Anthropic, or Gemini in Settings.'}
-        </p>
-      `}
-      ${connected?.id === 'openrouter' ? html`
+      ${anyConnected
+        ? connectedProviders.map(p => renderProviderModels(p))
+        : html`
+          <p class="copilot-focus-hint" style="padding: 8px 14px;">
+            Connect OpenRouter, xAI, OpenAI, Anthropic, or Gemini in Settings.
+          </p>
+        `}
+      ${connectedProviders.some(p => p.id === 'openrouter') ? html`
         <p class="copilot-model-foot">
-          OpenRouter routes many cheap capable models through one key.
+          OpenRouter routes many cheap capable models through one key. Direct vendor keys stay available too.
         </p>
       ` : ''}
     </div>
@@ -867,9 +889,20 @@ function modelSummaryLabel(llm, options) {
   const resolved = llm || options?.resolved || {};
   const label = String(resolved.label || resolved.model || options?.active_model || '').trim();
   const cost = String(resolved.cost_band || '').trim();
-  if (label && cost) return `${cost} ${shortModelLabel(label)}`;
-  if (label) return shortModelLabel(label);
-  return 'Default';
+  const provider = String(resolved.provider || options?.active_provider || '').toLowerCase();
+  const activeProvider = String(options?.active_provider || '').toLowerCase();
+  const connectedCount = Array.isArray(options?.providers)
+    ? options.providers.filter(p => p.connected).length
+    : 0;
+  const providerEntry = (options?.providers || []).find(p => p.id === provider);
+  const providerShort = providerEntry?.label || provider;
+  // When several vendors are connected and this chat uses a non-default one, show vendor.
+  const showProvider = connectedCount > 1 && provider && provider !== activeProvider && providerShort;
+  const core = label
+    ? (cost ? `${cost} ${shortModelLabel(label)}` : shortModelLabel(label))
+    : 'Default';
+  if (showProvider) return `${providerShort} · ${core}`;
+  return core;
 }
 
 function shortModelLabel(label) {

@@ -8,7 +8,7 @@ import buildwealth_orchestrator.main as main
 from buildwealth_orchestrator.services.user_settings import MASKED_PLACEHOLDER, UserSettingsStore
 
 
-def test_settings_probe_payload_clears_masked_key_on_provider_change(
+def test_settings_probe_payload_uses_target_provider_key_on_provider_change(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -31,10 +31,30 @@ def test_settings_probe_payload_clears_masked_key_on_provider_change(
     )
 
     assert payload["llm_provider"] == "anthropic"
+    # No anthropic key stored — must not probe with openai's key.
     assert payload["llm_api_key"] == ""
     assert payload["llm_base_url"] == "https://api.anthropic.com/v1"
     assert payload["llm_model"] == "claude-opus-4-7"
     assert "llm_base_url" in explicit_keys
+
+    store.save(
+        {
+            "llm_provider": "anthropic",
+            "llm_api_key": "sk-ant-secret",
+            "llm_model": "claude-opus-4-7",
+            "llm_base_url": "https://api.anthropic.com/v1",
+        }
+    )
+    # Switch UI to openai with masked key → probe uses openai vault key.
+    store.save({"llm_provider": "openai", "llm_api_key": "sk-openai-again"})
+    payload2, _ = main._settings_payload_for_probe(
+        {
+            "llm_provider": "anthropic",
+            "llm_api_key": MASKED_PLACEHOLDER + "cret",
+        }
+    )
+    assert payload2["llm_provider"] == "anthropic"
+    assert payload2["llm_api_key"] == "sk-ant-secret"
 
 
 def test_settings_probe_payload_replaces_stale_provider_default_base_url(
