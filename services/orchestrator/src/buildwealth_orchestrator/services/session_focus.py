@@ -419,6 +419,85 @@ def public_focus(focus: Mapping[str, Any] | None) -> dict[str, Any]:
     return normalized
 
 
+_NL_DOMAIN_ALIASES: dict[str, str] = {
+    "goals": "profile.goals",
+    "goal": "profile.goals",
+    "cashflow": "profile.cashflow",
+    "budget": "profile.cashflow",
+    "income": "profile.cashflow",
+    "expenses": "profile.cashflow",
+    "debt": "profile.debt",
+    "debts": "profile.debt",
+    "tax": "profile.tax",
+    "taxes": "profile.tax",
+    "policy": "profile.policy",
+    "investment policy": "profile.policy",
+    "portfolio": "portfolio",
+    "holdings": "portfolio.holdings",
+    "plan": "plan",
+    "retirement": "plan",
+    "inbox": "recommendation",
+    "recommendations": "recommendation",
+    "recommendation": "recommendation",
+    "research": "research",
+    "stocks": "research",
+    "profile": "profile",
+}
+
+
+def parse_session_focus_utterance(question: str) -> dict[str, Any] | None:
+    """Deterministic NL focus patch for explicit mute/focus phrases. Returns None if no match."""
+    text = str(question or "").strip().lower()
+    if not text:
+        return None
+
+    muted: list[str] = []
+    primary: list[str] = []
+    mode: str | None = None
+
+    # Longer aliases first so "investment policy" wins over "policy".
+    aliases = sorted(_NL_DOMAIN_ALIASES.items(), key=lambda item: len(item[0]), reverse=True)
+
+    mute_verbs = ("ignore ", "mute ", "don't talk about ", "do not talk about ", "skip ")
+    for verb in mute_verbs:
+        for alias, domain in aliases:
+            needle = f"{verb}{alias}"
+            if needle in text:
+                muted.append(domain)
+
+    focus_prefixes = (
+        "focus only on ",
+        "only talk about ",
+        "only discuss ",
+        "just talk about ",
+        "just discuss ",
+    )
+    for prefix in focus_prefixes:
+        for alias, domain in aliases:
+            needle = f"{prefix}{alias}"
+            if needle in text:
+                primary.append(domain)
+                mode = "narrow"
+                break
+        if primary:
+            break
+
+    muted = _unique_preserve(muted)
+    primary = _unique_preserve(primary)
+    if not muted and not primary:
+        return None
+
+    patch: dict[str, Any] = {}
+    if muted:
+        patch["muted_domains"] = muted
+    if primary:
+        patch["primary_domains"] = primary
+        patch["secondary_domains"] = []
+    if mode:
+        patch["mode"] = mode
+    return patch
+
+
 def pinned_focus_domains(pinned_entity_ids: Sequence[str]) -> set[str]:
     """Map pin ids like 'recommendation:rec-1' to catalog domains."""
     out: set[str] = set()

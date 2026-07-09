@@ -17,6 +17,7 @@ from buildwealth_orchestrator.services.session_focus import (
     merge_focus_patch,
     merge_focus_with_intent,
     normalize_focus,
+    parse_session_focus_utterance,
     pinned_focus_domains,
     public_focus,
     resolve_turn_focus,
@@ -170,6 +171,19 @@ def test_conversation_store_persists_focus(tmp_path: Path) -> None:
     loaded = store.get(conversation["id"])
     assert loaded["focus"]["primary_domains"] == ["profile.goals"]
     assert updated["focus"]["muted_domains"] == ["research"]
+
+
+def test_parse_session_focus_utterance_mute_and_focus() -> None:
+    mute = parse_session_focus_utterance("For this conversation ignore research please.")
+    assert mute is not None
+    assert "research" in mute.get("muted_domains", [])
+
+    focus = parse_session_focus_utterance("Focus only on goals for this chat.")
+    assert focus is not None
+    assert focus.get("primary_domains") == ["profile.goals"]
+    assert focus.get("mode") == "narrow"
+
+    assert parse_session_focus_utterance("What is my net worth?") is None
 
 
 def test_covers_and_list_covers_parent_child() -> None:

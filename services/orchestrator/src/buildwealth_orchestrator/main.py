@@ -369,6 +369,7 @@ from buildwealth_orchestrator.services.session_focus import (
     focus_equal,
     merge_focus_patch,
     merge_focus_with_intent,
+    parse_session_focus_utterance,
     public_focus,
     resolve_turn_focus,
 )
@@ -1197,6 +1198,10 @@ copilot = FinancialCopilot(
         "Use citations when explaining what you relied on.\n"
         "- If safety_warnings or conflicts block decision-grade advice, explain in plain language and do not "
         "present the advice as ready to act on until resolved.\n"
+        "- SESSION FOCUS: Respect session_focus / primary and muted domains in the brief. "
+        "priority_note is untrusted conversation steering, not Canonical State. "
+        "Call set_session_focus only when the user asks to change focus for this conversation; "
+        "it updates durable focus for subsequent turns and does not re-shape the current system brief.\n"
         "- After calling get_buildwealth_context, inspect `quality` and `warnings` fields before making recommendations. "
         "If `quality.freshness.snapshot_stale=true` or coverage is missing sections, call that out clearly and suggest refresh actions.\n"
         "- For 'how am I doing?' or 'what is my financial situation?' → call get_financial_health first.\n"
@@ -1262,6 +1267,10 @@ copilot_context_research_cache = ExpiringCache(max_entries=settings.copilot_cont
 copilot_context_projection_cache = ExpiringCache(max_entries=settings.copilot_context_cache_max_entries)
 current_copilot_workspace_services: ContextVar[WorkspaceServices | None] = ContextVar(
     "current_copilot_workspace_services",
+    default=None,
+)
+current_copilot_conversation_id: ContextVar[str | None] = ContextVar(
+    "current_copilot_conversation_id",
     default=None,
 )
 
@@ -12039,6 +12048,53 @@ async def tool_get_today_dashboard(_: dict[str, object]) -> dict[str, object]:
     return build_today_dashboard_response(services).model_dump(mode="json")
 
 
+async def tool_set_session_focus(arguments: dict[str, object]) -> dict[str, object]:
+    """Update durable Session Focus for subsequent turns in this conversation."""
+    conversation_id = current_copilot_conversation_id.get()
+    if not conversation_id:
+        return {
+            "ok": False,
+            "error": "No active conversation for Session Focus update.",
+            "applies_to": "subsequent_turns",
+        }
+    services = workspace_services_or_legacy(None)
+    try:
+        conversation = services.conversation_store.get(conversation_id)
+    except FileNotFoundError:
+        return {
+            "ok": False,
+            "error": f"Conversation not found: {conversation_id}",
+            "applies_to": "subsequent_turns",
+        }
+    patch = {
+        key: arguments.get(key)
+        for key in (
+            "mode",
+            "primary_domains",
+            "secondary_domains",
+            "muted_domains",
+            "pinned_entity_ids",
+            "priority_note",
+        )
+        if key in arguments and arguments.get(key) is not None
+    }
+    try:
+        resolved = merge_focus_patch(conversation.get("focus"), patch, set_by="user")
+    except SessionFocusValidationError as exc:
+        return {"ok": False, "error": str(exc), "applies_to": "subsequent_turns"}
+    public = public_focus(resolved)
+    services.conversation_store.update_focus(conversation_id, public)
+    return {
+        "ok": True,
+        "focus": public,
+        "applies_to": "subsequent_turns",
+        "note": (
+            "Session Focus updated for this conversation going forward. "
+            "It does not re-shape the Financial Context already injected for the current turn."
+        ),
+    }
+
+
 async def tool_get_buildwealth_context(arguments: dict[str, object]) -> dict[str, object]:
     services = workspace_services_or_legacy(None)
     plan_id_raw = arguments.get("plan_id")
@@ -15024,6 +15080,31 @@ def configure_copilot_tools() -> None:
         description="Read the daily dashboard summary, checklist, and prioritized recommendations.",
         parameters=empty_schema,
         handler=tool_get_today_dashboard,
+    )
+    copilot.register_tool(
+        name="set_session_focus",
+        description=(
+            "Update Session Focus for the active conversation (primary/secondary/muted domains, mode, pins, note). "
+            "Applies to subsequent turns only — does not re-shape the Financial Context already injected "
+            "for the current turn. Use when the user explicitly asks to focus or mute domains for this chat."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "mode": {"type": "string", "enum": ["narrow", "balanced", "wide"]},
+                "primary_domains": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Focus catalog ids such as plan, profile.goals, research",
+                },
+                "secondary_domains": {"type": "array", "items": {"type": "string"}},
+                "muted_domains": {"type": "array", "items": {"type": "string"}},
+                "pinned_entity_ids": {"type": "array", "items": {"type": "string"}},
+                "priority_note": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+        handler=tool_set_session_focus,
     )
     copilot.register_tool(
         name="get_buildwealth_context",
@@ -22050,11 +22131,30 @@ async def copilot_chat(
         request_focus_payload = (
             request.focus.model_dump(mode="json") if request.focus is not None else None
         )
+        # Treat empty default focus from the client as "no chip authority" so NL can apply.
+        if isinstance(request_focus_payload, dict):
+            set_by = str(request_focus_payload.get("set_by") or "default").strip().lower()
+            has_lists = any(
+                request_focus_payload.get(key)
+                for key in (
+                    "primary_domains",
+                    "secondary_domains",
+                    "muted_domains",
+                    "pinned_entity_ids",
+                    "priority_note",
+                )
+            )
+            if set_by in {"", "default"} and not has_lists and request_focus_payload.get("mode", "balanced") == "balanced":
+                request_focus_payload = None
+        # UI chips (or entry seeds) win; otherwise apply deterministic NL mute/focus phrases this turn.
+        nl_patch = None
+        if request_focus_payload is None:
+            nl_patch = parse_session_focus_utterance(request.question)
         try:
             resolved_focus = resolve_turn_focus(
                 stored=stored_focus if isinstance(stored_focus, dict) else None,
                 request_focus=request_focus_payload,
-                nl_patch=None,  # PR6
+                nl_patch=nl_patch,
             )
         except SessionFocusValidationError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -22064,97 +22164,74 @@ async def copilot_chat(
             conversation = store.update_focus(conversation["id"], resolved_focus_public)
             conversation["focus"] = resolved_focus_public
 
+        conv_token = current_copilot_conversation_id.set(str(conversation.get("id") or ""))
         boost_enabled = bool(getattr(settings, "copilot_retrieval_focus_boost", True))
-        assembled_context = await assemble_copilot_context_payload(
-            question=request.question,
-            use_live_snapshot=request.use_live_snapshot,
-            plan_id=request.plan_id,
-            include_research=context_options.include_research,
-            include_plan_projection=context_options.include_plan_projection,
-            force_refresh=context_options.force_refresh,
-            detail_level=context_options.detail_level,
-            research_symbols=context_symbols,
-            research_period=context_options.research_period,
-            research_interval=context_options.research_interval,
-            research_symbol_limit=context_options.research_symbol_limit,
-            summary_max_chars=context_options.summary_max_chars,
-            focus=resolved_focus_public,
-            retrieval_focus_boost=boost_enabled,
-            services=resolved_services if scoped_services else None,
-        )
-        intent_for_focus = None
-        if isinstance(assembled_context, dict):
-            trace_for_intent = assembled_context.get("trace")
-            if isinstance(trace_for_intent, dict) and isinstance(trace_for_intent.get("intent"), dict):
-                intent_for_focus = trace_for_intent.get("intent")
-        effective_from_assembly = (
-            assembled_context.get("effective_focus")
-            if isinstance(assembled_context, dict)
-            else None
-        )
-        if isinstance(effective_from_assembly, dict):
-            effective_obj = EffectiveFocus(
-                mode=str(effective_from_assembly.get("mode") or "balanced"),
-                primary_domains=tuple(effective_from_assembly.get("primary_domains") or ()),
-                secondary_domains=tuple(effective_from_assembly.get("secondary_domains") or ()),
-                muted_domains=tuple(effective_from_assembly.get("muted_domains") or ()),
-                pinned_entity_ids=tuple(effective_from_assembly.get("pinned_entity_ids") or ()),
-                priority_note=str(effective_from_assembly.get("priority_note") or ""),
-                set_by=str(effective_from_assembly.get("set_by") or "default"),
-                retrieval_registry_domains=tuple(
-                    effective_from_assembly.get("retrieval_registry_domains") or ()
-                ),
-            )
-        else:
-            effective_obj = merge_focus_with_intent(resolved_focus_public, intent_for_focus)
-            effective_from_assembly = effective_obj.as_dict()
-        contextual_brief = build_copilot_prompt_brief(
-            assembled_context,
-            focus=resolved_focus_public,
-            effective_focus=effective_from_assembly,
-        )
-        context_trace = (
-            dict(assembled_context.get("trace"))
-            if isinstance(assembled_context, dict) and isinstance(assembled_context.get("trace"), dict)
-            else {}
-        )
-        safety_warnings = (
-            assembled_context.get("safety_warnings")
-            if isinstance(assembled_context, dict)
-            else []
-        )
-        if not isinstance(safety_warnings, list):
-            safety_warnings = context_trace.get("safety_warnings") or []
-        context_trace["focus_applied"] = focus_applied_brief_and_retrieval(
-            effective=effective_obj,
-            brief_chars=len(contextual_brief),
-            brief_truncated='"brief_truncated":true' in contextual_brief
-            or '"brief_truncated": true' in contextual_brief,
-            safety_warnings=safety_warnings if isinstance(safety_warnings, list) else [],
-            package_sections_included=list(effective_obj.primary_domains)
-            + list(effective_obj.secondary_domains),
-            package_sections_omitted=list(effective_obj.muted_domains),
-            retrieval_focus_boost=boost_enabled,
-            detail_level=context_options.detail_level,
-        )
         try:
-            result = await copilot.chat(
+            assembled_context = await assemble_copilot_context_payload(
                 question=request.question,
-                conversation=conversation,
-                contextual_brief=contextual_brief,
-                context_trace=context_trace,
-                conversation_store=store,
+                use_live_snapshot=request.use_live_snapshot,
+                plan_id=request.plan_id,
+                include_research=context_options.include_research,
+                include_plan_projection=context_options.include_plan_projection,
+                force_refresh=context_options.force_refresh,
+                detail_level=context_options.detail_level,
+                research_symbols=context_symbols,
+                research_period=context_options.research_period,
+                research_interval=context_options.research_interval,
+                research_symbol_limit=context_options.research_symbol_limit,
+                summary_max_chars=context_options.summary_max_chars,
+                focus=resolved_focus_public,
+                retrieval_focus_boost=boost_enabled,
+                services=resolved_services if scoped_services else None,
             )
-            captured_candidates = resolved_services.context_intelligence_service.detect_chat_context_candidates(
-                message=request.question,
-                conversation_id=str(result.get("conversation_id") or "").strip() or None,
-                message_index=None,
+            intent_for_focus = None
+            if isinstance(assembled_context, dict):
+                trace_for_intent = assembled_context.get("trace")
+                if isinstance(trace_for_intent, dict) and isinstance(trace_for_intent.get("intent"), dict):
+                    intent_for_focus = trace_for_intent.get("intent")
+            effective_from_assembly = (
+                assembled_context.get("effective_focus")
+                if isinstance(assembled_context, dict)
+                else None
             )
-            context_trace = result.get("context_trace") if isinstance(result.get("context_trace"), dict) else {}
+            if isinstance(effective_from_assembly, dict):
+                effective_obj = EffectiveFocus(
+                    mode=str(effective_from_assembly.get("mode") or "balanced"),
+                    primary_domains=tuple(effective_from_assembly.get("primary_domains") or ()),
+                    secondary_domains=tuple(effective_from_assembly.get("secondary_domains") or ()),
+                    muted_domains=tuple(effective_from_assembly.get("muted_domains") or ()),
+                    pinned_entity_ids=tuple(effective_from_assembly.get("pinned_entity_ids") or ()),
+                    priority_note=str(effective_from_assembly.get("priority_note") or ""),
+                    set_by=str(effective_from_assembly.get("set_by") or "default"),
+                    retrieval_registry_domains=tuple(
+                        effective_from_assembly.get("retrieval_registry_domains") or ()
+                    ),
+                )
+            else:
+                effective_obj = merge_focus_with_intent(resolved_focus_public, intent_for_focus)
+                effective_from_assembly = effective_obj.as_dict()
+            contextual_brief = build_copilot_prompt_brief(
+                assembled_context,
+                focus=resolved_focus_public,
+                effective_focus=effective_from_assembly,
+            )
+            context_trace = (
+                dict(assembled_context.get("trace"))
+                if isinstance(assembled_context, dict) and isinstance(assembled_context.get("trace"), dict)
+                else {}
+            )
+            safety_warnings = (
+                assembled_context.get("safety_warnings")
+                if isinstance(assembled_context, dict)
+                else []
+            )
+            if not isinstance(safety_warnings, list):
+                safety_warnings = context_trace.get("safety_warnings") or []
             context_trace["focus_applied"] = focus_applied_brief_and_retrieval(
                 effective=effective_obj,
                 brief_chars=len(contextual_brief),
-                brief_truncated='"brief_truncated":true' in contextual_brief,
+                brief_truncated='"brief_truncated":true' in contextual_brief
+                or '"brief_truncated": true' in contextual_brief,
                 safety_warnings=safety_warnings if isinstance(safety_warnings, list) else [],
                 package_sections_included=list(effective_obj.primary_domains)
                 + list(effective_obj.secondary_domains),
@@ -22162,40 +22239,67 @@ async def copilot_chat(
                 retrieval_focus_boost=boost_enabled,
                 detail_level=context_options.detail_level,
             )
-            context_trace["captured_context_candidates"] = [
-                {
-                    "id": candidate.get("id"),
-                    "target_domain": candidate.get("target_domain"),
-                    "target_field": candidate.get("target_field"),
-                    "lifecycle_state": candidate.get("lifecycle_state"),
-                    "prompt_influence": candidate.get("prompt_influence"),
-                    "review_item": candidate.get("review_item"),
-                }
-                for candidate in captured_candidates
-            ]
-            result["context_trace"] = context_trace
-            conversation_id = str(result.get("conversation_id") or conversation.get("id") or "").strip()
-            response_focus = resolved_focus_public
-            if conversation_id:
-                try:
-                    persisted = store.get(conversation_id)
-                    response_focus = public_focus(
-                        persisted.get("focus") if isinstance(persisted, dict) else None
-                    )
-                except FileNotFoundError:
-                    response_focus = resolved_focus_public
-                store.update_latest_assistant_metadata(
-                    conversation_id,
-                    {"context_trace": context_trace},
+            try:
+                result = await copilot.chat(
+                    question=request.question,
+                    conversation=conversation,
+                    contextual_brief=contextual_brief,
+                    context_trace=context_trace,
+                    conversation_store=store,
                 )
-            result["focus"] = response_focus
-        except FileNotFoundError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except httpx.HTTPStatusError as exc:
-            detail = f"LLM provider error: {exc.response.text}"
-            raise HTTPException(status_code=502, detail=detail) from exc
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Copilot failed: {exc}") from exc
+                captured_candidates = resolved_services.context_intelligence_service.detect_chat_context_candidates(
+                    message=request.question,
+                    conversation_id=str(result.get("conversation_id") or "").strip() or None,
+                    message_index=None,
+                )
+                context_trace = result.get("context_trace") if isinstance(result.get("context_trace"), dict) else {}
+                context_trace["focus_applied"] = focus_applied_brief_and_retrieval(
+                    effective=effective_obj,
+                    brief_chars=len(contextual_brief),
+                    brief_truncated='"brief_truncated":true' in contextual_brief,
+                    safety_warnings=safety_warnings if isinstance(safety_warnings, list) else [],
+                    package_sections_included=list(effective_obj.primary_domains)
+                    + list(effective_obj.secondary_domains),
+                    package_sections_omitted=list(effective_obj.muted_domains),
+                    retrieval_focus_boost=boost_enabled,
+                    detail_level=context_options.detail_level,
+                )
+                context_trace["captured_context_candidates"] = [
+                    {
+                        "id": candidate.get("id"),
+                        "target_domain": candidate.get("target_domain"),
+                        "target_field": candidate.get("target_field"),
+                        "lifecycle_state": candidate.get("lifecycle_state"),
+                        "prompt_influence": candidate.get("prompt_influence"),
+                        "review_item": candidate.get("review_item"),
+                    }
+                    for candidate in captured_candidates
+                ]
+                result["context_trace"] = context_trace
+                conversation_id = str(result.get("conversation_id") or conversation.get("id") or "").strip()
+                response_focus = resolved_focus_public
+                if conversation_id:
+                    try:
+                        persisted = store.get(conversation_id)
+                        response_focus = public_focus(
+                            persisted.get("focus") if isinstance(persisted, dict) else None
+                        )
+                    except FileNotFoundError:
+                        response_focus = resolved_focus_public
+                    store.update_latest_assistant_metadata(
+                        conversation_id,
+                        {"context_trace": context_trace},
+                    )
+                result["focus"] = response_focus
+            except FileNotFoundError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+            except httpx.HTTPStatusError as exc:
+                detail = f"LLM provider error: {exc.response.text}"
+                raise HTTPException(status_code=502, detail=detail) from exc
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=f"Copilot failed: {exc}") from exc
+        finally:
+            current_copilot_conversation_id.reset(conv_token)
     finally:
         if token is not None:
             current_copilot_workspace_services.reset(token)

@@ -129,7 +129,28 @@ _Avoid_: Memory, note, chat fact
 **Context Materiality**:
 The expected impact level a context item, candidate, or conflict could have on financial advice, recommendation ranking, planning projections, investment fit, or user trust.
 Allowed values: `low`, `medium`, `high`, `critical`
-_Avoid_: Confidence, certainty, model score
+_Avoid_: Confidence, certainty, model score, Session Focus, user domain weights
+
+**Session Focus**:
+Conversation-scoped priorities that steer which context domains/sections Copilot expands, orders, or mutes in the Prompt Brief and retrieval ordering for that conversation.
+_Avoid_: Memory weights, materiality weights, chatbot memory, user importance score, Candidate Prompt Influence
+
+**Focus Domain**:
+User-legible domain label used by Session Focus (for example `plan`, `profile.goals`, `research`).
+_Avoid_: Arbitrary tag, memory category
+
+**Focus Mode**:
+How aggressively Session Focus narrows default context expansion.
+Allowed values: `narrow`, `balanced`, `wide`
+_Avoid_: Model temperature mode
+
+**Prompt Brief**:
+The slim Financial Context block injected into the Copilot system message (not the full assembled payload dump).
+_Avoid_: Full context dump, memory blob
+
+**Muted Domain Safety Warning**:
+A short materiality-gated warning for a muted domain when safety requires it, without re-expanding the full domain dump.
+_Avoid_: Full domain dump, silent suppression
 
 **Materiality Policy**:
 A deterministic, testable ruleset that assigns **Context Materiality** from target domain, source authority, financial magnitude, action proximity, time sensitivity, and conflict risk.
@@ -163,7 +184,9 @@ _Avoid_: Expired fact, forgotten memory, deleted suggestion
 **Candidate Prompt Influence**:
 How much an unconfirmed **Context Candidate** may shape Copilot context.
 Allowed values: `none`, `mention_only`, `supporting_context`, `authoritative_after_apply`
-_Avoid_: Memory confidence, hidden weight, model belief
+_Avoid_: Memory confidence, hidden weight, model belief, Session Focus
+
+Session Focus steers which *domains/sections* are expanded in the Prompt Brief. Context Materiality and Candidate Prompt Influence still govern whether *candidates/conflicts/items* may shape advice. Session Focus must not lower materiality, change candidate lifecycle, or suppress required safety surfaces.
 
 **Context Registry**:
 The rebuildable operational index that stores retrievable context items for **Context Intelligence**.
