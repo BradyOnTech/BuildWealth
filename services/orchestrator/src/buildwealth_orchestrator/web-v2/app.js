@@ -69,6 +69,7 @@ let currentView = null;
 let toolsOpen = false;
 let workspaceMenuOpen = false;
 let accountMenuOpen = false;
+let statusMenuOpen = false;
 let globalEventsWired = false;
 let authEventsWired = false;
 let statusRefreshTimer = null;
@@ -228,35 +229,91 @@ function route() {
 function updateTopbar(view) {
   const folio = $('#topbar-folio');
   if (folio) {
-    const numeral = view.meta.numeral;
-    const showNumeral = numeral && numeral !== '·' && view.meta.group === 'primary';
-    const prefix = showNumeral ? `${numeral} · ` : '';
-    folio.textContent = `${prefix}${view.meta.label} · ${fmtDateLong(new Date())}`;
+    // Keep the date; drop roman + view name — the sidebar already marks the active section.
+    folio.textContent = fmtDateLong(new Date());
   }
-  renderTopbarChips();
+  renderTopbarStatus();
   renderWorkspaceMenu();
   renderAccountMenu();
 }
 
-/* ─────────────  Top-bar status chips  ─────────────
-   Per IA strategy: a small row of chips that answer "is the system ready
-   to give me good advice right now?" Each chip is a deep-link to the page
-   that fixes it when it's not. */
+/* ─────────────  Top-bar system status  ─────────────
+   Answers "is the system ready to give me good advice?" without a permanent
+   four-chip strip. One compact control; expand for deep links when needed. */
 
-function renderTopbarChips() {
-  const host = $('#topbar-status');
-  if (!host) return;
+function collectStatusChips() {
   const chips = [];
-
   if (state.lastError) {
-    chips.push({ tone: 'warn', label: 'attention', href: null, hint: state.lastError });
+    chips.push({ tone: 'warn', label: 'Attention', href: null, hint: state.lastError });
   }
   chips.push(profileChip());
   chips.push(copilotChip());
   chips.push(dataChip());
   chips.push(backupChip());
+  return chips.filter(Boolean);
+}
 
-  host.innerHTML = chips.filter(Boolean).map(renderChip).join('');
+function renderTopbarStatus() {
+  const host = $('#topbar-status');
+  if (!host) return;
+  const chips = collectStatusChips();
+  const issues = chips.filter(c => c.tone === 'warn' || c.tone === 'attn');
+  const loading = chips.some(c => c.tone === 'quiet');
+  let summaryTone = 'ok';
+  let summaryLabel = 'Ready';
+  if (loading && !issues.length) {
+    summaryTone = 'quiet';
+    summaryLabel = 'Checking…';
+  } else if (issues.length === 1) {
+    summaryTone = issues[0].tone;
+    summaryLabel = issues[0].label;
+  } else if (issues.length > 1) {
+    summaryTone = issues.some(c => c.tone === 'attn') ? 'attn' : 'warn';
+    summaryLabel = `${issues.length} need attention`;
+  }
+
+  host.innerHTML = html`
+    <div class="status-menu">
+      <button
+        type="button"
+        class="status-button ${summaryTone}"
+        id="status-toggle"
+        aria-expanded="${statusMenuOpen ? 'true' : 'false'}"
+        title="System readiness"
+      >
+        <span class="dot"></span>
+        <span class="status-label">${summaryLabel}</span>
+      </button>
+      ${statusMenuOpen ? raw(renderStatusDropdown(chips, issues.length)) : ''}
+    </div>
+  `;
+}
+
+function renderStatusDropdown(chips, issueCount) {
+  const rows = chips.map(chip => {
+    const cls = `status-row ${chip.tone || 'ok'}`;
+    const body = html`
+      <span class="dot"></span>
+      <span class="status-row-main">
+        <span class="status-row-label">${chip.label}</span>
+        ${chip.hint ? html`<span class="status-row-hint">${chip.hint}</span>` : ''}
+      </span>
+    `;
+    if (chip.href) {
+      return html`<a class="${cls}" href="${chip.href}" data-route>${body}</a>`;
+    }
+    return html`<div class="${cls}">${body}</div>`;
+  }).join('');
+
+  return html`
+    <div class="status-dropdown" role="menu">
+      <header class="status-dropdown-head">
+        <span>System status</span>
+        <span class="status-dropdown-meta">${issueCount ? `${issueCount} to review` : 'All clear'}</span>
+      </header>
+      ${raw(rows)}
+    </div>
+  `;
 }
 
 function activeWorkspace() {
@@ -342,41 +399,48 @@ function initials(value) {
   return letters.toUpperCase();
 }
 
-function renderChip(chip) {
-  const cls = `topbar-chip ${chip.tone || 'ok'}`;
-  const inner = `<span class="dot"></span><span>${chip.label}</span>`;
-  if (!chip.href) return `<span class="${cls}" title="${chip.hint || ''}">${inner}</span>`;
-  return `<a class="${cls}" href="${chip.href}" data-route title="${chip.hint || ''}">${inner}</a>`;
-}
-
 function profileChip() {
   const status = state.systemStatus?.profile;
-  if (!status) return { tone: 'quiet', label: 'profile · …', href: '#profile' };
-  if (status.ready) return { tone: 'ok',   label: 'profile · ready',   href: '#profile', hint: `${status.completion}% complete` };
-  if (status.completion >= 50) return { tone: 'warn', label: 'profile · review needed', href: '#profile', hint: `${status.completion}% complete` };
-  return { tone: 'attn', label: 'profile · setup', href: '#profile', hint: `${status.completion}% complete` };
+  if (!status) return { tone: 'quiet', label: 'Profile', href: '#profile', hint: 'Checking…' };
+  if (status.ready) return { tone: 'ok', label: 'Profile', href: '#profile', hint: `${status.completion}% complete · ready` };
+  if (status.completion >= 50) return { tone: 'warn', label: 'Profile', href: '#profile', hint: `${status.completion}% complete · review needed` };
+  return { tone: 'attn', label: 'Profile', href: '#profile', hint: `${status.completion}% complete · setup needed` };
 }
 
 function copilotChip() {
   const status = state.systemStatus?.copilot;
-  if (!status) return { tone: 'quiet', label: 'copilot · …', href: '#settings' };
-  if (status.configured) return { tone: 'ok', label: 'copilot · ready', href: '#settings', hint: status.provider ? `${status.provider} · ${status.model || 'configured'}` : 'configured' };
-  return { tone: 'warn', label: 'copilot · needs setup', href: '#settings', hint: 'API key missing — set in Connections & AI' };
+  if (!status) return { tone: 'quiet', label: 'Copilot', href: '#settings', hint: 'Checking…' };
+  if (status.configured) {
+    return {
+      tone: 'ok',
+      label: 'Copilot',
+      href: '#settings',
+      hint: status.provider ? `${status.provider} · ${status.model || 'configured'}` : 'Configured',
+    };
+  }
+  return { tone: 'warn', label: 'Copilot', href: '#settings', hint: 'API key missing — set in Connections & AI' };
 }
 
 function dataChip() {
   const status = state.systemStatus?.data;
-  if (!status) return { tone: 'quiet', label: 'data · …', href: '#today' };
-  if (status.fresh) return { tone: 'ok', label: 'data · fresh', href: '#today', hint: status.lastSync ? `Synced ${status.lastSync}` : '' };
-  if (status.never) return { tone: 'warn', label: 'data · never synced', href: '#today', hint: 'No sync recorded' };
-  return { tone: 'warn', label: 'data · stale', href: '#today', hint: status.lastSync ? `Last sync ${status.lastSync}` : '' };
+  if (!status) return { tone: 'quiet', label: 'Data', href: '#today', hint: 'Checking…' };
+  if (status.fresh) return { tone: 'ok', label: 'Data', href: '#today', hint: status.lastSync ? `Synced ${status.lastSync}` : 'Fresh' };
+  if (status.never) return { tone: 'warn', label: 'Data', href: '#today', hint: 'No sync recorded' };
+  return { tone: 'warn', label: 'Data', href: '#today', hint: status.lastSync ? `Last sync ${status.lastSync}` : 'Stale' };
 }
 
 function backupChip() {
   const status = state.systemStatus?.backup;
-  if (!status) return { tone: 'quiet', label: 'backup · …', href: '#atelier' };
-  if (status.count > 0) return { tone: 'ok', label: `backup · ${status.count}`, href: '#atelier', hint: status.latest ? `Latest ${status.latest}` : '' };
-  return { tone: 'warn', label: 'backup · none', href: '#atelier', hint: 'No backups recorded — create one in Data & Recovery' };
+  if (!status) return { tone: 'quiet', label: 'Backup', href: '#atelier', hint: 'Checking…' };
+  if (status.count > 0) {
+    return {
+      tone: 'ok',
+      label: 'Backup',
+      href: '#atelier',
+      hint: status.latest ? `${status.count} saved · latest ${status.latest}` : `${status.count} saved`,
+    };
+  }
+  return { tone: 'warn', label: 'Backup', href: '#atelier', hint: 'No backups recorded — create one in Data & Recovery' };
 }
 
 async function refreshSystemStatus() {
@@ -428,7 +492,7 @@ async function refreshSystemStatus() {
   }
 
   state.systemStatus = next;
-  renderTopbarChips();
+  renderTopbarStatus();
 }
 
 function humanRelative(value) {
@@ -460,7 +524,7 @@ function bootShell() {
           </button>
         </div>
       </nav>
-      <div>
+      <div class="app-main">
         <header class="topbar">
           <div class="topbar-eyebrow">
             <span class="topbar-folio" id="topbar-folio"></span>
@@ -468,7 +532,7 @@ function bootShell() {
           <div class="topbar-actions">
             <div class="workspace-menu" id="workspace-menu"></div>
             <div class="account-menu" id="account-menu"></div>
-            <div class="topbar-chips" id="topbar-status"></div>
+            <div class="topbar-status" id="topbar-status"></div>
           </div>
         </header>
         <main class="content" id="content"></main>
@@ -484,7 +548,13 @@ function wireGlobalEvents() {
     const toggle = event.target.closest('#tools-toggle');
     if (toggle) {
       event.preventDefault();
+      statusMenuOpen = false;
+      workspaceMenuOpen = false;
+      accountMenuOpen = false;
       setToolsOpen(!toolsOpen);
+      renderTopbarStatus();
+      renderWorkspaceMenu();
+      renderAccountMenu();
       return;
     }
     const close = event.target.closest('#tools-close');
@@ -502,7 +572,11 @@ function wireGlobalEvents() {
     if (workspaceToggle) {
       event.preventDefault();
       workspaceMenuOpen = !workspaceMenuOpen;
+      statusMenuOpen = false;
+      accountMenuOpen = false;
       renderWorkspaceMenu();
+      renderAccountMenu();
+      renderTopbarStatus();
       return;
     }
     const workspaceSelect = event.target.closest('[data-workspace-select]');
@@ -515,6 +589,21 @@ function wireGlobalEvents() {
     if (accountToggle) {
       event.preventDefault();
       accountMenuOpen = !accountMenuOpen;
+      statusMenuOpen = false;
+      workspaceMenuOpen = false;
+      renderAccountMenu();
+      renderWorkspaceMenu();
+      renderTopbarStatus();
+      return;
+    }
+    const statusToggle = event.target.closest('#status-toggle');
+    if (statusToggle) {
+      event.preventDefault();
+      statusMenuOpen = !statusMenuOpen;
+      workspaceMenuOpen = false;
+      accountMenuOpen = false;
+      renderTopbarStatus();
+      renderWorkspaceMenu();
       renderAccountMenu();
       return;
     }
@@ -524,6 +613,10 @@ function wireGlobalEvents() {
       signOut();
       return;
     }
+    // Close status menu when following a deep-link row.
+    if (event.target.closest('.status-row[href]')) {
+      statusMenuOpen = false;
+    }
     if (workspaceMenuOpen && !event.target.closest('#workspace-menu')) {
       workspaceMenuOpen = false;
       renderWorkspaceMenu();
@@ -531,6 +624,10 @@ function wireGlobalEvents() {
     if (accountMenuOpen && !event.target.closest('#account-menu')) {
       accountMenuOpen = false;
       renderAccountMenu();
+    }
+    if (statusMenuOpen && !event.target.closest('#topbar-status')) {
+      statusMenuOpen = false;
+      renderTopbarStatus();
     }
   });
 
@@ -544,6 +641,10 @@ function wireGlobalEvents() {
       if (accountMenuOpen) {
         accountMenuOpen = false;
         renderAccountMenu();
+      }
+      if (statusMenuOpen) {
+        statusMenuOpen = false;
+        renderTopbarStatus();
       }
     }
   });
@@ -607,7 +708,7 @@ async function switchWorkspace(workspaceId) {
     state.lastError = err.message || 'Could not switch workspace.';
     workspaceMenuOpen = false;
     renderWorkspaceMenu();
-    renderTopbarChips();
+    renderTopbarStatus();
   }
 }
 
