@@ -194,12 +194,46 @@ def test_copilot_chat_uses_context_assembler_by_default(monkeypatch: pytest.Monk
             }
 
     class FakeConversationStore:
+        def __init__(self) -> None:
+            self.docs: dict[str, dict[str, object]] = {}
+
+        def get_or_create(self, conversation_id: str | None, first_user_message: str) -> dict[str, object]:
+            if conversation_id and conversation_id in self.docs:
+                return self.docs[conversation_id]
+            doc = {
+                "id": conversation_id or "conversation-1",
+                "title": first_user_message[:64],
+                "focus": {
+                    "mode": "balanced",
+                    "primary_domains": [],
+                    "secondary_domains": [],
+                    "muted_domains": [],
+                    "pinned_entity_ids": [],
+                    "priority_note": "",
+                    "set_by": "default",
+                    "updated_at": None,
+                    "schema_version": 1,
+                },
+                "messages": [],
+            }
+            self.docs[str(doc["id"])] = doc
+            return doc
+
+        def get(self, conversation_id: str) -> dict[str, object]:
+            return self.docs[conversation_id]
+
+        def update_focus(self, conversation_id: str, focus: dict[str, object]) -> dict[str, object]:
+            doc = self.docs[conversation_id]
+            doc["focus"] = focus
+            return doc
+
         def update_latest_assistant_metadata(self, conversation_id: str, metadata: dict[str, object]) -> None:
             return None
 
+    fake_store = FakeConversationStore()
     monkeypatch.setattr(main, "context_assembler", FakeAssembler())
     monkeypatch.setattr(main, "copilot", FakeCopilot())
-    monkeypatch.setattr(main, "conversation_store", FakeConversationStore())
+    monkeypatch.setattr(main, "conversation_store", fake_store)
 
     response = asyncio.run(
         main.copilot_chat(
@@ -220,8 +254,125 @@ def test_copilot_chat_uses_context_assembler_by_default(monkeypatch: pytest.Monk
     # Slim brief: no full assembler dump / registry telemetry in the system message.
     assert '"assembler_version"' not in contextual_brief
     assert '"registry"' not in contextual_brief
+    assert copilot_calls[0]["conversation"]["id"] == "conversation-1"
     assert copilot_calls[0]["context_trace"]["assembler_version"] == "context_intelligence_assembler_v1"
+    assert copilot_calls[0]["context_trace"]["focus_applied"]["effect"] == "stored_only"
     assert response.context_trace["intent"]["intent"] == "profile_question"
+    assert response.context_trace["focus_applied"]["effect"] == "stored_only"
+    assert response.focus is not None
+    assert response.focus.mode == "balanced"
+
+
+def test_copilot_chat_persists_request_focus_before_assembly(monkeypatch: pytest.MonkeyPatch) -> None:
+    copilot_calls: list[dict[str, object]] = []
+    now = main.context_utc_now_iso()
+
+    class FakeAssembler:
+        async def assemble_context(self, **kwargs: object) -> dict[str, object]:
+            return {
+                "generated_at": now,
+                "scope": {"plan_id": None, "include_research": False, "detail_level": "light"},
+                "cache": {},
+                "location_state": "MN",
+                "currency": "USD",
+                "warnings": [],
+                "quality": {
+                    "freshness": {"generated_at": now, "snapshot_stale": None},
+                    "coverage": {"score_pct": 100.0, "checks": {}, "missing_sections": []},
+                    "warnings": {"count": 0, "has_warnings": False},
+                    "summary": {"max_chars": 1000, "full_chars": 20, "actual_chars": 20, "truncated": False},
+                },
+                "planning_defaults": {},
+                "financial_picture": {},
+                "planning": {},
+                "research": {},
+                "decisions": {},
+                "retrieved_context": {"count": 0, "items": []},
+                "citations": [],
+                "context_budget": {"truncated": False, "returned_items": 0},
+                "conflicts": [],
+                "trace": {"assembler_version": "context_intelligence_assembler_v1", "intent": {"intent": "planning_question"}},
+                "summary": "assembled context",
+            }
+
+    class FakeCopilot:
+        async def chat(self, **kwargs: object) -> dict[str, object]:
+            copilot_calls.append(kwargs)
+            conversation = kwargs.get("conversation")
+            assert isinstance(conversation, dict)
+            return {
+                "conversation_id": conversation["id"],
+                "answer": "ok",
+                "tool_calls": [],
+                "model": "fake",
+                "context_trace": kwargs.get("context_trace"),
+                "created_at": main.utc_now(),
+            }
+
+    class FakeConversationStore:
+        def __init__(self) -> None:
+            self.docs: dict[str, dict[str, object]] = {}
+
+        def get_or_create(self, conversation_id: str | None, first_user_message: str) -> dict[str, object]:
+            doc = {
+                "id": "conv-focus-1",
+                "title": first_user_message[:64],
+                "focus": {
+                    "mode": "balanced",
+                    "primary_domains": [],
+                    "secondary_domains": [],
+                    "muted_domains": [],
+                    "pinned_entity_ids": [],
+                    "priority_note": "",
+                    "set_by": "default",
+                    "updated_at": None,
+                    "schema_version": 1,
+                },
+                "messages": [],
+            }
+            self.docs[str(doc["id"])] = doc
+            return doc
+
+        def get(self, conversation_id: str) -> dict[str, object]:
+            return self.docs[conversation_id]
+
+        def update_focus(self, conversation_id: str, focus: dict[str, object]) -> dict[str, object]:
+            doc = self.docs[conversation_id]
+            doc["focus"] = focus
+            return doc
+
+        def update_latest_assistant_metadata(self, conversation_id: str, metadata: dict[str, object]) -> None:
+            return None
+
+    store = FakeConversationStore()
+    monkeypatch.setattr(main, "context_assembler", FakeAssembler())
+    monkeypatch.setattr(main, "copilot", FakeCopilot())
+    monkeypatch.setattr(main, "conversation_store", store)
+
+    response = asyncio.run(
+        main.copilot_chat(
+            main.CopilotChatRequest(
+                question="Help with my plan",
+                focus=main.SessionFocus(
+                    mode="narrow",
+                    primary_domains=["plan"],
+                    muted_domains=["research"],
+                    set_by="entry_surface",
+                ),
+                persist_focus=True,
+            )
+        )
+    )
+
+    assert store.docs["conv-focus-1"]["focus"]["primary_domains"] == ["plan"]
+    assert store.docs["conv-focus-1"]["focus"]["muted_domains"] == ["research"]
+    assert store.docs["conv-focus-1"]["focus"]["set_by"] == "entry_surface"
+    assert copilot_calls[0]["conversation"]["focus"]["primary_domains"] == ["plan"]
+    assert response.focus is not None
+    assert response.focus.primary_domains == ["plan"]
+    assert response.context_trace["focus_applied"]["effect"] == "stored_only"
+    assert response.context_trace["focus_applied"]["primary_domains"] == ["plan"]
+    assert "session_focus" in copilot_calls[0]["contextual_brief"]
 
 
 def test_assess_portfolio_fit_tool_contract() -> None:

@@ -406,6 +406,11 @@ export const api = {
   // Copilot
   conversations:     (limit = 25) => fetchJson(`/api/copilot/conversations?limit=${limit}`),
   conversation:      (id) => fetchJson(`/api/copilot/conversations/${encodeURIComponent(id)}`),
+  patchConversationFocus: (id, body = {}) => patchJson(
+    `/api/copilot/conversations/${encodeURIComponent(id)}/focus`,
+    body,
+  ),
+  focusDomains:      () => fetchJson('/api/copilot/focus/domains'),
   copilotChat:       (body) => postJson('/api/copilot/chat', body),
 
   // Recommendations

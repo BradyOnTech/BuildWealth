@@ -33,6 +33,17 @@ class ConversationStore:
             "title": title,
             "created_at": now,
             "updated_at": now,
+            "focus": {
+                "mode": "balanced",
+                "primary_domains": [],
+                "secondary_domains": [],
+                "muted_domains": [],
+                "pinned_entity_ids": [],
+                "priority_note": "",
+                "set_by": "default",
+                "updated_at": None,
+                "schema_version": 1,
+            },
             "messages": [],
         }
 
@@ -105,6 +116,17 @@ class ConversationStore:
             self.save(conversation)
             return message
         return None
+
+    def update_focus(
+        self,
+        conversation_id: str,
+        focus: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Persist Session Focus on a conversation document and return the updated doc."""
+        conversation = self.get(conversation_id)
+        conversation["focus"] = focus
+        self.save(conversation)
+        return conversation
 
     def list(self, limit: int = 20) -> list[dict[str, Any]]:
         docs: list[dict[str, Any]] = []
@@ -328,16 +350,20 @@ class FinancialCopilot:
     async def chat(
         self,
         question: str,
-        conversation_id: str | None,
+        conversation_id: str | None = None,
+        *,
+        conversation: dict[str, Any] | None = None,
         contextual_brief: str,
         context_trace: dict[str, Any] | None = None,
         conversation_store: ConversationStore | None = None,
     ) -> dict[str, Any]:
         store = conversation_store or self.conversation_store
-        conversation = store.get_or_create(
-            conversation_id=conversation_id,
-            first_user_message=question,
-        )
+        if conversation is None:
+            conversation = store.get_or_create(
+                conversation_id=conversation_id,
+                first_user_message=question,
+            )
+        # else: preloaded/created by caller (e.g. focus resolved before assembly)
         store.append_message(
             conversation,
             role="user",

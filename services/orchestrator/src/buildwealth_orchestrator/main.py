@@ -31,6 +31,8 @@ from buildwealth_orchestrator.schemas import (
     CopilotContextResponse,
     CopilotConversationResponse,
     CopilotConversationSummary,
+    SessionFocus,
+    SessionFocusUpdateRequest,
     CsvImportRequest,
     CsvImportResponse,
     CsvTemplateOption,
@@ -359,6 +361,15 @@ from buildwealth_orchestrator.services.buildwealth_context import (
     utc_now_iso as context_utc_now_iso,
 )
 from buildwealth_orchestrator.services.copilot_prompt_brief import build_copilot_prompt_brief
+from buildwealth_orchestrator.services.session_focus import (
+    FOCUS_DOMAIN_CATALOG,
+    SessionFocusValidationError,
+    focus_applied_stored_only,
+    focus_equal,
+    merge_focus_patch,
+    public_focus,
+    resolve_turn_focus,
+)
 from buildwealth_orchestrator.services.context_cache import ExpiringCache
 from buildwealth_orchestrator.services.context_intelligence import (
     ContextAssembler,
@@ -21947,7 +21958,43 @@ def get_copilot_conversation(
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    return CopilotConversationResponse(**conversation)
+    payload = dict(conversation)
+    payload["focus"] = public_focus(conversation.get("focus") if isinstance(conversation, dict) else None)
+    return CopilotConversationResponse(**payload)
+
+
+@app.patch("/api/copilot/conversations/{conversation_id}/focus", response_model=SessionFocus)
+def patch_copilot_conversation_focus(
+    conversation_id: str,
+    request: SessionFocusUpdateRequest,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> SessionFocus:
+    require_permission(services.context, "copilot.use")
+    try:
+        conversation = services.conversation_store.get(conversation_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    try:
+        patch_payload = request.model_dump(exclude_unset=True)
+        resolved = merge_focus_patch(
+            conversation.get("focus") if isinstance(conversation, dict) else None,
+            patch_payload,
+            set_by="user",
+        )
+    except SessionFocusValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    services.conversation_store.update_focus(conversation_id, public_focus(resolved))
+    return SessionFocus(**public_focus(resolved))
+
+
+@app.get("/api/copilot/focus/domains")
+def list_copilot_focus_domains(
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, list[str]]:
+    require_permission(services.context, "copilot.use")
+    return {"domains": sorted(FOCUS_DOMAIN_CATALOG)}
 
 
 @app.post("/api/copilot/chat", response_model=CopilotChatResponse)
@@ -21966,6 +22013,33 @@ async def copilot_chat(
     )
     token = current_copilot_workspace_services.set(resolved_services) if scoped_services else None
     try:
+        store = resolved_services.conversation_store
+        try:
+            conversation = store.get_or_create(
+                conversation_id=request.conversation_id,
+                first_user_message=request.question,
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        stored_focus = conversation.get("focus") if isinstance(conversation, dict) else None
+        request_focus_payload = (
+            request.focus.model_dump(mode="json") if request.focus is not None else None
+        )
+        try:
+            resolved_focus = resolve_turn_focus(
+                stored=stored_focus if isinstance(stored_focus, dict) else None,
+                request_focus=request_focus_payload,
+                nl_patch=None,  # PR6
+            )
+        except SessionFocusValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        resolved_focus_public = public_focus(resolved_focus)
+        if request.persist_focus and not focus_equal(stored_focus, resolved_focus_public):
+            conversation = store.update_focus(conversation["id"], resolved_focus_public)
+            conversation["focus"] = resolved_focus_public
+
         assembled_context = await assemble_copilot_context_payload(
             question=request.question,
             use_live_snapshot=request.use_live_snapshot,
@@ -21981,14 +22055,24 @@ async def copilot_chat(
             summary_max_chars=context_options.summary_max_chars,
             services=resolved_services if scoped_services else None,
         )
-        contextual_brief = build_copilot_prompt_brief(assembled_context)
+        contextual_brief = build_copilot_prompt_brief(
+            assembled_context,
+            focus=resolved_focus_public,
+        )
+        context_trace = (
+            dict(assembled_context.get("trace"))
+            if isinstance(assembled_context, dict) and isinstance(assembled_context.get("trace"), dict)
+            else {}
+        )
+        # PR3: focus is stored/resolved only; shaping lands in PR4.
+        context_trace["focus_applied"] = focus_applied_stored_only(resolved_focus_public)
         try:
             result = await copilot.chat(
                 question=request.question,
-                conversation_id=request.conversation_id,
+                conversation=conversation,
                 contextual_brief=contextual_brief,
-                context_trace=assembled_context.get("trace") if isinstance(assembled_context, dict) else {},
-                conversation_store=resolved_services.conversation_store,
+                context_trace=context_trace,
+                conversation_store=store,
             )
             captured_candidates = resolved_services.context_intelligence_service.detect_chat_context_candidates(
                 message=request.question,
@@ -21996,6 +22080,7 @@ async def copilot_chat(
                 message_index=None,
             )
             context_trace = result.get("context_trace") if isinstance(result.get("context_trace"), dict) else {}
+            context_trace["focus_applied"] = focus_applied_stored_only(resolved_focus_public)
             context_trace["captured_context_candidates"] = [
                 {
                     "id": candidate.get("id"),
@@ -22008,12 +22093,21 @@ async def copilot_chat(
                 for candidate in captured_candidates
             ]
             result["context_trace"] = context_trace
-            conversation_id = str(result.get("conversation_id") or "").strip()
+            conversation_id = str(result.get("conversation_id") or conversation.get("id") or "").strip()
+            response_focus = resolved_focus_public
             if conversation_id:
-                resolved_services.conversation_store.update_latest_assistant_metadata(
+                try:
+                    persisted = store.get(conversation_id)
+                    response_focus = public_focus(
+                        persisted.get("focus") if isinstance(persisted, dict) else None
+                    )
+                except FileNotFoundError:
+                    response_focus = resolved_focus_public
+                store.update_latest_assistant_metadata(
                     conversation_id,
                     {"context_trace": context_trace},
                 )
+            result["focus"] = response_focus
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except httpx.HTTPStatusError as exc:

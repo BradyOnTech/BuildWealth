@@ -1919,12 +1919,37 @@ class RuntimeTelemetryResponse(BaseModel):
     cache_quality: RuntimeTelemetryCacheQualitySummary
 
 
+class SessionFocus(BaseModel):
+    mode: Literal["narrow", "balanced", "wide"] = "balanced"
+    primary_domains: list[str] = Field(default_factory=list, max_length=3)
+    secondary_domains: list[str] = Field(default_factory=list, max_length=5)
+    muted_domains: list[str] = Field(default_factory=list, max_length=8)
+    pinned_entity_ids: list[str] = Field(default_factory=list, max_length=12)
+    priority_note: str = Field(default="", max_length=280)
+    set_by: Literal["user", "entry_surface", "planner", "default"] = "default"
+    updated_at: datetime | str | None = None
+    schema_version: int = 1
+
+
+class SessionFocusUpdateRequest(BaseModel):
+    """PATCH body: omitted fields unchanged. set_by forced to user server-side."""
+
+    mode: Literal["narrow", "balanced", "wide"] | None = None
+    primary_domains: list[str] | None = None
+    secondary_domains: list[str] | None = None
+    muted_domains: list[str] | None = None
+    pinned_entity_ids: list[str] | None = None
+    priority_note: str | None = Field(default=None, max_length=280)
+
+
 class CopilotChatRequest(BaseModel):
     question: str
     conversation_id: str | None = None
     use_live_snapshot: bool = False
     plan_id: str | None = None
     context_options: CopilotContextOptions = Field(default_factory=CopilotContextOptions)
+    focus: SessionFocus | None = None
+    persist_focus: bool = True
 
 
 class CopilotToolTrace(BaseModel):
@@ -1941,6 +1966,7 @@ class CopilotChatResponse(BaseModel):
     model: str | None = None
     context_trace: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
+    focus: SessionFocus | None = None
 
 
 class CopilotConversationSummary(BaseModel):
@@ -1957,6 +1983,7 @@ class CopilotConversationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     messages: list[dict[str, Any]] = Field(default_factory=list)
+    focus: SessionFocus = Field(default_factory=SessionFocus)
 
 
 TimelineEventType = Literal[*TIMELINE_EVENT_TYPE_VALUES]
