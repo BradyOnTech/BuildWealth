@@ -25,7 +25,7 @@ LLM_PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
         "llm_base_url": "https://api.anthropic.com/v1",
     },
     "xai": {
-        "llm_model": "grok-4.20-reasoning-latest",
+        "llm_model": "grok-4.5",
         "llm_base_url": "https://api.x.ai/v1",
     },
     "custom_openai_compatible": {
@@ -38,7 +38,12 @@ LEGACY_LLM_PROVIDER_DEFAULT_MODELS: dict[str, set[str]] = {
     "openai": {"gpt-5-mini"},
     "gemini": {"gemini-2.5-flash"},
     "anthropic": {"claude-sonnet-4-5"},
-    "xai": {"grok-4-latest", "grok-4.20-reasoning"},
+    "xai": {
+        "grok-4-latest",
+        "grok-4.20-reasoning",
+        "grok-4.20-reasoning-latest",
+        "grok-4.20-0309-reasoning",
+    },
 }
 
 

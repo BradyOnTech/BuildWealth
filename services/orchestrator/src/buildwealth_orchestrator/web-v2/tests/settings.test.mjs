@@ -73,6 +73,35 @@ test('toDraft/buildPayloadFor: task routing keys round-trip', () => {
   assert.equal(inherit.llm_task_summarize_provider, '');
 });
 
+test('buildPayloadFor: preserves configured key via mask and sends typed keys', () => {
+  const draft = toDraft({
+    llm_provider: 'xai',
+    llm_model: 'grok-4.5',
+    llm_base_url: 'https://api.x.ai/v1',
+  });
+  const masked = buildPayloadFor({
+    draft,
+    apiKeyDirty: false,
+    loadedSettings: { llm_api_key: '••••••••wxyz', llm_api_key_configured: true },
+  });
+  assert.equal(masked.llm_api_key, '••••••••wxyz');
+  assert.equal(masked.llm_model, 'grok-4.5');
+
+  const typed = buildPayloadFor({
+    draft: { ...draft, llm_api_key: 'xai-real-secret-key' },
+    apiKeyDirty: true,
+    loadedSettings: { llm_api_key: '••••••••wxyz', llm_api_key_configured: true },
+  });
+  assert.equal(typed.llm_api_key, 'xai-real-secret-key');
+
+  const missing = buildPayloadFor({
+    draft,
+    apiKeyDirty: false,
+    loadedSettings: { llm_api_key: '', llm_api_key_configured: false },
+  });
+  assert.equal(missing.llm_api_key, '');
+});
+
 test('toDraft: fills missing fields with defaults', () => {
   const draft = toDraft({});
   assert.equal(draft.llm_provider, 'openai');

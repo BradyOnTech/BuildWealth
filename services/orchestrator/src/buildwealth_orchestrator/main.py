@@ -17918,7 +17918,16 @@ def _settings_payload_for_probe(
         if "llm_base_url" not in request or request_base_url in ("", previous_base_url):
             payload["llm_base_url"] = next_base_url
             explicit_keys.add("llm_base_url")
-        if "llm_api_key" not in request or "llm_api_key" in masked_sensitive_keys:
+        # Only clear the probe key when the client did not supply a fresh one.
+        # A masked placeholder means "keep stored key" for the same provider, but
+        # provider transitions must not silently probe with the previous key.
+        request_key = request.get("llm_api_key")
+        has_fresh_key = (
+            isinstance(request_key, str)
+            and request_key.strip()
+            and "llm_api_key" not in masked_sensitive_keys
+        )
+        if not has_fresh_key:
             payload["llm_api_key"] = ""
             explicit_keys.add("llm_api_key")
     if provider_changed:

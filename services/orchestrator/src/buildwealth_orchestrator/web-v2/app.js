@@ -802,6 +802,9 @@ async function bootAuthenticatedShell() {
   refreshSystemStatus();
   clearAppTimers();
   statusRefreshTimer = setInterval(refreshSystemStatus, 60_000);
+  document.addEventListener('buildwealth:settings-saved', () => {
+    refreshSystemStatus();
+  });
 }
 
 async function boot() {

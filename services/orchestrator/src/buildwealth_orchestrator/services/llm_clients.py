@@ -15,7 +15,7 @@ DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
 DEFAULT_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-7"
 DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1"
-DEFAULT_XAI_MODEL = "grok-4.20-reasoning-latest"
+DEFAULT_XAI_MODEL = "grok-4.5"
 DEFAULT_XAI_BASE_URL = "https://api.x.ai/v1"
 
 LLM_PROVIDER_OPENAI = "openai"

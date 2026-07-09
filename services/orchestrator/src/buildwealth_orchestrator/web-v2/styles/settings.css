@@ -302,6 +302,95 @@
   line-height: 1.4;
 }
 
+.settings-key-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.settings-key-input {
+  min-width: 0;
+}
+
+.settings-key-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: var(--hair) solid var(--rule);
+  white-space: nowrap;
+}
+.settings-key-badge.ok {
+  color: var(--forest);
+  border-color: color-mix(in srgb, var(--forest) 35%, var(--rule));
+  background: color-mix(in srgb, var(--forest) 8%, var(--paper-bright));
+}
+.settings-key-badge.warn {
+  color: var(--brass);
+  border-color: color-mix(in srgb, var(--brass) 35%, var(--rule));
+  background: color-mix(in srgb, var(--brass) 8%, var(--paper-bright));
+}
+
+.settings-model-guide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.settings-model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: var(--hair) solid var(--rule);
+  background: var(--paper);
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 12px;
+  transition:
+    border-color var(--d-fast) var(--ease-press),
+    background var(--d-fast) var(--ease-press),
+    color var(--d-fast) var(--ease-press),
+    transform var(--d-fast) var(--ease-press);
+}
+.settings-model-chip:hover {
+  border-color: color-mix(in srgb, var(--forest) 40%, var(--rule));
+  color: var(--ink-strong);
+}
+.settings-model-chip:active {
+  transform: scale(0.96);
+}
+.settings-model-chip.active {
+  color: var(--forest);
+  border-color: color-mix(in srgb, var(--forest) 45%, var(--rule));
+  background: color-mix(in srgb, var(--forest) 9%, var(--paper-bright));
+}
+.settings-model-cost {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--gilt);
+}
+.settings-model-name {
+  font-weight: 500;
+}
+.settings-model-rec {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--forest);
+}
+
+.is-hidden {
+  display: none !important;
+}
+
 /* Advanced disclosure */
 .settings-advanced {
   border: var(--hair) solid var(--rule-soft);

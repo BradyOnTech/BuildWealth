@@ -48,7 +48,7 @@ const PROVIDER_DEFAULTS = {
   openai: { model: 'gpt-5.5', baseUrl: 'https://api.openai.com/v1' },
   gemini: { model: 'gemini-3.1-flash-lite', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai' },
   anthropic: { model: 'claude-opus-4-7', baseUrl: 'https://api.anthropic.com/v1' },
-  xai: { model: 'grok-4.20-reasoning-latest', baseUrl: 'https://api.x.ai/v1' },
+  xai: { model: 'grok-4.5', baseUrl: 'https://api.x.ai/v1' },
   custom_openai_compatible: { model: '', baseUrl: '' },
 };
 

@@ -26,11 +26,41 @@ const PROVIDERS = [
 // Mirrors services/user_settings.py LLM_PROVIDER_DEFAULTS so a provider switch
 // can pre-fill model + base URL inline without a server round-trip.
 const PROVIDER_DEFAULTS = {
-  openai:                   { llm_model: 'gpt-5.5',                  llm_base_url: 'https://api.openai.com/v1' },
-  anthropic:                { llm_model: 'claude-opus-4-7',          llm_base_url: 'https://api.anthropic.com/v1' },
-  gemini:                   { llm_model: 'gemini-3.1-flash-lite',    llm_base_url: 'https://generativelanguage.googleapis.com/v1beta/openai' },
-  xai:                      { llm_model: 'grok-4.20-reasoning-latest', llm_base_url: 'https://api.x.ai/v1' },
-  custom_openai_compatible: { llm_model: '',                          llm_base_url: '' },
+  openai:                   { llm_model: 'gpt-5.5',               llm_base_url: 'https://api.openai.com/v1' },
+  anthropic:                { llm_model: 'claude-opus-4-7',       llm_base_url: 'https://api.anthropic.com/v1' },
+  gemini:                   { llm_model: 'gemini-3.1-flash-lite', llm_base_url: 'https://generativelanguage.googleapis.com/v1beta/openai' },
+  xai:                      { llm_model: 'grok-4.5',              llm_base_url: 'https://api.x.ai/v1' },
+  custom_openai_compatible: { llm_model: '',                      llm_base_url: '' },
+};
+
+// Curated chat models for the settings picker. cost is a relative $, $$, $$$, $$$$
+// band (list prices change; use as a guide, not billing). Prices are approximate
+// input/output per 1M tokens when known.
+const PROVIDER_MODELS = {
+  xai: [
+    { id: 'grok-4.5', label: 'Grok 4.5', cost: '$$$', blurb: 'Flagship · tools & reasoning', recommended: true, price: '$2 / $6' },
+    { id: 'grok-4.3', label: 'Grok 4.3', cost: '$$', blurb: 'Strong general chat', price: '$1.25 / $2.50' },
+    { id: 'grok-4.20-0309-reasoning', label: 'Grok 4.20 Reasoning', cost: '$$', blurb: 'Deeper multi-step reasoning', price: '$1.25 / $2.50' },
+    { id: 'grok-4.20-0309-non-reasoning', label: 'Grok 4.20 Fast', cost: '$$', blurb: 'Faster responses', price: '$1.25 / $2.50' },
+    { id: 'grok-4.20-multi-agent-0309', label: 'Grok 4.20 Multi-agent', cost: '$$', blurb: 'Built-in multi-agent', price: '$1.25 / $2.50' },
+  ],
+  openai: [
+    { id: 'gpt-5.5', label: 'GPT-5.5', cost: '$$$', blurb: 'Latest flagship', recommended: true },
+    { id: 'gpt-5-mini', label: 'GPT-5 mini', cost: '$$', blurb: 'Cheaper everyday chat' },
+    { id: 'gpt-4.1', label: 'GPT-4.1', cost: '$$$', blurb: 'Stable tools-capable' },
+    { id: 'gpt-4.1-mini', label: 'GPT-4.1 mini', cost: '$$', blurb: 'Fast / lower cost' },
+  ],
+  anthropic: [
+    { id: 'claude-opus-4-7', label: 'Claude Opus 4.7', cost: '$$$$', blurb: 'Highest capability', recommended: true },
+    { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5', cost: '$$$', blurb: 'Balanced quality & cost' },
+    { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', cost: '$$', blurb: 'Fast / economical' },
+  ],
+  gemini: [
+    { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite', cost: '$', blurb: 'Fast & cheap', recommended: true },
+    { id: 'gemini-3.1-flash', label: 'Gemini 3.1 Flash', cost: '$$', blurb: 'Balanced' },
+    { id: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro', cost: '$$$', blurb: 'Higher quality' },
+  ],
+  custom_openai_compatible: [],
 };
 
 const MASK = '••••••••';
@@ -315,12 +345,50 @@ function truncate(value, n) {
 
 /* ─────────────  Provider card  ───────────── */
 
+function keyIsConfigured() {
+  const s = ui.loadedSettings || {};
+  if (s.llm_api_key_configured) return true;
+  const masked = String(s.llm_api_key || '');
+  return Boolean(masked && masked.startsWith(MASK));
+}
+
+function keyLast4() {
+  const s = ui.loadedSettings || {};
+  if (s.llm_api_key_last4) return String(s.llm_api_key_last4);
+  const masked = String(s.llm_api_key || '');
+  if (masked.startsWith(MASK) && masked.length > MASK.length) return masked.slice(-4);
+  return '';
+}
+
+function modelsForProvider(provider) {
+  return PROVIDER_MODELS[provider] || [];
+}
+
+function modelSelectOptions(provider, selectedId) {
+  const models = modelsForProvider(provider);
+  const selected = String(selectedId || '');
+  const known = models.some(m => m.id === selected);
+  const options = models.map(m => {
+    const rec = m.recommended ? ' · recommended' : '';
+    const price = m.price ? ` · ${m.price}` : '';
+    return `<option value="${esc(m.id)}" ${m.id === selected ? 'selected' : ''}>${esc(m.cost)} · ${esc(m.label)}${esc(rec)}${esc(price)}</option>`;
+  });
+  if (selected && !known) {
+    options.unshift(`<option value="${esc(selected)}" selected>Custom · ${esc(selected)}</option>`);
+  }
+  options.push('<option value="__custom__">Custom model id…</option>');
+  return options.join('');
+}
+
 function providerCard() {
   const d = ui.draft;
   const provider = PROVIDERS.find(p => p.value === d.llm_provider) || PROVIDERS[0];
-  const apiKeyPlaceholder = d.llm_api_key && !ui.apiKeyDirty
-    ? `${MASK}${d.llm_api_key.slice(-4)}`
-    : `${provider.label} API key`;
+  const configured = keyIsConfigured() && !ui.apiKeyDirty;
+  const last4 = keyLast4();
+  const models = modelsForProvider(d.llm_provider);
+  const selectedModel = d.llm_model || '';
+  const knownModel = models.some(m => m.id === selectedModel);
+  const showCustomModel = d.llm_provider === 'custom_openai_compatible' || (selectedModel && !knownModel) || d._modelCustom;
 
   return html`
     <section class="settings-card">
@@ -341,37 +409,64 @@ function providerCard() {
                 ${esc(p.label)} · ${esc(p.hint)}
               </option>`).join(''))}
           </select>
-          <span class="settings-hint">Switching provider clears the saved API key for safety.</span>
+          <span class="settings-hint">Changing provider requires saving a key for that provider.</span>
         </label>
 
-        <label class="settings-field span-2">
+        <div class="settings-field span-2">
           <span class="settings-label">
             API key
-            ${d.llm_api_key && !ui.apiKeyDirty
-              ? html`<button type="button" class="link-quiet" id="settings-clear-key">Clear saved key</button>`
+            ${configured
+              ? html`<button type="button" class="link-quiet" id="settings-clear-key">Remove saved key</button>`
               : ''}
           </span>
-          <input id="settings-api-key" class="settings-input mono"
-                 type="password" autocomplete="off" spellcheck="false"
-                 placeholder="${esc(apiKeyPlaceholder)}"
-                 value="${ui.apiKeyDirty ? esc(d.llm_api_key || '') : ''}" />
+          <div class="settings-key-row">
+            <input id="settings-api-key" class="settings-input mono settings-key-input"
+                   type="password" autocomplete="off" spellcheck="false"
+                   name="llm_api_key"
+                   placeholder="${configured ? 'Leave blank to keep saved key, or paste a new one' : `Paste your ${esc(provider.label)} API key`}"
+                   value="${ui.apiKeyDirty ? esc(d.llm_api_key || '') : ''}" />
+            ${configured
+              ? html`<span class="settings-key-badge ok">Saved${last4 ? ` · …${esc(last4)}` : ''}</span>`
+              : html`<span class="settings-key-badge warn">Not saved</span>`}
+          </div>
           <span class="settings-hint">
-            ${d.llm_api_key && !ui.apiKeyDirty
-              ? 'A key is saved. Type to replace it; leave blank to keep the existing key.'
-              : 'Stored locally — only sent to the provider you choose.'}
+            ${configured
+              ? 'A key is stored for this workspace. Paste a new key only if you want to replace it, then Save.'
+              : 'Paste the key, then Save provider. Test connection uses what you save (or the text in this field).'}
           </span>
-        </label>
+        </div>
 
-        <label class="settings-field">
+        <label class="settings-field span-2">
           <span class="settings-label">Model</span>
-          <input id="settings-model" class="settings-input mono"
+          ${models.length ? html`
+            <select id="settings-model-select" class="settings-input">
+              ${raw(modelSelectOptions(d.llm_provider, selectedModel))}
+            </select>
+          ` : ''}
+          <input id="settings-model" class="settings-input mono ${models.length && !showCustomModel ? 'is-hidden' : ''}"
                  type="text" autocomplete="off" spellcheck="false"
                  placeholder="${esc(PROVIDER_DEFAULTS[d.llm_provider]?.llm_model || 'model id')}"
                  value="${esc(d.llm_model || '')}" />
-          <span class="settings-hint">Prefer models with reliable tool calling.</span>
+          <span class="settings-hint">
+            ${models.length
+              ? '$, $$, $$$, $$$$ are relative cost bands. Prefer models with reliable tool calling.'
+              : 'Enter any OpenAI-compatible model id your endpoint serves.'}
+          </span>
+          ${models.length ? html`
+            <div class="settings-model-guide">
+              ${models.slice(0, 4).map(m => html`
+                <button type="button" class="settings-model-chip ${m.id === selectedModel ? 'active' : ''}"
+                        data-model-pick="${esc(m.id)}" title="${esc(m.blurb || '')}${m.price ? ` · ${m.price} per 1M in/out` : ''}">
+                  <span class="settings-model-cost">${esc(m.cost)}</span>
+                  <span class="settings-model-name">${esc(m.label)}</span>
+                  ${m.recommended ? html`<span class="settings-model-rec">rec</span>` : ''}
+                </button>
+              `)}
+            </div>
+          ` : ''}
         </label>
 
-        <label class="settings-field">
+        <label class="settings-field span-2">
           <span class="settings-label">Base URL</span>
           <input id="settings-base-url" class="settings-input mono"
                  type="text" autocomplete="off" spellcheck="false"
@@ -999,22 +1094,49 @@ function attachHandlers() {
     const defaults = PROVIDER_DEFAULTS[next] || PROVIDER_DEFAULTS.openai;
     const prevDefaults = PROVIDER_DEFAULTS[prev] || {};
     ui.draft.llm_provider = next;
-    if (!ui.draft.llm_model || ui.draft.llm_model === prevDefaults.llm_model) {
+    // Always jump to the new provider's recommended model unless the user already
+    // typed a custom non-default id for the previous provider they want to keep.
+    if (!ui.draft.llm_model || ui.draft.llm_model === prevDefaults.llm_model
+        || modelsForProvider(prev).some(m => m.id === ui.draft.llm_model)) {
       ui.draft.llm_model = defaults.llm_model;
     }
     if (!ui.draft.llm_base_url || ui.draft.llm_base_url === prevDefaults.llm_base_url) {
       ui.draft.llm_base_url = defaults.llm_base_url;
     }
-    // The saved key belonged to the previous provider; clear it on the draft so
-    // a Save with this draft removes it server-side. The user sees the field empty.
-    ui.draft.llm_api_key = '';
-    ui.apiKeyDirty = true;
+    // Do not wipe a freshly typed key on provider change — only forget the dirty
+    // buffer if the field was empty. Saved keys are provider-bound on Save.
+    if (!String(ui.draft.llm_api_key || '').trim()) {
+      ui.draft.llm_api_key = '';
+      ui.apiKeyDirty = false;
+    }
+    ui.draft._modelCustom = false;
     ui.testResult = null;
     render();
   });
 
   delegate(root, 'input',  '#settings-api-key',   (_, el) => { ui.draft.llm_api_key = el.value; ui.apiKeyDirty = true; });
-  delegate(root, 'input',  '#settings-model',     (_, el) => { ui.draft.llm_model = el.value; });
+  delegate(root, 'change', '#settings-api-key',   (_, el) => { ui.draft.llm_api_key = el.value; if (el.value) ui.apiKeyDirty = true; });
+  delegate(root, 'input',  '#settings-model',     (_, el) => { ui.draft.llm_model = el.value; ui.draft._modelCustom = true; });
+  delegate(root, 'change', '#settings-model-select', (_, el) => {
+    if (el.value === '__custom__') {
+      ui.draft._modelCustom = true;
+      render();
+      const input = document.getElementById('settings-model');
+      if (input) input.focus();
+      return;
+    }
+    ui.draft.llm_model = el.value;
+    ui.draft._modelCustom = false;
+    render();
+  });
+  delegate(root, 'click', '[data-model-pick]', (e, el) => {
+    e.preventDefault();
+    const id = el.getAttribute('data-model-pick');
+    if (!id) return;
+    ui.draft.llm_model = id;
+    ui.draft._modelCustom = false;
+    render();
+  });
   delegate(root, 'input',  '#settings-base-url',  (_, el) => { ui.draft.llm_base_url = el.value; });
   delegate(root, 'input',  '#settings-max-tokens',(_, el) => { ui.draft.llm_max_tokens = parseIntOr(el.value, 2048); });
   delegate(root, 'input',  '#settings-timeout',   (_, el) => { ui.draft.llm_timeout_seconds = parseFloatOr(el.value, 60); });
@@ -1076,8 +1198,36 @@ function attachHandlers() {
 
 /* ─────────────  Actions  ───────────── */
 
+function syncApiKeyFromDom() {
+  // Browser autofill often fills password fields without firing input events.
+  // Always read the live field before Save / Test so we do not probe with an
+  // empty key while the user thinks one is present.
+  const el = document.getElementById('settings-api-key');
+  if (!el) return;
+  const value = String(el.value || '');
+  if (value) {
+    ui.draft.llm_api_key = value;
+    ui.apiKeyDirty = true;
+  }
+}
+
+function hasProbeableKey() {
+  syncApiKeyFromDom();
+  if (ui.apiKeyDirty && String(ui.draft.llm_api_key || '').trim()) return true;
+  return keyIsConfigured();
+}
+
 async function save() {
   if (ui.saving) return;
+  syncApiKeyFromDom();
+  if (!hasProbeableKey() && ui.apiKeyDirty && !String(ui.draft.llm_api_key || '').trim()) {
+    // Explicit clear is allowed via clearSavedKey; empty dirty on first setup is a mistake.
+    if (!keyIsConfigured()) {
+      ui.saveError = 'Paste an API key before saving.';
+      render();
+      return;
+    }
+  }
   ui.saving = true;
   ui.saveError = null;
   render();
@@ -1088,7 +1238,12 @@ async function save() {
     ui.loadedSettings = updated;
     ui.draft = toDraft(updated);
     ui.apiKeyDirty = false;
+    ui.draft._modelCustom = false;
     state.lastError = null;
+    // Refresh topbar readiness so "Copilot · needs setup" clears immediately.
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('buildwealth:settings-saved'));
+    }
   } catch (err) {
     ui.saveError = err.message || 'Could not save settings.';
   } finally {
@@ -1099,14 +1254,35 @@ async function save() {
 
 async function testProvider() {
   if (ui.testing) return;
+  syncApiKeyFromDom();
+  if (!hasProbeableKey()) {
+    ui.testResult = {
+      ok: false,
+      stage: 'configuration',
+      detail: 'No API key available. Paste your key above, click Save provider, then Test connection.',
+    };
+    render();
+    return;
+  }
   ui.testing = true;
   ui.testResult = null;
   render();
 
+  // Prefer a saved key: if the user typed a new one, save first so the workspace
+  // secret store and the probe use the same value.
   const payload = buildPayload();
   try {
-    const result = await api.testLlmSettings(payload);
+    if (ui.apiKeyDirty && String(ui.draft.llm_api_key || '').trim()) {
+      const updated = await api.updateSettings(payload);
+      ui.loadedSettings = updated;
+      ui.draft = toDraft(updated);
+      ui.apiKeyDirty = false;
+    }
+    const result = await api.testLlmSettings(buildPayload());
     ui.testResult = result || { ok: true };
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('buildwealth:settings-saved'));
+    }
   } catch (err) {
     // The endpoint returns the failure shape inside HTTPException.detail; the
     // fetch helper has already flattened that into err.message text.
@@ -1124,10 +1300,24 @@ function resetDefaults() {
   render();
 }
 
-function clearSavedKey() {
+async function clearSavedKey() {
   ui.draft.llm_api_key = '';
   ui.apiKeyDirty = true;
   ui.testResult = null;
+  ui.saveError = null;
+  render();
+  // Persist the removal so "Saved" badge and topbar status update immediately.
+  try {
+    const updated = await api.updateSettings(buildPayload());
+    ui.loadedSettings = updated;
+    ui.draft = toDraft(updated);
+    ui.apiKeyDirty = false;
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('buildwealth:settings-saved'));
+    }
+  } catch (err) {
+    ui.saveError = err?.message || 'Could not clear the saved key.';
+  }
   render();
 }
 
@@ -1386,11 +1576,15 @@ export function buildPayloadFor({ draft, apiKeyDirty, loadedSettings }) {
     llm_task_summarize_model:    draft.llm_task_summarize_model || '',
     llm_task_summarize_base_url: draft.llm_task_summarize_base_url || '',
   };
-  // If the user hasn't typed over the masked key, send the mask back so the
-  // server preserves the stored value (UserSettingsStore.save understands this).
-  payload.llm_api_key = apiKeyDirty
-    ? draft.llm_api_key
-    : (loadedSettings?.llm_api_key || '');
+  // If the user hasn't typed over the key, send the mask (when configured) so
+  // the server preserves the stored secret. Never invent a fake key.
+  if (apiKeyDirty) {
+    payload.llm_api_key = String(draft.llm_api_key || '');
+  } else if (loadedSettings?.llm_api_key_configured || String(loadedSettings?.llm_api_key || '').startsWith(MASK)) {
+    payload.llm_api_key = loadedSettings?.llm_api_key || MASK;
+  } else {
+    payload.llm_api_key = '';
+  }
   return payload;
 }
 
