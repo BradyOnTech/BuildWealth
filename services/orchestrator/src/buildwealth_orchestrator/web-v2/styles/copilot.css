@@ -19,6 +19,80 @@
   border-bottom: var(--hair) solid var(--rule);
 }
 
+.copilot-focus-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  width: 100%;
+  margin: var(--s-4) 0 0;
+  padding: var(--s-3) 0 0;
+  border-top: var(--hair) solid var(--rule-soft, var(--rule));
+}
+
+.copilot-focus-mode {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.copilot-focus-mode-btn {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  background: transparent;
+  border: var(--hair) solid var(--rule);
+  border-radius: 999px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.copilot-focus-mode-btn.active {
+  color: var(--forest);
+  border-color: var(--forest);
+  background: color-mix(in srgb, var(--forest) 8%, transparent);
+}
+
+.copilot-focus-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.copilot-focus-chip {
+  font-family: var(--sans, inherit);
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: var(--hair) solid var(--rule);
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: border-color var(--d-fast) var(--ease-press), color var(--d-fast) var(--ease-press), background var(--d-fast) var(--ease-press);
+}
+.copilot-focus-chip.primary {
+  color: var(--forest);
+  border-color: var(--forest);
+  background: color-mix(in srgb, var(--forest) 10%, transparent);
+}
+.copilot-focus-chip.muted {
+  color: var(--ink-faint);
+  border-style: dashed;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.copilot-focus-chip:hover {
+  border-color: var(--forest);
+  color: var(--forest);
+}
+
+.copilot-focus-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-faint);
+  max-width: 52rem;
+}
+
 .copilot-masthead-controls {
   display: flex;
   align-items: baseline;

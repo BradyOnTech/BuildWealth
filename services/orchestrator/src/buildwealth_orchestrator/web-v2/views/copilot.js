@@ -131,6 +131,89 @@ export function buildPlanReviewPrompt(intent, { planId = '', chart = '' } = {}) 
   ].join(' ');
 }
 
+// Keep in sync with services/session_focus.py FOCUS_DOMAIN_CATALOG (server is authoritative on write).
+const FOCUS_DOMAIN_OPTIONS = [
+  { id: 'plan', label: 'Plan' },
+  { id: 'profile', label: 'Profile' },
+  { id: 'profile.goals', label: 'Goals' },
+  { id: 'profile.cashflow', label: 'Cashflow' },
+  { id: 'profile.debt', label: 'Debt' },
+  { id: 'profile.tax', label: 'Tax' },
+  { id: 'profile.policy', label: 'Policy' },
+  { id: 'portfolio', label: 'Portfolio' },
+  { id: 'portfolio.holdings', label: 'Holdings' },
+  { id: 'recommendation', label: 'Inbox' },
+  { id: 'research', label: 'Research' },
+];
+
+function defaultSessionFocus() {
+  return {
+    mode: 'balanced',
+    primary_domains: [],
+    secondary_domains: [],
+    muted_domains: [],
+    pinned_entity_ids: [],
+    priority_note: '',
+    set_by: 'default',
+    schema_version: 1,
+  };
+}
+
+function seedFocusFromEntry(params = {}) {
+  const intent = String(params.intent || '').trim().toLowerCase();
+  const focusId = String(params.focus || '').trim();
+  const base = defaultSessionFocus();
+  base.set_by = 'entry_surface';
+  if (intent === 'review_plan_assumptions' || intent === 'plan-scenario' || intent === 'explain_scenario_diff') {
+    return { ...base, mode: 'narrow', primary_domains: ['plan'], secondary_domains: ['profile'], muted_domains: intent === 'review_plan_assumptions' ? ['research'] : [] };
+  }
+  if (intent === 'review_stale_assumptions') {
+    return { ...base, mode: 'narrow', primary_domains: ['plan'], secondary_domains: ['profile', 'recommendation'] };
+  }
+  if (intent === 'explain-chart' || intent === 'withdrawal-strategy' || intent === 'plan-branch') {
+    return { ...base, mode: 'narrow', primary_domains: ['plan'], muted_domains: intent === 'explain-chart' ? ['research'] : [] };
+  }
+  if (intent === 'investment-policy') {
+    return { ...base, mode: 'narrow', primary_domains: ['profile.policy'], muted_domains: ['research'] };
+  }
+  if (intent === 'investment-fit') {
+    return {
+      ...base,
+      mode: 'narrow',
+      primary_domains: ['research'],
+      secondary_domains: ['portfolio', 'profile.policy', 'recommendation'],
+      pinned_entity_ids: focusId ? [`recommendation:${focusId}`] : [],
+    };
+  }
+  if (intent === 'complete-context') {
+    return {
+      ...base,
+      mode: 'narrow',
+      primary_domains: ['profile'],
+      secondary_domains: ['recommendation'],
+      pinned_entity_ids: focusId ? [`recommendation:${focusId}`] : [],
+    };
+  }
+  if (intent === 'review-decision') {
+    return {
+      ...base,
+      mode: 'narrow',
+      primary_domains: ['recommendation'],
+      secondary_domains: ['plan'],
+      pinned_entity_ids: focusId ? [`recommendation:${focusId}`] : [],
+    };
+  }
+  if (intent === 'affordability') {
+    return {
+      ...base,
+      mode: 'narrow',
+      primary_domains: ['profile.cashflow', 'portfolio'],
+      secondary_domains: ['plan', 'profile.debt'],
+    };
+  }
+  return defaultSessionFocus();
+}
+
 const ui = {
   conversationId: null,
   conversationTitle: '',
@@ -142,8 +225,9 @@ const ui = {
   error: null,
   planId: null,
   recommendationFocus: null,
-  pickerOpen: null,                 // 'conversations' | 'plans' | null
+  pickerOpen: null,                 // 'conversations' | 'plans' | 'focus' | null
   draftFocus: null,
+  sessionFocus: defaultSessionFocus(),
 };
 
 export function template() {
@@ -169,6 +253,7 @@ export async function init(params = {}) {
   ui.error = null;
   ui.recommendationFocus = String(params.focus || '').trim() || null;
   ui.pickerOpen = null;
+  ui.sessionFocus = seedFocusFromEntry(params);
   attachHandlers();
 
   rerenderAll();
@@ -176,6 +261,9 @@ export async function init(params = {}) {
   // Load past conversations, then the active one (if any).
   loadConversations().then(() => rerenderMasthead()).catch(() => {});
   loadOnboarding().then(() => rerenderBody()).catch(() => {});
+  if (ui.conversationId) {
+    loadConversation(ui.conversationId).catch(() => {});
+  }
   if (String(params.intent || '').trim().toLowerCase() === 'investment-policy') {
     fillDraft(INVESTMENT_POLICY_SETUP_PROMPT);
   }
@@ -186,6 +274,8 @@ export async function init(params = {}) {
     // Linked from inbox: prefill question. Conversation stays empty until sent.
     fillDraft(recommendationFocusPrompt(params.focus, params.intent));
   }
+  // Goal/debt setup cards still use prompts; seed focus when those prompts apply.
+  seedFocusFromOnboardingIfNeeded();
 }
 
 /* ─────────────  data  ───────────── */
@@ -216,6 +306,9 @@ async function loadConversation(id) {
     ui.conversationId = res.id;
     ui.conversationTitle = res.title || '';
     ui.messages = Array.isArray(res.messages) ? res.messages : [];
+    if (res.focus && typeof res.focus === 'object') {
+      ui.sessionFocus = normalizeClientFocus(res.focus);
+    }
   } catch (err) {
     ui.error = err.message;
   } finally {
@@ -240,8 +333,13 @@ async function sendMessage(question, { useLive }) {
       use_live_snapshot: !!useLive,
       plan_id: ui.planId,
       context_options: { detail_level: 'light' },
+      focus: clientFocusPayload(ui.sessionFocus),
+      persist_focus: true,
     });
     ui.conversationId = res.conversation_id;
+    if (res.focus && typeof res.focus === 'object') {
+      ui.sessionFocus = normalizeClientFocus(res.focus);
+    }
     ui.messages.push({
       role: 'assistant',
       content: res.answer || '',
@@ -264,8 +362,7 @@ async function sendMessage(question, { useLive }) {
     });
   } finally {
     ui.thinking = false;
-    rerenderBody();
-    rerenderComposer({ draft: '' });
+    rerenderAll();
     scrollToBottom();
   }
 }
@@ -310,6 +407,7 @@ function rerenderComposer({ draft = readDraft() } = {}) {
 function renderMasthead() {
   const plans = state.plans || [];
   const plan = plans.find(p => p.id === ui.planId) || plans.find(p => p.is_active) || plans[0];
+  const focusLabel = focusSummaryLabel(ui.sessionFocus);
   return html`
     <header class="copilot-masthead">
       <div class="copilot-masthead-controls">
@@ -328,11 +426,68 @@ function renderMasthead() {
             ${ui.pickerOpen === 'plans' ? raw(renderPlansMenu(plans, plan?.id)) : ''}
           </span>
         ` : ''}
+        <span class="copilot-picker">
+          <button class="copilot-picker-button" data-picker="focus" title="Session Focus steers which domains expand in the brief">
+            focus: ${esc(focusLabel)}
+          </button>
+          ${ui.pickerOpen === 'focus' ? raw(renderFocusMenu()) : ''}
+        </span>
       </div>
       <div class="entry-actions">
         <button class="action-link muted" data-action="new-chat">New conversation <span class="arrow">›</span></button>
       </div>
     </header>
+    ${raw(renderFocusChipBar())}
+  `;
+}
+
+function renderFocusChipBar() {
+  const focus = ui.sessionFocus || defaultSessionFocus();
+  const primary = new Set(focus.primary_domains || []);
+  const muted = new Set(focus.muted_domains || []);
+  return html`
+    <div class="copilot-focus-bar" role="group" aria-label="Session Focus">
+      <span class="copilot-focus-mode">
+        <button class="copilot-focus-mode-btn ${focus.mode === 'narrow' ? 'active' : ''}" data-focus-mode="narrow">narrow</button>
+        <button class="copilot-focus-mode-btn ${focus.mode === 'balanced' ? 'active' : ''}" data-focus-mode="balanced">balanced</button>
+        <button class="copilot-focus-mode-btn ${focus.mode === 'wide' ? 'active' : ''}" data-focus-mode="wide">wide</button>
+      </span>
+      <div class="copilot-focus-chips">
+        ${FOCUS_DOMAIN_OPTIONS.map(opt => {
+          const stateClass = primary.has(opt.id) ? 'primary' : muted.has(opt.id) ? 'muted' : 'idle';
+          return html`
+            <button
+              type="button"
+              class="copilot-focus-chip ${stateClass}"
+              data-focus-domain="${esc(opt.id)}"
+              title="Click to cycle: idle → primary → muted → idle"
+            >${esc(opt.label)}</button>
+          `;
+        })}
+      </div>
+      <p class="copilot-focus-hint">
+        Mute limits the default brief, not tool access. Critical warnings can still appear.
+      </p>
+    </div>
+  `;
+}
+
+function renderFocusMenu() {
+  const focus = ui.sessionFocus || defaultSessionFocus();
+  return html`
+    <div class="copilot-picker-menu open" data-menu="focus">
+      <button class="copilot-picker-item" data-focus-reset>
+        <span class="copilot-picker-item-meta">reset</span>
+        <span class="copilot-picker-item-title">Clear Session Focus to balanced defaults</span>
+      </button>
+      <div class="copilot-picker-divider"></div>
+      <div class="copilot-picker-item" style="cursor: default;">
+        <span class="copilot-picker-item-meta">mode ${esc(focus.mode)}</span>
+        <span class="copilot-picker-item-title">
+          Primary: ${esc((focus.primary_domains || []).join(', ') || 'intent-driven')}
+        </span>
+      </div>
+    </div>
   `;
 }
 
@@ -565,6 +720,94 @@ function derivedTitle(question) {
   return trimmed.slice(0, 57) + '…';
 }
 
+function normalizeClientFocus(raw) {
+  const base = defaultSessionFocus();
+  if (!raw || typeof raw !== 'object') return base;
+  return {
+    mode: ['narrow', 'balanced', 'wide'].includes(raw.mode) ? raw.mode : 'balanced',
+    primary_domains: Array.isArray(raw.primary_domains) ? raw.primary_domains.slice(0, 3) : [],
+    secondary_domains: Array.isArray(raw.secondary_domains) ? raw.secondary_domains.slice(0, 5) : [],
+    muted_domains: Array.isArray(raw.muted_domains) ? raw.muted_domains.slice(0, 8) : [],
+    pinned_entity_ids: Array.isArray(raw.pinned_entity_ids) ? raw.pinned_entity_ids.slice(0, 12) : [],
+    priority_note: String(raw.priority_note || '').slice(0, 280),
+    set_by: raw.set_by || 'user',
+    schema_version: 1,
+    updated_at: raw.updated_at || null,
+  };
+}
+
+function clientFocusPayload(focus) {
+  const normalized = normalizeClientFocus(focus);
+  return {
+    mode: normalized.mode,
+    primary_domains: normalized.primary_domains,
+    secondary_domains: normalized.secondary_domains,
+    muted_domains: normalized.muted_domains,
+    pinned_entity_ids: normalized.pinned_entity_ids,
+    priority_note: normalized.priority_note,
+    set_by: normalized.set_by === 'default' ? 'user' : normalized.set_by,
+    schema_version: 1,
+  };
+}
+
+function focusSummaryLabel(focus) {
+  const f = normalizeClientFocus(focus);
+  if (f.primary_domains.length) {
+    const labels = f.primary_domains
+      .map(id => FOCUS_DOMAIN_OPTIONS.find(opt => opt.id === id)?.label || id)
+      .slice(0, 2);
+    return `${f.mode} · ${labels.join(', ')}`;
+  }
+  if (f.muted_domains.length) return `${f.mode} · muted ${f.muted_domains.length}`;
+  return f.mode;
+}
+
+function cycleFocusDomain(focus, domainId) {
+  const next = normalizeClientFocus(focus);
+  const primary = new Set(next.primary_domains);
+  const muted = new Set(next.muted_domains);
+  if (primary.has(domainId)) {
+    primary.delete(domainId);
+    muted.add(domainId);
+  } else if (muted.has(domainId)) {
+    muted.delete(domainId);
+  } else {
+    if (primary.size >= 3) {
+      const first = [...primary][0];
+      primary.delete(first);
+    }
+    primary.add(domainId);
+    muted.delete(domainId);
+  }
+  next.primary_domains = [...primary];
+  next.muted_domains = [...muted].filter(id => !primary.has(id));
+  next.secondary_domains = (next.secondary_domains || []).filter(
+    id => !primary.has(id) && !muted.has(id),
+  );
+  next.set_by = 'user';
+  return next;
+}
+
+function seedFocusFromOnboardingIfNeeded(force = false) {
+  if (!force && ui.sessionFocus?.set_by === 'user') return;
+  const step = nextOnboardingStep(ui.onboarding);
+  if (!step) return;
+  const base = defaultSessionFocus();
+  base.set_by = 'entry_surface';
+  base.mode = 'narrow';
+  if (isGoalOnboardingStep(step)) {
+    ui.sessionFocus = { ...base, primary_domains: ['profile.goals'], muted_domains: ['research', 'portfolio.holdings'] };
+  } else if (isDebtOnboardingStep(step)) {
+    ui.sessionFocus = { ...base, primary_domains: ['profile.debt'], muted_domains: ['research'] };
+  } else if (isTaxOnboardingStep(step)) {
+    ui.sessionFocus = { ...base, primary_domains: ['profile.tax'] };
+  } else if (isInvestmentPolicyOnboardingStep(step)) {
+    ui.sessionFocus = { ...base, primary_domains: ['profile.policy'], muted_domains: ['research'] };
+  } else if (isPhysicalAssetOnboardingStep(step)) {
+    ui.sessionFocus = { ...base, primary_domains: ['profile'], muted_domains: ['research'] };
+  }
+}
+
 /* ─────────────  events  ───────────── */
 
 function attachHandlers() {
@@ -585,6 +828,7 @@ function attachHandlers() {
       ui.conversationId = null;
       ui.conversationTitle = '';
       ui.messages = [];
+      ui.sessionFocus = defaultSessionFocus();
       rerenderAll();
       return;
     }
@@ -604,7 +848,35 @@ function attachHandlers() {
     ui.conversationTitle = '';
     ui.messages = [];
     ui.error = null;
+    ui.sessionFocus = defaultSessionFocus();
     rerenderAll();
+  });
+
+  delegate(page, 'click', '[data-focus-mode]', (e, t) => {
+    e.stopPropagation();
+    const mode = t.getAttribute('data-focus-mode');
+    if (!mode) return;
+    ui.sessionFocus = {
+      ...normalizeClientFocus(ui.sessionFocus),
+      mode,
+      set_by: 'user',
+    };
+    rerenderMasthead();
+  });
+
+  delegate(page, 'click', '[data-focus-domain]', (e, t) => {
+    e.stopPropagation();
+    const domain = t.getAttribute('data-focus-domain');
+    if (!domain) return;
+    ui.sessionFocus = cycleFocusDomain(ui.sessionFocus, domain);
+    rerenderMasthead();
+  });
+
+  delegate(page, 'click', '[data-focus-reset]', (e) => {
+    e.stopPropagation();
+    ui.sessionFocus = defaultSessionFocus();
+    ui.pickerOpen = null;
+    rerenderMasthead();
   });
 
   delegate(page, 'click', '[data-suggest]', (_, t) => {
@@ -621,7 +893,9 @@ function attachHandlers() {
   });
 
   delegate(page, 'click', '[data-profile-onboarding-prompt]', () => {
-    fillDraft(onboardingPrompt(ui.onboarding));
+    const prompt = onboardingPrompt(ui.onboarding);
+    seedFocusFromOnboardingIfNeeded(true);
+    fillDraft(prompt);
   });
 
   // Outside-click closes pickers.

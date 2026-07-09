@@ -58,7 +58,19 @@ function renderContextTraceSummary(trace = {}) {
   const returnedCount = Number(retrieval.returned_count);
   const citationCount = Number(retrieval.citation_count);
   const conflictCount = Number(conflictReview.count);
+  const focusApplied = trace.focus_applied && typeof trace.focus_applied === 'object' ? trace.focus_applied : null;
+  const focusPrimary = Array.isArray(focusApplied?.primary_domains) ? focusApplied.primary_domains.filter(Boolean) : [];
+  const focusMuted = Array.isArray(focusApplied?.muted_domains) ? focusApplied.muted_domains.filter(Boolean) : [];
+  const focusLabel = focusApplied
+    ? [
+      focusApplied.mode || '',
+      focusPrimary.length ? `focus ${focusPrimary.slice(0, 2).join('+')}` : '',
+      focusMuted.length ? `muted ${focusMuted.length}` : '',
+      focusApplied.effect === 'brief_and_retrieval' ? 'focus applied' : focusApplied.effect === 'stored_only' ? 'focus stored' : '',
+    ].filter(Boolean).join(' · ')
+    : '';
   const summary = [
+    focusLabel,
     trace.plan_id ? 'plan scoped' : '',
     savedSimulations.length ? `${savedSimulations.length} saved simulation${savedSimulations.length === 1 ? '' : 's'}` : '',
     Array.isArray(trace.symbols) && trace.symbols.length ? `${trace.symbols.length} symbol${trace.symbols.length === 1 ? '' : 's'}` : '',
