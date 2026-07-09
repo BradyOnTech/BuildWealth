@@ -1752,7 +1752,7 @@ class CopilotContextScope(BaseModel):
     use_live_snapshot: bool = False
     include_research: bool = False
     include_plan_projection: bool = False
-    detail_level: Literal["light", "full"] = "full"
+    detail_level: Literal["light", "full"] = "light"
 
 
 class CopilotContextCacheLayer(BaseModel):

@@ -130,5 +130,5 @@ test('Copilot renders context-use trace from a chat response', async ({ page }) 
   await page.getByText('Tax profile needs review before decision-grade advice.').waitFor({ state: 'visible' });
 
   assert.equal(chatPayload.question, 'Should I review NVDA?');
-  assert.equal(chatPayload.context_options.detail_level, 'full');
+  assert.equal(chatPayload.context_options.detail_level, 'light');
 });

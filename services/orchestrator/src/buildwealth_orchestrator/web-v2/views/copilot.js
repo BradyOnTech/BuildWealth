@@ -239,7 +239,7 @@ async function sendMessage(question, { useLive }) {
       conversation_id: ui.conversationId,
       use_live_snapshot: !!useLive,
       plan_id: ui.planId,
-      context_options: { detail_level: 'full' },
+      context_options: { detail_level: 'light' },
     });
     ui.conversationId = res.conversation_id;
     ui.messages.push({

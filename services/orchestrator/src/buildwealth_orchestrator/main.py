@@ -12009,10 +12009,14 @@ async def tool_get_buildwealth_context(arguments: dict[str, object]) -> dict[str
     plan_id_raw = arguments.get("plan_id")
     plan_id = str(plan_id_raw).strip() if isinstance(plan_id_raw, str) else ""
     use_live_snapshot = _coerce_bool(arguments.get("use_live_snapshot"), False)
-    include_research = _coerce_bool(arguments.get("include_research"), True)
-    include_plan_projection = _coerce_bool(arguments.get("include_plan_projection"), True)
+    # Lean defaults: request only what is needed to avoid token rebound after slim Prompt Brief.
+    include_research = _coerce_bool(arguments.get("include_research"), False)
+    include_plan_projection = _coerce_bool(arguments.get("include_plan_projection"), False)
     force_refresh = _coerce_bool(arguments.get("force_refresh"), False)
-    detail_level = normalize_context_detail_level(arguments.get("detail_level"))
+    detail_level = normalize_context_detail_level(
+        arguments.get("detail_level"),
+        default="light",
+    )
 
     symbol_limit = max(
         0,
@@ -14991,7 +14995,10 @@ def configure_copilot_tools() -> None:
         description=(
             "Build a unified context package for LLM planning decisions across portfolio state, "
             "plan tracking/projections, research highlights, and open recommendations. "
-            "Includes cache metadata, warnings, and quality/freshness coverage fields for caveated decision support."
+            "Request only what you need: defaults are detail_level=light with research and plan projection off. "
+            "Set include_research / include_plan_projection / detail_level=full only when required. "
+            "Includes cache metadata, warnings, and quality/freshness coverage fields for caveated decision support. "
+            "Prefer domain-specific tools for narrow questions."
         ),
         parameters={
             "type": "object",
