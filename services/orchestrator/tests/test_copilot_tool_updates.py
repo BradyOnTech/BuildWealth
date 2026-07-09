@@ -84,6 +84,8 @@ def test_get_buildwealth_context_tool_supports_detail_level_control() -> None:
     detail_field = properties.get("detail_level")
     assert isinstance(detail_field, dict)
     assert detail_field.get("enum") == ["light", "full"]
+    assert "detail_level=light" in tool.description
+    assert "research and plan projection off" in tool.description
 
 
 def test_search_context_tool_contract() -> None:
@@ -213,6 +215,11 @@ def test_copilot_chat_uses_context_assembler_by_default(monkeypatch: pytest.Monk
     contextual_brief = copilot_calls[0]["contextual_brief"]
     assert isinstance(contextual_brief, str)
     assert '"retrieved_context"' in contextual_brief
+    assert '"brief_version"' in contextual_brief
+    assert "copilot_prompt_brief_v1" in contextual_brief
+    # Slim brief: no full assembler dump / registry telemetry in the system message.
+    assert '"assembler_version"' not in contextual_brief
+    assert '"registry"' not in contextual_brief
     assert copilot_calls[0]["context_trace"]["assembler_version"] == "context_intelligence_assembler_v1"
     assert response.context_trace["intent"]["intent"] == "profile_question"
 

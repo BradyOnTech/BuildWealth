@@ -358,6 +358,7 @@ from buildwealth_orchestrator.services.buildwealth_context import (
     shape_context_payload,
     utc_now_iso as context_utc_now_iso,
 )
+from buildwealth_orchestrator.services.copilot_prompt_brief import build_copilot_prompt_brief
 from buildwealth_orchestrator.services.context_cache import ExpiringCache
 from buildwealth_orchestrator.services.context_intelligence import (
     ContextAssembler,
@@ -1173,11 +1174,16 @@ copilot = FinancialCopilot(
         "- Be explicit about assumptions and uncertainty.\n"
         "- Do not provide legal or tax advice; provide analytical insights and scenarios.\n\n"
         "TOOL SELECTION GUIDE:\n"
-        "- For a full cross-domain briefing (portfolio + plan + research + open decisions) → call get_buildwealth_context.\n"
-        "- Default chat context includes Context Intelligence `retrieved_context`, `citations`, `conflicts`, "
-        "`context_budget`, and `trace`; use those citations when explaining what you relied on.\n"
-        "- If `conflicts` are present, explain them in plain language and avoid decision-grade advice until material "
-        "items are resolved or confirmed.\n"
+        "- For a full cross-domain briefing (portfolio + plan + research + open decisions) → call get_buildwealth_context "
+        "with only the flags you need (prefer detail_level=light; set include_research / include_plan_projection only when required).\n"
+        "- CONTEXT BRIEF: Financial Context is a slim Prompt Brief (brief_version=copilot_prompt_brief_v1), "
+        "not a full Canonical State dump. Expect: summary, quality, scope, focused_structured (partial), "
+        "retrieved_context, citations, conflicts (compact), safety_warnings, context_budget (compact), tool_guidance.\n"
+        "- Full package dumps and deep numbers: call get_buildwealth_context or domain-specific tools. "
+        "Prefer domain tools over get_buildwealth_context when the question is narrow. "
+        "Use citations when explaining what you relied on.\n"
+        "- If safety_warnings or conflicts block decision-grade advice, explain in plain language and do not "
+        "present the advice as ready to act on until resolved.\n"
         "- After calling get_buildwealth_context, inspect `quality` and `warnings` fields before making recommendations. "
         "If `quality.freshness.snapshot_stale=true` or coverage is missing sections, call that out clearly and suggest refresh actions.\n"
         "- For 'how am I doing?' or 'what is my financial situation?' → call get_financial_health first.\n"
@@ -21968,7 +21974,7 @@ async def copilot_chat(
             summary_max_chars=context_options.summary_max_chars,
             services=resolved_services if scoped_services else None,
         )
-        contextual_brief = json.dumps(assembled_context, indent=2, default=str)
+        contextual_brief = build_copilot_prompt_brief(assembled_context)
         try:
             result = await copilot.chat(
                 question=request.question,
