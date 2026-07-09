@@ -177,8 +177,22 @@ def test_copilot_chat_uses_context_assembler_by_default(monkeypatch: pytest.Monk
                 "citations": [{"context_item_id": "ctx_profile", "source_ref": "profile/financial_profile.json"}],
                 "context_budget": {"truncated": False, "returned_items": 1},
                 "conflicts": [],
-                "trace": {"assembler_version": "context_intelligence_assembler_v1", "intent": {"intent": "profile_question"}},
+                "trace": {
+                    "assembler_version": "context_intelligence_assembler_v2",
+                    "intent": {"intent": "profile_question", "confidence": "medium", "domains": ["profile", "plan"]},
+                },
                 "summary": "assembled context",
+                "effective_focus": {
+                    "mode": "balanced",
+                    "primary_domains": ["profile", "plan"],
+                    "secondary_domains": [],
+                    "muted_domains": [],
+                    "pinned_entity_ids": [],
+                    "priority_note": "",
+                    "set_by": "default",
+                    "retrieval_registry_domains": ["profile", "plan"],
+                },
+                "safety_warnings": [],
             }
 
     class FakeCopilot:
@@ -246,6 +260,7 @@ def test_copilot_chat_uses_context_assembler_by_default(monkeypatch: pytest.Monk
 
     assert assembler_calls[0]["question"] == "What tax rate is in my profile?"
     assert assembler_calls[0]["plan_id"] == "plan-1"
+    assert "focus" in assembler_calls[0]
     contextual_brief = copilot_calls[0]["contextual_brief"]
     assert isinstance(contextual_brief, str)
     assert '"retrieved_context"' in contextual_brief
@@ -255,10 +270,10 @@ def test_copilot_chat_uses_context_assembler_by_default(monkeypatch: pytest.Monk
     assert '"assembler_version"' not in contextual_brief
     assert '"registry"' not in contextual_brief
     assert copilot_calls[0]["conversation"]["id"] == "conversation-1"
-    assert copilot_calls[0]["context_trace"]["assembler_version"] == "context_intelligence_assembler_v1"
-    assert copilot_calls[0]["context_trace"]["focus_applied"]["effect"] == "stored_only"
+    assert copilot_calls[0]["context_trace"]["assembler_version"] == "context_intelligence_assembler_v2"
+    assert copilot_calls[0]["context_trace"]["focus_applied"]["effect"] == "brief_and_retrieval"
     assert response.context_trace["intent"]["intent"] == "profile_question"
-    assert response.context_trace["focus_applied"]["effect"] == "stored_only"
+    assert response.context_trace["focus_applied"]["effect"] == "brief_and_retrieval"
     assert response.focus is not None
     assert response.focus.mode == "balanced"
 
@@ -291,8 +306,26 @@ def test_copilot_chat_persists_request_focus_before_assembly(monkeypatch: pytest
                 "citations": [],
                 "context_budget": {"truncated": False, "returned_items": 0},
                 "conflicts": [],
-                "trace": {"assembler_version": "context_intelligence_assembler_v1", "intent": {"intent": "planning_question"}},
+                "trace": {
+                    "assembler_version": "context_intelligence_assembler_v2",
+                    "intent": {
+                        "intent": "planning_question",
+                        "confidence": "medium",
+                        "domains": ["plan", "profile", "recommendation", "research"],
+                    },
+                },
                 "summary": "assembled context",
+                "effective_focus": {
+                    "mode": "narrow",
+                    "primary_domains": ["plan"],
+                    "secondary_domains": [],
+                    "muted_domains": ["research"],
+                    "pinned_entity_ids": [],
+                    "priority_note": "",
+                    "set_by": "entry_surface",
+                    "retrieval_registry_domains": ["plan"],
+                },
+                "safety_warnings": [],
             }
 
     class FakeCopilot:
@@ -370,8 +403,9 @@ def test_copilot_chat_persists_request_focus_before_assembly(monkeypatch: pytest
     assert copilot_calls[0]["conversation"]["focus"]["primary_domains"] == ["plan"]
     assert response.focus is not None
     assert response.focus.primary_domains == ["plan"]
-    assert response.context_trace["focus_applied"]["effect"] == "stored_only"
+    assert response.context_trace["focus_applied"]["effect"] == "brief_and_retrieval"
     assert response.context_trace["focus_applied"]["primary_domains"] == ["plan"]
+    assert response.context_trace["focus_applied"]["retrieval_focus_boost"] is True
     assert "session_focus" in copilot_calls[0]["contextual_brief"]
 
 

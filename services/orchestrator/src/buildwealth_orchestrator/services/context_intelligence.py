@@ -17,11 +17,19 @@ from buildwealth_orchestrator.services.embedding_clients import (
     build_embedding_client_from_settings,
 )
 from buildwealth_orchestrator.services.financial_profile import profile_metadata_quality_for_field
+from buildwealth_orchestrator.services.session_focus import (
+    EffectiveFocus,
+    apply_focus_score_boost,
+    collect_muted_safety_warnings,
+    merge_focus_with_intent,
+    plan_pass_domains,
+    run_plan_id_pass,
+)
 
 
 CONTEXT_REGISTRY_SCHEMA_VERSION = 1
 MATERIALITY_POLICY_VERSION = "global_v1"
-CONTEXT_ASSEMBLER_VERSION = "context_intelligence_assembler_v1"
+CONTEXT_ASSEMBLER_VERSION = "context_intelligence_assembler_v2"
 CONTEXT_CONFLICT_REVIEW_SCHEMA_VERSION = 1
 CONTEXT_CONFLICT_RECOMMENDATION_TYPE = "context_conflict_review"
 CONTEXT_CONFLICT_RECOMMENDATION_SOURCE = "context_intelligence"
@@ -2160,6 +2168,8 @@ class ContextAssembler:
         builder_options: Mapping[str, Any] | None = None,
         max_retrieved_items: int | None = None,
         max_retrieved_text_chars: int | None = None,
+        focus: Mapping[str, Any] | None = None,
+        retrieval_focus_boost: bool = True,
     ) -> dict[str, Any]:
         started_at = utc_now_iso()
         builder_kwargs = dict(builder_options or {})
@@ -2167,6 +2177,19 @@ class ContextAssembler:
         resolved_symbols = _merge_symbol_lists(symbols, resolved_intent.get("symbols"))
         if resolved_symbols and not builder_kwargs.get("research_symbols"):
             builder_kwargs["research_symbols"] = list(resolved_symbols)
+
+        effective_focus = merge_focus_with_intent(focus, resolved_intent)
+        mode = effective_focus.mode
+        mode_item_caps = {"narrow": 8, "balanced": 12, "wide": 12}
+        mode_text_caps = {"narrow": 4000, "balanced": 6000, "wide": 6000}
+        resolved_max_items = max_retrieved_items or min(
+            self.max_retrieved_items,
+            mode_item_caps.get(mode, 12),
+        )
+        resolved_max_text = max_retrieved_text_chars or min(
+            self.max_retrieved_text_chars,
+            mode_text_caps.get(mode, 6000),
+        )
 
         structured_context = await structured_context_builder(**builder_kwargs)
         scope = structured_context.get("scope")
@@ -2178,12 +2201,18 @@ class ContextAssembler:
             intent_payload=resolved_intent,
             plan_id=resolved_plan_id,
             symbols=resolved_symbols,
-            max_items=max_retrieved_items or self.max_retrieved_items,
+            max_items=resolved_max_items,
+            effective_focus=effective_focus,
+        )
+        raw_items = apply_focus_score_boost(
+            raw_items,
+            effective_focus,
+            enabled=bool(retrieval_focus_boost),
         )
         retrieved_context, citations, context_budget = _budget_retrieved_items(
             raw_items,
-            max_items=max_retrieved_items or self.max_retrieved_items,
-            max_text_chars=max_retrieved_text_chars or self.max_retrieved_text_chars,
+            max_items=resolved_max_items,
+            max_text_chars=resolved_max_text,
         )
         conflicts = _build_assembly_conflicts(
             structured_context=structured_context,
@@ -2195,6 +2224,16 @@ class ContextAssembler:
             symbols=resolved_symbols,
             relevance_reason="copilot_answer",
         )
+        quality = structured_context.get("quality")
+        quality = quality if isinstance(quality, Mapping) else {}
+        safety_warnings = collect_muted_safety_warnings(
+            structured_context=structured_context,
+            conflicts=conflicts,
+            quality=quality,
+            effective_focus=effective_focus,
+            question=question,
+            intent=resolved_intent,
+        )
 
         trace = {
             "assembler_version": CONTEXT_ASSEMBLER_VERSION,
@@ -2203,11 +2242,15 @@ class ContextAssembler:
             "intent": resolved_intent,
             "plan_id": resolved_plan_id,
             "symbols": list(resolved_symbols),
+            "effective_focus": effective_focus.as_dict(),
             "retrieval": {
                 "candidate_count": len(raw_items),
                 "returned_count": len(retrieved_context.get("items", [])),
                 "citation_count": len(citations),
                 "truncated": bool(context_budget.get("truncated")),
+                "domains": list(effective_focus.retrieval_registry_domains),
+                "focus_boost": bool(retrieval_focus_boost),
+                "plan_id_pass": run_plan_id_pass(plan_id=resolved_plan_id, effective=effective_focus),
             },
             "conflict_review_items": {
                 "count": len(conflict_review_items),
@@ -2228,6 +2271,7 @@ class ContextAssembler:
                 for conflict in conflicts[:5]
                 if isinstance(conflict, Mapping)
             ],
+            "safety_warnings": safety_warnings,
             "registry": self.context_service.get_status(),
             "structured_context_builder": "build_buildwealth_context_payload",
         }
@@ -2239,6 +2283,8 @@ class ContextAssembler:
             "context_budget": context_budget,
             "conflicts": conflicts,
             "conflict_review_items": conflict_review_items,
+            "safety_warnings": safety_warnings,
+            "effective_focus": effective_focus.as_dict(),
             "trace": trace,
         }
 
@@ -2250,9 +2296,13 @@ class ContextAssembler:
         plan_id: str | None,
         symbols: tuple[str, ...],
         max_items: int,
+        effective_focus: EffectiveFocus | None = None,
     ) -> list[dict[str, Any]]:
-        domains = intent_payload.get("domains")
-        domains = domains if isinstance(domains, list) else None
+        if effective_focus is not None and effective_focus.retrieval_registry_domains:
+            domains: list[str] | None = list(effective_focus.retrieval_registry_domains)
+        else:
+            raw_domains = intent_payload.get("domains")
+            domains = raw_domains if isinstance(raw_domains, list) else None
         raw_results: list[dict[str, Any]] = []
 
         primary_result = self.context_service.search_context(
@@ -2264,7 +2314,18 @@ class ContextAssembler:
         )
         raw_results.extend(_result_items(primary_result))
 
-        if plan_id:
+        if effective_focus is not None and run_plan_id_pass(plan_id=plan_id, effective=effective_focus):
+            plan_domains = plan_pass_domains(effective_focus)
+            if plan_domains:
+                plan_result = self.context_service.search_context(
+                    query=question,
+                    domains=plan_domains,
+                    plan_id=plan_id,
+                    limit=max_items,
+                    rebuild_if_empty=True,
+                )
+                raw_results.extend(_result_items(plan_result))
+        elif effective_focus is None and plan_id:
             plan_result = self.context_service.search_context(
                 query=question,
                 domains=["plan", "research", "recommendation"],

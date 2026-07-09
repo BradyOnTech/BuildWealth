@@ -461,6 +461,66 @@ def _truncate_brief(brief: dict[str, Any], *, mode: str) -> dict[str, Any]:
     return working
 
 
+def _shape_focused_structured_for_effective(
+    assembled: Mapping[str, Any],
+    effective_focus: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """PR4: start from light structured slice, strip muted domain expansions."""
+    base = _focused_structured_pr1(assembled)
+    if not isinstance(effective_focus, Mapping):
+        return base
+    muted = {
+        str(item).strip().lower()
+        for item in _as_list(effective_focus.get("muted_domains"))
+        if str(item).strip()
+    }
+    financial = dict(_as_mapping(base.get("financial_picture")))
+    profile = dict(_as_mapping(financial.get("financial_profile")))
+    if "research" in muted:
+        base["research"] = {"symbols": [], "items": [], "muted": True}
+    if "recommendation" in muted:
+        decisions = dict(_as_mapping(base.get("decisions")))
+        recs = dict(_as_mapping(decisions.get("recommendations")))
+        decisions["recommendations"] = {
+            "open_count": recs.get("open_count"),
+            "high_priority_count": recs.get("high_priority_count"),
+            "items": [],
+            "muted": True,
+        }
+        base["decisions"] = decisions
+    if "plan" in muted:
+        planning = dict(_as_mapping(base.get("planning")))
+        planning["tracking"] = {"muted": True}
+        if isinstance(planning.get("active_plan"), dict):
+            planning["active_plan"] = {
+                "id": planning["active_plan"].get("id"),
+                "title": planning["active_plan"].get("title"),
+            }
+        base["planning"] = planning
+    if "portfolio" in muted or "portfolio.holdings" in muted:
+        financial["snapshot_summary"] = {
+            "as_of": _as_mapping(financial.get("snapshot_summary")).get("as_of"),
+            "muted": True,
+        }
+    if "profile" in muted:
+        financial["financial_profile"] = {"muted": True}
+    else:
+        if "profile.tax" in muted:
+            profile["tax_profile"] = {}
+        if "profile.policy" in muted:
+            profile["investment_policy"] = {}
+        if "profile.goals" in muted:
+            profile["goal_items_count"] = profile.get("goal_items_count")
+        if "profile.cashflow" in muted:
+            profile["income_items_count"] = profile.get("income_items_count")
+            profile["expense_items_count"] = profile.get("expense_items_count")
+        if "profile.debt" in muted:
+            profile["debt_items_count"] = profile.get("debt_items_count")
+        financial["financial_profile"] = profile
+    base["financial_picture"] = financial
+    return base
+
+
 def build_copilot_prompt_brief(
     assembled_context: Mapping[str, Any] | None,
     *,
@@ -501,8 +561,17 @@ def build_copilot_prompt_brief(
             "set_by": "default",
         }
 
-    safety_warnings = _collect_pr1_safety_warnings(assembled=assembled, conflicts=conflicts_raw)
-    focused_structured = _budget_focused_structured(_focused_structured_pr1(assembled))
+    assembly_warnings = _as_list(assembled.get("safety_warnings")) or _as_list(trace.get("safety_warnings"))
+    if assembly_warnings:
+        safety_warnings = [
+            dict(item) if isinstance(item, Mapping) else {"message": str(item)}
+            for item in assembly_warnings[:MAX_SAFETY_WARNINGS]
+        ]
+    else:
+        safety_warnings = _collect_pr1_safety_warnings(assembled=assembled, conflicts=conflicts_raw)
+    focused_structured = _budget_focused_structured(
+        _shape_focused_structured_for_effective(assembled, effective_focus or focus)
+    )
 
     brief: dict[str, Any] = {
         "brief_version": BRIEF_VERSION,

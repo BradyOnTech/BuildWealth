@@ -127,6 +127,10 @@ class Settings(BaseSettings):
         default=120.0,
         alias="COPILOT_CONTEXT_PROJECTION_CACHE_TTL_SECONDS",
     )
+    copilot_retrieval_focus_boost: bool = Field(
+        default=True,
+        alias="COPILOT_RETRIEVAL_FOCUS_BOOST",
+    )
     copilot_context_snapshot_stale_after_seconds: float = Field(
         default=86400.0,
         alias="COPILOT_CONTEXT_SNAPSHOT_STALE_AFTER_SECONDS",

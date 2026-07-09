@@ -8,6 +8,7 @@ PR4+: merge_focus_with_intent shaping and retrieval boost.
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from buildwealth_orchestrator.services.copilot_runtime import utc_now_iso
@@ -78,19 +79,39 @@ def default_session_focus() -> dict[str, Any]:
     }
 
 
-def covers_focus_domain(parent: str, child: str) -> bool:
-    """True if parent focus domain covers child (exact or parent.prefix)."""
-    p = str(parent or "").strip().lower()
-    c = str(child or "").strip().lower()
-    if not p or not c:
+def covers_focus_domain(holder: str, candidate: str) -> bool:
+    """True if holder already covers candidate for list-dedup purposes.
+
+    Parent covers children and children cover bare parent (profile.goals covers profile)
+    so intent top-level domains can be treated as redundant with focused children.
+    """
+    h = str(holder or "").strip().lower()
+    c = str(candidate or "").strip().lower()
+    if not h or not c:
         return False
-    if p == c:
+    if h == c:
         return True
-    return c.startswith(f"{p}.")
+    if c.startswith(f"{h}."):
+        return True
+    if h.startswith(f"{c}."):
+        return True
+    return False
 
 
 def list_covers(domains: Sequence[str], target: str) -> bool:
     return any(covers_focus_domain(domain, target) for domain in domains)
+
+
+def is_domain_muted(muted: Sequence[str], domain: str) -> bool:
+    """Mute is one-directional for expansion: muting profile mutes profile.*; muting profile.tax does not mute profile.goals."""
+    d = lowered_domain(domain)
+    for m in muted:
+        m_norm = lowered_domain(m)
+        if not m_norm:
+            continue
+        if m_norm == d or d.startswith(f"{m_norm}."):
+            return True
+    return False
 
 
 def focus_domains_to_registry_domains(focus_domains: Sequence[str]) -> list[str]:
@@ -211,13 +232,9 @@ def _apply_user_list_conflicts(
     ]
     secondary_out: list[str] = []
     for domain in secondary:
-        if list_covers(muted_out, domain) or any(
-            covers_focus_domain(m, domain) or covers_focus_domain(domain, m) for m in muted_out
-        ):
+        if is_domain_muted(muted_out, domain):
             continue
-        if list_covers(primary_out, domain) or any(
-            covers_focus_domain(p, domain) or covers_focus_domain(domain, p) for p in primary_out
-        ):
+        if list_covers(primary_out, domain):
             continue
         secondary_out.append(domain)
     return primary_out[:MAX_PRIMARY], secondary_out[:MAX_SECONDARY], muted_out[:MAX_MUTED]
@@ -400,3 +417,435 @@ def public_focus(focus: Mapping[str, Any] | None) -> dict[str, Any]:
     normalized = normalize_focus(focus, strict=False)
     normalized.pop("_dropped_domains", None)
     return normalized
+
+
+def pinned_focus_domains(pinned_entity_ids: Sequence[str]) -> set[str]:
+    """Map pin ids like 'recommendation:rec-1' to catalog domains."""
+    out: set[str] = set()
+    for raw in pinned_entity_ids:
+        domain = pin_prefix_to_focus_domain(str(raw))
+        if domain:
+            out.add(domain)
+    return out
+
+
+def _unique_preserve(items: Sequence[str]) -> list[str]:
+    return _dedupe_preserve([str(item) for item in items if str(item or "").strip()])
+
+
+@dataclass(frozen=True)
+class EffectiveFocus:
+    mode: str
+    primary_domains: tuple[str, ...]
+    secondary_domains: tuple[str, ...]
+    muted_domains: tuple[str, ...]
+    pinned_entity_ids: tuple[str, ...]
+    priority_note: str
+    set_by: str
+    retrieval_registry_domains: tuple[str, ...]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "mode": self.mode,
+            "primary_domains": list(self.primary_domains),
+            "secondary_domains": list(self.secondary_domains),
+            "muted_domains": list(self.muted_domains),
+            "pinned_entity_ids": list(self.pinned_entity_ids),
+            "priority_note": self.priority_note,
+            "set_by": self.set_by,
+            "retrieval_registry_domains": list(self.retrieval_registry_domains),
+        }
+
+
+FOCUS_SCORE_MULTIPLIER = {
+    "primary": 1.25,
+    "secondary": 1.10,
+    "muted": 0.55,
+    "pinned": 1.35,
+    "none": 1.0,
+}
+
+
+def merge_focus_with_intent(
+    focus: Mapping[str, Any] | None,
+    intent: Mapping[str, Any] | None,
+) -> EffectiveFocus:
+    """Merge stored/request Session Focus with turn intent into EffectiveFocus."""
+    normalized = normalize_focus(focus, strict=False)
+    intent_payload = dict(intent) if isinstance(intent, Mapping) else {}
+    intent_domains = [
+        lowered_domain(str(item))
+        for item in (intent_payload.get("domains") or [])
+        if lowered_domain(str(item)) in {"profile", "plan", "recommendation", "research", "portfolio"}
+        or lowered_domain(str(item)) in FOCUS_DOMAIN_CATALOG
+    ]
+    # Intent domains are top-level; keep only known top-level ids.
+    intent_domains = [
+        d
+        for d in _unique_preserve(intent_domains)
+        if d in {"profile", "plan", "recommendation", "research", "portfolio"}
+        or d in FOCUS_DOMAIN_CATALOG
+    ]
+    confidence = str(intent_payload.get("confidence") or "low").strip().lower()
+    n = 1 if confidence == "high" else 2
+    mode = str(normalized.get("mode") or "balanced")
+    if mode not in FOCUS_MODES:
+        mode = "balanced"
+
+    user_primary = list(normalized.get("primary_domains") or [])
+    user_secondary = list(normalized.get("secondary_domains") or [])
+    user_muted = list(normalized.get("muted_domains") or [])
+    primary_from_user = len(user_primary) > 0
+    pin_domains = pinned_focus_domains(list(normalized.get("pinned_entity_ids") or []))
+
+    if primary_from_user:
+        primary = user_primary[:MAX_PRIMARY]
+    else:
+        primary = intent_domains[:n]
+
+    if user_secondary:
+        secondary = [d for d in user_secondary if not list_covers(primary, d)][:MAX_SECONDARY]
+    elif mode == "narrow" and primary_from_user:
+        secondary = []
+    else:
+        secondary = [d for d in intent_domains if not list_covers(primary, d)][:MAX_SECONDARY]
+
+    muted = list(user_muted)
+
+    if primary_from_user:
+        muted = [
+            m
+            for m in muted
+            if not list_covers(primary, m)
+            and not any(covers_focus_domain(m, p) for p in primary)
+        ]
+    else:
+        primary = [d for d in primary if not is_domain_muted(muted, d)]
+        if not primary:
+            primary = [d for d in intent_domains if not is_domain_muted(muted, d)][:n]
+
+    secondary = [
+        d
+        for d in secondary
+        if not list_covers(primary, d) and not is_domain_muted(muted, d)
+    ][:MAX_SECONDARY]
+
+    if mode == "narrow":
+        allowed = set(primary) | set(secondary) | set(pin_domains)
+        for domain in sorted(FOCUS_DOMAIN_CATALOG):
+            if is_domain_muted(muted, domain):
+                continue
+            if any(covers_focus_domain(a, domain) for a in allowed):
+                continue
+            muted.append(domain)
+
+    primary = _unique_preserve(primary)[:MAX_PRIMARY]
+    secondary = _unique_preserve(secondary)[:MAX_SECONDARY]
+    muted = _unique_preserve(muted)
+
+    retrieval = focus_domains_to_registry_domains(list(primary) + list(secondary) + sorted(pin_domains))
+    return EffectiveFocus(
+        mode=mode,
+        primary_domains=tuple(primary),
+        secondary_domains=tuple(secondary),
+        muted_domains=tuple(muted),
+        pinned_entity_ids=tuple(normalized.get("pinned_entity_ids") or ()),
+        priority_note=str(normalized.get("priority_note") or ""),
+        set_by=str(normalized.get("set_by") or "default"),
+        retrieval_registry_domains=tuple(retrieval),
+    )
+
+
+def plan_in_focus(effective: EffectiveFocus) -> bool:
+    ids = list(effective.primary_domains) + list(effective.secondary_domains)
+    return list_covers(ids, "plan")
+
+
+def run_plan_id_pass(*, plan_id: str | None, effective: EffectiveFocus) -> bool:
+    if not plan_id:
+        return False
+    if effective.mode != "narrow":
+        return True
+    return plan_in_focus(effective)
+
+
+def plan_pass_domains(effective: EffectiveFocus) -> list[str]:
+    domains = ["plan", "research", "recommendation"]
+    return [d for d in domains if not is_domain_muted(effective.muted_domains, d)]
+
+
+def _registry_domain_to_focus_candidates(registry_domain: str) -> list[str]:
+    domain = lowered_domain(registry_domain)
+    if domain == "profile":
+        return ["profile", "profile.goals", "profile.cashflow", "profile.debt", "profile.tax", "profile.policy"]
+    if domain == "portfolio":
+        return ["portfolio", "portfolio.holdings"]
+    if domain in FOCUS_DOMAIN_CATALOG:
+        return [domain]
+    return [domain] if domain else []
+
+
+def focus_tier_for_item(
+    item: Mapping[str, Any],
+    effective: EffectiveFocus,
+) -> str:
+    """Return primary|secondary|muted|pinned|none for a retrieved context item."""
+    item_id = str(item.get("id") or item.get("entity_id") or "").strip().lower()
+    entity_id = str(item.get("entity_id") or "").strip().lower()
+    source_ref = str(item.get("source_ref") or "").strip().lower()
+    for pin in effective.pinned_entity_ids:
+        pin_text = str(pin or "").strip().lower()
+        if not pin_text:
+            continue
+        pin_body = pin_text.split(":", 1)[-1] if ":" in pin_text else pin_text
+        if pin_text in item_id or pin_body and (
+            pin_body == entity_id or pin_body in source_ref or pin_body in item_id
+        ):
+            return "pinned"
+
+    registry_domain = lowered_domain(str(item.get("domain") or ""))
+    candidates = _registry_domain_to_focus_candidates(registry_domain)
+    # Prefer most specific tier among candidates.
+    for candidate in candidates:
+        if any(covers_focus_domain(p, candidate) or covers_focus_domain(candidate, p) for p in effective.primary_domains):
+            return "primary"
+    for candidate in candidates:
+        if any(covers_focus_domain(s, candidate) or covers_focus_domain(candidate, s) for s in effective.secondary_domains):
+            return "secondary"
+    for candidate in candidates:
+        if is_domain_muted(effective.muted_domains, candidate):
+            return "muted"
+    return "none"
+
+
+def apply_focus_score_boost(
+    items: Sequence[Mapping[str, Any]],
+    effective: EffectiveFocus,
+    *,
+    enabled: bool = True,
+) -> list[dict[str, Any]]:
+    boosted: list[dict[str, Any]] = []
+    for raw in items:
+        item = dict(raw)
+        tier = focus_tier_for_item(item, effective)
+        pre = float(item.get("score") or 0.0)
+        mult = FOCUS_SCORE_MULTIPLIER.get(tier, 1.0) if enabled else 1.0
+        item["score"] = round(min(1.0, pre * mult), 4)
+        breakdown = dict(item.get("score_breakdown") or {})
+        breakdown["focus"] = mult
+        breakdown["pre_focus_score"] = pre
+        breakdown["focus_tier"] = tier
+        item["score_breakdown"] = breakdown
+        boosted.append(item)
+    boosted.sort(
+        key=lambda row: (
+            float(row.get("score") or 0.0),
+            str(row.get("updated_at") or ""),
+        ),
+        reverse=True,
+    )
+    return boosted
+
+
+_ACTION_ADVICE_TERMS = (
+    "should i",
+    "what should",
+    "next action",
+    "recommendation",
+    "apply",
+    "reject",
+)
+
+
+def wants_action_advice(question: str, *, intent: Mapping[str, Any] | None = None) -> bool:
+    if isinstance(intent, Mapping) and str(intent.get("intent") or "") == "recommendation_review":
+        return True
+    lowered = str(question or "").strip().lower()
+    return any(term in lowered for term in _ACTION_ADVICE_TERMS)
+
+
+def collect_muted_safety_warnings(
+    *,
+    structured_context: Mapping[str, Any],
+    conflicts: Sequence[Mapping[str, Any]],
+    quality: Mapping[str, Any] | None,
+    effective_focus: EffectiveFocus,
+    question: str,
+    intent: Mapping[str, Any] | None = None,
+    muted_registry_candidates: Sequence[Mapping[str, Any]] = (),
+) -> list[dict[str, Any]]:
+    warnings: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def _add(
+        *,
+        domain: str,
+        materiality: str,
+        message: str,
+        blocks: bool,
+        source: str,
+        action_readiness: str = "",
+    ) -> None:
+        text = str(message or "").strip()
+        if not text:
+            return
+        key = text.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        readiness = action_readiness or (
+            "Needs attention before acting"
+            if materiality == "critical"
+            else "Review before relying on this"
+            if materiality == "high"
+            else "Worth reviewing"
+        )
+        warnings.append(
+            {
+                "domain": domain,
+                "materiality": materiality,
+                "action_readiness": readiness,
+                "message": text[:220],
+                "blocks_decision_grade_advice": bool(blocks),
+                "source": source,
+            }
+        )
+
+    for conflict in conflicts:
+        if not isinstance(conflict, Mapping):
+            continue
+        message = (
+            conflict.get("plain_language")
+            or conflict.get("detail")
+            or conflict.get("title")
+            or conflict.get("message")
+        )
+        severity = str(conflict.get("severity") or "medium").lower()
+        blocks = bool(conflict.get("blocks_decision_grade_advice"))
+        if blocks or severity in {"high", "critical"}:
+            _add(
+                domain="conflict",
+                materiality="critical" if severity == "critical" or blocks else "high",
+                message=str(message or ""),
+                blocks=blocks,
+                source="conflict",
+            )
+
+    quality_payload = quality if isinstance(quality, Mapping) else {}
+    freshness = quality_payload.get("freshness")
+    freshness = freshness if isinstance(freshness, Mapping) else {}
+    if freshness.get("snapshot_stale") is True:
+        _add(
+            domain="portfolio",
+            materiality="high",
+            message="Portfolio snapshot is stale; run sync or use live snapshot before relying on balances.",
+            blocks=False,
+            source="quality",
+        )
+
+    decisions = structured_context.get("decisions") if isinstance(structured_context, Mapping) else {}
+    decisions = decisions if isinstance(decisions, Mapping) else {}
+    recommendations = decisions.get("recommendations")
+    recommendations = recommendations if isinstance(recommendations, Mapping) else {}
+    try:
+        high_count = int(recommendations.get("high_priority_count") or 0)
+    except (TypeError, ValueError):
+        high_count = 0
+    if (
+        high_count > 0
+        and wants_action_advice(question, intent=intent)
+        and is_domain_muted(effective_focus.muted_domains, "recommendation")
+    ):
+        _add(
+            domain="recommendation",
+            materiality="high",
+            message=(
+                f"{high_count} high-priority inbox items exist; "
+                "unmute Inbox focus or call list_recommendations."
+            ),
+            blocks=False,
+            source="structured_signal",
+        )
+
+    financial = structured_context.get("financial_picture") if isinstance(structured_context, Mapping) else {}
+    financial = financial if isinstance(financial, Mapping) else {}
+    profile = financial.get("financial_profile")
+    profile = profile if isinstance(profile, Mapping) else {}
+    tax_profile = profile.get("tax_profile")
+    tax_profile = tax_profile if isinstance(tax_profile, Mapping) else {}
+    intent_name = str((intent or {}).get("intent") or "") if isinstance(intent, Mapping) else ""
+    tax_intent = intent_name in {"planning_question", "profile_question"} or any(
+        term in str(question or "").lower() for term in ("tax", "contribution", "roth", "401")
+    )
+    tax_missing = not tax_profile or (
+        tax_profile.get("marginal_tax_rate") in (None, "", 0, 0.0)
+        and not tax_profile.get("filing_status")
+    )
+    if tax_intent and tax_missing:
+        _add(
+            domain="profile.tax",
+            materiality="high",
+            message="Tax profile needs review before decision-grade tax or contribution advice.",
+            blocks=True,
+            source="structured_signal",
+        )
+
+    for candidate in muted_registry_candidates:
+        if not isinstance(candidate, Mapping):
+            continue
+        materiality = str(candidate.get("materiality") or "").lower()
+        if materiality not in {"high", "critical"}:
+            continue
+        domain = str(candidate.get("domain") or "muted")
+        text = str(candidate.get("text") or candidate.get("message") or "").strip()
+        if not text:
+            continue
+        sentence = text.split(".")[0].strip()
+        _add(
+            domain=domain if domain in FOCUS_DOMAIN_CATALOG else domain,
+            materiality=materiality,
+            message=sentence[:220],
+            blocks=materiality == "critical",
+            source="muted_registry_postfilter",
+        )
+
+    return warnings[:5]
+
+
+def focus_applied_brief_and_retrieval(
+    *,
+    effective: EffectiveFocus,
+    brief_chars: int,
+    brief_truncated: bool,
+    safety_warnings: Sequence[Mapping[str, Any]],
+    package_sections_included: Sequence[str],
+    package_sections_omitted: Sequence[str],
+    retrieval_focus_boost: bool,
+    detail_level: str = "light",
+) -> dict[str, Any]:
+    muted_safety = [
+        str(item.get("domain") or "")
+        for item in safety_warnings
+        if isinstance(item, Mapping) and item.get("domain")
+    ]
+    return {
+        "effect": "brief_and_retrieval",
+        "mode": effective.mode,
+        "primary_domains": list(effective.primary_domains),
+        "secondary_domains": list(effective.secondary_domains),
+        "muted_domains": list(effective.muted_domains),
+        "pinned_entity_ids": list(effective.pinned_entity_ids),
+        "priority_note": effective.priority_note,
+        "set_by": effective.set_by,
+        "effective_domains_for_retrieval": list(effective.retrieval_registry_domains),
+        "detail_level": detail_level,
+        "brief_version": "copilot_prompt_brief_v1",
+        "brief_chars": brief_chars,
+        "brief_truncated": brief_truncated,
+        "safety_warnings_count": len(safety_warnings),
+        "muted_safety_surfaced": muted_safety[:8],
+        "package_sections_included": list(package_sections_included),
+        "package_sections_omitted": list(package_sections_omitted),
+        "retrieval_focus_boost": bool(retrieval_focus_boost),
+        "score_formula": "min(1.0, pre_boost * focus_multiplier)",
+    }

@@ -363,10 +363,12 @@ from buildwealth_orchestrator.services.buildwealth_context import (
 from buildwealth_orchestrator.services.copilot_prompt_brief import build_copilot_prompt_brief
 from buildwealth_orchestrator.services.session_focus import (
     FOCUS_DOMAIN_CATALOG,
+    EffectiveFocus,
     SessionFocusValidationError,
-    focus_applied_stored_only,
+    focus_applied_brief_and_retrieval,
     focus_equal,
     merge_focus_patch,
+    merge_focus_with_intent,
     public_focus,
     resolve_turn_focus,
 )
@@ -11892,6 +11894,8 @@ async def assemble_copilot_context_payload(
     research_symbol_limit: int = DEFAULT_RESEARCH_SYMBOL_LIMIT,
     summary_max_chars: int = 1800,
     detail_level: str = "light",
+    focus: dict[str, Any] | None = None,
+    retrieval_focus_boost: bool | None = None,
     services: WorkspaceServices | None = None,
 ) -> dict[str, Any]:
     resolved_services = workspace_services_or_legacy(services)
@@ -11905,6 +11909,11 @@ async def assemble_copilot_context_payload(
         )
         if isinstance(services, WorkspaceServices)
         else context_assembler
+    )
+    boost_enabled = (
+        bool(retrieval_focus_boost)
+        if retrieval_focus_boost is not None
+        else bool(getattr(settings, "copilot_retrieval_focus_boost", True))
     )
     assembled = await resolved_assembler.assemble_context(
         question=question,
@@ -11927,8 +11936,23 @@ async def assemble_copilot_context_payload(
             "detail_level": detail_level,
             "services": resolved_services,
         },
+        focus=focus,
+        retrieval_focus_boost=boost_enabled,
     )
-    return CopilotContextResponse(**assembled).model_dump(mode="json")
+    # Assembler v2 may include fields beyond the response model; keep extras for brief/trace.
+    try:
+        validated = CopilotContextResponse(**assembled).model_dump(mode="json")
+    except Exception:
+        validated = {key: value for key, value in assembled.items() if key != "trace"}
+        if isinstance(assembled.get("trace"), dict):
+            validated["trace"] = assembled["trace"]
+    # Preserve assembler-only focus fields.
+    for key in ("effective_focus", "safety_warnings"):
+        if key in assembled and key not in validated:
+            validated[key] = assembled[key]
+    if isinstance(assembled.get("trace"), dict):
+        validated["trace"] = assembled["trace"]
+    return validated
 
 
 async def resolve_snapshots_for_workflow(
@@ -22040,6 +22064,7 @@ async def copilot_chat(
             conversation = store.update_focus(conversation["id"], resolved_focus_public)
             conversation["focus"] = resolved_focus_public
 
+        boost_enabled = bool(getattr(settings, "copilot_retrieval_focus_boost", True))
         assembled_context = await assemble_copilot_context_payload(
             question=request.question,
             use_live_snapshot=request.use_live_snapshot,
@@ -22053,19 +22078,65 @@ async def copilot_chat(
             research_interval=context_options.research_interval,
             research_symbol_limit=context_options.research_symbol_limit,
             summary_max_chars=context_options.summary_max_chars,
+            focus=resolved_focus_public,
+            retrieval_focus_boost=boost_enabled,
             services=resolved_services if scoped_services else None,
         )
+        intent_for_focus = None
+        if isinstance(assembled_context, dict):
+            trace_for_intent = assembled_context.get("trace")
+            if isinstance(trace_for_intent, dict) and isinstance(trace_for_intent.get("intent"), dict):
+                intent_for_focus = trace_for_intent.get("intent")
+        effective_from_assembly = (
+            assembled_context.get("effective_focus")
+            if isinstance(assembled_context, dict)
+            else None
+        )
+        if isinstance(effective_from_assembly, dict):
+            effective_obj = EffectiveFocus(
+                mode=str(effective_from_assembly.get("mode") or "balanced"),
+                primary_domains=tuple(effective_from_assembly.get("primary_domains") or ()),
+                secondary_domains=tuple(effective_from_assembly.get("secondary_domains") or ()),
+                muted_domains=tuple(effective_from_assembly.get("muted_domains") or ()),
+                pinned_entity_ids=tuple(effective_from_assembly.get("pinned_entity_ids") or ()),
+                priority_note=str(effective_from_assembly.get("priority_note") or ""),
+                set_by=str(effective_from_assembly.get("set_by") or "default"),
+                retrieval_registry_domains=tuple(
+                    effective_from_assembly.get("retrieval_registry_domains") or ()
+                ),
+            )
+        else:
+            effective_obj = merge_focus_with_intent(resolved_focus_public, intent_for_focus)
+            effective_from_assembly = effective_obj.as_dict()
         contextual_brief = build_copilot_prompt_brief(
             assembled_context,
             focus=resolved_focus_public,
+            effective_focus=effective_from_assembly,
         )
         context_trace = (
             dict(assembled_context.get("trace"))
             if isinstance(assembled_context, dict) and isinstance(assembled_context.get("trace"), dict)
             else {}
         )
-        # PR3: focus is stored/resolved only; shaping lands in PR4.
-        context_trace["focus_applied"] = focus_applied_stored_only(resolved_focus_public)
+        safety_warnings = (
+            assembled_context.get("safety_warnings")
+            if isinstance(assembled_context, dict)
+            else []
+        )
+        if not isinstance(safety_warnings, list):
+            safety_warnings = context_trace.get("safety_warnings") or []
+        context_trace["focus_applied"] = focus_applied_brief_and_retrieval(
+            effective=effective_obj,
+            brief_chars=len(contextual_brief),
+            brief_truncated='"brief_truncated":true' in contextual_brief
+            or '"brief_truncated": true' in contextual_brief,
+            safety_warnings=safety_warnings if isinstance(safety_warnings, list) else [],
+            package_sections_included=list(effective_obj.primary_domains)
+            + list(effective_obj.secondary_domains),
+            package_sections_omitted=list(effective_obj.muted_domains),
+            retrieval_focus_boost=boost_enabled,
+            detail_level=context_options.detail_level,
+        )
         try:
             result = await copilot.chat(
                 question=request.question,
@@ -22080,7 +22151,17 @@ async def copilot_chat(
                 message_index=None,
             )
             context_trace = result.get("context_trace") if isinstance(result.get("context_trace"), dict) else {}
-            context_trace["focus_applied"] = focus_applied_stored_only(resolved_focus_public)
+            context_trace["focus_applied"] = focus_applied_brief_and_retrieval(
+                effective=effective_obj,
+                brief_chars=len(contextual_brief),
+                brief_truncated='"brief_truncated":true' in contextual_brief,
+                safety_warnings=safety_warnings if isinstance(safety_warnings, list) else [],
+                package_sections_included=list(effective_obj.primary_domains)
+                + list(effective_obj.secondary_domains),
+                package_sections_omitted=list(effective_obj.muted_domains),
+                retrieval_focus_boost=boost_enabled,
+                detail_level=context_options.detail_level,
+            )
             context_trace["captured_context_candidates"] = [
                 {
                     "id": candidate.get("id"),

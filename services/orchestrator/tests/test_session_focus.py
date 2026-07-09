@@ -10,12 +10,17 @@ import pytest
 from buildwealth_orchestrator.services.copilot_runtime import ConversationStore, FinancialCopilot
 from buildwealth_orchestrator.services.session_focus import (
     SessionFocusValidationError,
+    covers_focus_domain,
     focus_applied_stored_only,
     focus_equal,
+    list_covers,
     merge_focus_patch,
+    merge_focus_with_intent,
     normalize_focus,
+    pinned_focus_domains,
     public_focus,
     resolve_turn_focus,
+    run_plan_id_pass,
 )
 
 
@@ -165,6 +170,148 @@ def test_conversation_store_persists_focus(tmp_path: Path) -> None:
     loaded = store.get(conversation["id"])
     assert loaded["focus"]["primary_domains"] == ["profile.goals"]
     assert updated["focus"]["muted_domains"] == ["research"]
+
+
+def test_covers_and_list_covers_parent_child() -> None:
+    assert covers_focus_domain("profile", "profile.goals")
+    assert covers_focus_domain("profile.goals", "profile")
+    assert not covers_focus_domain("profile.goals", "profile.tax")
+    assert list_covers(["profile.goals"], "profile")
+    assert list_covers(["profile"], "profile.goals")
+
+
+def test_pinned_focus_domains_map() -> None:
+    assert pinned_focus_domains(["recommendation:rec-1", "goal:house", "symbol:AAPL"]) == {
+        "recommendation",
+        "profile.goals",
+        "research",
+    }
+    assert pinned_focus_domains(["nope", "weird"]) == set()
+
+
+def test_merge_focus_with_intent_golden_examples() -> None:
+    planning_medium = {
+        "intent": "planning_question",
+        "confidence": "medium",
+        "domains": ["plan", "profile", "recommendation", "research"],
+    }
+    investment_high = {
+        "intent": "investment_fit",
+        "confidence": "high",
+        "domains": ["research", "plan", "profile", "recommendation"],
+    }
+    investment_medium = {
+        "intent": "investment_fit",
+        "confidence": "medium",
+        "domains": ["research", "plan", "profile", "recommendation"],
+    }
+    general_medium = {
+        "intent": "general",
+        "confidence": "medium",
+        "domains": ["profile", "plan", "recommendation", "research"],
+    }
+
+    # Example 1
+    e1 = merge_focus_with_intent(None, planning_medium)
+    assert list(e1.primary_domains) == ["plan", "profile"]
+    assert list(e1.secondary_domains) == ["recommendation", "research"]
+    assert list(e1.muted_domains) == []
+    assert list(e1.retrieval_registry_domains) == ["plan", "profile", "recommendation", "research"]
+
+    # Example 2
+    e2 = merge_focus_with_intent(
+        {
+            "mode": "balanced",
+            "primary_domains": ["profile.goals"],
+            "muted_domains": ["research"],
+            "secondary_domains": [],
+        },
+        planning_medium,
+    )
+    assert list(e2.primary_domains) == ["profile.goals"]
+    assert list(e2.secondary_domains) == ["plan", "recommendation"]
+    assert list(e2.muted_domains) == ["research"]
+    assert list(e2.retrieval_registry_domains) == ["profile", "plan", "recommendation"]
+
+    # Example 3a
+    e3a = merge_focus_with_intent({"muted_domains": ["research"]}, investment_high)
+    assert list(e3a.primary_domains) == ["plan"]
+    assert "research" in e3a.muted_domains
+    assert "research" not in e3a.retrieval_registry_domains
+
+    # Example 3b
+    e3b = merge_focus_with_intent({"muted_domains": ["research"]}, investment_medium)
+    assert list(e3b.primary_domains) == ["plan"]
+    assert "research" in e3b.muted_domains
+
+    # Example 3c
+    e3c = merge_focus_with_intent(
+        {"primary_domains": ["research"], "muted_domains": ["research"]},
+        investment_high,
+    )
+    assert list(e3c.primary_domains) == ["research"]
+    assert list(e3c.muted_domains) == []
+    assert "research" in e3c.retrieval_registry_domains
+
+    # Example 4
+    e4 = merge_focus_with_intent(
+        {"mode": "narrow", "primary_domains": ["plan"], "secondary_domains": []},
+        general_medium,
+    )
+    assert list(e4.primary_domains) == ["plan"]
+    assert list(e4.secondary_domains) == []
+    assert "research" in e4.muted_domains
+    assert "profile" in e4.muted_domains
+    assert list(e4.retrieval_registry_domains) == ["plan"]
+
+    # Example 4b
+    e4b = merge_focus_with_intent(
+        {
+            "mode": "narrow",
+            "primary_domains": ["plan"],
+            "secondary_domains": [],
+            "pinned_entity_ids": ["recommendation:rec-1"],
+        },
+        general_medium,
+    )
+    assert list(e4b.primary_domains) == ["plan"]
+    assert list(e4b.secondary_domains) == []
+    assert "recommendation" not in e4b.muted_domains or list_covers(["plan", "recommendation"], "recommendation")
+    assert "recommendation" in e4b.retrieval_registry_domains
+    assert "plan" in e4b.retrieval_registry_domains
+
+    # Example 5
+    e5 = merge_focus_with_intent(
+        {"mode": "wide", "muted_domains": ["portfolio.holdings"]},
+        planning_medium,
+    )
+    assert list(e5.primary_domains) == ["plan", "profile"]
+    assert list(e5.muted_domains) == ["portfolio.holdings"]
+
+    # Example 6
+    e6 = merge_focus_with_intent(
+        {"mode": "balanced", "primary_domains": ["portfolio"], "secondary_domains": []},
+        planning_medium,
+    )
+    assert list(e6.primary_domains) == ["portfolio"]
+    assert "plan" in e6.secondary_domains
+    assert "portfolio" in e6.retrieval_registry_domains
+
+
+def test_run_plan_id_pass_rules() -> None:
+    narrow_plan = merge_focus_with_intent(
+        {"mode": "narrow", "primary_domains": ["plan"]},
+        {"domains": ["profile", "plan"], "confidence": "medium"},
+    )
+    narrow_goals = merge_focus_with_intent(
+        {"mode": "narrow", "primary_domains": ["profile.goals"]},
+        {"domains": ["profile", "plan"], "confidence": "medium"},
+    )
+    balanced = merge_focus_with_intent(None, {"domains": ["plan", "profile"], "confidence": "medium"})
+    assert run_plan_id_pass(plan_id="plan-1", effective=narrow_plan) is True
+    assert run_plan_id_pass(plan_id="plan-1", effective=narrow_goals) is False
+    assert run_plan_id_pass(plan_id="plan-1", effective=balanced) is True
+    assert run_plan_id_pass(plan_id=None, effective=balanced) is False
 
 
 def test_copilot_chat_accepts_preloaded_conversation(tmp_path: Path) -> None:
