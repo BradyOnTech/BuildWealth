@@ -116,8 +116,8 @@ test('Copilot renders context-use trace from a chat response', async ({ page }) 
   });
 
   await page.goto('http://buildwealth-v2.test/#copilot');
-  await page.getByPlaceholder(/Ask anything/).fill('Should I review NVDA?');
-  await page.getByRole('button', { name: /Ask Copilot/ }).click();
+  await page.getByPlaceholder(/Message Copilot/).fill('Should I review NVDA?');
+  await page.getByRole('button', { name: /^Send$/ }).click();
 
   await page.getByText('I checked the current context before answering.').waitFor({ state: 'visible' });
   await page.getByText(/plan scoped · 1 symbol · 5 retrieved · 2 citations · 1 capture · 1 context issue/).waitFor({ state: 'visible' });

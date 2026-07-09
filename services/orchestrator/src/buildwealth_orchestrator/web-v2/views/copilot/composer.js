@@ -6,28 +6,28 @@ import { html } from '../../lib/dom.js';
 export function renderComposer({ busy = false, draft = '', useLive = false } = {}) {
   return html`
     <form class="composer" id="composer" autocomplete="off">
-      <div class="composer-card">
-        <textarea
-          class="composer-textarea"
-          id="composer-textarea"
-          name="question"
-          placeholder="Ask anything — what should I do this week, am I on track, what about a $450k house…"
-          rows="1"
-          ${busy ? 'disabled' : ''}>${draft}</textarea>
-        <div class="composer-row">
-          <span class="composer-hint">
-            <kbd>${isMac() ? '⌘' : 'Ctrl'}</kbd><kbd>↵</kbd> to send · <kbd>↵</kbd> for line break
-          </span>
-          <div class="composer-options">
-            <label class="composer-option">
-              <input type="checkbox" id="composer-live" ${useLive ? 'checked' : ''} />
-              live snapshot
-            </label>
-            <div class="composer-actions">
-              <button type="submit" class="action-link" id="composer-submit" ${busy ? 'disabled' : ''}>
-                ${busy ? 'Listening…' : 'Ask Copilot'} <span class="arrow">›</span>
-              </button>
+      <div class="composer-inner">
+        <div class="composer-card">
+          <textarea
+            class="composer-textarea"
+            id="composer-textarea"
+            name="question"
+            placeholder="Message Copilot…"
+            rows="1"
+            ${busy ? 'disabled' : ''}>${draft}</textarea>
+          <div class="composer-row">
+            <div class="composer-options">
+              <label class="composer-option" title="Use a live portfolio snapshot">
+                <input type="checkbox" id="composer-live" ${useLive ? 'checked' : ''} />
+                Live
+              </label>
+              <span class="composer-hint">
+                <kbd>${isMac() ? '⌘' : 'Ctrl'}</kbd><kbd>↵</kbd>
+              </span>
             </div>
+            <button type="submit" class="composer-send" id="composer-submit" ${busy ? 'disabled' : ''} title="Send">
+              ${busy ? '…' : 'Send'}
+            </button>
           </div>
         </div>
       </div>

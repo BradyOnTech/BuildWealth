@@ -234,9 +234,9 @@ export function template() {
   return html`
     <section class="page" id="copilot-page">
       <div class="copilot-shell" id="copilot-shell">
-        <div id="copilot-masthead"></div>
-        <div id="copilot-body"></div>
-        <div id="copilot-composer"></div>
+        <div class="copilot-top" id="copilot-masthead"></div>
+        <div class="copilot-main" id="copilot-body"></div>
+        <div class="copilot-bottom" id="copilot-composer"></div>
       </div>
     </section>
   `;
@@ -408,51 +408,63 @@ function renderMasthead() {
   const plans = state.plans || [];
   const plan = plans.find(p => p.id === ui.planId) || plans.find(p => p.is_active) || plans[0];
   const focusLabel = focusSummaryLabel(ui.sessionFocus);
+  const title = ui.conversationId
+    ? (ui.conversationTitle || 'Untitled')
+    : 'New chat';
   return html`
     <header class="copilot-masthead">
-      <div class="copilot-masthead-controls">
-        <span class="copilot-masthead-eyebrow">Copilot</span>
+      <div class="copilot-masthead-left">
         <span class="copilot-picker">
-          <button class="copilot-picker-button" data-picker="conversations">
-            ${ui.conversationId ? esc(ui.conversationTitle || 'Untitled') : 'New conversation'}
+          <button type="button" class="copilot-title-btn" data-picker="conversations" title="Conversations">
+            <span class="copilot-title-text">${esc(title)}</span>
           </button>
           ${ui.pickerOpen === 'conversations' ? raw(renderConversationsMenu()) : ''}
         </span>
-        ${plans.length ? html`
+        <div class="copilot-scope-pills">
+          ${plans.length ? html`
+            <span class="copilot-picker">
+              <button type="button" class="copilot-scope-pill" data-picker="plans" title="Plan scope">
+                <span class="copilot-scope-k">Plan</span>
+                <span class="copilot-scope-v">${esc(plan?.title || 'none')}</span>
+              </button>
+              ${ui.pickerOpen === 'plans' ? raw(renderPlansMenu(plans, plan?.id)) : ''}
+            </span>
+          ` : ''}
           <span class="copilot-picker">
-            <button class="copilot-picker-button" data-picker="plans">
-              plan: ${esc(plan?.title || 'none')}
+            <button type="button" class="copilot-scope-pill" data-picker="focus" title="Session Focus — which domains expand in the brief">
+              <span class="copilot-scope-k">Focus</span>
+              <span class="copilot-scope-v">${esc(focusLabel)}</span>
             </button>
-            ${ui.pickerOpen === 'plans' ? raw(renderPlansMenu(plans, plan?.id)) : ''}
+            ${ui.pickerOpen === 'focus' ? raw(renderFocusMenu()) : ''}
           </span>
-        ` : ''}
-        <span class="copilot-picker">
-          <button class="copilot-picker-button" data-picker="focus" title="Session Focus steers which domains expand in the brief">
-            focus: ${esc(focusLabel)}
-          </button>
-          ${ui.pickerOpen === 'focus' ? raw(renderFocusMenu()) : ''}
-        </span>
+        </div>
       </div>
-      <div class="entry-actions">
-        <button class="action-link muted" data-action="new-chat">New conversation <span class="arrow">›</span></button>
-      </div>
+      <button type="button" class="copilot-new-btn" data-action="new-chat" title="New conversation">
+        New chat
+      </button>
     </header>
-    ${raw(renderFocusChipBar())}
   `;
 }
 
-function renderFocusChipBar() {
+function renderFocusMenu() {
   const focus = ui.sessionFocus || defaultSessionFocus();
   const primary = new Set(focus.primary_domains || []);
   const muted = new Set(focus.muted_domains || []);
   return html`
-    <div class="copilot-focus-bar" role="group" aria-label="Session Focus">
-      <span class="copilot-focus-mode">
-        <button class="copilot-focus-mode-btn ${focus.mode === 'narrow' ? 'active' : ''}" data-focus-mode="narrow">narrow</button>
-        <button class="copilot-focus-mode-btn ${focus.mode === 'balanced' ? 'active' : ''}" data-focus-mode="balanced">balanced</button>
-        <button class="copilot-focus-mode-btn ${focus.mode === 'wide' ? 'active' : ''}" data-focus-mode="wide">wide</button>
-      </span>
-      <div class="copilot-focus-chips">
+    <div class="copilot-picker-menu copilot-focus-panel open" data-menu="focus">
+      <div class="copilot-focus-panel-head">
+        <span class="copilot-focus-panel-title">Session Focus</span>
+        <button type="button" class="copilot-focus-reset" data-focus-reset>Reset</button>
+      </div>
+      <p class="copilot-focus-hint">
+        Steers the default brief. Mute does not block tools; critical warnings can still appear.
+      </p>
+      <div class="copilot-focus-mode" role="group" aria-label="Focus mode">
+        <button type="button" class="copilot-focus-mode-btn ${focus.mode === 'narrow' ? 'active' : ''}" data-focus-mode="narrow">Narrow</button>
+        <button type="button" class="copilot-focus-mode-btn ${focus.mode === 'balanced' ? 'active' : ''}" data-focus-mode="balanced">Balanced</button>
+        <button type="button" class="copilot-focus-mode-btn ${focus.mode === 'wide' ? 'active' : ''}" data-focus-mode="wide">Wide</button>
+      </div>
+      <div class="copilot-focus-chips" role="group" aria-label="Focus domains">
         ${FOCUS_DOMAIN_OPTIONS.map(opt => {
           const stateClass = primary.has(opt.id) ? 'primary' : muted.has(opt.id) ? 'muted' : 'idle';
           return html`
@@ -460,33 +472,16 @@ function renderFocusChipBar() {
               type="button"
               class="copilot-focus-chip ${stateClass}"
               data-focus-domain="${esc(opt.id)}"
-              title="Click to cycle: idle → primary → muted → idle"
+              title="Click to cycle: off → primary → muted → off"
             >${esc(opt.label)}</button>
           `;
         })}
       </div>
-      <p class="copilot-focus-hint">
-        Mute limits the default brief, not tool access. Critical warnings can still appear.
+      <p class="copilot-focus-legend">
+        <span class="leg primary">Primary</span>
+        <span class="leg muted">Muted</span>
+        <span class="leg idle">Off</span>
       </p>
-    </div>
-  `;
-}
-
-function renderFocusMenu() {
-  const focus = ui.sessionFocus || defaultSessionFocus();
-  return html`
-    <div class="copilot-picker-menu open" data-menu="focus">
-      <button class="copilot-picker-item" data-focus-reset>
-        <span class="copilot-picker-item-meta">reset</span>
-        <span class="copilot-picker-item-title">Clear Session Focus to balanced defaults</span>
-      </button>
-      <div class="copilot-picker-divider"></div>
-      <div class="copilot-picker-item" style="cursor: default;">
-        <span class="copilot-picker-item-meta">mode ${esc(focus.mode)}</span>
-        <span class="copilot-picker-item-title">
-          Primary: ${esc((focus.primary_domains || []).join(', ') || 'intent-driven')}
-        </span>
-      </div>
     </div>
   `;
 }
@@ -529,36 +524,38 @@ function renderPlansMenu(plans, currentId) {
 
 function renderBody() {
   if (ui.busy && !ui.messages.length) {
-    return html`<div class="skeleton" style="height: 320px; margin-top: var(--s-7);">.</div>`;
+    return html`<div class="copilot-scroll"><div class="skeleton copilot-skeleton">.</div></div>`;
   }
   if (!ui.messages.length && !ui.thinking) {
-    return renderEmpty();
+    return html`<div class="copilot-scroll">${raw(renderEmpty())}</div>`;
   }
   return html`
-    ${ui.conversationTitle ? html`
-      <h1 class="conversation-title">${esc(ui.conversationTitle)}</h1>
-    ` : ''}
-    ${raw(renderThread(ui.messages, { thinking: ui.thinking }))}
-    ${ui.error ? html`<p class="error-banner">${esc(ui.error)}</p>` : ''}
+    <div class="copilot-scroll">
+      <div class="copilot-thread-wrap">
+        ${raw(renderThread(ui.messages, { thinking: ui.thinking }))}
+        ${ui.error ? html`<p class="error-banner">${esc(ui.error)}</p>` : ''}
+      </div>
+    </div>
   `;
 }
 
 function renderEmpty() {
   return html`
     <div class="copilot-empty">
-      <p class="copilot-empty-headline">Ask anything.</p>
-      <p class="copilot-empty-lede">
-        Copilot has your portfolio, your plan and your profile in scope.
-        It can run scenarios, look at concentration, and recommend changes.
-      </p>
+      <div class="copilot-empty-hero">
+        <p class="copilot-empty-headline">How can I help?</p>
+        <p class="copilot-empty-lede">
+          Portfolio, plan, and profile are available — ask a question or pick a starter.
+        </p>
+      </div>
       ${raw(renderProfileOnboardingCard())}
-      <ul class="suggestion-list">
+      <div class="suggestion-grid">
         ${SUGGESTIONS.map(s => html`
-          <li>
-            <button class="suggestion-row" data-suggest="${esc(s)}">${esc(s)}</button>
-          </li>
+          <button type="button" class="suggestion-card" data-suggest="${esc(s)}">
+            <span class="suggestion-card-text">${esc(s)}</span>
+          </button>
         `)}
-      </ul>
+      </div>
     </div>
   `;
 }
@@ -852,6 +849,11 @@ function attachHandlers() {
     rerenderAll();
   });
 
+  delegate(page, 'click', '[data-menu="focus"]', (e) => {
+    // Keep the focus panel open while interacting inside it.
+    e.stopPropagation();
+  });
+
   delegate(page, 'click', '[data-focus-mode]', (e, t) => {
     e.stopPropagation();
     const mode = t.getAttribute('data-focus-mode');
@@ -861,6 +863,7 @@ function attachHandlers() {
       mode,
       set_by: 'user',
     };
+    ui.pickerOpen = 'focus';
     rerenderMasthead();
   });
 
@@ -869,13 +872,14 @@ function attachHandlers() {
     const domain = t.getAttribute('data-focus-domain');
     if (!domain) return;
     ui.sessionFocus = cycleFocusDomain(ui.sessionFocus, domain);
+    ui.pickerOpen = 'focus';
     rerenderMasthead();
   });
 
   delegate(page, 'click', '[data-focus-reset]', (e) => {
     e.stopPropagation();
     ui.sessionFocus = defaultSessionFocus();
-    ui.pickerOpen = null;
+    ui.pickerOpen = 'focus';
     rerenderMasthead();
   });
 

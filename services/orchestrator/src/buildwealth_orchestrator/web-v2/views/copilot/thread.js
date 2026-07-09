@@ -35,13 +35,15 @@ function renderMessage(m) {
 
   return html`
     <article class="message ${role}">
-      <header class="message-eyebrow">
-        <span class="role-tag">${role === 'user' ? 'You asked' : 'Copilot'}</span>
-        ${ts ? html`<span class="timestamp">${ts}</span>` : ''}
-      </header>
-      <div class="message-body ${role}">${bodyHtml}</div>
-      ${contextTrace ? raw(renderContextTraceSummary(contextTrace)) : ''}
-      ${tools.length ? raw(renderToolTraces(tools)) : ''}
+      <div class="message-bubble">
+        <header class="message-eyebrow">
+          <span class="role-tag">${role === 'user' ? 'You' : 'Copilot'}</span>
+          ${ts ? html`<span class="timestamp">${ts}</span>` : ''}
+        </header>
+        <div class="message-body ${role}">${bodyHtml}</div>
+        ${contextTrace ? raw(renderContextTraceSummary(contextTrace)) : ''}
+        ${tools.length ? raw(renderToolTraces(tools)) : ''}
+      </div>
     </article>
   `;
 }
