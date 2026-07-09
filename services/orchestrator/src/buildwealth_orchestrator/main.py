@@ -25,6 +25,8 @@ from buildwealth_orchestrator.schemas import (
     ChatRequest,
     ChatResponse,
     LifePlanDraftRequest,
+    ConversationLlm,
+    ConversationLlmUpdateRequest,
     CopilotChatRequest,
     CopilotChatResponse,
     CopilotContextCacheStatusResponse,
@@ -233,6 +235,12 @@ from buildwealth_orchestrator.services.llm_clients import (
     default_base_url_for_provider,
     default_model_for_provider,
     run_tool_call_probe,
+)
+from buildwealth_orchestrator.services.llm_model_catalog import (
+    build_llm_options_payload,
+    get_provider_entry,
+    list_provider_ids,
+    normalize_conversation_llm,
 )
 from buildwealth_orchestrator.services.financial_profile import (
     FinancialProfileStore,
@@ -22072,8 +22080,15 @@ def get_copilot_conversation(
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    workspace_settings = services.settings_store.load_raw()
+    resolved_llm = _resolve_conversation_llm(
+        workspace_settings=workspace_settings,
+        conversation_llm=conversation.get("llm") if isinstance(conversation, dict) else None,
+        request_llm=None,
+    )
     payload = dict(conversation)
     payload["focus"] = public_focus(conversation.get("focus") if isinstance(conversation, dict) else None)
+    payload["llm"] = ConversationLlm(**resolved_llm)
     return CopilotConversationResponse(**payload)
 
 
@@ -22103,12 +22118,153 @@ def patch_copilot_conversation_focus(
     return SessionFocus(**public_focus(resolved))
 
 
+@app.patch("/api/copilot/conversations/{conversation_id}/llm", response_model=ConversationLlm)
+def patch_copilot_conversation_llm(
+    conversation_id: str,
+    request: ConversationLlmUpdateRequest,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> ConversationLlm:
+    """Set or clear the model used for this conversation (under the workspace provider)."""
+    require_permission(services.context, "copilot.use")
+    try:
+        conversation = services.conversation_store.get(conversation_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    workspace_settings = services.settings_store.load_raw()
+    workspace_provider = str(workspace_settings.get("llm_provider") or "openai").strip().lower()
+    patch = request.model_dump(exclude_unset=True)
+    provider = str(patch.get("provider") or workspace_provider).strip().lower()
+    # Single workspace key today: conversation may only steer models under the
+    # connected provider. OpenRouter is the multi-model cheap path.
+    if provider and provider != workspace_provider:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Conversation models must use the connected provider ({workspace_provider}). "
+                "Connect another provider in Settings, or use OpenRouter for many cheap models under one key."
+            ),
+        )
+    model = str(patch.get("model") or "").strip()
+    services.conversation_store.update_llm(
+        conversation_id,
+        {"provider": workspace_provider if model else "", "model": model},
+    )
+    resolved = _resolve_conversation_llm(
+        workspace_settings=workspace_settings,
+        conversation_llm={"provider": workspace_provider if model else "", "model": model},
+        request_llm=None,
+    )
+    return ConversationLlm(**resolved)
+
+
+@app.get("/api/copilot/llm-options")
+def get_copilot_llm_options(
+    conversation_id: str | None = None,
+    services: WorkspaceServices = Depends(get_workspace_services),
+) -> dict[str, Any]:
+    """Catalog of providers/models plus which provider is connected for this workspace."""
+    require_permission(services.context, "copilot.use")
+    workspace_settings = services.settings_store.load_raw()
+    conversation_llm = None
+    if conversation_id:
+        try:
+            conversation = services.conversation_store.get(conversation_id)
+            if isinstance(conversation, dict) and isinstance(conversation.get("llm"), dict):
+                conversation_llm = conversation.get("llm")
+        except FileNotFoundError:
+            conversation_llm = None
+    connected = _connected_providers_from_settings(workspace_settings)
+    return build_llm_options_payload(
+        active_provider=str(workspace_settings.get("llm_provider") or "openai"),
+        active_model=str(workspace_settings.get("llm_model") or ""),
+        connected_providers=connected,
+        conversation_llm=conversation_llm if isinstance(conversation_llm, dict) else None,
+    )
+
+
 @app.get("/api/copilot/focus/domains")
 def list_copilot_focus_domains(
     services: WorkspaceServices = Depends(get_workspace_services),
 ) -> dict[str, list[str]]:
     require_permission(services.context, "copilot.use")
     return {"domains": sorted(FOCUS_DOMAIN_CATALOG)}
+
+
+def _connected_providers_from_settings(workspace_settings: dict[str, Any]) -> list[dict[str, Any]]:
+    active = str(workspace_settings.get("llm_provider") or "").strip().lower()
+    has_key = bool(str(workspace_settings.get("llm_api_key") or "").strip())
+    # Custom OpenAI-compatible endpoints can run keyless (Ollama, etc.).
+    connected = bool(has_key) or active == "custom_openai_compatible"
+    out: list[dict[str, Any]] = []
+    for provider_id in list_provider_ids():
+        entry = get_provider_entry(provider_id) or {}
+        out.append(
+            {
+                "id": provider_id,
+                "label": entry.get("label") or provider_id,
+                "connected": connected and provider_id == active,
+                "is_active_default": provider_id == active,
+            }
+        )
+    return out
+
+
+def _resolve_conversation_llm(
+    *,
+    workspace_settings: dict[str, Any],
+    conversation_llm: dict[str, Any] | None,
+    request_llm: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Resolve model for a turn. Single-key workspaces lock provider to Settings."""
+    workspace_provider = str(workspace_settings.get("llm_provider") or "openai").strip().lower()
+    workspace_model = str(workspace_settings.get("llm_model") or "").strip()
+    raw: dict[str, Any] = {}
+    if isinstance(conversation_llm, dict):
+        raw.update(
+            {
+                "provider": str(conversation_llm.get("provider") or "").strip().lower(),
+                "model": str(conversation_llm.get("model") or "").strip(),
+            }
+        )
+    if isinstance(request_llm, dict):
+        if request_llm.get("provider") is not None:
+            raw["provider"] = str(request_llm.get("provider") or "").strip().lower()
+        if request_llm.get("model") is not None:
+            raw["model"] = str(request_llm.get("model") or "").strip()
+    # Drop cross-provider overrides until multi-key storage exists.
+    if raw.get("provider") and raw["provider"] != workspace_provider:
+        raw = {"provider": workspace_provider, "model": ""}
+    elif raw.get("provider") == "":
+        raw["provider"] = workspace_provider
+    else:
+        raw.setdefault("provider", workspace_provider)
+    return normalize_conversation_llm(
+        raw if (raw.get("model") or raw.get("provider")) else None,
+        fallback_provider=workspace_provider,
+        fallback_model=workspace_model,
+    )
+
+
+def _chat_client_for_resolved_llm(
+    *,
+    workspace_settings: dict[str, Any],
+    resolved: dict[str, Any],
+) -> Any:
+    """Build a chat client for the resolved conversation model using workspace credentials."""
+    payload = dict(workspace_settings)
+    payload["llm_provider"] = str(resolved.get("provider") or payload.get("llm_provider") or "openai")
+    payload["llm_model"] = str(resolved.get("model") or payload.get("llm_model") or "")
+    # Keep the workspace base URL when the provider matches; otherwise use catalog default.
+    if payload["llm_provider"] != str(workspace_settings.get("llm_provider") or "").strip().lower():
+        payload["llm_base_url"] = default_base_url_for_provider(payload["llm_provider"])
+    explicit_keys = {
+        key
+        for key, value in payload.items()
+        if (key.startswith("llm_") or key.startswith("openai_")) and value not in ("", None)
+    }
+    config = _llm_config_from_payload(payload, explicit_keys=explicit_keys)
+    return build_llm_client(config)
 
 
 @app.post("/api/copilot/chat", response_model=CopilotChatResponse)
@@ -22135,6 +22291,32 @@ async def copilot_chat(
             )
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        workspace_settings = resolved_services.settings_store.load_raw()
+        request_llm_payload = (
+            request.llm.model_dump(exclude_unset=True) if request.llm is not None else None
+        )
+        resolved_llm = _resolve_conversation_llm(
+            workspace_settings=workspace_settings,
+            conversation_llm=conversation.get("llm") if isinstance(conversation, dict) else None,
+            request_llm=request_llm_payload,
+        )
+        if request.persist_llm and request_llm_payload is not None:
+            model_to_store = str(resolved_llm.get("model") or "").strip()
+            provider_to_store = str(resolved_llm.get("provider") or "").strip().lower()
+            # Persist only true overrides (not identical to workspace default).
+            workspace_model = str(workspace_settings.get("llm_model") or "").strip()
+            if model_to_store and model_to_store != workspace_model:
+                conversation = store.update_llm(
+                    conversation["id"],
+                    {"provider": provider_to_store, "model": model_to_store},
+                )
+            elif "model" in (request_llm_payload or {}) and not model_to_store:
+                conversation = store.update_llm(conversation["id"], {"provider": "", "model": ""})
+        turn_llm_client = _chat_client_for_resolved_llm(
+            workspace_settings=workspace_settings,
+            resolved=resolved_llm,
+        )
 
         stored_focus = conversation.get("focus") if isinstance(conversation, dict) else None
         request_focus_payload = (
@@ -22255,6 +22437,7 @@ async def copilot_chat(
                     contextual_brief=contextual_brief,
                     context_trace=context_trace,
                     conversation_store=store,
+                    llm_client=turn_llm_client,
                 )
                 captured_candidates = resolved_services.context_intelligence_service.detect_chat_context_candidates(
                     message=request.question,
@@ -22300,6 +22483,7 @@ async def copilot_chat(
                         {"context_trace": context_trace},
                     )
                 result["focus"] = response_focus
+                result["llm"] = ConversationLlm(**resolved_llm)
             except FileNotFoundError as exc:
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
             except httpx.HTTPStatusError as exc:

@@ -410,6 +410,15 @@ export const api = {
     `/api/copilot/conversations/${encodeURIComponent(id)}/focus`,
     body,
   ),
+  patchConversationLlm: (id, body = {}) => patchJson(
+    `/api/copilot/conversations/${encodeURIComponent(id)}/llm`,
+    body,
+  ),
+  llmOptions:        (conversationId) => fetchJson(
+    conversationId
+      ? `/api/copilot/llm-options?conversation_id=${encodeURIComponent(conversationId)}`
+      : '/api/copilot/llm-options',
+  ),
   focusDomains:      () => fetchJson('/api/copilot/focus/domains'),
   copilotChat:       (body) => postJson('/api/copilot/chat', body),
 

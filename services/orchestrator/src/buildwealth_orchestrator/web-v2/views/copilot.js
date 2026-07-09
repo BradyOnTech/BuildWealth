@@ -225,9 +225,13 @@ const ui = {
   error: null,
   planId: null,
   recommendationFocus: null,
-  pickerOpen: null,                 // 'conversations' | 'plans' | 'focus' | null
+  pickerOpen: null,                 // 'conversations' | 'plans' | 'focus' | 'model' | null
   draftFocus: null,
   sessionFocus: defaultSessionFocus(),
+  // Model menu (Grok/Codex-style): workspace default + per-conversation override
+  llmOptions: null,                 // payload from GET /api/copilot/llm-options
+  conversationLlm: null,            // { provider, model, label, cost_band, source, cheap }
+  showCheapOnly: false,
 };
 
 export function template() {
@@ -254,6 +258,8 @@ export async function init(params = {}) {
   ui.recommendationFocus = String(params.focus || '').trim() || null;
   ui.pickerOpen = null;
   ui.sessionFocus = seedFocusFromEntry(params);
+  ui.conversationLlm = null;
+  ui.showCheapOnly = false;
   attachHandlers();
 
   rerenderAll();
@@ -261,6 +267,7 @@ export async function init(params = {}) {
   // Load past conversations, then the active one (if any).
   loadConversations().then(() => rerenderMasthead()).catch(() => {});
   loadOnboarding().then(() => rerenderBody()).catch(() => {});
+  loadLlmOptions().then(() => rerenderMasthead()).catch(() => {});
   if (ui.conversationId) {
     loadConversation(ui.conversationId).catch(() => {});
   }
@@ -309,11 +316,27 @@ async function loadConversation(id) {
     if (res.focus && typeof res.focus === 'object') {
       ui.sessionFocus = normalizeClientFocus(res.focus);
     }
+    if (res.llm && typeof res.llm === 'object') {
+      ui.conversationLlm = res.llm;
+    }
+    loadLlmOptions(id).then(() => rerenderMasthead()).catch(() => {});
   } catch (err) {
     ui.error = err.message;
   } finally {
     ui.busy = false;
     rerenderAll();
+  }
+}
+
+async function loadLlmOptions(conversationId = ui.conversationId) {
+  try {
+    const res = await api.llmOptions(conversationId || undefined);
+    ui.llmOptions = res && typeof res === 'object' ? res : null;
+    if (res?.resolved && typeof res.resolved === 'object') {
+      ui.conversationLlm = res.resolved;
+    }
+  } catch {
+    // Keep prior options; picker falls back to workspace labels.
   }
 }
 
@@ -327,6 +350,7 @@ async function sendMessage(question, { useLive }) {
   rerenderComposer({ draft: '' });
 
   try {
+    const llmPayload = clientLlmPayload(ui.conversationLlm);
     const res = await api.copilotChat({
       question,
       conversation_id: ui.conversationId,
@@ -335,10 +359,15 @@ async function sendMessage(question, { useLive }) {
       context_options: { detail_level: 'light' },
       focus: clientFocusPayload(ui.sessionFocus),
       persist_focus: true,
+      llm: llmPayload,
+      persist_llm: true,
     });
     ui.conversationId = res.conversation_id;
     if (res.focus && typeof res.focus === 'object') {
       ui.sessionFocus = normalizeClientFocus(res.focus);
+    }
+    if (res.llm && typeof res.llm === 'object') {
+      ui.conversationLlm = res.llm;
     }
     ui.messages.push({
       role: 'assistant',
@@ -352,6 +381,7 @@ async function sendMessage(question, { useLive }) {
     });
     if (!ui.conversationTitle) ui.conversationTitle = derivedTitle(question);
     loadConversations().then(() => rerenderMasthead()).catch(() => {});
+    loadLlmOptions(ui.conversationId).then(() => rerenderMasthead()).catch(() => {});
   } catch (err) {
     ui.error = err.message;
     ui.messages.push({
@@ -408,6 +438,7 @@ function renderMasthead() {
   const plans = state.plans || [];
   const plan = plans.find(p => p.id === ui.planId) || plans.find(p => p.is_active) || plans[0];
   const focusLabel = focusSummaryLabel(ui.sessionFocus);
+  const modelLabel = modelSummaryLabel(ui.conversationLlm, ui.llmOptions);
   const title = ui.conversationId
     ? (ui.conversationTitle || 'Untitled')
     : 'New chat';
@@ -437,12 +468,85 @@ function renderMasthead() {
             </button>
             ${ui.pickerOpen === 'focus' ? raw(renderFocusMenu()) : ''}
           </span>
+          <span class="copilot-picker">
+            <button type="button" class="copilot-scope-pill copilot-model-pill" data-picker="model" title="Model for this conversation">
+              <span class="copilot-scope-k">Model</span>
+              <span class="copilot-scope-v">${esc(modelLabel)}</span>
+            </button>
+            ${ui.pickerOpen === 'model' ? raw(renderModelMenu()) : ''}
+          </span>
         </div>
       </div>
       <button type="button" class="copilot-new-btn" data-action="new-chat" title="New conversation">
         New chat
       </button>
     </header>
+  `;
+}
+
+function renderModelMenu() {
+  const opts = ui.llmOptions;
+  const resolved = ui.conversationLlm || opts?.resolved || {};
+  const activeProvider = String(opts?.active_provider || resolved.provider || '').toLowerCase();
+  const providers = Array.isArray(opts?.providers) ? opts.providers : [];
+  const connected = providers.find(p => p.connected) || providers.find(p => p.id === activeProvider);
+  const models = Array.isArray(connected?.models) ? connected.models : [];
+  const filtered = ui.showCheapOnly ? models.filter(m => m.cheap || m.cost_band === '$') : models;
+  const selectedId = String(resolved.model || opts?.active_model || '');
+  const connectedLabel = connected?.label || activeProvider || 'provider';
+  const isConnected = Boolean(connected?.connected);
+  const workspaceDefault = String(opts?.active_model || '');
+
+  return html`
+    <div class="copilot-picker-menu copilot-model-panel open" data-menu="model">
+      <div class="copilot-focus-panel-head">
+        <span class="copilot-focus-panel-title">Model</span>
+        <button type="button" class="copilot-focus-reset" data-model-reset title="Use workspace default">Default</button>
+      </div>
+      <p class="copilot-focus-hint">
+        ${isConnected
+          ? `Connected: ${esc(connectedLabel)}. Choice applies to this chat.`
+          : 'No API key saved. Connect a provider in Settings — OpenRouter is great for cheap models.'}
+      </p>
+      ${isConnected && models.some(m => m.cheap) ? html`
+        <label class="copilot-model-filter">
+          <input type="checkbox" data-model-cheap-only ${ui.showCheapOnly ? 'checked' : ''} />
+          Show cheap options only
+        </label>
+      ` : ''}
+      ${!isConnected ? html`
+        <a class="copilot-model-settings-link" href="#settings">Open Settings →</a>
+      ` : ''}
+      ${filtered.length ? filtered.map(m => {
+        const cost = m.cost_band || '';
+        const active = m.id === selectedId;
+        const isDefault = m.id === workspaceDefault;
+        return html`
+          <button type="button" class="copilot-picker-item copilot-model-item ${active ? 'active' : ''}"
+                  data-model-id="${esc(m.id)}" data-model-provider="${esc(connected.id || activeProvider)}">
+            <span class="copilot-picker-item-meta">
+              <span class="copilot-model-cost">${esc(cost)}</span>
+              ${m.cheap ? html`<span class="copilot-model-tag">cheap</span>` : ''}
+              ${m.recommended ? html`<span class="copilot-model-tag rec">rec</span>` : ''}
+              ${isDefault ? html`<span class="copilot-model-tag">default</span>` : ''}
+            </span>
+            <span class="copilot-picker-item-title">${esc(m.label || m.id)}</span>
+            ${m.blurb ? html`<span class="copilot-model-blurb">${esc(m.blurb)}</span>` : ''}
+          </button>
+        `;
+      }) : html`
+        <p class="copilot-focus-hint" style="padding: 8px 14px;">
+          ${isConnected
+            ? 'No models in the catalog for this provider. Enter a custom model id in Settings.'
+            : 'Connect OpenRouter, xAI, OpenAI, Anthropic, or Gemini in Settings.'}
+        </p>
+      `}
+      ${connected?.id === 'openrouter' ? html`
+        <p class="copilot-model-foot">
+          OpenRouter routes many cheap capable models through one key.
+        </p>
+      ` : ''}
+    </div>
   `;
 }
 
@@ -759,6 +863,54 @@ function focusSummaryLabel(focus) {
   return f.mode;
 }
 
+function modelSummaryLabel(llm, options) {
+  const resolved = llm || options?.resolved || {};
+  const label = String(resolved.label || resolved.model || options?.active_model || '').trim();
+  const cost = String(resolved.cost_band || '').trim();
+  if (label && cost) return `${cost} ${shortModelLabel(label)}`;
+  if (label) return shortModelLabel(label);
+  return 'Default';
+}
+
+function shortModelLabel(label) {
+  const s = String(label || '');
+  if (s.length <= 22) return s;
+  return `${s.slice(0, 19)}…`;
+}
+
+function clientLlmPayload(llm) {
+  if (!llm || typeof llm !== 'object') return null;
+  const model = String(llm.model || '').trim();
+  const provider = String(llm.provider || '').trim().toLowerCase();
+  if (!model && !provider) return null;
+  // Only send when this chat is steering away from pure workspace default
+  // or when the user explicitly picked a model (source=conversation).
+  if (llm.source === 'workspace_default' && model === String(ui.llmOptions?.active_model || '')) {
+    return null;
+  }
+  return { provider, model };
+}
+
+function resetConversationLlmToWorkspaceDefault() {
+  if (!ui.llmOptions) {
+    ui.conversationLlm = null;
+    return;
+  }
+  const resolved = ui.llmOptions.resolved;
+  if (resolved && typeof resolved === 'object') {
+    ui.conversationLlm = { ...resolved, source: 'workspace_default' };
+    return;
+  }
+  ui.conversationLlm = {
+    provider: ui.llmOptions.active_provider || '',
+    model: ui.llmOptions.active_model || '',
+    label: ui.llmOptions.active_model || 'Default',
+    cost_band: '',
+    source: 'workspace_default',
+    cheap: false,
+  };
+}
+
 function cycleFocusDomain(focus, domainId) {
   const next = normalizeClientFocus(focus);
   const primary = new Set(next.primary_domains);
@@ -826,6 +978,8 @@ function attachHandlers() {
       ui.conversationTitle = '';
       ui.messages = [];
       ui.sessionFocus = defaultSessionFocus();
+      resetConversationLlmToWorkspaceDefault();
+      loadLlmOptions(null).then(() => rerenderMasthead()).catch(() => {});
       rerenderAll();
       return;
     }
@@ -846,12 +1000,83 @@ function attachHandlers() {
     ui.messages = [];
     ui.error = null;
     ui.sessionFocus = defaultSessionFocus();
+    resetConversationLlmToWorkspaceDefault();
+    loadLlmOptions(null).then(() => rerenderMasthead()).catch(() => {});
     rerenderAll();
   });
 
   delegate(page, 'click', '[data-menu="focus"]', (e) => {
     // Keep the focus panel open while interacting inside it.
     e.stopPropagation();
+  });
+
+  delegate(page, 'click', '[data-menu="model"]', (e) => {
+    e.stopPropagation();
+  });
+
+  delegate(page, 'change', '[data-model-cheap-only]', (e, t) => {
+    e.stopPropagation();
+    ui.showCheapOnly = !!t.checked;
+    ui.pickerOpen = 'model';
+    rerenderMasthead();
+  });
+
+  delegate(page, 'click', '[data-model-id]', async (e, t) => {
+    e.stopPropagation();
+    const modelId = t.getAttribute('data-model-id');
+    const provider = t.getAttribute('data-model-provider') || ui.llmOptions?.active_provider || '';
+    if (!modelId) return;
+    const providerEntry = (ui.llmOptions?.providers || []).find(p => p.id === provider);
+    const meta = (providerEntry?.models || []).find(m => m.id === modelId) || {};
+    ui.conversationLlm = {
+      provider,
+      model: modelId,
+      label: meta.label || modelId,
+      cost_band: meta.cost_band || '',
+      source: 'conversation',
+      cheap: !!meta.cheap,
+    };
+    ui.pickerOpen = null;
+    if (ui.conversationId) {
+      try {
+        const saved = await api.patchConversationLlm(ui.conversationId, {
+          provider,
+          model: modelId,
+        });
+        if (saved && typeof saved === 'object') ui.conversationLlm = saved;
+      } catch (err) {
+        ui.error = err.message;
+      }
+    }
+    rerenderMasthead();
+  });
+
+  delegate(page, 'click', '[data-model-reset]', async (e) => {
+    e.stopPropagation();
+    const activeProvider = ui.llmOptions?.active_provider || '';
+    const activeModel = ui.llmOptions?.active_model || '';
+    ui.conversationLlm = {
+      provider: activeProvider,
+      model: activeModel,
+      label: activeModel || 'Default',
+      cost_band: '',
+      source: 'workspace_default',
+      cheap: false,
+    };
+    ui.pickerOpen = null;
+    if (ui.conversationId) {
+      try {
+        // Empty model clears the conversation override.
+        const saved = await api.patchConversationLlm(ui.conversationId, {
+          provider: activeProvider,
+          model: '',
+        });
+        if (saved && typeof saved === 'object') ui.conversationLlm = saved;
+      } catch (err) {
+        ui.error = err.message;
+      }
+    }
+    rerenderMasthead();
   });
 
   delegate(page, 'click', '[data-focus-mode]', (e, t) => {

@@ -17,16 +17,20 @@ DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-7"
 DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1"
 DEFAULT_XAI_MODEL = "grok-4.5"
 DEFAULT_XAI_BASE_URL = "https://api.x.ai/v1"
+DEFAULT_OPENROUTER_MODEL = "openrouter/auto"
+DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 LLM_PROVIDER_OPENAI = "openai"
 LLM_PROVIDER_GEMINI = "gemini"
 LLM_PROVIDER_ANTHROPIC = "anthropic"
 LLM_PROVIDER_XAI = "xai"
+LLM_PROVIDER_OPENROUTER = "openrouter"
 LLM_PROVIDER_CUSTOM_OPENAI_COMPATIBLE = "custom_openai_compatible"
 
 OPENAI_COMPATIBLE_PROVIDERS = {
     LLM_PROVIDER_OPENAI,
     LLM_PROVIDER_GEMINI,
+    LLM_PROVIDER_OPENROUTER,
     LLM_PROVIDER_CUSTOM_OPENAI_COMPATIBLE,
 }
 
@@ -220,6 +224,7 @@ def _coerce_provider(provider: str | None) -> str:
         LLM_PROVIDER_GEMINI,
         LLM_PROVIDER_ANTHROPIC,
         LLM_PROVIDER_XAI,
+        LLM_PROVIDER_OPENROUTER,
         LLM_PROVIDER_CUSTOM_OPENAI_COMPATIBLE,
     }
     return value if value in supported else LLM_PROVIDER_OPENAI
@@ -232,6 +237,8 @@ def default_base_url_for_provider(provider: str) -> str:
         return DEFAULT_ANTHROPIC_BASE_URL
     if provider == LLM_PROVIDER_XAI:
         return DEFAULT_XAI_BASE_URL
+    if provider == LLM_PROVIDER_OPENROUTER:
+        return DEFAULT_OPENROUTER_BASE_URL
     return DEFAULT_OPENAI_BASE_URL
 
 
@@ -242,6 +249,8 @@ def default_model_for_provider(provider: str) -> str:
         return DEFAULT_ANTHROPIC_MODEL
     if provider == LLM_PROVIDER_XAI:
         return DEFAULT_XAI_MODEL
+    if provider == LLM_PROVIDER_OPENROUTER:
+        return DEFAULT_OPENROUTER_MODEL
     return DEFAULT_OPENAI_MODEL
 
 
@@ -251,6 +260,7 @@ def provider_label(provider: str) -> str:
         LLM_PROVIDER_GEMINI: "Gemini",
         LLM_PROVIDER_ANTHROPIC: "Anthropic",
         LLM_PROVIDER_XAI: "xAI",
+        LLM_PROVIDER_OPENROUTER: "OpenRouter",
         LLM_PROVIDER_CUSTOM_OPENAI_COMPATIBLE: "Custom OpenAI-compatible",
     }
     return labels.get(provider, provider)
@@ -339,6 +349,10 @@ class OpenAICompatibleChatClient:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+        # OpenRouter ranks apps that identify themselves; optional but helpful.
+        if self.provider == LLM_PROVIDER_OPENROUTER:
+            headers.setdefault("HTTP-Referer", "https://buildwealth.local")
+            headers.setdefault("X-Title", "BuildWealth Copilot")
 
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             response = await client.post(

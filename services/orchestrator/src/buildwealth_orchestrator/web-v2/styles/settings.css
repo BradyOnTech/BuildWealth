@@ -386,6 +386,9 @@
   letter-spacing: 0.1em;
   color: var(--forest);
 }
+.settings-model-rec.cheap {
+  color: var(--gilt, var(--ink-soft));
+}
 
 .is-hidden {
   display: none !important;

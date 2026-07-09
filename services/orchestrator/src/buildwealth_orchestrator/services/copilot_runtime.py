@@ -44,6 +44,11 @@ class ConversationStore:
                 "updated_at": None,
                 "schema_version": 1,
             },
+            # Optional per-conversation model override. Empty = workspace default.
+            "llm": {
+                "provider": "",
+                "model": "",
+            },
             "messages": [],
         }
 
@@ -125,6 +130,19 @@ class ConversationStore:
         """Persist Session Focus on a conversation document and return the updated doc."""
         conversation = self.get(conversation_id)
         conversation["focus"] = focus
+        self.save(conversation)
+        return conversation
+
+    def update_llm(
+        self,
+        conversation_id: str,
+        llm: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Persist per-conversation LLM override (provider + model)."""
+        conversation = self.get(conversation_id)
+        provider = str(llm.get("provider") or "").strip().lower()
+        model = str(llm.get("model") or "").strip()
+        conversation["llm"] = {"provider": provider, "model": model}
         self.save(conversation)
         return conversation
 
@@ -356,8 +374,10 @@ class FinancialCopilot:
         contextual_brief: str,
         context_trace: dict[str, Any] | None = None,
         conversation_store: ConversationStore | None = None,
+        llm_client: ChatToolClient | None = None,
     ) -> dict[str, Any]:
         store = conversation_store or self.conversation_store
+        client = llm_client or self.llm_client
         if conversation is None:
             conversation = store.get_or_create(
                 conversation_id=conversation_id,
@@ -372,16 +392,16 @@ class FinancialCopilot:
 
         tool_traces: list[dict[str, Any]] = []
         answer = ""
-        model_name = self.llm_client.model if self.llm_client.enabled else None
+        model_name = client.model if client.enabled else None
 
-        if self.llm_client.enabled:
+        if client.enabled:
             messages = self._build_messages(
                 conversation=conversation,
                 contextual_brief=contextual_brief,
             )
 
             for _ in range(self.max_tool_rounds):
-                completion = await self.llm_client.complete(
+                completion = await client.complete(
                     messages=messages,
                     tools=self._tool_definitions(),
                 )

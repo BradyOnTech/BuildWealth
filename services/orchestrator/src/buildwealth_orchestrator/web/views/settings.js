@@ -35,6 +35,7 @@ const FIELDS = [
       { value: 'gemini', label: 'Gemini' },
       { value: 'anthropic', label: 'Anthropic' },
       { value: 'xai', label: 'xAI' },
+      { value: 'openrouter', label: 'OpenRouter (cheap multi-model)' },
       { value: 'custom_openai_compatible', label: 'Custom OpenAI-compatible' },
     ],
   },
@@ -49,6 +50,7 @@ const PROVIDER_DEFAULTS = {
   gemini: { model: 'gemini-3.1-flash-lite', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai' },
   anthropic: { model: 'claude-opus-4-7', baseUrl: 'https://api.anthropic.com/v1' },
   xai: { model: 'grok-4.5', baseUrl: 'https://api.x.ai/v1' },
+  openrouter: { model: 'openrouter/auto', baseUrl: 'https://openrouter.ai/api/v1' },
   custom_openai_compatible: { model: '', baseUrl: '' },
 };
 

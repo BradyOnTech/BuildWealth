@@ -257,6 +257,16 @@ def test_build_llm_client_selects_provider_adapters() -> None:
         ),
         XAIResponsesClient,
     )
+    openrouter = build_llm_client(
+        LLMProviderConfig(
+            provider="openrouter",
+            api_key="key",
+            model="openrouter/auto",
+            base_url="https://openrouter.ai/api/v1",
+        )
+    )
+    assert openrouter.provider == "openrouter"
+    assert openrouter.model == "openrouter/auto"
 
 
 def test_anthropic_adapter_converts_openai_tool_loop_messages() -> None:

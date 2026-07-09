@@ -28,6 +28,10 @@ LLM_PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
         "llm_model": "grok-4.5",
         "llm_base_url": "https://api.x.ai/v1",
     },
+    "openrouter": {
+        "llm_model": "openrouter/auto",
+        "llm_base_url": "https://openrouter.ai/api/v1",
+    },
     "custom_openai_compatible": {
         "llm_model": "",
         "llm_base_url": "",

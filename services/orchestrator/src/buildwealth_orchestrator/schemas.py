@@ -1942,6 +1942,24 @@ class SessionFocusUpdateRequest(BaseModel):
     priority_note: str | None = Field(default=None, max_length=280)
 
 
+class ConversationLlm(BaseModel):
+    """Per-conversation model choice under a connected provider."""
+
+    provider: str = ""
+    model: str = ""
+    label: str = ""
+    cost_band: str = ""
+    source: Literal["workspace_default", "conversation"] = "workspace_default"
+    cheap: bool = False
+
+
+class ConversationLlmUpdateRequest(BaseModel):
+    """PATCH body for conversation model override. Empty model clears override."""
+
+    provider: str | None = None
+    model: str | None = None
+
+
 class CopilotChatRequest(BaseModel):
     question: str
     conversation_id: str | None = None
@@ -1950,6 +1968,8 @@ class CopilotChatRequest(BaseModel):
     context_options: CopilotContextOptions = Field(default_factory=CopilotContextOptions)
     focus: SessionFocus | None = None
     persist_focus: bool = True
+    llm: ConversationLlmUpdateRequest | None = None
+    persist_llm: bool = True
 
 
 class CopilotToolTrace(BaseModel):
@@ -1967,6 +1987,7 @@ class CopilotChatResponse(BaseModel):
     context_trace: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     focus: SessionFocus | None = None
+    llm: ConversationLlm | None = None
 
 
 class CopilotConversationSummary(BaseModel):
@@ -1984,6 +2005,7 @@ class CopilotConversationResponse(BaseModel):
     updated_at: datetime
     messages: list[dict[str, Any]] = Field(default_factory=list)
     focus: SessionFocus = Field(default_factory=SessionFocus)
+    llm: ConversationLlm | None = None
 
 
 TimelineEventType = Literal[*TIMELINE_EVENT_TYPE_VALUES]
