@@ -191,14 +191,18 @@ function render() {
     return;
   }
 
+  const usage = usageCard(ui.llmUsage);
   setView(shell, html`
     ${raw(masthead())}
-    ${raw(providerCard())}
-    ${raw(usageCard(ui.llmUsage))}
-    ${raw(contextCard())}
-    ${raw(demoWorkspaceCard(ui))}
-    ${raw(accountCard(ui))}
-    ${raw(handoffCard())}
+    ${raw(sectionNav({ hasUsage: Boolean(usage) }))}
+    <div class="settings-main">
+      <div id="settings-ai" class="settings-section">${raw(providerCard())}</div>
+      ${usage ? html`<div id="settings-usage" class="settings-section">${raw(usage)}</div>` : ''}
+      <div id="settings-context" class="settings-section">${raw(contextCard())}</div>
+      <div id="settings-demo" class="settings-section">${raw(demoWorkspaceCard(ui))}</div>
+      <div id="settings-account" class="settings-section">${raw(accountCard(ui))}</div>
+      ${raw(handoffCard())}
+    </div>
   `);
 }
 
@@ -215,11 +219,11 @@ export function usageCard(usage = null) {
   return html`
     <section class="settings-card settings-card-quiet">
       <header class="settings-card-head">
+        <div class="settings-card-kicker">Spend</div>
         <h2 class="settings-card-title">AI usage · ${monthLabel}</h2>
         <p class="settings-card-lede">
           ${costText} estimated across ${current.requests} request${current.requests === 1 ? '' : 's'}.
-          Token counts come from the provider; dollars are list-price estimates.
-          This ledger is a local file — nothing leaves the machine.
+          Token counts from the provider; dollars are list-price estimates. Local file only.
         </p>
       </header>
       <div class="benchmark-rows">
@@ -244,16 +248,34 @@ function masthead() {
   const status = currentStatus();
   return html`
     <header class="settings-masthead">
-      <p class="settings-eyebrow">§ System · Connections</p>
-      <h1 class="settings-title">Connections &amp; AI</h1>
-      <p class="settings-lede">
-        Copilot needs an API key before it can use live AI responses.
-        Pick a provider, save the key, and run a quick handshake.
-      </p>
+      <div class="settings-masthead-text">
+        <p class="settings-eyebrow">System</p>
+        <h1 class="settings-title">Settings</h1>
+        <p class="settings-lede">
+          Connect Copilot, tune context search, and manage account data.
+        </p>
+      </div>
       <div class="settings-statuses">
         ${raw(statusChip(status))}
       </div>
     </header>
+  `;
+}
+
+function sectionNav({ hasUsage = false } = {}) {
+  const items = [
+    { id: 'settings-ai', label: 'AI provider' },
+    hasUsage ? { id: 'settings-usage', label: 'Usage' } : null,
+    { id: 'settings-context', label: 'Context' },
+    { id: 'settings-demo', label: 'Demo' },
+    { id: 'settings-account', label: 'Account' },
+  ].filter(Boolean);
+  return html`
+    <nav class="settings-nav" aria-label="Settings sections">
+      ${items.map(item => html`
+        <a class="settings-nav-link" href="#${item.id}" data-settings-section="${item.id}">${item.label}</a>
+      `)}
+    </nav>
   `;
 }
 
@@ -303,10 +325,10 @@ function providerCard() {
   return html`
     <section class="settings-card">
       <header class="settings-card-head">
+        <div class="settings-card-kicker">Copilot</div>
         <h2 class="settings-card-title">AI provider</h2>
         <p class="settings-card-lede">
-          Used for Copilot conversations, suggestion drafting, and explanation flows.
-          Settings are stored locally and masked in the UI.
+          Keys stay local. Used for chat, drafts, and explanations.
         </p>
       </header>
 
@@ -336,7 +358,7 @@ function providerCard() {
           <span class="settings-hint">
             ${d.llm_api_key && !ui.apiKeyDirty
               ? 'A key is saved. Type to replace it; leave blank to keep the existing key.'
-              : 'Stored locally, never sent anywhere except the provider you choose.'}
+              : 'Stored locally — only sent to the provider you choose.'}
           </span>
         </label>
 
@@ -346,7 +368,7 @@ function providerCard() {
                  type="text" autocomplete="off" spellcheck="false"
                  placeholder="${esc(PROVIDER_DEFAULTS[d.llm_provider]?.llm_model || 'model id')}"
                  value="${esc(d.llm_model || '')}" />
-          <span class="settings-hint">Use a model with reliable function/tool calling.</span>
+          <span class="settings-hint">Prefer models with reliable tool calling.</span>
         </label>
 
         <label class="settings-field">
@@ -355,81 +377,84 @@ function providerCard() {
                  type="text" autocomplete="off" spellcheck="false"
                  placeholder="${esc(PROVIDER_DEFAULTS[d.llm_provider]?.llm_base_url || 'https://...')}"
                  value="${esc(d.llm_base_url || '')}" />
-          <span class="settings-hint">Provider endpoint. Defaults are filled when you switch providers.</span>
-        </label>
-
-        <label class="settings-field">
-          <span class="settings-label">Max output tokens</span>
-          <input id="settings-max-tokens" class="settings-input mono"
-                 type="number" min="64" max="32768" step="1"
-                 value="${esc(String(d.llm_max_tokens ?? 2048))}" />
-          <span class="settings-hint">Caps each model response in the Copilot tool loop.</span>
-        </label>
-
-        <label class="settings-field">
-          <span class="settings-label">Timeout (seconds)</span>
-          <input id="settings-timeout" class="settings-input mono"
-                 type="number" min="5" max="600" step="1"
-                 value="${esc(String(d.llm_timeout_seconds ?? 60))}" />
-          <span class="settings-hint">Per-request timeout for provider calls.</span>
-        </label>
-
-        <label class="settings-field span-2 settings-field-toggle">
-          <input id="settings-parallel" type="checkbox"
-                 ${d.llm_parallel_tool_calls ? 'checked' : ''} />
-          <span>
-            <span class="settings-label">Allow parallel tool calls</span>
-            <span class="settings-hint">Lets Copilot batch tool calls when the provider supports it. Turn off only if you see ordering issues.</span>
-          </span>
-        </label>
-
-        <div class="settings-field span-2">
-          <span class="settings-label">Background tasks</span>
-          <span class="settings-hint">
-            Summaries and draft preparation can run on a cheaper or local model
-            (for example Ollama via the Custom endpoint) while chat keeps the
-            provider above. Uses your primary API key; local endpoints need none.
-            Leave on "Same as chat" to route everything to one model.
-          </span>
-        </div>
-
-        <label class="settings-field">
-          <span class="settings-label">Background provider</span>
-          <select id="settings-task-summarize-provider" class="settings-input">
-            <option value="" ${!d.llm_task_summarize_provider ? 'selected' : ''}>Same as chat</option>
-            ${raw(PROVIDERS.map(p => `
-              <option value="${esc(p.value)}" ${p.value === d.llm_task_summarize_provider ? 'selected' : ''}>
-                ${esc(p.label)}
-              </option>`).join(''))}
-          </select>
-        </label>
-
-        <label class="settings-field">
-          <span class="settings-label">Background model</span>
-          <input id="settings-task-summarize-model" class="settings-input mono"
-                 type="text" autocomplete="off" spellcheck="false"
-                 placeholder="inherit"
-                 value="${esc(d.llm_task_summarize_model || '')}" />
-        </label>
-
-        <label class="settings-field span-2">
-          <span class="settings-label">Background base URL</span>
-          <input id="settings-task-summarize-base-url" class="settings-input mono"
-                 type="text" autocomplete="off" spellcheck="false"
-                 placeholder="inherit (e.g. http://localhost:11434/v1 for Ollama)"
-                 value="${esc(d.llm_task_summarize_base_url || '')}" />
+          <span class="settings-hint">Filled automatically when you switch providers.</span>
         </label>
       </div>
+
+      <details class="settings-advanced">
+        <summary>Advanced · timeouts, tools, background models</summary>
+        <div class="settings-grid settings-advanced-grid">
+          <label class="settings-field">
+            <span class="settings-label">Max output tokens</span>
+            <input id="settings-max-tokens" class="settings-input mono"
+                   type="number" min="64" max="32768" step="1"
+                   value="${esc(String(d.llm_max_tokens ?? 2048))}" />
+            <span class="settings-hint">Caps each model response in the Copilot tool loop.</span>
+          </label>
+
+          <label class="settings-field">
+            <span class="settings-label">Timeout (seconds)</span>
+            <input id="settings-timeout" class="settings-input mono"
+                   type="number" min="5" max="600" step="1"
+                   value="${esc(String(d.llm_timeout_seconds ?? 60))}" />
+            <span class="settings-hint">Per-request timeout for provider calls.</span>
+          </label>
+
+          <label class="settings-field span-2 settings-field-toggle">
+            <input id="settings-parallel" type="checkbox"
+                   ${d.llm_parallel_tool_calls ? 'checked' : ''} />
+            <span>
+              <span class="settings-label">Allow parallel tool calls</span>
+              <span class="settings-hint">Batch tool calls when the provider supports it. Turn off only if ordering breaks.</span>
+            </span>
+          </label>
+
+          <div class="settings-field span-2">
+            <span class="settings-label">Background tasks</span>
+            <span class="settings-hint">
+              Summaries and draft prep can use a cheaper or local model while chat keeps the provider above.
+              Leave “Same as chat” to route everything to one model.
+            </span>
+          </div>
+
+          <label class="settings-field">
+            <span class="settings-label">Background provider</span>
+            <select id="settings-task-summarize-provider" class="settings-input">
+              <option value="" ${!d.llm_task_summarize_provider ? 'selected' : ''}>Same as chat</option>
+              ${raw(PROVIDERS.map(p => `
+                <option value="${esc(p.value)}" ${p.value === d.llm_task_summarize_provider ? 'selected' : ''}>
+                  ${esc(p.label)}
+                </option>`).join(''))}
+            </select>
+          </label>
+
+          <label class="settings-field">
+            <span class="settings-label">Background model</span>
+            <input id="settings-task-summarize-model" class="settings-input mono"
+                   type="text" autocomplete="off" spellcheck="false"
+                   placeholder="inherit"
+                   value="${esc(d.llm_task_summarize_model || '')}" />
+          </label>
+
+          <label class="settings-field span-2">
+            <span class="settings-label">Background base URL</span>
+            <input id="settings-task-summarize-base-url" class="settings-input mono"
+                   type="text" autocomplete="off" spellcheck="false"
+                   placeholder="inherit (e.g. http://localhost:11434/v1 for Ollama)"
+                   value="${esc(d.llm_task_summarize_base_url || '')}" />
+          </label>
+        </div>
+      </details>
 
       <footer class="settings-actions">
         <button class="btn btn-primary" id="settings-save" ${ui.saving ? 'disabled' : ''}>
           ${ui.saving ? 'Saving…' : 'Save provider'}
         </button>
         <button class="btn btn-ghost" id="settings-test" ${ui.testing ? 'disabled' : ''}>
-          ${ui.testing ? 'Testing…' : 'Test provider'}
+          ${ui.testing ? 'Testing…' : 'Test connection'}
         </button>
         <button class="btn btn-quiet" id="settings-reset-defaults">
-          Reset model &amp; URL to defaults
+          Reset defaults
         </button>
         ${ui.saveError ? html`<p class="inline-warning">${ui.saveError}</p>` : ''}
       </footer>
@@ -478,11 +503,10 @@ function contextCard() {
   return html`
     <section class="settings-card settings-card-quiet">
       <header class="settings-card-head">
-        <h2 class="settings-card-title">Context intelligence</h2>
+        <div class="settings-card-kicker">Optional</div>
+        <h2 class="settings-card-title">Context search</h2>
         <p class="settings-card-lede">
-          Structured profile, plan, and portfolio data are always the source of truth.
-          Optional embeddings let Copilot search older notes, research, and conversation
-          history when nothing structured is close enough.
+          Profile, plan, and portfolio stay the source of truth. Embeddings only help find older notes and research.
         </p>
       </header>
 
@@ -611,10 +635,9 @@ function contextDraft(snapshot) {
 function handoffCard() {
   return html`
     <aside class="settings-handoff">
-      <p class="settings-handoff-eyebrow">Looking for backups, restore, or version history?</p>
+      <p class="settings-handoff-eyebrow">Backups &amp; restore</p>
       <p class="settings-handoff-body">
-        Those tools live in <a href="#atelier" class="link-editorial">Data &amp; Recovery</a>.
-        Connections &amp; AI is intentionally narrow — provider, model, and the keys that make Copilot work.
+        Live in <a href="#atelier" class="link-editorial">Data &amp; Recovery</a> — keep Settings focused on connections and account control.
       </p>
     </aside>
   `;
@@ -626,9 +649,10 @@ export function demoWorkspaceCard(model) {
   return html`
     <section class="settings-card settings-card-quiet">
       <header class="settings-card-head">
+        <div class="settings-card-kicker">Sandbox</div>
         <h2 class="settings-card-title">Demo workspace</h2>
         <p class="settings-card-lede">
-          Demo data lives in its own household workspace so testing never touches your real financial picture.
+          A separate household for testing — never touches your real financial picture.
         </p>
       </header>
       ${demo ? html`
@@ -682,9 +706,10 @@ export function accountCard(model) {
   return html`
     <section class="settings-card">
       <header class="settings-card-head">
+        <div class="settings-card-kicker">Privacy</div>
         <h2 class="settings-card-title">Account &amp; data</h2>
         <p class="settings-card-lede">
-          Manage exports, sign-in, access closure, and BuildWealth data deletion.
+          Export, sign-in, access closure, and data deletion.
         </p>
       </header>
 
@@ -955,6 +980,17 @@ function readinessCheckRow(check) {
 function attachHandlers() {
   const root = $('#settings-page');
   if (!root) return;
+
+  delegate(root, 'click', '[data-settings-section]', (e, el) => {
+    e.preventDefault();
+    const id = el.getAttribute('data-settings-section');
+    const target = id ? document.getElementById(id) : null;
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    root.querySelectorAll('.settings-nav-link').forEach(link => {
+      link.classList.toggle('active', link.getAttribute('data-settings-section') === id);
+    });
+  });
 
   delegate(root, 'change', '#settings-provider', (_, el) => {
     const next = el.value;

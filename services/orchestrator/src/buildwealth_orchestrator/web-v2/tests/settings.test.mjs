@@ -46,7 +46,7 @@ test('usageCard renders monthly spend rows and hides when empty', () => {
   assert.match(markup, /~\$0\.47 estimated across 54 requests/);
   assert.match(markup, /gpt-5\.5 · 182,000 in \/ 24,000 out/);
   assert.match(markup, /free \/ local/);
-  assert.match(markup, /nothing leaves the machine/);
+  assert.match(markup, /Local file only/);
 
   assert.equal(String(usageCard(null)), '');
   assert.equal(String(usageCard({ month: '2026-07', current: { rows: [] } })), '');
