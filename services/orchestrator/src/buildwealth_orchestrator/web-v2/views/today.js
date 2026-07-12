@@ -87,6 +87,7 @@ async function load(params = {}) {
   setView(root, html`
     ${raw(renderHero(payload, health, analytics, state.peerBenchmark, state.incomeBend))}
     ${raw(renderMorningBrief(state.morningBrief))}
+    ${raw(renderNextQuestion(payload?.profile_readiness))}
     ${raw(renderMove(payload))}
     ${raw(renderCommandCards(payload, services))}
     ${raw(renderAffordabilitySection())}
@@ -100,6 +101,45 @@ async function load(params = {}) {
   ) {
     history.replaceState(null, '', '#today');
   }
+}
+
+/* ─────────────  ONE QUESTION, ONE UNLOCK  ───────────── */
+
+// Payoff-first profile prompting: name the feature the next answer turns on,
+// instead of showing an abstract completion percentage.
+const SECTION_PAYOFFS = {
+  household: 'retirement timing, RMD and Medicare projections, and education goals use real ages',
+  income: 'your savings rate, monthly surplus, and affordability pricing turn on',
+  expenses: 'runway, liquidity, and inflation-aware projections turn on',
+  debt: 'payoff strategies and honest cash-flow math activate',
+  goals: 'goal funding and progress tracking activate',
+  tax_profile: 'the Roth ladder and loss-harvesting tools compute with your numbers',
+  investment_policy: 'portfolio-fit checks and risk guardrails activate',
+};
+
+export function renderNextQuestion(readiness) {
+  const sections = Array.isArray(readiness?.sections) ? readiness.sections : [];
+  const gap = sections.find(section => section.status !== 'complete' && SECTION_PAYOFFS[section.key]);
+  if (!gap) return '';
+  return html`
+    <section class="today-section" id="next-question" aria-label="Next profile question">
+      <header class="section-head">
+        <span class="section-eyebrow">One answer unlocks</span>
+      </header>
+      <p class="section-lede">
+        <strong>${esc(gap.title)}:</strong> ${esc(String(gap.detail || ''))}
+        Answer it and ${esc(SECTION_PAYOFFS[gap.key])}.
+      </p>
+      <div class="entry-actions">
+        <a class="action-link" href="#copilot?intent=profile-setup">
+          Answer with Copilot <span class="arrow">›</span>
+        </a>
+        <a class="action-link" href="#profile?section=${esc(gap.key === 'tax_profile' ? 'taxes' : gap.key === 'investment_policy' ? 'investing' : gap.key)}">
+          Fill it in directly <span class="arrow">›</span>
+        </a>
+      </div>
+    </section>
+  `.toString();
 }
 
 /* ─────────────  SINCE YOU LAST LOOKED  ───────────── */

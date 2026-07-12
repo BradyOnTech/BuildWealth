@@ -1328,3 +1328,12 @@
   gap: var(--s-3);
   align-items: center;
 }
+
+/* ───────────  Onboarding quick replies  ─────────── */
+
+.onboarding-quick-replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin: 10px 0 2px;
+}

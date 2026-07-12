@@ -279,7 +279,14 @@ export async function init(params = {}) {
 
   // Load past conversations, then the active one (if any).
   loadConversations().then(() => rerenderMasthead()).catch(() => {});
-  loadOnboarding().then(() => rerenderBody()).catch(() => {});
+  const wantsProfileSetup = String(params.intent || '').trim().toLowerCase() === 'profile-setup';
+  loadOnboarding().then(() => {
+    rerenderBody();
+    if (wantsProfileSetup) {
+      seedFocusFromOnboardingIfNeeded(true);
+      fillDraft(onboardingPrompt(ui.onboarding));
+    }
+  }).catch(() => {});
   loadLlmOptions().then(() => rerenderMasthead()).catch(() => {});
   if (ui.conversationId) {
     loadConversation(ui.conversationId).catch(() => {});
@@ -789,6 +796,7 @@ function renderProfileOnboardingCard() {
         Your profile is ${percent}% complete${nextStep?.title ? `. Next: ${nextStep.title}.` : '.'}
       </p>
       ${raw(renderProfileReadinessHint(status.profile_readiness))}
+      ${raw(renderOnboardingQuickReplies(status))}
       <div class="entry-actions">
         <button class="action-link" data-profile-onboarding-prompt>
           ${actionLabel} <span class="arrow">›</span>
@@ -796,6 +804,50 @@ function renderProfileOnboardingCard() {
       </div>
     </article>
   `;
+}
+
+// One-tap answers for enum questions — a chip sends a plain sentence, so the
+// normal chat + draft-review loop stays the single write path.
+export function onboardingQuickReplies(status) {
+  if (householdNeedsSetup(status)) {
+    return [
+      { label: 'Just me', message: 'My household is just me.' },
+      { label: 'Me + partner', message: 'My household is me and my partner.' },
+      { label: 'Me + partner + kids', message: 'My household is me, my partner, and our children.' },
+      { label: 'Me + kids', message: 'My household is me and my children.' },
+    ];
+  }
+  const step = nextOnboardingStep(status);
+  if (isTaxOnboardingStep(step)) {
+    return [
+      { label: 'Single', message: 'My filing status is single.' },
+      { label: 'Married filing jointly', message: 'My filing status is married filing jointly.' },
+      { label: 'Head of household', message: 'My filing status is head of household.' },
+      { label: "I don't know my tax rate", message: "I don't know my marginal tax rate — estimate it from my income." },
+    ];
+  }
+  if (isInvestmentPolicyOnboardingStep(step)) {
+    return [
+      { label: 'Conservative', message: 'My risk tolerance is conservative.' },
+      { label: 'Balanced', message: 'My risk tolerance is balanced.' },
+      { label: 'Aggressive', message: 'My risk tolerance is aggressive.' },
+    ];
+  }
+  return [];
+}
+
+function renderOnboardingQuickReplies(status) {
+  const replies = onboardingQuickReplies(status);
+  if (!replies.length) return '';
+  return html`
+    <div class="onboarding-quick-replies" role="group" aria-label="Quick answers">
+      ${raw(replies.map(reply => html`
+        <button type="button" class="chip" data-quick-reply="${esc(reply.message)}">
+          ${esc(reply.label)}
+        </button>
+      `.toString()).join(''))}
+    </div>
+  `.toString();
 }
 
 function renderProfileReadinessHint(readiness) {
@@ -1256,6 +1308,13 @@ function attachHandlers() {
 
   delegate(page, 'click', '[data-thesis-draft]', (_, t) => {
     saveThesisDraft(t);
+  });
+
+  delegate(page, 'click', '[data-quick-reply]', (_, t) => {
+    const message = t.getAttribute('data-quick-reply') || '';
+    if (!message) return;
+    seedFocusFromOnboardingIfNeeded(true);
+    sendMessage(message, { useLive: false });
   });
 
   delegate(page, 'click', '[data-profile-onboarding-prompt]', () => {
