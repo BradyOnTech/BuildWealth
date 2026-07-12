@@ -228,6 +228,7 @@ from buildwealth_orchestrator.services.import_workbench import ImportWorkbenchSt
 from buildwealth_orchestrator.services.asset_registry import AssetRegistry
 from buildwealth_orchestrator.services.portfolio_audit import build_portfolio_audit_payload
 from buildwealth_orchestrator.services.portfolio_analytics import build_portfolio_analytics_payload
+from buildwealth_orchestrator.services.llm_routing import metered_chat_client
 from buildwealth_orchestrator.services.llm_clients import (
     DEFAULT_OPENAI_BASE_URL,
     DEFAULT_OPENAI_MODEL,
@@ -17220,7 +17221,9 @@ def _chat_client_for_resolved_llm(
     # Always treat model/base_url/key as explicit for the resolved turn.
     explicit_keys.update({"llm_provider", "llm_model", "llm_base_url", "llm_api_key"})
     config = _llm_config_from_payload(payload, explicit_keys=explicit_keys)
-    return build_llm_client(config)
+    # Meter per-conversation override clients too — otherwise turns that pick
+    # a model in the chat UI never reach the usage ledger.
+    return metered_chat_client(build_llm_client(config), task="chat", ledger=llm_usage_ledger)
 
 
 def _create_import_review_items(

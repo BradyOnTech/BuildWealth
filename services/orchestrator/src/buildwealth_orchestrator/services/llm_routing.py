@@ -83,8 +83,7 @@ class MeteredChatClient:
     def enabled(self) -> bool:
         return bool(getattr(self._inner, "enabled", False))
 
-    async def complete(self, messages: Any, tools: Any) -> dict[str, Any]:
-        completion = await self._inner.complete(messages, tools)
+    def _record(self, completion: dict[str, Any]) -> None:
         try:
             self._ledger.record(
                 provider=str(completion.get("provider") or self.provider),
@@ -94,7 +93,30 @@ class MeteredChatClient:
             )
         except Exception:
             pass
+
+    async def complete(self, messages: Any, tools: Any) -> dict[str, Any]:
+        completion = await self._inner.complete(messages, tools)
+        self._record(completion)
         return completion
+
+
+class MeteredStreamingChatClient(MeteredChatClient):
+    """Metered wrapper for clients that support token streaming. Kept as a
+    separate class so hasattr(client, "complete_stream") stays an accurate
+    capability probe for the copilot runtime."""
+
+    async def complete_stream(self, messages: Any, tools: Any, on_delta: Any = None) -> dict[str, Any]:
+        completion = await self._inner.complete_stream(
+            messages=messages, tools=tools, on_delta=on_delta
+        )
+        self._record(completion)
+        return completion
+
+
+def metered_chat_client(inner: Any, *, task: str, ledger: Any) -> Any:
+    if hasattr(inner, "complete_stream"):
+        return MeteredStreamingChatClient(inner, task=task, ledger=ledger)
+    return MeteredChatClient(inner, task=task, ledger=ledger)
 
 
 class LLMRouter:
@@ -143,7 +165,7 @@ class LLMRouter:
         if resolved_task not in self._clients:
             client = build_llm_client(self.config_for(resolved_task))
             if self.usage_ledger is not None:
-                client = MeteredChatClient(client, task=resolved_task, ledger=self.usage_ledger)
+                client = metered_chat_client(client, task=resolved_task, ledger=self.usage_ledger)
             self._clients[resolved_task] = client
         return self._clients[resolved_task]
 

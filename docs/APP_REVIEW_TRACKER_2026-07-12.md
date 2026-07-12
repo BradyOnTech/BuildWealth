@@ -128,13 +128,13 @@ pending Conflict Review Items. Snapshots, recommendation factory, and inbox alre
 Usage ledger already meters tokens by month (`data/storage/llm_usage_ledger.json`); it
 has no Settings surface. Already on the roadmap; nearly free.
 
-- [ ] Settings panel showing usage/cost by month, provider, model
+- [x] Settings panel showing usage/cost by month, provider, model
 
 ### 4. Per-task LLM model routing
 
 Roadmap item; the multi-vendor client work is the prerequisite, this is the payoff.
 
-- [ ] Task-class → provider/model mapping (cheap models for classification/extraction,
+- [x] Task-class → provider/model mapping (cheap models for classification/extraction,
       expensive model for copilot reasoning)
 
 ### 5. Fund look-through for overlap/diversification

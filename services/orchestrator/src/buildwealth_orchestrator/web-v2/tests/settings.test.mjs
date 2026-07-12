@@ -52,6 +52,41 @@ test('usageCard renders monthly spend rows and hides when empty', () => {
   assert.equal(String(usageCard({ month: '2026-07', current: { rows: [] } })), '');
 });
 
+test('usageCard renders provider and month-history sections when present', () => {
+  const usage = {
+    month: '2026-07',
+    current: {
+      rows: [
+        { provider: 'openai', model: 'gpt-5.5', task: 'chat', requests: 2, prompt_tokens: 1000, completion_tokens: 200, estimated_cost_usd: 0.02 },
+      ],
+      requests: 2, prompt_tokens: 1000, completion_tokens: 200, estimated_cost_usd: 0.02,
+    },
+    providers: [
+      { provider: 'openai', requests: 2, prompt_tokens: 1000, completion_tokens: 200, estimated_cost_usd: 0.02 },
+      { provider: 'anthropic', requests: 1, prompt_tokens: 500, completion_tokens: 90, estimated_cost_usd: 0.01 },
+    ],
+    history: [
+      { month: '2026-07', requests: 3, prompt_tokens: 1500, completion_tokens: 290, estimated_cost_usd: 0.03 },
+      { month: '2026-06', requests: 9, prompt_tokens: 9000, completion_tokens: 900, estimated_cost_usd: 0.11 },
+    ],
+  };
+  const markup = String(usageCard(usage));
+  assert.match(markup, /By provider/);
+  assert.match(markup, /anthropic/);
+  assert.match(markup, /By month/);
+  assert.match(markup, /2026-06/);
+  assert.match(markup, /~\$0\.11/);
+
+  // Single provider or single month: sections stay hidden (no noise).
+  const quiet = String(usageCard({
+    ...usage,
+    providers: usage.providers.slice(0, 1),
+    history: usage.history.slice(0, 1),
+  }));
+  assert.doesNotMatch(quiet, /By provider/);
+  assert.doesNotMatch(quiet, /By month/);
+});
+
 test('toDraft/buildPayloadFor: task routing keys round-trip', () => {
   const draft = toDraft({
     llm_provider: 'anthropic',

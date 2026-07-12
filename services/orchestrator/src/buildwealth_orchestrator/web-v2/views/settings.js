@@ -228,8 +228,52 @@ export function usageCard(usage = null) {
           `.toString();
         }).join(''))}
       </div>
+      ${raw(usageProviderRows(usage))}
+      ${raw(usageHistoryRows(usage))}
     </section>
   `;
+}
+
+function usageCostText(value) {
+  const cost = Number(value) || 0;
+  if (cost >= 0.01) return `~$${cost.toFixed(2)}`;
+  return cost > 0 ? '<$0.01' : '$0.00';
+}
+
+// Current-month spend by provider — which vendor key is actually burning.
+export function usageProviderRows(usage = null) {
+  const providers = Array.isArray(usage?.providers) ? usage.providers : [];
+  if (providers.length < 2) return '';
+  return html`
+    <div class="settings-card-kicker" style="margin-top: 14px;">By provider</div>
+    <div class="benchmark-rows">
+      ${raw(providers.map(row => html`
+        <div class="benchmark-row">
+          <strong>${esc(String(row.provider || ''))}</strong>
+          <span>${Number(row.requests || 0).toLocaleString('en-US')} request${Number(row.requests) === 1 ? '' : 's'} · ${Number(row.prompt_tokens || 0).toLocaleString('en-US')} in / ${Number(row.completion_tokens || 0).toLocaleString('en-US')} out</span>
+          <span>${usageCostText(row.estimated_cost_usd)}</span>
+        </div>
+      `.toString()).join(''))}
+    </div>
+  `.toString();
+}
+
+// Month-over-month trend from the local ledger (newest first, capped at 6).
+export function usageHistoryRows(usage = null) {
+  const history = Array.isArray(usage?.history) ? usage.history : [];
+  if (history.length < 2) return '';
+  return html`
+    <div class="settings-card-kicker" style="margin-top: 14px;">By month</div>
+    <div class="benchmark-rows">
+      ${raw(history.slice(0, 6).map(row => html`
+        <div class="benchmark-row">
+          <strong>${esc(String(row.month || ''))}</strong>
+          <span>${Number(row.requests || 0).toLocaleString('en-US')} request${Number(row.requests) === 1 ? '' : 's'} · ${Number(row.prompt_tokens || 0).toLocaleString('en-US')} in / ${Number(row.completion_tokens || 0).toLocaleString('en-US')} out</span>
+          <span>${usageCostText(row.estimated_cost_usd)}</span>
+        </div>
+      `.toString()).join(''))}
+    </div>
+  `.toString();
 }
 
 /* ─────────────  Composition  ───────────── */
@@ -554,6 +598,41 @@ function providerCard() {
                    type="text" autocomplete="off" spellcheck="false"
                    placeholder="inherit (e.g. http://localhost:11434/v1 for Ollama)"
                    value="${esc(d.llm_task_summarize_base_url || '')}" />
+          </label>
+
+          <div class="settings-field span-2">
+            <span class="settings-label">Statement vision</span>
+            <span class="settings-hint">
+              Statement photo/screenshot imports need a vision-capable model. Route it here if the
+              chat model can’t read images.
+            </span>
+          </div>
+
+          <label class="settings-field">
+            <span class="settings-label">Vision provider</span>
+            <select id="settings-task-extract-provider" class="settings-input">
+              <option value="" ${!d.llm_task_extract_provider ? 'selected' : ''}>Same as chat</option>
+              ${raw(PROVIDERS.map(p => `
+                <option value="${esc(p.value)}" ${p.value === d.llm_task_extract_provider ? 'selected' : ''}>
+                  ${esc(p.label)}
+                </option>`).join(''))}
+            </select>
+          </label>
+
+          <label class="settings-field">
+            <span class="settings-label">Vision model</span>
+            <input id="settings-task-extract-model" class="settings-input mono"
+                   type="text" autocomplete="off" spellcheck="false"
+                   placeholder="inherit"
+                   value="${esc(d.llm_task_extract_model || '')}" />
+          </label>
+
+          <label class="settings-field span-2">
+            <span class="settings-label">Vision base URL</span>
+            <input id="settings-task-extract-base-url" class="settings-input mono"
+                   type="text" autocomplete="off" spellcheck="false"
+                   placeholder="inherit"
+                   value="${esc(d.llm_task_extract_base_url || '')}" />
           </label>
         </div>
       </details>
@@ -1164,6 +1243,9 @@ function attachHandlers() {
   delegate(root, 'change', '#settings-task-summarize-provider', (_, el) => { ui.draft.llm_task_summarize_provider = el.value; });
   delegate(root, 'input',  '#settings-task-summarize-model',    (_, el) => { ui.draft.llm_task_summarize_model = el.value; });
   delegate(root, 'input',  '#settings-task-summarize-base-url', (_, el) => { ui.draft.llm_task_summarize_base_url = el.value; });
+  delegate(root, 'change', '#settings-task-extract-provider', (_, el) => { ui.draft.llm_task_extract_provider = el.value; });
+  delegate(root, 'input',  '#settings-task-extract-model',    (_, el) => { ui.draft.llm_task_extract_model = el.value; });
+  delegate(root, 'input',  '#settings-task-extract-base-url', (_, el) => { ui.draft.llm_task_extract_base_url = el.value; });
 
   delegate(root, 'click',  '#settings-save',           (e) => { e.preventDefault(); save(); });
   delegate(root, 'click',  '#settings-test',           (e) => { e.preventDefault(); testProvider(); });
@@ -1581,6 +1663,9 @@ export function toDraft(settings) {
     llm_task_summarize_provider: settings.llm_task_summarize_provider || '',
     llm_task_summarize_model:    settings.llm_task_summarize_model || '',
     llm_task_summarize_base_url: settings.llm_task_summarize_base_url || '',
+    llm_task_extract_provider: settings.llm_task_extract_provider || '',
+    llm_task_extract_model:    settings.llm_task_extract_model || '',
+    llm_task_extract_base_url: settings.llm_task_extract_base_url || '',
   };
 }
 
@@ -1595,6 +1680,9 @@ export function buildPayloadFor({ draft, apiKeyDirty, loadedSettings }) {
     llm_task_summarize_provider: draft.llm_task_summarize_provider || '',
     llm_task_summarize_model:    draft.llm_task_summarize_model || '',
     llm_task_summarize_base_url: draft.llm_task_summarize_base_url || '',
+    llm_task_extract_provider: draft.llm_task_extract_provider || '',
+    llm_task_extract_model:    draft.llm_task_extract_model || '',
+    llm_task_extract_base_url: draft.llm_task_extract_base_url || '',
   };
   // If the user hasn't typed over the key, send the mask (when configured) so
   // the server preserves the stored secret. Never invent a fake key.

@@ -107,12 +107,45 @@ class LLMUsageLedger:
         payload = self._load()
         months = payload.get("months", {})
         current_key = _month_key(now)
+        history = []
+        for key in sorted(months.keys(), reverse=True):
+            month_summary = self._month_summary(months.get(key, {}))
+            history.append(
+                {
+                    "month": key,
+                    "requests": month_summary["requests"],
+                    "prompt_tokens": month_summary["prompt_tokens"],
+                    "completion_tokens": month_summary["completion_tokens"],
+                    "estimated_cost_usd": month_summary["estimated_cost_usd"],
+                }
+            )
+        current = self._month_summary(months.get(current_key, {}))
         return {
             "month": current_key,
-            "current": self._month_summary(months.get(current_key, {})),
+            "current": current,
+            "providers": self._provider_rollup(current["rows"]),
+            "history": history,
             "months_recorded": sorted(months.keys(), reverse=True),
             "note": "Token counts come from the provider; dollar figures are list-price estimates.",
         }
+
+    @staticmethod
+    def _provider_rollup(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        by_provider: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            provider = str(row.get("provider") or "unknown")
+            agg = by_provider.setdefault(
+                provider,
+                {"provider": provider, "requests": 0, "prompt_tokens": 0,
+                 "completion_tokens": 0, "estimated_cost_usd": 0.0},
+            )
+            agg["requests"] += int(row.get("requests") or 0)
+            agg["prompt_tokens"] += int(row.get("prompt_tokens") or 0)
+            agg["completion_tokens"] += int(row.get("completion_tokens") or 0)
+            agg["estimated_cost_usd"] = round(
+                agg["estimated_cost_usd"] + float(row.get("estimated_cost_usd") or 0.0), 4
+            )
+        return sorted(by_provider.values(), key=lambda item: -item["estimated_cost_usd"])
 
     @staticmethod
     def _month_summary(month: dict[str, Any]) -> dict[str, Any]:

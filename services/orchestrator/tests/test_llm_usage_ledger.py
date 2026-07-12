@@ -96,3 +96,64 @@ def test_metering_failure_never_breaks_the_completion() -> None:
     client = MeteredChatClient(_FakeInner(), task="chat", ledger=_BrokenLedger())
     completion = asyncio.run(client.complete([], []))
     assert completion["message"]["content"] == "hi"
+
+
+def test_summary_includes_history_and_provider_rollup(tmp_path: Path) -> None:
+    ledger = LLMUsageLedger(tmp_path / "ledger.json")
+    january = datetime(2026, 1, 10, tzinfo=timezone.utc)
+    february = datetime(2026, 2, 10, tzinfo=timezone.utc)
+    ledger.record(provider="openai", model="gpt-5.5", task="chat", usage={"prompt_tokens": 100, "completion_tokens": 50}, now=january)
+    ledger.record(provider="anthropic", model="claude-opus-4-8", task="chat", usage={"prompt_tokens": 200, "completion_tokens": 80}, now=february)
+    ledger.record(provider="openai", model="gpt-5.5", task="summarize", usage={"prompt_tokens": 50, "completion_tokens": 10}, now=february)
+
+    summary = ledger.summary(now=february)
+
+    history = summary["history"]
+    assert [row["month"] for row in history] == ["2026-02", "2026-01"]
+    feb_row = history[0]
+    assert feb_row["requests"] == 2
+    assert feb_row["prompt_tokens"] == 250
+    jan_row = history[1]
+    assert jan_row["requests"] == 1
+
+    providers = summary["providers"]
+    assert {row["provider"] for row in providers} == {"openai", "anthropic"}
+    openai_row = next(row for row in providers if row["provider"] == "openai")
+    assert openai_row["requests"] == 1
+    assert openai_row["prompt_tokens"] == 50
+
+
+class _FakeStreamingInner:
+    provider = "openai"
+    model = "gpt-5.5"
+    enabled = True
+
+    async def complete(self, messages, tools):
+        return {"message": {"content": "hi"}, "usage": {"prompt_tokens": 1, "completion_tokens": 1}, "model": "gpt-5.5", "provider": "openai"}
+
+    async def complete_stream(self, messages, tools, on_delta=None):
+        if on_delta:
+            on_delta("hi")
+        return {"message": {"content": "hi"}, "usage": {"prompt_tokens": 5, "completion_tokens": 2}, "model": "gpt-5.5", "provider": "openai"}
+
+
+def test_metered_wrapper_preserves_streaming_capability(tmp_path: Path) -> None:
+    import asyncio
+
+    from buildwealth_orchestrator.services.llm_routing import metered_chat_client
+
+    ledger = LLMUsageLedger(tmp_path / "ledger.json")
+
+    streaming = metered_chat_client(_FakeStreamingInner(), task="chat", ledger=ledger)
+    assert hasattr(streaming, "complete_stream")
+    deltas: list[str] = []
+    asyncio.run(streaming.complete_stream([], [], on_delta=deltas.append))
+    assert deltas == ["hi"]
+
+    non_streaming = metered_chat_client(_FakeInner(), task="chat", ledger=ledger)
+    assert not hasattr(non_streaming, "complete_stream")
+
+    summary = ledger.summary()
+    row = summary["current"]["rows"][0]
+    assert row["prompt_tokens"] == 5
+    assert row["completion_tokens"] == 2
