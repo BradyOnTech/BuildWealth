@@ -5,6 +5,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
+from buildwealth_orchestrator.services.store_locks import synchronized_store
+from buildwealth_orchestrator.services.json_store_migrations import migrate_payload
 
 PROFILE_SCHEMA_VERSION = 2
 PROFILE_METADATA_REVIEW_STATUSES = {"copilot_drafted", "inferred", "stale"}
@@ -267,6 +269,7 @@ def _normalize_profile_metadata(raw_metadata: Any) -> dict[str, Any]:
     return normalized
 
 
+@synchronized_store('profile_path')
 class FinancialProfileStore:
     def __init__(self, profile_path: Path):
         self.profile_path = profile_path
@@ -436,6 +439,7 @@ class FinancialProfileStore:
         except Exception:
             raw = self._default_payload()
         payload = self._migrate_payload(raw)
+        payload, _ = migrate_payload("financial_profile", payload)
         self.profile_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return payload
 

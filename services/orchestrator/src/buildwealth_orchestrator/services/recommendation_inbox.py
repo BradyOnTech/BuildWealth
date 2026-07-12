@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from buildwealth_orchestrator.schemas import RecommendationStatus
+from buildwealth_orchestrator.services.store_locks import synchronized_store
+from buildwealth_orchestrator.services.json_store_migrations import migrate_payload
 
 
 def utc_now() -> datetime:
@@ -21,6 +23,7 @@ class RecommendationNotFoundError(FileNotFoundError):
     pass
 
 
+@synchronized_store('storage_path')
 class RecommendationInbox:
     def __init__(self, storage_path: Path):
         self.storage_path = storage_path
@@ -52,6 +55,9 @@ class RecommendationInbox:
         if not isinstance(rows, list):
             rows = []
         payload["recommendations"] = [row for row in rows if isinstance(row, dict)]
+        payload, migrated = migrate_payload("recommendations_inbox", payload)
+        if migrated:
+            self._save(payload)
         return payload
 
     def _save(self, payload: dict[str, Any]) -> None:

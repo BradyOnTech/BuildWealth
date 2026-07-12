@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Protocol
 
 import httpx
+from buildwealth_orchestrator.services.store_locks import synchronized_store
 
 
 def utc_now() -> datetime:
@@ -18,6 +19,7 @@ def utc_now_iso() -> str:
     return utc_now().isoformat()
 
 
+@synchronized_store('base_dir')
 class ConversationStore:
     def __init__(self, base_dir: Path):
         self.base_dir = base_dir

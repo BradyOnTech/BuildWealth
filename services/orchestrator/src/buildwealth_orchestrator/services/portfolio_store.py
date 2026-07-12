@@ -12,6 +12,8 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from buildwealth_orchestrator.services.store_locks import synchronized_store
+from buildwealth_orchestrator.services.json_store_migrations import migrate_payload
 from pathlib import Path
 from typing import Any, Literal
 
@@ -120,6 +122,7 @@ class Transaction:
         }
 
 
+@synchronized_store('portfolio_dir')
 class PortfolioStore:
     """Manages holdings and transactions via local JSON files."""
 
@@ -1328,6 +1331,7 @@ class PortfolioStore:
     def _read_holdings_payload(self) -> dict[str, Any]:
         original = self._read_json(self._holdings_path)
         payload = self._migrate_holdings_payload(original)
+        payload, _ = migrate_payload("portfolio_holdings", payload)
         if payload != original:
             self._write_json(self._holdings_path, payload)
         return payload

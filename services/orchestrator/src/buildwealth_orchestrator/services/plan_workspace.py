@@ -6,6 +6,7 @@ import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
+from buildwealth_orchestrator.services.store_locks import synchronized_store
 
 from buildwealth_orchestrator.services.scenario_engine import (
     DEFAULT_SIMULATION_SEED,
@@ -35,6 +36,7 @@ class PlanNotFoundError(FileNotFoundError):
     pass
 
 
+@synchronized_store('base_dir')
 class PlanWorkspace:
     def __init__(self, base_dir: Path):
         self.base_dir = base_dir

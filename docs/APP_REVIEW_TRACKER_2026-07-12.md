@@ -70,9 +70,9 @@ surface has `schema_version` fields but no migration runner and no locking. Atom
 per-file `os.replace` does not prevent read-modify-write races between concurrent
 requests. Breaks first on the hosted-SaaS path.
 
-- [ ] Per-store locking (asyncio lock or file lock) around read-modify-write cycles
-- [ ] Ordered migration runner for JSON stores (mirror `control_db_migrations.py` discipline)
-- [ ] Tests exercising concurrent writers against the same store
+- [x] Per-store locking (asyncio lock or file lock) around read-modify-write cycles
+- [x] Ordered migration runner for JSON stores (mirror `control_db_migrations.py` discipline)
+- [x] Tests exercising concurrent writers against the same store
 
 ### 6. Delete dead weight
 
