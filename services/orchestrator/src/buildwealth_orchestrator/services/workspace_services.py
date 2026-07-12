@@ -26,7 +26,7 @@ from buildwealth_orchestrator.services.today_review_checkpoints import TodayRevi
 from buildwealth_orchestrator.services.workspace_settings import (
     WorkspaceSecretStore,
     WorkspaceSettingsStore,
-    load_or_create_local_secret_key,
+    resolve_local_secret_key_with_source,
     write_local_secret_key,
 )
 
@@ -73,11 +73,15 @@ class WorkspaceServices:
     secret_store: WorkspaceSecretStore
 
 
+class SecretKeyRotationUnavailable(RuntimeError):
+    """Raised when the active key source cannot be rotated via the API."""
+
+
 class WorkspaceServiceFactory:
     def __init__(self, *, settings, control_plane: ControlPlaneStore):
         self.settings = settings
         self.control_plane = control_plane
-        self.secret_key = load_or_create_local_secret_key(settings.secret_key_path)
+        self.secret_key, self.secret_key_source = resolve_local_secret_key_with_source(settings.secret_key_path)
 
     def paths_for_record(self, record: WorkspaceRecord) -> WorkspacePaths:
         root = record.storage_path
@@ -197,6 +201,11 @@ class WorkspaceServiceFactory:
         }
 
     def rotate_secret_key(self) -> dict[str, object]:
+        if self.secret_key_source == "env":
+            raise SecretKeyRotationUnavailable(
+                "The secret key is provided by BUILDWEALTH_SECRET_KEY; rotate it by "
+                "updating that environment variable (the on-disk key file is ignored)."
+            )
         preview = self.preview_secret_key_rotation()
         new_key = secrets.token_bytes(32)
         rotated_items: list[dict[str, object]] = []

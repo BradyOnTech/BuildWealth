@@ -88,7 +88,10 @@ def apply_secret_key_rotation(
     m.require_permission(context, "workspace.manage")
     if str(payload.get("confirm") or "").strip().lower() != "rotate":
         raise m.HTTPException(status_code=400, detail='Type "rotate" to confirm secret key rotation')
-    result = m.workspace_service_factory.rotate_secret_key()
+    try:
+        result = m.workspace_service_factory.rotate_secret_key()
+    except m.SecretKeyRotationUnavailable as exc:
+        raise m.HTTPException(status_code=409, detail=str(exc)) from exc
     m.control_plane_store.record_audit_event(
         action="security.workspace_secret_key_rotated",
         actor_user_id=context.user_id,

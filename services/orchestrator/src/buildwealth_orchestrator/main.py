@@ -446,6 +446,7 @@ from buildwealth_orchestrator.services.control_plane import (
     RequestContext,
 )
 from buildwealth_orchestrator.services.workspace_services import (
+    SecretKeyRotationUnavailable,
     WorkspaceServiceFactory,
     WorkspaceServices,
 )

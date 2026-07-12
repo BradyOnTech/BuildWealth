@@ -59,9 +59,9 @@ Workspace secrets use a home-rolled HMAC-SHA256 stream cipher
 `data/control/local_secret.key` next to the ciphertext — at-rest encryption protects
 against essentially nothing.
 
-- [ ] Replace home-rolled cipher with the `cryptography` library (e.g. Fernet)
-- [ ] Move the key out of the data dir: macOS Keychain, or passphrase-derived key
-- [ ] Migration path for existing encrypted secrets
+- [x] Replace home-rolled cipher with the `cryptography` library (e.g. Fernet)
+- [x] Move the key out of the data dir: macOS Keychain, or passphrase-derived key
+- [x] Migration path for existing encrypted secrets
 
 ### 5. JSON-store integrity
 

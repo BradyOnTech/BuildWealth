@@ -12,6 +12,7 @@ dependencies = [
   "uvicorn[standard]>=0.35.0",
   "httpx>=0.28.0",
   "PyJWT[crypto]>=2.9.0",
+  "cryptography>=42.0",
   "pydantic>=2.11.0",
   "pydantic-settings>=2.10.0",
   "python-multipart>=0.0.9"

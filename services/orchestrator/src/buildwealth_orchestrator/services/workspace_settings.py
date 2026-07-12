@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from cryptography.fernet import Fernet, InvalidToken
+
 from buildwealth_orchestrator.services.llm_provider_vault import (
     LEGACY_LLM_API_KEY,
     LEGACY_OPENAI_API_KEY,
@@ -35,6 +37,10 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+SECRET_KEY_ENV_VAR = "BUILDWEALTH_SECRET_KEY"
+SECRET_KEY_FILE_ENV_VAR = "BUILDWEALTH_SECRET_KEY_FILE"
+
+
 def load_or_create_local_secret_key(secret_key_path: Path) -> bytes:
     secret_key_path.parent.mkdir(parents=True, exist_ok=True)
     if secret_key_path.exists():
@@ -50,6 +56,35 @@ def load_or_create_local_secret_key(secret_key_path: Path) -> bytes:
     except OSError:
         pass
     return key
+
+
+def resolve_local_secret_key_with_source(secret_key_path: Path, env: Any = None) -> tuple[bytes, str]:
+    """Resolve the workspace secret key, preferring sources outside the data dir.
+
+    Priority: BUILDWEALTH_SECRET_KEY (urlsafe-b64, 32 bytes) from the
+    environment (e.g. infra/env/orchestrator.env or a deployment KMS), then
+    BUILDWEALTH_SECRET_KEY_FILE, then the legacy on-disk key beside the data
+    stores (kept for existing installs). Returns (key, source) where source is
+    "env", "file_override", or "data_dir".
+    """
+    env = os.environ if env is None else env
+    raw = str(env.get(SECRET_KEY_ENV_VAR, "") or "").strip()
+    if raw:
+        try:
+            key = base64.urlsafe_b64decode(raw.encode("ascii"))
+        except Exception as exc:
+            raise ValueError(f"{SECRET_KEY_ENV_VAR} is not valid urlsafe base64") from exc
+        if len(key) != 32:
+            raise ValueError(f"{SECRET_KEY_ENV_VAR} must decode to 32 bytes")
+        return key, "env"
+    file_override = str(env.get(SECRET_KEY_FILE_ENV_VAR, "") or "").strip()
+    if file_override:
+        return load_or_create_local_secret_key(Path(file_override)), "file_override"
+    return load_or_create_local_secret_key(secret_key_path), "data_dir"
+
+
+def resolve_local_secret_key(secret_key_path: Path, env: Any = None) -> bytes:
+    return resolve_local_secret_key_with_source(secret_key_path, env)[0]
 
 
 def write_local_secret_key(secret_key_path: Path, secret_key: bytes) -> None:
@@ -77,10 +112,10 @@ def _mask_suffix(value: str | None) -> str | None:
 class WorkspaceSecretStore:
     """Workspace-scoped encrypted secret store.
 
-    This avoids plaintext provider keys in workspace settings. It uses a local
-    authenticated stream built from HMAC-SHA256 so the implementation remains
-    dependency-light for the current proof of concept. Before hosted beta this
-    should be replaced with a standard audited primitive or deployment KMS.
+    Secrets are encrypted with Fernet (AES-128-CBC + HMAC-SHA256 from the
+    `cryptography` library). Entries written by the earlier home-rolled
+    HMAC-keystream cipher are still readable and are migrated to Fernet on
+    first load.
     """
 
     def __init__(self, secrets_path: Path, secret_key: bytes):
@@ -88,7 +123,33 @@ class WorkspaceSecretStore:
         self.secret_key = secret_key
         self.secrets_path.parent.mkdir(parents=True, exist_ok=True)
         if not self.secrets_path.exists():
-            self._write({"schema_version": 1, "secrets": {}})
+            self._write({"schema_version": 2, "secrets": {}})
+        else:
+            self._migrate_legacy_entries()
+
+    @staticmethod
+    def _fernet_for(secret_key: bytes) -> Fernet:
+        return Fernet(base64.urlsafe_b64encode(secret_key))
+
+    def _migrate_legacy_entries(self) -> None:
+        payload = self._read()
+        changed = False
+        for key, entry in list(payload.get("secrets", {}).items()):
+            if not isinstance(entry, dict) or "token" in entry or "ciphertext" not in entry:
+                continue
+            value = self._decrypt_legacy(entry)
+            if value is None:
+                continue  # wrong key or corrupt — leave as-is so rotation can report it
+            payload["secrets"][key] = {
+                **self._encrypt(value),
+                "last4": entry.get("last4"),
+                "updated_at": entry.get("updated_at") or utc_now_iso(),
+                "migrated_at": utc_now_iso(),
+            }
+            changed = True
+        if changed:
+            payload["schema_version"] = 2
+            self._write(payload)
 
     def _write(self, payload: dict[str, Any]) -> None:
         self.secrets_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -104,33 +165,16 @@ class WorkspaceSecretStore:
             payload["secrets"] = {}
         return payload
 
-    def _keystream(self, nonce: bytes, length: int) -> bytes:
-        blocks: list[bytes] = []
-        counter = 0
-        while sum(len(block) for block in blocks) < length:
-            counter_bytes = counter.to_bytes(4, "big")
-            blocks.append(hmac.new(self.secret_key, nonce + counter_bytes, hashlib.sha256).digest())
-            counter += 1
-        return b"".join(blocks)[:length]
-
     def _encrypt(self, value: str) -> dict[str, str]:
         return self._encrypt_with_key(value, self.secret_key)
 
     @classmethod
     def _encrypt_with_key(cls, value: str, secret_key: bytes) -> dict[str, str]:
-        nonce = secrets.token_bytes(16)
-        plaintext = value.encode("utf-8")
-        keystream = cls._keystream_for(secret_key, nonce, len(plaintext))
-        ciphertext = bytes(a ^ b for a, b in zip(plaintext, keystream, strict=True))
-        tag = hmac.new(secret_key, nonce + ciphertext, hashlib.sha256).digest()
-        return {
-            "nonce": base64.urlsafe_b64encode(nonce).decode("ascii"),
-            "ciphertext": base64.urlsafe_b64encode(ciphertext).decode("ascii"),
-            "tag": base64.urlsafe_b64encode(tag).decode("ascii"),
-        }
+        token = cls._fernet_for(secret_key).encrypt(value.encode("utf-8"))
+        return {"token": token.decode("ascii")}
 
     @staticmethod
-    def _keystream_for(secret_key: bytes, nonce: bytes, length: int) -> bytes:
+    def _legacy_keystream(secret_key: bytes, nonce: bytes, length: int) -> bytes:
         blocks: list[bytes] = []
         counter = 0
         while sum(len(block) for block in blocks) < length:
@@ -139,7 +183,8 @@ class WorkspaceSecretStore:
             counter += 1
         return b"".join(blocks)[:length]
 
-    def _decrypt(self, payload: dict[str, Any]) -> str | None:
+    def _decrypt_legacy(self, payload: dict[str, Any]) -> str | None:
+        """Decrypt an entry written by the pre-Fernet HMAC-keystream cipher."""
         try:
             nonce = base64.urlsafe_b64decode(str(payload["nonce"]).encode("ascii"))
             ciphertext = base64.urlsafe_b64decode(str(payload["ciphertext"]).encode("ascii"))
@@ -149,12 +194,21 @@ class WorkspaceSecretStore:
         expected = hmac.new(self.secret_key, nonce + ciphertext, hashlib.sha256).digest()
         if not hmac.compare_digest(tag, expected):
             return None
-        keystream = self._keystream(nonce, len(ciphertext))
+        keystream = self._legacy_keystream(self.secret_key, nonce, len(ciphertext))
         plaintext = bytes(a ^ b for a, b in zip(ciphertext, keystream, strict=True))
         try:
             return plaintext.decode("utf-8")
         except UnicodeDecodeError:
             return None
+
+    def _decrypt(self, payload: dict[str, Any]) -> str | None:
+        token = payload.get("token")
+        if token:
+            try:
+                return self._fernet_for(self.secret_key).decrypt(str(token).encode("ascii")).decode("utf-8")
+            except (InvalidToken, ValueError):
+                return None
+        return self._decrypt_legacy(payload)
 
     def set_secret(self, key: str, value: str) -> None:
         payload = self._read()
