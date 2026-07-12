@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-import re
 from typing import Any, get_args
 
 from buildwealth_orchestrator.schemas import PlanScenarioBranchEvent, PlanTimelineEvent
@@ -29,14 +27,6 @@ _BACKEND_ONLY_TIMELINE_CONSTANTS = {
     "TIMELINE_IMPACT_TYPES",
     "TIMELINE_FREQUENCIES",
 }
-
-_FRONTEND_TIMELINE_EXPORT_NAMES = {
-    "TIMELINE_EVENT_TYPES",
-    "TIMELINE_IMPACT_TYPES",
-    "TIMELINE_FREQUENCIES",
-    "TIMELINE_DEFAULT_IMPACT_BY_EVENT",
-}
-
 
 def _literal_values(annotation: Any) -> tuple[str, ...]:
     args = get_args(annotation)
@@ -91,48 +81,3 @@ def test_timeline_defaults_constant_coverage_is_explicit() -> None:
     assert TIMELINE_EVENT_TYPES == frozenset(TIMELINE_EVENT_TYPE_VALUES)
     assert TIMELINE_IMPACT_TYPES == frozenset(TIMELINE_IMPACT_TYPE_VALUES)
     assert TIMELINE_FREQUENCIES == frozenset(TIMELINE_FREQUENCY_VALUES)
-
-
-def _extract_js_array_values(module_text: str, const_name: str) -> tuple[str, ...]:
-    pattern = rf"export const {const_name}\s*=\s*Object\.freeze\(\[(.*?)\]\);"
-    match = re.search(pattern, module_text, re.DOTALL)
-    if match is None:
-        raise AssertionError(f"Unable to locate {const_name} array export in timeline_defaults.js")
-    values = re.findall(r"'([^']+)'", match.group(1))
-    return tuple(values)
-
-
-def _extract_js_object_values(module_text: str, const_name: str) -> dict[str, str]:
-    pattern = rf"export const {const_name}\s*=\s*Object\.freeze\(\{{(.*?)\}}\);"
-    match = re.search(pattern, module_text, re.DOTALL)
-    if match is None:
-        raise AssertionError(f"Unable to locate {const_name} object export in timeline_defaults.js")
-    pairs = re.findall(r"([A-Za-z0-9_]+)\s*:\s*'([^']+)'", match.group(1))
-    return {key: value for key, value in pairs}
-
-
-def test_timeline_defaults_frontend_mirror_stays_in_sync() -> None:
-    project_root = Path(__file__).resolve().parents[1]
-    module_path = (
-        project_root
-        / "src"
-        / "buildwealth_orchestrator"
-        / "web"
-        / "lib"
-        / "timeline_defaults.js"
-    )
-    module_text = module_path.read_text(encoding="utf-8")
-
-    exported_names = set(re.findall(r"export const (TIMELINE_[A-Z0-9_]+)\s*=", module_text))
-    assert exported_names == _FRONTEND_TIMELINE_EXPORT_NAMES
-
-    payload = {
-        "eventTypes": list(_extract_js_array_values(module_text, "TIMELINE_EVENT_TYPES")),
-        "impactTypes": list(_extract_js_array_values(module_text, "TIMELINE_IMPACT_TYPES")),
-        "frequencies": list(_extract_js_array_values(module_text, "TIMELINE_FREQUENCIES")),
-        "defaultImpactByEvent": _extract_js_object_values(module_text, "TIMELINE_DEFAULT_IMPACT_BY_EVENT"),
-    }
-    assert payload["eventTypes"] == list(TIMELINE_EVENT_TYPE_VALUES)
-    assert payload["impactTypes"] == list(TIMELINE_IMPACT_TYPE_VALUES)
-    assert payload["frequencies"] == list(TIMELINE_FREQUENCY_VALUES)
-    assert payload["defaultImpactByEvent"] == TIMELINE_DEFAULT_IMPACT_BY_EVENT

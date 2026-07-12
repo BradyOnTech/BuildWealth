@@ -320,7 +320,7 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
   assert.equal(savedProfile.notes, 'Keep this note.');
   assert.equal(onboardingStatusCalls, 3);
 
-  await page.getByRole('button', { name: /new conversation/i }).click();
+  await page.getByRole('button', { name: /new chat/i }).click();
   await page.getByText('Your profile is 75% complete. Next: Add goals.').waitFor({ state: 'visible' });
 
   const goalsButton = page.getByRole('button', { name: /add goals with copilot/i });
@@ -358,7 +358,7 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
     { id: 'income_salary', label: 'Salary', monthly_amount_usd: 11000 },
   ]);
 
-  await page.getByRole('button', { name: /new conversation/i }).click();
+  await page.getByRole('button', { name: /new chat/i }).click();
   await page.getByText('Your profile is 82% complete. Next: Add tax basics.').waitFor({ state: 'visible' });
 
   const taxButton = page.getByRole('button', { name: /add tax basics with copilot/i });
@@ -397,7 +397,7 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
     notes: 'Keep this goal separate from emergency reserves.',
   }]);
 
-  await page.getByRole('button', { name: /new conversation/i }).click();
+  await page.getByRole('button', { name: /new chat/i }).click();
   await page.getByText('Your profile is 90% complete. Next: Add physical assets.').waitFor({ state: 'visible' });
 
   const assetsButton = page.getByRole('button', { name: /add assets with copilot/i });

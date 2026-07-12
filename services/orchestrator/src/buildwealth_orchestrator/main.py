@@ -465,10 +465,6 @@ async def _app_lifespan(_: FastAPI):
 
 app = FastAPI(title=settings.app_name, lifespan=_app_lifespan)
 
-web_dir = Path(__file__).resolve().parent / "web"
-if web_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
-
 web_v2_dir = Path(__file__).resolve().parent / "web-v2"
 if web_v2_dir.exists():
     app.mount("/static-v2", StaticFiles(directory=str(web_v2_dir)), name="static-v2")

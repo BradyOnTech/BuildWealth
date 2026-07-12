@@ -2153,13 +2153,16 @@ def test_copilot_chat_and_tools_use_active_user_workspace(monkeypatch, tmp_path:
             *,
             question,
             conversation_id=None,
+            conversation=None,
             contextual_brief=None,
             context_trace=None,
             conversation_store=None,
+            llm_client=None,
         ):
             assert conversation_store is not None
             profile = await main.tool_get_financial_profile({})
-            conversation = conversation_store.get_or_create(conversation_id, question)
+            if conversation is None:
+                conversation = conversation_store.get_or_create(conversation_id, question)
             conversation_store.append_message(conversation, "user", question)
             answer = f"profile-notes:{profile.get('notes')}"
             conversation_store.append_message(
