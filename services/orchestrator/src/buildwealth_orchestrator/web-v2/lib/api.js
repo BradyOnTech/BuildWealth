@@ -453,6 +453,8 @@ export const api = {
     `/api/context/candidates/${encodeURIComponent(id)}/lifecycle`,
     body,
   ),
+  applyContextCandidate: (id) => postJson(`/api/context/candidates/${id}/apply`, {}),
+  inferProfileCandidates: () => postJson('/api/context/candidates/infer-profile', {}),
   contextCandidateEvents: (id) => fetchJson(`/api/context/candidates/${encodeURIComponent(id)}/events`),
 
   // Copilot

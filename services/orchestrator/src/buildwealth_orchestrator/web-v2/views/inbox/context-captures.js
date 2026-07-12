@@ -14,6 +14,15 @@ export const CONTEXT_CAPTURE_STATES = [
 
 const TERMINAL_STATES = new Set(['applied', 'rejected', 'superseded', 'archived']);
 const SOURCE_REVIEW_DOMAINS = new Set(['profile', 'plan', 'research', 'recommendation', 'import']);
+const PROFILE_APPLY_FIELD_PREFIXES = ['tax_profile.', 'investment_policy.'];
+
+// Candidates the apply bridge can write straight into the financial profile.
+export function canApplyToProfile(candidate) {
+  const patchKind = String(candidate?.metadata?.profile_patch_kind || '').trim();
+  if (patchKind) return true;
+  const field = String(candidate?.target_field || '').trim();
+  return PROFILE_APPLY_FIELD_PREFIXES.some(prefix => field.startsWith(prefix));
+}
 
 export function renderContextCaptures(ctx = {}) {
   const items = Array.isArray(ctx.items) ? ctx.items : [];
@@ -25,6 +34,7 @@ export function renderContextCaptures(ctx = {}) {
     return html`
       <section class="context-captures quiet" aria-labelledby="context-captures-title">
         <span class="section-eyebrow" id="context-captures-title">Context capture</span>
+        ${ctx.confirmation ? html`<p class="quality-quote context-capture-confirmation">${ctx.confirmation}</p>` : ''}
         <details class="diagnostics-toggle">
           <summary>Nothing needs a decision — browse past captures</summary>
           <div class="inbox-filters context-capture-filters">
@@ -58,6 +68,7 @@ export function renderContextCaptures(ctx = {}) {
         </div>
       </div>
       ${ctx.error ? html`<p class="error-banner">${ctx.error}</p>` : ''}
+      ${ctx.confirmation ? html`<p class="quality-quote context-capture-confirmation">${ctx.confirmation}</p>` : ''}
       ${raw(body)}
     </section>
   `;
@@ -136,9 +147,15 @@ function renderCandidateActions(candidate, { expanded, actionBusyId } = {}) {
   const routeHref = routeHrefFor(candidate);
   const sourceReview = requiresSourceReview(candidate);
   const expandedMode = expanded?.mode || '';
+  const profileApply = canApplyToProfile(candidate);
 
   return html`
     <div class="entry-actions context-capture-actions">
+      ${profileApply ? html`
+        <button class="action-link" data-context-action="apply-to-profile" data-candidate-id="${id}" ${disabled}>
+          Apply to Profile <span class="arrow">›</span>
+        </button>
+      ` : ''}
       ${sourceReview ? html`
         <a class="action-link" href="${routeHref}">
           Review ${route.label || 'source'} <span class="arrow">→</span>

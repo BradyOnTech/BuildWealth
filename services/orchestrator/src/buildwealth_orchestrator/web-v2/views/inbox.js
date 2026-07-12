@@ -36,6 +36,7 @@ const inbox = {
     error: null,
     expanded: null,                        // { id, mode, busy, error }
     actionBusyId: null,
+    confirmation: null,                    // transient apply_result.detail line
   },
   sweep:  { phase: 'idle', busy: false },  // 'idle' | 'previewing' | 'preview-ready' | 'creating' | 'done' | 'error'
   closure: null,
@@ -407,6 +408,7 @@ async function setContextCaptureState(lifecycleState) {
   if (inbox.context.lifecycleState === lifecycleState) return;
   inbox.context.lifecycleState = lifecycleState || 'pending_review';
   inbox.context.expanded = null;
+  setContextConfirmation(null);
   await loadContextCaptures();
   rerenderContextCaptures();
 }
@@ -427,9 +429,47 @@ function closeContextCapture() {
 }
 
 async function handleContextCaptureAction(action, id) {
+  if (action === 'apply-to-profile') {
+    await applyContextCaptureToProfile(id);
+    return;
+  }
   const body = contextActionPayload(action, id);
   if (!body) return;
   await updateContextCapture(id, body);
+}
+
+let contextConfirmationTimer = null;
+
+function setContextConfirmation(detail) {
+  inbox.context.confirmation = detail || null;
+  clearTimeout(contextConfirmationTimer);
+  if (!detail) return;
+  contextConfirmationTimer = setTimeout(() => {
+    inbox.context.confirmation = null;
+    rerenderContextCaptures();
+  }, 8000);
+}
+
+async function applyContextCaptureToProfile(id) {
+  if (!id) return;
+  inbox.context.actionBusyId = id;
+  inbox.context.error = null;
+  setContextConfirmation(null);
+  rerenderContextCaptures();
+
+  try {
+    const res = await api.applyContextCandidate(id);
+    setContextConfirmation(res?.apply_result?.detail || 'Applied to the profile.');
+    inbox.context.expanded = null;
+    await Promise.all([loadContextCaptures(), loadList()]);
+    rerenderControls();
+    rerenderList();
+  } catch (err) {
+    inbox.context.error = err.message;
+  } finally {
+    inbox.context.actionBusyId = null;
+    rerenderContextCaptures();
+  }
 }
 
 async function handleContextCaptureResolution(resolution, id) {
@@ -503,6 +543,7 @@ function contextActionPayload(action, id) {
 
 async function updateContextCapture(id, body) {
   if (!id || !body) return;
+  setContextConfirmation(null);
   inbox.context.actionBusyId = id;
   if (inbox.context.expanded?.id === id) {
     inbox.context.expanded = { ...inbox.context.expanded, busy: true, error: null };

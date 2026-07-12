@@ -105,7 +105,12 @@ export async function runPreview() {
 }
 
 export async function runCreate() {
-  const res = await api.sweepCreate();
+  // The profile inference sweep rides along — it drafts context captures,
+  // not inbox suggestions, so its failure never blocks the sweep itself.
+  const [res] = await Promise.all([
+    api.sweepCreate(),
+    api.inferProfileCandidates().catch(() => null),
+  ]);
   return normalizeSweepResponse(res);
 }
 

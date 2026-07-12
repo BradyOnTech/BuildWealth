@@ -983,6 +983,17 @@ class ContextRegistry:
             )
         return payload
 
+    def get_candidate(self, candidate_id: str) -> dict[str, Any]:
+        self._initialize()
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM context_candidates WHERE id = ?",
+                (str(candidate_id).strip(),),
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"Context candidate not found: {candidate_id}")
+        return _candidate_from_row(row)
+
     def list_candidates(
         self,
         *,
@@ -1800,6 +1811,7 @@ class ContextIntelligenceService:
         metadata: Mapping[str, Any] | None = None,
         lifecycle_state: str = "pending_review",
         prompt_influence: str | None = None,
+        dedupe_key: str | None = None,
     ) -> dict[str, Any]:
         candidate = build_context_candidate_payload(
             source_domain=source_domain,
@@ -1813,6 +1825,7 @@ class ContextIntelligenceService:
             metadata=metadata,
             lifecycle_state=lifecycle_state,
             prompt_influence=prompt_influence,
+            dedupe_key=dedupe_key,
         )
         stored = self.registry.upsert_candidate(candidate)
         review_item = self._sync_context_candidate_review_item(stored)
@@ -1857,6 +1870,9 @@ class ContextIntelligenceService:
             include_archived=include_archived,
             limit=limit,
         )
+
+    def get_context_candidate(self, candidate_id: str) -> dict[str, Any]:
+        return self.registry.get_candidate(candidate_id)
 
     def list_context_candidate_events(self, candidate_id: str) -> list[dict[str, Any]]:
         return self.registry.candidate_events(candidate_id)
@@ -2726,6 +2742,7 @@ def build_context_candidate_payload(
     metadata: Mapping[str, Any] | None = None,
     lifecycle_state: str = "pending_review",
     prompt_influence: str | None = None,
+    dedupe_key: str | None = None,
 ) -> dict[str, Any]:
     source_domain_value = _clean_candidate_domain(source_domain, default="conversation")
     target_domain_value = _clean_candidate_domain(target_domain, default="conversation")
@@ -2746,7 +2763,9 @@ def build_context_candidate_payload(
         if prompt_influence is not None
         else _default_prompt_influence_for_state(state, materiality=materiality.materiality)
     )
-    dedupe_key = _context_candidate_dedupe_key(
+    # An explicit dedupe_key (e.g. "profile_inference:tax_profile.marginal_tax_rate")
+    # keeps re-sweeps upserting the same candidate even when the claim text changes.
+    dedupe_key = str(dedupe_key or "").strip() or _context_candidate_dedupe_key(
         source_domain=source_domain_value,
         source_ref=source_ref,
         extracted_claim=claim,
