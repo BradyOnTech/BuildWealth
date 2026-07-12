@@ -72,11 +72,11 @@ requests. Breaks first on the hosted-SaaS path.
 
 ### 6. Delete dead weight
 
-- [ ] Remove legacy v1 frontend `web/` (~10.5k lines, still bundled and mounted at
+- [x] Remove legacy v1 frontend `web/` (~10.5k lines, still bundled and mounted at
       `/static` via `main.py:470` but never served as a page)
-- [ ] Remove empty, unenforced `contracts/engine/v1/` placeholder
-- [ ] Remove empty `data/ignidash/` directory (no code references)
-- [ ] Fix or delete untracked `services/orchestrator/tests/plan.test.mjs` — broken as
+- [x] Remove empty, unenforced `contracts/engine/v1/` placeholder
+- [x] Remove empty `data/ignidash/` directory (no code references)
+- [x] Fix or delete untracked `services/orchestrator/tests/plan.test.mjs` — broken as
       written: missing all imports, wrong directory (relative paths resolve to
       `services/orchestrator/views/`, which doesn't exist; the real test lives in
       `web-v2/tests/plan.test.mjs`)
