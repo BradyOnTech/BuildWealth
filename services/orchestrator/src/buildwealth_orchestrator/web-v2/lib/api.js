@@ -359,6 +359,7 @@ export const api = {
   appendDecision: (id, body) => postJson(`/api/plans/${encodeURIComponent(id)}/decisions`, body),
   setActivePlan: (id) => postJson(`/api/plans/${encodeURIComponent(id)}/activate`, {}),
   holdings:     () => fetchJson('/api/portfolio/holdings'),
+  portfolioLookThrough: () => fetchJson('/api/portfolio/look-through'),
   portfolioAnalytics: (opts = {}) => fetchJson(`/api/portfolio/analytics?${new URLSearchParams({
     limit: String(opts.limit || 180),
     top_n: String(opts.topN || opts.top_n || 5),

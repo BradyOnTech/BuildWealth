@@ -142,8 +142,10 @@ Roadmap item; the multi-vendor client work is the prerequisite, this is the payo
 Fund-overlap and diversification analytics currently treat funds as opaque; roadmap
 sketches this as "asset enrichment."
 
-- [ ] Provider-fed fund holdings data
-- [ ] Look-through overlap and diversification for VTI/VXUS/BND-style portfolios
+- [x] Provider-fed fund holdings data — shipped as a curated composition seed
+      (12 broad funds, honestly labeled estimates); live provider feed remains a
+      natural extension via the OpenBB research service
+- [x] Look-through overlap and diversification for VTI/VXUS/BND-style portfolios
 
 ### 6. Turn on semantic retrieval
 

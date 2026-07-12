@@ -11,6 +11,7 @@ import { html, raw, $, esc, setView } from '../lib/dom.js';
 import { skeleton } from '../lib/skeleton.js';
 import { renderStanding } from './portfolio/standing.js';
 import { renderComposition } from './portfolio/composition.js';
+import { renderLookThrough } from './portfolio/lookthrough.js';
 import { renderAnalytics } from './portfolio/analytics.js';
 import { renderWatch } from './portfolio/watch.js';
 
@@ -42,17 +43,21 @@ export async function init(params = {}) {
   const maintenanceSection = normalizeMaintenanceSection(params.section || '');
   let maintenance = null;
   let analytics = null;
+  let lookThrough = null;
   try {
-    const [holdingsData, analyticsData, maintenanceData] = await Promise.all([
+    const [holdingsData, analyticsData, lookThroughData, maintenanceData] = await Promise.all([
       api.holdings(),
       api.portfolioAnalytics({ limit: 180, topN: 5, period: params.period || '1y' }).catch((err) => ({
         status: 'unavailable',
         warnings: [err?.message || 'Performance analytics are unavailable.'],
       })),
+      // Quietly optional: the composition still renders if look-through fails.
+      api.portfolioLookThrough().catch(() => null),
       maintenanceSection ? loadMaintenanceSection(maintenanceSection, params) : Promise.resolve(null),
     ]);
     data = holdingsData;
     analytics = analyticsData;
+    lookThrough = lookThroughData;
     maintenance = maintenanceSection === 'risk-policy' && maintenanceData
       ? { ...maintenanceData, riskAlerts: holdingsData?.risk_alerts || null }
       : maintenanceData;
@@ -68,7 +73,7 @@ export async function init(params = {}) {
   setView(root, html`
     ${raw(renderSectionNav())}
     <div id="pf-standing" class="pf-section">${raw(renderStanding(data))}</div>
-    <div id="pf-composition" class="pf-section">${raw(renderComposition(data))}</div>
+    <div id="pf-composition" class="pf-section">${raw(renderComposition(data))}${raw(renderLookThrough(lookThrough))}</div>
     <div id="pf-performance" class="pf-section">${raw(renderAnalytics(analytics))}</div>
     <div id="pf-watch" class="pf-section">${raw(renderWatch(data))}</div>
     <div id="pf-fit" class="pf-section">${raw(renderFitReview(null, { initialSymbol: params.fit || '' }))}</div>

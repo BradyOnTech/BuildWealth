@@ -1,0 +1,334 @@
+{
+  "schema_version": 1,
+  "note": "Approximate compositions for common broad funds; decision support, not authoritative. Sector mixes and mega-cap top-10 weights drift slowly; treat every number as an estimate.",
+  "funds": {
+    "VTI": {
+      "as_of": "2025-12-31",
+      "source": "seed_estimate",
+      "asset_class": "equity",
+      "sector_weights": {
+        "information_technology": 0.315,
+        "financials": 0.135,
+        "health_care": 0.11,
+        "consumer_discretionary": 0.11,
+        "industrials": 0.095,
+        "communication_services": 0.09,
+        "consumer_staples": 0.05,
+        "energy": 0.035,
+        "utilities": 0.025,
+        "real_estate": 0.02,
+        "materials": 0.015
+      },
+      "region_weights": { "united_states": 1.0 },
+      "top_holdings": [
+        { "symbol": "AAPL", "weight": 0.061 },
+        { "symbol": "NVDA", "weight": 0.058 },
+        { "symbol": "MSFT", "weight": 0.055 },
+        { "symbol": "AMZN", "weight": 0.035 },
+        { "symbol": "GOOGL", "weight": 0.032 },
+        { "symbol": "META", "weight": 0.025 },
+        { "symbol": "AVGO", "weight": 0.022 },
+        { "symbol": "TSLA", "weight": 0.016 },
+        { "symbol": "BRK.B", "weight": 0.015 },
+        { "symbol": "LLY", "weight": 0.012 }
+      ]
+    },
+    "VOO": {
+      "as_of": "2025-12-31",
+      "source": "seed_estimate",
+      "asset_class": "equity",
+      "sector_weights": {
+        "information_technology": 0.33,
+        "financials": 0.13,
+        "health_care": 0.11,
+        "consumer_discretionary": 0.11,
+        "communication_services": 0.095,
+        "industrials": 0.08,
+        "consumer_staples": 0.055,
+        "energy": 0.03,
+        "utilities": 0.02,
+        "real_estate": 0.02,
+        "materials": 0.02
+      },
+      "region_weights": { "united_states": 1.0 },
+      "top_holdings": [
+        { "symbol": "AAPL", "weight": 0.07 },
+        { "symbol": "NVDA", "weight": 0.067 },
+        { "symbol": "MSFT", "weight": 0.063 },
+        { "symbol": "AMZN", "weight": 0.04 },
+        { "symbol": "GOOGL", "weight": 0.037 },
+        { "symbol": "META", "weight": 0.028 },
+        { "symbol": "AVGO", "weight": 0.025 },
+        { "symbol": "TSLA", "weight": 0.018 },
+        { "symbol": "BRK.B", "weight": 0.017 },
+        { "symbol": "LLY", "weight": 0.013 }
+      ]
+    },
+    "SPY": {
+      "as_of": "2025-12-31",
+      "source": "seed_estimate",
+      "asset_class": "equity",
+      "sector_weights": {
+        "information_technology": 0.33,
+        "financials": 0.13,
+        "health_care": 0.11,
+        "consumer_discretionary": 0.11,
+        "communication_services": 0.095,
+        "industrials": 0.08,
+        "consumer_staples": 0.055,
+        "energy": 0.03,
+        "utilities": 0.02,
+        "real_estate": 0.02,
+        "materials": 0.02
+      },
+      "region_weights": { "united_states": 1.0 },
+      "top_holdings": [
+        { "symbol": "AAPL", "weight": 0.07 },
+        { "symbol": "NVDA", "weight": 0.067 },
+        { "symbol": "MSFT", "weight": 0.063 },
+        { "symbol": "AMZN", "weight": 0.04 },
+        { "symbol": "GOOGL", "weight": 0.037 },
+        { "symbol": "META", "weight": 0.028 },
+        { "symbol": "AVGO", "weight": 0.025 },
+        { "symbol": "TSLA", "weight": 0.018 },
+        { "symbol": "BRK.B", "weight": 0.017 },
+        { "symbol": "LLY", "weight": 0.013 }
+      ]
+    },
+    "IVV": {
+      "as_of": "2025-12-31",
+      "source": "seed_estimate",
+      "asset_class": "equity",
+      "sector_weights": {
+        "information_technology": 0.33,
+        "financials": 0.13,
+        "health_care": 0.11,
+        "consumer_discretionary": 0.11,
+        "communication_services": 0.095,
+        "industrials": 0.08,
+        "consumer_staples": 0.055,
+        "energy": 0.03,
+        "utilities": 0.02,
+        "real_estate": 0.02,
+        "materials": 0.02
+      },
+      "region_weights": { "united_states": 1.0 },
+      "top_holdings": [
+        { "symbol": "AAPL", "weight": 0.07 },
+        { "symbol": "NVDA", "weight": 0.067 },
+        { "symbol": "MSFT", "weight": 0.063 },
+        { "symbol": "AMZN", "weight": 0.04 },
+        { "symbol": "GOOGL", "weight": 0.037 },
+        { "symbol": "META", "weight": 0.028 },
+        { "symbol": "AVGO", "weight": 0.025 },
+        { "symbol": "TSLA", "weight": 0.018 },
+        { "symbol": "BRK.B", "weight": 0.017 },
+        { "symbol": "LLY", "weight": 0.013 }
+      ]
+    },
+    "QQQ": {
+      "as_of": "2025-12-31",
+      "source": "seed_estimate",
+      "asset_class": "equity",
+      "sector_weights": {
+        "information_technology": 0.51,
+        "communication_services": 0.155,
+        "consumer_discretionary": 0.13,
+        "consumer_staples": 0.06,
+        "health_care": 0.055,
+        "industrials": 0.045,
+        "utilities": 0.015,
+        "materials": 0.01,
+        "real_estate": 0.01,
+        "energy": 0.005,
+        "financials": 0.005
+      },
+      "region_weights": { "united_states": 1.0 },
+      "top_holdings": [
+        { "symbol": "AAPL", "weight": 0.088 },
+        { "symbol": "NVDA", "weight": 0.085 },
+        { "symbol": "MSFT", "weight": 0.08 },
+        { "symbol": "AMZN", "weight": 0.055 },
+        { "symbol": "AVGO", "weight": 0.05 },
+        { "symbol": "GOOGL", "weight": 0.049 },
+        { "symbol": "META", "weight": 0.047 },
+        { "symbol": "TSLA", "weight": 0.03 },
+        { "symbol": "COST", "weight": 0.027 },
+        { "symbol": "NFLX", "weight": 0.025 }
+      ]
+    },
+    "SCHD": {
+      "as_of": "2025-12-31",
+      "source": "seed_estimate",
+      "asset_class": "equity",
+      "sector_weights": {
+        "financials": 0.18,
+        "health_care": 0.155,
+        "consumer_staples": 0.14,
+        "industrials": 0.125,
+        "energy": 0.12,
+        "consumer_discretionary": 0.1,
+        "information_technology": 0.09,
+        "communication_services": 0.045,
+        "materials": 0.03,
+        "utilities": 0.015
+      },
+      "region_weights": { "united_states": 1.0 },
+      "top_holdings": [
+        { "symbol": "TXN", "weight": 0.043 },
+        { "symbol": "CVX", "weight": 0.042 },
+        { "symbol": "VZ", "weight": 0.041 },
+        { "symbol": "KO", "weight": 0.04 },
+        { "symbol": "LMT", "weight": 0.04 },
+        { "symbol": "PEP", "weight": 0.039 },
+        { "symbol": "HD", "weight": 0.039 },
+        { "symbol": "ABBV", "weight": 0.038 },
+        { "symbol": "AMGN", "weight": 0.038 },
+        { "symbol": "CSCO", "weight": 0.037 }
+      ]
+    },
+    "VXUS": {
+      "as_of": "2025-12-31",
+      "source": "seed_estimate",
+      "asset_class": "equity",
+      "sector_weights": {
+        "financials": 0.21,
+        "industrials": 0.145,
+        "information_technology": 0.13,
+        "consumer_discretionary": 0.105,
+        "health_care": 0.09,
+        "materials": 0.07,
+        "consumer_staples": 0.07,
+        "communication_services": 0.06,
+        "energy": 0.05,
+        "utilities": 0.035,
+        "real_estate": 0.035
+      },
+      "region_weights": {
+        "europe": 0.4,
+        "asia_pacific_developed": 0.265,
+        "emerging_markets": 0.25,
+        "north_america_ex_us": 0.085
+      },
+      "top_holdings": [
+        { "symbol": "TSM", "weight": 0.022 },
+        { "symbol": "TCEHY", "weight": 0.011 },
+        { "symbol": "ASML", "weight": 0.01 },
+        { "symbol": "SAP", "weight": 0.009 },
+        { "symbol": "NESN", "weight": 0.008 },
+        { "symbol": "NVO", "weight": 0.008 },
+        { "symbol": "TM", "weight": 0.008 },
+        { "symbol": "AZN", "weight": 0.007 },
+        { "symbol": "HSBC", "weight": 0.007 },
+        { "symbol": "SHEL", "weight": 0.007 }
+      ]
+    },
+    "VEA": {
+      "as_of": "2025-12-31",
+      "source": "seed_estimate",
+      "asset_class": "equity",
+      "sector_weights": {
+        "financials": 0.21,
+        "industrials": 0.155,
+        "health_care": 0.105,
+        "consumer_discretionary": 0.1,
+        "information_technology": 0.1,
+        "consumer_staples": 0.075,
+        "materials": 0.07,
+        "communication_services": 0.055,
+        "energy": 0.055,
+        "utilities": 0.04,
+        "real_estate": 0.035
+      },
+      "region_weights": {
+        "europe": 0.53,
+        "asia_pacific_developed": 0.36,
+        "north_america_ex_us": 0.11
+      },
+      "top_holdings": [
+        { "symbol": "ASML", "weight": 0.014 },
+        { "symbol": "SAP", "weight": 0.013 },
+        { "symbol": "NESN", "weight": 0.012 },
+        { "symbol": "NVO", "weight": 0.011 },
+        { "symbol": "TM", "weight": 0.011 },
+        { "symbol": "AZN", "weight": 0.01 },
+        { "symbol": "SHEL", "weight": 0.01 },
+        { "symbol": "HSBC", "weight": 0.009 },
+        { "symbol": "ROG", "weight": 0.009 },
+        { "symbol": "NOVN", "weight": 0.008 }
+      ]
+    },
+    "VWO": {
+      "as_of": "2025-12-31",
+      "source": "seed_estimate",
+      "asset_class": "equity",
+      "sector_weights": {
+        "financials": 0.225,
+        "information_technology": 0.215,
+        "consumer_discretionary": 0.13,
+        "communication_services": 0.095,
+        "industrials": 0.07,
+        "materials": 0.065,
+        "consumer_staples": 0.055,
+        "energy": 0.05,
+        "health_care": 0.04,
+        "utilities": 0.03,
+        "real_estate": 0.025
+      },
+      "region_weights": { "emerging_markets": 1.0 },
+      "top_holdings": [
+        { "symbol": "TSM", "weight": 0.088 },
+        { "symbol": "TCEHY", "weight": 0.045 },
+        { "symbol": "BABA", "weight": 0.024 },
+        { "symbol": "HDB", "weight": 0.012 },
+        { "symbol": "RELIANCE", "weight": 0.011 },
+        { "symbol": "PDD", "weight": 0.01 },
+        { "symbol": "MEITUAN", "weight": 0.009 },
+        { "symbol": "ICICIBANK", "weight": 0.009 },
+        { "symbol": "JD", "weight": 0.007 },
+        { "symbol": "INFY", "weight": 0.007 }
+      ]
+    },
+    "BND": {
+      "as_of": "2025-12-31",
+      "source": "seed_estimate",
+      "asset_class": "bond",
+      "sector_weights": {
+        "government": 0.67,
+        "corporate": 0.26,
+        "securitized": 0.07
+      },
+      "region_weights": { "united_states": 1.0 },
+      "top_holdings": []
+    },
+    "AGG": {
+      "as_of": "2025-12-31",
+      "source": "seed_estimate",
+      "asset_class": "bond",
+      "sector_weights": {
+        "government": 0.65,
+        "corporate": 0.28,
+        "securitized": 0.07
+      },
+      "region_weights": { "united_states": 1.0 },
+      "top_holdings": []
+    },
+    "BNDX": {
+      "as_of": "2025-12-31",
+      "source": "seed_estimate",
+      "asset_class": "bond",
+      "sector_weights": {
+        "government": 0.75,
+        "corporate": 0.2,
+        "securitized": 0.05
+      },
+      "region_weights": {
+        "europe": 0.55,
+        "asia_pacific_developed": 0.33,
+        "north_america_ex_us": 0.07,
+        "emerging_markets": 0.05
+      },
+      "top_holdings": []
+    }
+  }
+}

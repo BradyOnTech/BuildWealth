@@ -17324,3 +17324,6 @@ app.include_router(_pages_router)
 from buildwealth_orchestrator.routes.tax import router as _tax_router
 from buildwealth_orchestrator.routes.tax import *  # noqa: F401,F403 — keep main.<handler> importable
 app.include_router(_tax_router)
+from buildwealth_orchestrator.routes.lookthrough import router as _lookthrough_router
+from buildwealth_orchestrator.routes.lookthrough import *  # noqa: F401,F403 — keep main.<handler> importable
+app.include_router(_lookthrough_router)
