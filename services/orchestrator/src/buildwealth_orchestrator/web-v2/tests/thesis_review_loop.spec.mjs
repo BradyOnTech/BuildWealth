@@ -221,7 +221,12 @@ test('Inbox thesis review opens v2 Research and refreshes review metadata', asyn
   await page.getByText('$460.02').first().waitFor({ state: 'visible' });
   await page.getByText('+12.2%').first().waitFor({ state: 'visible' });
 
-  await page.getByRole('button', { name: /Mark thesis reviewed/ }).click();
+  // Wait for the apply POST to land before asserting its payload — the click
+  // resolves before the fetch completes, which raced under parallel workers.
+  await Promise.all([
+    page.waitForResponse(response => response.url().includes('/apply') && response.request().method() === 'POST'),
+    page.getByRole('button', { name: /Mark thesis reviewed/ }).click(),
+  ]);
 
   assert.equal(applyPayload.decision_status, 'reviewed');
   assert.equal(applyPayload.create_decision_packet, false);
@@ -398,7 +403,12 @@ test('Watchlist thesis review opens v2 Research and refreshes watchlist metadata
   await page.getByText('$800.00').first().waitFor({ state: 'visible' });
   await page.getByText('$898.00').first().waitFor({ state: 'visible' });
 
-  await page.getByRole('button', { name: /Mark thesis reviewed/ }).click();
+  // Wait for the apply POST to land before asserting its payload — the click
+  // resolves before the fetch completes, which raced under parallel workers.
+  await Promise.all([
+    page.waitForResponse(response => response.url().includes('/apply') && response.request().method() === 'POST'),
+    page.getByRole('button', { name: /Mark thesis reviewed/ }).click(),
+  ]);
 
   assert.equal(applyPayload.decision_status, 'reviewed');
   assert.equal(applyPayload.create_decision_packet, false);
