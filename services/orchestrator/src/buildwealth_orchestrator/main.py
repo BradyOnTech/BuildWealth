@@ -474,7 +474,17 @@ app = FastAPI(title=settings.app_name, lifespan=_app_lifespan)
 _web_v2_override = os.environ.get("WEB_V2_DIR", "").strip()
 web_v2_dir = Path(_web_v2_override) if _web_v2_override else Path(__file__).resolve().parent / "web-v2"
 if web_v2_dir.exists():
-    app.mount("/static-v2", StaticFiles(directory=str(web_v2_dir)), name="static-v2")
+    class _RevalidatedStaticFiles(StaticFiles):
+        """no-cache (not no-store): browsers revalidate every request, ETags
+        turn unchanged files into 304s. Without this, heuristic caching serves
+        stale ES modules for hours after an app update."""
+
+        def file_response(self, *args: Any, **kwargs: Any):  # type: ignore[override]
+            response = super().file_response(*args, **kwargs)
+            response.headers["Cache-Control"] = "no-cache"
+            return response
+
+    app.mount("/static-v2", _RevalidatedStaticFiles(directory=str(web_v2_dir)), name="static-v2")
 
 
 user_settings_store = UserSettingsStore(settings.snapshot_dir.parent / "settings" / "user_settings.json")
@@ -17311,3 +17321,6 @@ app.include_router(_system_router)
 from buildwealth_orchestrator.routes.pages import router as _pages_router
 from buildwealth_orchestrator.routes.pages import *  # noqa: F401,F403 — keep main.<handler> importable
 app.include_router(_pages_router)
+from buildwealth_orchestrator.routes.tax import router as _tax_router
+from buildwealth_orchestrator.routes.tax import *  # noqa: F401,F403 — keep main.<handler> importable
+app.include_router(_tax_router)

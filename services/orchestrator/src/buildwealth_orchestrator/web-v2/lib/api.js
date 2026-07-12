@@ -297,6 +297,8 @@ export const api = {
 
   today:        () => fetchJson('/api/dashboard/today'),
   morningBrief:       () => fetchJson('/api/dashboard/brief'),
+  taxLossHarvest:     () => fetchJson('/api/tax/loss-harvest'),
+  rothLadder:         (body = {}) => postJson('/api/tax/roth-ladder', body),
   markBriefSeen:      () => postJson('/api/dashboard/brief/seen', {}),
   financialHealth: () => fetchJson('/api/financial-health'),
   affordability: (body = {}) => postJson('/api/affordability', body),

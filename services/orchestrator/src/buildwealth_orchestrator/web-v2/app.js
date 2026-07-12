@@ -12,6 +12,7 @@ import * as profile from './views/profile.js';
 import * as settings from './views/settings.js';
 import * as importSync from './views/import_sync.js';
 import * as workflows from './views/workflows.js';
+import * as tax from './views/tax.js';
 import * as review from './views/review.js';
 import { authScreen } from './views/auth.js';
 
@@ -21,7 +22,7 @@ import { api, setActiveWorkspaceId } from './lib/api.js';
 import { html, raw, $, $$, esc } from './lib/dom.js';
 import { fmtDateLong } from './lib/format.js';
 
-const VIEWS = [today, inbox, plan, portfolio, profile, copilot, research, atelier, settings, importSync, workflows, review];
+const VIEWS = [today, inbox, plan, portfolio, profile, copilot, research, atelier, settings, importSync, workflows, review, tax];
 
 const VIEW_BY_ID = new Map(VIEWS.map(v => [v.meta.id, v]));
 
@@ -55,6 +56,12 @@ const TOOLS_GROUPS = [
     label: 'Automation',
     items: [
       { id: 'workflows',    label: 'Workflows',           hint: 'Run pre-built routines' },
+    ],
+  },
+  {
+    label: 'Strategy',
+    items: [
+      { id: 'tax',          label: 'Tax Strategy',        hint: 'Loss harvesting, Roth ladders' },
     ],
   },
   {

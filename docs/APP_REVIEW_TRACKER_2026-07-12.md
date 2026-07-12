@@ -112,8 +112,8 @@ requests. Breaks first on the hosted-SaaS path.
 Composition of existing services (tax engine, RMD projections, Social Security modeling,
 lot-level cost basis, scenario engine).
 
-- [ ] Tax-loss harvesting candidates (lots below basis, wash-sale awareness)
-- [ ] Roth conversion ladder planner as a scenario type
+- [x] Tax-loss harvesting candidates (lots below basis, wash-sale awareness)
+- [x] Roth conversion ladder planner as a scenario type
 
 ### 2. Scheduled morning brief
 
