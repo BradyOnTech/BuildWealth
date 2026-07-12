@@ -120,8 +120,8 @@ lot-level cost basis, scenario engine).
 Digest combining the recommendations sweep, risk alerts, plan-resilience drift, and
 pending Conflict Review Items. Snapshots, recommendation factory, and inbox already exist.
 
-- [ ] Scheduler for the sweep/digest
-- [ ] Delivery surface: "since you last looked" panel on Today (and/or email)
+- [x] Scheduler for the sweep/digest
+- [x] Delivery surface: "since you last looked" panel on Today (and/or email)
 
 ### 3. LLM cost visibility UI
 

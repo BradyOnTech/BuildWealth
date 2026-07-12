@@ -296,6 +296,8 @@ export const api = {
   resetDemoWorkspace: (workspaceId) => postJson(`/api/workspaces/${encodeURIComponent(workspaceId)}/demo/reset`, {}),
 
   today:        () => fetchJson('/api/dashboard/today'),
+  morningBrief:       () => fetchJson('/api/dashboard/brief'),
+  markBriefSeen:      () => postJson('/api/dashboard/brief/seen', {}),
   financialHealth: () => fetchJson('/api/financial-health'),
   affordability: (body = {}) => postJson('/api/affordability', body),
   recordTodayReview: () => postJson('/api/dashboard/today/review-checkpoint', {}),

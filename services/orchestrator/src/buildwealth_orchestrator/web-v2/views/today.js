@@ -50,7 +50,8 @@ async function load(params = {}) {
     const shouldRecordReview = String(params.review || '').toLowerCase() === 'complete';
     let peers = null;
     let incomeBend = null;
-    [payload, services, health, analytics, peers, incomeBend] = await Promise.all([
+    let brief = null;
+    [payload, services, health, analytics, peers, incomeBend, brief] = await Promise.all([
       shouldRecordReview
         ? api.recordTodayReview()
         : shouldRefreshResearch
@@ -61,7 +62,9 @@ async function load(params = {}) {
       api.portfolioAnalytics({ period: '1m', limit: 40 }).catch(() => null),
       api.peerBenchmark().catch(() => null),
       loadIncomeBend().catch(() => null),
+      api.morningBrief().catch(() => null),
     ]);
+    state.morningBrief = brief;
     state.peerBenchmark = peers;
     state.incomeBend = incomeBend;
     state.today = payload;
@@ -83,18 +86,90 @@ async function load(params = {}) {
   // under the number, decision pricing next, status housekeeping last.
   setView(root, html`
     ${raw(renderHero(payload, health, analytics, state.peerBenchmark, state.incomeBend))}
+    ${raw(renderMorningBrief(state.morningBrief))}
     ${raw(renderMove(payload))}
     ${raw(renderCommandCards(payload, services))}
     ${raw(renderAffordabilitySection())}
     ${raw(renderRoom(payload, services, health))}
   `);
   bindAffordabilitySection(root);
+  bindMorningBrief(root);
   if (
     String(params.refresh || '').toLowerCase() === 'research'
     || String(params.review || '').toLowerCase() === 'complete'
   ) {
     history.replaceState(null, '', '#today');
   }
+}
+
+/* ─────────────  SINCE YOU LAST LOOKED  ───────────── */
+
+// Digest of what the heartbeat surfaced while the user was away. Quiet by
+// design: nothing new -> nothing rendered.
+export function renderMorningBrief(brief) {
+  if (!brief || brief.first_visit || !brief.has_news) return '';
+  const recs = brief.new_recommendations || {};
+  const risk = brief.risk_alerts || {};
+  const reviews = brief.pending_context_reviews || {};
+  const portfolio = brief.portfolio || {};
+  const lines = [];
+  if (recs.count) {
+    const top = (recs.items || [])[0];
+    lines.push(`
+      <div class="benchmark-row">
+        <strong>${recs.count === 1 ? 'New suggestion' : `${recs.count} new suggestions`}</strong>
+        <span>${esc(String(top?.title || 'Waiting in the Inbox'))}</span>
+        <a href="#inbox">Open Inbox</a>
+      </div>`);
+  }
+  if (risk.breach_count || risk.watch_count) {
+    const first = (risk.items || [])[0];
+    lines.push(`
+      <div class="benchmark-row">
+        <strong>${risk.breach_count ? `${risk.breach_count} risk breach${risk.breach_count === 1 ? '' : 'es'}` : `${risk.watch_count} on watch`}</strong>
+        <span>${esc(String(first?.message || 'Risk policy thresholds need a look.'))}</span>
+        <a href="#portfolio">Review risk</a>
+      </div>`);
+  }
+  if (reviews.count) {
+    lines.push(`
+      <div class="benchmark-row">
+        <strong>${reviews.count} context ${reviews.count === 1 ? 'capture' : 'captures'}</strong>
+        <span>Copilot noted things that need your decision.</span>
+        <a href="#inbox">Review</a>
+      </div>`);
+  }
+  if (!lines.length) return '';
+  const drift = Number(portfolio.change_since_seen_usd);
+  const driftText = Number.isFinite(drift) && drift !== 0
+    ? ` Portfolio ${drift > 0 ? 'up' : 'down'} ${fmtUsd(Math.abs(drift))} since then.`
+    : '';
+  const sinceText = brief.since ? new Date(brief.since).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+  return html`
+    <section class="today-section" id="morning-brief" aria-label="Since you last looked">
+      <header class="section-head">
+        <span class="section-eyebrow">Since you last looked${sinceText ? ` · ${sinceText}` : ''}</span>
+        <button type="button" class="btn btn-ghost" data-action="brief-caught-up">Caught up</button>
+      </header>
+      <p class="section-lede">${lines.length} thing${lines.length === 1 ? '' : 's'} moved while you were away.${driftText}</p>
+      <div class="benchmark-rows">${raw(lines.join(''))}</div>
+    </section>
+  `.toString();
+}
+
+function bindMorningBrief(root) {
+  const button = root.querySelector('[data-action="brief-caught-up"]');
+  if (!button) return;
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {
+      await api.markBriefSeen();
+      const section = root.querySelector('#morning-brief');
+      if (section) section.remove();
+    } catch {
+      button.disabled = false;
+    }
+  });
 }
 
 /* ─────────────  THE STANDING (hero)  ───────────── */

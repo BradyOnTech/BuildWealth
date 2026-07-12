@@ -14,6 +14,8 @@ router = APIRouter()
 
 __all__ = [
     "get_peer_benchmark",
+    "get_morning_brief",
+    "mark_morning_brief_seen",
     "today_dashboard",
     "refresh_today_research_readiness",
     "record_today_review_checkpoint",
@@ -51,6 +53,44 @@ def get_peer_benchmark(
         profile_payload=profile,
         current_year=m.datetime.now(m.timezone.utc).year,
     )
+
+
+def _morning_brief_service(services: m.Any) -> m.Any:
+    from buildwealth_orchestrator.services.morning_brief import MorningBriefService
+
+    seen_path = services.today_review_checkpoint_store.path.parent / "brief_seen.json"
+    return MorningBriefService(
+        recommendation_inbox=services.recommendation_inbox,
+        portfolio_store=services.portfolio_store,
+        snapshot_store=services.snapshot_store,
+        context_intelligence_service=services.context_intelligence_service,
+        seen_path=seen_path,
+    )
+
+
+@router.get("/api/dashboard/brief")
+def get_morning_brief(
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> dict[str, m.Any]:
+    """Digest of what changed since the user last marked the brief seen."""
+    resolved_services = m.route_workspace_services(services, permission="workspace.read")
+    service = _morning_brief_service(resolved_services)
+    brief = service.build()
+    if brief.get("first_visit"):
+        # Bootstrap the cursor: the first visit renders nothing, so without
+        # this write the baseline would never exist and the panel never shows.
+        service.mark_seen()
+    return brief
+
+
+@router.post("/api/dashboard/brief/seen")
+def mark_morning_brief_seen(
+    http_request: m.Request,
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> dict[str, m.Any]:
+    m.require_csrf(http_request)
+    resolved_services = m.route_workspace_services(services, permission="workspace.read")
+    return _morning_brief_service(resolved_services).mark_seen()
 
 
 @router.get("/api/dashboard/today", response_model=m.TodayDashboardResponse)
