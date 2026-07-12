@@ -109,6 +109,53 @@ function postForm(url, formData) {
   });
 }
 
+/* Parse a server-sent-events byte stream, invoking onEvent(parsedJson) for
+   each `data:` line. Exported for unit tests. */
+export function parseSseChunk(buffer, chunk, onEvent) {
+  let text = buffer + chunk;
+  const events = [];
+  let idx;
+  while ((idx = text.indexOf('\n')) >= 0) {
+    const line = text.slice(0, idx).replace(/\r$/, '');
+    text = text.slice(idx + 1);
+    if (!line.startsWith('data:')) continue;
+    const payload = line.slice(5).trim();
+    if (!payload) continue;
+    try { events.push(JSON.parse(payload)); }
+    catch { /* ignore malformed event lines */ }
+  }
+  for (const event of events) onEvent(event);
+  return text;
+}
+
+/* POST to an SSE endpoint and dispatch each event to onEvent. Resolves when
+   the stream ends; rejects on network failure, non-2xx, or non-SSE replies
+   (callers fall back to the blocking endpoint). Abort via options.signal. */
+export async function fetchSse(url, body, { signal, onEvent } = {}) {
+  const response = await fetch(url, withAuthHeaders({
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  }));
+  const contentType = response.headers.get('content-type') || '';
+  if (!response.ok || !contentType.includes('text/event-stream') || !response.body) {
+    const error = new Error(`Streaming unavailable (${response.status})`);
+    error.status = response.status;
+    error.streamingUnavailable = true;
+    throw error;
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer = parseSseChunk(buffer, decoder.decode(value, { stream: true }), onEvent);
+  }
+  parseSseChunk(buffer, '\n', onEvent);
+}
+
 function putJson(url, body = {}) {
   return fetchJson(url, {
     method: 'PUT',
@@ -421,6 +468,7 @@ export const api = {
   ),
   focusDomains:      () => fetchJson('/api/copilot/focus/domains'),
   copilotChat:       (body) => postJson('/api/copilot/chat', body),
+  copilotChatStream: (body, options = {}) => fetchSse('/api/copilot/chat/stream', body, options),
 
   // Recommendations
   recommendations: (opts) => fetchJson(recommendationsUrl(opts)),

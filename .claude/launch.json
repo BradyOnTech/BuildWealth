@@ -6,6 +6,12 @@
       "runtimeExecutable": "make",
       "runtimeArgs": ["up"],
       "port": 8090
+    },
+    {
+      "name": "orchestrator-local",
+      "runtimeExecutable": "services/orchestrator/.venv/bin/python",
+      "runtimeArgs": ["-m", "uvicorn", "buildwealth_orchestrator.main:app", "--port", "8090"],
+      "port": 8090
     }
   ]
 }

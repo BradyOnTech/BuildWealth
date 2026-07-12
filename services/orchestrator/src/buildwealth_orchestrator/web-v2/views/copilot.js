@@ -223,6 +223,7 @@ const ui = {
   onboarding: null,
   busy: false,
   thinking: false,
+  streaming: null,                  // { stage, tool, partial } while a turn streams
   error: null,
   planId: null,
   recommendationFocus: null,
@@ -355,58 +356,121 @@ async function loadLlmOptions(conversationId = ui.conversationId) {
   }
 }
 
+let streamController = null;
+let streamRenderAt = 0;
+
+function rerenderStreamingThrottled() {
+  const now = Date.now();
+  if (now - streamRenderAt < 80) return;
+  streamRenderAt = now;
+  rerenderBody();
+  scrollToBottom();
+}
+
+export function stopStreaming() {
+  if (streamController) streamController.abort();
+}
+
+function applyChatResult(question, res) {
+  ui.conversationId = res.conversation_id;
+  if (res.focus && typeof res.focus === 'object') {
+    ui.sessionFocus = normalizeClientFocus(res.focus);
+  }
+  if (res.llm && typeof res.llm === 'object') {
+    ui.conversationLlm = res.llm;
+  }
+  ui.messages.push({
+    role: 'assistant',
+    content: res.answer || '',
+    created_at: res.created_at || new Date().toISOString(),
+    metadata: {
+      tool_calls: res.tool_calls || [],
+      model: res.model || null,
+      context_trace: res.context_trace || {},
+    },
+  });
+  if (!ui.conversationTitle) ui.conversationTitle = derivedTitle(question);
+  loadConversations().then(() => rerenderMasthead()).catch(() => {});
+  loadLlmOptions(ui.conversationId).then(() => rerenderMasthead()).catch(() => {});
+}
+
 async function sendMessage(question, { useLive }) {
   // Optimistic user message.
   const now = new Date().toISOString();
   ui.messages.push({ role: 'user', content: question, created_at: now, metadata: {} });
   ui.thinking = true;
+  ui.streaming = { stage: 'starting', tool: '', partial: '' };
   ui.error = null;
   rerenderBody();
   rerenderComposer({ draft: '' });
 
+  const payload = {
+    question,
+    conversation_id: ui.conversationId,
+    use_live_snapshot: !!useLive,
+    plan_id: ui.planId,
+    context_options: { detail_level: 'light' },
+    focus: clientFocusPayload(ui.sessionFocus),
+    persist_focus: true,
+    llm: clientLlmPayload(ui.conversationLlm),
+    persist_llm: true,
+  };
+
+  streamController = new AbortController();
+  let result = null;
+  let streamError = null;
+  let sawEvent = false;
+
   try {
-    const llmPayload = clientLlmPayload(ui.conversationLlm);
-    const res = await api.copilotChat({
-      question,
-      conversation_id: ui.conversationId,
-      use_live_snapshot: !!useLive,
-      plan_id: ui.planId,
-      context_options: { detail_level: 'light' },
-      focus: clientFocusPayload(ui.sessionFocus),
-      persist_focus: true,
-      llm: llmPayload,
-      persist_llm: true,
-    });
-    ui.conversationId = res.conversation_id;
-    if (res.focus && typeof res.focus === 'object') {
-      ui.sessionFocus = normalizeClientFocus(res.focus);
+    try {
+      await api.copilotChatStream(payload, {
+        signal: streamController.signal,
+        onEvent: (event) => {
+          sawEvent = true;
+          if (!ui.streaming) return;
+          if (event.type === 'stage') {
+            ui.streaming.stage = event.stage;
+          } else if (event.type === 'round') {
+            // A new model round starts a fresh answer; drop any provisional text.
+            ui.streaming.partial = '';
+            ui.streaming.tool = '';
+          } else if (event.type === 'tool') {
+            ui.streaming.tool = event.status === 'start' ? event.name : '';
+          } else if (event.type === 'answer_delta') {
+            ui.streaming.partial += event.text || '';
+            ui.streaming.tool = '';
+          } else if (event.type === 'result') {
+            result = event.data;
+          } else if (event.type === 'error') {
+            streamError = new Error(event.detail || 'Copilot failed.');
+          }
+          rerenderStreamingThrottled();
+        },
+      });
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        ui.error = 'Stopped — the response was cancelled.';
+        return;
+      }
+      // Streaming endpoint unavailable (proxy, old server) and nothing
+      // received yet: fall back to the blocking endpoint.
+      if (!sawEvent) {
+        result = await api.copilotChat(payload);
+      } else {
+        throw err;
+      }
     }
-    if (res.llm && typeof res.llm === 'object') {
-      ui.conversationLlm = res.llm;
-    }
-    ui.messages.push({
-      role: 'assistant',
-      content: res.answer || '',
-      created_at: res.created_at || new Date().toISOString(),
-      metadata: {
-        tool_calls: res.tool_calls || [],
-        model: res.model || null,
-        context_trace: res.context_trace || {},
-      },
-    });
-    if (!ui.conversationTitle) ui.conversationTitle = derivedTitle(question);
-    loadConversations().then(() => rerenderMasthead()).catch(() => {});
-    loadLlmOptions(ui.conversationId).then(() => rerenderMasthead()).catch(() => {});
+    if (streamError) throw streamError;
+    if (!result) throw new Error('Copilot returned no response.');
+    applyChatResult(question, result);
   } catch (err) {
+    // Transport/provider failures surface as a transient banner; they are not
+    // part of the conversation and must not be persisted as assistant turns.
     ui.error = err.message;
-    ui.messages.push({
-      role: 'assistant',
-      content: `_Could not reach Copilot — ${err.message}_`,
-      created_at: new Date().toISOString(),
-      metadata: {},
-    });
   } finally {
+    streamController = null;
     ui.thinking = false;
+    ui.streaming = null;
     rerenderAll();
     scrollToBottom();
   }
@@ -667,14 +731,14 @@ function renderBody() {
   if (ui.busy && !ui.messages.length) {
     return html`<div class="copilot-scroll"><div class="skeleton copilot-skeleton">.</div></div>`;
   }
-  if (!ui.messages.length && !ui.thinking) {
+  if (!ui.messages.length && !ui.thinking && !ui.streaming) {
     return html`<div class="copilot-scroll">${raw(renderEmpty())}</div>`;
   }
   return html`
     <div class="copilot-scroll">
       <div class="copilot-thread-wrap">
-        ${raw(renderThread(ui.messages, { thinking: ui.thinking }))}
-        ${ui.error ? html`<p class="error-banner">${esc(ui.error)}</p>` : ''}
+        ${raw(renderThread(ui.messages, { thinking: ui.thinking, streaming: ui.streaming }))}
+        ${ui.error ? html`<p class="error-banner" role="status">${esc(ui.error)}</p>` : ''}
       </div>
     </div>
   `;
@@ -1040,6 +1104,10 @@ function attachHandlers() {
     ui.planId = id === '__none__' ? null : id;
     ui.pickerOpen = null;
     rerenderMasthead();
+  });
+
+  delegate(page, 'click', '[data-action="stop-copilot"]', () => {
+    stopStreaming();
   });
 
   delegate(page, 'click', '[data-action="new-chat"]', () => {

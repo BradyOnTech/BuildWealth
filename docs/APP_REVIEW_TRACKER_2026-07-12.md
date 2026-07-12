@@ -47,9 +47,9 @@ There is no CI at all (no `.github/`, nothing gating commits) despite the large 
 Chat is a blocking POST with a "thinking" flag and no `AbortController`
 (`web-v2/views/copilot.js:358-413`). Most user-visible improvement available.
 
-- [ ] SSE (or chunked) streaming of copilot responses
-- [ ] Cancel button wired to `AbortController`
-- [ ] Stop persisting transport errors into the conversation as fake assistant turns
+- [x] SSE (or chunked) streaming of copilot responses
+- [x] Cancel button wired to `AbortController`
+- [x] Stop persisting transport errors into the conversation as fake assistant turns
       (`copilot.js:402`) — show a transient banner instead
 
 ### 4. Fix the secrets story

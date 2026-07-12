@@ -6,7 +6,13 @@ monkeypatching of main attributes keeps working.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
+import json
+
 from fastapi import APIRouter
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import StreamingResponse
 
 import buildwealth_orchestrator.main as m
 
@@ -23,6 +29,7 @@ __all__ = [
     "get_copilot_llm_options",
     "list_copilot_focus_domains",
     "copilot_chat",
+    "copilot_chat_stream",
 ]
 
 
@@ -241,11 +248,18 @@ def list_copilot_focus_domains(
     return {"domains": sorted(m.FOCUS_DOMAIN_CATALOG)}
 
 
-@router.post("/api/copilot/chat", response_model=m.CopilotChatResponse)
-async def copilot_chat(
+async def _copilot_chat_pipeline(
     request: m.CopilotChatRequest,
-    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
-) -> m.CopilotChatResponse:
+    services: m.WorkspaceServices,
+    progress: m.Any = None,
+) -> dict[str, m.Any]:
+    """Shared chat pipeline used by both the blocking and streaming endpoints.
+
+    `progress` (optional callable) receives dict events: stage/round/tool/
+    answer_delta. It is forwarded to the copilot runtime only when the runtime
+    accepts a progress_cb parameter, so test fakes with narrower signatures
+    keep working.
+    """
     scoped_services = hasattr(services, "context")
     resolved_services = services if scoped_services else m.workspace_services_or_legacy(None)
     if scoped_services:
@@ -338,6 +352,8 @@ async def copilot_chat(
         conv_token = m.current_copilot_conversation_id.set(str(conversation.get("id") or ""))
         boost_enabled = bool(getattr(m.settings, "copilot_retrieval_focus_boost", True))
         try:
+            if progress is not None:
+                progress({"type": "stage", "stage": "assembling_context"})
             assembled_context = await m.assemble_copilot_context_payload(
                 question=request.question,
                 use_live_snapshot=request.use_live_snapshot,
@@ -411,7 +427,7 @@ async def copilot_chat(
                 detail_level=context_options.detail_level,
             )
             try:
-                result = await m.copilot.chat(
+                chat_kwargs: dict[str, m.Any] = dict(
                     question=request.question,
                     conversation=conversation,
                     contextual_brief=contextual_brief,
@@ -419,6 +435,17 @@ async def copilot_chat(
                     conversation_store=store,
                     llm_client=turn_llm_client,
                 )
+                if progress is not None:
+                    progress({"type": "stage", "stage": "thinking"})
+                    try:
+                        accepts_progress = (
+                            "progress_cb" in inspect.signature(m.copilot.chat).parameters
+                        )
+                    except (TypeError, ValueError):
+                        accepts_progress = False
+                    if accepts_progress:
+                        chat_kwargs["progress_cb"] = progress
+                result = await m.copilot.chat(**chat_kwargs)
                 captured_candidates = resolved_services.context_intelligence_service.detect_chat_context_candidates(
                     message=request.question,
                     conversation_id=str(result.get("conversation_id") or "").strip() or None,
@@ -477,4 +504,69 @@ async def copilot_chat(
         if token is not None:
             m.current_copilot_workspace_services.reset(token)
 
+    return result
+
+
+@router.post("/api/copilot/chat", response_model=m.CopilotChatResponse)
+async def copilot_chat(
+    request: m.CopilotChatRequest,
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> m.CopilotChatResponse:
+    result = await _copilot_chat_pipeline(request, services)
     return m.CopilotChatResponse(**result)
+
+
+@router.post("/api/copilot/chat/stream")
+async def copilot_chat_stream(
+    request: m.CopilotChatRequest,
+    http_request: m.Request,
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> StreamingResponse:
+    """Server-sent-events variant of /api/copilot/chat.
+
+    Emits progress events (stage, round, tool, answer_delta) while the turn
+    runs, then a final `result` event with the full CopilotChatResponse
+    payload, or an `error` event. Client disconnect cancels the turn.
+    """
+    queue: asyncio.Queue[dict[str, m.Any] | None] = asyncio.Queue()
+
+    def emit(event: dict[str, m.Any]) -> None:
+        queue.put_nowait(event)
+
+    async def run_turn() -> None:
+        try:
+            result = await _copilot_chat_pipeline(request, services, progress=emit)
+            payload = jsonable_encoder(m.CopilotChatResponse(**result))
+            emit({"type": "result", "data": payload})
+        except m.HTTPException as exc:
+            emit({"type": "error", "status": exc.status_code, "detail": str(exc.detail)})
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            emit({"type": "error", "status": 500, "detail": f"Copilot failed: {exc}"})
+        finally:
+            queue.put_nowait(None)
+
+    task = asyncio.create_task(run_turn())
+
+    async def event_stream():
+        try:
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    if await http_request.is_disconnected():
+                        break
+                    continue
+                if item is None:
+                    break
+                yield f"data: {json.dumps(item)}\n\n"
+        finally:
+            if not task.done():
+                task.cancel()
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

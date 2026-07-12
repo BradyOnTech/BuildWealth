@@ -9,16 +9,47 @@ const DAY_FMT = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long
 const MONEY_FMT = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const GOAL_DATE_FMT = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
-export function renderThread(messages, { thinking } = {}) {
-  if (!messages.length && !thinking) return '';
+export function renderThread(messages, { thinking, streaming } = {}) {
+  if (!messages.length && !thinking && !streaming) return '';
   const groups = groupByDay(messages);
   const blocks = [];
   for (const [dayKey, items] of groups) {
     blocks.push(html`<div class="day-divider">${dayKey}</div>`);
     for (const m of items) blocks.push(renderMessage(m));
   }
-  if (thinking) blocks.push(renderThinking());
+  if (streaming) blocks.push(renderStreaming(streaming));
+  else if (thinking) blocks.push(renderThinking());
   return html`<div class="thread">${blocks}</div>`;
+}
+
+function streamingStatusLabel(streaming) {
+  if (streaming.tool) return `running ${streaming.tool}`;
+  if (streaming.stage === 'assembling_context') return 'is reading your context';
+  return 'is thinking';
+}
+
+function renderStreaming(streaming) {
+  const partial = String(streaming.partial || '');
+  return html`
+    <div class="streaming-turn" aria-live="polite">
+      ${partial ? html`
+        <article class="message assistant">
+          <div class="message-bubble">
+            <header class="message-eyebrow"><span class="role-tag">Copilot</span></header>
+            <div class="message-body">${raw(renderMarkdown(partial))}</div>
+          </div>
+        </article>
+      ` : ''}
+      <div class="thinking-line">
+        <span class="role-tag" style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.18em;color:var(--gilt);">Copilot</span>
+        <span>${streamingStatusLabel(streaming)}</span>
+        <span class="dots"><span>·</span><span>·</span><span>·</span></span>
+        <button type="button" class="copilot-stop-btn" data-action="stop-copilot" aria-label="Stop this response">
+          Stop
+        </button>
+      </div>
+    </div>
+  `;
 }
 
 function renderMessage(m) {

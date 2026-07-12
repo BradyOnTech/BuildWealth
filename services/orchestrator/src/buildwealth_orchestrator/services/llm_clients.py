@@ -373,6 +373,96 @@ class OpenAICompatibleChatClient:
             "provider": self.provider,
         }
 
+    async def complete_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        on_delta: Any = None,
+    ) -> dict[str, Any]:
+        """Streaming variant of complete(). Emits content deltas through
+        on_delta(text) as they arrive and returns the same shape as complete().
+        Tool-call fragments are accumulated by choice index per the
+        chat.completions streaming protocol."""
+        if not self.enabled:
+            raise RuntimeError("LLM API key is not configured")
+
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "tool_choice": "auto",
+            "stream": True,
+        }
+        if tools:
+            payload["tools"] = tools
+            payload["parallel_tool_calls"] = self.parallel_tool_calls
+
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        if self.provider == LLM_PROVIDER_OPENROUTER:
+            headers.setdefault("HTTP-Referer", "https://buildwealth.local")
+            headers.setdefault("X-Title", "BuildWealth Copilot")
+
+        content_parts: list[str] = []
+        tool_calls_acc: dict[int, dict[str, Any]] = {}
+        model_name = self.model
+        usage: dict[str, Any] = {}
+
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            async with client.stream(
+                "POST",
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+            ) as response:
+                if response.status_code >= 400:
+                    await response.aread()
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data_text = line[5:].strip()
+                    if not data_text or data_text == "[DONE]":
+                        continue
+                    try:
+                        chunk = json.loads(data_text)
+                    except ValueError:
+                        continue
+                    model_name = chunk.get("model") or model_name
+                    if isinstance(chunk.get("usage"), dict):
+                        usage = chunk["usage"]
+                    for choice in chunk.get("choices") or []:
+                        delta = choice.get("delta") or {}
+                        text = delta.get("content")
+                        if text:
+                            content_parts.append(text)
+                            if on_delta is not None:
+                                on_delta(text)
+                        for fragment in delta.get("tool_calls") or []:
+                            index = int(fragment.get("index") or 0)
+                            acc = tool_calls_acc.setdefault(
+                                index,
+                                {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
+                            )
+                            if fragment.get("id"):
+                                acc["id"] = fragment["id"]
+                            fn = fragment.get("function") or {}
+                            if fn.get("name"):
+                                acc["function"]["name"] = fn["name"]
+                            if fn.get("arguments"):
+                                acc["function"]["arguments"] += fn["arguments"]
+
+        message: dict[str, Any] = {"role": "assistant", "content": "".join(content_parts)}
+        if tool_calls_acc:
+            message["tool_calls"] = [tool_calls_acc[i] for i in sorted(tool_calls_acc)]
+
+        return {
+            "message": message,
+            "usage": usage,
+            "model": model_name,
+            "provider": self.provider,
+        }
+
 
 class AnthropicMessagesClient:
     provider = LLM_PROVIDER_ANTHROPIC

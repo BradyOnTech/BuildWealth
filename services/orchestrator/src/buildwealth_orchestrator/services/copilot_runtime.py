@@ -375,9 +375,19 @@ class FinancialCopilot:
         context_trace: dict[str, Any] | None = None,
         conversation_store: ConversationStore | None = None,
         llm_client: ChatToolClient | None = None,
+        progress_cb: Any = None,
     ) -> dict[str, Any]:
         store = conversation_store or self.conversation_store
         client = llm_client or self.llm_client
+
+        def _emit(event: dict[str, Any]) -> None:
+            if progress_cb is None:
+                return
+            try:
+                progress_cb(event)
+            except Exception:  # progress reporting must never break the turn
+                pass
+
         if conversation is None:
             conversation = store.get_or_create(
                 conversation_id=conversation_id,
@@ -400,11 +410,19 @@ class FinancialCopilot:
                 contextual_brief=contextual_brief,
             )
 
-            for _ in range(self.max_tool_rounds):
-                completion = await client.complete(
-                    messages=messages,
-                    tools=self._tool_definitions(),
-                )
+            for round_index in range(self.max_tool_rounds):
+                _emit({"type": "round", "round": round_index + 1})
+                if progress_cb is not None and hasattr(client, "complete_stream"):
+                    completion = await client.complete_stream(
+                        messages=messages,
+                        tools=self._tool_definitions(),
+                        on_delta=lambda text: _emit({"type": "answer_delta", "text": text}),
+                    )
+                else:
+                    completion = await client.complete(
+                        messages=messages,
+                        tools=self._tool_definitions(),
+                    )
                 model_name = completion.get("model", model_name)
                 assistant_message = completion.get("message", {})
                 content = self._message_text(assistant_message.get("content"))
@@ -433,7 +451,15 @@ class FinancialCopilot:
                         except Exception:
                             arguments = {"_raw": raw_arguments}
 
+                        _emit({"type": "tool", "name": name, "status": "start"})
                         result, error = await self._execute_tool(name=name, arguments=arguments)
+                        _emit(
+                            {
+                                "type": "tool",
+                                "name": name,
+                                "status": "error" if error else "done",
+                            }
+                        )
 
                         trace = {
                             "name": name,
