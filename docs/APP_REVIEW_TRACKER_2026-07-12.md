@@ -32,11 +32,11 @@ merge-conflict magnet, the untestable layer, and the reason handler logic is har
 
 There is no CI at all (no `.github/`, nothing gating commits) despite the large test suite.
 
-- [ ] GitHub Actions workflow running `make test` (pytest, 126 files)
-- [ ] Wire the 29 orphaned `node:test` `*.test.mjs` frontend unit tests into a runner
+- [x] GitHub Actions workflow running `make test` (pytest, 126 files)
+- [x] Wire the 29 orphaned `node:test` `*.test.mjs` frontend unit tests into a runner
       (`node --test`; add to Makefile and/or npm scripts) — currently they only run manually
-- [ ] Add the Playwright browser suite (`npm run test:web-v2:browser`) to CI
-- [ ] Gate merges/pushes on the suite passing
+- [x] Add the Playwright browser suite (`npm run test:web-v2:browser`) to CI
+- [ ] Gate merges/pushes on the suite passing (requires pushing the workflow and enabling branch protection on GitHub — manual step)
 
 ### 3. Copilot streaming and cancel
 

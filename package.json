@@ -6,6 +6,7 @@
     "services/orchestrator"
   ],
   "scripts": {
+    "test:web-v2:unit": "npm --workspace services/orchestrator run test:web-v2:unit",
     "test:web-v2:browser": "npm --workspace services/orchestrator run test:web-v2:browser"
   }
 }

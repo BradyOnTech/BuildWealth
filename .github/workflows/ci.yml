@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python-tests:
+    name: Python tests (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/orchestrator/pyproject.toml
+      - name: Install orchestrator with dev extras
+        working-directory: services/orchestrator
+        run: python -m pip install -e '.[dev]'
+      - name: Run pytest
+        working-directory: services/orchestrator
+        run: pytest -q
+
+  web-unit-tests:
+    name: web-v2 unit tests (node:test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run node --test suites
+        run: npm run test:web-v2:unit
+
+  browser-tests:
+    name: web-v2 browser tests (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run browser specs
+        run: npm run test:web-v2:browser

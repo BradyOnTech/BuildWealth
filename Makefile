@@ -2,7 +2,7 @@ SHELL := /bin/zsh
 
 COMPOSE := docker compose -f infra/docker-compose.yml
 
-.PHONY: init-env up down restart ps logs sync sync-status service-status telemetry-runtime backup backup-list backup-restore protection-status protection-apply reliability-smoke-storage import-csv test
+.PHONY: test-python test-web test-e2e init-env up down restart ps logs sync sync-status service-status telemetry-runtime backup backup-list backup-restore protection-status protection-apply reliability-smoke-storage import-csv test
 
 init-env:
 	./scripts/init-env.sh
@@ -65,5 +65,13 @@ import-csv:
 	  -H 'content-type: application/json' \
 	  -d "{\"path\":\"$${FILE}\",\"dry_run\":$${DRY_RUN:-true}}" | jq
 
-test:
+test: test-python test-web
+
+test-python:
 	cd services/orchestrator && python3 -m pip install -e '.[dev]' >/dev/null && pytest -q
+
+test-web:
+	npm run test:web-v2:unit
+
+test-e2e:
+	npm run test:web-v2:browser

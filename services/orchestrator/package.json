@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:web-v2:unit": "node --test src/buildwealth_orchestrator/web-v2/tests/*.test.mjs",
     "test:web-v2:browser": "playwright test src/buildwealth_orchestrator/web-v2/tests/*.spec.mjs --browser=chromium --reporter=line"
   },
   "devDependencies": {

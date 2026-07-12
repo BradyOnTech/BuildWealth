@@ -123,7 +123,9 @@ test('Inbox reviews a pending profile context capture through source resolution'
   assert.equal(lifecyclePayload.metadata.resolution_state, 'resolved_by_source_update');
   assert.equal(lifecyclePayload.metadata.review_note, 'Updated the tax profile after checking the source.');
 
-  await contextLane.getByText('No pending context captures.').waitFor({ state: 'visible' });
+  const emptySummary = contextLane.getByText('Nothing needs a decision — browse past captures');
+  await emptySummary.waitFor({ state: 'visible' });
+  await emptySummary.click();
   await contextLane.getByRole('button', { name: /remembered/ }).click();
   await contextLane.getByText('My marginal tax rate is 32%.').waitFor({ state: 'visible' });
 });
