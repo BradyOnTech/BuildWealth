@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import hashlib
 import json
 import re
@@ -25,6 +27,8 @@ from buildwealth_orchestrator.services.session_focus import (
     plan_pass_domains,
     run_plan_id_pass,
 )
+
+logger = logging.getLogger(__name__)
 
 
 CONTEXT_REGISTRY_SCHEMA_VERSION = 1
@@ -1748,7 +1752,11 @@ class ContextIntelligenceService:
         if getattr(self.embedding_client, "enabled", False) and str(query or "").strip():
             try:
                 query_embedding = self.embedding_client.embed_text(str(query))
-            except Exception:
+            except Exception as exc:
+                # Fall back to structured search, but leave a trail — a wrong
+                # base_url (e.g. host.docker.internal outside docker) otherwise
+                # degrades semantic retrieval silently.
+                logger.warning("query embedding failed; semantic search skipped: %s", exc)
                 query_embedding = None
         return self.registry.search(
             query=query,

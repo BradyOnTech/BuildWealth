@@ -150,9 +150,9 @@ sketches this as "asset enrichment."
 The embeddings path in `context_intelligence.py` (4,093 lines) is fully built but ships
 as `DisabledEmbeddingClient` — an entire subsystem unexercised.
 
-- [ ] Wire embeddings to local Ollama by default (setup already anticipates
+- [x] Wire embeddings to local Ollama by default (setup already anticipates
       `host.docker.internal:11434`)
-- [ ] Exercise/verify the semantic retrieval path once enabled
+- [x] Exercise/verify the semantic retrieval path once enabled
 
 ---
 
