@@ -28,8 +28,19 @@ const SUGGESTIONS = [
 const PROFILE_SETUP_PROMPT = [
   'Help me fill out my financial profile.',
   'First call get_onboarding_status and get_financial_profile.',
-  'Ask me one focused question at a time for missing income, expenses, debt, goals, tax basics, and physical assets.',
+  'Ask me one focused question at a time for missing household members, income, expenses, debt, goals, tax basics, and physical assets.',
+  'Start with the household: who is in it, relationships, and birth years — ages drive most planning math.',
   'When you have enough information, call draft_financial_profile_update so I can review the changes.',
+  'do not save anything with update_financial_profile until I explicitly confirm the draft.',
+].join(' ');
+
+const HOUSEHOLD_SETUP_PROMPT = [
+  'Help me record who is in my household.',
+  'First call get_onboarding_status and get_financial_profile.',
+  'Focus only on household_members for now.',
+  'Ask me one focused question at a time: who lives in the household (me, a partner, children or other dependents), each person\'s display_name, relationship (self, partner, child, dependent, other), birth_year, and — for adults — an intended retirement_age.',
+  'Explain briefly why it matters: birth years drive retirement timing, catch-up contributions, RMDs, Medicare, and education goals; a partner on record keeps married filing statuses coherent.',
+  'When you have enough information, call draft_financial_profile_update with household_members so I can review the changes.',
   'do not save anything with update_financial_profile until I explicitly confirm the draft.',
 ].join(' ');
 
@@ -818,6 +829,14 @@ function nextOnboardingStep(status) {
   return steps.find(step => step.status !== 'complete');
 }
 
+function householdNeedsSetup(status) {
+  const sections = Array.isArray(status?.profile_readiness?.sections)
+    ? status.profile_readiness.sections
+    : [];
+  const household = sections.find(section => section.key === 'household');
+  return Boolean(household && household.status !== 'complete');
+}
+
 function isGoalOnboardingStep(step) {
   const key = String(step?.key || '').toLowerCase();
   const title = String(step?.title || '').toLowerCase();
@@ -861,6 +880,7 @@ function isPlanReviewIntent(intent) {
 
 function onboardingActionLabel(status) {
   const step = nextOnboardingStep(status);
+  if (householdNeedsSetup(status)) return 'Add your household with Copilot';
   if (isDebtOnboardingStep(step)) return 'Add debt with Copilot';
   if (isGoalOnboardingStep(step)) return 'Add goals with Copilot';
   if (isTaxOnboardingStep(step)) return 'Add tax basics with Copilot';
@@ -871,6 +891,7 @@ function onboardingActionLabel(status) {
 
 function onboardingPrompt(status) {
   const step = nextOnboardingStep(status);
+  if (householdNeedsSetup(status)) return HOUSEHOLD_SETUP_PROMPT;
   if (isDebtOnboardingStep(step)) return DEBT_SETUP_PROMPT;
   if (isGoalOnboardingStep(step)) return GOAL_SETUP_PROMPT;
   if (isTaxOnboardingStep(step)) return TAX_SETUP_PROMPT;
@@ -1341,7 +1362,7 @@ async function saveThesisDraft(button) {
 
 function mergeProfileDraft(current, patch) {
   const merged = { ...(current || {}) };
-  for (const key of ['income_items', 'expense_items', 'debt_items', 'goal_items', 'physical_assets']) {
+  for (const key of ['household_members', 'income_items', 'expense_items', 'debt_items', 'goal_items', 'physical_assets']) {
     if (Array.isArray(patch?.[key])) merged[key] = patch[key];
   }
   if (typeof patch?.notes === 'string') merged.notes = patch.notes;

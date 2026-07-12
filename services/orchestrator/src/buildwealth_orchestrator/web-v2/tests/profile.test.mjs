@@ -59,9 +59,21 @@ test('overview: surfaces pending context candidates in the Needs Review card', (
   assert.match(markup, /Confirm marginal tax rate/);
 });
 
-test('tables: defines all five editable sections', () => {
+test('tables: defines all six editable sections', () => {
   const keys = TABLE_SECTIONS.map(s => s.key).sort();
-  assert.deepEqual(keys, ['debt_items', 'expense_items', 'goal_items', 'income_items', 'physical_assets']);
+  assert.deepEqual(keys, ['debt_items', 'expense_items', 'goal_items', 'household_members', 'income_items', 'physical_assets']);
+});
+
+test('tables: household member build normalizes relationship and dependent flag', () => {
+  const household = sectionForKey('household_members');
+  const child = household.build({ display_name: 'Kid', relationship: 'child', birth_year: '2019' });
+  assert.equal(child.relationship, 'child');
+  assert.equal(child.dependent, true);
+  assert.equal(child.birth_year, 2019);
+  const self = household.build({ display_name: 'Me', relationship: 'self', birth_year: '1988', retirement_age: '62' });
+  assert.equal(self.dependent, false);
+  assert.equal(self.retirement_age, 62);
+  assert.throws(() => household.build({ relationship: 'self' }), /name is required/i);
 });
 
 test('tables: sectionForKey returns the right declarative spec', () => {

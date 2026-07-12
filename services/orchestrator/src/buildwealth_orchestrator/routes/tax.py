@@ -43,6 +43,9 @@ def build_roth_ladder(
     Filing status, state rate, and income default from the financial profile;
     every input can be overridden in the request body.
     """
+    from datetime import datetime, timezone
+
+    from buildwealth_orchestrator.services.peer_benchmark import _age_from_profile
     from buildwealth_orchestrator.services.tax_strategy import build_roth_conversion_ladder
 
     resolved_services = m.route_workspace_services(services, permission="profile.read")
@@ -72,5 +75,6 @@ def build_roth_ladder(
         years=int(_num("years", 10)),
         annual_growth_rate=_num("annual_growth_rate", 0.05),
         state_tax_rate=_num("state_tax_rate", float(tax_profile.get("state_tax_rate") or 0.0)),
-        age=int(_num("age", 0)) or None,
+        age=int(_num("age", 0))
+        or _age_from_profile(profile, current_year=datetime.now(timezone.utc).year),
     )

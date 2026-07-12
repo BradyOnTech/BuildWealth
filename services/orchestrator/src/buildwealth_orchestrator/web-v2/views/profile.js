@@ -38,6 +38,7 @@ export const meta = {
 
 const SECTIONS = [
   { id: 'overview',     label: 'Overview',     kind: 'overview' },
+  { id: 'household',    label: 'Household',    kind: 'table',   tableKey: 'household_members' },
   { id: 'income',       label: 'Income',       kind: 'table',   tableKey: 'income_items' },
   { id: 'expenses',     label: 'Expenses',     kind: 'table',   tableKey: 'expense_items' },
   { id: 'debt',         label: 'Debt',         kind: 'table',   tableKey: 'debt_items' },

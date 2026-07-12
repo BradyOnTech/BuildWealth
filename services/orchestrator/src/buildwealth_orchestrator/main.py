@@ -10229,6 +10229,7 @@ def _plan_settings_completion_percent(active_plan_detail: dict[str, Any] | None)
 
 def _build_profile_readiness_summary(
     *,
+    household_members: list[Any] | None = None,
     income_items: list[Any],
     expense_items: list[Any],
     debt_items: list[Any],
@@ -10262,7 +10263,44 @@ def _build_profile_readiness_summary(
         single_symbol_cap_value = None
     policy_complete = single_symbol_cap_value is not None
 
+    members = [m for m in (household_members or []) if isinstance(m, dict)]
+    partners = [m for m in members if str(m.get("relationship") or "") in {"partner"}]
+    dependents = [m for m in members if bool(m.get("dependent"))]
+    # Filing-status coherence: MFJ/MFS with no partner on record (or vice versa)
+    # weakens every household-level engine, so it surfaces as attention.
+    joint_status = filing_status in {"married_filing_jointly", "married_filing_separately"}
+    household_status = "complete" if members else "incomplete"
+    if joint_status and not partners:
+        household_status = "attention"
+        household_detail = (
+            f"Filing status is {filing_status.replace('_', ' ')} but no partner is on "
+            "record — add household members so tax and planning math see the whole household."
+        )
+    elif partners and filing_status == "single":
+        household_status = "attention"
+        household_detail = (
+            "A partner is on record but filing status is single — confirm which is right."
+        )
+    elif members:
+        member_bits = [f"{len(members)} member(s)"]
+        if dependents:
+            member_bits.append(f"{len(dependents)} dependent(s)")
+        household_detail = ", ".join(member_bits) + " on record."
+    else:
+        household_detail = (
+            "Add who is in the household (you, a partner, dependents) — ages drive "
+            "retirement timing, RMDs, Medicare, and education goals."
+        )
+
     sections = [
+        ProfileReadinessSection(
+            key="household",
+            title="Household",
+            status=household_status,
+            detail=household_detail,
+            required_for=["planning", "tax_strategy", "education_goals"],
+            blocking_recommendations=False,
+        ),
         ProfileReadinessSection(
             key="income",
             title="Income profile",
@@ -10451,7 +10489,9 @@ def build_onboarding_status_response(
     debt_items = profile.get("debt_items") if isinstance(profile.get("debt_items"), list) else []
     goal_items = profile.get("goal_items") if isinstance(profile.get("goal_items"), list) else []
     physical_assets = profile.get("physical_assets") if isinstance(profile.get("physical_assets"), list) else []
+    household_members = profile.get("household_members") if isinstance(profile.get("household_members"), list) else []
     profile_readiness = _build_profile_readiness_summary(
+        household_members=household_members,
         income_items=income_items,
         expense_items=expense_items,
         debt_items=debt_items,
@@ -12342,6 +12382,7 @@ async def tool_get_onboarding_status(_: dict[str, object]) -> dict[str, object]:
 
 
 PROFILE_UPDATE_LIST_KEYS = (
+    "household_members",
     "income_items",
     "expense_items",
     "debt_items",
@@ -12349,6 +12390,7 @@ PROFILE_UPDATE_LIST_KEYS = (
     "physical_assets",
 )
 PROFILE_UPDATE_ITEM_ID_PREFIXES = {
+    "household_members": "member",
     "income_items": "income",
     "expense_items": "expense",
     "debt_items": "debt",
@@ -15425,6 +15467,23 @@ def configure_copilot_tools() -> None:
         parameters={
             "type": "object",
             "properties": {
+                "household_members": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "display_name": {"type": "string"},
+                            "relationship": {
+                                "type": "string",
+                                "enum": ["self", "partner", "child", "dependent", "other"],
+                            },
+                            "birth_year": {"type": ["integer", "null"]},
+                            "retirement_age": {"type": ["integer", "null"]},
+                            "dependent": {"type": "boolean"},
+                            "notes": {"type": "string"},
+                        },
+                    },
+                },
                 "income_items": {"type": "array", "items": {"type": "object"}},
                 "expense_items": {"type": "array", "items": {"type": "object"}},
                 "debt_items": {"type": "array", "items": {"type": "object"}},
@@ -15443,12 +15502,29 @@ def configure_copilot_tools() -> None:
         name="update_financial_profile",
         description=(
             "Update financial profile collections and tax settings. "
-            "You may provide any subset of income_items, expense_items, debt_items, goal_items, "
+            "You may provide any subset of household_members, income_items, expense_items, debt_items, goal_items, "
             "physical_assets, tax_profile, investment_policy, flags, and notes. Only use after explicit user confirmation."
         ),
         parameters={
             "type": "object",
             "properties": {
+                "household_members": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "display_name": {"type": "string"},
+                            "relationship": {
+                                "type": "string",
+                                "enum": ["self", "partner", "child", "dependent", "other"],
+                            },
+                            "birth_year": {"type": ["integer", "null"]},
+                            "retirement_age": {"type": ["integer", "null"]},
+                            "dependent": {"type": "boolean"},
+                            "notes": {"type": "string"},
+                        },
+                    },
+                },
                 "income_items": {"type": "array", "items": {"type": "object"}},
                 "expense_items": {"type": "array", "items": {"type": "object"}},
                 "debt_items": {"type": "array", "items": {"type": "object"}},
@@ -16861,6 +16937,9 @@ def build_portfolio_fit_assessment_payload(
         holdings_payload = dict(holdings_payload)
         holdings_payload["investment_policy"] = investment_policy
     profile_readiness = _build_profile_readiness_summary(
+        household_members=profile_payload.get("household_members")
+        if isinstance(profile_payload.get("household_members"), list)
+        else [],
         income_items=profile_payload.get("income_items") if isinstance(profile_payload.get("income_items"), list) else [],
         expense_items=profile_payload.get("expense_items") if isinstance(profile_payload.get("expense_items"), list) else [],
         debt_items=profile_payload.get("debt_items") if isinstance(profile_payload.get("debt_items"), list) else [],

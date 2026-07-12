@@ -715,6 +715,7 @@ function renderAccountLocationList(accountLocation = {}) {
 function renderProfileDraftCard(result) {
   const profile = result.proposed_profile || {};
   const sections = [
+    renderHouseholdSection(profile.household_members),
     renderItemSection('Income items', profile.income_items, 'monthly_amount_usd'),
     renderItemSection('Expense items', profile.expense_items, 'monthly_amount_usd'),
     renderItemSection('Debt items', profile.debt_items, 'balance_usd'),
@@ -741,6 +742,23 @@ function renderProfileDraftCard(result) {
         </button>
       </div>
     </article>
+  `;
+}
+
+function renderHouseholdSection(members) {
+  if (!Array.isArray(members) || !members.length) return '';
+  return html`
+    <div class="profile-draft-section">
+      <p class="profile-draft-section-title">Household</p>
+      <ul>
+        ${members.slice(0, 6).map(member => html`
+          <li>
+            <span>${member?.display_name || 'Household member'}</span>
+            <b>${member?.relationship || 'self'}${member?.birth_year ? ` · b. ${member.birth_year}` : ''}${member?.dependent ? ' · dependent' : ''}</b>
+          </li>
+        `)}
+      </ul>
+    </div>
   `;
 }
 

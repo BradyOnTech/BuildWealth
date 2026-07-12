@@ -16,6 +16,7 @@ const COMPOSER_DRAFTS = new Map();
 const SECTIONS_BY_KEY = new Map();
 
 export const TABLE_SECTIONS = [
+  defineHousehold(),
   defineIncome(),
   defineExpenses(),
   defineDebt(),
@@ -226,6 +227,59 @@ function composerDraft(key) {
 }
 
 /* ─────────────  Section definitions  ───────────── */
+
+function defineHousehold() {
+  const currentYear = new Date().getFullYear();
+  const section = {
+    key: 'household_members',
+    title: 'Household',
+    singular: 'member',
+    eyebrow: 'Foundation · Household',
+    lede: 'Who the plan is for. Birth years drive retirement timing, catch-up contributions, RMDs, Medicare, and education goals.',
+    emptyHint: 'No household members yet. Add yourself first — then a partner and any dependents.',
+    columns: [
+      { key: 'display_name',   header: 'Name' },
+      { key: 'relationship',   header: 'Relationship', format: humanWord },
+      { key: 'birth_year',     header: 'Born',         numeric: true, format: v => (v ? String(v) : '—') },
+      { key: 'retirement_age', header: 'Retire at',    numeric: true, format: v => (v ? String(v) : '—') },
+      { key: 'dependent',      header: 'Dependent',    format: boolWord },
+      { key: 'notes',          header: 'Notes' },
+    ],
+    composer: [
+      { key: 'display_name',   kind: 'text',   label: 'Name',        placeholder: 'e.g. Brady' },
+      { key: 'relationship',   kind: 'select', label: 'Relationship', options: [
+        { value: 'self',      label: 'Self' },
+        { value: 'partner',   label: 'Partner / spouse' },
+        { value: 'child',     label: 'Child' },
+        { value: 'dependent', label: 'Other dependent' },
+        { value: 'other',     label: 'Other' },
+      ] },
+      { key: 'birth_year',     kind: 'number', label: 'Birth year',  min: 1900, max: currentYear, step: 1, placeholder: 'e.g. 1988' },
+      { key: 'retirement_age', kind: 'number', label: 'Retire at',   min: 18, max: 100, step: 1, placeholder: 'adults only' },
+      { key: 'notes',          kind: 'text',   label: 'Notes',       placeholder: 'optional' },
+    ],
+    build(draft) {
+      const name = String(draft.display_name || '').trim();
+      if (!name) throw new Error('A name is required.');
+      const relationship = String(draft.relationship || 'self');
+      const birthYear = Number(draft.birth_year);
+      const retirementAge = Number(draft.retirement_age);
+      return {
+        id: uid(),
+        display_name: name,
+        relationship,
+        birth_year: Number.isFinite(birthYear) && birthYear >= 1900 ? Math.round(birthYear) : null,
+        retirement_age: Number.isFinite(retirementAge) && retirementAge >= 18 ? Math.round(retirementAge) : null,
+        dependent: relationship === 'child' || relationship === 'dependent',
+        notes: String(draft.notes || '').trim(),
+      };
+    },
+    onAction: () => {},
+    onAdd: () => {},
+  };
+  bindActions(section);
+  return section;
+}
 
 function defineIncome() {
   const section = {
