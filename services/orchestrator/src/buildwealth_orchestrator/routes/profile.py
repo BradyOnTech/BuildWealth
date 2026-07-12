@@ -9,6 +9,12 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 import buildwealth_orchestrator.main as m
+from buildwealth_orchestrator.services.profile_document_vision import (
+    ALLOWED_MEDIA_TYPES,
+    MAX_IMAGE_BYTES,
+    apply_document_suggestions,
+    extract_profile_document,
+)
 
 router = APIRouter()
 
@@ -17,6 +23,8 @@ __all__ = [
     "post_life_plans_drafts",
     "get_financial_profile",
     "update_financial_profile",
+    "extract_profile_document_image",
+    "apply_profile_document_vision",
 ]
 
 
@@ -83,3 +91,66 @@ def update_financial_profile(
     )
     m._queue_autogit_event("financial_profile_updated")
     return m.FinancialProfileResponse(**saved)
+
+
+@router.post("/api/profile/document-vision")
+async def extract_profile_document_image(
+    file: m.UploadFile = m.File(...),
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> dict[str, m.Any]:
+    """Read a paystub/W-2/mortgage/insurance photo with the 'extract' vision
+    model and return reviewable profile suggestions — nothing is saved until
+    the user applies them through /api/profile/document-vision/apply."""
+    m.require_permission(services.context, "profile.read")
+    image_bytes = await file.read()
+    media_type = str(file.content_type or "").strip().lower()
+    if media_type not in ALLOWED_MEDIA_TYPES:
+        raise m.HTTPException(
+            status_code=400,
+            detail=(
+                f"Unsupported image type {media_type or 'unknown'}. Use PNG, JPEG, WebP, "
+                "or GIF; for a PDF, screenshot the page."
+            ),
+        )
+    if len(image_bytes) > MAX_IMAGE_BYTES:
+        raise m.HTTPException(status_code=400, detail="Image is larger than 8 MB — crop or downscale it.")
+
+    result = await extract_profile_document(
+        image_bytes,
+        media_type,
+        llm_client=m.llm_router.client_for("extract"),
+    )
+    return {
+        "status": result.status,
+        "detail": result.detail,
+        "file_name": file.filename,
+        "document_type": result.document_type,
+        "confidence": result.confidence,
+        "suggestions": result.suggestions,
+        "warnings": result.warnings,
+        "review_note": (
+            "Read by AI from your photo — check every number against the document "
+            "before applying. Nothing is saved until you apply."
+        ),
+    }
+
+
+@router.post("/api/profile/document-vision/apply")
+def apply_profile_document_vision(
+    request: dict[str, m.Any],
+    http_request: m.Request,
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> dict[str, m.Any]:
+    """Apply a reviewed (possibly user-edited) document-vision suggestions
+    patch to the financial profile. Lists append with dedupe; only known
+    sections and fields are honored."""
+    resolved_services = m.route_workspace_services(
+        services,
+        permission="profile.write",
+        http_request=http_request,
+        require_write_token=True,
+    )
+    result = apply_document_suggestions(request, resolved_services.financial_profile_store)
+    if result.get("applied_sections"):
+        m._queue_autogit_event("financial_profile_updated")
+    return result

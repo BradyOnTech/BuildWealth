@@ -434,6 +434,8 @@ export const api = {
   importCsvUpload:    (formData) => postForm('/api/import/upload-csv', formData),
   uploadStatement:    (formData) => postForm('/api/import/statement', formData),
   uploadStatementImage: (formData) => postForm('/api/import/statement-vision', formData),
+  profileDocumentVision:      (formData) => postForm('/api/profile/document-vision', formData),
+  applyProfileDocumentVision: (body = {}) => postJson('/api/profile/document-vision/apply', body),
   applyStatementSuggestions: (body = {}) => postJson('/api/import/statement/apply', body),
   importWorkbenchPreview: (formData) => postForm('/api/import/workbench/preview', formData),
   applyImportWorkbench: (sessionId, body = {}) => postJson(

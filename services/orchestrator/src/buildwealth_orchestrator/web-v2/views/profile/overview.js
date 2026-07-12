@@ -5,6 +5,11 @@
 
 import { html, raw, esc } from '../../lib/dom.js';
 import { fmtUsdOrEmpty, fmtPctOrDash } from '../../lib/format.js';
+import { renderDocumentCapture } from './document_capture.js';
+
+// The capture card is part of the overview surface; re-exported so callers
+// and tests can reach it without knowing the file split.
+export { renderDocumentCapture } from './document_capture.js';
 
 export function renderOverview(ui) {
   const p = ui.profile || {};
@@ -48,6 +53,8 @@ export function renderOverview(ui) {
         line('Tax sensitivity',          guardrail(p, 'tax_sensitivity', 'plain'),              'How careful BuildWealth should be about taxable sales.'),
         line('Restricted investments',   restrictedSummary(p),                                  'Symbols or sectors BuildWealth should avoid suggesting.'),
       ], { footer: 'Edit guardrails on the Investing tab.' }))}
+
+      ${raw(renderDocumentCapture())}
 
       ${raw(needsReviewCard(ui))}
     </div>
