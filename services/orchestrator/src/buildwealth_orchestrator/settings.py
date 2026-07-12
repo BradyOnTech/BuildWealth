@@ -149,6 +149,8 @@ class Settings(BaseSettings):
     # Heartbeat cadence for scheduled price/snapshot sync. Daily by default so
     # freshness does not depend on the user clicking refresh; 0 disables.
     sync_interval_minutes: float = Field(default=1440.0, alias="SYNC_INTERVAL_MINUTES")
+    backup_interval_hours: float = Field(default=24.0, alias="BACKUP_INTERVAL_HOURS")
+    backup_retention_count: int = Field(default=14, alias="BACKUP_RETENTION_COUNT")
 
 
 @lru_cache(maxsize=1)

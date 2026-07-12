@@ -6,6 +6,7 @@ import { api } from '../lib/api.js';
 import { state } from '../lib/state.js';
 import { html, raw, $, esc, setView, delegate } from '../lib/dom.js';
 import { fmtRelative } from '../lib/format.js';
+import { skeleton } from '../lib/skeleton.js';
 import { renderBudgetReaderCard, bindBudgetReader } from './import_sync/budget_reader.js';
 
 export const meta = {
@@ -40,7 +41,7 @@ export function template() {
   return html`
     <section class="page" id="import-sync-page">
       <div class="import-shell" id="import-shell">
-        ${raw(skeleton())}
+        ${raw(masthead())}${raw(skeletonBody())}
       </div>
     </section>
   `;
@@ -801,13 +802,9 @@ function humanFileSize(bytes) {
 
 /* ─────────────  Skeletons  ───────────── */
 
-function skeleton() {
-  return html`${raw(masthead())}${raw(skeletonBody())}`;
-}
-
 function skeletonBody() {
   return html`
-    <div class="skeleton" style="height: 180px;">.</div>
-    <div class="skeleton" style="height: 120px; margin-top: 12px;">.</div>
+    ${skeleton('180px')}
+    ${skeleton('120px', { marginTop: '12px' })}
   `;
 }

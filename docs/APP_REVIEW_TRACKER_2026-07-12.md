@@ -87,21 +87,21 @@ requests. Breaks first on the hosted-SaaS path.
 
 ### 7. Smaller items
 
-- [ ] Schedule automated backups — `data/backups/` is empty even though the backup
+- [x] Schedule automated backups — `data/backups/` is empty even though the backup
       machinery and Make targets exist
-- [ ] Fix hardcoded `python3.12` site-packages path in `infra/docker-compose.yml`
+- [x] Fix hardcoded `python3.12` site-packages path in `infra/docker-compose.yml`
       (silently breaks web-v2 hot-mount on a base-image Python bump; local venv is 3.14)
-- [ ] Frontend dedup: ~6 views reimplement skeleton loaders and money/percent formatters
+- [x] Frontend dedup: ~6 views reimplement skeleton loaders and money/percent formatters
       (`fmtMoneyOrDash`, `fmtUsdOrEmpty`, `fmtUsdSafe`, `fmtPctOrDash`) despite
       `lib/format.js` — consolidate into shared helpers
-- [ ] Accessibility: keyboard navigation + focus management for custom dropdowns
+- [x] Accessibility: keyboard navigation + focus management for custom dropdowns
       (workspace/account/status/tools drawer, `app.js:634`); add `aria-live` regions for
       async state changes (currently 1 in the whole app)
-- [ ] Remove unreachable `renderPlaceholder()` "Coming soon" branch in
+- [x] Remove unreachable `renderPlaceholder()` "Coming soon" branch in
       `web-v2/views/profile.js:254`
-- [ ] Review the 155 broad `except Exception` sites — at minimum add logging where
+- [x] Review the 155 broad `except Exception` sites — at minimum add logging where
       external-call failures are currently swallowed (`research.py` etc.)
-- [ ] Refresh hardcoded default model ids in `llm_clients.py` (will silently rot)
+- [x] Refresh hardcoded default model ids in `llm_clients.py` (will silently rot)
 
 ---
 

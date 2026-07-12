@@ -63,6 +63,33 @@ export function fmtPctSigned(value, { fromFraction = false } = {}) {
   return `${sign}${PCT_PT.format(pct)}%`;
 }
 
+// Coercing "or dash" variants. Unlike fmtUsd/fmtPct these accept numeric
+// strings (form inputs) and treat blank ('' / null / undefined / non-numeric)
+// as absent, rendering the dash. Pass a different `dash` when a view wants
+// its own vocabulary for "unset" (e.g. plan story uses 'app default').
+export function fmtUsdOrDash(value, dash = '—') {
+  if (value == null || value === '') return dash;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return dash;
+  return fmtUsd(n);
+}
+
+// Fraction in (0.05 == 5%), two decimals out. For percent-point inputs or
+// other precisions, format at the call site.
+export function fmtPctOrDash(value, dash = '—') {
+  if (value == null || value === '') return dash;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return dash;
+  return `${(n * 100).toFixed(2)}%`;
+}
+
+// Null in, null out — for callers that hide the whole line when a value is
+// absent rather than printing a dash.
+export function fmtUsdOrEmpty(value) {
+  if (value == null) return null;
+  return fmtUsd(value);
+}
+
 const DATELONG = new Intl.DateTimeFormat('en-US', {
   weekday: 'long',
   month: 'long',

@@ -13,7 +13,7 @@ export const PROVIDERS = [
 
 export const PROVIDER_DEFAULTS = {
   openai:                   { llm_model: 'gpt-5.5',               llm_base_url: 'https://api.openai.com/v1' },
-  anthropic:                { llm_model: 'claude-opus-4-7',       llm_base_url: 'https://api.anthropic.com/v1' },
+  anthropic:                { llm_model: 'claude-opus-4-8',       llm_base_url: 'https://api.anthropic.com/v1' },
   gemini:                   { llm_model: 'gemini-3.1-flash-lite', llm_base_url: 'https://generativelanguage.googleapis.com/v1beta/openai' },
   xai:                      { llm_model: 'grok-4.5',              llm_base_url: 'https://api.x.ai/v1' },
   openrouter:               { llm_model: 'openrouter/auto',       llm_base_url: 'https://openrouter.ai/api/v1' },
@@ -37,7 +37,8 @@ export const PROVIDER_MODELS = {
     { id: 'gpt-4o-mini', label: 'GPT-4o mini', cost: '$', blurb: 'Very cheap tools model', cheap: true, price: '~$0.15 / $0.60' },
   ],
   anthropic: [
-    { id: 'claude-opus-4-7', label: 'Claude Opus 4.7', cost: '$$$$', blurb: 'Highest capability', recommended: true },
+    { id: 'claude-opus-4-8', label: 'Claude Opus 4.8', cost: '$$$$', blurb: 'Highest capability', recommended: true },
+    { id: 'claude-opus-4-7', label: 'Claude Opus 4.7', cost: '$$$$', blurb: 'Previous Opus generation' },
     { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5', cost: '$$$', blurb: 'Balanced quality & cost' },
     { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', cost: '$', blurb: 'Fast / economical', cheap: true },
   ],

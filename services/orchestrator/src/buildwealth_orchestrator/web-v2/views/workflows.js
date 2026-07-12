@@ -6,6 +6,7 @@ import { api } from '../lib/api.js';
 import { state } from '../lib/state.js';
 import { html, raw, $, esc, setView } from '../lib/dom.js';
 import { fmtRelative } from '../lib/format.js';
+import { skeleton } from '../lib/skeleton.js';
 
 export const meta = {
   id: 'workflows',
@@ -27,7 +28,7 @@ export function template() {
   return html`
     <section class="page" id="workflows-page">
       <div class="workflows-shell" id="workflows-shell">
-        ${raw(skeleton())}
+        ${raw(masthead())}${skeleton('240px')}
       </div>
     </section>
   `;
@@ -64,7 +65,7 @@ function render() {
     return;
   }
   if (!ui.loaded) {
-    setView(shell, html`${raw(masthead())}${raw(skeletonBody())}`);
+    setView(shell, html`${raw(masthead())}${skeleton('240px')}`);
     return;
   }
   setView(shell, html`
@@ -313,12 +314,4 @@ function parseArrayItem(value) {
   if (!value) return '';
   const numeric = Number(value);
   return Number.isFinite(numeric) && /^-?\d+(\.\d+)?$/.test(value) ? numeric : value;
-}
-
-function skeleton() {
-  return html`${raw(masthead())}${raw(skeletonBody())}`;
-}
-
-function skeletonBody() {
-  return html`<div class="skeleton" style="height: 240px;">.</div>`;
 }

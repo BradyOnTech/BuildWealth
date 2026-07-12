@@ -34,7 +34,7 @@ def test_settings_probe_payload_uses_target_provider_key_on_provider_change(
     # No anthropic key stored — must not probe with openai's key.
     assert payload["llm_api_key"] == ""
     assert payload["llm_base_url"] == "https://api.anthropic.com/v1"
-    assert payload["llm_model"] == "claude-opus-4-7"
+    assert payload["llm_model"] == "claude-opus-4-8"
     assert "llm_base_url" in explicit_keys
 
     store.save(
@@ -83,7 +83,7 @@ def test_settings_probe_payload_replaces_stale_provider_default_base_url(
     config = main._llm_config_from_payload(payload, explicit_keys=explicit_keys)
 
     assert config.provider == "anthropic"
-    assert config.model == "claude-opus-4-7"
+    assert config.model == "claude-opus-4-8"
     assert config.base_url == "https://api.anthropic.com/v1"
     assert config.api_key == "sk-ant"
 

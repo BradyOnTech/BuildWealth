@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from datetime import datetime, timezone
 from math import sqrt
 import re
@@ -15,6 +17,8 @@ from buildwealth_orchestrator.schemas import (
     ResearchResponse,
 )
 
+logger = logging.getLogger(__name__)
+
 
 _SYMBOL_PATTERN = re.compile(r"[^A-Z0-9._-]+")
 
@@ -24,6 +28,9 @@ class OpenBBResearchService:
         self.provider = provider
 
     def _unavailable(self, symbol: str, detail: str) -> ResearchResponse:
+        # Surfaced to the caller in the response, and logged so provider
+        # failures are diagnosable server-side instead of silently degrading.
+        logger.warning("research unavailable for %s: %s", symbol, detail)
         return ResearchResponse(
             symbol=symbol,
             provider=self.provider,

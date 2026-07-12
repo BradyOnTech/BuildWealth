@@ -135,6 +135,33 @@ class BackupRestoreService:
             "reason": reason,
         }
 
+    def latest_backup_age_seconds(self) -> float | None:
+        backups = self.list_backups()["backups"]
+        if not backups:
+            return None
+        newest = max(backups, key=lambda item: str(item.get("created_at") or ""))
+        try:
+            created = datetime.fromisoformat(str(newest["created_at"]))
+        except (KeyError, ValueError):
+            return None
+        return max(0.0, (datetime.now(timezone.utc) - created).total_seconds())
+
+    def prune_backups(self, *, keep: int) -> list[str]:
+        """Delete the oldest backup archives beyond `keep`. Returns pruned ids."""
+        if keep < 1:
+            return []
+        backups = self.list_backups()["backups"]
+        ordered = sorted(backups, key=lambda item: str(item.get("created_at") or ""), reverse=True)
+        pruned: list[str] = []
+        for entry in ordered[keep:]:
+            archive_path = Path(str(entry["archive_path"]))
+            try:
+                archive_path.unlink(missing_ok=True)
+                pruned.append(str(entry["backup_id"]))
+            except OSError:
+                continue
+        return pruned
+
     def restore_backup(self, *, backup_id: str, create_pre_restore_backup: bool = True) -> dict[str, Any]:
         archive_path = self._archive_path_for_id(backup_id)
         if not archive_path.exists():

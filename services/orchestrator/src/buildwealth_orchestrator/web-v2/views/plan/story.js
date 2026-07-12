@@ -3,7 +3,7 @@
 // top next actions on the right.
 
 import { html, raw, esc, stripHtml } from '../../lib/dom.js';
-import { fmtUsd, fmtPctSigned, roman } from '../../lib/format.js';
+import { fmtUsd, fmtUsdOrDash, fmtPctSigned, roman } from '../../lib/format.js';
 
 export function renderStory(plan, assumptionState = {}, timelineState = {}) {
   return html`
@@ -53,7 +53,7 @@ export function effectivePlanSettings(plan = {}, assumptionState = {}, timelineS
 
 function renderLedger(settings) {
   const rows = [
-    ['Annual contribution', fmtMoneyOrDash(settings.annual_contribution_usd)],
+    ['Annual contribution', fmtUsdOrDash(settings.annual_contribution_usd, dash())],
     ['Years horizon',       fmtIntOrDash(settings.years)],
     ['Expected return',     fmtPctOrDash(settings.expected_return_baseline)],
     ['Inflation',           fmtPctOrDash(settings.inflation_rate)],
@@ -119,13 +119,6 @@ function renderActionEntry(action, index) {
   `;
 }
 
-function fmtMoneyOrDash(v) {
-  if (v == null) return dash();
-  const n = Number(v);
-  if (!Number.isFinite(n)) return dash();
-  return fmtUsd(n);
-}
-
 function fmtIntOrDash(v) {
   if (v == null) return dash();
   const n = Number(v);
@@ -133,6 +126,9 @@ function fmtIntOrDash(v) {
   return `${n}`;
 }
 
+// Deliberately local, not lib/format.js's fmtPctOrDash: plan settings mix
+// fraction (0.07) and percent-point (7) entries, so this applies a
+// fraction-vs-percent heuristic and prints 1 decimal instead of 2.
 function fmtPctOrDash(v) {
   if (v == null) return dash();
   const n = Number(v);

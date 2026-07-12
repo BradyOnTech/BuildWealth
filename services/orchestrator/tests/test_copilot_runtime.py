@@ -530,7 +530,7 @@ def test_user_settings_provider_switch_applies_preset_and_keeps_other_vendor_key
     # Anthropic has no key yet; openai key remains in the multi-vendor map.
     assert saved["llm_api_key"] == ""
     assert saved["llm_provider_api_keys"]["openai"] == "sk-openai"
-    assert saved["llm_model"] == "claude-opus-4-7"
+    assert saved["llm_model"] == "claude-opus-4-8"
     assert saved["llm_base_url"] == "https://api.anthropic.com/v1"
     assert saved["llm_settings_saved_at"]
 

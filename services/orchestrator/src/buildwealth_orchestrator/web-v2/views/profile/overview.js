@@ -4,7 +4,7 @@
 // nothing here writes data.
 
 import { html, raw, esc } from '../../lib/dom.js';
-import { fmtUsd } from '../../lib/format.js';
+import { fmtUsdOrEmpty, fmtPctOrDash } from '../../lib/format.js';
 
 export function renderOverview(ui) {
   const p = ui.profile || {};
@@ -35,9 +35,9 @@ export function renderOverview(ui) {
 
       ${raw(card('Planning inputs', [
         line('Filing status',     humanFiling(tax.filing_status),                                'Used in tax-aware suggestions and Roth-conversion math.'),
-        line('Marginal tax rate', fmtPctOrEmpty(tax.marginal_tax_rate),                          'Affects bonus, RSU, and tax-loss harvesting guidance.'),
-        line('Effective tax rate',fmtPctOrEmpty(tax.effective_tax_rate),                        'Used in plan trajectory simulations.'),
-        line('State',             tax.state ? esc(tax.state) : 'Not set',                       tax.state_tax_rate != null ? `State rate ${fmtPctOrEmpty(tax.state_tax_rate)}.` : 'State rate not set.'),
+        line('Marginal tax rate', fmtPctOrDash(tax.marginal_tax_rate, null),                     'Affects bonus, RSU, and tax-loss harvesting guidance.'),
+        line('Effective tax rate',fmtPctOrDash(tax.effective_tax_rate, null),                   'Used in plan trajectory simulations.'),
+        line('State',             tax.state ? esc(tax.state) : 'Not set',                       tax.state_tax_rate != null ? `State rate ${fmtPctOrDash(tax.state_tax_rate, null)}.` : 'State rate not set.'),
         line('Active plan',       p.notes ? 'Notes attached' : 'No plan-specific notes',        'Notes here travel with Copilot context.'),
       ]))}
 
@@ -157,16 +157,6 @@ function estimateRunway(profile, monthlyExpenses) {
 }
 
 /* ─────────────  Formatting  ───────────── */
-
-function fmtUsdOrEmpty(value) {
-  if (value == null) return null;
-  return fmtUsd(value);
-}
-
-function fmtPctOrEmpty(value) {
-  if (value == null || !Number.isFinite(Number(value))) return null;
-  return `${(Number(value) * 100).toFixed(2)}%`;
-}
 
 function humanFiling(value) {
   if (!value) return null;

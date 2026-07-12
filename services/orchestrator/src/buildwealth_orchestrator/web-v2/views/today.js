@@ -9,6 +9,7 @@ import {
   fmtDateLong, fmtTimeShort, roman,
 } from '../lib/format.js';
 import { compactUsd } from '../lib/chart.js';
+import { skeleton } from '../lib/skeleton.js';
 import { renderAffordabilitySection, bindAffordabilitySection } from './today/affordability.js';
 
 export const meta = {
@@ -705,7 +706,7 @@ function skeletonSection(numeral, title) {
   return html`
     <section>
       ${raw(sectionHead(numeral, title, null))}
-      <div class="skeleton" style="height: 80px;">.</div>
+      ${skeleton('80px')}
     </section>
   `;
 }

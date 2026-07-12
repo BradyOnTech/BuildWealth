@@ -8,6 +8,7 @@
 import { api } from '../lib/api.js';
 import { state } from '../lib/state.js';
 import { html, raw, $, esc, setView } from '../lib/dom.js';
+import { skeleton } from '../lib/skeleton.js';
 import { renderStanding } from './portfolio/standing.js';
 import { renderComposition } from './portfolio/composition.js';
 import { renderAnalytics } from './portfolio/analytics.js';
@@ -1366,7 +1367,7 @@ function skeletonSection(numeral, title) {
         <span class="section-eyebrow">Movement ${numeral}</span>
         <h2 class="section-title">${title}</h2>
       </header>
-      <div class="skeleton" style="height: 120px;">.</div>
+      ${skeleton('120px')}
     </section>
   `;
 }

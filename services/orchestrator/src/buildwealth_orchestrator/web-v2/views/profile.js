@@ -14,6 +14,7 @@ import { api } from '../lib/api.js';
 import { state, emit } from '../lib/state.js';
 import { html, raw, $, esc, setView, delegate } from '../lib/dom.js';
 import { fmtRelative } from '../lib/format.js';
+import { skeleton } from '../lib/skeleton.js';
 import { renderOverview } from './profile/overview.js';
 import { renderTable, sectionForKey, TABLE_SECTIONS } from './profile/tables.js';
 import { renderTaxes, submitTaxesForm } from './profile/taxes.js';
@@ -62,7 +63,8 @@ export function template() {
   return html`
     <section class="page" id="profile-page">
       <div class="profile-shell" id="profile-shell">
-        ${raw(skeleton())}
+        ${raw(masthead())}
+        ${raw(skeletonBody())}
       </div>
     </section>
   `;
@@ -247,18 +249,7 @@ function renderSectionBody(section) {
       ${raw(renderTable(ui, sectionForKey(section.tableKey)))}
     `;
   }
-  if (section.kind === 'placeholder')  return renderPlaceholder(section);
   return '';
-}
-
-function renderPlaceholder(section) {
-  return html`
-    <div class="placeholder">
-      <span class="glyph">¶</span>
-      <h2>${section.label}</h2>
-      <p>${section.blurb || 'Coming soon.'}</p>
-    </div>
-  `;
 }
 
 /* ─────────────  Events  ───────────── */
@@ -353,16 +344,9 @@ function ensureShape(profile) {
 
 /* ─────────────  Skeletons  ───────────── */
 
-function skeleton() {
-  return html`
-    ${raw(masthead())}
-    ${raw(skeletonBody())}
-  `;
-}
-
 function skeletonBody() {
   return html`
-    <div class="skeleton" style="height: 36px; width: 60%;">.</div>
-    <div class="skeleton" style="height: 240px; margin-top: 24px;">.</div>
+    ${skeleton('36px', { width: '60%' })}
+    ${skeleton('240px', { marginTop: '24px' })}
   `;
 }

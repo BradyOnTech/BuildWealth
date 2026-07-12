@@ -18,7 +18,7 @@ import { authScreen } from './views/auth.js';
 import { state } from './lib/state.js';
 import './lib/chart_hover.js'; // side effect: binds chart hover readouts once at document level
 import { api, setActiveWorkspaceId } from './lib/api.js';
-import { html, raw, $, esc } from './lib/dom.js';
+import { html, raw, $, $$, esc } from './lib/dom.js';
 import { fmtDateLong } from './lib/format.js';
 
 const VIEWS = [today, inbox, plan, portfolio, profile, copilot, research, atelier, settings, importSync, workflows, review];
@@ -287,6 +287,19 @@ function renderTopbarStatus() {
       ${statusMenuOpen ? raw(renderStatusDropdown(chips, issues.length)) : ''}
     </div>
   `;
+  announceStatus(summaryLabel);
+}
+
+// Screen-reader announcement for async status changes. The chip repaints on
+// every interaction; only speak when the summary actually changed.
+let lastStatusAnnouncement = '';
+function announceStatus(summaryLabel) {
+  const announcer = $('#status-announcer');
+  if (!announcer) return;
+  const message = `System status: ${summaryLabel}`;
+  if (message === lastStatusAnnouncement) return;
+  lastStatusAnnouncement = message;
+  announcer.textContent = message;
 }
 
 function renderStatusDropdown(chips, issueCount) {
@@ -533,6 +546,7 @@ function bootShell() {
             <div class="workspace-menu" id="workspace-menu"></div>
             <div class="account-menu" id="account-menu"></div>
             <div class="topbar-status" id="topbar-status"></div>
+            <span class="sr-only" id="status-announcer" aria-live="polite"></span>
           </div>
         </header>
         <main class="content" id="content"></main>
@@ -633,21 +647,54 @@ function wireGlobalEvents() {
 
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
-      if (toolsOpen) setToolsOpen(false);
+      // Close and hand focus back to the toggle that opened the menu, so a
+      // keyboard user isn't dropped at the top of the document. Focus must be
+      // set after the re-render replaces the toggle element.
+      if (toolsOpen) {
+        setToolsOpen(false);
+        $('#tools-toggle')?.focus();
+      }
       if (workspaceMenuOpen) {
         workspaceMenuOpen = false;
         renderWorkspaceMenu();
+        $('#workspace-toggle')?.focus();
       }
       if (accountMenuOpen) {
         accountMenuOpen = false;
         renderAccountMenu();
+        $('#account-toggle')?.focus();
       }
       if (statusMenuOpen) {
         statusMenuOpen = false;
         renderTopbarStatus();
+        $('#status-toggle')?.focus();
       }
+      return;
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      const menu = openMenuElement();
+      if (!menu) return;
+      const items = $$('a[href], button:not([disabled])', menu);
+      if (!items.length) return;
+      event.preventDefault();
+      const delta = event.key === 'ArrowDown' ? 1 : -1;
+      const index = items.indexOf(document.activeElement);
+      const next = index === -1
+        ? (delta === 1 ? 0 : items.length - 1)
+        : (index + delta + items.length) % items.length;
+      items[next].focus();
     }
   });
+}
+
+// The dropdown (or drawer) currently open, if any. The click handlers keep at
+// most one open at a time, so first match wins.
+function openMenuElement() {
+  if (workspaceMenuOpen) return $('.workspace-dropdown');
+  if (accountMenuOpen) return $('.account-dropdown');
+  if (statusMenuOpen) return $('.status-dropdown');
+  if (toolsOpen) return $('#tools-drawer');
+  return null;
 }
 
 async function preloadGlobalState({ refreshWorkspace = true } = {}) {

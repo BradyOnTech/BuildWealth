@@ -7,6 +7,7 @@ import { api } from '../lib/api.js';
 import { state } from '../lib/state.js';
 import { html, raw, $, esc, setView, delegate } from '../lib/dom.js';
 import { fmtRelative } from '../lib/format.js';
+import { skeleton } from '../lib/skeleton.js';
 import {
   PROVIDERS,
   PROVIDER_DEFAULTS,
@@ -88,7 +89,8 @@ export function template() {
   return html`
     <section class="page" id="settings-page">
       <div class="settings-shell" id="settings-shell">
-        ${raw(skeleton())}
+        ${raw(masthead())}
+        ${raw(skeletonForm())}
       </div>
     </section>
   `;
@@ -1665,20 +1667,13 @@ function titleCase(value) {
 
 /* ─────────────  Skeletons  ───────────── */
 
-function skeleton() {
-  return html`
-    ${raw(masthead())}
-    ${raw(skeletonForm())}
-  `;
-}
-
 function skeletonForm() {
   return html`
     <section class="settings-card">
-      <div class="skeleton" style="height: 28px; width: 220px;">.</div>
-      <div class="skeleton" style="height: 72px; margin-top: 12px;">.</div>
-      <div class="skeleton" style="height: 72px; margin-top: 8px;">.</div>
-      <div class="skeleton" style="height: 72px; margin-top: 8px;">.</div>
+      ${skeleton('28px', { width: '220px' })}
+      ${skeleton('72px', { marginTop: '12px' })}
+      ${skeleton('72px', { marginTop: '8px' })}
+      ${skeleton('72px', { marginTop: '8px' })}
     </section>
   `;
 }

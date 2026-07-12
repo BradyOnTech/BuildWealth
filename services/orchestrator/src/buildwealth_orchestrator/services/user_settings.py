@@ -7,32 +7,35 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from buildwealth_orchestrator.services import llm_clients as llm_client_defaults
+
 # Imported lazily in methods that need vault helpers to avoid circular imports
 # at module load (llm_provider_vault imports LLM_PROVIDER_DEFAULTS from here).
 
 MASKED_PLACEHOLDER = "••••••••"
 VISIBLE_SUFFIX_LEN = 4
 
+# Derived from llm_clients defaults — the single source of truth.
 LLM_PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
     "openai": {
-        "llm_model": "gpt-5.5",
-        "llm_base_url": "https://api.openai.com/v1",
+        "llm_model": llm_client_defaults.DEFAULT_OPENAI_MODEL,
+        "llm_base_url": llm_client_defaults.DEFAULT_OPENAI_BASE_URL,
     },
     "gemini": {
-        "llm_model": "gemini-3.1-flash-lite",
-        "llm_base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "llm_model": llm_client_defaults.DEFAULT_GEMINI_MODEL,
+        "llm_base_url": llm_client_defaults.DEFAULT_GEMINI_BASE_URL,
     },
     "anthropic": {
-        "llm_model": "claude-opus-4-7",
-        "llm_base_url": "https://api.anthropic.com/v1",
+        "llm_model": llm_client_defaults.DEFAULT_ANTHROPIC_MODEL,
+        "llm_base_url": llm_client_defaults.DEFAULT_ANTHROPIC_BASE_URL,
     },
     "xai": {
-        "llm_model": "grok-4.5",
-        "llm_base_url": "https://api.x.ai/v1",
+        "llm_model": llm_client_defaults.DEFAULT_XAI_MODEL,
+        "llm_base_url": llm_client_defaults.DEFAULT_XAI_BASE_URL,
     },
     "openrouter": {
-        "llm_model": "openrouter/auto",
-        "llm_base_url": "https://openrouter.ai/api/v1",
+        "llm_model": llm_client_defaults.DEFAULT_OPENROUTER_MODEL,
+        "llm_base_url": llm_client_defaults.DEFAULT_OPENROUTER_BASE_URL,
     },
     "custom_openai_compatible": {
         "llm_model": "",

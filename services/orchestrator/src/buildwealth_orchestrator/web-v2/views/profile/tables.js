@@ -6,7 +6,7 @@
 // stays the source of truth and onboarding refreshes automatically.
 
 import { html, raw, esc } from '../../lib/dom.js';
-import { fmtUsd } from '../../lib/format.js';
+import { fmtUsdOrDash, fmtPctOrDash } from '../../lib/format.js';
 import { persist, render as renderProfile } from '../profile.js';
 
 /* ─────────────  Specs  ───────────── */
@@ -237,10 +237,10 @@ function defineIncome() {
     emptyHint: 'No income entries yet. Add the streams BuildWealth should plan around.',
     columns: [
       { key: 'label',                header: 'Item' },
-      { key: 'monthly_amount_usd',   header: 'Monthly',     numeric: true, format: fmtUsdSafe },
+      { key: 'monthly_amount_usd',   header: 'Monthly',     numeric: true, format: fmtUsdOrDash },
       { key: 'source_type',          header: 'Type',        format: humanWord },
       { key: 'is_pre_tax',           header: 'Pre-tax',     format: boolWord },
-      { key: 'annual_growth_rate',   header: 'Growth',      numeric: true, format: pctSafe },
+      { key: 'annual_growth_rate',   header: 'Growth',      numeric: true, format: fmtPctOrDash },
       { key: 'start_date',           header: 'Start',       format: dateSafe },
       { key: 'end_date',             header: 'End',         format: dateSafe },
     ],
@@ -292,10 +292,10 @@ function defineExpenses() {
     emptyHint: 'No expenses yet. Add the recurring obligations BuildWealth should plan around.',
     columns: [
       { key: 'label',              header: 'Item' },
-      { key: 'monthly_amount_usd', header: 'Monthly',  numeric: true, format: fmtUsdSafe },
+      { key: 'monthly_amount_usd', header: 'Monthly',  numeric: true, format: fmtUsdOrDash },
       { key: 'category',           header: 'Category' },
       { key: 'is_fixed',           header: 'Fixed',    format: boolWord },
-      { key: 'inflation_rate',     header: 'Inflation',numeric: true, format: pctSafe },
+      { key: 'inflation_rate',     header: 'Inflation',numeric: true, format: fmtPctOrDash },
       { key: 'start_date',         header: 'Start',    format: dateSafe },
       { key: 'end_date',           header: 'End',      format: dateSafe },
     ],
@@ -341,11 +341,11 @@ function defineDebt() {
     emptyHint: 'No debt tracked. If this is correct, mark "no debt" on the Overview.',
     columns: [
       { key: 'label',                  header: 'Debt' },
-      { key: 'balance_usd',            header: 'Balance',     numeric: true, format: fmtUsdSafe },
-      { key: 'interest_rate',          header: 'Rate',        numeric: true, format: pctSafe },
-      { key: 'minimum_payment_usd',    header: 'Min payment', numeric: true, format: fmtUsdSafe },
+      { key: 'balance_usd',            header: 'Balance',     numeric: true, format: fmtUsdOrDash },
+      { key: 'interest_rate',          header: 'Rate',        numeric: true, format: fmtPctOrDash },
+      { key: 'minimum_payment_usd',    header: 'Min payment', numeric: true, format: fmtUsdOrDash },
       { key: 'payoff_strategy',        header: 'Strategy',    format: humanWord },
-      { key: 'custom_monthly_payment_usd', header: 'Custom',  numeric: true, format: fmtUsdSafe },
+      { key: 'custom_monthly_payment_usd', header: 'Custom',  numeric: true, format: fmtUsdOrDash },
     ],
     composer: [
       { key: 'label',                      kind: 'text',   label: 'Debt label',    placeholder: 'Credit card, student loan…' },
@@ -392,7 +392,7 @@ function defineGoals() {
     emptyHint: 'No goals tracked yet. Adding goals lets BuildWealth pace your saving.',
     columns: [
       { key: 'label',             header: 'Goal' },
-      { key: 'target_amount_usd', header: 'Target',  numeric: true, format: fmtUsdSafe },
+      { key: 'target_amount_usd', header: 'Target',  numeric: true, format: fmtUsdOrDash },
       { key: 'target_date',       header: 'By',      format: dateSafe },
       { key: 'priority',          header: 'Priority',format: humanWord },
     ],
@@ -436,9 +436,9 @@ function defineAssets() {
     emptyHint: 'No physical assets tracked. Liquid investments belong in Portfolio.',
     columns: [
       { key: 'label',              header: 'Asset' },
-      { key: 'current_value_usd',  header: 'Value',   numeric: true, format: fmtUsdSafe },
+      { key: 'current_value_usd',  header: 'Value',   numeric: true, format: fmtUsdOrDash },
       { key: 'asset_type',         header: 'Type',    format: humanWord },
-      { key: 'annual_growth_rate', header: 'Growth',  numeric: true, format: pctSafe },
+      { key: 'annual_growth_rate', header: 'Growth',  numeric: true, format: fmtPctOrDash },
       { key: 'purchase_date',      header: 'Bought',  format: dateSafe },
     ],
     composer: [
@@ -505,20 +505,6 @@ function parseRatio(value) {
   // Stored profile rates use decimal fractions (0.05 == 5%). The composer
   // takes percent input; convert here.
   return n / 100;
-}
-
-function fmtUsdSafe(value) {
-  if (value == null || value === '') return '—';
-  const n = Number(value);
-  if (!Number.isFinite(n)) return '—';
-  return fmtUsd(n);
-}
-
-function pctSafe(value) {
-  if (value == null || value === '') return '—';
-  const n = Number(value);
-  if (!Number.isFinite(n)) return '—';
-  return `${(n * 100).toFixed(2)}%`;
 }
 
 function dateSafe(value) {

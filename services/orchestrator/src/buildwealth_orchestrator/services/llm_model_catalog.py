@@ -136,16 +136,22 @@ PROVIDER_CATALOG: dict[str, dict[str, Any]] = {
         "id": "anthropic",
         "label": "Anthropic",
         "hint": "Claude family",
-        "default_model": "claude-opus-4-7",
+        "default_model": "claude-opus-4-8",
         "default_base_url": "https://api.anthropic.com/v1",
         "auth_note": "One Anthropic API key unlocks Claude models below.",
         "models": [
             _model(
-                id="claude-opus-4-7",
-                label="Claude Opus 4.7",
+                id="claude-opus-4-8",
+                label="Claude Opus 4.8",
                 cost_band="$$$$",
                 blurb="Highest capability",
                 recommended=True,
+            ),
+            _model(
+                id="claude-opus-4-7",
+                label="Claude Opus 4.7",
+                cost_band="$$$$",
+                blurb="Previous Opus generation",
             ),
             _model(
                 id="claude-sonnet-4-5",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import importlib.util
 import json
 import re
@@ -466,7 +467,11 @@ async def _app_lifespan(_: FastAPI):
 
 app = FastAPI(title=settings.app_name, lifespan=_app_lifespan)
 
-web_v2_dir = Path(__file__).resolve().parent / "web-v2"
+# WEB_V2_DIR lets deployments bind-mount the frontend at a stable path
+# (e.g. /app/web-v2 in docker) instead of the interpreter-versioned
+# site-packages path, which silently breaks on Python minor bumps.
+_web_v2_override = os.environ.get("WEB_V2_DIR", "").strip()
+web_v2_dir = Path(_web_v2_override) if _web_v2_override else Path(__file__).resolve().parent / "web-v2"
 if web_v2_dir.exists():
     app.mount("/static-v2", StaticFiles(directory=str(web_v2_dir)), name="static-v2")
 
@@ -1458,7 +1463,33 @@ async def scheduled_sync_loop() -> None:
             except Exception:
                 pass
 
+        try:
+            run_scheduled_backup_if_due()
+        except Exception:
+            # Backups are best-effort from the heartbeat; failures surface
+            # through /api/storage/backups and release readiness.
+            pass
+
         await asyncio.sleep(poll_seconds)
+
+
+def run_scheduled_backup_if_due() -> dict[str, Any] | None:
+    """Create a data backup when the newest archive is older than the
+    configured interval, then prune to the retention count.
+
+    Rides the sync heartbeat, so it needs no extra scheduler process.
+    Disabled with BACKUP_INTERVAL_HOURS=0.
+    """
+    interval_hours = float(getattr(settings, "backup_interval_hours", 0) or 0)
+    if interval_hours <= 0:
+        return None
+    age_seconds = backup_restore_service.latest_backup_age_seconds()
+    if age_seconds is not None and age_seconds < interval_hours * 3600:
+        return None
+    result = backup_restore_service.create_backup(reason="scheduled")
+    keep = max(1, int(getattr(settings, "backup_retention_count", 14) or 14))
+    backup_restore_service.prune_backups(keep=keep)
+    return result
 
 
 def sweep_auto_measure_outcomes(*, limit: int = 10, now: datetime | None = None) -> int:

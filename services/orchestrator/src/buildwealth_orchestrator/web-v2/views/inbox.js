@@ -6,6 +6,7 @@
 import { api } from '../lib/api.js';
 import { state } from '../lib/state.js';
 import { html, raw, $, delegate } from '../lib/dom.js';
+import { skeleton } from '../lib/skeleton.js';
 import { renderEntries } from './inbox/entries.js';
 import { renderSweep, runPreview, runCreate } from './inbox/sweep.js';
 import { renderQuality } from './inbox/quality.js';
@@ -53,7 +54,7 @@ export function template() {
           <p class="section-lede">Decisions waiting for your call. Ranked by impact, confidence, urgency, and reversibility.</p>
         </header>
         <div id="inbox-controls"></div>
-        <div id="inbox-list">${raw(loadingPlaceholder())}</div>
+        <div id="inbox-list">${skeleton('240px')}</div>
         <div id="inbox-context-captures"></div>
         <div id="inbox-sweep"></div>
         <div id="inbox-quality"></div>
@@ -166,7 +167,7 @@ function rerenderList() {
   const root = $('#inbox-list');
   if (!root) return;
   if (inbox.busy && !inbox.items.length) {
-    root.innerHTML = loadingPlaceholder();
+    root.innerHTML = skeleton('240px');
     return;
   }
   if (inbox.error) {
@@ -202,10 +203,6 @@ function rerenderQuality() {
   const root = $('#inbox-quality');
   if (!root) return;
   root.innerHTML = renderQuality(inbox.closure);
-}
-
-function loadingPlaceholder() {
-  return `<div class="skeleton" style="height: 240px;">.</div>`;
 }
 
 function emptyMessageFor(status) {
