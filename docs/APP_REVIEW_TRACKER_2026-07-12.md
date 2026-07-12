@@ -21,12 +21,16 @@ concentrated in a few specific places.
 230 routes in one file, on top of 94 well-factored service modules. It is the
 merge-conflict magnet, the untestable layer, and the reason handler logic is hard to audit.
 
-- [ ] Introduce FastAPI `APIRouter` modules, one per domain: `portfolio`, `plans`,
+- [x] Introduce FastAPI `APIRouter` modules, one per domain: `portfolio`, `plans`,
       `recommendations`, `copilot`, `auth`, `storage`, `research`, `imports`, `git`
-- [ ] Move routes incrementally, domain by domain, keeping tests green after each move
-- [ ] Investigate stray malformed markers deep in the file (e.g. an `@APP.GET(` around
+- [x] Move routes incrementally, domain by domain, keeping tests green after each move
+- [x] Investigate stray malformed markers deep in the file (e.g. an `@APP.GET(` around
       line 20635) — possible incomplete/auto-generated edits
 - [ ] Target: no file over ~1,000 lines when done (repo preference is ~300 for new code)
+      — progress: main.py 23,566 → 17,278 (route layer fully extracted to 19
+      `routes/*.py` modules; remaining bulk is helpers/copilot tools/context
+      assembly, a follow-up extraction). Note: the `@APP.GET(` marker was a
+      review-scan artifact; none exist in the file.
 
 ### 2. Add CI
 
