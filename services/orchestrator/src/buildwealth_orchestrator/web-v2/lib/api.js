@@ -322,6 +322,7 @@ export const api = {
     limit: String(opts.limit || 25),
   }).toString()}`),
   plans:        (limit = 200) => fetchJson(`/api/plans?limit=${limit}`),
+  planningAssumptionDefaults: () => fetchJson('/api/planning/assumption-defaults'),
   plan:         (id) => fetchJson(`/api/plans/${encodeURIComponent(id)}`),
   planTracking: (id) => fetchJson(`/api/plans/${encodeURIComponent(id)}/tracking`),
   planSettings: (id, body = {}) => patchJson(`/api/plans/${encodeURIComponent(id)}/settings`, body),

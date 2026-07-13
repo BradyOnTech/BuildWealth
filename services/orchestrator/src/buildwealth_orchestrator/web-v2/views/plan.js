@@ -49,6 +49,7 @@ export const meta = {
 
 const ui = {
   selectedId: null,
+  assumptionDefaults: null,
   section: '',
   openFolds: new Set(),
   plan: null,
@@ -158,6 +159,13 @@ async function loadPlan(id) {
   } catch (err) {
     ui.plan = null;
     ui.error = err.message;
+  }
+  if (!ui.assumptionDefaults) {
+    // Engine fallback values + provenance; the ledger shows real numbers
+    // instead of the words "app default".
+    api.planningAssumptionDefaults()
+      .then((d) => { ui.assumptionDefaults = d?.defaults || null; rerenderAll(); })
+      .catch(() => { ui.assumptionDefaults = null; });
   }
 }
 
@@ -429,7 +437,7 @@ function rerenderBody() {
   }
 
   root.innerHTML = html`
-    ${raw(renderStory(ui.plan, ui.assumptions, ui.timeline))}
+    ${raw(renderStory(ui.plan, ui.assumptions, ui.timeline, ui.assumptionDefaults))}
     <div id="plan-trajectory-preview">${raw(renderTrajectoryPreview(ui.trajectoryPreview, ui.plan?.id))}</div>
     <div id="plan-trajectory" data-plan-section="trajectory">${raw(renderTrajectory(ui.trajectory))}</div>
     <div class="plan-workbench">

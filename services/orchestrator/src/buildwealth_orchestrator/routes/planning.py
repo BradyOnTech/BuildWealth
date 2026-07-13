@@ -13,6 +13,7 @@ import buildwealth_orchestrator.main as m
 router = APIRouter()
 
 __all__ = [
+    "planning_assumption_defaults",
     "plan_scenarios",
     "planning_income_projection",
     "planning_expense_projection",
@@ -568,3 +569,50 @@ def planning_contribution_allocation(
         profile_id=profile_id,
     )
     return m.ContributionAllocationResponse(**payload)
+
+
+@router.get("/api/planning/assumption-defaults")
+def planning_assumption_defaults(
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> dict[str, m.Any]:
+    """The values the engine actually falls back to when a plan leaves an
+    assumption unset — plus their provenance. The UI must never say
+    'app default' without showing the number."""
+    resolved_services = m.route_workspace_services(services, permission="plan.read")
+    profile = resolved_services.financial_profile_store.get()
+    tax_profile = profile.get("tax_profile") if isinstance(profile.get("tax_profile"), dict) else {}
+
+    def default(value: m.Any, source: str = "buildwealth_default") -> dict[str, m.Any]:
+        return {"value": value, "source": source}
+
+    marginal = tax_profile.get("marginal_tax_rate")
+    filing = tax_profile.get("filing_status")
+
+    return {
+        "defaults": {
+            "annual_contribution_usd": default(m.settings.planner_annual_contribution_usd),
+            "years": default(m.settings.planner_years_to_retirement),
+            "expected_return_baseline": default(m.settings.planner_expected_return_baseline),
+            "inflation_rate": default(m.settings.planner_inflation),
+            "marginal_tax_rate": (
+                default(float(marginal), "profile")
+                if marginal
+                else default(m.settings.planner_marginal_tax_rate)
+            ),
+            "filing_status": (
+                default(str(filing), "profile") if filing else default("single")
+            ),
+            "withdrawal_strategy": default("cashflow_only"),
+            "drawdown_order": default("smart account order"),
+            "simulation_mode": default("fixed"),
+        },
+        "profile_mismatch": (
+            {
+                "field": "marginal_tax_rate",
+                "profile_value": float(marginal),
+                "engine_default": m.settings.planner_marginal_tax_rate,
+            }
+            if marginal and abs(float(marginal) - m.settings.planner_marginal_tax_rate) > 1e-9
+            else None
+        ),
+    }

@@ -3,9 +3,9 @@
 // top next actions on the right.
 
 import { html, raw, esc, stripHtml } from '../../lib/dom.js';
-import { fmtUsd, fmtUsdOrDash, fmtPctSigned, roman } from '../../lib/format.js';
+import { fmtUsd, fmtPctSigned, roman } from '../../lib/format.js';
 
-export function renderStory(plan, assumptionState = {}, timelineState = {}) {
+export function renderStory(plan, assumptionState = {}, timelineState = {}, assumptionDefaults = null) {
   return html`
     <section>
       <header class="section-head">
@@ -17,7 +17,7 @@ export function renderStory(plan, assumptionState = {}, timelineState = {}) {
       <div class="story-grid">
         <div>
           <span class="story-block-eyebrow">Key assumptions</span>
-          ${renderLedger(effectivePlanSettings(plan, assumptionState, timelineState))}
+          ${renderLedger(effectivePlanSettings(plan, assumptionState, timelineState), assumptionDefaults)}
         </div>
         <div class="story-actions">
           <span class="story-block-eyebrow">You should know</span>
@@ -51,17 +51,40 @@ export function effectivePlanSettings(plan = {}, assumptionState = {}, timelineS
   return merged;
 }
 
-function renderLedger(settings) {
+// Sources the resolved-fallback payload reports, in user words.
+const SOURCE_LABELS = {
+  profile: 'from your profile',
+  buildwealth_default: 'BuildWealth default',
+};
+
+/* A ledger row never says "app default": if the plan leaves a value unset we
+   show the number the engine will actually use, tagged with where it came
+   from. Returns {text, resolved} so unresolved rows can stay muted. */
+export function resolveLedgerValue(rawValue, key, defaults, formatValue) {
+  if (rawValue != null && rawValue !== '') {
+    return { text: formatValue(rawValue), resolved: true, fromDefault: false };
+  }
+  const entry = defaults?.[key];
+  if (entry && entry.value != null) {
+    const source = SOURCE_LABELS[entry.source] || entry.source;
+    return { text: `${formatValue(entry.value)} · ${source}`, resolved: true, fromDefault: true };
+  }
+  return { text: 'not set', resolved: false, fromDefault: true };
+}
+
+function renderLedger(settings, defaults = null) {
+  const row = (label, key, formatValue) =>
+    [label, resolveLedgerValue(settings[key], key, defaults, formatValue)];
   const rows = [
-    ['Annual contribution', fmtUsdOrDash(settings.annual_contribution_usd, dash())],
-    ['Years horizon',       fmtIntOrDash(settings.years)],
-    ['Expected return',     fmtPctOrDash(settings.expected_return_baseline)],
-    ['Inflation',           fmtPctOrDash(settings.inflation_rate)],
-    ['Marginal tax',        fmtPctOrDash(settings.marginal_tax_rate)],
-    ['Withdrawal strategy', humanText(settings.withdrawal_strategy) || dash()],
-    ['Drawdown order',      humanText(settings.drawdown_order) || dash()],
-    ['Filing status',       humanText(settings.filing_status) || dash()],
-    ['Simulation',          humanText(settings.simulation_mode) || dash()],
+    row('Annual contribution', 'annual_contribution_usd', v => fmtUsd(v)),
+    row('Years horizon',       'years', v => `${Number(v)}`),
+    row('Expected return',     'expected_return_baseline', fmtPctValue),
+    row('Inflation',           'inflation_rate', fmtPctValue),
+    row('Marginal tax',        'marginal_tax_rate', fmtPctValue),
+    row('Withdrawal strategy', 'withdrawal_strategy', v => humanText(v)),
+    row('Drawdown order',      'drawdown_order', v => humanText(v)),
+    row('Filing status',       'filing_status', v => humanText(v)),
+    row('Simulation',          'simulation_mode', v => humanText(v)),
   ];
   const optional = [
     ['Roth conversions',
@@ -71,7 +94,7 @@ function renderLedger(settings) {
     ['Household mode',      humanText(settings.household_mode)],
   ];
   for (const [label, value] of optional) {
-    if (value) rows.push([label, value]);
+    if (value) rows.push([label, { text: value, resolved: true, fromDefault: false }]);
   }
 
   return html`
@@ -79,7 +102,7 @@ function renderLedger(settings) {
       ${rows.map(([label, value]) => html`
         <li class="ledger-row">
           <span class="ledger-label">${label}</span>
-          <span class="ledger-value ${value === 'app default' ? 'muted' : ''}">${value}</span>
+          <span class="ledger-value ${value.fromDefault ? 'muted' : ''}">${value.text}</span>
         </li>
       `)}
     </ul>
@@ -119,22 +142,12 @@ function renderActionEntry(action, index) {
   `;
 }
 
-function fmtIntOrDash(v) {
-  if (v == null) return dash();
+// Deliberately local, not lib/format.js's: plan settings mix fraction (0.07)
+// and percent-point (7) entries, so this applies a fraction-vs-percent
+// heuristic and prints 1 decimal.
+function fmtPctValue(v) {
   const n = Number(v);
-  if (!Number.isFinite(n)) return dash();
-  return `${n}`;
-}
-
-// Deliberately local, not lib/format.js's fmtPctOrDash: plan settings mix
-// fraction (0.07) and percent-point (7) entries, so this applies a
-// fraction-vs-percent heuristic and prints 1 decimal instead of 2.
-function fmtPctOrDash(v) {
-  if (v == null) return dash();
-  const n = Number(v);
-  if (!Number.isFinite(n)) return dash();
-  // settings store rates as fractions (0.07 == 7%) historically, but some
-  // are entered as percentages (7). Use a small heuristic: if abs(v) < 1, treat as fraction.
+  if (!Number.isFinite(n)) return String(v);
   const pct = Math.abs(n) < 1 ? n * 100 : n;
   return `${pct.toFixed(1)}%`;
 }
@@ -144,6 +157,4 @@ function humanText(v) {
   return String(v).replace(/_/g, ' ');
 }
 
-// An unset assumption is not missing data — the engine falls back to app
-// defaults. Say that, instead of a dash a normal person can't interpret.
-function dash() { return 'app default'; }
+
