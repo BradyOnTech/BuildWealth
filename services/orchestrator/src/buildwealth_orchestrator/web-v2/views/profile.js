@@ -20,6 +20,7 @@ import { renderTable, sectionForKey, TABLE_SECTIONS } from './profile/tables.js'
 import { renderTaxes, submitTaxesForm } from './profile/taxes.js';
 import { renderInvesting, submitInvestingForm, addRestricted, removeRestricted } from './profile/investing.js';
 import { renderDataQuality, resolveConflict } from './profile/data_quality.js';
+import { renderSetupRail, onRailAction } from './profile/setup_rail.js';
 import {
   renderLifeInterview,
   onInterviewAction,
@@ -153,6 +154,7 @@ export function render() {
   setView(shell, html`
     ${raw(masthead())}
     ${raw(reviewBanner())}
+    ${raw(renderSetupRail(ui))}
     ${raw(tabs())}
     <section class="profile-section profile-section-${section.id}">
       ${raw(renderSectionBody(section))}
@@ -289,6 +291,13 @@ function attachHandlers() {
     handler.onAdd(ui, root);
   });
 
+  // Guided setup rail: skip / dismiss / doc-capture toggle / use-estimates /
+  // apply-candidate all route through one dispatcher in setup_rail.js.
+  delegate(root, 'click', '[data-rail-action]', (e, el) => {
+    e.preventDefault();
+    onRailAction(ui, el.getAttribute('data-rail-action'), el.dataset);
+  });
+
   delegate(root, 'click', '[data-mix-preset]', (e, el) => {
     e.preventDefault();
     let mix = null;
@@ -358,7 +367,9 @@ function attachHandlers() {
 
 /* ─────────────  Plumbing  ───────────── */
 
-function ensureShape(profile) {
+// Exported for setup_rail.js, which reloads the profile after applying an
+// inference candidate and must normalize it the same way load() does.
+export function ensureShape(profile) {
   const next = profile && typeof profile === 'object' ? { ...profile } : {};
   for (const key of ['household_members', 'income_items', 'expense_items', 'debt_items', 'goal_items', 'physical_assets']) {
     if (!Array.isArray(next[key])) next[key] = [];

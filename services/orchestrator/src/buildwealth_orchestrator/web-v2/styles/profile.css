@@ -1143,3 +1143,183 @@
 .profile-edit-static { color: var(--ink-faint); }
 
 .profile-row-actions .link-quiet + .link-quiet { margin-left: var(--s-2); }
+
+/* ─────────────────────────────────────────────────
+   Setup rail — guided profile setup (Workstream C)
+   Progress dots + the current step's editor inline,
+   above the tab strip until readiness is complete.
+   ───────────────────────────────────────────────── */
+
+.setup-rail {
+  display: grid;
+  gap: var(--s-4);
+  padding: var(--s-5);
+  border: var(--hair) solid var(--rule);
+  border-left: 2px solid var(--gilt);
+  background: var(--paper-bright);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+}
+
+.setup-rail-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+}
+
+.setup-rail-eyebrow {
+  font-family: var(--mono);
+  font-size: var(--t-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--ink-faint);
+  margin: 0;
+}
+.setup-rail-eyebrow::first-letter {
+  color: var(--gilt);
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 1.4em;
+  vertical-align: -0.06em;
+  margin-right: 4px;
+}
+
+.setup-rail-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.setup-rail-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink-quiet);
+}
+.setup-rail-dot.done    { background: var(--forest); }
+.setup-rail-dot.current {
+  background: var(--gilt);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gilt) 25%, transparent);
+}
+
+.setup-rail-title {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 72;
+  font-weight: 600;
+  font-size: 24px;
+  letter-spacing: var(--track-tight);
+  color: var(--ink-strong);
+  margin: 0;
+}
+
+.setup-rail-details {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s-1);
+}
+
+.setup-rail-details li {
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-style: italic;
+  font-size: 15px;
+  line-height: var(--lh-body);
+  color: var(--ink-soft);
+  max-width: 64ch;
+}
+
+.setup-rail-alternates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.setup-rail-alternates .chip { text-decoration: none; }
+
+.setup-rail-alternates .chip-accent {
+  border-color: var(--gilt);
+  color: var(--ink-strong);
+}
+
+.setup-rail-found {
+  display: grid;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-4);
+  border-left: 2px solid var(--brass);
+  background: var(--shade);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+
+.setup-rail-found-title {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--brass);
+  margin: 0;
+}
+
+.setup-rail-found-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s-2);
+}
+
+.setup-rail-found-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.setup-rail-found-text {
+  font-size: var(--t-body-sm);
+  color: var(--ink);
+}
+
+.setup-rail-editor { display: grid; gap: var(--s-5); }
+
+.setup-rail-note {
+  font-style: italic;
+  color: var(--ink-faint);
+  margin: 0;
+}
+
+.setup-rail-foot {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  border-top: var(--hair) solid var(--rule);
+  padding-top: var(--s-3);
+}
+
+.setup-rail-foot-note {
+  font-size: var(--t-body-sm);
+  color: var(--ink-faint);
+}
+
+.setup-rail-complete {
+  padding: var(--s-3) var(--s-5);
+  border-left-color: var(--forest);
+}
+
+.setup-rail-done {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-style: italic;
+  font-size: 15px;
+  color: var(--ink-soft);
+}
+.setup-rail-done:hover { color: var(--ink-strong); }

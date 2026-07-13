@@ -10305,7 +10305,11 @@ def _build_profile_readiness_summary(
             key="income",
             title="Income profile",
             status="complete" if len(income_items) > 0 else "incomplete",
-            detail=f"{len(income_items)} income item(s) configured.",
+            detail=(
+                f"{len(income_items)} income stream(s) on record."
+                if income_items
+                else "Add what comes in each month — salary, business, anything recurring."
+            ),
             required_for=["cash_flow", "planning", "affordability"],
             blocking_recommendations=len(income_items) == 0,
         ),
@@ -10313,7 +10317,11 @@ def _build_profile_readiness_summary(
             key="expenses",
             title="Expense profile",
             status="complete" if len(expense_items) > 0 else "incomplete",
-            detail=f"{len(expense_items)} expense item(s) configured.",
+            detail=(
+                f"{len(expense_items)} recurring expense(s) on record."
+                if expense_items
+                else "Add what goes out each month — housing, food, the usual suspects."
+            ),
             required_for=["cash_flow", "liquidity", "affordability"],
             blocking_recommendations=len(expense_items) == 0,
         ),
@@ -10322,11 +10330,11 @@ def _build_profile_readiness_summary(
             title="Debt profile",
             status="complete" if len(debt_items) > 0 or bool(flags.get("no_debt")) else "attention",
             detail=(
-                f"{len(debt_items)} debt item(s) configured."
+                f"{len(debt_items)} debt balance(s) on record."
                 if len(debt_items) > 0
                 else "Marked as no current debt."
                 if bool(flags.get("no_debt"))
-                else "Add debt balances or mark that you currently have no debt."
+                else "Add balances you owe, or tell BuildWealth you're debt-free."
             ),
             required_for=["cash_flow", "liquidity", "affordability"],
             blocking_recommendations=len(debt_items) == 0 and not bool(flags.get("no_debt")),
@@ -10508,7 +10516,11 @@ def build_onboarding_status_response(
             "id": "income",
             "title": "Income profile",
             "status": "complete" if len(income_items) > 0 else "incomplete",
-            "detail": f"{len(income_items)} income item(s) configured.",
+            "detail": (
+                f"{len(income_items)} income stream(s) on record."
+                if income_items
+                else "Add what comes in each month — salary, business, anything recurring."
+            ),
         }
     )
     steps.append(
@@ -10516,7 +10528,11 @@ def build_onboarding_status_response(
             "id": "expenses",
             "title": "Expense profile",
             "status": "complete" if len(expense_items) > 0 else "incomplete",
-            "detail": f"{len(expense_items)} expense item(s) configured.",
+            "detail": (
+                f"{len(expense_items)} recurring expense(s) on record."
+                if expense_items
+                else "Add what goes out each month — housing, food, the usual suspects."
+            ),
         }
     )
 
