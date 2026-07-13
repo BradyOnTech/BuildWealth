@@ -7,7 +7,19 @@
 
 import { html, raw, esc } from '../../lib/dom.js';
 import { fmtUsdOrDash, fmtPctOrDash } from '../../lib/format.js';
+import { showUndoToast } from '../../lib/undo.js';
 import { persist, render as renderProfile } from '../profile.js';
+import {
+  AMOUNT_FIELD_KEY,
+  amountToggleHtml,
+  applyAmountUnit,
+  cancelRowEdit,
+  handleAmountUnit,
+  isRowEditing,
+  renderEditRow,
+  saveRowEdit,
+  startRowEdit,
+} from './row_edit.js';
 
 /* ─────────────  Specs  ───────────── */
 
@@ -71,6 +83,7 @@ function renderRows(section, items) {
   const headers = section.columns.map(c => `<th>${esc(c.header)}</th>`).join('')
     + '<th>Source</th><th>Status</th><th aria-label="Action"></th>';
   const rows = items.map(item => {
+    if (isRowEditing(section.key, item.id)) return renderEditRow(section, item);
     const cells = section.columns.map(col => `<td class="${col.numeric ? 'num' : ''}">${esc(col.format ? col.format(item[col.key], item) : item[col.key] ?? '—')}</td>`).join('');
     const source = humanRowSource(item);
     const status = humanRowStatus(item);
@@ -82,6 +95,12 @@ function renderRows(section, items) {
           <span class="status-pill ${esc(status.tone)}"><span class="dot"></span>${esc(status.label)}</span>
         </td>
         <td class="profile-row-actions">
+          <button class="link-quiet" type="button"
+                  data-table-action="edit"
+                  data-table-key="${esc(section.key)}"
+                  data-row-id="${esc(item.id || '')}">
+            Edit
+          </button>
           <button class="link-quiet danger" type="button"
                   data-table-action="remove"
                   data-table-key="${esc(section.key)}"
@@ -123,14 +142,32 @@ function humanRowStatus(item) {
   return { tone: 'applied', label: 'Confirmed' };
 }
 
+// The 2-3 required fields render by default; everything else folds into a
+// "More detail" disclosure so adding a row stays a two-field affair.
+export function composerFieldSplit(section) {
+  const primaryKeys = Array.isArray(section.primary) ? section.primary : [];
+  return {
+    primary: section.composer.filter(f => primaryKeys.includes(f.key)),
+    more: section.composer.filter(f => !primaryKeys.includes(f.key)),
+  };
+}
+
 function renderComposer(section) {
   const draft = composerDraft(section.key);
-  const fields = section.composer.map(f => fieldHtml(section.key, f, draft)).join('');
+  const { primary, more } = composerFieldSplit(section);
+  const primaryFields = (primary.length ? primary : section.composer).map(f => fieldHtml(section.key, f, draft)).join('');
+  const moreFields = primary.length ? more.map(f => fieldHtml(section.key, f, draft)).join('') : '';
   return html`
     <form class="profile-composer" data-composer-key="${esc(section.key)}" novalidate>
       <div class="profile-composer-grid">
-        ${raw(fields)}
+        ${raw(primaryFields)}
       </div>
+      ${moreFields ? raw(`
+        <details class="composer-more">
+          <summary>More detail</summary>
+          <div class="profile-composer-grid">${moreFields}</div>
+        </details>
+      `) : ''}
       <div class="profile-composer-actions">
         <button class="btn btn-primary" type="button"
                 data-table-add="${esc(section.key)}">
@@ -144,6 +181,30 @@ function renderComposer(section) {
 function fieldHtml(key, field, draft) {
   const value = draft[field.key] ?? '';
   const id = `composer-${key}-${field.key}`;
+  if (field.key === AMOUNT_FIELD_KEY) {
+    // People think in annual salary; storage is monthly. The unit rides on
+    // the segmented toggle (module-level, remembered), so the label is just
+    // "Amount" — handleAdd converts before build().
+    return `
+      <div class="settings-field">
+        <span class="settings-label">Amount</span>
+        <span class="amount-input-row">
+          <input class="settings-input mono"
+                 id="${id}"
+                 type="number"
+                 aria-label="Amount"
+                 data-composer-input="${esc(field.key)}"
+                 data-composer-table="${esc(key)}"
+                 data-amount-input="1"
+                 ${field.placeholder ? `placeholder="${esc(field.placeholder)}"` : ''}
+                 ${field.min != null ? `min="${esc(field.min)}"` : ''}
+                 ${field.step != null ? `step="${esc(field.step)}"` : ''}
+                 value="${esc(value)}" />
+          ${amountToggleHtml(key)}
+        </span>
+      </div>
+    `;
+  }
   if (field.kind === 'select') {
     const options = field.options.map(o => `<option value="${esc(o.value)}" ${o.value === value ? 'selected' : ''}>${esc(o.label)}</option>`).join('');
     return `
@@ -186,8 +247,19 @@ async function handleRemove(ui, section, dataset) {
   const id = dataset.rowId;
   if (!id) return;
   const items = ui.profile?.[section.key] || [];
+  const removed = items.find(item => item.id === id);
+  if (!removed) return;
+  const prior = items.slice();
   ui.profile[section.key] = items.filter(item => item.id !== id);
   await persist();
+  const label = removed.label || removed.display_name || `this ${section.singular}`;
+  showUndoToast({
+    message: `Removed ${label}`,
+    onUndo: async () => {
+      ui.profile[section.key] = prior;
+      await persist();
+    },
+  });
 }
 
 async function handleAdd(ui, section, root) {
@@ -207,7 +279,9 @@ async function handleAdd(ui, section, root) {
   }
   let row;
   try {
-    row = section.build(draft);
+    // Convert Annual-entered amounts to stored monthly dollars on a copy so a
+    // failed add re-renders the composer with what the user actually typed.
+    row = section.build(applyAmountUnit(section, draft));
   } catch (err) {
     ui.saveError = err.message || 'Could not validate row.';
     renderProfile();
@@ -237,6 +311,7 @@ function defineHousehold() {
     eyebrow: 'Foundation · Household',
     lede: 'Who the plan is for. Birth years drive retirement timing, catch-up contributions, RMDs, Medicare, and education goals.',
     emptyHint: 'No household members yet. Add yourself first — then a partner and any dependents.',
+    primary: ['display_name', 'relationship', 'birth_year'],
     columns: [
       { key: 'display_name',   header: 'Name' },
       { key: 'relationship',   header: 'Relationship', format: humanWord },
@@ -289,6 +364,7 @@ function defineIncome() {
     eyebrow: 'Foundation · Income',
     lede: 'Recurring income that BuildWealth uses to model surplus, savings rate, and tax-aware planning.',
     emptyHint: 'No income entries yet. Add the streams BuildWealth should plan around.',
+    primary: ['label', 'monthly_amount_usd'],
     columns: [
       { key: 'label',                header: 'Item' },
       { key: 'monthly_amount_usd',   header: 'Monthly',     numeric: true, format: fmtUsdOrDash },
@@ -309,7 +385,7 @@ function defineIncome() {
         { value: 'other',    label: 'Other' },
       ] },
       { key: 'is_pre_tax',         kind: 'checkbox', label: 'Pre-tax' },
-      { key: 'annual_growth_rate', kind: 'number',   label: 'Growth %/yr',   step: 0.01, placeholder: 'optional' },
+      { key: 'annual_growth_rate', kind: 'number',   label: 'Growth %/yr',   step: 0.01, placeholder: 'optional', ratio: true },
       { key: 'start_date',         kind: 'date',     label: 'Start' },
       { key: 'end_date',           kind: 'date',     label: 'End' },
     ],
@@ -344,6 +420,7 @@ function defineExpenses() {
     eyebrow: 'Foundation · Expenses',
     lede: 'Monthly outflows that drive runway, savings rate, and inflation-aware projections.',
     emptyHint: 'No expenses yet. Add the recurring obligations BuildWealth should plan around.',
+    primary: ['label', 'monthly_amount_usd'],
     columns: [
       { key: 'label',              header: 'Item' },
       { key: 'monthly_amount_usd', header: 'Monthly',  numeric: true, format: fmtUsdOrDash },
@@ -358,7 +435,7 @@ function defineExpenses() {
       { key: 'monthly_amount_usd', kind: 'number',   label: 'Monthly USD', min: 0, step: 1, placeholder: '0' },
       { key: 'category',           kind: 'text',     label: 'Category',    placeholder: 'housing, food, …' },
       { key: 'is_fixed',           kind: 'checkbox', label: 'Fixed' },
-      { key: 'inflation_rate',     kind: 'number',   label: 'Inflation %/yr', step: 0.01, placeholder: 'optional' },
+      { key: 'inflation_rate',     kind: 'number',   label: 'Inflation %/yr', step: 0.01, placeholder: 'optional', ratio: true },
       { key: 'start_date',         kind: 'date',     label: 'Start' },
       { key: 'end_date',           kind: 'date',     label: 'End' },
     ],
@@ -393,6 +470,7 @@ function defineDebt() {
     eyebrow: 'Foundation · Debt',
     lede: 'Outstanding balances. Strategy here informs pay-down recommendations and tax-aware ordering.',
     emptyHint: 'No debt tracked. If this is correct, mark "no debt" on the Overview.',
+    primary: ['label', 'balance_usd'],
     columns: [
       { key: 'label',                  header: 'Debt' },
       { key: 'balance_usd',            header: 'Balance',     numeric: true, format: fmtUsdOrDash },
@@ -404,7 +482,7 @@ function defineDebt() {
     composer: [
       { key: 'label',                      kind: 'text',   label: 'Debt label',    placeholder: 'Credit card, student loan…' },
       { key: 'balance_usd',                kind: 'number', label: 'Balance USD',   min: 0, step: 1, placeholder: '0' },
-      { key: 'interest_rate',              kind: 'number', label: 'APR %',         min: 0, step: 0.01, placeholder: '0' },
+      { key: 'interest_rate',              kind: 'number', label: 'APR %',         min: 0, step: 0.01, placeholder: '0', ratio: true },
       { key: 'minimum_payment_usd',        kind: 'number', label: 'Min payment',   min: 0, step: 1, placeholder: '0' },
       { key: 'payoff_strategy',            kind: 'select', label: 'Strategy',      options: [
         { value: 'minimum',   label: 'Minimum' },
@@ -444,6 +522,7 @@ function defineGoals() {
     eyebrow: 'Foundation · Goals',
     lede: 'What you are saving toward. Goals drive plan trajectory and prioritization.',
     emptyHint: 'No goals tracked yet. Adding goals lets BuildWealth pace your saving.',
+    primary: ['label', 'target_amount_usd', 'target_date'],
     columns: [
       { key: 'label',             header: 'Goal' },
       { key: 'target_amount_usd', header: 'Target',  numeric: true, format: fmtUsdOrDash },
@@ -488,6 +567,7 @@ function defineAssets() {
     eyebrow: 'Foundation · Assets',
     lede: 'Real estate, vehicles, and other non-portfolio holdings that affect net worth and runway.',
     emptyHint: 'No physical assets tracked. Liquid investments belong in Portfolio.',
+    primary: ['label', 'current_value_usd'],
     columns: [
       { key: 'label',              header: 'Asset' },
       { key: 'current_value_usd',  header: 'Value',   numeric: true, format: fmtUsdOrDash },
@@ -506,7 +586,7 @@ function defineAssets() {
         { value: 'collectible', label: 'Collectible' },
         { value: 'other',       label: 'Other' },
       ] },
-      { key: 'annual_growth_rate', kind: 'number', label: 'Growth %/yr',   step: 0.01, placeholder: 'optional' },
+      { key: 'annual_growth_rate', kind: 'number', label: 'Growth %/yr',   step: 0.01, placeholder: 'optional', ratio: true },
       { key: 'purchase_date',      kind: 'date',   label: 'Purchase date' },
     ],
     build(draft) {
@@ -535,7 +615,11 @@ function defineAssets() {
 // sections route through bindActions for a single source of truth.
 function bindActions(section) {
   section.onAction = (ui, action, dataset) => {
-    if (action === 'remove') return handleRemove(ui, section, dataset);
+    if (action === 'remove')      return handleRemove(ui, section, dataset);
+    if (action === 'edit')        return startRowEdit(ui, section, dataset.rowId);
+    if (action === 'edit-save')   return saveRowEdit(ui, section);
+    if (action === 'edit-cancel') return cancelRowEdit();
+    if (action === 'amount-unit') return handleAmountUnit(dataset);
   };
   section.onAdd = (ui, root) => handleAdd(ui, section, root);
 }
@@ -548,6 +632,9 @@ function uid() {
 }
 
 function numOr(value, fallback) {
+  // Empty inputs mean "not provided" — Number('') is 0, which would silently
+  // turn an optional blank field into a real $0 on edit round-trips.
+  if (value === '' || value == null) return fallback;
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }

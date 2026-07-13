@@ -82,12 +82,14 @@ async function load() {
   ui.loaded = false;
   ui.loadError = null;
   try {
-    const [profile, onboarding, candidates] = await Promise.all([
+    const [profile, onboarding, candidates, defaults] = await Promise.all([
       api.profile(),
       api.onboarding().catch(() => null),
       api.contextCandidates({ lifecycleState: 'proposed' }).catch(() => []),
+      api.profileDefaults().catch(() => null),
     ]);
     ui.profile = ensureShape(profile);
+    ui.suggestions = defaults?.suggestions || {};
     ui.onboarding = onboarding;
     ui.candidates = Array.isArray(candidates) ? candidates : (candidates?.items || []);
     ui.loaded = true;
@@ -116,6 +118,9 @@ export async function persist({ optimistic = true } = {}) {
     ui.profile = ensureShape(saved);
     state.financialProfile = ui.profile;
     api.onboarding().then((o) => { ui.onboarding = o; render(); }).catch(() => {});
+    api.profileDefaults()
+      .then((d) => { ui.suggestions = d?.suggestions || {}; render(); })
+      .catch(() => {});
     return true;
   } catch (err) {
     ui.saveError = err.message || 'Could not save profile.';
@@ -282,6 +287,26 @@ function attachHandlers() {
     const handler = TABLE_SECTIONS.find(s => s.key === el.getAttribute('data-table-add'));
     if (!handler) return;
     handler.onAdd(ui, root);
+  });
+
+  delegate(root, 'click', '[data-mix-preset]', (e, el) => {
+    e.preventDefault();
+    let mix = null;
+    try { mix = JSON.parse(el.getAttribute('data-mix-preset') || ''); } catch { return; }
+    if (!mix || typeof mix !== 'object') return;
+    for (const [key, value] of Object.entries(mix)) {
+      const input = root.querySelector(`[data-investing-target-class="${key}"]`);
+      if (input) {
+        input.value = String(value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+  });
+
+  delegate(root, 'click', '[data-use-suggestion]', async (e, el) => {
+    e.preventDefault();
+    const { applySuggestionClick } = await import('./profile/suggestions.js');
+    applySuggestionClick(el, root);
   });
 
   delegate(root, 'click', '[data-taxes-save]', (e) => {

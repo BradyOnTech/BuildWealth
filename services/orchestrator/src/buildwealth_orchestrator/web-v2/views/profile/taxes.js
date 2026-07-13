@@ -5,6 +5,7 @@
 
 import { html, raw, esc } from '../../lib/dom.js';
 import { persist, render as renderProfile } from '../profile.js';
+import { getSuggestion, suggestionLine } from './suggestions.js';
 
 const FILING_STATUSES = [
   { value: '',                          label: 'Choose…' },
@@ -21,6 +22,8 @@ let lastSaveError = null;
 export function renderTaxes(ui) {
   const tax = ui.profile?.tax_profile || {};
   const flags = ui.profile?.flags || {};
+  const suggestions = ui.suggestions || {};
+  const ratePct = (decimal) => (Number(decimal) * 100).toFixed(1).replace(/\.0$/, '');
   return html`
     <div class="profile-taxes">
       <header class="profile-table-head">
@@ -56,21 +59,24 @@ export function renderTaxes(ui) {
           <span class="settings-label">Marginal tax rate (%)</span>
           <input class="settings-input mono" id="taxes-marginal" type="number" min="0" max="100" step="0.01"
                  placeholder="e.g. 24" value="${esc(toPercent(tax.marginal_tax_rate))}" />
-          <span class="settings-hint">Top federal bracket on the next dollar.</span>
+          <span class="settings-hint">Top federal bracket on the next dollar.
+            ${raw(suggestionLine(suggestions, 'tax_profile.marginal_tax_rate', { target: 'taxes-marginal', format: ratePct }))}</span>
         </label>
 
         <label class="settings-field">
           <span class="settings-label">Effective tax rate (%)</span>
           <input class="settings-input mono" id="taxes-effective" type="number" min="0" max="100" step="0.01"
                  placeholder="e.g. 18" value="${esc(toPercent(tax.effective_tax_rate))}" />
-          <span class="settings-hint">Average federal rate across total income.</span>
+          <span class="settings-hint">Average federal rate across total income.
+            ${raw(suggestionLine(suggestions, 'tax_profile.effective_tax_rate', { target: 'taxes-effective', format: ratePct }))}</span>
         </label>
 
         <label class="settings-field">
           <span class="settings-label">State tax rate (%)</span>
           <input class="settings-input mono" id="taxes-state-rate" type="number" min="0" max="100" step="0.01"
                  placeholder="e.g. 5" value="${esc(toPercent(tax.state_tax_rate))}" />
-          <span class="settings-hint">Optional; leave blank if state has no income tax.</span>
+          <span class="settings-hint">Optional; leave blank if state has no income tax.
+            ${raw(suggestionLine(suggestions, 'tax_profile.state_tax_rate', { target: 'taxes-state-rate', format: ratePct }))}</span>
         </label>
 
         <label class="settings-field span-2 settings-field-toggle">
@@ -90,6 +96,12 @@ export function renderTaxes(ui) {
         </label>
       </div>
 
+      ${getSuggestion(suggestions, 'tax_profile.marginal_tax_rate') || getSuggestion(suggestions, 'tax_profile.effective_tax_rate') || getSuggestion(suggestions, 'tax_profile.state_tax_rate') ? html`
+        <p class="suggestion-banner">
+          Don't know these? Use the estimates — they come from your own income and state,
+          and you can correct them any time.
+        </p>
+      ` : ''}
       ${lastSaveError ? html`<p class="inline-warning">${lastSaveError}</p>` : ''}
       <div class="profile-composer-actions">
         <button class="btn btn-primary" type="button" data-taxes-save ${pendingSave ? 'disabled' : ''}>

@@ -1018,3 +1018,128 @@
   color: var(--warn, #a15c00);
   padding: 2px 0;
 }
+
+/* ───────────  Suggested values (smart defaults)  ─────────── */
+
+.suggestion-line {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.suggestion-use {
+  background: transparent;
+  border: var(--hair) solid color-mix(in srgb, var(--forest) 45%, var(--rule));
+  border-radius: 999px;
+  color: var(--forest);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.suggestion-use:hover {
+  background: color-mix(in srgb, var(--forest) 8%, transparent);
+}
+.suggestion-why {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.suggestion-banner {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  font-style: italic;
+  margin: 10px 0 0;
+}
+.suggestion-presets {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.suggestion-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Inline row editing · composer "More detail" · Monthly|Annual toggle
+   (views/profile/tables.js + views/profile/row_edit.js) — appended block
+   ──────────────────────────────────────────────────────────────────────── */
+
+.composer-more {
+  margin-top: var(--s-2);
+}
+
+.composer-more > summary {
+  cursor: pointer;
+  display: inline-block;
+  font-size: var(--t-body-sm);
+  color: var(--ink-faint);
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.composer-more > summary:hover { color: var(--ink); }
+
+.composer-more[open] > summary { margin-bottom: var(--s-2); }
+
+.amount-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.amount-input-row .settings-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.amount-unit-toggle {
+  display: inline-flex;
+  flex: none;
+  border: 1px solid var(--ink-quiet);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.amount-unit-option {
+  appearance: none;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  color: var(--ink-faint);
+}
+
+.amount-unit-option + .amount-unit-option { border-left: 1px solid var(--ink-quiet); }
+
+.amount-unit-option:hover { color: var(--ink); }
+
+.amount-unit-option.active {
+  color: var(--ink-strong);
+  background: var(--shade);
+}
+
+.profile-row-editing td {
+  background: var(--shade);
+  vertical-align: middle;
+}
+
+.profile-row-editing .settings-input {
+  width: 100%;
+  min-width: 88px;
+  font-size: var(--t-body-sm);
+  padding: 4px 8px;
+}
+
+.profile-row-editing .amount-input-row { min-width: 220px; }
+
+.profile-edit-static { color: var(--ink-faint); }
+
+.profile-row-actions .link-quiet + .link-quiet { margin-left: var(--s-2); }

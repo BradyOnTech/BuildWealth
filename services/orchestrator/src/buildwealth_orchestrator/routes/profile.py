@@ -19,6 +19,7 @@ from buildwealth_orchestrator.services.profile_document_vision import (
 router = APIRouter()
 
 __all__ = [
+    "get_profile_defaults",
     "get_life_plans_interview",
     "post_life_plans_drafts",
     "get_financial_profile",
@@ -56,6 +57,24 @@ def post_life_plans_drafts(
         body.answers,
         monthly_expenses_usd=monthly_expenses,
     )
+
+
+@router.get("/api/profile/defaults")
+def get_profile_defaults(
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> dict[str, m.Any]:
+    """Labeled suggestions for every estimable profile field — the UI never
+    shows a blank the app can estimate."""
+    from buildwealth_orchestrator.services.profile_defaults import (
+        build_profile_default_suggestions,
+    )
+
+    resolved_services = m.route_workspace_services(services, permission="profile.read")
+    profile = resolved_services.financial_profile_store.get()
+    return {
+        "generated_at": m.utc_now(),
+        "suggestions": build_profile_default_suggestions(profile),
+    }
 
 
 @router.get("/api/financial-profile", response_model=m.FinancialProfileResponse)

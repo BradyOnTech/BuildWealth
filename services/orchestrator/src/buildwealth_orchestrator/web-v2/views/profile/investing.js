@@ -6,6 +6,7 @@
 
 import { html, raw, esc } from '../../lib/dom.js';
 import { persist, render as renderProfile } from '../profile.js';
+import { getSuggestion, suggestionLine } from './suggestions.js';
 
 const RISK_OPTIONS = [
   { value: '',             label: 'Not set' },
@@ -33,6 +34,7 @@ let lastSaveError = null;
 
 export function renderInvesting(ui) {
   const policy = ui.profile?.investment_policy || {};
+  const suggestions = ui.suggestions || {};
   return html`
     <div class="profile-investing">
       <header class="profile-table-head">
@@ -47,8 +49,8 @@ export function renderInvesting(ui) {
         </div>
       </header>
 
-      ${raw(guardrailsCard(policy))}
-      ${raw(targetsCard(policy))}
+      ${raw(guardrailsCard(policy, suggestions))}
+      ${raw(targetsCard(policy, suggestions))}
       ${raw(restrictedCard(policy))}
       ${raw(handoffCard())}
 
@@ -71,7 +73,7 @@ const TARGET_CLASSES = [
   ['cash', 'Cash'],
 ];
 
-export function targetsCard(policy) {
+export function targetsCard(policy, suggestions = {}) {
   const targets = policy?.target_asset_class_allocation_pct || {};
   const total = TARGET_CLASSES.reduce((sum, [key]) => sum + (Number(targets[key]) || 0), 0);
   return html`
@@ -84,6 +86,7 @@ export function targetsCard(policy) {
           should go — guidance only, it never trades.
         </p>
       </header>
+      ${raw(targetPresets(suggestions))}
       <div class="profile-guardrails">
         ${raw(TARGET_CLASSES.map(([key, label]) => html`
           <label class="scenario-field">
@@ -105,9 +108,28 @@ export function targetsCard(policy) {
   `;
 }
 
+// One-tap starting points for the target mix; clicking fills the inputs, the
+// user still saves explicitly.
+function targetPresets(suggestions) {
+  const entry = getSuggestion(suggestions, 'investment_policy.target_asset_class_allocation_pct');
+  if (!entry || !Array.isArray(entry.presets)) return '';
+  return html`
+    <div class="suggestion-presets" role="group" aria-label="Target mix starting points">
+      <span class="suggestion-why">Starting points${entry.basis === 'computed' ? ` · ${esc(entry.explanation || '')}` : ''}</span>
+      <div class="suggestion-preset-row">
+        ${raw(entry.presets.map(preset => html`
+          <button type="button" class="chip" data-mix-preset="${esc(JSON.stringify(preset.mix))}">
+            ${esc(preset.name)}
+          </button>
+        `.toString()).join(''))}
+      </div>
+    </div>
+  `.toString();
+}
+
 /* ─────────────  Guardrails card  ───────────── */
 
-function guardrailsCard(policy) {
+function guardrailsCard(policy, suggestions = {}) {
   return html`
     <article class="profile-card">
       <header class="profile-card-head">
@@ -117,6 +139,7 @@ function guardrailsCard(policy) {
         ${raw(numberRow({
           id: 'inv-single-symbol',
           field: 'max_single_symbol_exposure_pct',
+          suggestion: suggestionLine(suggestions, 'investment_policy.max_single_symbol_exposure_pct', { target: 'inv-single-symbol' }),
           plain: 'Single-investment limit',
           why: 'The most of your portfolio BuildWealth should be comfortable seeing in one stock or fund.',
           unit: '%', step: '1', min: '0', max: '100',
@@ -127,6 +150,7 @@ function guardrailsCard(policy) {
         ${raw(numberRow({
           id: 'inv-sector',
           field: 'max_sector_exposure_pct',
+          suggestion: suggestionLine(suggestions, 'investment_policy.max_sector_exposure_pct', { target: 'inv-sector' }),
           plain: 'Single-sector limit',
           why: 'How much of the portfolio can sit in one sector before BuildWealth flags concentration.',
           unit: '%', step: '1', min: '0', max: '100',
@@ -137,6 +161,7 @@ function guardrailsCard(policy) {
         ${raw(numberRow({
           id: 'inv-cash',
           field: 'minimum_cash_runway_months',
+          suggestion: suggestionLine(suggestions, 'investment_policy.minimum_cash_runway_months', { target: 'inv-cash' }),
           plain: 'Minimum cash cushion',
           why: 'Months of expenses you want available before taking on more investment risk.',
           unit: 'months', step: '1', min: '0',
@@ -147,6 +172,7 @@ function guardrailsCard(policy) {
         ${raw(selectRow({
           id: 'inv-risk',
           field: 'risk_tolerance',
+          suggestion: suggestionLine(suggestions, 'investment_policy.risk_tolerance', { target: 'inv-risk' }),
           plain: 'Risk comfort',
           why: 'How much volatility you are willing to accept.',
           options: RISK_OPTIONS,
@@ -156,6 +182,7 @@ function guardrailsCard(policy) {
         ${raw(selectRow({
           id: 'inv-tax',
           field: 'tax_sensitivity',
+          suggestion: suggestionLine(suggestions, 'investment_policy.tax_sensitivity', { target: 'inv-tax' }),
           plain: 'Tax sensitivity',
           why: 'How careful BuildWealth should be about taxable sales or tax-heavy investments.',
           options: SENSITIVITY_OPTIONS,
@@ -165,6 +192,7 @@ function guardrailsCard(policy) {
         ${raw(selectRow({
           id: 'inv-simplicity',
           field: 'simplicity_preference',
+          suggestion: suggestionLine(suggestions, 'investment_policy.simplicity_preference', { target: 'inv-simplicity' }),
           plain: 'Simplicity preference',
           why: 'Whether to prefer fewer holdings and easier maintenance over fine-grained optimization.',
           options: SIMPLICITY_OPTIONS,
@@ -174,6 +202,7 @@ function guardrailsCard(policy) {
         ${raw(selectRow({
           id: 'inv-research',
           field: 'minimum_research_confidence',
+          suggestion: suggestionLine(suggestions, 'investment_policy.minimum_research_confidence', { target: 'inv-research' }),
           plain: 'Required research confidence',
           why: 'How much evidence BuildWealth should require before recommending a position.',
           options: SIMPLICITY_OPTIONS.map(o => o.value === '' ? o : { ...o, label: o.label.replace(/—.*$/, '').trim() + (o.value === 'low' ? ' — broad evidence is enough' : o.value === 'medium' ? ' — balanced evidence' : ' — only strong evidence') }),
@@ -184,12 +213,13 @@ function guardrailsCard(policy) {
   `;
 }
 
-function numberRow({ id, field, plain, why, unit, step, min, max, value, placeholder }) {
+function numberRow({ id, field, plain, why, unit, step, min, max, value, placeholder, suggestion = '' }) {
   return html`
     <label class="profile-guardrail" for="${id}">
       <div class="profile-guardrail-text">
         <span class="profile-guardrail-label">${plain}</span>
         <span class="profile-guardrail-why">${why}</span>
+        ${raw(suggestion || '')}
       </div>
       <div class="profile-guardrail-input">
         <input class="settings-input mono" id="${id}" type="number"
@@ -203,12 +233,13 @@ function numberRow({ id, field, plain, why, unit, step, min, max, value, placeho
   `;
 }
 
-function selectRow({ id, field, plain, why, options, value }) {
+function selectRow({ id, field, plain, why, options, value, suggestion = '' }) {
   return html`
     <label class="profile-guardrail" for="${id}">
       <div class="profile-guardrail-text">
         <span class="profile-guardrail-label">${plain}</span>
         <span class="profile-guardrail-why">${why}</span>
+        ${raw(suggestion || '')}
       </div>
       <div class="profile-guardrail-input">
         <select class="settings-input" id="${id}" data-investing-field="${field}">
