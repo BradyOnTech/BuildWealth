@@ -42,5 +42,13 @@ export function showUndoToast({ message, onUndo, actionLabel = 'Undo' } = {}) {
 
 export function dismissUndoToast() {
   if (liveTimer) { clearTimeout(liveTimer); liveTimer = null; }
-  if (liveToast) { liveToast.remove(); liveToast = null; }
+  if (!liveToast) return;
+  const toast = liveToast;
+  liveToast = null;
+  // Exit along the entrance path (down and away), faster than it arrived —
+  // the system responding should never feel slower than the user acting.
+  toast.classList.add('leaving');
+  const remove = () => toast.remove();
+  toast.addEventListener('transitionend', remove, { once: true });
+  setTimeout(remove, 200); // fallback: reduced motion zeroes the transition
 }

@@ -164,7 +164,13 @@ async function loadPlan(id) {
     // Engine fallback values + provenance; the ledger shows real numbers
     // instead of the words "app default".
     api.planningAssumptionDefaults()
-      .then((d) => { ui.assumptionDefaults = d?.defaults || null; rerenderAll(); })
+      .then((d) => {
+        if (!d?.defaults) return;
+        ui.assumptionDefaults = d.defaults;
+        // Never clobber in-flight edits: the ledger provenance can wait a
+        // render; a half-typed assumption draft cannot.
+        if (!ui.assumptions?.dirty) rerenderAll();
+      })
       .catch(() => { ui.assumptionDefaults = null; });
   }
 }

@@ -131,3 +131,44 @@
 .link-editorial:hover::after {
   transform: translateX(2px);
 }
+
+/* ───────────  Press feedback, everywhere pressable  ───────────
+   The interface must visibly hear every press the instant it lands
+   (pointer-down, not release). Subtle scale — 0.97 on compact controls,
+   0.985 on wide rows/cards where a deeper dip reads as wobble. */
+
+.chip,
+.action-link,
+.link-editorial,
+.suggestion-use,
+.copilot-picker-item,
+.copilot-stop-btn,
+.tools-item,
+.undo-toast-action {
+  transition: transform var(--d-fast) var(--ease-out);
+}
+.chip:active,
+.action-link:active,
+.link-editorial:active,
+.suggestion-use:active,
+.copilot-picker-item:active,
+.copilot-stop-btn:active,
+.tools-item:active,
+.undo-toast-action:active {
+  transform: scale(0.97);
+}
+
+.portfolio-maintenance-card,
+.tools-drawer-card {
+  transition: transform var(--d-fast) var(--ease-out);
+}
+.portfolio-maintenance-card:active,
+.tools-drawer-card:active {
+  transform: scale(0.985);
+}
+
+/* Hover motion is a pointer-only affordance: on touch it fires on tap and
+   sticks. Gate anything that moves. */
+@media (hover: none), (pointer: coarse) {
+  .action-link:hover .arrow { transform: none; }
+}

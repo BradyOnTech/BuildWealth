@@ -34,7 +34,7 @@
   color: var(--ink-faint);
   border-radius: var(--r-sm);
   position: relative;
-  transition: color var(--d-fast) var(--ease-press), background var(--d-fast) var(--ease-press);
+  transition: color var(--d-fast) var(--ease-press), background var(--d-fast) var(--ease-press), transform var(--d-fast) var(--ease-out);
   -webkit-tap-highlight-color: transparent;
 }
 .chip::after {
@@ -382,6 +382,12 @@
 }
 .inline-form.danger { border-left-color: var(--oxblood); }
 .inline-form.muted  { border-left-color: var(--rule-strong); }
+
+@media (prefers-reduced-motion: reduce) {
+  .inline-form {
+    animation: none;
+  }
+}
 
 @keyframes inline-rise {
   from { opacity: 0; transform: translateY(-4px); }

@@ -104,12 +104,18 @@
   --shadow-lift:  0 1px 0 rgba(20,24,18,0.04), 0 8px 24px rgba(20,24,18,0.06);
   --shadow-press: inset 0 1px 0 rgba(20,24,18,0.06);
 
-  /* Motion */
+  /* Motion.
+     ease-out is the workhorse: strong deceleration so movement is front-
+     loaded where the eye is watching. ease-drawer is the iOS sheet curve.
+     ease-page stays for large content settles; ease-press for color/bg. */
+  --ease-out:     cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer:  cubic-bezier(0.32, 0.72, 0, 1);
   --ease-page:    cubic-bezier(0.2, 0, 0, 1);
   --ease-press:   cubic-bezier(0.4, 0, 0.2, 1);
   --d-fast:       120ms;
   --d-mid:        220ms;
-  --d-page:       320ms;
+  --d-page:       260ms;
+  --d-drawer:     380ms;
 }
 
 /* Optional: respect reduced motion. Keep transitions but slash durations. */
@@ -118,5 +124,6 @@
     --d-fast: 0ms;
     --d-mid:  0ms;
     --d-page: 0ms;
+    --d-drawer: 0ms;
   }
 }

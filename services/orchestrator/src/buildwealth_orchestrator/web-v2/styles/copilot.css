@@ -316,13 +316,25 @@
   box-shadow: var(--shadow-lift);
   padding: 6px 0;
   display: none;
-  animation: picker-rise var(--d-fast) var(--ease-page);
+  /* Pickers open dozens of times a day: entrance must be instant-feeling,
+     interruptible (transition, not keyframe), and grow from the trigger
+     edge rather than materializing in place. Exit is instant by design —
+     dismissals should never make the user wait. */
+  opacity: 0;
+  transform: scale(0.98) translateY(-4px);
+  transform-origin: top left;
+  transition:
+    opacity var(--d-fast) var(--ease-out),
+    transform var(--d-fast) var(--ease-out);
 }
-.copilot-picker-menu.open { display: block; }
-
-@keyframes picker-rise {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
+.copilot-picker-menu.open {
+  display: block;
+  opacity: 1;
+  transform: none;
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.98) translateY(-4px);
+  }
 }
 
 .copilot-picker-item {

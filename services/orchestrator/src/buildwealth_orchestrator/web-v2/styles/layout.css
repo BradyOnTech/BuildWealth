@@ -255,7 +255,7 @@
   z-index: 40;
   overflow-y: auto;
   transform: translateX(100%);
-  transition: transform var(--d-mid) var(--ease-page);
+  transition: transform var(--d-drawer) var(--ease-drawer);
   pointer-events: none;
 }
 
@@ -271,7 +271,7 @@
   z-index: 35;
   opacity: 0;
   pointer-events: none;
-  transition: opacity var(--d-mid) var(--ease-page);
+  transition: opacity var(--d-drawer) var(--ease-drawer);
 }
 
 /* ───────────  Auth entry  ─────────── */
@@ -651,7 +651,18 @@
   box-shadow: var(--shadow-lift);
   display: grid;
   gap: 2px;
-  animation: picker-rise var(--d-fast) var(--ease-page);
+  /* Same treatment as the copilot pickers: grow from the trigger edge,
+     interruptible, no wait on dismiss. These menus attach top-right. */
+  transform-origin: top right;
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--d-fast) var(--ease-out),
+    transform var(--d-fast) var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.98) translateY(-4px);
+  }
 }
 
 .status-dropdown-head {
@@ -981,12 +992,22 @@ a.status-row:hover {
   transform: translateY(8px);
   animation: page-rise var(--d-page) var(--ease-page) forwards;
 }
-.page > *:nth-child(1) { animation-delay: 40ms; }
-.page > *:nth-child(2) { animation-delay: 120ms; }
-.page > *:nth-child(3) { animation-delay: 200ms; }
-.page > *:nth-child(4) { animation-delay: 280ms; }
-.page > *:nth-child(5) { animation-delay: 360ms; }
-.page > *:nth-child(6) { animation-delay: 440ms; }
+/* Navigation happens dozens of times a day: the cascade must finish before
+   the user's eye does. 30ms steps; whole page settled well under 450ms. */
+.page > *:nth-child(1) { animation-delay: 0ms; }
+.page > *:nth-child(2) { animation-delay: 30ms; }
+.page > *:nth-child(3) { animation-delay: 60ms; }
+.page > *:nth-child(4) { animation-delay: 90ms; }
+.page > *:nth-child(5) { animation-delay: 120ms; }
+.page > *:nth-child(6) { animation-delay: 150ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .page > * {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
 
 @keyframes page-rise {
   to { opacity: 1; transform: translateY(0); }

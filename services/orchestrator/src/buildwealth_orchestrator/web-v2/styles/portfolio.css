@@ -1086,6 +1086,12 @@ details.verdict-panel.tone-bad  .verdict-line { color: var(--oxblood); }
   width: 100%;
   max-width: 640px;
   display: grid;
+  /* Arrives from its trigger (the Add button sits above it): a short rise
+     with the strong ease-out. One-shot, occasional — worth a full entrance. */
+  transition:
+    opacity var(--d-mid) var(--ease-out),
+    transform var(--d-mid) var(--ease-out);
+  transform-origin: top center;
   gap: var(--s-4);
   padding: var(--s-4);
   border: var(--hair) solid var(--rule);
@@ -1261,6 +1267,13 @@ details.verdict-panel.tone-bad  .verdict-line { color: var(--oxblood); }
 }
 
 /* Explicit display values above would otherwise defeat the UA [hidden] rule. */
+.portfolio-add-card:not([hidden]) {
+  @starting-style {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.99);
+  }
+}
+
 .portfolio-add-card[hidden],
 .portfolio-add-panel[hidden],
 .portfolio-add-new-account[hidden],
