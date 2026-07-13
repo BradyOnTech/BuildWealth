@@ -367,7 +367,13 @@ export const api = {
     period: opts.period || '1y',
     ...(opts.symbols ? { symbols: opts.symbols } : {}),
   }).toString()}`),
+  portfolioAdd: (body = {}) => postJson('/api/portfolio/add', body),
   portfolioTransactions: (limit = 100) => fetchJson(`/api/portfolio/transactions?limit=${encodeURIComponent(limit)}`),
+  addTransaction: (body = {}) => postJson('/api/portfolio/transactions', body),
+  deletePortfolioTransaction: (id) => fetchJson(
+    `/api/portfolio/transactions/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
+  ),
   portfolioAccounts: () => fetchJson('/api/portfolio/accounts'),
   portfolioAudit: (limit = 25) => fetchJson(`/api/portfolio/audit?limit=${encodeURIComponent(limit)}`),
   portfolioExportBundle: (limit = 10000) => fetchJson(`/api/portfolio/export-bundle?limit=${encodeURIComponent(limit)}`),

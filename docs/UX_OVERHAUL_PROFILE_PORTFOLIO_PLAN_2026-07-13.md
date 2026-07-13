@@ -163,7 +163,7 @@ Tests: pytest for resolved-assumption payload; node test asserting no
 - Phase 1 (A + B): **shipped** — ca422243
 - Phase 2 (C): **shipped** — d2dd4dcc
 - Phase 4 (E): **shipped** — 4ee997bb (rode ahead of phase 3; small and independent)
-- Phase 3 (D): in progress
+- Phase 3 (D): **shipped** — see commit below; note: share transfers record as BUY-at-basis until the ledger supports position transfers
 
 ## Sequencing
 

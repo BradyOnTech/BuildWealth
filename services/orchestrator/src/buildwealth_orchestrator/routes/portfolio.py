@@ -9,12 +9,14 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 import buildwealth_orchestrator.main as m
+from buildwealth_orchestrator.services.portfolio_add_flow import execute_add_flow
 
 router = APIRouter()
 
 __all__ = [
     "get_portfolio_holdings",
     "get_portfolio_transactions",
+    "add_portfolio_entry",
     "add_portfolio_transaction",
     "delete_portfolio_transaction",
     "refresh_portfolio_prices",
@@ -69,6 +71,21 @@ def get_portfolio_transactions(
 ) -> list[dict[str, m.Any]]:
     m.require_permission(services.context, "portfolio.read")
     return services.portfolio_store.list_transactions(limit=limit)
+
+
+@router.post("/api/portfolio/add")
+def add_portfolio_entry(
+    request: dict[str, m.Any],
+    http_request: m.Request,
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> dict[str, m.Any]:
+    """Plain-language front door: investment, cash, or property in one call."""
+    m.require_csrf(http_request)
+    m.require_permission(services.context, "portfolio.write")
+    try:
+        return execute_add_flow(services.portfolio_store, request)
+    except ValueError as exc:
+        raise m.HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/api/portfolio/transactions")

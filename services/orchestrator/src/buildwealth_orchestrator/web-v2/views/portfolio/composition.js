@@ -132,7 +132,34 @@ function holdingRow(row, index) {
       <span class="holding-value">${fmtUsd(value)}</span>
       <span class="holding-alloc">${allocation.toFixed(1)}%</span>
       <span class="holding-return ${returnDir}">${fmtPctSigned(returnPct)}</span>
+      ${raw(holdingActions(row, symbol))}
     </li>
+  `;
+}
+
+// Quiet inline actions. "Record buy/sell" pre-fills the Add-to-portfolio card;
+// "Update value" only appears where the price is a manual/local one.
+function holdingActions(row, symbol) {
+  if (!symbol || symbol === '—') return '';
+  const manualPriced = row.price_source === 'MANUAL'
+    || Boolean(row.is_custom_asset)
+    || row.valuation_method === 'MANUAL_PRICE_OVERRIDE';
+  return html`
+    <span class="holding-actions" data-holding-actions>
+      <button type="button" class="action-link muted" data-holding-trade
+        data-symbol="${esc(String(symbol))}" data-account="${esc(String(row.account || ''))}">Record buy/sell</button>
+      ${manualPriced ? html`
+        <button type="button" class="action-link muted" data-holding-update-value
+          data-symbol="${esc(String(symbol))}">Update value</button>
+        <form class="holding-update-form" data-holding-update-form hidden
+          data-symbol="${esc(String(symbol))}" data-quantity="${String(Number(row.quantity) || 1)}">
+          <input name="value" type="number" step="any" min="0" inputmode="decimal"
+            aria-label="New value (USD)" placeholder="New value (USD)">
+          <button type="submit" class="action-link">Save</button>
+          <em data-holding-update-status></em>
+        </form>
+      ` : ''}
+    </span>
   `;
 }
 

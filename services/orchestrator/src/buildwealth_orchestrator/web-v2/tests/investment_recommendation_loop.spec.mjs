@@ -395,8 +395,8 @@ test('generated investment recommendation routes through Inbox, Portfolio, and C
   await page.goto('http://buildwealth-v2.test/#inbox?focus=rec-invest');
   await page.getByRole('link', { name: /Review fit/ }).first().click();
   await page.waitForURL('**/#portfolio?fit=NVDA&focus=rec-invest');
-  await page.locator('input[name="symbol"]').waitFor({ state: 'visible' });
-  await assertInputValue(page, 'input[name="symbol"]', 'NVDA');
+  await page.locator('.fit-review-form input[name="symbol"]').waitFor({ state: 'visible' });
+  await assertInputValue(page, '.fit-review-form input[name="symbol"]', 'NVDA');
   await page.getByText('Does Not Fit').waitFor({ state: 'visible' });
   await page.getByText('NVDA would worsen concentration risk.').waitFor({ state: 'visible' });
   await page.getByRole('link', { name: /Open evidence/ }).click();
@@ -642,8 +642,8 @@ test('generated contribution account recommendation routes through fit review an
 
   await page.getByRole('link', { name: /Review fit/ }).first().click();
   await page.waitForURL('**/#portfolio?fit=VTI&focus=rec-contribution-account');
-  await page.locator('input[name="symbol"]').waitFor({ state: 'visible' });
-  await assertInputValue(page, 'input[name="symbol"]', 'VTI');
+  await page.locator('.fit-review-form input[name="symbol"]').waitFor({ state: 'visible' });
+  await assertInputValue(page, '.fit-review-form input[name="symbol"]', 'VTI');
   await page.getByText('Contribution fit').waitFor({ state: 'visible' });
   await page.getByText('Review · Taxable · Review Account Location · Proposed contribution account conflicts with preferred account-location policy.').waitFor({ state: 'visible' });
   await page.getByText('Personal tax sensitivity is high; taxable contribution placement should be reviewed.').waitFor({ state: 'visible' });

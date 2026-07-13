@@ -9,11 +9,13 @@ import { api } from '../lib/api.js';
 import { state } from '../lib/state.js';
 import { html, raw, $, esc, setView } from '../lib/dom.js';
 import { skeleton } from '../lib/skeleton.js';
+import { showUndoToast } from '../lib/undo.js';
 import { renderStanding } from './portfolio/standing.js';
 import { renderComposition } from './portfolio/composition.js';
 import { renderLookThrough } from './portfolio/lookthrough.js';
 import { renderAnalytics } from './portfolio/analytics.js';
 import { renderWatch } from './portfolio/watch.js';
+import { renderAddFlow, bindAddFlow, bindHoldingActions } from './portfolio/add_flow.js';
 
 const MONEY_FMT = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
@@ -72,16 +74,19 @@ export async function init(params = {}) {
 
   setView(root, html`
     ${raw(renderSectionNav())}
-    <div id="pf-standing" class="pf-section">${raw(renderStanding(data))}</div>
+    <div id="pf-standing" class="pf-section">${raw(renderStanding(data))}${raw(renderAddFlow(data))}</div>
     <div id="pf-composition" class="pf-section">${raw(renderComposition(data))}${raw(renderLookThrough(lookThrough))}</div>
     <div id="pf-performance" class="pf-section">${raw(renderAnalytics(analytics))}</div>
     <div id="pf-watch" class="pf-section">${raw(renderWatch(data))}</div>
     <div id="pf-fit" class="pf-section">${raw(renderFitReview(null, { initialSymbol: params.fit || '' }))}</div>
     <div id="pf-maintenance" class="pf-section">${raw(renderLookCloser(maintenanceSection, maintenance))}</div>
   `);
+  const reload = () => init(params);
   bindSectionNav(root);
+  bindAddFlow(root, { reload });
+  bindHoldingActions(root, { reload });
   bindFitReview(root);
-  bindMaintenanceTools(root);
+  bindMaintenanceTools(root, maintenance, params);
   if (params.fit) {
     const fitSection = root.querySelector('.fit-review');
     if (fitSection) fitSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -101,7 +106,7 @@ const PORTFOLIO_SECTIONS = [
   ['pf-performance', 'Performance'],
   ['pf-watch', 'The watch'],
   ['pf-fit', 'Fit review'],
-  ['pf-maintenance', 'Maintenance'],
+  ['pf-maintenance', 'Records & tools'],
 ];
 
 function renderSectionNav() {
@@ -423,39 +428,58 @@ function labelize(value) {
     .replace(/\b\w/g, (ch) => ch.toUpperCase()) || 'Unknown';
 }
 
+// Two groups: the records most people actually revisit, then the advanced
+// tools. Each card says when a normal user needs it.
+const MAINTENANCE_GROUPS = [
+  {
+    label: 'Records',
+    sections: [
+      { id: 'audit', label: 'Portfolio Audit', hint: 'After an import or a cleanup — confirm everything landed.' },
+      { id: 'accounts', label: 'Accounts', hint: 'When you open, rename, or reorganize an account.' },
+      { id: 'transactions', label: 'Transactions', hint: 'To review or correct a recorded buy, sell, or deposit.' },
+      { id: 'export', label: 'Export & Recovery', hint: 'Before big changes — take a full copy of your records.' },
+    ],
+  },
+  {
+    label: 'Advanced',
+    sections: [
+      { id: 'assets', label: 'Investments & Assets', hint: 'When a holding is mislabeled or its details need fixing.' },
+      { id: 'prices', label: 'Manual prices', hint: 'When an asset has no live quote and needs a value set by hand.' },
+      { id: 'fx', label: 'FX rates', hint: 'Only if you hold money in another currency.' },
+      { id: 'cost-basis', label: 'Cost basis', hint: 'If your broker sells lots differently than first-in, first-out.' },
+      { id: 'risk-policy', label: 'Guardrails', hint: 'To tune when BuildWealth warns you about concentration.' },
+    ],
+  },
+];
+
 export function renderLookCloser(activeSection = '', maintenance = null) {
-  const sections = [
-    { id: 'audit', label: 'Portfolio Audit', hint: 'Import checks, review items, and follow-through' },
-    { id: 'accounts', label: 'Accounts', hint: 'Brokerage and account-level metadata' },
-    { id: 'transactions', label: 'Transactions', hint: 'Buy/sell/dividend history' },
-    { id: 'assets', label: 'Investments & Assets', hint: 'Searchable registry, metadata, and review status' },
-    { id: 'prices', label: 'Manual prices', hint: 'Override or backfill quotes' },
-    { id: 'fx', label: 'FX rates', hint: 'Currency conversion rates' },
-    { id: 'cost-basis', label: 'Cost basis', hint: 'Lot-level basis adjustments' },
-    { id: 'risk-policy', label: 'Guardrails', hint: 'Plain limits for concentration, accounts, sectors, and spread' },
-    { id: 'export', label: 'Export & Recovery', hint: 'Portfolio bundle and reversal posture' },
-  ];
   return html`
     <section>
       <header class="section-head">
         <span class="section-eyebrow">Movement VI</span>
-        <h2 class="section-title">Maintenance</h2>
+        <h2 class="section-title">Records & tools</h2>
         <p class="section-lede">
-          Lower-frequency tools that keep the picture honest. Import reports,
-          account review, and source evidence resolve here inside BuildWealth.
+          Lower-frequency records and tools that keep the picture honest.
+          Day to day, adding money happens up in Standing — come here to
+          check, correct, or export what's on file.
         </p>
       </header>
-      <div class="portfolio-maintenance-grid">
-        ${raw(sections.map(s => `
-          <a class="portfolio-maintenance-card"
-             href="${esc(s.href || `#portfolio?section=${s.id}`)}"
-             data-route>
-            <span class="portfolio-maintenance-label">${esc(s.label)}</span>
-            <span class="portfolio-maintenance-hint">${esc(s.hint)}</span>
-            <span class="portfolio-maintenance-arrow">→</span>
-          </a>
-        `).join(''))}
-      </div>
+      ${raw(MAINTENANCE_GROUPS.map(group => `
+        <div class="portfolio-maintenance-group">
+          <h3 class="portfolio-maintenance-group-title">${esc(group.label)}</h3>
+          <div class="portfolio-maintenance-grid">
+            ${group.sections.map(s => `
+              <a class="portfolio-maintenance-card"
+                 href="${esc(`#portfolio?section=${s.id}`)}"
+                 data-route>
+                <span class="portfolio-maintenance-label">${esc(s.label)}</span>
+                <span class="portfolio-maintenance-hint">${esc(s.hint)}</span>
+                <span class="portfolio-maintenance-arrow">→</span>
+              </a>
+            `).join('')}
+          </div>
+        </div>
+      `).join(''))}
       ${raw(renderMaintenanceDetail(activeSection, maintenance))}
     </section>
   `;
@@ -1008,7 +1032,8 @@ function renderFxRateTools(payload = {}) {
   `;
 }
 
-function bindMaintenanceTools(root) {
+function bindMaintenanceTools(root, maintenance = null, params = {}) {
+  bindTransactionRemoval(root, maintenance, params);
   const registryForm = root.querySelector('[data-asset-registry-search]');
   if (registryForm) registryForm.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -1070,6 +1095,54 @@ function bindMaintenanceTools(root) {
       button.textContent = 'Clearing';
       await api.clearPortfolioFxRate(currency);
       await init({ section: 'fx' });
+    });
+  });
+}
+
+// Remove a transaction with a six-second undo: undo re-adds the same row
+// (new id, same fields) via the plain transactions endpoint.
+function bindTransactionRemoval(root, maintenance, params = {}) {
+  const rows = maintenance?.section === 'transactions' && Array.isArray(maintenance.rows)
+    ? maintenance.rows
+    : [];
+  root.querySelectorAll('[data-remove-transaction]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const id = button.getAttribute('data-remove-transaction');
+      if (!id) return;
+      const row = rows.find(r => String(r?.id || '') === id) || null;
+      button.disabled = true;
+      button.textContent = 'Removing';
+      try {
+        await api.deletePortfolioTransaction(id);
+      } catch (err) {
+        button.disabled = false;
+        button.textContent = err?.message ? 'Retry remove' : 'Remove';
+        button.title = err?.message || '';
+        return;
+      }
+      const label = row
+        ? `Removed ${labelize(row.action || 'transaction')}${row.symbol ? ` of ${row.symbol}` : ''}${row.date ? ` on ${row.date}` : ''}.`
+        : 'Removed the transaction.';
+      showUndoToast({
+        message: label,
+        onUndo: async () => {
+          if (!row) return;
+          await api.addTransaction({
+            date: row.date || '',
+            symbol: row.symbol || '',
+            action: row.action || 'BUY',
+            quantity: Number(row.quantity) || 0,
+            unit_price: Number(row.unit_price) || 0,
+            fee: Number(row.fee) || 0,
+            account: row.account || 'default',
+            currency: row.currency || 'USD',
+            note: row.note || '',
+            lot_method: row.lot_method || 'FIFO',
+          });
+          await init({ ...params, section: 'transactions' });
+        },
+      });
+      await init({ ...params, section: 'transactions' });
     });
   });
 }
@@ -1259,7 +1332,7 @@ function objectRows(obj, mapRow) {
 function renderMaintenanceRows(section, rows) {
   const columnsBySection = {
     accounts: ['name', 'type', 'currency', 'id'],
-    transactions: ['date', 'symbol', 'action', 'quantity', 'unit_price', 'account'],
+    transactions: ['date', 'symbol', 'action', 'quantity', 'unit_price', 'account', 'actions'],
     assets: ['quality_label', 'symbol', 'name', 'asset_class', 'asset_type', 'current_value', 'current_price', 'tags', 'detail'],
     prices: ['symbol', 'price', 'note', 'updated_at', 'actions'],
     fx: ['currency', 'rate', 'base_currency', 'updated_at', 'actions'],
@@ -1291,6 +1364,12 @@ function formatMaintenanceCell(section, column, row = {}) {
     const symbol = String(row?.symbol || '').trim().toUpperCase();
     return symbol
       ? `<a class="action-link muted" href="#portfolio?section=assets&symbol=${encodeURIComponent(symbol)}">Details</a>`
+      : '-';
+  }
+  if (section === 'transactions' && column === 'actions') {
+    const id = String(row?.id || '').trim();
+    return id
+      ? `<button class="action-link muted" type="button" data-remove-transaction="${esc(id)}">Remove</button>`
       : '-';
   }
   if (section === 'prices' && column === 'actions') {
