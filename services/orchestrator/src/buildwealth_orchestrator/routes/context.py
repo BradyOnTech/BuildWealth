@@ -11,6 +11,7 @@ from fastapi import APIRouter
 import buildwealth_orchestrator.main as m
 from buildwealth_orchestrator.services.profile_candidate_apply import apply_candidate_to_profile
 from buildwealth_orchestrator.services.profile_inference import build_profile_inference_candidates
+from buildwealth_orchestrator.services.profile_mutation import apply_candidate_profile_mutation
 
 router = APIRouter()
 
@@ -260,26 +261,19 @@ def apply_context_candidate_to_profile(
         candidate = resolved_services.context_intelligence_service.get_context_candidate(candidate_id)
     except KeyError as exc:
         raise m.HTTPException(status_code=404, detail=str(exc)) from exc
-    apply_result = apply_candidate_to_profile(
-        candidate,
-        resolved_services.financial_profile_store,
+    mutation = apply_candidate_profile_mutation(
+        candidate=candidate,
+        profile_store=resolved_services.financial_profile_store,
+        context_service=resolved_services.context_intelligence_service,
+        apply_profile=apply_candidate_to_profile,
     )
+    apply_result = mutation["apply_result"]
     if not apply_result.get("applied"):
         raise m.HTTPException(
             status_code=400,
             detail=str(apply_result.get("reason") or "This capture cannot be applied to the profile."),
         )
-    updated = resolved_services.context_intelligence_service.update_context_candidate_lifecycle(
-        candidate_id,
-        lifecycle_state="applied",
-        prompt_influence="authoritative",
-        metadata_patch={
-            "review_action": "applied_to_profile",
-            "resolution_state": "resolved_by_apply",
-            "applied_sections": list(apply_result.get("sections") or []),
-        },
-    )
-    return {"candidate": updated, "apply_result": apply_result}
+    return mutation
 
 
 @router.patch("/api/context/candidates/{candidate_id}/lifecycle")

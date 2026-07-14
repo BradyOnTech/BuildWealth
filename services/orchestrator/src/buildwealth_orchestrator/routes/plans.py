@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 import buildwealth_orchestrator.main as m
+from buildwealth_orchestrator.services.simulation_runs import track_simulation_run
 
 router = APIRouter()
 
@@ -28,6 +29,8 @@ __all__ = [
     "update_plan_branch_templates",
     "explain_plan_simulation_result",
     "classify_plan_what_if_review_level",
+    "list_plan_simulation_runs",
+    "get_plan_simulation_run",
     "list_plan_saved_simulations",
     "create_plan_saved_simulation",
     "get_plan_saved_simulation",
@@ -46,6 +49,34 @@ __all__ = [
     "read_plan_artifact",
     "save_plan_artifact_thesis_revision",
 ]
+
+
+@router.get("/api/plans/{plan_id}/simulations/runs", response_model=m.PlanSimulationRunsResponse)
+def list_plan_simulation_runs(
+    plan_id: str,
+    limit: int = 50,
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> m.PlanSimulationRunsResponse:
+    resolved_services = m.route_workspace_services(services, permission="plan.read")
+    try:
+        payload = resolved_services.plan_workspace.list_simulation_runs(plan_id, limit=limit)
+    except m.PlanNotFoundError as exc:
+        raise m.HTTPException(status_code=404, detail=str(exc)) from exc
+    return m.PlanSimulationRunsResponse(**payload)
+
+
+@router.get("/api/plans/{plan_id}/simulations/runs/{simulation_run_id}", response_model=m.PlanSimulationRun)
+def get_plan_simulation_run(
+    plan_id: str,
+    simulation_run_id: str,
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> m.PlanSimulationRun:
+    resolved_services = m.route_workspace_services(services, permission="plan.read")
+    try:
+        payload = resolved_services.plan_workspace.get_simulation_run(plan_id, simulation_run_id)
+    except m.PlanNotFoundError as exc:
+        raise m.HTTPException(status_code=404, detail=str(exc)) from exc
+    return m.PlanSimulationRun(**payload)
 
 
 @router.get("/api/plans", response_model=list[m.PlanSummary])
@@ -75,7 +106,7 @@ def create_plan(
     except ValueError as exc:
         raise m.HTTPException(status_code=400, detail=str(exc)) from exc
     m._queue_autogit_event("plan_created")
-    return m._build_plan_detail_response(detail)
+    return m._build_plan_detail_response(detail, inbox=resolved_services.recommendation_inbox)
 
 
 @router.get("/api/plans/{plan_id}", response_model=m.PlanDetailResponse)
@@ -88,7 +119,7 @@ def get_plan(
         detail = resolved_services.plan_workspace.get_plan(plan_id)
     except m.PlanNotFoundError as exc:
         raise m.HTTPException(status_code=404, detail=str(exc)) from exc
-    return m._build_plan_detail_response(detail)
+    return m._build_plan_detail_response(detail, inbox=resolved_services.recommendation_inbox)
 
 
 @router.put("/api/plans/{plan_id}", response_model=m.PlanDetailResponse)
@@ -115,7 +146,7 @@ def update_plan(
     except ValueError as exc:
         raise m.HTTPException(status_code=400, detail=str(exc)) from exc
     m._queue_autogit_event("plan_updated")
-    return m._build_plan_detail_response(detail)
+    return m._build_plan_detail_response(detail, inbox=resolved_services.recommendation_inbox)
 
 
 @router.patch("/api/plans/{plan_id}/settings", response_model=m.PlanDetailResponse)
@@ -148,7 +179,7 @@ def update_plan_settings(
     except ValueError as exc:
         raise m.HTTPException(status_code=400, detail=str(exc)) from exc
     m._queue_autogit_event("plan_settings_updated")
-    return m._build_plan_detail_response(detail)
+    return m._build_plan_detail_response(detail, inbox=resolved_services.recommendation_inbox)
 
 
 @router.get("/api/plans/{plan_id}/timeline", response_model=m.PlanTimelineResponse)
@@ -394,10 +425,30 @@ def create_plan_saved_simulation(
         require_write_token=True,
     )
     try:
+        linked_run = None
+        if request.simulation_run_id:
+            linked_run = resolved_services.plan_workspace.get_simulation_run(
+                plan_id,
+                request.simulation_run_id,
+            )
+            if linked_run.get("status") != "completed":
+                raise ValueError("Only a completed Simulation Run can be saved.")
         payload = resolved_services.plan_workspace.save_simulation(
             plan_id=plan_id,
             simulation_payload=request.model_dump(mode="json"),
         )
+        if linked_run is not None:
+            resolved_services.plan_workspace.finish_simulation_run(
+                plan_id,
+                request.simulation_run_id or "",
+                status="completed",
+                result_payload=(
+                    linked_run.get("result_payload")
+                    if isinstance(linked_run.get("result_payload"), dict)
+                    else {}
+                ),
+                saved_simulation_id=str(payload.get("id") or ""),
+            )
     except m.PlanNotFoundError as exc:
         raise m.HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -540,8 +591,18 @@ async def rerun_plan_saved_simulation(
                     "notes": request.notes,
                     "input_payload": input_payload,
                     "result_payload": result_payload,
+                    "simulation_run_id": result_payload.get("simulation_run_id"),
                 },
             )
+            rerun_id = str(result_payload.get("simulation_run_id") or "").strip()
+            if rerun_id:
+                resolved_services.plan_workspace.finish_simulation_run(
+                    plan_id,
+                    rerun_id,
+                    status="completed",
+                    result_payload=result_payload,
+                    saved_simulation_id=str(saved_payload.get("id") or ""),
+                )
             m._queue_autogit_event("plan_saved_simulation_rerun_saved")
     except m.PlanNotFoundError as exc:
         raise m.HTTPException(status_code=404, detail=str(exc)) from exc
@@ -638,12 +699,17 @@ def pin_watchlist_research_to_plan_branch_template(
 
 
 @router.post("/api/plans/{plan_id}/scenario-diff", response_model=m.PlanScenarioDiffResponse)
+@track_simulation_run("scenario_diff")
 async def run_plan_scenario_diff(
     plan_id: str,
     request: m.PlanScenarioDiffRequest,
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> m.PlanScenarioDiffResponse:
     resolved_services = m.route_workspace_services(services, permission="plan.read")
+    m.require_permission(resolved_services.context, "profile.read")
+    m.require_permission(resolved_services.context, "portfolio.read")
+    profile_payload = m.get_financial_profile_payload(resolved_services.financial_profile_store)
+    planning_accounts = m.build_planning_accounts_from_portfolio(resolved_services.portfolio_store)
     compare_updates = request.compare_settings.model_dump(exclude_unset=True)
 
     try:
@@ -673,12 +739,24 @@ async def run_plan_scenario_diff(
         assumption_set_id=candidate_set_id,
     )
     candidate_settings = m.merge_plan_settings(candidate_base_settings, compare_updates)
-    base_income_projection = m.build_income_projection_for_plan_settings(base_settings)
-    candidate_income_projection = m.build_income_projection_for_plan_settings(candidate_settings)
-    base_expense_projection = m.build_expense_projection_for_plan_settings(base_settings)
-    candidate_expense_projection = m.build_expense_projection_for_plan_settings(candidate_settings)
-    base_debt_projection = m.build_debt_projection_for_plan_settings(base_settings)
-    candidate_debt_projection = m.build_debt_projection_for_plan_settings(candidate_settings)
+    base_income_projection = m.build_income_projection_for_plan_settings(
+        base_settings, profile_payload=profile_payload
+    )
+    candidate_income_projection = m.build_income_projection_for_plan_settings(
+        candidate_settings, profile_payload=profile_payload
+    )
+    base_expense_projection = m.build_expense_projection_for_plan_settings(
+        base_settings, profile_payload=profile_payload
+    )
+    candidate_expense_projection = m.build_expense_projection_for_plan_settings(
+        candidate_settings, profile_payload=profile_payload
+    )
+    base_debt_projection = m.build_debt_projection_for_plan_settings(
+        base_settings, profile_payload=profile_payload
+    )
+    candidate_debt_projection = m.build_debt_projection_for_plan_settings(
+        candidate_settings, profile_payload=profile_payload
+    )
     base_timeline_projection = m.build_timeline_projection_for_plan_settings(
         plan_settings=base_settings,
         timeline_payload=timeline_payload,
@@ -691,10 +769,12 @@ async def run_plan_scenario_diff(
     base_contribution_allocation = m.build_contribution_allocation_for_plan_settings(
         plan_settings=base_settings,
         contribution_rules_payload=contribution_rules_payload,
+        accounts_override=planning_accounts,
     )
     candidate_contribution_allocation = m.build_contribution_allocation_for_plan_settings(
         plan_settings=candidate_settings,
         contribution_rules_payload=contribution_rules_payload,
+        accounts_override=planning_accounts,
     )
     base_social_security_projection = m.build_social_security_projection_for_plan_settings(
         plan_settings=base_settings,
@@ -712,17 +792,20 @@ async def run_plan_scenario_diff(
         plan_settings=base_settings,
         timeline_payload=timeline_payload,
         start_year=m.utc_now().year,
+        accounts_override=planning_accounts,
     )
     candidate_rmd_projection = m.build_rmd_projection_for_plan_settings(
         plan_settings=candidate_settings,
         timeline_payload=timeline_payload,
         start_year=m.utc_now().year,
+        accounts_override=planning_accounts,
     )
 
     try:
         current_value = m.resolve_portfolio_value(
             request.current_portfolio_value_usd,
             store=resolved_services.snapshot_store,
+            portfolio=resolved_services.portfolio_store,
         )
         base_result = await m.run_scenarios_for_plan_settings(
             current_portfolio_value_usd=current_value,
@@ -738,6 +821,8 @@ async def run_plan_scenario_diff(
             retirement_age=retirement_age,
             timeline_withdrawal_strategy=timeline_withdrawal_strategy,
             timeline_drawdown_order=timeline_drawdown_order,
+            profile_payload=profile_payload,
+            planning_accounts_override=planning_accounts,
         )
         candidate_result = await m.run_scenarios_for_plan_settings(
             current_portfolio_value_usd=current_value,
@@ -753,6 +838,8 @@ async def run_plan_scenario_diff(
             retirement_age=retirement_age,
             timeline_withdrawal_strategy=timeline_withdrawal_strategy,
             timeline_drawdown_order=timeline_drawdown_order,
+            profile_payload=profile_payload,
+            planning_accounts_override=planning_accounts,
         )
     except ValueError as exc:
         raise m.HTTPException(status_code=400, detail=str(exc)) from exc
@@ -781,6 +868,7 @@ async def run_plan_scenario_diff(
     "/api/plans/{plan_id}/withdrawal-strategy-compare",
     response_model=m.PlanWithdrawalStrategyCompareResponse,
 )
+@track_simulation_run("withdrawal_strategy")
 async def compare_plan_withdrawal_strategies(
     plan_id: str,
     request: m.PlanWithdrawalStrategyCompareRequest,
@@ -815,6 +903,7 @@ async def compare_plan_withdrawal_strategies(
 
 
 @router.post("/api/plans/{plan_id}/scenario-branch", response_model=m.PlanScenarioBranchResponse)
+@track_simulation_run("scenario_branch")
 async def run_plan_scenario_branch(
     plan_id: str,
     request: m.PlanScenarioBranchRequest,
@@ -951,7 +1040,7 @@ def append_plan_decision(
     except ValueError as exc:
         raise m.HTTPException(status_code=400, detail=str(exc)) from exc
     m._queue_autogit_event("plan_decision_added")
-    return m._build_plan_detail_response(detail)
+    return m._build_plan_detail_response(detail, inbox=resolved_services.recommendation_inbox)
 
 
 @router.post("/api/plans/{plan_id}/refresh-context", response_model=m.PlanDetailResponse)
@@ -972,7 +1061,7 @@ def refresh_plan_context(
     except m.PlanNotFoundError as exc:
         raise m.HTTPException(status_code=404, detail=str(exc)) from exc
     m._queue_autogit_event("plan_context_refreshed")
-    return m._build_plan_detail_response(detail)
+    return m._build_plan_detail_response(detail, inbox=resolved_services.recommendation_inbox)
 
 
 @router.get("/api/plans/{plan_id}/artifacts/{artifact_id}", response_model=m.PlanArtifactResponse)

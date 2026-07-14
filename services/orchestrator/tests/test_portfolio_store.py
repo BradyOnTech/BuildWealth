@@ -176,6 +176,23 @@ class TestHoldings:
         assert _position_key("AAPL", "roth_ira") in holdings["holdings"]
         assert holdings["holdings_by_symbol"]["AAPL"]["quantity"] == pytest.approx(10.0)
 
+    def test_unpriced_holding_never_reports_a_total_loss(self, store):
+        store.add_transaction(
+            date="2026-01-15",
+            symbol="VTI",
+            action="BUY",
+            quantity=10,
+            unit_price=200,
+        )
+
+        holdings = store.get_holdings()
+
+        assert holdings["valuation_status"] == "unavailable"
+        assert holdings["unpriced_holdings_count"] == 1
+        assert holdings["unpriced_cost_basis"] == 2000
+        assert holdings["net_performance"] is None
+        assert holdings["net_performance_pct"] is None
+
 
 class TestExtendedActivities:
     def test_cash_deposit_and_buy_updates_account_cash(self, store):

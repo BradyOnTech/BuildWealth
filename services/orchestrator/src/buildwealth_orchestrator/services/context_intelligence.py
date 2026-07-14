@@ -27,6 +27,11 @@ from buildwealth_orchestrator.services.session_focus import (
     plan_pass_domains,
     run_plan_id_pass,
 )
+from buildwealth_orchestrator.services.action_readiness import (
+    ACTION_READINESS_BY_MATERIALITY,
+    MATERIALITY_LEVELS,
+    normalize_materiality,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,14 +87,6 @@ CONTEXT_CANDIDATE_PROMPT_INFLUENCE_LEVELS = {
 }
 CONTEXT_CANDIDATE_REVIEW_ITEM_MATERIALITY = {"high", "critical"}
 CONTEXT_CANDIDATE_INDEXABLE_STATES = {"applied"}
-
-MATERIALITY_LEVELS = ("low", "medium", "high", "critical")
-ACTION_READINESS_BY_MATERIALITY = {
-    "low": "Can review later",
-    "medium": "Worth reviewing",
-    "high": "Review before relying on this",
-    "critical": "Needs attention before acting",
-}
 
 AUTHORITY_SCORE = {
     "canonical": 1.0,
@@ -305,10 +302,7 @@ def _source_mtime_iso(path: Path) -> str | None:
 
 
 def _normalize_materiality(value: Any, *, default: str = "low") -> str:
-    level = str(value or "").strip().lower()
-    if level in MATERIALITY_LEVELS:
-        return level
-    return default
+    return normalize_materiality(value, default=default)
 
 
 @dataclass(frozen=True)
@@ -1087,6 +1081,49 @@ class ContextRegistry:
                 payload=payload,
             )
         return payload
+
+    def restore_candidate_lifecycle(self, candidate: Mapping[str, Any]) -> dict[str, Any]:
+        """Restore lifecycle fields from a pre-mutation candidate snapshot.
+
+        This compensation primitive deliberately restores the exact metadata
+        and timestamps instead of merging a patch, so a failed Profile apply
+        cannot leave behind partial review-state fields.
+        """
+        self._initialize()
+        candidate_id = str(candidate.get("id") or "").strip()
+        if not candidate_id:
+            raise KeyError("Context candidate id is required for restore")
+        with self._connect() as connection:
+            existing = connection.execute(
+                "SELECT id FROM context_candidates WHERE id = ?",
+                (candidate_id,),
+            ).fetchone()
+            if existing is None:
+                raise KeyError(f"Context candidate not found: {candidate_id}")
+            connection.execute(
+                """
+                UPDATE context_candidates
+                SET lifecycle_state = ?, prompt_influence = ?, metadata = ?,
+                    updated_at = ?, applied_at = ?, archived_at = ?
+                WHERE id = ?
+                """,
+                (
+                    candidate.get("lifecycle_state"),
+                    candidate.get("prompt_influence"),
+                    _json_dumps(candidate.get("metadata") or {}),
+                    candidate.get("updated_at"),
+                    candidate.get("applied_at"),
+                    candidate.get("archived_at"),
+                    candidate_id,
+                ),
+            )
+            self._record_candidate_event(
+                connection,
+                candidate_id=candidate_id,
+                event_type="candidate_mutation_compensated",
+                payload=dict(candidate),
+            )
+        return self.get_candidate(candidate_id)
 
     def candidate_events(self, candidate_id: str) -> list[dict[str, Any]]:
         if not self.database_path.exists():
@@ -1893,6 +1930,11 @@ class ContextIntelligenceService:
         )
         self._sync_context_candidate_review_item(updated)
         return updated
+
+    def restore_context_candidate_lifecycle(self, candidate: Mapping[str, Any]) -> dict[str, Any]:
+        restored = self.registry.restore_candidate_lifecycle(candidate)
+        self._sync_context_candidate_review_item(restored)
+        return restored
 
     def sync_conflict_review_items(
         self,

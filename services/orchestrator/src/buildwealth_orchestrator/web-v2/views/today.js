@@ -460,8 +460,11 @@ export function computeRunway(payload) {
 /* ─────────────  COMMAND CENTER  ───────────── */
 
 export function renderCommandCards(payload, services = null) {
-  const cards = Array.isArray(payload.command_cards) ? [...payload.command_cards] : [];
-  const serviceCard = buildServiceCommandCard(services);
+  const firstRun = payload?.onboarding_ready_for_daily_review === false;
+  const operatorCardIds = new Set(['data-trust', 'research-readiness', 'trust-durability']);
+  const cards = (Array.isArray(payload.command_cards) ? [...payload.command_cards] : [])
+    .filter(card => !firstRun || !operatorCardIds.has(String(card?.id || '')));
+  const serviceCard = firstRun ? null : buildServiceCommandCard(services);
   if (serviceCard) cards.push(serviceCard);
   const visibleCards = cards.slice(0, 10);
   if (!visibleCards.length) {
@@ -732,7 +735,7 @@ function humanSource(source) {
 
 /* ─────────────  THE ROOM  ───────────── */
 
-function renderRoom(payload, services, health = null) {
+export function renderRoom(payload, services, health = null) {
   const sync = payload.sync_status || {};
   const servicesEnabled = services?.enabled_count ?? 0;
   const servicesReachable = services?.reachable_count ?? 0;
@@ -745,7 +748,10 @@ function renderRoom(payload, services, health = null) {
     sync.failed_count === 0
   );
 
-  const headline = allQuiet
+  const firstRun = payload.onboarding_ready_for_daily_review === false;
+  const headline = firstRun
+    ? 'Your decision picture is taking shape.'
+    : allQuiet
     ? 'All systems quiet.'
     : payload.context_state === 'critical' ? 'Attention needed.'
     : 'A few things to look at.';
@@ -758,7 +764,9 @@ function renderRoom(payload, services, health = null) {
           <span class="glyph">§</span>
           ${headline}
           <span class="marginalia">
-            Last sync ${lastSync ? fmtRelative(lastSync) : '—'} · ${servicesReachable}/${servicesEnabled} services ready
+            ${firstRun
+              ? `Next: ${esc(payload.profile_readiness?.next_gap_title || 'finish your core profile')}`
+              : `Last sync ${lastSync ? fmtRelative(lastSync) : '—'} · ${servicesReachable}/${servicesEnabled} services ready`}
           </span>
         </p>
         ${Array.isArray(health?.highlights) && health.highlights.length ? html`
@@ -772,7 +780,7 @@ function renderRoom(payload, services, health = null) {
             <dl><dt>Snapshot</dt><dd>${payload.snapshot_age_minutes != null ? `${payload.snapshot_age_minutes}m ago` : '—'}</dd></dl>
             <dl><dt>Inbox</dt><dd>${payload.inbox_open_count ?? 0} open · ${payload.inbox_high_priority_count ?? 0} high</dd></dl>
             <dl><dt>Concentration</dt><dd>${payload.concentration_risk || '—'}</dd></dl>
-            <dl><dt>Onboarding</dt><dd>${Math.round(payload.onboarding_completion_percent || 0)}%</dd></dl>
+            <dl><dt>Readiness</dt><dd>${String(payload.profile_readiness?.status || '').toLowerCase() === 'ready' ? 'Core profile ready' : 'In progress'}</dd></dl>
             <dl><dt>Profile gap</dt><dd>${esc(payload.profile_readiness?.next_gap_title || '—')}</dd></dl>
             <dl><dt>Health</dt><dd>${humanHealth(payload.financial_health_status)}</dd></dl>
             <dl><dt>Context</dt><dd>${closure}</dd></dl>

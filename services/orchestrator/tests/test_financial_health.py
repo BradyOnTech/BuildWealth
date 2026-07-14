@@ -5,6 +5,7 @@ import pytest
 from buildwealth_orchestrator.schemas import (
     DebtItem,
     ExpenseItem,
+    Holding,
     IncomeItem,
     GoalItem,
     PhysicalAssetItem,
@@ -61,6 +62,77 @@ class TestNetWorth:
         assert r.physical_assets_value_usd == 450000
         assert r.total_assets_usd == 550000
         assert r.net_worth_usd == 550000
+
+    def test_net_worth_does_not_count_profile_asset_already_in_portfolio(self):
+        snapshot = _snap(total_value=600000)
+        snapshot.holdings = [
+            Holding(
+                symbol="VTI",
+                name="Total Market",
+                asset_type="etf",
+                asset_class="equity",
+                value_usd=100000,
+            ),
+            Holding(
+                symbol="MY_HOME",
+                name="Primary residence",
+                asset_type="property",
+                asset_class="real_estate",
+                value_usd=500000,
+            ),
+        ]
+
+        r = _health(
+            snapshot=snapshot,
+            physical_assets=[
+                PhysicalAssetItem(
+                    id="asset-home",
+                    label="House",
+                    current_value_usd=500000,
+                    asset_type="real_estate",
+                )
+            ],
+        )
+
+        assert r.portfolio_value_usd == 600000
+        assert r.physical_assets_value_usd == 0
+        assert r.total_assets_usd == 600000
+        assert r.net_worth_usd == 600000
+
+    def test_explicit_portfolio_symbol_prevents_double_count_when_values_drift(self):
+        snapshot = _snap(total_value=625000)
+        snapshot.holdings = [
+            Holding(
+                symbol="VTI",
+                name="Total Market",
+                asset_type="etf",
+                asset_class="equity",
+                value_usd=100000,
+            ),
+            Holding(
+                symbol="MY_HOME",
+                name="Primary residence",
+                asset_type="property",
+                asset_class="real_estate",
+                value_usd=525000,
+            ),
+        ]
+
+        r = _health(
+            snapshot=snapshot,
+            physical_assets=[
+                PhysicalAssetItem(
+                    id="asset-home",
+                    label="House",
+                    current_value_usd=500000,
+                    asset_type="real_estate",
+                    portfolio_symbol="MY_HOME",
+                )
+            ],
+        )
+
+        assert r.physical_assets_value_usd == 0
+        assert r.net_worth_usd == 625000
 
     def test_net_worth_no_portfolio(self):
         r = _health(snapshot=None)

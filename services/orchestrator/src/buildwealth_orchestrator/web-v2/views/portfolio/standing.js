@@ -6,20 +6,27 @@ import { html, raw } from '../../lib/dom.js';
 import { fmtUsd, splitUsd, fmtUsdSigned, fmtPctSigned, fmtRelative } from '../../lib/format.js';
 
 export function renderStanding(data) {
-  const total = data.total_value ?? data.total_portfolio_value ?? 0;
+  const knownTotal = data.total_portfolio_value ?? data.total_value ?? 0;
   const cash = data.total_cash ?? 0;
   const performance = data.performance || {};
-  const netPerf = data.net_performance ?? 0;
-  const netPerfPct = data.net_performance_pct ?? 0;
-  const twr = numberOrNull(performance.twr_annualized_return_pct);
-  const xirr = numberOrNull(performance.xirr_annualized_return_pct);
+  const valuationStatus = String(data.valuation_status || '').toLowerCase();
+  const valuationPending = valuationStatus === 'partial' || valuationStatus === 'unavailable';
+  const pendingCount = Number(data.unpriced_holdings_count || 0);
+  const pendingBasis = Number(data.unpriced_cost_basis ?? data.total_cost_basis ?? 0);
+  const total = valuationStatus === 'unavailable' && Number(knownTotal) <= 0 && pendingBasis > 0
+    ? pendingBasis
+    : knownTotal;
+  const netPerf = valuationPending ? null : numberOrNull(data.net_performance);
+  const netPerfPct = valuationPending ? null : numberOrNull(data.net_performance_pct);
+  const twr = valuationPending ? null : numberOrNull(performance.twr_annualized_return_pct);
+  const xirr = valuationPending ? null : numberOrNull(performance.xirr_annualized_return_pct);
   const positions = countHoldings(data);
   const pricesAt = data.prices_updated_at || data.updated_at;
 
   const { currency, number } = splitUsd(total);
 
   const marginalia = [];
-  if (netPerf !== 0 || netPerfPct !== 0) {
+  if (netPerf != null && netPerfPct != null && (netPerf !== 0 || netPerfPct !== 0)) {
     marginalia.push(margin(
       `${fmtUsdSigned(netPerf)} (${fmtPctSigned(netPerfPct)})`,
       'net performance',
@@ -29,12 +36,25 @@ export function renderStanding(data) {
   if (twr != null)  marginalia.push(margin(`${fmtPctSigned(twr)}`, 'annualized return', twr >= 0 ? 'up' : 'down'));
   if (xirr != null) marginalia.push(margin(`${fmtPctSigned(xirr)}`, 'your money-weighted return', xirr >= 0 ? 'up' : 'down'));
   if (positions > 0) marginalia.push(margin(`${positions}`, `position${positions === 1 ? '' : 's'}`, 'up'));
+  if (valuationPending && pendingCount > 0) {
+    marginalia.push(margin(
+      `${pendingCount}`,
+      `position${pendingCount === 1 ? ' needs' : 's need'} a current value; performance is hidden`,
+      'down',
+    ));
+  }
   if (cash > 0)      marginalia.push(margin(fmtUsd(cash), 'in cash', 'up'));
   if (pricesAt)      marginalia.push(margin(fmtRelative(pricesAt), 'prices refreshed', 'up'));
 
   return html`
     <section class="hero-stack">
-      <p class="hero-eyebrow">As of ${data.updated_at ? new Date(data.updated_at).toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' }) : 'now'}</p>
+      <p class="hero-eyebrow">
+        ${valuationStatus === 'unavailable'
+          ? 'Recorded cost basis · current value pending'
+          : valuationStatus === 'partial'
+            ? 'Known current value · some positions pending'
+            : `As of ${data.updated_at ? new Date(data.updated_at).toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' }) : 'now'}`}
+      </p>
       <h1 class="hero-number">
         <span class="currency">${currency}</span>${number}
       </h1>

@@ -11,6 +11,9 @@ from math import isfinite
 from typing import Any
 
 
+ONBOARDING_FUNDING_NOTE = "funding offset for existing position added through portfolio onboarding"
+
+
 def _parse_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -92,7 +95,36 @@ def _normalized_transactions(transactions: list[dict[str, Any]]) -> list[dict[st
             }
         )
     normalized.sort(key=lambda item: item["_parsed_date"])
+    # The plain-language onboarding flow records an external cash deposit and
+    # the matching BUY together. The deposit is the contribution; treating the
+    # BUY as another contribution would double the user's invested amount.
+    # Preserve legacy BUY-as-contribution behavior for every other ledger path.
+    funding_offsets: dict[tuple[datetime, str, str, float], int] = {}
+    for transaction in normalized:
+        if (
+            str(transaction.get("action") or "").upper().strip() == "CASH_DEPOSIT"
+            and ONBOARDING_FUNDING_NOTE in str(transaction.get("note") or "")
+        ):
+            key = _funding_match_key(transaction)
+            funding_offsets[key] = funding_offsets.get(key, 0) + 1
+    for transaction in normalized:
+        if str(transaction.get("action") or "").upper().strip() != "BUY":
+            continue
+        key = _funding_match_key(transaction)
+        if funding_offsets.get(key, 0) <= 0:
+            continue
+        transaction["_cash_flow"] = 0.0
+        funding_offsets[key] -= 1
     return normalized
+
+
+def _funding_match_key(transaction: dict[str, Any]) -> tuple[datetime, str, str, float]:
+    return (
+        transaction["_parsed_date"],
+        str(transaction.get("account") or "default"),
+        str(transaction.get("currency") or "USD").upper().strip(),
+        round(abs(float(transaction.get("_cash_flow") or 0.0)), 2),
+    )
 
 
 def calculate_portfolio_performance(

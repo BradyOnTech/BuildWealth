@@ -13,6 +13,7 @@ from buildwealth_orchestrator.schemas import (
     PhysicalAssetItem,
     PortfolioSnapshot,
 )
+from buildwealth_orchestrator.services.household_assets import reconcile_household_assets
 
 # Thresholds for health assessment
 SAVINGS_RATE_HEALTHY = 20.0      # >= 20% savings rate is healthy
@@ -94,7 +95,16 @@ def compute_financial_health(
 
     # --- Portfolio & Debt ---
     portfolio_value = snapshot.total_value_usd if snapshot else 0.0
-    physical_assets_value = sum(asset.current_value_usd for asset in physical_assets)
+    reconciled_assets = reconcile_household_assets(
+        portfolio_assets=(holding.model_dump(mode="python") for holding in snapshot.holdings)
+        if snapshot is not None
+        else (),
+        profile_assets=(asset.model_dump(mode="python") for asset in physical_assets),
+    )
+    # Portfolio total already includes custom-valued property and other
+    # physical holdings. Add only Profile assets that do not resolve to one of
+    # those positions.
+    physical_assets_value = reconciled_assets.profile_only_value_usd
     total_assets = portfolio_value + physical_assets_value
     total_debt = sum(d.balance_usd for d in debt_items)
     net_worth = total_assets - total_debt

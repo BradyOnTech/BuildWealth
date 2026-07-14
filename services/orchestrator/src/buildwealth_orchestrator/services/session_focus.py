@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from buildwealth_orchestrator.services.copilot_runtime import utc_now_iso
+from buildwealth_orchestrator.services.action_readiness import action_readiness_for_materiality
 
 FOCUS_DOMAIN_CATALOG: frozenset[str] = frozenset(
     {
@@ -772,12 +773,9 @@ def collect_muted_safety_warnings(
         if key in seen:
             return
         seen.add(key)
-        readiness = action_readiness or (
-            "Needs attention before acting"
-            if materiality == "critical"
-            else "Review before relying on this"
-            if materiality == "high"
-            else "Worth reviewing"
+        readiness = action_readiness or action_readiness_for_materiality(
+            materiality,
+            default="medium",
         )
         warnings.append(
             {

@@ -178,6 +178,12 @@ export function renderSetupRail(ui) {
             ${railState.busy ? 'Applying…' : 'Use the estimates'}
           </button>
         ` : ''}
+        ${step.id === 'debt-goals' && !(ui.profile?.debt_items || []).length && !ui.profile?.flags?.no_debt ? html`
+          <button type="button" class="chip" data-rail-action="mark-no-debt">I have no debt</button>
+        ` : ''}
+        ${step.id === 'debt-goals' && !(ui.profile?.goal_items || []).length && !ui.profile?.flags?.no_goals ? html`
+          <button type="button" class="chip" data-rail-action="defer-goals">I’m not ready to set a goal</button>
+        ` : ''}
       </div>
 
       ${railState.docOpen ? raw(renderDocumentCapture()) : ''}
@@ -199,7 +205,7 @@ function completeLine() {
   return html`
     <aside class="setup-rail setup-rail-complete">
       <button type="button" class="setup-rail-done" data-rail-action="dismiss">
-        Setup complete — everything below stays editable.
+        Core profile ready — optional details can improve future advice, and everything stays editable.
       </button>
     </aside>
   `;
@@ -278,6 +284,27 @@ export async function onRailAction(ui, action, dataset = {}) {
   }
   if (action === 'use-estimates')   return applyStepEstimates(ui);
   if (action === 'apply-candidate') return applyCandidate(ui, dataset.candidateId);
+  if (action === 'mark-no-debt')    return saveFlag(ui, 'no_debt', true);
+  if (action === 'defer-goals')     return saveFlag(ui, 'no_goals', true);
+}
+
+async function saveFlag(ui, key, value) {
+  if (railState.busy || !ui.profile) return;
+  const prior = { ...(ui.profile.flags || {}) };
+  ui.profile.flags = { ...prior, [key]: value };
+  railState.busy = true;
+  railState.error = null;
+  renderProfile();
+  try {
+    const saved = await persist();
+    if (!saved) {
+      ui.profile.flags = prior;
+      railState.error = 'Could not save that answer — nothing was changed.';
+    }
+  } finally {
+    railState.busy = false;
+    renderProfile();
+  }
 }
 
 async function applyStepEstimates(ui) {

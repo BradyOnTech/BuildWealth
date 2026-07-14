@@ -28,11 +28,12 @@ export function renderTaxes(ui) {
     <div class="profile-taxes">
       <header class="profile-table-head">
         <div>
-          <p class="profile-table-eyebrow">§ Foundation · Taxes</p>
-          <h2 class="profile-table-title">Tax profile</h2>
+          <p class="profile-table-eyebrow">§ Foundation · Taxes &amp; status</p>
+          <h2 class="profile-table-title">Tax profile and simple status answers</h2>
           <p class="profile-table-lede">
             Used in plan trajectory, Roth-conversion math, and tax-loss harvesting.
-            Rates are stored as decimals server-side; enter percentages here.
+            Rates shape tax-aware planning. Simple no-debt and not-yet-tracking-goals answers
+            keep BuildWealth from repeatedly asking about things that do not apply.
           </p>
         </div>
       </header>

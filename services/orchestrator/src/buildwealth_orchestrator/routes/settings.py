@@ -35,7 +35,7 @@ async def test_llm_settings(
     request: dict[str, m.Any],
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> dict[str, m.Any]:
-    resolved_services = m.workspace_services_or_legacy(services)
+    resolved_services = m.resolve_workspace_services(services)
     m.require_permission(resolved_services.context, "settings.read")
     payload, explicit_keys = m._settings_payload_for_probe(request, resolved_services.settings_store)
     client = m.build_llm_client(

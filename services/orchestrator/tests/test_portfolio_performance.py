@@ -83,6 +83,47 @@ def test_calculate_portfolio_performance_handles_mid_period_buy():
     assert result["total_return_pct"] == pytest.approx(12.5, abs=0.01)
 
 
+def test_onboarding_funding_offset_counts_the_opening_contribution_once():
+    result = calculate_portfolio_performance(
+        transactions=[
+            {
+                "date": "2026-01-01",
+                "symbol": "CASH",
+                "action": "CASH_DEPOSIT",
+                "quantity": 1,
+                "unit_price": 25_000,
+                "account": "default",
+                "currency": "USD",
+                "note": "funding offset for existing position added through portfolio onboarding",
+            },
+            {
+                "date": "2026-01-01",
+                "symbol": "VTI",
+                "action": "BUY",
+                "quantity": 1,
+                "unit_price": 25_000,
+                "account": "default",
+                "currency": "USD",
+            },
+        ],
+        holdings={
+            "default:VTI": {
+                "symbol": "VTI",
+                "quantity": 1,
+                "cost_basis": 25_000,
+                "current_price": 25_000,
+                "current_value": 25_000,
+            }
+        },
+        as_of="2026-01-31T00:00:00+00:00",
+    )
+
+    assert result["gross_contributions"] == 25_000
+    assert result["net_contributions"] == 25_000
+    assert result["return_denominator_usd"] == 25_000
+    assert result["total_return_pct"] == 0
+
+
 def test_filter_transaction_cash_flows_uses_portfolio_contribution_signs():
     flows = filter_transaction_cash_flows(
         transactions=[

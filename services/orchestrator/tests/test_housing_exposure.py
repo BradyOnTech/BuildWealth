@@ -80,3 +80,21 @@ def test_profile_physical_asset_counts_once() -> None:
     assert len(payload["properties"]) == 2
     # Vehicle counts toward other assets, not housing: 650k / (650k + 100k + 30k)
     assert payload["share_of_total_assets_pct"] == 83.3
+
+
+def test_explicit_portfolio_symbol_wins_when_profile_value_is_stale() -> None:
+    payload = build_housing_exposure_payload(
+        _holdings(),
+        physical_assets=[
+            {
+                "id": "p1",
+                "label": "House",
+                "asset_type": "real_estate",
+                "current_value_usd": 475000,
+                "portfolio_symbol": "MY_HOME",
+            }
+        ],
+    )
+
+    assert payload["home_value_usd"] == 500000
+    assert len(payload["properties"]) == 1

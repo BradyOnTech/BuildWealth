@@ -35,6 +35,7 @@ __all__ = [
 
 @router.get("/api/copilot/context", response_model=m.CopilotContextResponse)
 async def get_copilot_context(
+    question: str = "Give me a complete BuildWealth financial context briefing.",
     use_live_snapshot: bool = False,
     plan_id: str | None = None,
     include_research: bool = True,
@@ -56,7 +57,8 @@ async def get_copilot_context(
         for item in str(research_symbols or "").split(",")
         if item.strip()
     ]
-    return await m.build_buildwealth_context_payload(
+    return await m.assemble_copilot_context_payload(
+        question=question,
         use_live_snapshot=use_live_snapshot,
         plan_id=plan_id,
         include_research=include_research,
@@ -261,7 +263,7 @@ async def _copilot_chat_pipeline(
     keep working.
     """
     scoped_services = hasattr(services, "context")
-    resolved_services = services if scoped_services else m.workspace_services_or_legacy(None)
+    resolved_services = services if scoped_services else m.resolve_workspace_services(None)
     if scoped_services:
         m.require_permission(resolved_services.context, "copilot.use")
     context_options = request.context_options

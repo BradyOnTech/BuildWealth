@@ -44,7 +44,7 @@ const SECTIONS = [
   { id: 'expenses',     label: 'Expenses',     kind: 'table',   tableKey: 'expense_items' },
   { id: 'debt',         label: 'Debt',         kind: 'table',   tableKey: 'debt_items' },
   { id: 'goals',        label: 'Goals',        kind: 'goals',   tableKey: 'goal_items' },
-  { id: 'taxes',        label: 'Taxes',        kind: 'taxes' },
+  { id: 'taxes',        label: 'Taxes & status', kind: 'taxes' },
   { id: 'investing',    label: 'Investing',    kind: 'investing' },
   { id: 'assets',       label: 'Assets',       kind: 'table',   tableKey: 'physical_assets' },
   { id: 'data-quality', label: 'Data quality', kind: 'data-quality' },
@@ -166,7 +166,13 @@ export function render() {
 
 function masthead() {
   const o = ui.onboarding;
-  const completion = o ? Math.round(Number(o.completion_percent || 0)) : null;
+  const readiness = o?.profile_readiness || null;
+  const readinessReady = String(readiness?.status || '').toLowerCase() === 'ready';
+  const readinessLabel = readinessReady
+    ? 'Core profile ready'
+    : readiness?.next_gap_title
+      ? `Needs ${readiness.next_gap_title}`
+      : 'In progress';
   const reviewCount = ui.candidates.length;
   const updated = ui.profile?.updated_at ? fmtRelative(ui.profile.updated_at) : null;
 
@@ -180,7 +186,7 @@ function masthead() {
         fewer surprises later.
       </p>
       <ul class="profile-stat-strip">
-        ${raw(stat('Completeness', completion != null ? `${completion}%` : '—', completionTone(completion)))}
+        ${raw(stat('Readiness', readinessLabel, readinessReady ? 'ok' : 'warn'))}
         ${raw(stat('Need review', reviewCount ? `${reviewCount}` : 'None', reviewCount ? 'attn' : 'ok'))}
         ${raw(stat('Last updated', updated || '—', 'quiet'))}
       </ul>
@@ -195,13 +201,6 @@ function stat(label, value, tone) {
       <span class="profile-stat-value">${value}</span>
     </li>
   `;
-}
-
-function completionTone(pct) {
-  if (pct == null) return 'quiet';
-  if (pct >= 80) return 'ok';
-  if (pct >= 50) return 'warn';
-  return 'attn';
 }
 
 function reviewBanner() {

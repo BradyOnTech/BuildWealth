@@ -55,7 +55,7 @@ test('card starts closed; open state renders it visible', () => {
   assert.doesNotMatch(String(renderAddFlow({})), /data-add-card hidden/);
 });
 
-test('investment panel: symbol + shares/value visible, basis and date behind More detail', () => {
+test('investment panel keeps cost basis visible and only dates behind More detail', () => {
   resetState();
   const markup = String(renderAddFlow({ accounts: ACCOUNTS }));
 
@@ -69,10 +69,14 @@ test('investment panel: symbol + shares/value visible, basis and date behind Mor
   // Accounts include existing ones and the inline "New account…" option.
   assert.match(markup, /<option value="roth">Fidelity Roth<\/option>/);
   assert.match(markup, /value="__new__">New account…/);
-  // Everything else waits behind the disclosure.
+  // Cost basis stays visible because it may be required when a quote is unavailable.
+  const beforeMore = markup.slice(markup.indexOf('data-add-panel="investment"'), markup.indexOf('<details'));
+  assert.match(beforeMore, /name="unit_cost"/);
+  assert.match(beforeMore, /estimate is okay/i);
+  // Acquisition date remains optional detail.
   assert.match(markup, /<summary>More detail<\/summary>/);
   const moreDetail = markup.slice(markup.indexOf('<details'), markup.indexOf('</details>'));
-  assert.match(moreDetail, /name="unit_cost"/);
+  assert.doesNotMatch(moreDetail, /name="unit_cost"/);
   assert.match(moreDetail, /name="acquired_date"/);
   // Buy/sell toggle for the inline "Record buy/sell" action.
   assert.match(markup, /name="action" value="BUY" checked/);
@@ -122,6 +126,19 @@ test('success line shows the detail sentence; estimated basis adds the note', ()
   const estimated = String(renderAddResult({ detail: 'Recorded a buy.', estimated_basis: true }));
   assert.match(estimated, /Cost basis was estimated from the current price/);
   assert.match(estimated, /Records &amp; tools/);
+});
+
+test('valuation-only success is honest without duplicating the estimated-basis message', () => {
+  const markup = String(renderAddResult({
+    detail: 'Added VTI at your $25,000.00 current-value estimate in Default Brokerage.',
+    estimated_basis: true,
+    valuation_only: true,
+  }));
+
+  assert.match(markup, /current-value estimate/);
+  assert.match(markup, /your total is useful now/);
+  assert.match(markup, /Add the real share count and cost/);
+  assert.doesNotMatch(markup, /Cost basis was estimated from the current price/);
 });
 
 /* ─────────────  buildAddBody  ───────────── */

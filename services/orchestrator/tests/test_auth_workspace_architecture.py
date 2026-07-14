@@ -212,6 +212,66 @@ def test_registered_users_get_separate_household_workspaces(monkeypatch, tmp_pat
     assert blocked_cross_read.status_code == 403
 
 
+def test_registered_users_get_separate_recommendation_closure_analytics(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "local"
+
+    with TestClient(main.app) as alice, TestClient(main.app) as bob:
+        assert alice.post(
+            "/api/auth/register",
+            json={
+                "email": "analytics-alice@example.test",
+                "password": "correct-horse-1",
+                "display_name": "Analytics Alice",
+            },
+        ).status_code == 200
+        assert bob.post(
+            "/api/auth/register",
+            json={
+                "email": "analytics-bob@example.test",
+                "password": "correct-horse-2",
+                "display_name": "Analytics Bob",
+            },
+        ).status_code == 200
+        alice_csrf = _csrf_headers(alice)
+        bob_csrf = _csrf_headers(bob)
+
+        alice_recommendation = alice.post(
+            "/api/recommendations",
+            headers=alice_csrf,
+            json={"title": "Alice only", "detail": "Alice household recommendation."},
+        )
+        bob_recommendation = bob.post(
+            "/api/recommendations",
+            headers=bob_csrf,
+            json={"title": "Bob only", "detail": "Bob household recommendation."},
+        )
+        assert alice_recommendation.status_code == 200
+        assert bob_recommendation.status_code == 200
+
+        assert alice.post(
+            f"/api/recommendations/{alice_recommendation.json()['id']}/reject",
+            headers=alice_csrf,
+            json={"reason": "Alice decision", "capture_scenario_diff": False},
+        ).status_code == 200
+        assert bob.post(
+            f"/api/recommendations/{bob_recommendation.json()['id']}/reject",
+            headers=bob_csrf,
+            json={"reason": "Bob decision", "capture_scenario_diff": False},
+        ).status_code == 200
+
+        alice_analytics = alice.get("/api/recommendations/closure-analytics")
+        bob_analytics = bob.get("/api/recommendations/closure-analytics")
+
+    assert alice_analytics.status_code == 200
+    assert bob_analytics.status_code == 200
+    assert [item["title"] for item in alice_analytics.json()["items"]] == ["Alice only"]
+    assert [item["title"] for item in bob_analytics.json()["items"]] == ["Bob only"]
+
+
 def test_settings_route_uses_workspace_secret_store(monkeypatch, tmp_path: Path) -> None:
     _install_temp_workspace_spine(monkeypatch, tmp_path)
 
@@ -1292,6 +1352,20 @@ def test_registered_users_get_separate_statement_import_suggestions(monkeypatch,
                 ]
             },
         )
+        alice_apply_again = alice.post(
+            "/api/import/statement/apply",
+            headers=alice_csrf,
+            json={
+                "expenses": [
+                    {
+                        "label": "Rent",
+                        "monthly_amount_usd": 1800,
+                        "category": "housing",
+                        "is_fixed": True,
+                    }
+                ]
+            },
+        )
         bob_apply = bob.post(
             "/api/import/statement/apply",
             headers=bob_csrf,
@@ -1315,6 +1389,9 @@ def test_registered_users_get_separate_statement_import_suggestions(monkeypatch,
     assert alice_register.status_code == 200
     assert bob_register.status_code == 200
     assert alice_apply.status_code == 200
+    assert alice_apply_again.status_code == 200
+    assert alice_apply_again.json()["added_expenses"] == 0
+    assert alice_apply_again.json()["skipped_duplicates"] == 1
     assert bob_apply.status_code == 200
     assert blocked_missing_csrf.status_code == 403
     assert alice_profile.json()["expense_items"][0]["label"] == "Rent"

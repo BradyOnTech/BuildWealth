@@ -20,6 +20,7 @@ import { html, raw, esc, $, delegate } from '../lib/dom.js';
 import { renderStory } from './plan/story.js';
 import {
   PLAN_ASSUMPTION_FIELDS,
+  assumptionCoverageSummary,
   buildAssumptionSetsPayload,
   buildPlanSettingsPatch,
   renderAssumptions,
@@ -539,8 +540,7 @@ function refreshFoldSummaries() {
 
 function assumptionsFoldSummary() {
   const settings = ui.plan?.settings && typeof ui.plan.settings === 'object' ? ui.plan.settings : {};
-  const set = PLAN_ASSUMPTION_FIELDS.filter(field => settings[field.key] != null && settings[field.key] !== '').length;
-  return `${set} of ${PLAN_ASSUMPTION_FIELDS.length} set`;
+  return assumptionCoverageSummary(settings, ui.assumptionDefaults || {});
 }
 
 function healthFoldSummary() {

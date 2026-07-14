@@ -72,13 +72,13 @@ function renderInvestmentPanel(accounts, prefill = {}) {
           <input name="value_usd" type="number" step="any" min="0" inputmode="decimal" placeholder="2500">
         </label>
       </div>
+      <label class="fit-field"><span>What you paid per share <small>(estimate is okay)</small></span>
+        <input name="unit_cost" type="number" step="any" min="0" inputmode="decimal"
+          placeholder="Needed when a current quote is unavailable">
+      </label>
       ${raw(renderAccountField(accounts, prefill.account || ''))}
       <details class="portfolio-add-more">
         <summary>More detail</summary>
-        <label class="fit-field"><span>What you paid per share</span>
-          <input name="unit_cost" type="number" step="any" min="0" inputmode="decimal"
-            placeholder="Blank means: estimate from today's price">
-        </label>
         <label class="fit-field"><span>Date acquired</span>
           <input name="acquired_date" type="date">
         </label>
@@ -199,10 +199,16 @@ export function renderAddResult(result = {}) {
   const detail = String(result.detail || 'Added to your portfolio.');
   return html`
     <span class="portfolio-add-detail">${detail}</span>
-    ${result.estimated_basis ? html`
+    ${result.estimated_basis && !result.valuation_only ? html`
       <span class="portfolio-add-estimated">
         Cost basis was estimated from the current price — correct it under
         Records &amp; tools → Transactions whenever you know the real number.
+      </span>
+    ` : ''}
+    ${result.valuation_only ? html`
+      <span class="portfolio-add-estimated">
+        This starts as a current-value estimate, so your total is useful now.
+        Add the real share count and cost under Records &amp; tools when you have them.
       </span>
     ` : ''}
   `;

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeRunway, renderCommandCards, renderMove } from '../views/today.js';
+import { computeRunway, renderCommandCards, renderMove, renderRoom } from '../views/today.js';
 
 test('today hero runway uses emergency-fund months from the dashboard payload', () => {
   assert.equal(computeRunway({
@@ -32,6 +32,7 @@ test('today move renders top-action quality explanation', () => {
 
 test('today command cards render decision state with actions', () => {
   const markup = String(renderCommandCards({
+    onboarding_ready_for_daily_review: true,
     confidence_domains: [
       {
         id: 'profile',
@@ -181,6 +182,7 @@ test('today command cards render decision state with actions', () => {
 
 test('today command center with all-quiet cards shows no cards in the scroll path', () => {
   const markup = String(renderCommandCards({
+    onboarding_ready_for_daily_review: true,
     command_cards: [
       { id: 'a', title: 'Research readiness', status: 'ready', detail: 'Fresh.' },
       { id: 'b', title: 'Profile readiness', status: 'ready', detail: 'Complete.' },
@@ -191,6 +193,38 @@ test('today command center with all-quiet cards shows no cards in the scroll pat
   assert.doesNotMatch(beforeOverflow, /command-card /);
   assert.match(insideOverflow, /All 2 inputs are quiet/);
   assert.match(insideOverflow, /Research readiness/);
+});
+
+test('first-run Today hides operator diagnostics from the customer scroll path', () => {
+  const markup = String(renderCommandCards({
+    onboarding_ready_for_daily_review: false,
+    command_cards: [
+      { id: 'profile-readiness', title: 'Profile readiness', status: 'warning', detail: 'Add income.' },
+      { id: 'data-trust', title: 'Data trust', status: 'critical', detail: 'No snapshot.' },
+      { id: 'research-readiness', title: 'Research readiness', status: 'critical', detail: 'No provider.' },
+      { id: 'trust-durability', title: 'Trust & durability', status: 'critical', detail: 'Diagnostics missing.' },
+    ],
+  }, { enabled_count: 4, reachable_count: 0, degraded_count: 4 }));
+
+  assert.match(markup, /Profile readiness/);
+  assert.doesNotMatch(markup, /Data trust/);
+  assert.doesNotMatch(markup, /Research readiness/);
+  assert.doesNotMatch(markup, /Trust &amp; durability/);
+  assert.doesNotMatch(markup, /Service readiness/);
+});
+
+test('first-run Today room leads with the customer next step, not service health', () => {
+  const markup = String(renderRoom({
+    onboarding_ready_for_daily_review: false,
+    profile_readiness: { status: 'attention', next_gap_title: 'Income' },
+    sync_status: {},
+  }, { enabled_count: 4, reachable_count: 0, degraded_count: 4 }));
+
+  assert.match(markup, /Your decision picture is taking shape/);
+  assert.match(markup, /Next: Income/);
+  assert.doesNotMatch(markup, /0\/4 services ready/);
+  assert.match(markup, /Readiness<\/dt><dd>In progress/);
+  assert.doesNotMatch(markup, /Onboarding<\/dt>/);
 });
 
 /* ─────────────  The income bend on Today  ───────────── */

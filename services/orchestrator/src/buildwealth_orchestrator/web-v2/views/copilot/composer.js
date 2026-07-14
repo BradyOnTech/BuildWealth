@@ -3,7 +3,8 @@
 
 import { html } from '../../lib/dom.js';
 
-export function renderComposer({ busy = false, draft = '', useLive = false } = {}) {
+export function renderComposer({ busy = false, draft = '', useLive = false, disabledReason = '' } = {}) {
+  const disabled = busy || Boolean(disabledReason);
   return html`
     <form class="composer" id="composer" autocomplete="off">
       <div class="composer-inner">
@@ -12,9 +13,9 @@ export function renderComposer({ busy = false, draft = '', useLive = false } = {
             class="composer-textarea"
             id="composer-textarea"
             name="question"
-            placeholder="Message Copilot…"
+            placeholder="${disabledReason || 'Message Copilot…'}"
             rows="1"
-            ${busy ? 'disabled' : ''}>${draft}</textarea>
+            ${disabled ? 'disabled' : ''}>${draft}</textarea>
           <div class="composer-row">
             <div class="composer-options">
               <label class="composer-option" title="Use a live portfolio snapshot">
@@ -25,7 +26,7 @@ export function renderComposer({ busy = false, draft = '', useLive = false } = {
                 <kbd>${isMac() ? '⌘' : 'Ctrl'}</kbd><kbd>↵</kbd>
               </span>
             </div>
-            <button type="submit" class="composer-send" id="composer-submit" ${busy ? 'disabled' : ''} title="Send">
+            <button type="submit" class="composer-send" id="composer-submit" ${disabled ? 'disabled' : ''} title="${disabledReason || 'Send'}">
               ${busy ? '…' : 'Send'}
             </button>
           </div>

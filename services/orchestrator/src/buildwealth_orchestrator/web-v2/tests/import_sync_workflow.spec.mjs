@@ -233,7 +233,7 @@ test('Import & Review previews unresolved assets, applies ready rows, and opens 
   await page.getByRole('button', { name: 'Apply ready rows' }).click();
   await page.getByText('Import applied').waitFor({ state: 'visible' });
   await page.getByText('Open saved import report').click();
-  await page.getByText('Source evidence').waitFor({ state: 'visible' });
+  await page.getByText('Source evidence', { exact: true }).waitFor({ state: 'visible' });
   // Heading role keeps this unambiguous: the apply panel's summary paragraph
   // also contains the phrase "sent to Inbox" and getByText matches substrings
   // case-insensitively, tripping strict mode.

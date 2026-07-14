@@ -6,7 +6,7 @@
 // stays the source of truth and onboarding refreshes automatically.
 
 import { html, raw, esc } from '../../lib/dom.js';
-import { fmtUsdOrDash, fmtPctOrDash } from '../../lib/format.js';
+import { fmtUsdOrDash, fmtPctOrDash, unwrapDisplayValue } from '../../lib/format.js';
 import { showUndoToast } from '../../lib/undo.js';
 import { persist, render as renderProfile } from '../profile.js';
 import {
@@ -84,7 +84,13 @@ function renderRows(section, items) {
     + '<th>Source</th><th>Status</th><th aria-label="Action"></th>';
   const rows = items.map(item => {
     if (isRowEditing(section.key, item.id)) return renderEditRow(section, item);
-    const cells = section.columns.map(col => `<td class="${col.numeric ? 'num' : ''}">${esc(col.format ? col.format(item[col.key], item) : item[col.key] ?? '—')}</td>`).join('');
+    const cells = section.columns.map(col => {
+      const rawValue = col.format
+        ? col.format(item[col.key], item)
+        : unwrapDisplayValue(item[col.key]);
+      const displayValue = rawValue == null || typeof rawValue === 'object' ? '—' : rawValue;
+      return `<td class="${col.numeric ? 'num' : ''}">${esc(displayValue)}</td>`;
+    }).join('');
     const source = humanRowSource(item);
     const status = humanRowStatus(item);
     return `
@@ -237,6 +243,7 @@ function fieldHtml(key, field, draft) {
              ${field.max != null ? `max="${esc(field.max)}"` : ''}
              ${field.step != null ? `step="${esc(field.step)}"` : ''}
              value="${esc(value)}" />
+      ${field.hint ? `<small class="settings-hint">${esc(field.hint)}</small>` : ''}
     </label>
   `;
 }
@@ -329,7 +336,7 @@ function defineHousehold() {
         { value: 'dependent', label: 'Other dependent' },
         { value: 'other',     label: 'Other' },
       ] },
-      { key: 'birth_year',     kind: 'number', label: 'Birth year',  min: 1900, max: currentYear, step: 1, placeholder: 'e.g. 1988' },
+      { key: 'birth_year',     kind: 'number', label: 'Birth year',  min: 1900, max: currentYear, step: 1, placeholder: 'e.g. 1988', hint: 'An estimate is fine. Leave blank for now and retirement timing stays directional.' },
       { key: 'retirement_age', kind: 'number', label: 'Retire at',   min: 18, max: 100, step: 1, placeholder: 'adults only' },
       { key: 'notes',          kind: 'text',   label: 'Notes',       placeholder: 'optional' },
     ],
@@ -362,7 +369,7 @@ function defineIncome() {
     title: 'Income',
     singular: 'income',
     eyebrow: 'Foundation · Income',
-    lede: 'Recurring income that BuildWealth uses to model surplus, savings rate, and tax-aware planning.',
+    lede: 'Recurring income that BuildWealth uses to model surplus, savings rate, and tax-aware planning. A rough monthly or annual estimate is enough to start.',
     emptyHint: 'No income entries yet. Add the streams BuildWealth should plan around.',
     primary: ['label', 'monthly_amount_usd'],
     columns: [
@@ -418,7 +425,7 @@ function defineExpenses() {
     title: 'Expenses',
     singular: 'expense',
     eyebrow: 'Foundation · Expenses',
-    lede: 'Monthly outflows that drive runway, savings rate, and inflation-aware projections.',
+    lede: 'Monthly outflows that drive runway, savings rate, and inflation-aware projections. Start with a rough total or your largest recurring bills.',
     emptyHint: 'No expenses yet. Add the recurring obligations BuildWealth should plan around.',
     primary: ['label', 'monthly_amount_usd'],
     columns: [
@@ -469,7 +476,7 @@ function defineDebt() {
     singular: 'debt',
     eyebrow: 'Foundation · Debt',
     lede: 'Outstanding balances. Strategy here informs pay-down recommendations and tax-aware ordering.',
-    emptyHint: 'No debt tracked. If this is correct, mark "no debt" on the Overview.',
+    emptyHint: 'No debt tracked. If this is correct, mark "I currently have no debt" under Taxes & status.',
     primary: ['label', 'balance_usd'],
     columns: [
       { key: 'label',                  header: 'Debt' },
@@ -532,7 +539,7 @@ function defineGoals() {
     composer: [
       { key: 'label',             kind: 'text',   label: 'Goal label',  placeholder: 'House, college fund…' },
       { key: 'target_amount_usd', kind: 'number', label: 'Target USD',  min: 0, step: 1, placeholder: '0' },
-      { key: 'target_date',       kind: 'date',   label: 'Target date' },
+      { key: 'target_date',       kind: 'date',   label: 'Target date', hint: 'Not sure yet? Leave it blank; the forecast will stay directional.' },
       { key: 'priority',          kind: 'select', label: 'Priority',    options: [
         { value: 'high',   label: 'High' },
         { value: 'medium', label: 'Medium' },
