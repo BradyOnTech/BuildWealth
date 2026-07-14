@@ -128,6 +128,19 @@ test('success line shows the detail sentence; estimated basis adds the note', ()
   assert.match(estimated, /Records &amp; tools/);
 });
 
+test('valuation-only success is honest without duplicating the estimated-basis message', () => {
+  const markup = String(renderAddResult({
+    detail: 'Added VTI at your $25,000.00 current-value estimate in Default Brokerage.',
+    estimated_basis: true,
+    valuation_only: true,
+  }));
+
+  assert.match(markup, /current-value estimate/);
+  assert.match(markup, /your total is useful now/);
+  assert.match(markup, /Add the real share count and cost/);
+  assert.doesNotMatch(markup, /Cost basis was estimated from the current price/);
+});
+
 /* ─────────────  buildAddBody  ───────────── */
 
 test('buildAddBody: investment with value only', () => {

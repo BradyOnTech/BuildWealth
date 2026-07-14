@@ -8,6 +8,8 @@ import pytest
 
 from buildwealth_orchestrator.services.portfolio_add_flow import (
     ESTIMATED_BASIS_NOTE,
+    ONBOARDING_FUNDING_NOTE,
+    VALUE_ONLY_POSITION_NOTE,
     AddFlowError,
     execute_add_flow,
 )
@@ -46,6 +48,11 @@ class TestInvestmentFlow:
         holding = store.get_holdings()["holdings"]["default:VTI"]
         assert holding["quantity"] == 4
         assert holding["cost_basis"] == 1000
+        holdings = store.get_holdings()
+        assert holdings["total_cash"] == 0
+        funding = next(row for row in store.list_transactions() if row["action"] == "CASH_DEPOSIT")
+        assert funding["unit_price"] == 1000
+        assert ONBOARDING_FUNDING_NOTE in funding["note"]
 
     def test_value_usd_resolves_quantity_from_known_price(self, store):
         store.set_manual_price(symbol="VTI", price=250)
@@ -56,6 +63,26 @@ class TestInvestmentFlow:
         assert result["created"]["quantity"] == 4  # 1000 / 250
         assert result["created"]["unit_price"] == 200
         assert result["estimated_basis"] is False
+        assert result["valuation_only"] is False
+
+    def test_value_without_known_price_creates_editable_valuation_position(self, store):
+        result = execute_add_flow(
+            store,
+            {"flow": "investment", "symbol": "VTI", "account_id": "default", "value_usd": 25_000},
+        )
+
+        assert result["valuation_only"] is True
+        assert result["estimated_basis"] is True
+        assert result["created"]["quantity"] == 1.0
+        assert result["created"]["unit_price"] == 25_000
+        assert VALUE_ONLY_POSITION_NOTE in result["created"]["note"]
+        assert "Add share details later" in result["detail"]
+
+        holding = store.get_holdings()["holdings"]["default:VTI"]
+        assert holding["current_value"] == 25_000
+        assert holding["price_source"] == "MANUAL"
+        assert store.get_manual_prices()["by_symbol"]["VTI"]["price"] == 25_000
+        assert store.get_holdings()["total_portfolio_value"] == 25_000
 
     def test_missing_unit_cost_estimates_basis_from_current_price(self, store):
         store.set_manual_price(symbol="VTI", price=250)
@@ -182,9 +209,12 @@ class TestValidation:
         with pytest.raises(AddFlowError, match="number of shares or their current dollar value"):
             execute_add_flow(store, {"flow": "investment", "symbol": "VTI"})
 
-    def test_value_without_known_price_is_rejected(self, store):
-        with pytest.raises(AddFlowError, match="no current price for ZZTOP"):
-            execute_add_flow(store, {"flow": "investment", "symbol": "ZZTOP", "value_usd": 1000})
+    def test_sell_value_without_known_price_still_requires_share_details(self, store):
+        with pytest.raises(AddFlowError, match="number of shares being sold"):
+            execute_add_flow(
+                store,
+                {"flow": "investment", "symbol": "ZZTOP", "action": "SELL", "value_usd": 1000},
+            )
 
     def test_quantity_without_cost_or_price_is_rejected(self, store):
         with pytest.raises(AddFlowError, match="no current price for ZZTOP"):

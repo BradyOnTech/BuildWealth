@@ -33,16 +33,32 @@ async def plan_scenarios(
     resolved_services = m.route_workspace_services(services, permission="plan.read")
     m.require_permission(resolved_services.context, "portfolio.read")
     m.require_permission(resolved_services.context, "profile.read")
+    profile_payload = m.get_financial_profile_payload(resolved_services.financial_profile_store)
+    planning_accounts = m.build_planning_accounts_from_portfolio(resolved_services.portfolio_store)
+    household_members = profile_payload.get("household_members")
+    profile_members = [item for item in household_members if isinstance(item, dict)] if isinstance(household_members, list) else []
+    primary_member = next(
+        (item for item in profile_members if str(item.get("relationship") or "").strip().lower() == "self"),
+        profile_members[0] if profile_members else None,
+    )
+    current_age = 35
+    if isinstance(primary_member, dict) and primary_member.get("birth_year") is not None:
+        current_age = max(
+            0,
+            min(120, m.utc_now().year - m._coerce_int(primary_member.get("birth_year"), m.utc_now().year - 35)),
+        )
     current_value = request.current_portfolio_value_usd
     if current_value is None:
         try:
             latest_snapshot = resolved_services.snapshot_store.latest()
             current_value = latest_snapshot.total_value_usd
-        except FileNotFoundError as exc:
-            raise m.HTTPException(
-                status_code=400,
-                detail="Provide current_portfolio_value_usd or create a snapshot first",
-            ) from exc
+        except FileNotFoundError:
+            holdings = resolved_services.portfolio_store.get_holdings()
+            current_value = m._coerce_float(holdings.get("total_value"), 0.0)
+            positions = holdings.get("holdings")
+            if abs(current_value) <= 1e-9 and not (isinstance(positions, dict) and positions):
+                current_value = m._coerce_float(holdings.get("total_cash"), 0.0)
+            current_value = max(0.0, current_value)
 
     resolved_years = (
         int(request.years)
@@ -166,9 +182,15 @@ async def plan_scenarios(
         years=resolved_years,
     )
 
-    income_projection = m.build_income_projection_for_plan_settings(planning_settings_for_run)
-    expense_projection = m.build_expense_projection_for_plan_settings(planning_settings_for_run)
-    debt_projection = m.build_debt_projection_for_plan_settings(planning_settings_for_run)
+    income_projection = m.build_income_projection_for_plan_settings(
+        planning_settings_for_run, profile_payload=profile_payload
+    )
+    expense_projection = m.build_expense_projection_for_plan_settings(
+        planning_settings_for_run, profile_payload=profile_payload
+    )
+    debt_projection = m.build_debt_projection_for_plan_settings(
+        planning_settings_for_run, profile_payload=profile_payload
+    )
     income_projection_payload = income_projection.model_dump(mode="json") if income_projection is not None else None
     expense_projection_payload = expense_projection.model_dump(mode="json") if expense_projection is not None else None
     (
@@ -180,7 +202,7 @@ async def plan_scenarios(
         expense_projection=expense_projection_payload,
         household_settings=household_settings,
         start_year=resolved_start_year,
-        start_age=35,
+        start_age=current_age,
         years=resolved_years,
     )
 
@@ -209,6 +231,7 @@ async def plan_scenarios(
             "annual_contribution_usd": resolved_annual_contribution,
         },
         contribution_rules_payload=contribution_rules_payload,
+        accounts_override=planning_accounts,
     )
     social_security_projection: m.SocialSecurityProjectionResponse | None = None
     rmd_projection: m.RmdProjectionResponse | None = None
@@ -223,10 +246,9 @@ async def plan_scenarios(
             plan_settings=planning_settings_for_run,
             timeline_payload=active_timeline_payload,
             start_year=m.utc_now().year,
-            accounts_override=m.build_planning_accounts_from_portfolio(resolved_services.portfolio_store),
+            accounts_override=planning_accounts,
         )
 
-    profile_payload = m.get_financial_profile_payload(resolved_services.financial_profile_store)
     tax_profile = profile_payload.get("tax_profile")
     filing_status: str | None = None
     state_tax_rate: float | None = None
@@ -284,6 +306,12 @@ async def plan_scenarios(
         )
     if not active_drawdown_order:
         active_drawdown_order = str(planning_settings_for_run.get("drawdown_order") or "").strip() or None
+    if (
+        active_retirement_age is None
+        and isinstance(primary_member, dict)
+        and primary_member.get("retirement_age") is not None
+    ):
+        active_retirement_age = max(18, min(100, m._coerce_int(primary_member.get("retirement_age"), 65)))
     requested_drawdown_order = str(request.drawdown_order or "").strip() or None
     if requested_drawdown_order is not None:
         active_drawdown_order = requested_drawdown_order
@@ -293,7 +321,7 @@ async def plan_scenarios(
         annual_contribution_usd=resolved_annual_contribution,
         years=request.years,
         hsa_extra_contribution_usd=request.hsa_extra_contribution_usd,
-        accounts=m.build_planning_accounts_from_portfolio(resolved_services.portfolio_store),
+        accounts=planning_accounts,
         income_projection=income_projection_payload,
         expense_projection=expense_projection_payload,
         debt_projection=debt_projection.model_dump(mode="json") if debt_projection is not None else None,
@@ -332,6 +360,7 @@ async def plan_scenarios(
         household_partner_income_added_first_year_usd=household_adjustments_payload.get("partner_income_added_first_year_usd"),
         household_partner_income_added_total_usd=household_adjustments_payload.get("partner_income_added_total_usd"),
         start_year=resolved_start_year,
+        start_age=current_age,
         withdrawal_strategy=active_withdrawal_strategy,
         retirement_age=active_retirement_age,
         simulation_mode=planning_settings_for_run.get("simulation_mode"),

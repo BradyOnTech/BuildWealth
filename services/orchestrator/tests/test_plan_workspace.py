@@ -353,6 +353,35 @@ def test_plan_workspace_saved_simulations_are_immutable_records(tmp_path: Path) 
     assert saved_json["items"][0]["input_payload"]["branch_template_id"] == "early_retirement"
 
 
+def test_plan_workspace_tracks_complete_simulation_run_lifecycle(tmp_path: Path) -> None:
+    workspace = PlanWorkspace(tmp_path)
+    detail = workspace.create_plan(title="Simulation Run Plan")
+
+    started = workspace.start_simulation_run(
+        detail["id"],
+        source="scenario_diff",
+        input_payload={"compare_settings": {"annual_contribution_usd": 30000}},
+    )
+    assert started["id"].startswith("simulation-run-")
+    assert started["status"] == "running"
+
+    completed = workspace.finish_simulation_run(
+        detail["id"],
+        started["id"],
+        status="completed",
+        result_payload={"scenario_deltas": [{"label": "baseline"}]},
+    )
+    assert completed["status"] == "completed"
+    assert completed["completed_at"]
+    assert completed["result_payload"]["scenario_deltas"][0]["label"] == "baseline"
+
+    listed = workspace.list_simulation_runs(detail["id"])
+    assert listed["runs"][0]["id"] == started["id"]
+    refreshed = workspace.get_plan(detail["id"])
+    assert refreshed["simulation_runs"][0]["status"] == "completed"
+    assert '"status": "completed"' in refreshed["files"]["simulation_runs_json"]
+
+
 def test_plan_workspace_updates_timeline(tmp_path: Path) -> None:
     workspace = PlanWorkspace(tmp_path)
     detail = workspace.create_plan(title="Timeline Plan")

@@ -4,6 +4,21 @@ from types import SimpleNamespace
 import buildwealth_orchestrator.main as main
 
 
+def _run_with_workspace(workspace, coroutine):
+    services = SimpleNamespace(
+        context=SimpleNamespace(permissions=frozenset()),
+        plan_workspace=workspace,
+        snapshot_store=main.snapshot_store,
+        financial_profile_store=main.financial_profile_store,
+        portfolio_store=main.portfolio_store,
+    )
+    token = main.current_copilot_workspace_services.set(services)
+    try:
+        return asyncio.run(coroutine)
+    finally:
+        main.current_copilot_workspace_services.reset(token)
+
+
 def test_normalize_withdrawal_strategies_aliases_and_invalid() -> None:
     strategies, invalid = main.normalize_withdrawal_strategies(
         ["cashflow_only", "4_percent_rule", "dynamic_guardrails", "bad_strategy", "4_percent_rule"]
@@ -30,7 +45,8 @@ def test_tool_compare_withdrawal_strategies_ranks_and_summarizes(monkeypatch) ->
                 "files": {},
             }
 
-    monkeypatch.setattr(main, "plan_workspace", FakePlanWorkspace())
+    workspace = FakePlanWorkspace()
+    monkeypatch.setattr(main, "plan_workspace", workspace)
     monkeypatch.setattr(main, "resolve_plan_assumption_sets", lambda detail: {})
     monkeypatch.setattr(
         main,
@@ -41,9 +57,9 @@ def test_tool_compare_withdrawal_strategies_ranks_and_summarizes(monkeypatch) ->
     monkeypatch.setattr(main, "resolve_timeline_retirement_age", lambda payload: None)
     monkeypatch.setattr(main, "resolve_timeline_withdrawal_strategy", lambda payload: None)
     monkeypatch.setattr(main, "resolve_plan_contribution_rules", lambda detail: {})
-    monkeypatch.setattr(main, "build_income_projection_for_plan_settings", lambda settings: {})
-    monkeypatch.setattr(main, "build_expense_projection_for_plan_settings", lambda settings: {})
-    monkeypatch.setattr(main, "build_debt_projection_for_plan_settings", lambda settings: {})
+    monkeypatch.setattr(main, "build_income_projection_for_plan_settings", lambda settings, **kwargs: {})
+    monkeypatch.setattr(main, "build_expense_projection_for_plan_settings", lambda settings, **kwargs: {})
+    monkeypatch.setattr(main, "build_debt_projection_for_plan_settings", lambda settings, **kwargs: {})
     monkeypatch.setattr(main, "build_timeline_projection_for_plan_settings", lambda **kwargs: {})
     monkeypatch.setattr(main, "build_contribution_allocation_for_plan_settings", lambda **kwargs: None)
     monkeypatch.setattr(main, "build_social_security_projection_for_plan_settings", lambda **kwargs: None)
@@ -106,7 +122,8 @@ def test_tool_compare_withdrawal_strategies_ranks_and_summarizes(monkeypatch) ->
 
     monkeypatch.setattr(main, "run_scenarios_for_plan_settings", fake_run_scenarios_for_plan_settings)
 
-    payload = asyncio.run(
+    payload = _run_with_workspace(
+        workspace,
         main.tool_compare_withdrawal_strategies(
             {
                 "plan_id": "plan-abc",
@@ -152,7 +169,8 @@ def test_tool_compare_withdrawal_strategies_includes_simulation_fields(monkeypat
                 "files": {},
             }
 
-    monkeypatch.setattr(main, "plan_workspace", FakePlanWorkspace())
+    workspace = FakePlanWorkspace()
+    monkeypatch.setattr(main, "plan_workspace", workspace)
     monkeypatch.setattr(main, "resolve_plan_assumption_sets", lambda detail: {})
     monkeypatch.setattr(
         main,
@@ -163,9 +181,9 @@ def test_tool_compare_withdrawal_strategies_includes_simulation_fields(monkeypat
     monkeypatch.setattr(main, "resolve_timeline_retirement_age", lambda payload: None)
     monkeypatch.setattr(main, "resolve_timeline_withdrawal_strategy", lambda payload: None)
     monkeypatch.setattr(main, "resolve_plan_contribution_rules", lambda detail: {})
-    monkeypatch.setattr(main, "build_income_projection_for_plan_settings", lambda settings: {})
-    monkeypatch.setattr(main, "build_expense_projection_for_plan_settings", lambda settings: {})
-    monkeypatch.setattr(main, "build_debt_projection_for_plan_settings", lambda settings: {})
+    monkeypatch.setattr(main, "build_income_projection_for_plan_settings", lambda settings, **kwargs: {})
+    monkeypatch.setattr(main, "build_expense_projection_for_plan_settings", lambda settings, **kwargs: {})
+    monkeypatch.setattr(main, "build_debt_projection_for_plan_settings", lambda settings, **kwargs: {})
     monkeypatch.setattr(main, "build_timeline_projection_for_plan_settings", lambda **kwargs: {})
     monkeypatch.setattr(main, "build_contribution_allocation_for_plan_settings", lambda **kwargs: None)
     monkeypatch.setattr(main, "build_social_security_projection_for_plan_settings", lambda **kwargs: None)
@@ -221,7 +239,8 @@ def test_tool_compare_withdrawal_strategies_includes_simulation_fields(monkeypat
 
     monkeypatch.setattr(main, "run_scenarios_for_plan_settings", fake_run_scenarios_for_plan_settings)
 
-    payload = asyncio.run(
+    payload = _run_with_workspace(
+        workspace,
         main.tool_compare_withdrawal_strategies(
             {
                 "plan_id": "plan-abc",

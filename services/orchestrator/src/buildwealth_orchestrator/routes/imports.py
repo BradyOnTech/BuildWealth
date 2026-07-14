@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 import buildwealth_orchestrator.main as m
+from buildwealth_orchestrator.services.profile_mutation import apply_reviewed_profile_patch
 
 router = APIRouter()
 
@@ -146,38 +147,23 @@ def apply_statement_suggestions(
     """Apply selected expense/income suggestions to the financial profile."""
     m.require_csrf(http_request)
     m.require_permission(services.context, "profile.write")
-    profile = services.financial_profile_store.load()
-    added_expenses = 0
-    added_income = 0
-
-    for item in request.get("expenses", []):
-        from buildwealth_orchestrator.services.statement_importer import _normalize_merchant
-        item_id = f"stmt-{_normalize_merchant(item['label'])[:20].replace(' ', '-')}"
-        profile.setdefault("expense_items", []).append({
-            "id": item_id,
-            "label": item["label"],
-            "monthly_amount_usd": item["monthly_amount_usd"],
-            "category": item.get("category", "general"),
-            "is_fixed": item.get("is_fixed", True),
-        })
-        added_expenses += 1
-
-    for item in request.get("income", []):
-        item_id = f"stmt-{item['label'][:20].lower().replace(' ', '-')}"
-        profile.setdefault("income_items", []).append({
-            "id": item_id,
-            "label": item["label"],
-            "monthly_amount_usd": item["monthly_amount_usd"],
-            "source_type": item.get("source_type", "other"),
-            "is_pre_tax": item.get("is_pre_tax", False),
-        })
-        added_income += 1
-
-    services.financial_profile_store.save(profile)
+    result = apply_reviewed_profile_patch(
+        {
+            "expense_items": request.get("expenses", []),
+            "income_items": request.get("income", []),
+        },
+        services.financial_profile_store,
+        metadata_source="statement_import",
+    )
+    counts = result.get("counts") or {}
+    added_expenses = int(counts.get("expense_items") or 0)
+    added_income = int(counts.get("income_items") or 0)
+    profile = services.financial_profile_store.get()
 
     return {
         "added_expenses": added_expenses,
         "added_income": added_income,
+        "skipped_duplicates": int(result.get("skipped_duplicates") or 0),
         "total_expense_items": len(profile.get("expense_items", [])),
         "total_income_items": len(profile.get("income_items", [])),
     }

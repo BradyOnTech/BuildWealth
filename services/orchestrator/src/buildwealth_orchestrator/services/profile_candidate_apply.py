@@ -11,6 +11,12 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from buildwealth_orchestrator.services.profile_mutation import (
+    normalize_monthly_item as _normalize_item,
+    numeric_or_none as _numeric_or_none,
+    profile_item_dedupe_key as _item_dedupe_key,
+)
+
 APPLY_METADATA_SOURCE = "context_candidate_apply"
 
 # Rates stored as fractions in 0..1 — a numeric value > 1 is treated as a
@@ -22,10 +28,6 @@ FRACTION_RATE_FIELDS = {
 }
 
 ITEM_PATCH_KINDS = ("income_items", "expense_items")
-
-_INCOME_ITEM_DEFAULTS = {"source_type": "other", "is_pre_tax": False}
-_EXPENSE_ITEM_DEFAULTS = {"category": "general", "is_fixed": True}
-
 
 def apply_candidate_to_profile(
     candidate: Mapping[str, Any],
@@ -158,28 +160,6 @@ def _candidate_items(target_value: Any, *, section: str) -> list[Mapping[str, An
     return [item for item in raw if isinstance(item, Mapping)]
 
 
-def _normalize_item(raw: Mapping[str, Any], *, section: str) -> dict[str, Any] | None:
-    label = str(raw.get("label") or "").strip()
-    amount = _numeric_or_none(raw.get("monthly_amount_usd"))
-    if not label or amount is None:
-        return None
-    item: dict[str, Any] = {"label": label, "monthly_amount_usd": round(amount, 2)}
-    item_id = str(raw.get("id") or "").strip()
-    if item_id:
-        item["id"] = item_id
-    defaults = _INCOME_ITEM_DEFAULTS if section == "income_items" else _EXPENSE_ITEM_DEFAULTS
-    for key, fallback in defaults.items():
-        value = raw.get(key)
-        item[key] = fallback if value is None else value
-    return item
-
-
-def _item_dedupe_key(item: Mapping[str, Any]) -> tuple[str, float | None]:
-    label = str(item.get("label") or "").strip().lower()
-    amount = _numeric_or_none(item.get("monthly_amount_usd"))
-    return (label, round(amount, 2) if amount is not None else None)
-
-
 def _coerce_scalar_value(value: Any, *, field_path: str) -> Any:
     if isinstance(value, Mapping):
         if "value" in value:
@@ -203,20 +183,6 @@ def _coerce_scalar_value(value: Any, *, field_path: str) -> Any:
     if field_path in FRACTION_RATE_FIELDS and numeric > 1:
         numeric = numeric / 100.0
     return numeric
-
-
-def _numeric_or_none(value: Any) -> float | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    text = str(value or "").strip().replace(",", "").replace("$", "").rstrip("%").strip()
-    if not text:
-        return None
-    try:
-        return float(text)
-    except ValueError:
-        return None
 
 
 def _human_field(field_path: str) -> str:

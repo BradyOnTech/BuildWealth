@@ -1430,6 +1430,9 @@ class PhysicalAssetItem(BaseModel):
     asset_type: Literal["real_estate", "vehicle", "jewelry", "equipment", "collectible", "other"] = "other"
     annual_growth_rate: float | None = Field(default=None, ge=-1, le=1)
     purchase_date: datetime | None = None
+    # When this asset is also valued in Portfolio, that valuation is
+    # authoritative and the Profile record supplies household context only.
+    portfolio_symbol: str | None = None
 
 
 class FinancialProfileRequest(BaseModel):
@@ -1480,6 +1483,10 @@ class ProfileReadinessSummary(BaseModel):
 class OnboardingStatusResponse(BaseModel):
     completion_percent: float
     ready_for_daily_review: bool
+    decision_stage: Literal["profile", "portfolio", "plan", "ready"] = "profile"
+    decision_headline: str = "Build your first forecast"
+    decision_detail: str = "Add the next missing part of your financial picture."
+    next_action_label: str = "Continue setup"
     steps: list[OnboardingStep] = Field(default_factory=list)
     profile_readiness: ProfileReadinessSummary | None = None
 
@@ -1699,6 +1706,7 @@ class RecommendationFactoryRunAllResponse(BaseModel):
 class RecommendationActionResponse(BaseModel):
     recommendation: RecommendationItem
     plan: PlanDetailResponse | None = None
+    plan_decision: PlanDecision | None = None
     decision_packet_artifact: PlanArtifactSummary | None = None
     decision_closure_artifact: PlanArtifactSummary | None = None
     suggested_research_symbols: list[str] = Field(default_factory=list)
@@ -2182,6 +2190,27 @@ class PlanFiles(BaseModel):
     assumption_sets_json: str = ""
     branch_templates_json: str = ""
     saved_simulations_json: str = ""
+    simulation_runs_json: str = ""
+
+
+class PlanSimulationRun(BaseModel):
+    id: str
+    plan_id: str
+    source: Literal["simulation", "scenario_diff", "scenario_branch", "withdrawal_strategy"]
+    status: Literal["queued", "running", "completed", "failed", "cancelled"]
+    created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    input_payload: dict[str, Any] = Field(default_factory=dict)
+    result_payload: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
+    saved_simulation_id: str | None = None
+
+
+class PlanSimulationRunsResponse(BaseModel):
+    schema_version: int = 2
+    plan_id: str
+    runs: list[PlanSimulationRun] = Field(default_factory=list)
 
 
 class PlanSavedSimulation(BaseModel):
@@ -2194,6 +2223,7 @@ class PlanSavedSimulation(BaseModel):
     immutable: bool = True
     input_payload: dict[str, Any] = Field(default_factory=dict)
     result_payload: dict[str, Any] = Field(default_factory=dict)
+    simulation_run_id: str | None = None
 
 
 class PlanSavedSimulationCreateRequest(BaseModel):
@@ -2203,6 +2233,7 @@ class PlanSavedSimulationCreateRequest(BaseModel):
     notes: str = ""
     input_payload: dict[str, Any] = Field(default_factory=dict)
     result_payload: dict[str, Any] = Field(default_factory=dict)
+    simulation_run_id: str | None = None
 
 
 class PlanSavedSimulationsResponse(BaseModel):
@@ -2329,6 +2360,7 @@ class ScenarioComparisonRow(BaseModel):
 
 
 class PlanScenarioDiffResponse(BaseModel):
+    simulation_run_id: str | None = None
     plan_id: str
     current_portfolio_value_usd: float
     base_settings: PlanSettings
@@ -2373,6 +2405,7 @@ class PlanWithdrawalStrategyComparisonRow(BaseModel):
 
 
 class PlanWithdrawalStrategyCompareResponse(BaseModel):
+    simulation_run_id: str | None = None
     plan_id: str
     current_portfolio_value_usd: float
     assumption_set: PlanAssumptionSet | None = None
@@ -2410,6 +2443,7 @@ class PlanScenarioBranchRequest(_PlanScenarioComparisonRequestBase):
 
 
 class PlanScenarioBranchResponse(BaseModel):
+    simulation_run_id: str | None = None
     plan_id: str
     branch_name: str
     branch_template_id: str | None = None
@@ -2533,6 +2567,7 @@ class PlanDetailResponse(BaseModel):
     decisions: list[PlanDecision] = Field(default_factory=list)
     artifacts: list[PlanArtifactSummary] = Field(default_factory=list)
     saved_simulations: list[PlanSavedSimulation] = Field(default_factory=list)
+    simulation_runs: list[PlanSimulationRun] = Field(default_factory=list)
     top_next_actions: list[TopNextAction] = Field(default_factory=list)
 
 

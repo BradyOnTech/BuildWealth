@@ -65,12 +65,15 @@ def get_recommendation_closure_analytics(
     statuses: str = "applied,rejected",
     include_pending_realized: bool = True,
     plan_id: str | None = None,
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> m.RecommendationClosureAnalyticsResponse:
+    m.require_permission(services.context, "recommendations.read")
     payload = m.build_recommendation_closure_analytics_payload(
         limit=limit,
         statuses=statuses,
         include_pending_realized=include_pending_realized,
         plan_id=plan_id,
+        inbox=services.recommendation_inbox,
     )
     return m.RecommendationClosureAnalyticsResponse(**payload)
 
@@ -81,7 +84,7 @@ def generate_portfolio_risk_recommendation_candidates(
     http_request: m.Request = m.Depends(m.get_current_request),
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> m.RecommendationFactoryResponse:
-    services = m.workspace_services_or_legacy(services)
+    services = m.resolve_workspace_services(services)
     if http_request is not None:
         m.require_csrf(http_request)
     m.require_permission(services.context, "recommendations.write")
@@ -113,7 +116,7 @@ def generate_plan_tracking_recommendation_candidates(
     http_request: m.Request = m.Depends(m.get_current_request),
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> m.RecommendationFactoryResponse:
-    services = m.workspace_services_or_legacy(services)
+    services = m.resolve_workspace_services(services)
     if http_request is not None:
         m.require_csrf(http_request)
     m.require_permission(services.context, "recommendations.write")
@@ -168,7 +171,7 @@ def generate_cash_liquidity_recommendation_candidates(
     http_request: m.Request = m.Depends(m.get_current_request),
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> m.RecommendationFactoryResponse:
-    services = m.workspace_services_or_legacy(services)
+    services = m.resolve_workspace_services(services)
     if http_request is not None:
         m.require_csrf(http_request)
     m.require_permission(services.context, "recommendations.write")
@@ -201,7 +204,7 @@ def generate_profile_completeness_recommendation_candidates(
     http_request: m.Request = m.Depends(m.get_current_request),
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> m.RecommendationFactoryResponse:
-    services = m.workspace_services_or_legacy(services)
+    services = m.resolve_workspace_services(services)
     if http_request is not None:
         m.require_csrf(http_request)
     m.require_permission(services.context, "recommendations.write")
@@ -236,7 +239,7 @@ def generate_stale_assumption_recommendation_candidates(
     http_request: m.Request = m.Depends(m.get_current_request),
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> m.RecommendationFactoryResponse:
-    services = m.workspace_services_or_legacy(services)
+    services = m.resolve_workspace_services(services)
     if http_request is not None:
         m.require_csrf(http_request)
     m.require_permission(services.context, "recommendations.write")
@@ -301,7 +304,7 @@ def generate_allocation_drift_recommendation_candidates(
     http_request: m.Request = m.Depends(m.get_current_request),
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> m.RecommendationFactoryResponse:
-    services = m.workspace_services_or_legacy(services)
+    services = m.resolve_workspace_services(services)
     if http_request is not None:
         m.require_csrf(http_request)
     m.require_permission(services.context, "recommendations.write")
@@ -339,7 +342,7 @@ def generate_fund_overlap_recommendation_candidates(
     http_request: m.Request = m.Depends(m.get_current_request),
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> m.RecommendationFactoryResponse:
-    services = m.workspace_services_or_legacy(services)
+    services = m.resolve_workspace_services(services)
     if http_request is not None:
         m.require_csrf(http_request)
     m.require_permission(services.context, "recommendations.write")
@@ -369,7 +372,7 @@ def generate_due_outcome_review_recommendation_candidates(
     http_request: m.Request = m.Depends(m.get_current_request),
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> m.RecommendationFactoryResponse:
-    services = m.workspace_services_or_legacy(services)
+    services = m.resolve_workspace_services(services)
     if http_request is not None:
         m.require_csrf(http_request)
     m.require_permission(services.context, "recommendations.write")
@@ -397,7 +400,7 @@ def generate_watchlist_research_recommendation_candidates(
     http_request: m.Request = m.Depends(m.get_current_request),
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> m.RecommendationFactoryResponse:
-    services = m.workspace_services_or_legacy(services)
+    services = m.resolve_workspace_services(services)
     if http_request is not None:
         m.require_csrf(http_request)
     m.require_permission(services.context, "recommendations.write")
@@ -469,7 +472,7 @@ def generate_research_thesis_expiration_recommendation_candidates(
     http_request: m.Request = m.Depends(m.get_current_request),
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> m.RecommendationFactoryResponse:
-    services = m.workspace_services_or_legacy(services)
+    services = m.resolve_workspace_services(services)
     if http_request is not None:
         m.require_csrf(http_request)
     m.require_permission(services.context, "recommendations.write")
@@ -543,7 +546,7 @@ def run_all_recommendation_factories(
     http_request: m.Request = m.Depends(m.get_current_request),
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> m.RecommendationFactoryRunAllResponse:
-    services = m.workspace_services_or_legacy(services)
+    services = m.resolve_workspace_services(services)
     if http_request is not None:
         m.require_csrf(http_request)
     m.require_permission(services.context, "recommendations.write")
