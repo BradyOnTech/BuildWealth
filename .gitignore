@@ -33,3 +33,8 @@ services/orchestrator/data/
 data/settings/workspace_secrets.json
 data/settings/workspace_settings.json
 .claude/settings.local.json
+
+# Installed agent skills (managed by skill tooling, not committed)
+.agents/
+.claude/skills/
+skills-lock.json
