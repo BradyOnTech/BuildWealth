@@ -6,7 +6,7 @@ monkeypatching of main attributes keeps working.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 import buildwealth_orchestrator.main as m
 
@@ -18,13 +18,30 @@ __all__ = [
     "privacy_notice_page",
     "terms_page",
     "ai_disclosure_page",
+    "robots_txt",
+    "sitemap_xml",
     "health",
 ]
 
 
+def _site_origin(request: Request) -> str:
+    """Absolute origin (scheme://host[:port]) the page is being served from.
+
+    Used to fill absolute canonical/Open Graph/JSON-LD URLs so crawlers and
+    social scrapers resolve them correctly. Behind a TLS-terminating proxy,
+    run uvicorn with --proxy-headers so the scheme reflects https.
+    """
+    return str(request.base_url).rstrip("/")
+
+
 @router.get("/", include_in_schema=False)
-def ui_root() -> m.Response:
-    """Send root visitors to the canonical v2 product surface."""
+def ui_root(request: Request) -> m.Response:
+    """Public marketing front door. The v2 product surface lives at /v2."""
+    landing = m.web_v2_dir / "landing.html"
+    if landing.exists():
+        html = landing.read_text(encoding="utf-8").replace("%%BASE%%", _site_origin(request))
+        return m.HTMLResponse(html)
+    # Fall back to the product surface if the landing page is missing.
     v2_index = m.web_v2_dir / "index.html"
     if v2_index.exists():
         return m.RedirectResponse(url="/v2", status_code=307)
@@ -32,6 +49,34 @@ def ui_root() -> m.Response:
         "<h1>BuildWealth v2 UI not found</h1><p>Expected index.html in orchestrator web-v2 directory.</p>",
         status_code=500,
     )
+
+
+@router.get("/robots.txt", include_in_schema=False)
+def robots_txt(request: Request) -> m.Response:
+    """Allow indexing of the marketing surface; keep the app + API out of the index."""
+    origin = _site_origin(request)
+    body = (
+        "User-agent: *\n"
+        "Disallow: /v2\n"
+        "Disallow: /api/\n"
+        f"Sitemap: {origin}/sitemap.xml\n"
+    )
+    return m.Response(content=body, media_type="text/plain")
+
+
+@router.get("/sitemap.xml", include_in_schema=False)
+def sitemap_xml(request: Request) -> m.Response:
+    """Minimal sitemap for the public marketing surface (legal pages are noindex)."""
+    origin = _site_origin(request)
+    paths = ["/"]
+    urls = "".join(f"  <url><loc>{origin}{p}</loc></url>\n" for p in paths)
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"{urls}"
+        "</urlset>\n"
+    )
+    return m.Response(content=body, media_type="application/xml")
 
 
 @router.get("/v2", include_in_schema=False)

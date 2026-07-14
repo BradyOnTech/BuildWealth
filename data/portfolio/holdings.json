@@ -925,15 +925,19 @@
   "fx_rates": {
     "USD": 1.0
   },
+  "valuation_status": "complete",
+  "priced_holdings_count": 11,
+  "unpriced_holdings_count": 0,
+  "unpriced_cost_basis": 0.0,
   "performance": {
     "start_date": "2024-01-05T00:00:00+00:00",
-    "as_of": "2026-07-05T05:26:59.416800+00:00",
-    "period_days": 912,
+    "as_of": "2026-07-13T18:38:53.799955+00:00",
+    "period_days": 921,
     "gross_contributions": 1014544.7,
     "net_contributions": 1014544.7,
     "ending_value": 498984.5,
     "twr_return_pct": 10.13,
-    "twr_annualized_return_pct": 3.94,
+    "twr_annualized_return_pct": 3.9,
     "xirr_annualized_return_pct": null,
     "realized_gains_usd": 0.0,
     "unrealized_gains_usd": 11212.15,
@@ -1277,13 +1281,13 @@
   },
   "risk_alerts": {
     "schema_version": 1,
-    "generated_at": "2026-07-05T05:26:59.416800+00:00",
+    "generated_at": "2026-07-13T18:38:53.799955+00:00",
     "status": "critical",
-    "breach_count": 8,
+    "breach_count": 7,
     "watch_count": 0,
-    "high_count": 6,
-    "medium_count": 1,
-    "low_count": 1,
+    "high_count": 5,
+    "medium_count": 2,
+    "low_count": 0,
     "thresholds": {
       "single_holding_max_pct": 25.0,
       "top3_holdings_max_pct": 60.0,
@@ -1296,40 +1300,23 @@
     },
     "metrics": {
       "total_market_value": 498984.5,
-      "positions_count": 11,
-      "top_holding_symbol": "DEMO_HOME",
-      "top_holding_pct": 84.17,
-      "top3_holdings_pct": 93.01,
-      "herfindahl_index": 0.7141,
-      "effective_positions": 1.4,
-      "largest_account_id": "demo_home_equity",
-      "largest_account_pct": 78.07,
-      "largest_asset_class": "real_estate",
-      "largest_asset_class_pct": 84.17,
-      "largest_sector": "Residential Real Estate",
-      "largest_sector_pct": 84.17,
+      "investable_market_value": 78984.5,
+      "positions_count": 8,
+      "top_holding_symbol": "VTI",
+      "top_holding_pct": 56.35,
+      "top3_holdings_pct": 80.73,
+      "herfindahl_index": 0.3572,
+      "effective_positions": 2.8,
+      "largest_account_id": "demo_401k",
+      "largest_account_pct": 38.52,
+      "largest_asset_class": "equity",
+      "largest_asset_class_pct": 87.71,
+      "largest_sector": "Diversified",
+      "largest_sector_pct": 82.19,
       "largest_region": "United States",
-      "largest_region_pct": 98.96
+      "largest_region_pct": 93.44
     },
     "alerts": [
-      {
-        "id": "single_holding_concentration",
-        "category": "concentration",
-        "state": "breach",
-        "severity": "high",
-        "label": "Top holding concentration",
-        "metric": "single_holding",
-        "direction": "max",
-        "unit": "pct",
-        "observed": 84.17,
-        "threshold": 25.0,
-        "drift_from_threshold": 59.17,
-        "context": {
-          "symbol": "DEMO_HOME"
-        },
-        "message": "Top holding concentration is 84.17% against max 25.0%.",
-        "recommendation": "Trim or redirect contributions away from the largest position."
-      },
       {
         "id": "sector_cluster_risk",
         "category": "allocation",
@@ -1339,36 +1326,32 @@
         "metric": "sector",
         "direction": "max",
         "unit": "pct",
-        "observed": 84.17,
+        "observed": 82.19,
         "threshold": 35.0,
-        "drift_from_threshold": 49.17,
+        "drift_from_threshold": 47.19,
         "context": {
-          "sector": "Residential Real Estate"
+          "sector": "Diversified"
         },
-        "message": "Largest sector concentration is 84.17% against max 35.0%.",
+        "message": "Largest sector concentration is 82.19% against max 35.0%.",
         "recommendation": "Use new purchases to broaden sector exposure and lower single-sector dependence."
       },
       {
-        "id": "top3_concentration",
+        "id": "single_holding_concentration",
         "category": "concentration",
         "state": "breach",
         "severity": "high",
-        "label": "Top 3 holdings concentration",
-        "metric": "top3",
+        "label": "Top holding concentration",
+        "metric": "single_holding",
         "direction": "max",
         "unit": "pct",
-        "observed": 93.01,
-        "threshold": 60.0,
-        "drift_from_threshold": 33.01,
+        "observed": 56.35,
+        "threshold": 25.0,
+        "drift_from_threshold": 31.35,
         "context": {
-          "symbols": [
-            "DEMO_HOME",
-            "VTI",
-            "VOO"
-          ]
+          "symbol": "VTI"
         },
-        "message": "Top 3 holdings concentration is 93.01% against max 60.0%.",
-        "recommendation": "Rebalance into underweight positions or broaden index exposure."
+        "message": "Top holding concentration is 56.35% against max 25.0%.",
+        "recommendation": "Trim or redirect contributions away from the largest position."
       },
       {
         "id": "regional_cluster_risk",
@@ -1379,32 +1362,36 @@
         "metric": "region",
         "direction": "max",
         "unit": "pct",
-        "observed": 98.96,
+        "observed": 93.44,
         "threshold": 69.0,
-        "drift_from_threshold": 29.96,
+        "drift_from_threshold": 24.44,
         "context": {
           "region": "United States"
         },
-        "message": "Largest region concentration is 98.96% against max 69.0%.",
+        "message": "Largest region concentration is 93.44% against max 69.0%.",
         "recommendation": "Add non-dominant regional exposure to reduce geographic concentration risk."
       },
       {
-        "id": "account_cluster_risk",
-        "category": "allocation",
+        "id": "top3_concentration",
+        "category": "concentration",
         "state": "breach",
         "severity": "high",
-        "label": "Largest account concentration",
-        "metric": "account",
+        "label": "Top 3 holdings concentration",
+        "metric": "top3",
         "direction": "max",
         "unit": "pct",
-        "observed": 78.07,
-        "threshold": 50.0,
-        "drift_from_threshold": 28.07,
+        "observed": 80.73,
+        "threshold": 60.0,
+        "drift_from_threshold": 20.73,
         "context": {
-          "account_id": "demo_home_equity"
+          "symbols": [
+            "VTI",
+            "VOO",
+            "BND"
+          ]
         },
-        "message": "Largest account concentration is 78.07% against max 50.0%.",
-        "recommendation": "Shift new capital toward underweight accounts over the next contribution cycle."
+        "message": "Top 3 holdings concentration is 80.73% against max 60.0%.",
+        "recommendation": "Rebalance into underweight positions or broaden index exposure."
       },
       {
         "id": "hhi_concentration",
@@ -1415,12 +1402,30 @@
         "metric": "hhi",
         "direction": "max",
         "unit": "ratio",
-        "observed": 0.714,
+        "observed": 0.357,
         "threshold": 0.2,
-        "drift_from_threshold": 0.514,
+        "drift_from_threshold": 0.157,
         "context": {},
-        "message": "Herfindahl concentration index is 0.714 against max 0.2.",
+        "message": "Herfindahl concentration index is 0.357 against max 0.2.",
         "recommendation": "Increase the number of meaningful positions to reduce portfolio concentration."
+      },
+      {
+        "id": "asset_class_cluster_risk",
+        "category": "allocation",
+        "state": "breach",
+        "severity": "medium",
+        "label": "Largest asset-class concentration",
+        "metric": "asset_class",
+        "direction": "max",
+        "unit": "pct",
+        "observed": 87.71,
+        "threshold": 82.0,
+        "drift_from_threshold": 5.71,
+        "context": {
+          "asset_class": "equity"
+        },
+        "message": "Largest asset-class concentration is 87.71% against max 82.0%.",
+        "recommendation": "Diversify into complementary asset classes to reduce cluster risk."
       },
       {
         "id": "effective_positions",
@@ -1431,40 +1436,22 @@
         "metric": "effective_positions",
         "direction": "min",
         "unit": "count",
-        "observed": 1.4,
+        "observed": 2.8,
         "threshold": 5.0,
-        "drift_from_threshold": -3.6,
+        "drift_from_threshold": -2.2,
         "context": {},
-        "message": "Effective number of positions is 1.4 against min 5.0.",
+        "message": "Effective number of positions is 2.8 against min 5.0.",
         "recommendation": "Broaden exposure with uncorrelated assets to improve diversification depth."
-      },
-      {
-        "id": "asset_class_cluster_risk",
-        "category": "allocation",
-        "state": "breach",
-        "severity": "low",
-        "label": "Largest asset-class concentration",
-        "metric": "asset_class",
-        "direction": "max",
-        "unit": "pct",
-        "observed": 84.17,
-        "threshold": 82.0,
-        "drift_from_threshold": 2.17,
-        "context": {
-          "asset_class": "real_estate"
-        },
-        "message": "Largest asset-class concentration is 84.17% against max 82.0%.",
-        "recommendation": "Diversify into complementary asset classes to reduce cluster risk."
       }
     ]
   },
   "total_cash": 39000.0,
   "total_portfolio_value": 537984.5,
-  "updated_at": "2026-07-05T05:26:59.432731+00:00",
+  "updated_at": "2026-07-13T18:38:53.809984+00:00",
   "total_value": 498984.5,
   "total_cost_basis": 487772.35,
   "net_performance": 11212.15,
   "net_performance_pct": 2.3,
-  "prices_updated_at": "2026-07-05T05:26:59.416800+00:00",
-  "asset_metadata_updated_at": "2026-07-04T23:08:43.211848+00:00"
+  "prices_updated_at": "2026-07-13T18:38:53.799955+00:00",
+  "asset_metadata_updated_at": "2026-07-13T18:38:53.806481+00:00"
 }

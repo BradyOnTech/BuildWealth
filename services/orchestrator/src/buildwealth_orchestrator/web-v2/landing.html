@@ -1,0 +1,614 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BuildWealth — Private portfolio tracking &amp; financial planning workspace</title>
+    <meta
+      name="description"
+      content="BuildWealth is a private, local-first workspace for portfolio tracking, net-worth analysis, and long-horizon financial planning — with Monte Carlo simulations and a copilot grounded entirely in your own data. Evidence, not advice."
+    />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="application-name" content="BuildWealth" />
+    <meta name="author" content="BuildWealth" />
+    <link rel="canonical" href="%%BASE%%/" />
+    <meta name="theme-color" content="#efe9dd" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232d5d3e'/%3E%3Cpath d='M9 21h14M10 17l4-4 4 3 4-6' stroke='%23efe9dd' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
+    />
+
+    <meta property="og:site_name" content="BuildWealth" />
+    <meta property="og:title" content="BuildWealth · The Wealth Almanac" />
+    <meta
+      property="og:description"
+      content="A private, local-first workspace to understand your money, model your future, and act on evidence — not guesses."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="%%BASE%%/" />
+    <meta property="og:image" content="%%BASE%%/static-v2/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="BuildWealth — understand your money, model your future, act on evidence." />
+    <meta property="og:locale" content="en_US" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="BuildWealth · The Wealth Almanac" />
+    <meta
+      name="twitter:description"
+      content="A private, local-first workspace to understand your money, model your future, and act on evidence — not guesses."
+    />
+    <meta name="twitter:image" content="%%BASE%%/static-v2/og-image.png" />
+    <meta name="twitter:image:alt" content="BuildWealth — understand your money, model your future, act on evidence." />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "%%BASE%%/#org",
+            "name": "BuildWealth",
+            "url": "%%BASE%%/",
+            "logo": "%%BASE%%/static-v2/og-image.png"
+          },
+          {
+            "@type": "WebSite",
+            "@id": "%%BASE%%/#website",
+            "url": "%%BASE%%/",
+            "name": "BuildWealth",
+            "description": "A private, local-first workspace for portfolio tracking and long-horizon financial planning.",
+            "publisher": { "@id": "%%BASE%%/#org" }
+          },
+          {
+            "@type": "SoftwareApplication",
+            "name": "BuildWealth",
+            "applicationCategory": "FinanceApplication",
+            "operatingSystem": "Web",
+            "url": "%%BASE%%/",
+            "image": "%%BASE%%/static-v2/og-image.png",
+            "description": "Private, local-first financial workspace for portfolio analysis, plan simulations (Monte Carlo, scenarios, backtests), import reconciliation, and a data-grounded copilot.",
+            "featureList": [
+              "Portfolio performance, attribution, allocation and risk analysis",
+              "Long-horizon plans with Monte Carlo and historical backtests",
+              "Import Workbench with preview, reconcile and audit",
+              "Asset Registry that resolves, classifies and prices holdings",
+              "Copilot grounded in your own canonical data",
+              "Context intelligence with an inspectable audit trail"
+            ]
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Is my financial data private?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. BuildWealth is local-first: your data lives in an isolated workspace with its own store, not a row in a shared multi-tenant table. Hosted sessions keep the same isolation, with tenant-scoped backups you control."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Does BuildWealth give investment advice?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. BuildWealth helps you organize, model, and understand your finances. It is not a registered investment adviser and does not provide personalized investment, tax, or legal advice — the decisions are yours."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "What can I track and plan with BuildWealth?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Track portfolio performance, allocation, attribution, and risk; model long-horizon plans with projections, scenarios, Monte Carlo simulations, and historical backtests; and read a plain-language Plan Strength label that tells you how reliably the plan holds."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Where does the copilot get its answers?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Only from your own canonical data. Every answer carries a traceable context trail, and copilot suggestions arrive as drafts you review before anything changes."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "How do I get my data into BuildWealth?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Through the Import Workbench: preview and reconcile statements and holdings, then apply them with a durable audit report. Nothing becomes portfolio state until you approve it."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://api.fontshare.com" />
+    <link rel="preconnect" href="https://cdn.fontshare.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500;1,9..144,600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://api.fontshare.com/v2/css?f[]=switzer@400,500,600,700&display=swap"
+      rel="stylesheet"
+    />
+
+    <link rel="stylesheet" href="/static-v2/styles/tokens.css" />
+    <link rel="stylesheet" href="/static-v2/styles/base.css" />
+    <link rel="stylesheet" href="/static-v2/styles/landing.css" />
+  </head>
+  <body>
+    <div class="lp">
+      <!-- ─────────  Masthead  ───────── -->
+      <header class="lp-masthead">
+        <div class="lp-wrap lp-masthead__inner">
+          <a class="lp-brand" href="/" aria-label="BuildWealth home">
+            <svg class="lp-brand__mark" viewBox="0 0 32 32" aria-hidden="true">
+              <rect width="32" height="32" rx="6" fill="#2d5d3e" />
+              <path
+                d="M9 21h14M10 17l4-4 4 3 4-6"
+                stroke="#efe9dd"
+                stroke-width="2.5"
+                fill="none"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <span class="lp-brand__name">BuildWealth</span>
+            <span class="lp-brand__meta">The Wealth Almanac</span>
+          </a>
+          <nav class="lp-nav" aria-label="Primary">
+            <a class="lp-nav__link" href="#capabilities">Capabilities</a>
+            <a class="lp-nav__link" href="#how">How it works</a>
+            <a class="lp-nav__link" href="#privacy">Privacy</a>
+            <a class="lp-nav__link lp-nav__cta" href="/v2">Open the app</a>
+          </nav>
+        </div>
+      </header>
+
+      <main>
+        <!-- ─────────  Hero  ───────── -->
+        <section class="lp-hero lp-wrap">
+          <div class="lp-hero__grid">
+            <div class="lp-hero__copy">
+              <p class="eyebrow lp-eyebrow lp-rise" style="animation-delay: 40ms">
+                Private financial workspace
+              </p>
+              <h1 class="lp-hero__title lp-rise" style="animation-delay: 110ms">
+                Understand your money. Model your future.
+                <em>Act on evidence.</em>
+              </h1>
+              <p class="lp-hero__lede lp-rise" style="animation-delay: 200ms">
+                BuildWealth is a private, local-first workspace for your whole financial life.
+                Track your portfolio, run long-horizon plans, and review evidence-backed next
+                steps with a copilot grounded entirely in your own data.
+              </p>
+              <div class="lp-hero__cta lp-rise" style="animation-delay: 280ms">
+                <a class="lp-btn" href="/v2">
+                  Open the app
+                  <span class="lp-btn__arrow" aria-hidden="true">→</span>
+                </a>
+                <a class="lp-btn lp-btn--ghost" href="#capabilities">See what it does</a>
+              </div>
+              <div class="lp-hero__meta lp-rise" style="animation-delay: 360ms">
+                <span>Local-first by design</span>
+                <span>Your data stays your data</span>
+                <span>Evidence, not advice</span>
+              </div>
+            </div>
+
+            <!-- Hero ledger card -->
+            <div class="lp-ledger lp-rise" data-reveal style="animation-delay: 420ms">
+              <div class="lp-ledger__head">
+                <div>
+                  <p class="lp-ledger__label">Net worth · this workspace</p>
+                  <p class="lp-ledger__net" data-count-to="1284630" data-count-prefix="$">
+                    $1,284,630
+                  </p>
+                  <p class="lp-ledger__delta">$18,240 · 30 days</p>
+                </div>
+              </div>
+
+              <svg class="lp-spark" viewBox="0 0 300 54" preserveAspectRatio="none" aria-hidden="true">
+                <path
+                  class="area"
+                  d="M0 44 L30 40 L60 42 L90 33 L120 35 L150 26 L180 28 L210 18 L240 20 L270 11 L300 8 L300 54 L0 54 Z"
+                />
+                <path
+                  class="line"
+                  d="M0 44 L30 40 L60 42 L90 33 L120 35 L150 26 L180 28 L210 18 L240 20 L270 11 L300 8"
+                />
+              </svg>
+
+              <div class="lp-ledger__rows">
+                <div class="lp-ledger__row">
+                  <span class="name">US equities</span>
+                  <span class="alloc">54%</span>
+                  <span class="val">$693,700</span>
+                </div>
+                <div class="lp-ledger__row">
+                  <span class="name">International</span>
+                  <span class="alloc">21%</span>
+                  <span class="val">$269,770</span>
+                </div>
+                <div class="lp-ledger__row">
+                  <span class="name">Bonds &amp; cash</span>
+                  <span class="alloc">18%</span>
+                  <span class="val">$231,230</span>
+                </div>
+                <div class="lp-ledger__row">
+                  <span class="name">Alternatives</span>
+                  <span class="alloc">7%</span>
+                  <span class="val">$89,930</span>
+                </div>
+              </div>
+
+              <div class="lp-strength">
+                <span class="lp-strength__dot" aria-hidden="true"></span>
+                <span class="lp-strength__label">Plan strength</span>
+                <span class="lp-strength__val">Strong</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ─────────  Creed / positioning band  ───────── -->
+        <section class="lp-section--tight lp-wrap">
+          <div class="lp-creed" data-reveal>
+            <p class="lp-creed__quote">
+              A place to organize, model, and understand your finances —
+              <em>so the decisions stay yours.</em>
+            </p>
+            <div class="lp-creed__foot">
+              <p>
+                <strong>Grounded</strong>
+                Every figure traces back to your canonical data. Nothing is invented to fill a gap.
+              </p>
+              <p>
+                <strong>Reviewable</strong>
+                Imports, plan changes, and copilot answers arrive as drafts you approve — never silent edits.
+              </p>
+              <p>
+                <strong>Yours</strong>
+                An isolated workspace per household. Local-first roots, carried into every hosted session.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ─────────  Capabilities index  ───────── -->
+        <section class="lp-section lp-wrap" id="capabilities">
+          <div class="lp-shead" data-reveal>
+            <p class="eyebrow" style="margin-bottom: 16px">The capabilities</p>
+            <h2 class="lp-shead__title">One workspace, from holdings to horizon.</h2>
+            <p class="lp-shead__sub">
+              Six native capabilities that own their data, their calculations, and their audit trail —
+              not dashboards bolted onto someone else's tools.
+            </p>
+          </div>
+
+          <div class="lp-index" data-reveal-stagger="70">
+            <article class="lp-entry">
+              <span class="lp-entry__no">01</span>
+              <div>
+                <h3 class="lp-entry__name">Portfolio Analysis</h3>
+                <span class="lp-entry__tag">Performance · Attribution · Risk</span>
+              </div>
+              <p class="lp-entry__body">
+                Explains <b>performance, benchmarks, attribution, allocation, and risk</b> — and models the
+                impact of a trade before you make it. See not just what you hold, but why it moved.
+              </p>
+            </article>
+
+            <article class="lp-entry">
+              <span class="lp-entry__no">02</span>
+              <div>
+                <h3 class="lp-entry__name">Plan &amp; Simulations</h3>
+                <span class="lp-entry__tag">Projections · Monte Carlo · Backtests</span>
+              </div>
+              <p class="lp-entry__body">
+                Run projections, compare scenarios, and stress-test with <b>Monte Carlo and historical
+                backtests</b>. A plain-language <b>Plan Strength</b> label tells you how reliably the plan funds
+                what matters — before the metrics.
+              </p>
+            </article>
+
+            <article class="lp-entry">
+              <span class="lp-entry__no">03</span>
+              <div>
+                <h3 class="lp-entry__name">Import Workbench</h3>
+                <span class="lp-entry__tag">Preview · Reconcile · Audit</span>
+              </div>
+              <p class="lp-entry__body">
+                Preview, reconcile, and apply imported data — with a durable <b>Import Report</b> that explains
+                exactly how each file changed your portfolio. Nothing becomes state until you say so.
+              </p>
+            </article>
+
+            <article class="lp-entry">
+              <span class="lp-entry__no">04</span>
+              <div>
+                <h3 class="lp-entry__name">Asset Registry</h3>
+                <span class="lp-entry__tag">Resolve · Classify · Price</span>
+              </div>
+              <p class="lp-entry__body">
+                Resolves, classifies, enriches, and prices every investable asset your portfolio, plan, and
+                research depend on — and flags the <b>ambiguous ones for review</b> before they skew a number.
+              </p>
+            </article>
+
+            <article class="lp-entry">
+              <span class="lp-entry__no">05</span>
+              <div>
+                <h3 class="lp-entry__name">Copilot, grounded</h3>
+                <span class="lp-entry__tag">Your data · Traceable · Drafts</span>
+              </div>
+              <p class="lp-entry__body">
+                Ask questions in plain language and get answers built <b>only from your canonical state</b>,
+                each one carrying the context it used. Copilot proposes; you review and decide.
+              </p>
+            </article>
+
+            <article class="lp-entry">
+              <span class="lp-entry__no">06</span>
+              <div>
+                <h3 class="lp-entry__name">Context Intelligence</h3>
+                <span class="lp-entry__tag">Evidence · Conflicts · Trail</span>
+              </div>
+              <p class="lp-entry__body">
+                Captures, selects, and audits the financial context behind every recommendation — surfacing
+                <b>conflicts to resolve</b> and leaving a <b>context trace</b> you can inspect end to end.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <!-- ─────────  Spotlight 1 · Plan Strength  ───────── -->
+        <section class="lp-section lp-wrap">
+          <div class="lp-spot" data-reveal>
+            <div class="lp-spot__copy">
+              <p class="eyebrow" style="margin-bottom: 16px">Simulations</p>
+              <h2 class="lp-spot__title">Know whether your plan holds — in plain language.</h2>
+              <p class="lp-spot__body">
+                Instead of a false-precision "success probability", BuildWealth reads your plan against modeled
+                futures and returns one honest label. Branch a scenario from any life event and watch the
+                label move.
+              </p>
+              <ul class="lp-list">
+                <li><b>Rule-derived, not vibes</b> — the label follows a versioned, testable policy.</li>
+                <li><b>Branch what-ifs</b> — retire earlier, buy a home, change contributions.</li>
+                <li><b>Saved as evidence</b> — the runs that matter become durable Saved Simulations.</li>
+              </ul>
+            </div>
+
+            <div class="lp-art lp-spot__art">
+              <div class="lp-gauge__head">
+                <span class="lp-ledger__label">Plan strength · active plan</span>
+                <span class="lp-strength__val" style="color: var(--forest-deep)">Strong</span>
+              </div>
+              <div class="lp-gauge__states">
+                <div class="lp-gauge__state" data-active>
+                  <span class="lp-gauge__name">Strong</span>
+                  <span class="lp-gauge__bar"><span class="lp-gauge__fill lp-gauge__fill--strong" style="width: 92%"></span></span>
+                </div>
+                <div class="lp-gauge__state">
+                  <span class="lp-gauge__name">Workable</span>
+                  <span class="lp-gauge__bar"><span class="lp-gauge__fill lp-gauge__fill--workable" style="width: 64%"></span></span>
+                </div>
+                <div class="lp-gauge__state">
+                  <span class="lp-gauge__name">Fragile</span>
+                  <span class="lp-gauge__bar"><span class="lp-gauge__fill lp-gauge__fill--fragile" style="width: 33%"></span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ─────────  Spotlight 2 · Grounded copilot  ───────── -->
+        <section class="lp-section lp-wrap">
+          <div class="lp-spot lp-spot--flip" data-reveal>
+            <div class="lp-spot__copy">
+              <p class="eyebrow" style="margin-bottom: 16px">Copilot</p>
+              <h2 class="lp-spot__title">Answers you can trace back to your own numbers.</h2>
+              <p class="lp-spot__body">
+                Ask about your fees, your allocation drift, your runway. The copilot reads your canonical
+                state, shows the context it pulled, and hands you a draft — never an anonymous verdict.
+              </p>
+              <ul class="lp-list">
+                <li><b>Grounded in your data</b> — no fabricated figures, no generic web answers.</li>
+                <li><b>Context trace</b> — see which holdings, plans, and facts informed the reply.</li>
+                <li><b>Review before act</b> — suggestions flow to an inbox you approve or dismiss.</li>
+              </ul>
+            </div>
+
+            <div class="lp-art lp-spot__art">
+              <div class="lp-chat">
+                <div class="lp-chat__q">
+                  <span class="lp-chat__role">You</span>
+                  How much am I paying in fund fees each year, and where is it concentrated?
+                </div>
+                <div class="lp-chat__a">
+                  <span class="lp-chat__role">Copilot · draft</span>
+                  Across your holdings, blended fees run about <b>0.34%</b> — roughly <b>$4,370 / yr</b>. Two thirds
+                  sit in a single international fund at 0.61%. A lower-cost equivalent would trim about $2,100.
+                  <div class="lp-chat__trace">
+                    <span class="lp-chip">Portfolio · holdings</span>
+                    <span class="lp-chip">Asset Registry · expense ratios</span>
+                    <span class="lp-chip">Profile · accounts</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ─────────  How it works  ───────── -->
+        <section class="lp-section lp-wrap" id="how">
+          <div class="lp-shead" data-reveal>
+            <p class="eyebrow" style="margin-bottom: 16px">How it works</p>
+            <h2 class="lp-shead__title">Three moves: bring it in, understand it, decide.</h2>
+          </div>
+          <div class="lp-steps" data-reveal-stagger="90">
+            <div class="lp-step">
+              <p class="lp-step__no">STEP 01</p>
+              <h3 class="lp-step__title">Bring your finances in</h3>
+              <p class="lp-step__body">
+                Import statements and holdings through the Workbench. Preview and reconcile every row before
+                it becomes canonical state — with a report you can revisit.
+              </p>
+            </div>
+            <div class="lp-step">
+              <p class="lp-step__no">STEP 02</p>
+              <h3 class="lp-step__title">Understand where you stand</h3>
+              <p class="lp-step__body">
+                See performance, allocation, and risk explained. Model long-horizon plans and read your Plan
+                Strength across the futures that could actually happen.
+              </p>
+            </div>
+            <div class="lp-step">
+              <p class="lp-step__no">STEP 03</p>
+              <h3 class="lp-step__title">Decide, with evidence</h3>
+              <p class="lp-step__body">
+                Review evidence-backed next steps in your inbox. Approve what fits, dismiss what doesn't —
+                every choice recorded with the context behind it.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ─────────  Privacy band  ───────── -->
+        <section class="lp-section--tight lp-wrap" id="privacy">
+          <div class="lp-creed" data-reveal>
+            <p class="eyebrow" style="color: var(--gilt); margin-bottom: 18px">Privacy posture</p>
+            <p class="lp-creed__quote">
+              Built local-first — and hosted the same way. <em>Your workspace, isolated.</em>
+            </p>
+            <div class="lp-creed__foot">
+              <p>
+                <strong>Private by architecture</strong>
+                Each household gets its own isolated workspace and its own store — not a row in a shared table.
+              </p>
+              <p>
+                <strong>You hold the keys</strong>
+                Sensitive data stays scoped to your workspace, with tenant-scoped backups you control.
+              </p>
+              <p>
+                <strong>Nothing leaves quietly</strong>
+                Read the <a href="/privacy" style="color: var(--gilt)">privacy notice</a> and
+                <a href="/ai-disclosure" style="color: var(--gilt)">AI disclosure</a> — plainly written, no fine-print traps.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ─────────  FAQ  ───────── -->
+        <section class="lp-section lp-wrap" id="faq">
+          <div class="lp-shead" data-reveal>
+            <p class="eyebrow" style="margin-bottom: 16px">Questions</p>
+            <h2 class="lp-shead__title">The things worth knowing first.</h2>
+          </div>
+
+          <div class="lp-faq" data-reveal-stagger="60">
+            <details class="lp-faq__item">
+              <summary class="lp-faq__q">Is my financial data private?</summary>
+              <div class="lp-faq__a">
+                Yes. BuildWealth is local-first: your data lives in an isolated workspace with its own
+                store, not a row in a shared multi-tenant table. Hosted sessions keep the same isolation,
+                with tenant-scoped backups you control.
+              </div>
+            </details>
+            <details class="lp-faq__item">
+              <summary class="lp-faq__q">Does BuildWealth give investment advice?</summary>
+              <div class="lp-faq__a">
+                No. BuildWealth helps you organize, model, and understand your finances. It is not a
+                registered investment adviser and does not provide personalized investment, tax, or legal
+                advice — the decisions are yours.
+              </div>
+            </details>
+            <details class="lp-faq__item">
+              <summary class="lp-faq__q">What can I track and plan with BuildWealth?</summary>
+              <div class="lp-faq__a">
+                Track portfolio performance, allocation, attribution, and risk; model long-horizon plans
+                with projections, scenarios, Monte Carlo simulations, and historical backtests; and read a
+                plain-language Plan Strength label that tells you how reliably the plan holds.
+              </div>
+            </details>
+            <details class="lp-faq__item">
+              <summary class="lp-faq__q">Where does the copilot get its answers?</summary>
+              <div class="lp-faq__a">
+                Only from your own canonical data. Every answer carries a traceable context trail, and
+                copilot suggestions arrive as drafts you review before anything changes.
+              </div>
+            </details>
+            <details class="lp-faq__item">
+              <summary class="lp-faq__q">How do I get my data into BuildWealth?</summary>
+              <div class="lp-faq__a">
+                Through the Import Workbench: preview and reconcile statements and holdings, then apply them
+                with a durable audit report. Nothing becomes portfolio state until you approve it.
+              </div>
+            </details>
+          </div>
+        </section>
+
+        <!-- ─────────  Closing CTA  ───────── -->
+        <section class="lp-section lp-wrap">
+          <div class="lp-close" data-reveal>
+            <div class="ornament">The Wealth Almanac</div>
+            <h2 class="lp-close__title">Open the ledger on your <em>whole</em> financial life.</h2>
+            <p class="lp-close__sub">
+              Start in your private workspace. Bring in what you have, and see where you actually stand.
+            </p>
+            <div class="lp-close__cta">
+              <a class="lp-btn" href="/v2">
+                Open BuildWealth
+                <span class="lp-btn__arrow" aria-hidden="true">→</span>
+              </a>
+              <a class="lp-btn lp-btn--ghost" href="#capabilities">Review the capabilities</a>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- ─────────  Footer  ───────── -->
+      <footer class="lp-footer">
+        <div class="lp-wrap">
+          <div class="lp-footer__top">
+            <a class="lp-brand" href="/" aria-label="BuildWealth home">
+              <svg class="lp-brand__mark" viewBox="0 0 32 32" aria-hidden="true">
+                <rect width="32" height="32" rx="6" fill="#2d5d3e" />
+                <path
+                  d="M9 21h14M10 17l4-4 4 3 4-6"
+                  stroke="#efe9dd"
+                  stroke-width="2.5"
+                  fill="none"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <span class="lp-brand__name">BuildWealth</span>
+            </a>
+            <nav class="lp-footer__links" aria-label="Footer">
+              <a href="/v2">Open the app</a>
+              <a href="/privacy">Privacy</a>
+              <a href="/terms">Terms</a>
+              <a href="/ai-disclosure">AI disclosure</a>
+            </nav>
+          </div>
+          <p class="lp-footer__fine">
+            BuildWealth is a tool for organizing, modeling, and understanding your finances. It is not a
+            registered investment adviser and does not provide personalized investment, tax, or legal advice.
+            Copilot output is a draft or suggestion for your review — the decisions are yours.
+          </p>
+        </div>
+      </footer>
+    </div>
+
+    <script type="module" src="/static-v2/landing.js"></script>
+  </body>
+</html>
