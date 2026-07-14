@@ -72,13 +72,13 @@ function renderInvestmentPanel(accounts, prefill = {}) {
           <input name="value_usd" type="number" step="any" min="0" inputmode="decimal" placeholder="2500">
         </label>
       </div>
+      <label class="fit-field"><span>What you paid per share <small>(estimate is okay)</small></span>
+        <input name="unit_cost" type="number" step="any" min="0" inputmode="decimal"
+          placeholder="Needed when a current quote is unavailable">
+      </label>
       ${raw(renderAccountField(accounts, prefill.account || ''))}
       <details class="portfolio-add-more">
         <summary>More detail</summary>
-        <label class="fit-field"><span>What you paid per share</span>
-          <input name="unit_cost" type="number" step="any" min="0" inputmode="decimal"
-            placeholder="Blank means: estimate from today's price">
-        </label>
         <label class="fit-field"><span>Date acquired</span>
           <input name="acquired_date" type="date">
         </label>

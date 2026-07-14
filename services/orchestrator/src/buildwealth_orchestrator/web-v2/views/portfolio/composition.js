@@ -116,9 +116,10 @@ function renderTopHoldings(rows) {
 function holdingRow(row, index) {
   const symbol = row.symbol || '—';
   const name = row.name || row.long_name || symbol;
-  const value = Number(row.current_value || 0);
-  const allocation = Number(row.allocation_pct || 0);
-  const returnPct = Number(row.gain_loss_pct || 0);
+  const priced = row.current_value != null && Number.isFinite(Number(row.current_value));
+  const value = priced ? Number(row.current_value) : null;
+  const allocation = priced && row.allocation_pct != null ? Number(row.allocation_pct) : null;
+  const returnPct = priced && row.gain_loss_pct != null ? Number(row.gain_loss_pct) : null;
   const returnDir = returnPct >= 0 ? 'up' : 'down';
 
   return html`
@@ -129,9 +130,9 @@ function holdingRow(row, index) {
         <span class="holding-name">${esc(String(name))}</span>
       </span>
       <span class="holding-meta">${row.account ? esc(String(row.account)) : ''}${row.asset_class ? raw(` · ${esc(String(row.asset_class))}`) : ''}</span>
-      <span class="holding-value">${fmtUsd(value)}</span>
-      <span class="holding-alloc">${allocation.toFixed(1)}%</span>
-      <span class="holding-return ${returnDir}">${fmtPctSigned(returnPct)}</span>
+      <span class="holding-value">${priced ? fmtUsd(value) : 'Price needed'}</span>
+      <span class="holding-alloc">${allocation == null ? '—' : `${allocation.toFixed(1)}%`}</span>
+      <span class="holding-return ${returnPct == null ? '' : returnDir}">${returnPct == null ? '—' : fmtPctSigned(returnPct)}</span>
       ${raw(holdingActions(row, symbol))}
     </li>
   `;
@@ -143,7 +144,8 @@ function holdingActions(row, symbol) {
   if (!symbol || symbol === '—') return '';
   const manualPriced = row.price_source === 'MANUAL'
     || Boolean(row.is_custom_asset)
-    || row.valuation_method === 'MANUAL_PRICE_OVERRIDE';
+    || row.valuation_method === 'MANUAL_PRICE_OVERRIDE'
+    || row.current_value == null;
   return html`
     <span class="holding-actions" data-holding-actions>
       <button type="button" class="action-link muted" data-holding-trade
@@ -167,8 +169,12 @@ function topHoldings(data, limit) {
   const h = data.holdings;
   const list = Array.isArray(h) ? h : (h && typeof h === 'object' ? Object.values(h) : []);
   return list
-    .filter(row => Number(row?.current_value || 0) > 0)
-    .sort((a, b) => Number(b.current_value || 0) - Number(a.current_value || 0))
+    .filter(row => Number(row?.quantity || 0) > 0 || Number(row?.current_value || 0) > 0)
+    .sort((a, b) => {
+      const aPriced = a?.current_value != null ? 1 : 0;
+      const bPriced = b?.current_value != null ? 1 : 0;
+      return bPriced - aPriced || Number(b?.current_value || 0) - Number(a?.current_value || 0);
+    })
     .slice(0, limit);
 }
 

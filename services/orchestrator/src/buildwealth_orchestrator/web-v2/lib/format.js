@@ -68,6 +68,7 @@ export function fmtPctSigned(value, { fromFraction = false } = {}) {
 // as absent, rendering the dash. Pass a different `dash` when a view wants
 // its own vocabulary for "unset" (e.g. plan story uses 'app default').
 export function fmtUsdOrDash(value, dash = '—') {
+  value = unwrapDisplayValue(value);
   if (value == null || value === '') return dash;
   const n = Number(value);
   if (!Number.isFinite(n)) return dash;
@@ -77,10 +78,21 @@ export function fmtUsdOrDash(value, dash = '—') {
 // Fraction in (0.05 == 5%), two decimals out. For percent-point inputs or
 // other precisions, format at the call site.
 export function fmtPctOrDash(value, dash = '—') {
+  value = unwrapDisplayValue(value);
   if (value == null || value === '') return dash;
   const n = Number(value);
   if (!Number.isFinite(n)) return dash;
   return `${(n * 100).toFixed(2)}%`;
+}
+
+// APIs may attach provenance as { value, source, ... }. Views should display
+// the value while never allowing an arbitrary object to become
+// "[object Object]" in a customer-facing table.
+export function unwrapDisplayValue(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return Object.prototype.hasOwnProperty.call(value, 'value') ? value.value : null;
+  }
+  return value;
 }
 
 // Null in, null out — for callers that hide the whole line when a value is

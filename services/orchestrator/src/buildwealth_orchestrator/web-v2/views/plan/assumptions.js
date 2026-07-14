@@ -132,6 +132,23 @@ export function buildAssumptionSetsPayload(assumptionSets = {}, activeAssumption
   };
 }
 
+export function assumptionCoverageSummary(settings = {}, defaults = {}) {
+  const reviewed = PLAN_ASSUMPTION_FIELDS.filter(
+    field => settings?.[field.key] != null && settings[field.key] !== '',
+  ).length;
+  const resolved = PLAN_ASSUMPTION_FIELDS.filter(field => {
+    if (settings?.[field.key] != null && settings[field.key] !== '') return true;
+    const row = defaults?.[field.key];
+    const value = row && typeof row === 'object' ? row.value : row;
+    return value != null && value !== '';
+  }).length;
+  const starting = Math.max(0, resolved - reviewed);
+  if (!reviewed && starting) return `Using ${starting} starting assumption${starting === 1 ? '' : 's'}`;
+  if (reviewed && starting) return `${reviewed} reviewed · ${starting} starting value${starting === 1 ? '' : 's'}`;
+  if (reviewed) return `${reviewed} reviewed`;
+  return 'Assumptions need review';
+}
+
 export function draftValueForField(field, plan = {}, draft = {}) {
   if (Object.prototype.hasOwnProperty.call(draft, field.key)) {
     return String(draft[field.key] ?? '');

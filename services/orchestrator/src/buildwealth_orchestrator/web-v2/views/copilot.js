@@ -287,7 +287,13 @@ export async function init(params = {}) {
       fillDraft(onboardingPrompt(ui.onboarding));
     }
   }).catch(() => {});
-  loadLlmOptions().then(() => rerenderMasthead()).catch(() => {});
+  loadLlmOptions().then(() => {
+    rerenderMasthead();
+    if (copilotConnectionState(ui.llmOptions).status === 'unavailable') {
+      rerenderBody();
+      rerenderComposer();
+    }
+  }).catch(() => {});
   if (ui.conversationId) {
     loadConversation(ui.conversationId).catch(() => {});
   }
@@ -413,6 +419,11 @@ function applyChatResult(question, res) {
 }
 
 async function sendMessage(question, { useLive }) {
+  if (copilotConnectionState(ui.llmOptions).status === 'unavailable') {
+    ui.error = 'Connect an AI provider in Settings before starting a Copilot conversation.';
+    rerenderBody();
+    return;
+  }
   // Optimistic user message.
   const now = new Date().toISOString();
   ui.messages.push({ role: 'user', content: question, created_at: now, metadata: {} });
@@ -517,7 +528,12 @@ function rerenderBody() {
 function rerenderComposer({ draft = readDraft() } = {}) {
   const root = $('#copilot-composer');
   if (!root) return;
-  root.innerHTML = renderComposer({ busy: ui.busy, draft });
+  const connection = copilotConnectionState(ui.llmOptions);
+  root.innerHTML = renderComposer({
+    busy: ui.busy,
+    draft,
+    disabledReason: connection.status === 'unavailable' ? 'Connect an AI provider in Settings' : '',
+  });
   attachComposerBehavior(root, {
     onSubmit: ({ question, useLive }) => sendMessage(question, { useLive }),
   });
@@ -763,6 +779,23 @@ function renderBody() {
 }
 
 function renderEmpty() {
+  const connection = copilotConnectionState(ui.llmOptions);
+  if (connection.status === 'unavailable') {
+    return html`
+      <div class="copilot-empty copilot-unavailable">
+        <div class="copilot-empty-hero">
+          <p class="copilot-empty-headline">Connect Copilot</p>
+          <p class="copilot-empty-lede">
+            No AI provider is connected yet. Your financial data is still available across Profile,
+            Portfolio, and Plan; conversational answers turn on after you add a provider key.
+          </p>
+          <div class="entry-actions">
+            <a class="action-link" href="#settings" data-route>Open AI provider settings <span class="arrow">›</span></a>
+          </div>
+        </div>
+      </div>
+    `;
+  }
   return html`
     <div class="copilot-empty">
       <div class="copilot-empty-hero">
@@ -786,14 +819,13 @@ function renderEmpty() {
 function renderProfileOnboardingCard() {
   const status = ui.onboarding;
   if (!status || status.ready_for_daily_review) return '';
-  const percent = Math.round(Number(status.completion_percent || 0));
-  const nextStep = nextOnboardingStep(status);
+  const readiness = decisionReadiness(status);
   const actionLabel = onboardingActionLabel(status);
   return html`
     <article class="profile-onboarding-card">
-      <p class="profile-draft-eyebrow">Profile setup</p>
+      <p class="profile-draft-eyebrow">Decision readiness</p>
       <p class="profile-draft-summary">
-        Your profile is ${percent}% complete${nextStep?.title ? `. Next: ${nextStep.title}.` : '.'}
+        ${readiness.label}. ${readiness.detail}
       </p>
       ${raw(renderProfileReadinessHint(status.profile_readiness))}
       ${raw(renderOnboardingQuickReplies(status))}
@@ -881,6 +913,49 @@ function nextOnboardingStep(status) {
   return steps.find(step => step.status !== 'complete');
 }
 
+export function decisionReadiness(status = {}) {
+  const profile = status?.profile_readiness || {};
+  const profileReady = String(profile.status || '').toLowerCase() === 'ready';
+  if (!profileReady) {
+    const next = String(profile.next_gap_title || nextOnboardingStep(status)?.title || 'your profile').trim();
+    return { label: 'Build your first forecast', detail: `Next: ${next}.`, stage: 'profile' };
+  }
+  const steps = Array.isArray(status?.steps) ? status.steps : [];
+  const stepId = step => String(step?.id || step?.key || '').toLowerCase();
+  const snapshot = steps.find(step => stepId(step) === 'snapshot' || stepId(step) === 'portfolio_snapshot');
+  if (snapshot && snapshot.status !== 'complete') {
+    return {
+      label: 'Enough for a first forecast',
+      detail: 'Add or connect your portfolio next for allocation and performance guidance.',
+      stage: 'portfolio',
+    };
+  }
+  const activePlan = steps.find(step => stepId(step) === 'active_plan');
+  if (activePlan && activePlan.status !== 'complete') {
+    return {
+      label: 'Ready for tailored advice',
+      detail: 'Create a plan next so simulations have a goal and horizon.',
+      stage: 'plan',
+    };
+  }
+  return {
+    label: status.ready_for_daily_review ? 'Decision picture ready' : 'Ready for tailored advice',
+    detail: status.ready_for_daily_review ? 'Review and refine it whenever life changes.' : 'Review the next suggested context when you are ready.',
+    stage: 'ready',
+  };
+}
+
+export function copilotConnectionState(options) {
+  if (!options || typeof options !== 'object') return { status: 'loading' };
+  const providers = Array.isArray(options.providers) ? options.providers : [];
+  const hasConnectionMetadata = Array.isArray(options.providers)
+    || Array.isArray(options.connected_providers);
+  if (!hasConnectionMetadata) return { status: 'loading' };
+  const connected = providers.some(provider => Boolean(provider?.connected))
+    || (Array.isArray(options.connected_providers) && options.connected_providers.length > 0);
+  return { status: connected ? 'ready' : 'unavailable' };
+}
+
 function householdNeedsSetup(status) {
   const sections = Array.isArray(status?.profile_readiness?.sections)
     ? status.profile_readiness.sections
@@ -890,31 +965,31 @@ function householdNeedsSetup(status) {
 }
 
 function isGoalOnboardingStep(step) {
-  const key = String(step?.key || '').toLowerCase();
+  const key = String(step?.id || step?.key || '').toLowerCase();
   const title = String(step?.title || '').toLowerCase();
   return key.includes('goal') || title.includes('goal');
 }
 
 function isDebtOnboardingStep(step) {
-  const key = String(step?.key || '').toLowerCase();
+  const key = String(step?.id || step?.key || '').toLowerCase();
   const title = String(step?.title || '').toLowerCase();
   return key.includes('debt') || title.includes('debt');
 }
 
 function isPhysicalAssetOnboardingStep(step) {
-  const key = String(step?.key || '').toLowerCase();
+  const key = String(step?.id || step?.key || '').toLowerCase();
   const title = String(step?.title || '').toLowerCase();
   return key.includes('physical_asset') || title.includes('physical asset') || title.includes('asset');
 }
 
 function isTaxOnboardingStep(step) {
-  const key = String(step?.key || '').toLowerCase();
+  const key = String(step?.id || step?.key || '').toLowerCase();
   const title = String(step?.title || '').toLowerCase();
   return key.includes('tax') || title.includes('tax');
 }
 
 function isInvestmentPolicyOnboardingStep(step) {
-  const key = String(step?.key || '').toLowerCase();
+  const key = String(step?.id || step?.key || '').toLowerCase();
   const title = String(step?.title || '').toLowerCase();
   return key.includes('investment_policy')
     || title.includes('investment policy')
@@ -1038,6 +1113,7 @@ function focusSummaryLabel(focus) {
 }
 
 function modelSummaryLabel(llm, options) {
+  if (copilotConnectionState(options).status === 'unavailable') return 'Connect AI';
   const resolved = llm || options?.resolved || {};
   const label = String(resolved.label || resolved.model || options?.active_model || '').trim();
   const cost = String(resolved.cost_band || '').trim();

@@ -203,7 +203,18 @@ test('rail avoids duplicating the editor when its tab is already active', () => 
   assert.doesNotMatch(markup, /data-table-add="household_members"/);
 });
 
-test('all steps complete: single quiet dismissable line', () => {
+test('debt and goals step offers honest not-applicable and not-yet answers', () => {
+  resetRail();
+  const markup = String(renderSetupRail(uiWith({
+    household: 'complete', income: 'complete', expenses: 'complete',
+  })));
+  assert.match(markup, /I have no debt/);
+  assert.match(markup, /I’m not ready to set a goal/);
+  assert.match(markup, /data-rail-action="mark-no-debt"/);
+  assert.match(markup, /data-rail-action="defer-goals"/);
+});
+
+test('all core steps complete: readiness milestone stays honest about optional context', () => {
   resetRail();
   const done = {
     household: 'complete', income: 'complete', expenses: 'complete',
@@ -211,7 +222,9 @@ test('all steps complete: single quiet dismissable line', () => {
     investment_policy: 'complete',
   };
   const markup = String(renderSetupRail(uiWith(done)));
-  assert.match(markup, /Setup complete — everything below stays editable\./);
+  assert.match(markup, /Core profile ready/);
+  assert.match(markup, /optional details can improve/i);
+  assert.doesNotMatch(markup, /Setup complete/);
   assert.match(markup, /data-rail-action="dismiss"/);
   assert.doesNotMatch(markup, /Skip for now/);
 
