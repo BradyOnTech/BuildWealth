@@ -45,6 +45,12 @@ function installBaseRoutes(page, handleChatStream, {
   conversations = [],
   conversationById = {},
   onDecision = null,
+  onboardingStatus = {
+    ready_for_daily_review: true,
+    completion_percent: 100,
+    profile_readiness: { status: 'ready' },
+    steps: [],
+  },
 } = {}) {
   return page.route('**/*', async route => {
     const request = route.request();
@@ -97,12 +103,7 @@ function installBaseRoutes(page, handleChatStream, {
       return;
     }
     if (url.pathname === '/api/onboarding/status') {
-      await route.fulfill(jsonResponse({
-        ready_for_daily_review: true,
-        completion_percent: 100,
-        profile_readiness: { status: 'ready' },
-        steps: [],
-      }));
+      await route.fulfill(jsonResponse(onboardingStatus));
       return;
     }
     if (url.pathname === '/api/copilot/chat/stream' && request.method() === 'POST') {
@@ -276,6 +277,40 @@ test('Copilot history opens as a usable drawer on mobile', async ({ page }) => {
     const element = document.querySelector('#copilot-history');
     return element && element.getBoundingClientRect().right <= 25;
   });
+});
+
+test('Copilot desktop empty state keeps its headline and starter cards inside the scroll viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 1536, height: 844 });
+  await installBaseRoutes(page, async route => route.fulfill(sseResponse([])), {
+    onboardingStatus: {
+      ready_for_daily_review: false,
+      completion_percent: 0,
+      profile_readiness: {
+        status: 'incomplete',
+        next_gap_title: 'Income profile',
+        next_gap_detail: 'Add what comes in each month — salary, business, anything recurring.',
+        blocking_recommendation_sources: ['profile_completeness', 'tax_planning'],
+        sections: [{ key: 'household', status: 'incomplete' }],
+      },
+      steps: [{ id: 'income', title: 'Income profile', status: 'incomplete' }],
+    },
+  });
+
+  await page.goto('http://buildwealth-v2.test/#copilot');
+  await page.getByText('How can I help?').waitFor();
+
+  const scrollBox = await page.locator('.copilot-scroll').boundingBox();
+  const headlineBox = await page.locator('.copilot-empty-headline').boundingBox();
+  const lastStarterBox = await page.locator('.suggestion-card:last-child').boundingBox();
+  assert.ok(scrollBox && headlineBox && lastStarterBox);
+  assert.ok(
+    headlineBox.y >= scrollBox.y,
+    'empty-state headline should not be clipped above the scroll viewport',
+  );
+  assert.ok(
+    lastStarterBox.y + lastStarterBox.height <= scrollBox.y + scrollBox.height + 1,
+    'starter cards should not be clipped behind the composer',
+  );
 });
 
 test('Copilot history is searchable, grouped, renameable, and archivable with undo', async ({ page }) => {

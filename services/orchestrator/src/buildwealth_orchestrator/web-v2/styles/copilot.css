@@ -1418,12 +1418,13 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: var(--s-5);
-  min-height: 0;
+  justify-content: safe center;
+  gap: var(--s-4);
+  min-height: 100%;
   flex: 1;
-  height: 100%;
-  padding: var(--s-3) 0;
+  height: auto;
+  box-sizing: border-box;
+  padding: var(--s-2) 0 10px;
   text-align: center;
 }
 
@@ -1543,6 +1544,10 @@
   width: 100%;
   max-width: 420px;
   text-align: left;
+}
+
+.profile-onboarding-card {
+  max-width: 560px;
 }
 
 .profile-draft-eyebrow,
@@ -1817,7 +1822,7 @@
     color-mix(in srgb, var(--paper) 88%, transparent) 28%,
     var(--paper) 55%
   );
-  padding: var(--s-3) 0 var(--s-4);
+  padding: var(--s-2) 0 10px;
   margin-top: auto;
 }
 
@@ -1836,9 +1841,9 @@
   border: var(--hair) solid var(--rule);
   border-radius: 18px;
   background: var(--paper-bright);
-  padding: 12px 14px 10px;
+  padding: 10px 14px 9px;
   display: grid;
-  gap: 8px;
+  gap: 6px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.05);
   transition:
     border-color var(--d-fast) var(--ease-press),
