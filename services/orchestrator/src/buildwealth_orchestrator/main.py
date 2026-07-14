@@ -4833,8 +4833,7 @@ def _build_top_next_actions(
         if row_plan_id in {None, resolved_plan_id}:
             scoped_rows.append(row)
 
-    selected_rows = scoped_rows if scoped_rows else ranked_rows
-    return [_as_top_next_action(row) for row in selected_rows[:bounded_limit]]
+    return [_as_top_next_action(row) for row in scoped_rows[:bounded_limit]]
 
 
 def _build_today_command_cards(
@@ -7020,10 +7019,18 @@ def _recommendation_needs_process_outcome(row: dict[str, Any]) -> bool:
     return not str(calibration.get("process_outcome") or "").strip()
 
 
-def _build_plan_detail_response(detail: dict[str, Any]) -> PlanDetailResponse:
+def _build_plan_detail_response(
+    detail: dict[str, Any],
+    *,
+    inbox: RecommendationInbox | None = None,
+) -> PlanDetailResponse:
     payload = dict(detail)
     plan_id = str(payload.get("id") or "").strip() or None
-    payload["top_next_actions"] = _build_top_next_actions(plan_id=plan_id, limit=3)
+    payload["top_next_actions"] = _build_top_next_actions(
+        plan_id=plan_id,
+        limit=3,
+        inbox=inbox,
+    )
     return PlanDetailResponse(**payload)
 
 

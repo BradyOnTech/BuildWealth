@@ -165,6 +165,10 @@ class PortfolioStore:
             "fx_rates": {
                 DEFAULT_CURRENCY: 1.0,
             },
+            "valuation_status": "empty",
+            "priced_holdings_count": 0,
+            "unpriced_holdings_count": 0,
+            "unpriced_cost_basis": 0.0,
             "performance": {
                 "start_date": None,
                 "as_of": None,
@@ -1095,6 +1099,9 @@ class PortfolioStore:
         migrated_holdings: dict[str, dict[str, Any]] = {}
         total_market_value = 0.0
         total_cost = 0.0
+        priced_holdings_count = 0
+        unpriced_holdings_count = 0
+        unpriced_cost_basis = 0.0
 
         for holding_key, raw_holding in holdings_input.items():
             if not isinstance(raw_holding, dict):
@@ -1255,6 +1262,10 @@ class PortfolioStore:
 
             if current_value_value is not None:
                 total_market_value += float(current_value_value)
+                priced_holdings_count += 1
+            elif quantity > 0:
+                unpriced_holdings_count += 1
+                unpriced_cost_basis += float(cost_basis)
             total_cost += float(cost_basis)
 
         performance_input = payload.get("performance") if isinstance(payload.get("performance"), dict) else {}
@@ -1266,6 +1277,19 @@ class PortfolioStore:
             performance["ending_value"] = round(total_market_value, 2)
         if performance.get("as_of") is None:
             performance["as_of"] = payload.get("prices_updated_at")
+
+        if unpriced_holdings_count:
+            for key in (
+                "twr_return_pct",
+                "twr_annualized_return_pct",
+                "xirr_annualized_return_pct",
+                "unrealized_gains_usd",
+                "price_return_usd",
+                "total_return_usd",
+                "price_return_pct",
+                "total_return_pct",
+            ):
+                performance[key] = None
 
         total_market_value = round(total_market_value, 2)
         total_cost = round(total_cost, 2)
@@ -1307,13 +1331,29 @@ class PortfolioStore:
             "risk_alerts": self._normalize_risk_alerts_payload(payload.get("risk_alerts"), fallback=risk_alerts),
             "total_value": round(total_market_value, 2),
             "total_cost_basis": round(total_cost, 2),
+            "valuation_status": (
+                "empty"
+                if not migrated_holdings
+                else "unavailable"
+                if priced_holdings_count == 0
+                else "partial"
+                if unpriced_holdings_count
+                else "complete"
+            ),
+            "priced_holdings_count": priced_holdings_count,
+            "unpriced_holdings_count": unpriced_holdings_count,
+            "unpriced_cost_basis": round(unpriced_cost_basis, 2),
             "total_cash": total_cash,
             "total_portfolio_value": total_portfolio_value,
-            "net_performance": round(
-                _safe_float(payload.get("net_performance"), total_market_value - total_cost),
-                2,
+            "net_performance": (
+                None
+                if unpriced_holdings_count
+                else round(_safe_float(payload.get("net_performance"), total_market_value - total_cost), 2)
             ),
             "net_performance_pct": (
+                None
+                if unpriced_holdings_count
+                else
                 round(
                     _safe_float(
                         payload.get("net_performance_pct"),
@@ -1860,6 +1900,9 @@ class PortfolioStore:
     ) -> dict[str, Any]:
         total_market_value = 0.0
         total_cost = 0.0
+        priced_holdings_count = 0
+        unpriced_holdings_count = 0
+        unpriced_cost_basis = 0.0
         manual_prices = self._manual_prices_by_symbol()
         base_currency, fx_rates = self._fx_rates_data()
 
@@ -1959,6 +2002,10 @@ class PortfolioStore:
 
             if holding.get("current_value") is not None:
                 total_market_value += float(holding["current_value"])
+                priced_holdings_count += 1
+            elif quantity > 0:
+                unpriced_holdings_count += 1
+                unpriced_cost_basis += float(cost_basis)
             total_cost += float(cost_basis)
 
         normalized_account_cash = self._normalize_account_cash_payload(account_cash)
@@ -2015,9 +2062,25 @@ class PortfolioStore:
         payload["total_cash"] = total_cash
         payload["total_portfolio_value"] = total_portfolio_value
         payload["total_cost_basis"] = round(total_cost, 2)
-        payload["net_performance"] = round(total_market_value - total_cost, 2)
+        payload["valuation_status"] = (
+            "empty"
+            if not holdings
+            else "unavailable"
+            if priced_holdings_count == 0
+            else "partial"
+            if unpriced_holdings_count
+            else "complete"
+        )
+        payload["priced_holdings_count"] = priced_holdings_count
+        payload["unpriced_holdings_count"] = unpriced_holdings_count
+        payload["unpriced_cost_basis"] = round(unpriced_cost_basis, 2)
+        payload["net_performance"] = None if unpriced_holdings_count else round(total_market_value - total_cost, 2)
         payload["net_performance_pct"] = (
-            round((total_market_value - total_cost) / total_cost * 100, 2) if total_cost > 0 else 0.0
+            None
+            if unpriced_holdings_count
+            else round((total_market_value - total_cost) / total_cost * 100, 2)
+            if total_cost > 0
+            else 0.0
         )
         payload["performance"] = calculate_portfolio_performance(
             transactions=converted_transactions,
@@ -2025,6 +2088,18 @@ class PortfolioStore:
             as_of=prices_updated_at or _utc_now(),
             return_components_override=return_components_override,
         )
+        if unpriced_holdings_count:
+            for key in (
+                "twr_return_pct",
+                "twr_annualized_return_pct",
+                "xirr_annualized_return_pct",
+                "unrealized_gains_usd",
+                "price_return_usd",
+                "total_return_usd",
+                "price_return_pct",
+                "total_return_pct",
+            ):
+                payload["performance"][key] = None
         payload["lot_audit"] = self._normalize_lot_audit_payload(lot_audit)
         payload["corporate_actions"] = self._normalize_corporate_actions_payload(corporate_actions)
         payload["risk_policy"] = risk_policy

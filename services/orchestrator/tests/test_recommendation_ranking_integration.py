@@ -187,6 +187,56 @@ def test_build_top_next_actions_scopes_to_plan_and_global(
     assert ids[0] == target_plan["id"]
 
 
+def test_build_top_next_actions_never_falls_back_to_another_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        main,
+        "_recommendation_list",
+        lambda **_kwargs: [
+            {
+                "id": "other-plan-recommendation",
+                "plan_id": "plan-other",
+                "title": "Other plan action",
+                "detail": "This action belongs to a different plan.",
+                "priority": "high",
+                "status": "proposed",
+            }
+        ],
+    )
+
+    assert main._build_top_next_actions(plan_id="plan-target", limit=3) == []
+
+
+def test_plan_detail_builder_uses_the_resolved_workspace_inbox(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected_inbox = object()
+    received: dict[str, object] = {}
+
+    def fake_actions(*, plan_id, limit, inbox):
+        received.update(plan_id=plan_id, limit=limit, inbox=inbox)
+        return []
+
+    monkeypatch.setattr(main, "_build_top_next_actions", fake_actions)
+    detail = {
+        "id": "plan-target",
+        "title": "Target plan",
+        "description": "",
+        "is_active": True,
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
+        "settings": {},
+        "files": {},
+        "decisions": [],
+        "artifacts": [],
+    }
+
+    main._build_plan_detail_response(detail, inbox=expected_inbox)
+
+    assert received == {"plan_id": "plan-target", "limit": 3, "inbox": expected_inbox}
+
+
 def test_top_next_actions_include_quality_explanation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

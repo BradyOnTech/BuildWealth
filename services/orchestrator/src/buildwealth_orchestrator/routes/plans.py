@@ -75,7 +75,7 @@ def create_plan(
     except ValueError as exc:
         raise m.HTTPException(status_code=400, detail=str(exc)) from exc
     m._queue_autogit_event("plan_created")
-    return m._build_plan_detail_response(detail)
+    return m._build_plan_detail_response(detail, inbox=resolved_services.recommendation_inbox)
 
 
 @router.get("/api/plans/{plan_id}", response_model=m.PlanDetailResponse)
@@ -88,7 +88,7 @@ def get_plan(
         detail = resolved_services.plan_workspace.get_plan(plan_id)
     except m.PlanNotFoundError as exc:
         raise m.HTTPException(status_code=404, detail=str(exc)) from exc
-    return m._build_plan_detail_response(detail)
+    return m._build_plan_detail_response(detail, inbox=resolved_services.recommendation_inbox)
 
 
 @router.put("/api/plans/{plan_id}", response_model=m.PlanDetailResponse)
@@ -115,7 +115,7 @@ def update_plan(
     except ValueError as exc:
         raise m.HTTPException(status_code=400, detail=str(exc)) from exc
     m._queue_autogit_event("plan_updated")
-    return m._build_plan_detail_response(detail)
+    return m._build_plan_detail_response(detail, inbox=resolved_services.recommendation_inbox)
 
 
 @router.patch("/api/plans/{plan_id}/settings", response_model=m.PlanDetailResponse)
@@ -148,7 +148,7 @@ def update_plan_settings(
     except ValueError as exc:
         raise m.HTTPException(status_code=400, detail=str(exc)) from exc
     m._queue_autogit_event("plan_settings_updated")
-    return m._build_plan_detail_response(detail)
+    return m._build_plan_detail_response(detail, inbox=resolved_services.recommendation_inbox)
 
 
 @router.get("/api/plans/{plan_id}/timeline", response_model=m.PlanTimelineResponse)
@@ -951,7 +951,7 @@ def append_plan_decision(
     except ValueError as exc:
         raise m.HTTPException(status_code=400, detail=str(exc)) from exc
     m._queue_autogit_event("plan_decision_added")
-    return m._build_plan_detail_response(detail)
+    return m._build_plan_detail_response(detail, inbox=resolved_services.recommendation_inbox)
 
 
 @router.post("/api/plans/{plan_id}/refresh-context", response_model=m.PlanDetailResponse)
@@ -972,7 +972,7 @@ def refresh_plan_context(
     except m.PlanNotFoundError as exc:
         raise m.HTTPException(status_code=404, detail=str(exc)) from exc
     m._queue_autogit_event("plan_context_refreshed")
-    return m._build_plan_detail_response(detail)
+    return m._build_plan_detail_response(detail, inbox=resolved_services.recommendation_inbox)
 
 
 @router.get("/api/plans/{plan_id}/artifacts/{artifact_id}", response_model=m.PlanArtifactResponse)
