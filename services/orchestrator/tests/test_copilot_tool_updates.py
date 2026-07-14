@@ -1362,14 +1362,14 @@ def test_tool_apply_recommendation_records_copilot_audit_event(
             self.events.append(kwargs)
             return kwargs
 
-    async def fake_apply(recommendation_id, request):
+    async def fake_apply(recommendation_id, request, *, services=None):
         assert recommendation_id == "rec-123"
         assert request.decision_status == "accepted"
         return FakeResult()
 
     activity = FakeActivityStore()
     monkeypatch.setattr(main, "apply_recommendation_with_decision_packet", fake_apply)
-    monkeypatch.setattr(main, "_git_activity_store", lambda: activity)
+    monkeypatch.setattr(main, "_git_activity_store", lambda services=None: activity)
 
     result = asyncio.run(
         main.tool_apply_recommendation(
@@ -1542,6 +1542,7 @@ def test_tool_pin_watchlist_research_to_plan_calls_bridge(
         *,
         plan_id: str,
         request: main.PlanResearchBridgeRequest,
+        services=None,
     ) -> main.PlanResearchBridgeResponse:
         assert plan_id == "plan-abc"
         assert request.symbols == ["NVDA", "VTI"]
@@ -1719,6 +1720,7 @@ def test_tool_research_dossier_lookup_calls_payload_builder(
         plan_id: str | None,
         limit: int,
         include_content: bool,
+        workspace=None,
     ) -> dict[str, object]:
         assert plan_id == "plan-abc"
         assert limit == 4
@@ -1766,6 +1768,7 @@ def test_tool_research_watchlist_rank_calls_payload_builder(
         interval: str,
         sort: str,
         limit: int,
+        store=None,
     ) -> dict[str, object]:
         assert period == "6mo"
         assert interval == "1d"
@@ -1804,6 +1807,8 @@ def test_tool_preview_recommendation_calls_preview_service(
     async def fake_preview(
         recommendation_id: str,
         request: main.RecommendationPreviewRequest,
+        *,
+        services=None,
     ) -> main.RecommendationPreviewResponse:
         assert recommendation_id == "rec-123"
         assert request.plan_id == "plan-abc"
@@ -1856,6 +1861,8 @@ def test_tool_update_recommendation_outcome_calls_service(
     def fake_update(
         recommendation_id: str,
         request: main.RecommendationOutcomeUpdateRequest,
+        *,
+        services=None,
     ) -> main.RecommendationActionResponse:
         assert recommendation_id == "rec-123"
         assert request.plan_id == "plan-abc"
@@ -1913,6 +1920,7 @@ def test_tool_get_recommendation_closure_analytics_calls_payload_builder(
         limit: int,
         statuses,
         include_pending_realized: bool,
+        inbox=None,
     ) -> dict[str, object]:
         assert limit == 120
         assert statuses == ["applied", "rejected"]
@@ -1953,6 +1961,7 @@ def test_tool_get_recommendation_closure_analytics_passes_plan_id(
         statuses,
         include_pending_realized: bool,
         plan_id: str | None = None,
+        inbox=None,
     ) -> dict[str, object]:
         assert limit == 50
         assert statuses == ["applied", "rejected"]
@@ -1994,6 +2003,7 @@ def test_tool_create_plan_recommendation_closure_summary_calls_service(
         *,
         plan_id: str,
         request: main.PlanRecommendationClosureSummaryRequest,
+        services=None,
     ) -> main.PlanRecommendationClosureSummaryResponse:
         assert plan_id == "plan-xyz"
         assert request.limit == 120
@@ -2014,7 +2024,11 @@ def test_tool_create_plan_recommendation_closure_summary_calls_service(
             decision_summary="Generated recommendation closure analytics summary (2 closed, 1 measured).",
         )
 
-    monkeypatch.setattr(main, "resolve_plan_id_or_active", lambda value: "plan-xyz")
+    monkeypatch.setattr(
+        main,
+        "resolve_plan_id_or_active",
+        lambda value, *, workspace=None: "plan-xyz",
+    )
     monkeypatch.setattr(main, "create_plan_recommendation_closure_summary", fake_create)
 
     payload = asyncio.run(

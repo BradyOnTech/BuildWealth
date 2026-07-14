@@ -319,10 +319,23 @@ class FinancialProfileStore:
     def _initialize(self) -> None:
         if self.profile_path.exists():
             return
-        self.profile_path.write_text(
-            json.dumps(self._default_payload(), indent=2),
-            encoding="utf-8",
+        self._write_payload(self._default_payload())
+
+    def _write_payload(self, payload: Mapping[str, Any]) -> None:
+        """Atomically replace the profile file.
+
+        Profile updates participate in reviewed multi-store mutations.  A
+        process interruption must therefore leave either the old JSON file or
+        the complete new one, never a partially-written document.
+        """
+        temporary_path = self.profile_path.with_name(
+            f".{self.profile_path.name}.{uuid.uuid4().hex}.tmp"
         )
+        try:
+            temporary_path.write_text(json.dumps(dict(payload), indent=2), encoding="utf-8")
+            temporary_path.replace(self.profile_path)
+        finally:
+            temporary_path.unlink(missing_ok=True)
 
     @staticmethod
     def _ensure_id(items: list[dict[str, Any]], prefix: str) -> list[dict[str, Any]]:
@@ -440,7 +453,7 @@ class FinancialProfileStore:
             raw = self._default_payload()
         payload = self._migrate_payload(raw)
         payload, _ = migrate_payload("financial_profile", payload)
-        self.profile_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        self._write_payload(payload)
         return payload
 
     # Backward-compatible alias used by existing route handlers.
@@ -475,5 +488,16 @@ class FinancialProfileStore:
                 now=now,
             )
         current["updated_at"] = now
-        self.profile_path.write_text(json.dumps(current, indent=2), encoding="utf-8")
+        self._write_payload(current)
+        return current
+
+    def replace(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """Replace the complete profile, preserving its supplied timestamps.
+
+        This is intentionally distinct from ``save``: it is the compensation
+        primitive used when a reviewed mutation cannot finish updating its
+        companion lifecycle record.
+        """
+        current = self._migrate_payload(dict(payload))
+        self._write_payload(current)
         return current

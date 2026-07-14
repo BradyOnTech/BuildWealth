@@ -255,7 +255,11 @@ def test_buildwealth_context_payload_contract_permutations(
             "settings": {},
             "decisions": [],
         }
-        monkeypatch.setattr(main, "_resolve_context_plan_detail", lambda plan_id: (plan_detail, "plan-1"))
+        monkeypatch.setattr(
+            main,
+            "_resolve_context_plan_detail",
+            lambda plan_id, *, workspace=None: (plan_detail, "plan-1"),
+        )
         monkeypatch.setattr(
             main,
             "plan_workspace",
@@ -279,7 +283,11 @@ def test_buildwealth_context_payload_contract_permutations(
             ),
         )
     else:
-        monkeypatch.setattr(main, "_resolve_context_plan_detail", lambda plan_id: (None, None))
+        monkeypatch.setattr(
+            main,
+            "_resolve_context_plan_detail",
+            lambda plan_id, *, workspace=None: (None, None),
+        )
 
     payload = asyncio.run(
         main.build_buildwealth_context_payload(

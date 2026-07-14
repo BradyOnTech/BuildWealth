@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from buildwealth_orchestrator import main
 from buildwealth_orchestrator.services.control_plane import ControlPlaneStore
+from buildwealth_orchestrator.services.context_intelligence import ContextIntelligenceService
 from buildwealth_orchestrator.services.financial_profile import FinancialProfileStore
 from buildwealth_orchestrator.services.profile_candidate_apply import apply_candidate_to_profile
 from buildwealth_orchestrator.services.workspace_services import WorkspaceServiceFactory
@@ -271,6 +272,49 @@ def test_apply_endpoint_missing_candidate_404(monkeypatch, tmp_path: Path) -> No
     with TestClient(main.app) as client:
         response = client.post("/api/context/candidates/does-not-exist/apply")
         assert response.status_code == 404
+
+
+def test_apply_endpoint_compensates_profile_when_lifecycle_sync_fails(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+
+    with TestClient(main.app, raise_server_exceptions=False) as client:
+        drafted = client.post(
+            "/api/context/candidates",
+            json={
+                "source_domain": "conversation",
+                "source_ref": "conversation/test#message.compensation",
+                "extracted_claim": "My marginal tax rate is 32%.",
+                "target_domain": "profile",
+                "target_area": "tax_profile",
+                "target_field": "tax_profile.marginal_tax_rate",
+                "target_value": 0.32,
+            },
+        )
+        candidate_id = drafted.json()["id"]
+        profile_before = client.get("/api/financial-profile").json()
+
+        original_sync = ContextIntelligenceService._sync_context_candidate_review_item
+
+        def fail_applied_sync(self, candidate):
+            if candidate.get("lifecycle_state") == "applied":
+                raise RuntimeError("simulated review sync failure")
+            return original_sync(self, candidate)
+
+        monkeypatch.setattr(
+            ContextIntelligenceService,
+            "_sync_context_candidate_review_item",
+            fail_applied_sync,
+        )
+        response = client.post(f"/api/context/candidates/{candidate_id}/apply")
+        profile_after = client.get("/api/financial-profile").json()
+        candidates = client.get("/api/context/candidates").json()["items"]
+
+    assert response.status_code == 500
+    assert profile_after == profile_before
+    restored = next(item for item in candidates if item["id"] == candidate_id)
+    assert restored["lifecycle_state"] == "pending_review"
+    assert restored["prompt_influence"] == "mention_only"
+    assert "review_action" not in restored["metadata"]
 
 
 def test_infer_profile_endpoint_creates_bracket_candidate(monkeypatch, tmp_path: Path) -> None:

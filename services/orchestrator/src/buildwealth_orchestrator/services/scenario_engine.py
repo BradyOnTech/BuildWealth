@@ -430,6 +430,23 @@ def _income_for_year(
     return max(0.0, _safe_float(income_projection.get("first_year_gross_income_usd"), 0.0))
 
 
+def _taxable_income_for_year(
+    income_projection: dict[str, Any] | None,
+    *,
+    year: int,
+) -> float:
+    point = _projection_point_for_year(income_projection, year=year)
+    if point is not None:
+        # Profile income explicitly distinguishes gross/pre-tax dollars from
+        # take-home dollars. Only the former should enter the tax engine.
+        if "pre_tax_income_usd" in point:
+            return max(0.0, _safe_float(point.get("pre_tax_income_usd"), 0.0))
+        return max(0.0, _safe_float(point.get("gross_income_usd"), 0.0))
+    if not isinstance(income_projection, dict):
+        return 0.0
+    return max(0.0, _safe_float(income_projection.get("first_year_gross_income_usd"), 0.0))
+
+
 def _expenses_for_year(
     expense_projection: dict[str, Any] | None,
     *,
@@ -1255,6 +1272,7 @@ class ScenarioEngine:
             starting_balance = sum(starting_by_account.values())
 
             annual_income = _income_for_year(income_projection, year=year)
+            taxable_annual_income = _taxable_income_for_year(income_projection, year=year)
             annual_social_security_income = _social_security_income_for_year(
                 social_security_projection,
                 year=year,
@@ -1268,9 +1286,11 @@ class ScenarioEngine:
             timeline_impact = _timeline_impacts_for_year(timeline_projection, year=year)
 
             annual_income += timeline_impact["income"]
+            taxable_annual_income += timeline_impact["income"]
             annual_expenses += timeline_impact["expense"]
             annual_debt += timeline_impact["debt_payment"]
             annual_income = max(0.0, annual_income)
+            taxable_annual_income = max(0.0, taxable_annual_income)
             annual_expenses = max(0.0, annual_expenses)
             annual_debt = max(0.0, annual_debt)
 
@@ -1289,7 +1309,7 @@ class ScenarioEngine:
             initial_tax = estimate_federal_tax(
                 tax_year=year,
                 filing_status=filing_status,
-                earned_income_usd=annual_income,
+                earned_income_usd=taxable_annual_income,
                 ordinary_income_usd=0.0,
                 short_term_capital_gains_usd=0.0,
                 long_term_capital_gains_usd=0.0,
@@ -1406,7 +1426,7 @@ class ScenarioEngine:
                 revised_tax_payload = estimate_federal_tax(
                     tax_year=year,
                     filing_status=filing_status,
-                    earned_income_usd=annual_income,
+                    earned_income_usd=taxable_annual_income,
                     ordinary_income_usd=taxable_ordinary_income,
                     short_term_capital_gains_usd=0.0,
                     long_term_capital_gains_usd=0.0,
@@ -1443,7 +1463,7 @@ class ScenarioEngine:
                     final_tax_payload = estimate_federal_tax(
                         tax_year=year,
                         filing_status=filing_status,
-                        earned_income_usd=annual_income,
+                        earned_income_usd=taxable_annual_income,
                         ordinary_income_usd=taxable_ordinary_income,
                         short_term_capital_gains_usd=0.0,
                         long_term_capital_gains_usd=0.0,

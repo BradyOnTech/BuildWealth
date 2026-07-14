@@ -199,10 +199,16 @@ export function renderAddResult(result = {}) {
   const detail = String(result.detail || 'Added to your portfolio.');
   return html`
     <span class="portfolio-add-detail">${detail}</span>
-    ${result.estimated_basis ? html`
+    ${result.estimated_basis && !result.valuation_only ? html`
       <span class="portfolio-add-estimated">
         Cost basis was estimated from the current price — correct it under
         Records &amp; tools → Transactions whenever you know the real number.
+      </span>
+    ` : ''}
+    ${result.valuation_only ? html`
+      <span class="portfolio-add-estimated">
+        This starts as a current-value estimate, so your total is useful now.
+        Add the real share count and cost under Records &amp; tools when you have them.
       </span>
     ` : ''}
   `;

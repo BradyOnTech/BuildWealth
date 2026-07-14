@@ -11,9 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from buildwealth_orchestrator.services.portfolio_rebalancing import is_untradable_position
+from buildwealth_orchestrator.services.household_assets import reconcile_household_assets
 
-_HOUSING_ASSET_TYPES = {"property", "real_estate"}
 _MORTGAGE_HINTS = ("mortgage", "home", "house", "heloc", "property")
 
 
@@ -36,46 +35,16 @@ def build_housing_exposure_payload(
     debt_items: list[dict[str, Any]] | None = None,
     physical_assets: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    properties: list[dict[str, Any]] = []
-    other_assets_total = 0.0
-
-    for entry in holdings.values():
-        if not isinstance(entry, dict):
-            continue
-        value = _safe(entry.get("current_value"))
-        if value <= 0:
-            continue
-        asset_type = str(entry.get("asset_type") or "").strip().lower()
-        if is_untradable_position(entry) and asset_type in _HOUSING_ASSET_TYPES:
-            properties.append(
-                {
-                    "label": str(entry.get("name") or entry.get("symbol") or "Property").strip(),
-                    "value_usd": round(value, 2),
-                }
-            )
-        else:
-            other_assets_total += value
-
-    property_values = {round(_safe(row["value_usd"])) for row in properties}
-    for asset in physical_assets or []:
-        if not isinstance(asset, dict):
-            continue
-        value = _safe(asset.get("current_value_usd"))
-        if value <= 0:
-            continue
-        if str(asset.get("asset_type") or "").strip().lower() == "real_estate":
-            # The same home sometimes lives in both the portfolio (custom
-            # asset) and the profile (physical asset); don't count it twice.
-            if round(value) in property_values:
-                continue
-            properties.append(
-                {
-                    "label": str(asset.get("label") or "Property").strip(),
-                    "value_usd": round(value, 2),
-                }
-            )
-        else:
-            other_assets_total += value
+    reconciliation = reconcile_household_assets(
+        portfolio_assets=(entry for entry in holdings.values() if isinstance(entry, dict)),
+        profile_assets=physical_assets,
+    )
+    properties = [
+        {"label": asset.label, "value_usd": round(asset.value_usd, 2)}
+        for asset in reconciliation.assets
+        if asset.is_housing
+    ]
+    other_assets_total = sum(asset.value_usd for asset in reconciliation.assets if not asset.is_housing)
 
     if not properties:
         return {

@@ -26,7 +26,8 @@ def test_plan_saved_simulation_routes(monkeypatch, tmp_path) -> None:
     workspace = PlanWorkspace(tmp_path)
     plan = workspace.create_plan(title="Saved Simulation Route Plan")
     monkeypatch.setattr(main, "plan_workspace", workspace)
-    _override_plan_workspace(workspace)
+    services = _override_plan_workspace(workspace)
+    token = main.current_copilot_workspace_services.set(services)
 
     try:
         with TestClient(main.app) as client:
@@ -116,6 +117,7 @@ def test_plan_saved_simulation_routes(monkeypatch, tmp_path) -> None:
             assert review["stage_one"]["name"] == "Change size"
             assert review["stage_two"]["name"] == "Result trust"
     finally:
+        main.current_copilot_workspace_services.reset(token)
         main.app.dependency_overrides.pop(main.get_workspace_services, None)
 
 def test_plan_saved_simulation_copilot_tools(monkeypatch, tmp_path) -> None:
@@ -143,7 +145,8 @@ def test_plan_saved_simulation_copilot_tools(monkeypatch, tmp_path) -> None:
         },
     )
     monkeypatch.setattr(main, "plan_workspace", workspace)
-    _override_plan_workspace(workspace)
+    services = _override_plan_workspace(workspace)
+    token = main.current_copilot_workspace_services.set(services)
 
     try:
         listed = asyncio.run(main.tool_list_plan_saved_simulations({"plan_id": plan["id"], "limit": 5}))
@@ -164,6 +167,7 @@ def test_plan_saved_simulation_copilot_tools(monkeypatch, tmp_path) -> None:
         assert comparison["changed_since_saved"] is True
         assert comparison["setting_differences"][0]["field"] == "annual_contribution_usd"
     finally:
+        main.current_copilot_workspace_services.reset(token)
         main.app.dependency_overrides.pop(main.get_workspace_services, None)
 
 

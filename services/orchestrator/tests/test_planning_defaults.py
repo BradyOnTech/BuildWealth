@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from buildwealth_orchestrator import main
 
 
@@ -47,3 +49,67 @@ def test_assumption_defaults_prefer_profile_tax_fields(monkeypatch, tmp_path) ->
     mismatch = payload["profile_mismatch"]
     assert mismatch["profile_value"] == 0.22
     assert mismatch["engine_default"] == main.settings.planner_marginal_tax_rate
+
+
+def test_plan_run_uses_explicit_household_profile_and_accounts() -> None:
+    profile = {
+        "household_members": [
+            {"display_name": "Alex", "relationship": "self", "birth_year": 1988}
+        ],
+        "income_items": [
+            {"label": "Salary", "monthly_amount_usd": 8_000, "source_type": "salary"}
+        ],
+        "expense_items": [
+            {"label": "Household spending", "monthly_amount_usd": 4_500, "category": "living"}
+        ],
+        "debt_items": [],
+        "tax_profile": {
+            "filing_status": "single",
+            "marginal_tax_rate": 0.24,
+            "state_tax_rate": 0.068,
+        },
+    }
+    settings = {"annual_contribution_usd": 18_000, "years": 1}
+    income = main.build_income_projection_for_plan_settings(settings, profile_payload=profile)
+    expenses = main.build_expense_projection_for_plan_settings(settings, profile_payload=profile)
+
+    result = asyncio.run(
+        main.run_scenarios_for_plan_settings(
+            current_portfolio_value_usd=15_000,
+            plan_settings=settings,
+            income_projection=income,
+            expense_projection=expenses,
+            profile_payload=profile,
+            planning_accounts_override=[
+                {
+                    "account_id": "default",
+                    "account_name": "Default Brokerage",
+                    "account_type": "taxable",
+                    "balance_usd": 15_000,
+                }
+            ],
+        )
+    )
+
+    point = result.scenarios[0].timeline_points[0]
+    assumptions = result.scenarios[0].assumptions
+    assert point.income_usd == 96_000
+    assert point.expenses_usd == 54_000
+    assert point.age == main.utc_now().year - 1988
+    assert assumptions["filing_status"] == "single"
+    assert assumptions["state_tax_rate"] == 0.068
+    assert assumptions["account_count"] == 1
+
+
+def test_plan_value_falls_back_to_current_holdings_without_snapshot(tmp_path) -> None:
+    portfolio = main.PortfolioStore(tmp_path / "portfolio")
+    portfolio.add_transaction(
+        date="2026-07-14",
+        symbol="CASH",
+        action="CASH_DEPOSIT",
+        quantity=1,
+        unit_price=1_234,
+    )
+    snapshots = main.SnapshotStore(tmp_path / "snapshots")
+
+    assert main.resolve_portfolio_value(None, store=snapshots, portfolio=portfolio) == 1_234

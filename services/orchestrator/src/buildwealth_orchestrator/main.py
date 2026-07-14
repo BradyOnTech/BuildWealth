@@ -18,6 +18,7 @@ from typing import Any, Literal
 from urllib.parse import quote as url_quote, urlencode
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.params import Depends as DependsParam
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 import httpx
@@ -68,6 +69,7 @@ from buildwealth_orchestrator.schemas import (
     PlanArtifactResponse,
     PlanCreateRequest,
     PlanDecisionCreateRequest,
+    PlanDecision,
     PlanDetailResponse,
     PlanScenarioDiffRequest,
     PlanScenarioDiffResponse,
@@ -97,6 +99,8 @@ from buildwealth_orchestrator.schemas import (
     PlanSavedSimulationRerunRequest,
     PlanSavedSimulationRerunResponse,
     PlanSavedSimulationsResponse,
+    PlanSimulationRun,
+    PlanSimulationRunsResponse,
     PlanResearchBridgeRequest,
     PlanResearchBridgeResponse,
     PlanResearchBridgePinnedItem,
@@ -259,6 +263,7 @@ from buildwealth_orchestrator.services.scenario_engine import (
     STRATEGY_ALIASES,
     ScenarioEngine,
 )
+from buildwealth_orchestrator.services.simulation_runs import execute_tracked_simulation
 from buildwealth_orchestrator.services.timeline_defaults import (
     TIMELINE_DEFAULT_IMPACT_BY_EVENT,
     TIMELINE_EVENT_TYPES,
@@ -788,27 +793,35 @@ def get_current_request(request: Request) -> Request:
     return request
 
 
-def workspace_services_or_legacy(candidate: Any) -> Any:
+def default_workspace_services() -> WorkspaceServices:
+    """Resolve the configured default household through the control plane.
+
+    CLI helpers and tests may run outside an HTTP dependency context, but they
+    still use a real workspace service graph.  There is no second global-store
+    interpretation of Canonical State.
+    """
+    context = control_plane_store.dev_request_context(auth_mode=_auth_mode())
+    return workspace_service_factory.for_context(context)
+
+
+def resolve_workspace_services(candidate: Any) -> Any:
+    """Resolve explicit, active Copilot, or default workspace services.
+
+    The historical function name remains while call sites migrate, but the
+    legacy global-store fallback has been removed.
+    """
+    # Calling a FastAPI handler directly leaves its dependency marker in the
+    # argument slot. Treat that marker as "not supplied" so CLI/test callers
+    # still resolve through an explicitly bound or default workspace graph.
+    if isinstance(candidate, DependsParam):
+        candidate = None
     if candidate is None:
         candidate = current_copilot_workspace_services.get()
     if isinstance(candidate, WorkspaceServices) or hasattr(candidate, "context"):
         return candidate
-    from types import SimpleNamespace
-
-    return SimpleNamespace(
-        record=SimpleNamespace(id="legacy"),
-        context=SimpleNamespace(permissions=ControlPlaneStore.OWNER_PERMISSIONS),
-        settings_store=user_settings_store,
-        financial_profile_store=financial_profile_store,
-        portfolio_store=portfolio_store,
-        snapshot_store=snapshot_store,
-        plan_workspace=plan_workspace,
-        recommendation_inbox=recommendation_inbox,
-        import_workbench_store=import_workbench_store,
-        conversation_store=conversation_store,
-        context_intelligence_service=context_intelligence_service,
-        today_review_checkpoint_store=today_review_checkpoint_store,
-    )
+    if candidate is not None:
+        raise TypeError("Expected WorkspaceServices or an active workspace context")
+    return default_workspace_services()
 
 
 def route_workspace_services(
@@ -818,7 +831,7 @@ def route_workspace_services(
     http_request: Request | None = None,
     require_write_token: bool = False,
 ) -> Any:
-    resolved_services = workspace_services_or_legacy(candidate)
+    resolved_services = resolve_workspace_services(candidate)
     if require_write_token and hasattr(http_request, "headers"):
         require_csrf(http_request)
     require_permission(resolved_services.context, permission)
@@ -910,7 +923,7 @@ def git_integration_settings_store_for_workspace(services: Any) -> GitIntegratio
 
 
 def _git_policy(services: Any | None = None) -> dict[str, Any]:
-    resolved_services = workspace_services_or_legacy(services) if services is not None else None
+    resolved_services = resolve_workspace_services(services) if services is not None else None
     return git_integration_settings_store_for_workspace(resolved_services).load()
 
 
@@ -918,7 +931,7 @@ def _versioned_workspace_service(
     policy: dict[str, Any],
     services: Any | None = None,
 ) -> VersionedWorkspaceService:
-    resolved_services = workspace_services_or_legacy(services) if services is not None else None
+    resolved_services = resolve_workspace_services(services) if services is not None else None
     paths = getattr(resolved_services, "paths", None)
     if paths is not None:
         return VersionedWorkspaceService(
@@ -943,7 +956,7 @@ def _git_repository_service(
     policy: dict[str, Any],
     services: Any | None = None,
 ) -> GitRepositoryService:
-    resolved_services = workspace_services_or_legacy(services) if services is not None else None
+    resolved_services = resolve_workspace_services(services) if services is not None else None
     paths = getattr(resolved_services, "paths", None)
     default_workspace_dir = paths.root / "versioned" if paths is not None else settings.versioned_workspace_dir
     return GitRepositoryService(Path(str(policy.get("workspace_dir") or default_workspace_dir)))
@@ -964,7 +977,7 @@ def _git_restore_apply_service(
     policy: dict[str, Any],
     services: Any | None = None,
 ) -> GitRestoreApplyService:
-    resolved_services = workspace_services_or_legacy(services)
+    resolved_services = resolve_workspace_services(services)
     return GitRestoreApplyService(
         git_repository=_git_repository_service(policy, services=resolved_services),
         checkpoint_service=_git_checkpoint_service(policy, services=resolved_services),
@@ -980,7 +993,7 @@ def _git_restore_apply_service(
 
 
 def _git_activity_store(services: Any | None = None) -> GitActivityStore:
-    resolved_services = workspace_services_or_legacy(services) if services is not None else None
+    resolved_services = resolve_workspace_services(services) if services is not None else None
     paths = getattr(resolved_services, "paths", None)
     settings_path = (
         paths.settings_path.with_name("git_activity.jsonl")
@@ -991,7 +1004,7 @@ def _git_activity_store(services: Any | None = None) -> GitActivityStore:
 
 
 def _git_restore_preview_token_store(services: Any | None = None) -> GitRestorePreviewTokenStore:
-    resolved_services = workspace_services_or_legacy(services) if services is not None else None
+    resolved_services = resolve_workspace_services(services) if services is not None else None
     paths = getattr(resolved_services, "paths", None)
     settings_path = (
         paths.settings_path.with_name("git_restore_preview_tokens.jsonl")
@@ -1007,7 +1020,7 @@ def _git_autogit_service(
     policy: dict[str, Any],
     services: Any | None = None,
 ) -> GitAutoGitService:
-    resolved_services = workspace_services_or_legacy(services) if services is not None else None
+    resolved_services = resolve_workspace_services(services) if services is not None else None
     paths = getattr(resolved_services, "paths", None)
     state_path = (
         paths.settings_path.with_name("git_autogit_state.json")
@@ -1034,7 +1047,7 @@ def _queue_autogit_event(event_type: str) -> None:
 
 
 def _run_due_autogit(services: Any | None = None) -> dict[str, Any]:
-    resolved_services = workspace_services_or_legacy(services) if services is not None else None
+    resolved_services = resolve_workspace_services(services) if services is not None else None
     policy = _git_policy(resolved_services)
     state = _git_autogit_service(policy, services=resolved_services).run_due(
         policy=policy,
@@ -1305,9 +1318,7 @@ def resolve_copilot_tool_plan_id(
     *,
     services: WorkspaceServices,
 ) -> str:
-    if has_active_copilot_workspace_context():
-        return resolve_plan_id_or_active(requested_plan_id, workspace=services.plan_workspace)
-    return resolve_plan_id_or_active(requested_plan_id)
+    return resolve_plan_id_or_active(requested_plan_id, workspace=services.plan_workspace)
 
 
 today_research_evidence_cache = ExpiringCache(max_entries=64)
@@ -3354,9 +3365,10 @@ def build_income_projection_from_profile(
     years: int,
     start_year: int | None = None,
     default_annual_growth_rate: float | None = None,
+    profile_payload: dict[str, Any] | None = None,
 ) -> IncomeProjectionResponse | None:
-    profile_payload = get_financial_profile_payload()
-    income_rows = profile_payload.get("income_items")
+    resolved_profile = profile_payload if profile_payload is not None else get_financial_profile_payload()
+    income_rows = resolved_profile.get("income_items")
     if not isinstance(income_rows, list) or not income_rows:
         return None
 
@@ -3377,7 +3389,11 @@ def build_income_projection_from_profile(
     return IncomeProjectionResponse(**payload)
 
 
-def build_income_projection_for_plan_settings(plan_settings: dict[str, Any]) -> IncomeProjectionResponse | None:
+def build_income_projection_for_plan_settings(
+    plan_settings: dict[str, Any],
+    *,
+    profile_payload: dict[str, Any] | None = None,
+) -> IncomeProjectionResponse | None:
     years = _coerce_int(plan_settings.get("years"), settings.planner_years_to_retirement)
     inflation_rate = (
         settings.planner_inflation
@@ -3388,6 +3404,7 @@ def build_income_projection_for_plan_settings(plan_settings: dict[str, Any]) -> 
         years=years,
         start_year=utc_now().year,
         default_annual_growth_rate=inflation_rate,
+        profile_payload=profile_payload,
     )
 
 
@@ -3396,9 +3413,10 @@ def build_expense_projection_from_profile(
     years: int,
     start_year: int | None = None,
     default_inflation_rate: float | None = None,
+    profile_payload: dict[str, Any] | None = None,
 ) -> ExpenseProjectionResponse | None:
-    profile_payload = get_financial_profile_payload()
-    expense_rows = profile_payload.get("expense_items")
+    resolved_profile = profile_payload if profile_payload is not None else get_financial_profile_payload()
+    expense_rows = resolved_profile.get("expense_items")
     if not isinstance(expense_rows, list) or not expense_rows:
         return None
 
@@ -3419,7 +3437,11 @@ def build_expense_projection_from_profile(
     return ExpenseProjectionResponse(**payload)
 
 
-def build_expense_projection_for_plan_settings(plan_settings: dict[str, Any]) -> ExpenseProjectionResponse | None:
+def build_expense_projection_for_plan_settings(
+    plan_settings: dict[str, Any],
+    *,
+    profile_payload: dict[str, Any] | None = None,
+) -> ExpenseProjectionResponse | None:
     years = _coerce_int(plan_settings.get("years"), settings.planner_years_to_retirement)
     inflation_rate = (
         settings.planner_inflation
@@ -3430,6 +3452,7 @@ def build_expense_projection_for_plan_settings(plan_settings: dict[str, Any]) ->
         years=years,
         start_year=utc_now().year,
         default_inflation_rate=inflation_rate,
+        profile_payload=profile_payload,
     )
 
 
@@ -3437,9 +3460,10 @@ def build_debt_projection_from_profile(
     *,
     max_years: int,
     start_date: date | None = None,
+    profile_payload: dict[str, Any] | None = None,
 ) -> DebtProjectionResponse | None:
-    profile_payload = get_financial_profile_payload()
-    debt_rows = profile_payload.get("debt_items")
+    resolved_profile = profile_payload if profile_payload is not None else get_financial_profile_payload()
+    debt_rows = resolved_profile.get("debt_items")
     if not isinstance(debt_rows, list) or not debt_rows:
         return None
 
@@ -3465,11 +3489,16 @@ def build_debt_projection_from_profile(
     return DebtProjectionResponse(**payload)
 
 
-def build_debt_projection_for_plan_settings(plan_settings: dict[str, Any]) -> DebtProjectionResponse | None:
+def build_debt_projection_for_plan_settings(
+    plan_settings: dict[str, Any],
+    *,
+    profile_payload: dict[str, Any] | None = None,
+) -> DebtProjectionResponse | None:
     years = _coerce_int(plan_settings.get("years"), settings.planner_years_to_retirement)
     return build_debt_projection_from_profile(
         max_years=years,
         start_date=utc_now().date().replace(day=1),
+        profile_payload=profile_payload,
     )
 
 
@@ -3824,7 +3853,31 @@ async def run_scenarios_for_plan_settings(
     timeline_withdrawal_strategy: str | None = None,
     timeline_drawdown_order: str | None = None,
     household_source: str = "plan_settings",
+    profile_payload: dict[str, Any] | None = None,
+    planning_accounts_override: list[dict[str, Any]] | None = None,
 ) -> PlanningResponse:
+    resolved_profile = profile_payload if profile_payload is not None else get_financial_profile_payload()
+    plan_settings = dict(plan_settings)
+    tax_profile = resolved_profile.get("tax_profile")
+    if isinstance(tax_profile, dict):
+        for key in ("filing_status", "marginal_tax_rate", "state_tax_rate"):
+            if plan_settings.get(key) is None and tax_profile.get(key) is not None:
+                plan_settings[key] = tax_profile.get(key)
+
+    primary_member: dict[str, Any] | None = None
+    household_members = resolved_profile.get("household_members")
+    if isinstance(household_members, list):
+        candidates = [item for item in household_members if isinstance(item, dict)]
+        primary_member = next(
+            (item for item in candidates if str(item.get("relationship") or "").strip().lower() == "self"),
+            candidates[0] if candidates else None,
+        )
+    start_age = 35
+    if isinstance(primary_member, dict) and primary_member.get("birth_year") is not None:
+        start_age = max(0, min(120, utc_now().year - _coerce_int(primary_member.get("birth_year"), utc_now().year - 35)))
+    if retirement_age is None and isinstance(primary_member, dict) and primary_member.get("retirement_age") is not None:
+        retirement_age = max(18, min(100, _coerce_int(primary_member.get("retirement_age"), 65)))
+
     validate_plan_return_relationships(plan_settings)
     service = build_plan_simulation_service_for_plan_settings(plan_settings)
     annual_contribution = plan_settings.get("annual_contribution_usd")
@@ -3844,7 +3897,11 @@ async def run_scenarios_for_plan_settings(
         else None
     )
     resolved_portfolio_value = float(current_portfolio_value_usd)
-    planning_accounts: list[dict[str, Any]] | None = build_planning_accounts_from_portfolio() or None
+    planning_accounts: list[dict[str, Any]] | None = (
+        list(planning_accounts_override)
+        if planning_accounts_override is not None
+        else (build_planning_accounts_from_portfolio() or None)
+    )
     income_projection_payload: dict[str, Any] | None = None
     expense_projection_payload: dict[str, Any] | None = None
     debt_projection_payload: dict[str, Any] | None = None
@@ -3989,6 +4046,7 @@ async def run_scenarios_for_plan_settings(
         household_partner_income_added_first_year_usd=household_adjustments_payload.get("partner_income_added_first_year_usd"),
         household_partner_income_added_total_usd=household_adjustments_payload.get("partner_income_added_total_usd"),
         start_year=resolved_start_year,
+        start_age=start_age,
         withdrawal_strategy=withdrawal_strategy,
         retirement_age=retirement_age,
         simulation_mode=plan_settings.get("simulation_mode"),
@@ -4014,6 +4072,7 @@ def resolve_portfolio_value(
     current_portfolio_value_usd: float | None,
     *,
     store: SnapshotStore | None = None,
+    portfolio: PortfolioStore | None = None,
 ) -> float:
     if current_portfolio_value_usd is not None:
         return float(current_portfolio_value_usd)
@@ -4022,6 +4081,13 @@ def resolve_portfolio_value(
     try:
         latest_snapshot = resolved_store.latest()
     except FileNotFoundError as exc:
+        if portfolio is not None:
+            holdings = portfolio.get_holdings()
+            total_value = _coerce_float(holdings.get("total_value"), 0.0)
+            positions = holdings.get("holdings")
+            if abs(total_value) > 1e-9 or (isinstance(positions, dict) and positions):
+                return max(0.0, total_value)
+            return max(0.0, _coerce_float(holdings.get("total_cash"), 0.0))
         raise HTTPException(
             status_code=400,
             detail="Provide current_portfolio_value_usd or create a snapshot first",
@@ -4192,7 +4258,9 @@ async def compute_plan_scenario_branch(
     raw_branch_events: list[dict[str, Any]] | None,
     services: WorkspaceServices | None = None,
 ) -> dict[str, Any]:
-    resolved_services = workspace_services_or_legacy(services)
+    resolved_services = resolve_workspace_services(services)
+    profile_payload = get_financial_profile_payload(resolved_services.financial_profile_store)
+    planning_accounts = build_planning_accounts_from_portfolio(resolved_services.portfolio_store)
     detail = resolved_services.plan_workspace.get_plan(plan_id)
     timeline_payload = resolve_plan_timeline_payload(detail)
     retirement_age = resolve_timeline_retirement_age(timeline_payload)
@@ -4277,12 +4345,24 @@ async def compute_plan_scenario_branch(
     if resolved_branch_name == "What-If Branch" and template_branch_name:
         resolved_branch_name = template_branch_name
 
-    base_income_projection = build_income_projection_for_plan_settings(base_settings)
-    branch_income_projection = build_income_projection_for_plan_settings(branch_settings)
-    base_expense_projection = build_expense_projection_for_plan_settings(base_settings)
-    branch_expense_projection = build_expense_projection_for_plan_settings(branch_settings)
-    base_debt_projection = build_debt_projection_for_plan_settings(base_settings)
-    branch_debt_projection = build_debt_projection_for_plan_settings(branch_settings)
+    base_income_projection = build_income_projection_for_plan_settings(
+        base_settings, profile_payload=profile_payload
+    )
+    branch_income_projection = build_income_projection_for_plan_settings(
+        branch_settings, profile_payload=profile_payload
+    )
+    base_expense_projection = build_expense_projection_for_plan_settings(
+        base_settings, profile_payload=profile_payload
+    )
+    branch_expense_projection = build_expense_projection_for_plan_settings(
+        branch_settings, profile_payload=profile_payload
+    )
+    base_debt_projection = build_debt_projection_for_plan_settings(
+        base_settings, profile_payload=profile_payload
+    )
+    branch_debt_projection = build_debt_projection_for_plan_settings(
+        branch_settings, profile_payload=profile_payload
+    )
     base_timeline_projection = build_timeline_projection_for_plan_settings(
         plan_settings=base_settings,
         timeline_payload=timeline_payload,
@@ -4296,10 +4376,12 @@ async def compute_plan_scenario_branch(
     base_contribution_allocation = build_contribution_allocation_for_plan_settings(
         plan_settings=base_settings,
         contribution_rules_payload=contribution_rules_payload,
+        accounts_override=planning_accounts,
     )
     branch_contribution_allocation = build_contribution_allocation_for_plan_settings(
         plan_settings=branch_settings,
         contribution_rules_payload=contribution_rules_payload,
+        accounts_override=planning_accounts,
     )
 
     base_social_security_projection = build_social_security_projection_for_plan_settings(
@@ -4319,16 +4401,19 @@ async def compute_plan_scenario_branch(
         plan_settings=base_settings,
         timeline_payload=timeline_payload,
         start_year=start_year,
+        accounts_override=planning_accounts,
     )
     branch_rmd_projection = build_rmd_projection_for_plan_settings(
         plan_settings=branch_settings,
         timeline_payload=branch_timeline_payload,
         start_year=start_year,
+        accounts_override=planning_accounts,
     )
 
     current_value = resolve_portfolio_value(
         current_portfolio_value_usd,
         store=resolved_services.snapshot_store,
+        portfolio=resolved_services.portfolio_store,
     )
     base_result = await run_scenarios_for_plan_settings(
         current_portfolio_value_usd=current_value,
@@ -4344,6 +4429,8 @@ async def compute_plan_scenario_branch(
         retirement_age=retirement_age,
         timeline_withdrawal_strategy=timeline_withdrawal_strategy,
         timeline_drawdown_order=timeline_drawdown_order,
+        profile_payload=profile_payload,
+        planning_accounts_override=planning_accounts,
     )
     branch_result = await run_scenarios_for_plan_settings(
         current_portfolio_value_usd=current_value,
@@ -4359,6 +4446,8 @@ async def compute_plan_scenario_branch(
         retirement_age=retirement_age,
         timeline_withdrawal_strategy=timeline_withdrawal_strategy,
         timeline_drawdown_order=timeline_drawdown_order,
+        profile_payload=profile_payload,
+        planning_accounts_override=planning_accounts,
     )
     scenario_deltas, monte_carlo_delta, simulation_delta = _build_scenario_diff_payload(
         base_result=base_result,
@@ -4840,7 +4929,7 @@ def _build_today_command_cards(
     dashboard: TodayDashboardResponse,
     services: WorkspaceServices | None = None,
 ) -> list[TodayCommandCard]:
-    resolved_services = workspace_services_or_legacy(services)
+    resolved_services = resolve_workspace_services(services)
     cards = list(dashboard.command_cards)
     cards.append(_build_cash_runway_command_card(dashboard))
     investment_policy_card = _build_investment_policy_command_card(dashboard)
@@ -5807,7 +5896,7 @@ def build_release_readiness_response(
     services: Any | None = None,
 ) -> ReleaseReadinessResponse:
     generated_at = now or utc_now()
-    resolved_services = workspace_services_or_legacy(services) if services is not None else None
+    resolved_services = resolve_workspace_services(services) if services is not None else None
     durable_service = (
         durable_storage_service_for_workspace(resolved_services)
         if resolved_services is not None
@@ -7739,6 +7828,8 @@ def create_recommendations_from_workflow_result(
 def _resolve_recommendation_plan_id(
     recommendation: dict[str, Any],
     requested_plan_id: str | None = None,
+    *,
+    workspace: PlanWorkspace | None = None,
 ) -> str:
     if requested_plan_id and requested_plan_id.strip():
         return requested_plan_id.strip()
@@ -7747,7 +7838,8 @@ def _resolve_recommendation_plan_id(
     if recommendation_plan_id:
         return recommendation_plan_id
 
-    active_plan_id = plan_workspace.get_active_plan_id()
+    resolved_workspace = workspace or plan_workspace
+    active_plan_id = resolved_workspace.get_active_plan_id()
     if active_plan_id:
         return active_plan_id
 
@@ -7841,6 +7933,7 @@ def _summarize_recommendation_scenario_diff_preview(
         "status": "captured",
         "captured_at": context_utc_now_iso(),
         "plan_id": diff_payload.get("plan_id"),
+        "simulation_run_id": diff_payload.get("simulation_run_id"),
         "current_portfolio_value_usd": diff_payload.get("current_portfolio_value_usd"),
         "compare_settings": compare_updates,
         "assumption_set_id": assumption_set_id,
@@ -8203,7 +8296,9 @@ async def build_recommendation_scenario_diff_preview(
     *,
     requested_plan_id: str | None = None,
     request_updates: dict[str, Any] | None = None,
+    services: WorkspaceServices | None = None,
 ) -> dict[str, Any] | None:
+    resolved_services = resolve_workspace_services(services)
     recommendation_type = str(recommendation.get("recommendation_type") or "").strip().lower()
     if recommendation_type != "plan_settings_update":
         return None
@@ -8220,7 +8315,11 @@ async def build_recommendation_scenario_diff_preview(
         }
 
     try:
-        plan_id = _resolve_recommendation_plan_id(recommendation, requested_plan_id)
+        plan_id = _resolve_recommendation_plan_id(
+            recommendation,
+            requested_plan_id,
+            workspace=resolved_services.plan_workspace,
+        )
     except ValueError as exc:
         return {
             "status": "skipped",
@@ -8247,7 +8346,7 @@ async def build_recommendation_scenario_diff_preview(
         arguments["candidate_assumption_set_id"] = candidate_assumption_set_id
 
     try:
-        diff_payload = await tool_run_plan_scenario_diff(arguments)
+        diff_payload = await tool_run_plan_scenario_diff(arguments, services=resolved_services)
     except Exception as exc:
         return {
             "status": "error",
@@ -8331,7 +8430,7 @@ async def preview_recommendation(
     *,
     services: WorkspaceServices | None = None,
 ) -> RecommendationPreviewResponse:
-    resolved_services = workspace_services_or_legacy(services)
+    resolved_services = resolve_workspace_services(services)
     recommendation = resolved_services.recommendation_inbox.get(recommendation_id)
     current_status = str(recommendation.get("status", "proposed")).strip().lower()
     if current_status != "proposed":
@@ -8347,7 +8446,11 @@ async def preview_recommendation(
     resolved_plan_id: str | None = None
     warnings: list[str] = []
     try:
-        resolved_plan_id = _resolve_recommendation_plan_id(recommendation, request.plan_id)
+        resolved_plan_id = _resolve_recommendation_plan_id(
+            recommendation,
+            request.plan_id,
+            workspace=resolved_services.plan_workspace,
+        )
     except ValueError as exc:
         warnings.append(str(exc))
 
@@ -8357,6 +8460,7 @@ async def preview_recommendation(
             recommendation,
             requested_plan_id=request.plan_id,
             request_updates=request.plan_settings_updates,
+            services=resolved_services,
         )
         if isinstance(captured, dict):
             scenario_diff_preview = captured
@@ -8601,7 +8705,7 @@ async def apply_recommendation_with_decision_packet(
     *,
     services: WorkspaceServices | None = None,
 ) -> RecommendationActionResponse:
-    resolved_services = workspace_services_or_legacy(services)
+    resolved_services = resolve_workspace_services(services)
     pre_apply_recommendation = resolved_services.recommendation_inbox.get(recommendation_id)
     scenario_diff_preview: dict[str, Any] | None = None
     if request.capture_scenario_diff:
@@ -8609,9 +8713,15 @@ async def apply_recommendation_with_decision_packet(
             pre_apply_recommendation,
             requested_plan_id=request.plan_id,
             request_updates=request.plan_settings_updates,
+            services=resolved_services,
         )
 
-    result = apply_recommendation(recommendation_id, request, services=resolved_services)
+    result = apply_recommendation(
+        recommendation_id,
+        request,
+        services=resolved_services,
+        scenario_diff_preview=scenario_diff_preview,
+    )
     recommendation_payload = result.recommendation.model_dump(mode="json")
     plan_id = str(result.plan.id) if result.plan is not None else ""
 
@@ -8620,7 +8730,11 @@ async def apply_recommendation_with_decision_packet(
     requested_symbols = normalize_research_symbols(request.decision_packet_research_symbols, max_symbols=12)
     if request.create_decision_packet and plan_id:
         try:
-            context_payload = await build_buildwealth_context_payload(
+            context_payload = await assemble_copilot_context_payload(
+                question=(
+                    f"What context supports applying recommendation {recommendation_id}: "
+                    f"{pre_apply_recommendation.get('title') or 'Recommendation'}?"
+                ),
                 use_live_snapshot=False,
                 plan_id=plan_id,
                 include_research=True,
@@ -8632,6 +8746,7 @@ async def apply_recommendation_with_decision_packet(
                 summary_max_chars=1800,
                 research_symbol_limit=max(DEFAULT_RESEARCH_SYMBOL_LIMIT, len(requested_symbols) or 0),
                 detail_level="light",
+                services=resolved_services,
             )
         except Exception as exc:
             context_error = str(exc)
@@ -8673,6 +8788,7 @@ async def apply_recommendation_with_decision_packet(
                     symbols=candidate_bridge_symbols,
                     max_symbols=max(1, min(max(len(candidate_bridge_symbols), 5), 20)),
                 ),
+                services=resolved_services,
             )
             pinned_symbols = normalize_research_symbols(research_bridge_response.pinned_symbols, max_symbols=12)
             if pinned_symbols:
@@ -8805,6 +8921,7 @@ async def apply_recommendation_with_decision_packet(
     return RecommendationActionResponse(
         recommendation=_recommendation_item_from_row(updated_recommendation_payload),
         plan=refreshed_plan,
+        plan_decision=result.plan_decision,
         decision_packet_artifact=artifact_summary,
         decision_closure_artifact=closure_artifact_summary,
         suggested_research_symbols=suggested_symbols,
@@ -8880,7 +8997,7 @@ def refresh_research_thesis_review_from_recommendation(
     plan_id: str | None,
     services: WorkspaceServices | None = None,
 ) -> dict[str, Any]:
-    resolved_services = workspace_services_or_legacy(services)
+    resolved_services = resolve_workspace_services(services)
     context = _thesis_review_action_context(recommendation)
     if context is None:
         return {}
@@ -8958,8 +9075,9 @@ def apply_recommendation(
     request: RecommendationApplyRequest,
     *,
     services: WorkspaceServices | None = None,
+    scenario_diff_preview: dict[str, Any] | None = None,
 ) -> RecommendationActionResponse:
-    resolved_services = workspace_services_or_legacy(services)
+    resolved_services = resolve_workspace_services(services)
     recommendation = resolved_services.recommendation_inbox.get(recommendation_id)
     current_status = str(recommendation.get("status", "proposed")).strip().lower()
     if current_status in {"applied", "rejected", "archived"}:
@@ -8969,10 +9087,28 @@ def apply_recommendation(
     payload = recommendation.get("action_payload")
     action_payload = payload if isinstance(payload, dict) else {}
     plan_detail: PlanDetailResponse | None = None
+    plan_decision: dict[str, Any] | None = None
     message = "Recommendation applied."
+    decision_link_payload = {
+        "source": "recommendation_decision",
+        "recommendation_id": recommendation_id,
+        "recommendation_title": recommendation.get("title"),
+        "recommendation_type": recommendation_type,
+        "recommendation_source": recommendation.get("source"),
+        "recommendation_resolution": "applied",
+        "simulation_run_id": (
+            scenario_diff_preview.get("simulation_run_id")
+            if isinstance(scenario_diff_preview, dict)
+            else None
+        ),
+    }
 
     if recommendation_type == "plan_settings_update":
-        plan_id = _resolve_recommendation_plan_id(recommendation, request.plan_id)
+        plan_id = _resolve_recommendation_plan_id(
+            recommendation,
+            request.plan_id,
+            workspace=resolved_services.plan_workspace,
+        )
         payload_updates = action_payload.get("plan_settings_updates")
         updates_from_payload = payload_updates if isinstance(payload_updates, dict) else {}
         merged_updates = dict(updates_from_payload)
@@ -8987,19 +9123,36 @@ def apply_recommendation(
             updates=merged_updates,
             rationale=request.rationale or recommendation.get("detail") or "Applied recommendation.",
             status=request.decision_status or "accepted",
-            log_decision=True,
+            log_decision=False,
         )
+        changed_fields = sorted(merged_updates)
+        plan_decision = resolved_services.plan_workspace.append_decision(
+            plan_id=plan_id,
+            summary=f"Applied recommendation: {recommendation.get('title', 'Recommendation')}",
+            rationale=request.rationale or recommendation.get("detail") or "Applied recommendation.",
+            status=request.decision_status or "accepted",
+            action_payload={
+                **decision_link_payload,
+                "plan_settings_fields": changed_fields,
+            },
+        )
+        detail = resolved_services.plan_workspace.get_plan(plan_id)
         plan_detail = PlanDetailResponse(**detail)
         message = f"Applied plan settings recommendation to plan {plan_id}."
     else:
-        plan_id = _resolve_recommendation_plan_id(recommendation, request.plan_id)
+        plan_id = _resolve_recommendation_plan_id(
+            recommendation,
+            request.plan_id,
+            workspace=resolved_services.plan_workspace,
+        )
         summary = f"Applied recommendation: {recommendation.get('title', 'Recommendation')}"
         rationale = request.rationale or str(recommendation.get("detail") or "")
-        resolved_services.plan_workspace.append_decision(
+        plan_decision = resolved_services.plan_workspace.append_decision(
             plan_id=plan_id,
             summary=summary,
             rationale=rationale,
             status=request.decision_status or "accepted",
+            action_payload=decision_link_payload,
         )
         detail = resolved_services.plan_workspace.get_plan(plan_id)
         plan_detail = PlanDetailResponse(**detail)
@@ -9010,10 +9163,23 @@ def apply_recommendation(
         status="applied",
         resolution_note=request.rationale.strip() if request.rationale else "",
     )
+    linked_action_payload = dict(recommendation.get("action_payload") or {})
+    if plan_decision is not None:
+        linked_action_payload["plan_decision"] = {
+            "plan_id": plan_id,
+            "decision_id": plan_decision.get("id"),
+            "status": plan_decision.get("status"),
+            "simulation_run_id": decision_link_payload.get("simulation_run_id"),
+        }
+        recommendation = resolved_services.recommendation_inbox.update(
+            recommendation_id,
+            {"action_payload": linked_action_payload},
+        )
     suggested_symbols = _extract_decision_packet_symbols(recommendation, request_symbols=request.decision_packet_research_symbols)
     return RecommendationActionResponse(
         recommendation=_recommendation_item_from_row(recommendation),
         plan=plan_detail,
+        plan_decision=PlanDecision(**plan_decision) if plan_decision is not None else None,
         suggested_research_symbols=suggested_symbols,
         message=message,
     )
@@ -9029,7 +9195,7 @@ async def reject_recommendation(
     decision_packet_research_symbols: list[str] | None = None,
     services: WorkspaceServices | None = None,
 ) -> RecommendationActionResponse:
-    resolved_services = workspace_services_or_legacy(services)
+    resolved_services = resolve_workspace_services(services)
     recommendation = resolved_services.recommendation_inbox.get(recommendation_id)
     current_status = str(recommendation.get("status", "proposed")).strip().lower()
     if current_status in {"applied", "rejected"}:
@@ -9040,6 +9206,7 @@ async def reject_recommendation(
         scenario_diff_preview = await build_recommendation_scenario_diff_preview(
             recommendation,
             requested_plan_id=plan_id,
+            services=resolved_services,
         )
 
     updated = resolved_services.recommendation_inbox.set_status(
@@ -9080,16 +9247,56 @@ async def reject_recommendation(
 
     resolved_plan_id: str | None = None
     try:
-        resolved_plan_id = _resolve_recommendation_plan_id(updated, plan_id)
+        resolved_plan_id = _resolve_recommendation_plan_id(
+            updated,
+            plan_id,
+            workspace=resolved_services.plan_workspace,
+        )
     except ValueError:
         resolved_plan_id = None
+
+    plan_decision: dict[str, Any] | None = None
+    if resolved_plan_id:
+        plan_decision = resolved_services.plan_workspace.append_decision(
+            plan_id=resolved_plan_id,
+            summary=f"Rejected recommendation: {updated.get('title') or 'Recommendation'}",
+            rationale=reason or str(updated.get("detail") or ""),
+            status="rejected",
+            action_payload={
+                "source": "recommendation_decision",
+                "recommendation_id": recommendation_id,
+                "recommendation_title": updated.get("title"),
+                "recommendation_type": updated.get("recommendation_type"),
+                "recommendation_source": updated.get("source"),
+                "recommendation_resolution": "rejected",
+                "simulation_run_id": (
+                    scenario_diff_preview.get("simulation_run_id")
+                    if isinstance(scenario_diff_preview, dict)
+                    else None
+                ),
+            },
+        )
+        action_payload["plan_decision"] = {
+            "plan_id": resolved_plan_id,
+            "decision_id": plan_decision.get("id"),
+            "status": plan_decision.get("status"),
+            "simulation_run_id": (
+                scenario_diff_preview.get("simulation_run_id")
+                if isinstance(scenario_diff_preview, dict)
+                else None
+            ),
+        }
 
     context_payload: dict[str, Any] | None = None
     context_error: str | None = None
     requested_symbols = normalize_research_symbols(decision_packet_research_symbols or [], max_symbols=12)
     if create_decision_packet and resolved_plan_id:
         try:
-            context_payload = await build_buildwealth_context_payload(
+            context_payload = await assemble_copilot_context_payload(
+                question=(
+                    f"What context supports rejecting recommendation {recommendation_id}: "
+                    f"{updated.get('title') or 'Recommendation'}?"
+                ),
                 use_live_snapshot=False,
                 plan_id=resolved_plan_id,
                 include_research=True,
@@ -9101,6 +9308,7 @@ async def reject_recommendation(
                 summary_max_chars=1800,
                 research_symbol_limit=max(DEFAULT_RESEARCH_SYMBOL_LIMIT, len(requested_symbols) or 0),
                 detail_level="light",
+                services=resolved_services,
             )
         except Exception as exc:
             context_error = str(exc)
@@ -9204,6 +9412,7 @@ async def reject_recommendation(
     return RecommendationActionResponse(
         recommendation=_recommendation_item_from_row(updated),
         plan=plan_detail,
+        plan_decision=PlanDecision(**plan_decision) if plan_decision is not None else None,
         decision_packet_artifact=decision_packet_artifact,
         decision_closure_artifact=closure_artifact_summary,
         suggested_research_symbols=suggested_symbols,
@@ -9571,7 +9780,7 @@ def build_recommendation_outcome_prefill_payload(
     decision's effect. The user confirms or edits; the app never pretends
     the attribution is exact.
     """
-    resolved_services = workspace_services_or_legacy(services)
+    resolved_services = resolve_workspace_services(services)
     resolved_now = now or datetime.now(timezone.utc)
     recommendation = resolved_services.recommendation_inbox.get(recommendation_id)
 
@@ -9639,7 +9848,7 @@ def update_recommendation_outcome(
     *,
     services: WorkspaceServices | None = None,
 ) -> RecommendationActionResponse:
-    resolved_services = workspace_services_or_legacy(services)
+    resolved_services = resolve_workspace_services(services)
     recommendation = resolved_services.recommendation_inbox.get(recommendation_id)
     current_status = str(recommendation.get("status", "proposed")).strip().lower()
     if current_status not in {"applied", "rejected"}:
@@ -10152,7 +10361,7 @@ def create_plan_recommendation_closure_summary(
     request: PlanRecommendationClosureSummaryRequest,
     services: WorkspaceServices | None = None,
 ) -> PlanRecommendationClosureSummaryResponse:
-    resolved_services = workspace_services_or_legacy(services)
+    resolved_services = resolve_workspace_services(services)
     plan_detail = resolved_services.plan_workspace.get_plan(plan_id)
     analytics_payload = build_recommendation_closure_analytics_payload(
         limit=request.limit,
@@ -10205,7 +10414,7 @@ def archive_recommendation(
     *,
     services: WorkspaceServices | None = None,
 ) -> RecommendationActionResponse:
-    resolved_services = workspace_services_or_legacy(services)
+    resolved_services = resolve_workspace_services(services)
     recommendation = resolved_services.recommendation_inbox.set_status(
         recommendation_id,
         status="archived",
@@ -10518,82 +10727,17 @@ def build_onboarding_status_response(
         profile_metadata=profile_metadata,
     )
 
-    steps.append(
-        {
-            "id": "income",
-            "title": "Income profile",
-            "status": "complete" if len(income_items) > 0 else "incomplete",
-            "detail": (
-                f"{len(income_items)} income stream(s) on record."
-                if income_items
-                else "Add what comes in each month — salary, business, anything recurring."
-            ),
-        }
-    )
-    steps.append(
-        {
-            "id": "expenses",
-            "title": "Expense profile",
-            "status": "complete" if len(expense_items) > 0 else "incomplete",
-            "detail": (
-                f"{len(expense_items)} recurring expense(s) on record."
-                if expense_items
-                else "Add what goes out each month — housing, food, the usual suspects."
-            ),
-        }
-    )
-
-    if len(debt_items) > 0 or bool(flags.get("no_debt")):
-        debt_status = "complete"
-        debt_detail = (
-            f"{len(debt_items)} debt item(s) configured."
-            if len(debt_items) > 0
-            else "Marked as no current debt."
+    readiness_by_key = {section.key: section for section in profile_readiness.sections}
+    for section_key in ("income", "expenses", "debt", "goals", "tax_profile"):
+        section = readiness_by_key[section_key]
+        steps.append(
+            {
+                "id": section.key,
+                "title": section.title,
+                "status": section.status,
+                "detail": section.detail,
+            }
         )
-    else:
-        debt_status = "attention"
-        debt_detail = "Add debt balances or mark that you currently have no debt."
-    steps.append(
-        {
-            "id": "debt",
-            "title": "Debt profile",
-            "status": debt_status,
-            "detail": debt_detail,
-        }
-    )
-
-    if len(goal_items) > 0 or bool(flags.get("no_goals")):
-        goal_status = "complete"
-        goal_detail = (
-            f"{len(goal_items)} goal item(s) configured."
-            if len(goal_items) > 0
-            else "Goals deferred for now."
-        )
-    else:
-        goal_status = "attention"
-        goal_detail = "Add at least one financial goal or mark goals as deferred."
-    steps.append(
-        {
-            "id": "goals",
-            "title": "Goals profile",
-            "status": goal_status,
-            "detail": goal_detail,
-        }
-    )
-
-    filing_status = str(tax_profile.get("filing_status") or "").strip()
-    marginal_tax_rate = tax_profile.get("marginal_tax_rate")
-    tax_complete = bool(filing_status) and marginal_tax_rate is not None
-    steps.append(
-        {
-            "id": "tax_profile",
-            "title": "Tax profile",
-            "status": "complete" if tax_complete else "incomplete",
-            "detail": "Filing status and marginal tax rate are configured."
-            if tax_complete
-            else "Set filing status and marginal tax rate.",
-        }
-    )
 
     plan_exists = active_plan_detail is not None
     settings_completion = _plan_settings_completion_percent(active_plan_detail)
@@ -10637,9 +10781,41 @@ def build_onboarding_status_response(
     completion_percent = round((complete_count / len(steps)) * 100, 1) if steps else 0.0
     ready_for_daily_review = all(item["status"] == "complete" for item in steps)
 
+    profile_ready = profile_readiness.status == "ready"
+    snapshot_step = next(item for item in steps if item["id"] == "snapshot")
+    active_plan_step = next(item for item in steps if item["id"] == "active_plan")
+    if not profile_ready:
+        decision_stage = "profile"
+        decision_headline = "Build your first forecast"
+        decision_detail = f"Next: {profile_readiness.next_gap_title or 'complete your profile'}."
+        next_action_label = "Continue profile setup"
+    elif snapshot_step["status"] != "complete":
+        decision_stage = "portfolio"
+        decision_headline = "Enough for a first forecast"
+        decision_detail = "Add or connect your portfolio next for allocation and performance guidance."
+        next_action_label = "Add your portfolio"
+    elif active_plan_step["status"] != "complete":
+        decision_stage = "plan"
+        decision_headline = "Ready for tailored advice"
+        decision_detail = "Create a plan next so simulations have a goal and horizon."
+        next_action_label = "Create a plan"
+    else:
+        decision_stage = "ready"
+        decision_headline = "Decision picture ready" if ready_for_daily_review else "Ready for tailored advice"
+        decision_detail = (
+            "Review and refine it whenever life changes."
+            if ready_for_daily_review
+            else "Review the next suggested context when you are ready."
+        )
+        next_action_label = "Review your picture"
+
     return OnboardingStatusResponse(
         completion_percent=completion_percent,
         ready_for_daily_review=ready_for_daily_review,
+        decision_stage=decision_stage,
+        decision_headline=decision_headline,
+        decision_detail=decision_detail,
+        next_action_label=next_action_label,
         steps=steps,
         profile_readiness=profile_readiness,
     )
@@ -10648,7 +10824,7 @@ def build_onboarding_status_response(
 def build_today_dashboard_response(
     services: WorkspaceServices | None = None,
 ) -> TodayDashboardResponse:
-    resolved_services = workspace_services_or_legacy(services)
+    resolved_services = resolve_workspace_services(services)
     latest_snapshot = None
     try:
         latest_snapshot = resolved_services.snapshot_store.latest()
@@ -11316,8 +11492,7 @@ async def build_buildwealth_context_payload(
     detail_level: str = DEFAULT_CONTEXT_DETAIL_LEVEL,
     services: WorkspaceServices | None = None,
 ) -> dict[str, Any]:
-    scoped_services = services is not None
-    resolved_services = workspace_services_or_legacy(services)
+    resolved_services = resolve_workspace_services(services)
     warnings: list[str] = []
     resolved_detail_level = normalize_context_detail_level(detail_level)
     resolved_snapshot: PortfolioSnapshot | None = None
@@ -11343,34 +11518,23 @@ async def build_buildwealth_context_payload(
         warnings.append(str(snapshot_summary_payload["note"]))
 
     try:
-        if scoped_services:
-            snapshot_history_payload = build_snapshot_history_payload(
-                limit=30,
-                store=resolved_services.snapshot_store,
-            ).model_dump(mode="json")
-        else:
-            snapshot_history_payload = build_snapshot_history_payload(limit=30).model_dump(mode="json")
+        snapshot_history_payload = build_snapshot_history_payload(
+            limit=30,
+            store=resolved_services.snapshot_store,
+        ).model_dump(mode="json")
     except Exception as exc:
         snapshot_history_payload = {"note": f"Snapshot history context unavailable: {exc}"}
         warnings.append(str(snapshot_history_payload["note"]))
 
     try:
-        today_dashboard_response = (
-            build_today_dashboard_response(resolved_services)
-            if scoped_services
-            else build_today_dashboard_response()
-        )
+        today_dashboard_response = build_today_dashboard_response(resolved_services)
         today_dashboard_payload = today_dashboard_response.model_dump(mode="json")
     except Exception as exc:
         today_dashboard_payload = {"note": f"Today dashboard context unavailable: {exc}"}
         warnings.append(str(today_dashboard_payload["note"]))
 
     try:
-        profile_source = (
-            get_financial_profile_payload(resolved_services.financial_profile_store)
-            if scoped_services
-            else get_financial_profile_payload()
-        )
+        profile_source = get_financial_profile_payload(resolved_services.financial_profile_store)
         financial_profile_payload = FinancialProfileResponse(
             **profile_source
         ).model_dump(mode="json")
@@ -11379,15 +11543,12 @@ async def build_buildwealth_context_payload(
         warnings.append(str(financial_profile_payload["note"]))
 
     try:
-        if scoped_services:
-            onboarding_response = build_onboarding_status_response(
-                profile_payload=get_financial_profile_payload(resolved_services.financial_profile_store),
-                latest_snapshot=resolved_snapshot,
-                active_plan_detail=resolve_active_plan_detail(workspace=resolved_services.plan_workspace),
-                load_fallbacks=False,
-            )
-        else:
-            onboarding_response = build_onboarding_status_response()
+        onboarding_response = build_onboarding_status_response(
+            profile_payload=get_financial_profile_payload(resolved_services.financial_profile_store),
+            latest_snapshot=resolved_snapshot,
+            active_plan_detail=resolve_active_plan_detail(workspace=resolved_services.plan_workspace),
+            load_fallbacks=False,
+        )
         onboarding_payload = onboarding_response.model_dump(mode="json")
     except Exception as exc:
         onboarding_payload = {"note": f"Onboarding context unavailable: {exc}"}
@@ -11413,17 +11574,11 @@ async def build_buildwealth_context_payload(
     recommendations_payload: dict[str, Any]
     recommendation_rows: list[dict[str, Any]]
     try:
-        if scoped_services:
-            recommendation_rows = _recommendation_list(
-                limit=recommendation_limit,
-                status="proposed",
-                inbox=resolved_services.recommendation_inbox,
-            )
-        else:
-            recommendation_rows = _recommendation_list(
-                limit=recommendation_limit,
-                status="proposed",
-            )
+        recommendation_rows = _recommendation_list(
+            limit=recommendation_limit,
+            status="proposed",
+            inbox=resolved_services.recommendation_inbox,
+        )
         recommendations_payload = {
             "open_count": len(recommendation_rows),
             "high_priority_count": len(
@@ -11470,13 +11625,10 @@ async def build_buildwealth_context_payload(
     baseline_projection_payload: dict[str, Any] | None = None
 
     try:
-        if scoped_services:
-            resolved_plan_detail, resolved_plan_id = _resolve_context_plan_detail(
-                plan_id,
-                workspace=resolved_services.plan_workspace,
-            )
-        else:
-            resolved_plan_detail, resolved_plan_id = _resolve_context_plan_detail(plan_id)
+        resolved_plan_detail, resolved_plan_id = _resolve_context_plan_detail(
+            plan_id,
+            workspace=resolved_services.plan_workspace,
+        )
     except PlanNotFoundError as exc:
         warnings.append(str(exc))
     except Exception as exc:
@@ -11627,6 +11779,7 @@ async def build_buildwealth_context_payload(
             preview = build_contribution_allocation_for_plan_settings(
                 plan_settings=raw_settings,
                 contribution_rules_payload=plan_contribution_rules_payload,
+                accounts_override=build_planning_accounts_from_portfolio(resolved_services.portfolio_store),
             )
             if preview is not None:
                 plan_contribution_allocation_preview_payload = preview.model_dump(mode="json")
@@ -11679,15 +11832,24 @@ async def build_buildwealth_context_payload(
                     timeline_retirement_age = resolve_timeline_retirement_age(timeline_payload)
                     timeline_withdrawal_strategy = resolve_timeline_withdrawal_strategy(timeline_payload)
                     timeline_drawdown_order = resolve_timeline_drawdown_order(timeline_payload)
-                    income_projection = build_income_projection_for_plan_settings(projection_settings)
-                    expense_projection = build_expense_projection_for_plan_settings(projection_settings)
-                    debt_projection = build_debt_projection_for_plan_settings(projection_settings)
+                    income_projection = build_income_projection_for_plan_settings(
+                        projection_settings, profile_payload=financial_profile_payload
+                    )
+                    expense_projection = build_expense_projection_for_plan_settings(
+                        projection_settings, profile_payload=financial_profile_payload
+                    )
+                    debt_projection = build_debt_projection_for_plan_settings(
+                        projection_settings, profile_payload=financial_profile_payload
+                    )
                     timeline_projection = build_timeline_projection_for_plan_settings(
                         plan_settings=projection_settings,
                         timeline_payload=timeline_payload,
                     )
                     contribution_allocation = build_contribution_allocation_for_plan_settings(
                         plan_settings=projection_settings,
+                        accounts_override=build_planning_accounts_from_portfolio(
+                            resolved_services.portfolio_store
+                        ),
                     )
                     social_security_projection = build_social_security_projection_for_plan_settings(
                         plan_settings=projection_settings,
@@ -11699,6 +11861,9 @@ async def build_buildwealth_context_payload(
                         plan_settings=projection_settings,
                         timeline_payload=timeline_payload,
                         start_year=utc_now().year,
+                        accounts_override=build_planning_accounts_from_portfolio(
+                            resolved_services.portfolio_store
+                        ),
                     )
                     baseline_projection = await run_scenarios_for_plan_settings(
                         current_portfolio_value_usd=float(resolved_snapshot.total_value_usd),
@@ -11714,6 +11879,10 @@ async def build_buildwealth_context_payload(
                         retirement_age=timeline_retirement_age,
                         timeline_withdrawal_strategy=timeline_withdrawal_strategy,
                         timeline_drawdown_order=timeline_drawdown_order,
+                        profile_payload=financial_profile_payload,
+                        planning_accounts_override=build_planning_accounts_from_portfolio(
+                            resolved_services.portfolio_store
+                        ),
                     )
                     baseline_projection_payload = baseline_projection.model_dump(mode="json")
                     if (
@@ -11970,6 +12139,7 @@ async def build_buildwealth_context_payload(
 
 
 async def build_contextual_brief(
+    question: str = "Give me a complete BuildWealth financial context briefing.",
     use_live_snapshot: bool = False,
     plan_id: str | None = None,
     include_research: bool = False,
@@ -11981,8 +12151,10 @@ async def build_contextual_brief(
     research_symbol_limit: int = DEFAULT_RESEARCH_SYMBOL_LIMIT,
     summary_max_chars: int = 1800,
     detail_level: str = "light",
+    services: WorkspaceServices | None = None,
 ) -> str:
-    payload = await build_buildwealth_context_payload(
+    payload = await assemble_copilot_context_payload(
+        question=question,
         use_live_snapshot=use_live_snapshot,
         plan_id=plan_id,
         include_research=include_research,
@@ -11995,6 +12167,7 @@ async def build_contextual_brief(
         max_recommendations=8,
         summary_max_chars=summary_max_chars,
         detail_level=detail_level,
+        services=services,
     )
     return json.dumps(payload, indent=2, default=str)
 
@@ -12012,23 +12185,23 @@ async def assemble_copilot_context_payload(
     research_interval: str = "1d",
     research_symbol_limit: int = DEFAULT_RESEARCH_SYMBOL_LIMIT,
     summary_max_chars: int = 1800,
+    max_recommendations: int = 8,
+    max_plan_decisions: int = 8,
     detail_level: str = "light",
     focus: dict[str, Any] | None = None,
     retrieval_focus_boost: bool | None = None,
     services: WorkspaceServices | None = None,
 ) -> dict[str, Any]:
-    resolved_services = workspace_services_or_legacy(services)
+    resolved_services = resolve_workspace_services(services)
     symbols = normalize_research_symbols(
         research_symbols or [],
         max_symbols=max(0, min(_coerce_int(research_symbol_limit, DEFAULT_RESEARCH_SYMBOL_LIMIT), 20)),
     )
-    resolved_assembler = (
-        ContextAssembler(
+    resolved_assembler = getattr(resolved_services, "context_assembler", None)
+    if resolved_assembler is None:
+        resolved_assembler = ContextAssembler(
             context_service=resolved_services.context_intelligence_service,
         )
-        if isinstance(services, WorkspaceServices)
-        else context_assembler
-    )
     boost_enabled = (
         bool(retrieval_focus_boost)
         if retrieval_focus_boost is not None
@@ -12050,7 +12223,8 @@ async def assemble_copilot_context_payload(
             "research_period": research_period,
             "research_interval": research_interval,
             "research_symbol_limit": research_symbol_limit,
-            "max_recommendations": 8,
+            "max_recommendations": max_recommendations,
+            "max_plan_decisions": max_plan_decisions,
             "summary_max_chars": summary_max_chars,
             "detail_level": detail_level,
             "services": resolved_services,
@@ -12079,7 +12253,7 @@ async def resolve_snapshots_for_workflow(
     *,
     services: WorkspaceServices | None = None,
 ) -> tuple[PortfolioSnapshot, PortfolioSnapshot | None]:
-    resolved_services = workspace_services_or_legacy(services)
+    resolved_services = resolve_workspace_services(services)
     if use_live_snapshot:
         current = await build_live_snapshot(resolved_services.portfolio_store)
         history = resolved_services.snapshot_store.recent(limit=1)
@@ -12101,19 +12275,19 @@ async def resolve_snapshots_for_workflow(
 
 
 async def tool_get_latest_snapshot(_: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     snapshot = services.snapshot_store.latest()
     return summarize_snapshot(snapshot)
 
 
 async def tool_get_live_snapshot(_: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     snapshot = await build_live_snapshot(services.portfolio_store)
     return summarize_snapshot(snapshot)
 
 
 async def tool_get_snapshot_history(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     limit_value = arguments.get("limit", 30)
     try:
         limit = max(2, min(int(limit_value), 365))
@@ -12123,7 +12297,7 @@ async def tool_get_snapshot_history(arguments: dict[str, object]) -> dict[str, o
 
 
 async def tool_list_import_reports(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     limit_value = arguments.get("limit", 10)
     try:
         limit = max(1, min(int(limit_value), 50))
@@ -12146,7 +12320,7 @@ async def tool_list_import_reports(arguments: dict[str, object]) -> dict[str, ob
 
 
 async def tool_get_import_report(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     report_id = str(arguments.get("report_id") or "").strip()
     if not report_id:
         raise ValueError("report_id is required.")
@@ -12154,7 +12328,7 @@ async def tool_get_import_report(arguments: dict[str, object]) -> dict[str, obje
 
 
 async def tool_get_today_dashboard(_: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     return build_today_dashboard_response(services).model_dump(mode="json")
 
 
@@ -12167,7 +12341,7 @@ async def tool_set_session_focus(arguments: dict[str, object]) -> dict[str, obje
             "error": "No active conversation for Session Focus update.",
             "applies_to": "subsequent_turns",
         }
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     try:
         conversation = services.conversation_store.get(conversation_id)
     except FileNotFoundError:
@@ -12206,7 +12380,7 @@ async def tool_set_session_focus(arguments: dict[str, object]) -> dict[str, obje
 
 
 async def tool_get_buildwealth_context(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id_raw = arguments.get("plan_id")
     plan_id = str(plan_id_raw).strip() if isinstance(plan_id_raw, str) else ""
     use_live_snapshot = _coerce_bool(arguments.get("use_live_snapshot"), False)
@@ -12238,7 +12412,11 @@ async def tool_get_buildwealth_context(arguments: dict[str, object]) -> dict[str
     else:
         symbol_inputs = []
 
-    payload = await build_buildwealth_context_payload(
+    payload = await assemble_copilot_context_payload(
+        question=str(
+            arguments.get("question")
+            or "Give me the BuildWealth context relevant to this conversation."
+        ),
         use_live_snapshot=use_live_snapshot,
         plan_id=(plan_id or None),
         include_research=include_research,
@@ -12258,7 +12436,7 @@ async def tool_get_buildwealth_context(arguments: dict[str, object]) -> dict[str
 
 
 async def tool_search_context(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     return services.context_intelligence_service.search_context(
         query=str(arguments.get("query") or arguments.get("q") or ""),
         domains=_context_filter_values(arguments.get("domains"), arguments.get("domain")),
@@ -12273,13 +12451,13 @@ async def tool_search_context(arguments: dict[str, object]) -> dict[str, object]
 
 
 async def tool_get_financial_profile(_: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     profile = FinancialProfileResponse(**get_financial_profile_payload(services.financial_profile_store))
     return profile.model_dump(mode="json")
 
 
 async def tool_get_financial_health(_: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem, PhysicalAssetItem
 
     profile = services.financial_profile_store.load()
@@ -12298,7 +12476,7 @@ async def tool_get_financial_health(_: dict[str, object]) -> dict[str, object]:
 
 
 async def tool_get_goal_progress(_: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem
 
     profile = services.financial_profile_store.load()
@@ -12323,7 +12501,7 @@ async def tool_get_goal_progress(_: dict[str, object]) -> dict[str, object]:
 
 
 async def tool_simulate_trade(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     request = SimulateTradeRequest(
         symbol=str(arguments.get("symbol", "")),
         action=str(arguments.get("action", "buy")),
@@ -12344,7 +12522,7 @@ async def tool_simulate_trade(arguments: dict[str, object]) -> dict[str, object]
 
 
 async def tool_assess_portfolio_fit(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     request = PortfolioFitAssessmentRequest(
         symbol=str(arguments.get("symbol") or ""),
         amount_usd=(
@@ -12364,7 +12542,7 @@ async def tool_assess_portfolio_fit(arguments: dict[str, object]) -> dict[str, o
 
 
 async def tool_assess_affordability(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     request = AffordabilityRequest(
         description=str(arguments.get("description") or ""),
         monthly_amount_usd=arguments.get("monthly_amount_usd"),
@@ -12390,7 +12568,7 @@ async def tool_assess_affordability(arguments: dict[str, object]) -> dict[str, o
 
 
 async def tool_get_onboarding_status(_: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     profile = get_financial_profile_payload(services.financial_profile_store)
     try:
         latest_snapshot = services.snapshot_store.latest()
@@ -12442,7 +12620,7 @@ def _build_financial_profile_update_draft(
     *,
     services: WorkspaceServices | None = None,
 ) -> dict[str, object]:
-    resolved_services = workspace_services_or_legacy(services)
+    resolved_services = resolve_workspace_services(services)
     profile_payload = get_financial_profile_payload(resolved_services.financial_profile_store)
     proposed_payload = dict(profile_payload)
     patch_payload: dict[str, object] = {}
@@ -12527,12 +12705,12 @@ def _build_financial_profile_update_draft(
 async def tool_draft_financial_profile_update(arguments: dict[str, object]) -> dict[str, object]:
     return _build_financial_profile_update_draft(
         arguments,
-        services=workspace_services_or_legacy(None),
+        services=resolve_workspace_services(None),
     )
 
 
 async def tool_update_financial_profile(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     profile_payload = get_financial_profile_payload(services.financial_profile_store)
 
     def _merge_list(key: str) -> None:
@@ -12592,7 +12770,7 @@ async def tool_update_financial_profile(arguments: dict[str, object]) -> dict[st
 
 
 async def tool_list_recommendations(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     limit_value = arguments.get("limit", 50)
     try:
         limit = max(1, min(int(limit_value), 500))
@@ -12618,7 +12796,7 @@ async def tool_list_recommendations(arguments: dict[str, object]) -> dict[str, o
 
 
 async def tool_create_recommendation(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     title = str(arguments.get("title") or "").strip()
     detail = str(arguments.get("detail") or "").strip()
     if not title or not detail:
@@ -12681,7 +12859,7 @@ def _investment_research_text_list(value: Any, *, limit: int = 6) -> list[str]:
 
 
 async def tool_draft_investment_research_recommendation(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     symbols = normalize_research_symbols([arguments.get("symbol")], max_symbols=1)
     if not symbols:
         raise ValueError("symbol is required")
@@ -12854,7 +13032,7 @@ def _revision_text_list(value: Any, *, limit: int = 6) -> list[str]:
 
 
 async def tool_draft_watchlist_thesis_revision(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     symbols = normalize_research_symbols([arguments.get("symbol")], max_symbols=1)
     if not symbols:
         raise ValueError("symbol is required")
@@ -12900,7 +13078,7 @@ async def tool_draft_watchlist_thesis_revision(arguments: dict[str, object]) -> 
 
 
 async def tool_draft_dossier_thesis_revision(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = str(arguments.get("plan_id") or "").strip()
     artifact_id = str(arguments.get("artifact_id") or "").strip()
     proposed_thesis = str(arguments.get("proposed_thesis") or "").strip()
@@ -12942,7 +13120,7 @@ async def tool_draft_dossier_thesis_revision(arguments: dict[str, object]) -> di
 
 
 async def tool_apply_recommendation(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     recommendation_id = str(arguments.get("recommendation_id") or "").strip()
     if not recommendation_id:
         raise ValueError("recommendation_id is required")
@@ -12984,7 +13162,7 @@ async def tool_apply_recommendation(arguments: dict[str, object]) -> dict[str, o
 
 
 async def tool_preview_recommendation(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     recommendation_id = str(arguments.get("recommendation_id") or "").strip()
     if not recommendation_id:
         raise ValueError("recommendation_id is required")
@@ -13008,7 +13186,7 @@ async def tool_preview_recommendation(arguments: dict[str, object]) -> dict[str,
 
 
 async def tool_reject_recommendation(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     recommendation_id = str(arguments.get("recommendation_id") or "").strip()
     if not recommendation_id:
         raise ValueError("recommendation_id is required")
@@ -13031,7 +13209,7 @@ async def tool_reject_recommendation(arguments: dict[str, object]) -> dict[str, 
 
 
 async def tool_update_recommendation_outcome(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     recommendation_id = str(arguments.get("recommendation_id") or "").strip()
     if not recommendation_id:
         raise ValueError("recommendation_id is required")
@@ -13064,7 +13242,7 @@ async def tool_update_recommendation_outcome(arguments: dict[str, object]) -> di
 
 
 async def tool_get_recommendation_closure_analytics(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     limit = max(1, min(_coerce_int(arguments.get("limit"), 200), 1000))
     raw_statuses = arguments.get("statuses")
     statuses: list[str] | str | None
@@ -13089,7 +13267,7 @@ async def tool_get_recommendation_closure_analytics(arguments: dict[str, object]
 
 
 async def tool_create_plan_recommendation_closure_summary(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = resolve_copilot_tool_plan_id(arguments.get("plan_id"), services=services)
     limit = max(1, min(_coerce_int(arguments.get("limit"), 200), 1000))
     raw_statuses = arguments.get("statuses")
@@ -13116,7 +13294,7 @@ async def tool_create_plan_recommendation_closure_summary(arguments: dict[str, o
 
 
 async def tool_pin_watchlist_research_to_plan(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = resolve_copilot_tool_plan_id(arguments.get("plan_id"), services=services)
     raw_symbols = arguments.get("symbols")
     symbols: list[str]
@@ -13144,7 +13322,7 @@ async def tool_pin_watchlist_research_to_plan(arguments: dict[str, object]) -> d
 
 
 async def tool_run_sync(_: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     async with sync_lock:
         sync_state["running"] = True
         sync_state["last_trigger"] = "copilot-tool"
@@ -13171,7 +13349,7 @@ async def tool_get_sync_status(_: dict[str, object]) -> dict[str, object]:
 
 
 async def tool_run_planning(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     current_value = arguments.get("current_portfolio_value_usd")
     annual_contribution = arguments.get("annual_contribution_usd")
     years = arguments.get("years")
@@ -13609,7 +13787,7 @@ def build_research_dossier_payload(
     include_portfolio_fit: bool,
     services: WorkspaceServices | None = None,
 ) -> ResearchDossierResponse:
-    resolved_services = workspace_services_or_legacy(services)
+    resolved_services = resolve_workspace_services(services)
     portfolio_weights_pct = (
         _portfolio_symbol_weights_pct(resolved_services.portfolio_store)
         if include_portfolio_fit
@@ -13683,7 +13861,7 @@ def _normalize_text_list_argument(raw_value: object, *, limit: int = 12) -> list
 
 
 async def tool_research_dossier(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     symbols_raw = arguments.get("symbols")
     symbols: list[str] = []
     if isinstance(symbols_raw, list):
@@ -13727,7 +13905,7 @@ async def tool_research_dossier(arguments: dict[str, object]) -> dict[str, objec
 
 
 async def tool_research_dossier_lookup(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = str(arguments.get("plan_id") or "").strip() or None
     limit = max(1, min(_coerce_int(arguments.get("limit"), 5), 25))
     include_content = _coerce_bool(arguments.get("include_content"), False)
@@ -13742,7 +13920,7 @@ async def tool_research_dossier_lookup(arguments: dict[str, object]) -> dict[str
 
 
 async def tool_research_watchlist_rank(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     period = str(arguments.get("period", "2y")).strip() or "2y"
     interval = str(arguments.get("interval", "1d")).strip() or "1d"
     limit = max(1, min(_coerce_int(arguments.get("limit"), 100), 500))
@@ -13816,7 +13994,7 @@ def _normalize_allocation_rows(rows: Any, *, top_n: int) -> list[dict[str, Any]]
 
 
 async def tool_get_account_balances(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     use_live_snapshot = _coerce_bool(arguments.get("use_live_snapshot"), False)
     include_holdings = _coerce_bool(arguments.get("include_holdings"), False)
     holdings_limit_per_account = max(1, min(_coerce_int(arguments.get("holdings_limit_per_account"), 8), 25))
@@ -13872,7 +14050,7 @@ async def tool_get_account_balances(arguments: dict[str, object]) -> dict[str, o
 
 
 async def tool_get_asset_allocation(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     use_live_snapshot = _coerce_bool(arguments.get("use_live_snapshot"), False)
     dimension = str(arguments.get("dimension") or "asset_class").strip().lower()
     if dimension not in {"asset_class", "sector", "region", "all"}:
@@ -13943,13 +14121,13 @@ async def tool_compute_tax(arguments: dict[str, object]) -> dict[str, object]:
 
 
 async def tool_list_accounts(_: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     accounts = services.portfolio_store.get_accounts()
     return {"count": len(accounts), "accounts": accounts}
 
 
 async def tool_list_plans(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     limit_value = arguments.get("limit", 20)
     try:
         limit = max(1, min(int(limit_value), 200))
@@ -13960,14 +14138,14 @@ async def tool_list_plans(arguments: dict[str, object]) -> dict[str, object]:
 
 
 async def tool_get_plan_context(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = arguments.get("plan_id")
     resolved = str(plan_id).strip() if isinstance(plan_id, str) and plan_id.strip() else None
     return services.plan_workspace.get_context_payload(plan_id=resolved)
 
 
 async def tool_get_plan_review_context(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
     detail = services.plan_workspace.get_plan(plan_id)
     settings_payload = detail.get("settings", {})
@@ -14241,7 +14419,7 @@ def plan_review_next_step_label(section: str) -> str:
 
 
 async def tool_get_plan_settings(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
     detail = services.plan_workspace.get_plan(plan_id)
     return {
@@ -14253,7 +14431,7 @@ async def tool_get_plan_settings(arguments: dict[str, object]) -> dict[str, obje
 
 
 async def tool_update_plan_settings(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
     updates = extract_plan_settings_updates(arguments)
     rationale = str(arguments.get("rationale") or "").strip()
@@ -14274,7 +14452,7 @@ async def tool_update_plan_settings(arguments: dict[str, object]) -> dict[str, o
 
 
 async def tool_get_plan_timeline(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
     timeline = services.plan_workspace.get_plan_timeline(plan_id)
     return {
@@ -14284,7 +14462,7 @@ async def tool_get_plan_timeline(arguments: dict[str, object]) -> dict[str, obje
 
 
 async def tool_update_plan_timeline(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
     timeline_raw = arguments.get("timeline")
     if not isinstance(timeline_raw, dict):
@@ -14304,7 +14482,7 @@ async def tool_update_plan_timeline(arguments: dict[str, object]) -> dict[str, o
 
 
 async def tool_add_timeline_event(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
 
     date_value = str(arguments.get("date") or "").strip()
@@ -14409,7 +14587,7 @@ async def tool_add_timeline_event(arguments: dict[str, object]) -> dict[str, obj
 
 
 async def tool_get_plan_contribution_rules(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
     contribution_rules = services.plan_workspace.get_plan_contribution_rules(plan_id)
     return {
@@ -14419,7 +14597,7 @@ async def tool_get_plan_contribution_rules(arguments: dict[str, object]) -> dict
 
 
 async def tool_set_contribution_rules(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
 
     payload_raw = arguments.get("contribution_rules")
@@ -14486,6 +14664,7 @@ async def tool_set_contribution_rules(arguments: dict[str, object]) -> dict[str,
         preview = build_contribution_allocation_for_plan_settings(
             plan_settings=plan_settings,
             contribution_rules_payload=contribution_rules,
+            accounts_override=build_planning_accounts_from_portfolio(services.portfolio_store),
         )
         allocation_preview = preview.model_dump(mode="json")
     except Exception as exc:
@@ -14503,7 +14682,9 @@ async def tool_set_contribution_rules(arguments: dict[str, object]) -> dict[str,
 
 
 async def tool_compare_withdrawal_strategies(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
+    profile_payload = get_financial_profile_payload(services.financial_profile_store)
+    planning_accounts = build_planning_accounts_from_portfolio(services.portfolio_store)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
     detail = services.plan_workspace.get_plan(plan_id)
     if not isinstance(detail, dict):
@@ -14513,6 +14694,7 @@ async def tool_compare_withdrawal_strategies(arguments: dict[str, object]) -> di
     current_portfolio_value = resolve_portfolio_value(
         float(current_portfolio_value_raw) if current_portfolio_value_raw is not None else None,
         store=services.snapshot_store,
+        portfolio=services.portfolio_store,
     )
 
     strategies, invalid_strategies = normalize_withdrawal_strategies(arguments.get("strategies"))
@@ -14535,9 +14717,15 @@ async def tool_compare_withdrawal_strategies(arguments: dict[str, object]) -> di
     timeline_drawdown_order = resolve_timeline_drawdown_order(timeline_payload)
     contribution_rules_payload = resolve_plan_contribution_rules(detail)
 
-    income_projection = build_income_projection_for_plan_settings(projection_settings)
-    expense_projection = build_expense_projection_for_plan_settings(projection_settings)
-    debt_projection = build_debt_projection_for_plan_settings(projection_settings)
+    income_projection = build_income_projection_for_plan_settings(
+        projection_settings, profile_payload=profile_payload
+    )
+    expense_projection = build_expense_projection_for_plan_settings(
+        projection_settings, profile_payload=profile_payload
+    )
+    debt_projection = build_debt_projection_for_plan_settings(
+        projection_settings, profile_payload=profile_payload
+    )
     timeline_projection = build_timeline_projection_for_plan_settings(
         plan_settings=projection_settings,
         timeline_payload=timeline_payload,
@@ -14545,6 +14733,7 @@ async def tool_compare_withdrawal_strategies(arguments: dict[str, object]) -> di
     contribution_allocation = build_contribution_allocation_for_plan_settings(
         plan_settings=projection_settings,
         contribution_rules_payload=contribution_rules_payload,
+        accounts_override=planning_accounts,
     )
     social_security_projection = build_social_security_projection_for_plan_settings(
         plan_settings=projection_settings,
@@ -14556,6 +14745,7 @@ async def tool_compare_withdrawal_strategies(arguments: dict[str, object]) -> di
         plan_settings=projection_settings,
         timeline_payload=timeline_payload,
         start_year=utc_now().year,
+        accounts_override=planning_accounts,
     )
 
     comparisons: list[dict[str, Any]] = []
@@ -14580,6 +14770,8 @@ async def tool_compare_withdrawal_strategies(arguments: dict[str, object]) -> di
             retirement_age=timeline_retirement_age,
             timeline_withdrawal_strategy=timeline_withdrawal_strategy,
             timeline_drawdown_order=timeline_drawdown_order,
+            profile_payload=profile_payload,
+            planning_accounts_override=planning_accounts,
         )
 
         baseline_scenario = next((item for item in result.scenarios if item.label == "baseline"), None)
@@ -14714,7 +14906,7 @@ async def tool_compare_withdrawal_strategies(arguments: dict[str, object]) -> di
 
 
 async def tool_get_plan_assumption_sets(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
     assumption_sets = services.plan_workspace.get_plan_assumption_sets(plan_id)
     return {
@@ -14724,7 +14916,7 @@ async def tool_get_plan_assumption_sets(arguments: dict[str, object]) -> dict[st
 
 
 async def tool_update_plan_assumption_sets(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
     payload_raw = arguments.get("assumption_sets")
     if not isinstance(payload_raw, dict):
@@ -14744,7 +14936,7 @@ async def tool_update_plan_assumption_sets(arguments: dict[str, object]) -> dict
 
 
 async def tool_get_plan_branch_templates(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
     branch_templates = services.plan_workspace.get_plan_branch_templates(plan_id)
     return {
@@ -14754,7 +14946,7 @@ async def tool_get_plan_branch_templates(arguments: dict[str, object]) -> dict[s
 
 
 async def tool_update_plan_branch_templates(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
     payload_raw = arguments.get("branch_templates")
     if not isinstance(payload_raw, dict):
@@ -14774,7 +14966,7 @@ async def tool_update_plan_branch_templates(arguments: dict[str, object]) -> dic
 
 
 async def tool_get_plan_tracking(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
     detail = services.plan_workspace.get_plan(plan_id)
     plan_settings = PlanSettings(**detail.get("settings", {}))
@@ -14796,8 +14988,14 @@ async def tool_get_plan_tracking(arguments: dict[str, object]) -> dict[str, obje
     return result.model_dump(mode="json")
 
 
-async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+async def _tool_run_plan_scenario_diff_untracked(
+    arguments: dict[str, object],
+    *,
+    services: WorkspaceServices | None = None,
+) -> dict[str, object]:
+    services = resolve_workspace_services(services)
+    profile_payload = get_financial_profile_payload(services.financial_profile_store)
+    planning_accounts = build_planning_accounts_from_portfolio(services.portfolio_store)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
     detail = services.plan_workspace.get_plan(plan_id)
     timeline_payload = resolve_plan_timeline_payload(detail)
@@ -14825,12 +15023,24 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         assumption_set_id=candidate_set_id,
     )
     candidate_settings = merge_plan_settings(candidate_base_settings, compare_updates)
-    base_income_projection = build_income_projection_for_plan_settings(base_settings)
-    candidate_income_projection = build_income_projection_for_plan_settings(candidate_settings)
-    base_expense_projection = build_expense_projection_for_plan_settings(base_settings)
-    candidate_expense_projection = build_expense_projection_for_plan_settings(candidate_settings)
-    base_debt_projection = build_debt_projection_for_plan_settings(base_settings)
-    candidate_debt_projection = build_debt_projection_for_plan_settings(candidate_settings)
+    base_income_projection = build_income_projection_for_plan_settings(
+        base_settings, profile_payload=profile_payload
+    )
+    candidate_income_projection = build_income_projection_for_plan_settings(
+        candidate_settings, profile_payload=profile_payload
+    )
+    base_expense_projection = build_expense_projection_for_plan_settings(
+        base_settings, profile_payload=profile_payload
+    )
+    candidate_expense_projection = build_expense_projection_for_plan_settings(
+        candidate_settings, profile_payload=profile_payload
+    )
+    base_debt_projection = build_debt_projection_for_plan_settings(
+        base_settings, profile_payload=profile_payload
+    )
+    candidate_debt_projection = build_debt_projection_for_plan_settings(
+        candidate_settings, profile_payload=profile_payload
+    )
     base_timeline_projection = build_timeline_projection_for_plan_settings(
         plan_settings=base_settings,
         timeline_payload=timeline_payload,
@@ -14843,10 +15053,12 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
     base_contribution_allocation = build_contribution_allocation_for_plan_settings(
         plan_settings=base_settings,
         contribution_rules_payload=contribution_rules_payload,
+        accounts_override=planning_accounts,
     )
     candidate_contribution_allocation = build_contribution_allocation_for_plan_settings(
         plan_settings=candidate_settings,
         contribution_rules_payload=contribution_rules_payload,
+        accounts_override=planning_accounts,
     )
     base_social_security_projection = build_social_security_projection_for_plan_settings(
         plan_settings=base_settings,
@@ -14864,17 +15076,20 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         plan_settings=base_settings,
         timeline_payload=timeline_payload,
         start_year=utc_now().year,
+        accounts_override=planning_accounts,
     )
     candidate_rmd_projection = build_rmd_projection_for_plan_settings(
         plan_settings=candidate_settings,
         timeline_payload=timeline_payload,
         start_year=utc_now().year,
+        accounts_override=planning_accounts,
     )
 
     current_value_raw = arguments.get("current_portfolio_value_usd")
     current_value = resolve_portfolio_value(
         float(current_value_raw) if current_value_raw is not None else None,
         store=services.snapshot_store,
+        portfolio=services.portfolio_store,
     )
 
     base_result = await run_scenarios_for_plan_settings(
@@ -14891,6 +15106,8 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         retirement_age=retirement_age,
         timeline_withdrawal_strategy=timeline_withdrawal_strategy,
         timeline_drawdown_order=timeline_drawdown_order,
+        profile_payload=profile_payload,
+        planning_accounts_override=planning_accounts,
     )
     candidate_result = await run_scenarios_for_plan_settings(
         current_portfolio_value_usd=current_value,
@@ -14906,6 +15123,8 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
         retirement_age=retirement_age,
         timeline_withdrawal_strategy=timeline_withdrawal_strategy,
         timeline_drawdown_order=timeline_drawdown_order,
+        profile_payload=profile_payload,
+        planning_accounts_override=planning_accounts,
     )
     scenario_deltas, monte_carlo_delta, simulation_delta = build_scenario_diff_payload(
         base_result,
@@ -14945,8 +15164,24 @@ async def tool_run_plan_scenario_diff(arguments: dict[str, object]) -> dict[str,
     }
 
 
-async def tool_run_plan_scenario_branch(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+async def tool_run_plan_scenario_diff(
+    arguments: dict[str, object],
+    *,
+    services: WorkspaceServices | None = None,
+) -> dict[str, object]:
+    services = resolve_workspace_services(services)
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
+    return await execute_tracked_simulation(
+        workspace=services.plan_workspace,
+        plan_id=plan_id,
+        source="scenario_diff",
+        input_payload=dict(arguments),
+        operation=lambda: _tool_run_plan_scenario_diff_untracked(arguments, services=services),
+    )
+
+
+async def _tool_run_plan_scenario_branch_untracked(arguments: dict[str, object]) -> dict[str, object]:
+    services = resolve_workspace_services(None)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
     branch_name = str(arguments.get("branch_name") or "What-If Branch").strip() or "What-If Branch"
     assumption_set_id = str(arguments.get("assumption_set_id") or "").strip() or None
@@ -14976,8 +15211,20 @@ async def tool_run_plan_scenario_branch(arguments: dict[str, object]) -> dict[st
     )
 
 
+async def tool_run_plan_scenario_branch(arguments: dict[str, object]) -> dict[str, object]:
+    services = resolve_workspace_services(None)
+    plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
+    return await execute_tracked_simulation(
+        workspace=services.plan_workspace,
+        plan_id=plan_id,
+        source="scenario_branch",
+        input_payload=dict(arguments),
+        operation=lambda: _tool_run_plan_scenario_branch_untracked(arguments),
+    )
+
+
 async def tool_list_plan_saved_simulations(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
     limit_raw = arguments.get("limit")
     limit = int(limit_raw) if limit_raw is not None else 10
@@ -14985,7 +15232,7 @@ async def tool_list_plan_saved_simulations(arguments: dict[str, object]) -> dict
 
 
 async def tool_get_plan_saved_simulation_context(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
     saved_simulation_id = str(arguments.get("saved_simulation_id") or "").strip()
     if not saved_simulation_id:
@@ -15002,7 +15249,7 @@ async def tool_get_plan_saved_simulation_context(arguments: dict[str, object]) -
 
 
 async def tool_compare_plan_saved_simulation_current(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
     saved_simulation_id = str(arguments.get("saved_simulation_id") or "").strip()
     if not saved_simulation_id:
@@ -15021,7 +15268,7 @@ async def tool_compare_plan_saved_simulation_current(arguments: dict[str, object
 
 
 async def tool_append_plan_decision(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     plan_id = str(arguments.get("plan_id") or "").strip()
     summary = str(arguments.get("summary") or "").strip()
     rationale = str(arguments.get("rationale") or "").strip()
@@ -15053,7 +15300,7 @@ async def tool_list_workflow_templates(_: dict[str, object]) -> dict[str, object
 
 
 async def tool_run_workflow(arguments: dict[str, object]) -> dict[str, object]:
-    services = workspace_services_or_legacy(None)
+    services = resolve_workspace_services(None)
     workflow_id = str(arguments.get("workflow_id") or "").strip()
     if not workflow_id:
         raise ValueError("workflow_id is required")
@@ -15231,6 +15478,10 @@ def configure_copilot_tools() -> None:
         parameters={
             "type": "object",
             "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "The question or decision the context should support.",
+                },
                 "plan_id": {"type": "string"},
                 "use_live_snapshot": {"type": "boolean"},
                 "include_research": {"type": "boolean"},
@@ -17025,7 +17276,7 @@ def pin_watchlist_research_bridge(
     request: PlanResearchBridgeRequest,
     services: WorkspaceServices | None = None,
 ) -> PlanResearchBridgeResponse:
-    resolved_services = workspace_services_or_legacy(services)
+    resolved_services = resolve_workspace_services(services)
     branch_templates_payload = resolved_services.plan_workspace.get_plan_branch_templates(plan_id)
 
     selected_items = select_research_bridge_watchlist_items(

@@ -235,9 +235,14 @@ def test_apply_recommendation_updates_research_bridge_metadata(
     async def fake_preview(*_: object, **__: object) -> dict[str, object]:
         return {"status": "captured"}
 
-    def fake_pin(plan_id: str, request: main.PlanResearchBridgeRequest) -> main.PlanResearchBridgeResponse:
+    def fake_pin(
+        plan_id: str,
+        request: main.PlanResearchBridgeRequest,
+        services: object | None = None,
+    ) -> main.PlanResearchBridgeResponse:
         assert plan_id == plan["id"]
         assert request.symbols == ["VTI"]
+        assert services is not None
         return main.PlanResearchBridgeResponse(
             plan_id=plan_id,
             template_id="research_watchlist_bridge",

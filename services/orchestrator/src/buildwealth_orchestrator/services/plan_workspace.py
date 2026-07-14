@@ -103,6 +103,9 @@ class PlanWorkspace:
     def _saved_simulations_path(self, plan_id: str) -> Path:
         return self._plan_dir(plan_id) / "saved_simulations.json"
 
+    def _simulation_runs_path(self, plan_id: str) -> Path:
+        return self._plan_dir(plan_id) / "simulation_runs.json"
+
     @staticmethod
     def _slug(value: str, default: str = "artifact") -> str:
         cleaned = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
@@ -507,6 +510,13 @@ class PlanWorkspace:
 
     @staticmethod
     def _default_saved_simulations() -> dict[str, Any]:
+        return {
+            "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
+            "items": [],
+        }
+
+    @staticmethod
+    def _default_simulation_runs() -> dict[str, Any]:
         return {
             "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
             "items": [],
@@ -1561,6 +1571,10 @@ class PlanWorkspace:
             json.dumps(self._default_saved_simulations(), indent=2),
             encoding="utf-8",
         )
+        self._simulation_runs_path(plan_id).write_text(
+            json.dumps(self._default_simulation_runs(), indent=2),
+            encoding="utf-8",
+        )
 
         now = utc_now_iso()
         metadata = {
@@ -1731,6 +1745,102 @@ class PlanWorkspace:
         self._saved_simulations_path(plan_id).write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
         return sanitized
 
+    def _read_simulation_runs_payload(self, plan_id: str) -> dict[str, Any]:
+        plan_dir = self._plan_dir(plan_id)
+        if not plan_dir.exists():
+            raise PlanNotFoundError(f"Plan not found: {plan_id}")
+        payload = self._read_or_initialize_json(
+            self._simulation_runs_path(plan_id),
+            self._default_simulation_runs(),
+        )
+        items_raw = payload.get("items")
+        items = [item for item in items_raw if isinstance(item, dict)] if isinstance(items_raw, list) else []
+        sanitized = {"schema_version": PLAN_WORKSPACE_SCHEMA_VERSION, "items": items}
+        self._simulation_runs_path(plan_id).write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
+        return sanitized
+
+    def list_simulation_runs(self, plan_id: str, limit: int = 50) -> dict[str, Any]:
+        payload = self._read_simulation_runs_payload(plan_id)
+        items = list(payload.get("items", []))
+        items.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+        return {
+            "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
+            "plan_id": plan_id,
+            "runs": items[: max(1, limit)],
+        }
+
+    def get_simulation_run(self, plan_id: str, simulation_run_id: str) -> dict[str, Any]:
+        requested_id = str(simulation_run_id or "").strip()
+        for item in self._read_simulation_runs_payload(plan_id).get("items", []):
+            if str(item.get("id") or "").strip() == requested_id:
+                return item
+        raise PlanNotFoundError(f"Simulation run not found: {simulation_run_id}")
+
+    def start_simulation_run(
+        self,
+        plan_id: str,
+        *,
+        source: str,
+        input_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        if not self._plan_dir(plan_id).exists():
+            raise PlanNotFoundError(f"Plan not found: {plan_id}")
+        now = utc_now_iso()
+        run = {
+            "id": f"simulation-run-{uuid.uuid4().hex[:12]}",
+            "plan_id": plan_id,
+            "source": source,
+            "status": "running",
+            "created_at": now,
+            "started_at": now,
+            "completed_at": None,
+            "input_payload": dict(input_payload),
+            "result_payload": {},
+            "error": None,
+            "saved_simulation_id": None,
+        }
+        stored = self._read_simulation_runs_payload(plan_id)
+        items = [item for item in stored.get("items", []) if isinstance(item, dict)]
+        items.insert(0, run)
+        self._simulation_runs_path(plan_id).write_text(
+            json.dumps({"schema_version": PLAN_WORKSPACE_SCHEMA_VERSION, "items": items}, indent=2),
+            encoding="utf-8",
+        )
+        return run
+
+    def finish_simulation_run(
+        self,
+        plan_id: str,
+        simulation_run_id: str,
+        *,
+        status: str,
+        result_payload: dict[str, Any] | None = None,
+        error: str | None = None,
+        saved_simulation_id: str | None = None,
+    ) -> dict[str, Any]:
+        if status not in {"completed", "failed", "cancelled"}:
+            raise ValueError("Simulation run terminal status must be completed, failed, or cancelled")
+        stored = self._read_simulation_runs_payload(plan_id)
+        items = [dict(item) for item in stored.get("items", []) if isinstance(item, dict)]
+        updated = None
+        for item in items:
+            if str(item.get("id") or "") != simulation_run_id:
+                continue
+            item["status"] = status
+            item["completed_at"] = utc_now_iso()
+            item["result_payload"] = dict(result_payload or {})
+            item["error"] = str(error or "").strip() or None
+            item["saved_simulation_id"] = str(saved_simulation_id or "").strip() or None
+            updated = item
+            break
+        if updated is None:
+            raise PlanNotFoundError(f"Simulation run not found: {simulation_run_id}")
+        self._simulation_runs_path(plan_id).write_text(
+            json.dumps({"schema_version": PLAN_WORKSPACE_SCHEMA_VERSION, "items": items}, indent=2),
+            encoding="utf-8",
+        )
+        return updated
+
     def list_saved_simulations(self, plan_id: str, limit: int = 50) -> dict[str, Any]:
         payload = self._read_saved_simulations_payload(plan_id)
         items = list(payload.get("items", []))
@@ -1784,6 +1894,7 @@ class PlanWorkspace:
             "immutable": True,
             "input_payload": input_payload,
             "result_payload": result_payload,
+            "simulation_run_id": str(payload.get("simulation_run_id") or "").strip() or None,
         }
 
         stored = self._read_saved_simulations_payload(plan_id)
@@ -1855,11 +1966,16 @@ class PlanWorkspace:
                     self._read_saved_simulations_payload(plan_id),
                     indent=2,
                 ),
+                "simulation_runs_json": json.dumps(
+                    self._read_simulation_runs_payload(plan_id),
+                    indent=2,
+                ),
             },
             "settings": self._read_settings(plan_id),
             "decisions": self._load_decisions(plan_id),
             "artifacts": self._list_artifacts(plan_id),
             "saved_simulations": self.list_saved_simulations(plan_id, limit=10).get("simulations", []),
+            "simulation_runs": self.list_simulation_runs(plan_id, limit=10).get("runs", []),
         }
 
     def set_active_plan(self, plan_id: str) -> dict[str, Any]:

@@ -11,7 +11,7 @@ from buildwealth_orchestrator.services.control_plane import (
     RequestContext,
     WorkspaceRecord,
 )
-from buildwealth_orchestrator.services.context_intelligence import ContextIntelligenceService
+from buildwealth_orchestrator.services.context_intelligence import ContextAssembler, ContextIntelligenceService
 from buildwealth_orchestrator.services.embedding_clients import apply_context_embedding_overrides
 from buildwealth_orchestrator.services.copilot_runtime import ConversationStore
 from buildwealth_orchestrator.services.financial_profile import FinancialProfileStore
@@ -71,6 +71,7 @@ class WorkspaceServices:
     today_review_checkpoint_store: TodayReviewCheckpointStore
     settings_store: WorkspaceSettingsStore
     secret_store: WorkspaceSecretStore
+    context_assembler: ContextAssembler | None = None
 
 
 class SecretKeyRotationUnavailable(RuntimeError):
@@ -175,6 +176,7 @@ class WorkspaceServiceFactory:
             today_review_checkpoint_store=TodayReviewCheckpointStore(paths.today_review_checkpoint_path),
             settings_store=settings_store,
             secret_store=secret_store,
+            context_assembler=ContextAssembler(context_service=context_intelligence_service),
         )
 
     def preview_secret_key_rotation(self) -> dict[str, object]:

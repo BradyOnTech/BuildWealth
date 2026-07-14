@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from .portfolio_performance import ONBOARDING_FUNDING_NOTE
 from .portfolio_store import PortfolioStore
 
 INVESTMENT_ACTIONS = {"BUY", "SELL"}
@@ -25,6 +26,7 @@ PROPERTY_TYPES = {
 }
 
 ESTIMATED_BASIS_NOTE = "basis estimated at entry"
+VALUE_ONLY_POSITION_NOTE = "valuation-only position; quantity assumed as one unit"
 
 
 class AddFlowError(ValueError):
@@ -65,20 +67,32 @@ def _add_investment(store: PortfolioStore, body: dict[str, Any]) -> dict[str, An
     value_usd = _parse_amount(body.get("value_usd"), "Current value")
     unit_cost = _parse_amount(body.get("unit_cost"), "Cost per share")
     acquired_date = str(body.get("acquired_date") or "").strip() or date.today().isoformat()
+    note = str(body.get("note") or "").strip()
 
     known_price = _known_price(store, symbol)
+    valuation_only = False
     if quantity is None:
         if value_usd is None:
             raise AddFlowError("Enter either the number of shares or their current dollar value.")
         if known_price is None:
-            raise AddFlowError(
-                f"BuildWealth has no current price for {symbol} yet — "
-                "enter the number of shares and what you paid per share instead."
-            )
-        quantity = round(value_usd / known_price, 8)
+            if action == "SELL":
+                raise AddFlowError(
+                    f"BuildWealth has no current price for {symbol} yet — "
+                    "enter the number of shares being sold and the sale price per share."
+                )
+            # Current value is intentionally a first-class onboarding path. If
+            # no quote is available yet, preserve the household's total by
+            # recording one valuation unit at the supplied value. The manual
+            # valuation remains explicit and editable until real share details
+            # are added; it must never silently become a zero-value holding.
+            quantity = 1.0
+            known_price = value_usd
+            valuation_only = True
+            note = f"{note}; {VALUE_ONLY_POSITION_NOTE}" if note else VALUE_ONLY_POSITION_NOTE
+        else:
+            quantity = round(value_usd / known_price, 8)
 
     estimated_basis = False
-    note = str(body.get("note") or "").strip()
     if unit_cost is None:
         if known_price is None:
             raise AddFlowError(
@@ -89,27 +103,83 @@ def _add_investment(store: PortfolioStore, body: dict[str, Any]) -> dict[str, An
         estimated_basis = True
         note = f"{note}; {ESTIMATED_BASIS_NOTE}" if note else ESTIMATED_BASIS_NOTE
 
-    txn = store.add_transaction(
-        date=acquired_date,
-        symbol=symbol,
-        action=action,
-        quantity=quantity,
-        unit_price=unit_cost,
-        fee=0.0,
-        account=str(account.get("id") or "default"),
-        currency=str(account.get("currency") or "USD"),
-        note=note,
+    account_id = str(account.get("id") or "default")
+    currency = str(account.get("currency") or "USD")
+    before_ids = {
+        str(row.get("id") or "")
+        for row in store.list_transactions(limit=1_000_000)
+        if isinstance(row, dict)
+    }
+    items: list[dict[str, Any]] = []
+    if action == "BUY":
+        # This front door means "I own this investment", not "spend cash
+        # already tracked in this account". Pair the position with an external
+        # funding contribution so a first holding increases net worth instead
+        # of creating an unexplained negative cash balance.
+        items.append(
+            {
+                "date": acquired_date,
+                "symbol": "CASH",
+                "action": "CASH_DEPOSIT",
+                "quantity": 1.0,
+                "unit_price": float(quantity) * float(unit_cost),
+                "fee": 0.0,
+                "account": account_id,
+                "currency": currency,
+                "note": ONBOARDING_FUNDING_NOTE,
+            }
+        )
+    items.append(
+        {
+            "date": acquired_date,
+            "symbol": symbol,
+            "action": action,
+            "quantity": quantity,
+            "unit_price": unit_cost,
+            "fee": 0.0,
+            "account": account_id,
+            "currency": currency,
+            "note": note,
+        }
     )
+    if store.add_transactions_bulk(items) != len(items):
+        raise RuntimeError("Portfolio entry could not be recorded completely.")
+    txn = next(
+        (
+            row
+            for row in store.list_transactions(limit=1_000_000)
+            if str(row.get("id") or "") not in before_ids
+            and str(row.get("symbol") or "") == symbol
+            and str(row.get("action") or "") == action
+        ),
+        None,
+    )
+    if not isinstance(txn, dict):
+        raise RuntimeError("Portfolio entry was recorded but could not be reloaded.")
+    if valuation_only:
+        store.set_manual_price(
+            symbol=symbol,
+            price=float(value_usd),
+            note="Current value supplied during portfolio onboarding; add share details when known.",
+        )
 
     verb = {"BUY": "a buy of", "SELL": "a sale of"}[action]
     detail = (
-        f"Recorded {verb} {_fmt_qty(quantity)} {symbol} "
-        f"at {_fmt_usd(unit_cost)} per share in {_account_name(account)}."
+        (
+            f"Added {symbol} at your {_fmt_usd(float(value_usd))} current-value estimate "
+            f"in {_account_name(account)}. Add share details later when you have them."
+        )
+        if valuation_only
+        else (
+            f"Recorded {verb} {_fmt_qty(quantity)} {symbol} "
+            f"at {_fmt_usd(unit_cost)} per share in {_account_name(account)}."
+        )
     )
     return {
         "created": txn,
         "account_id": account.get("id"),
         "estimated_basis": estimated_basis,
+        "valuation_only": valuation_only,
         "detail": detail,
     }
 

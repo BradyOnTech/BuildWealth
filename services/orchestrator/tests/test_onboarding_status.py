@@ -51,6 +51,8 @@ def test_onboarding_status_complete_path() -> None:
     assert status.profile_readiness.status == "ready"
     assert status.profile_readiness.next_gap_key is None
     assert status.profile_readiness.blocking_recommendation_sources == []
+    assert status.decision_stage == "ready"
+    assert status.decision_headline == "Ready for tailored advice"
     assert any(
         section.key == "investment_policy"
         and section.status == "complete"
@@ -81,6 +83,8 @@ def test_onboarding_status_incomplete_path() -> None:
     assert status.profile_readiness is not None
     assert status.profile_readiness.status == "incomplete"
     assert status.profile_readiness.next_gap_key == "income"
+    assert status.decision_stage == "profile"
+    assert status.decision_detail == "Next: Income profile."
     assert "profile_completeness" in status.profile_readiness.blocking_recommendation_sources
     assert any(section.key == "tax_profile" for section in status.profile_readiness.sections)
     assert any(
@@ -89,3 +93,8 @@ def test_onboarding_status_incomplete_path() -> None:
         and section.blocking_recommendations is False
         for section in status.profile_readiness.sections
     )
+    readiness_by_key = {section.key: section for section in status.profile_readiness.sections}
+    for step in status.steps:
+        if step.id in readiness_by_key:
+            section = readiness_by_key[step.id]
+            assert (step.status, step.detail) == (section.status, section.detail)

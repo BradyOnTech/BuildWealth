@@ -914,6 +914,12 @@ function nextOnboardingStep(status) {
 }
 
 export function decisionReadiness(status = {}) {
+  const serverStage = String(status?.decision_stage || '').toLowerCase();
+  const serverHeadline = String(status?.decision_headline || '').trim();
+  const serverDetail = String(status?.decision_detail || '').trim();
+  if (['profile', 'portfolio', 'plan', 'ready'].includes(serverStage) && serverHeadline && serverDetail) {
+    return { label: serverHeadline, detail: serverDetail, stage: serverStage };
+  }
   const profile = status?.profile_readiness || {};
   const profileReady = String(profile.status || '').toLowerCase() === 'ready';
   if (!profileReady) {
@@ -1006,6 +1012,8 @@ function isPlanReviewIntent(intent) {
 }
 
 function onboardingActionLabel(status) {
+  const serverLabel = String(status?.next_action_label || '').trim();
+  if (serverLabel) return serverLabel;
   const step = nextOnboardingStep(status);
   if (householdNeedsSetup(status)) return 'Add your household with Copilot';
   if (isDebtOnboardingStep(step)) return 'Add debt with Copilot';

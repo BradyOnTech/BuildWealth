@@ -299,6 +299,51 @@ def test_scenario_engine_projects_tax_and_account_timelines() -> None:
     assert baseline.timeline_points[0].taxes_usd > 0
 
 
+def test_scenario_engine_does_not_tax_profile_income_marked_post_tax() -> None:
+    engine = ScenarioEngine(
+        years_to_retirement=1,
+        annual_contribution_usd=42_000,
+        baseline_return=0.0,
+        optimistic_return=0.0,
+        conservative_return=0.0,
+        return_volatility=0.0,
+        inflation=0.0,
+        monte_carlo_runs=20,
+        hsa_delta_default=0,
+        marginal_tax_rate=0.24,
+    )
+
+    result = engine.run(
+        current_portfolio_value_usd=15_000,
+        years=1,
+        accounts=[{"account_id": "default", "account_type": "taxable", "balance_usd": 15_000}],
+        income_projection={
+            "first_year_gross_income_usd": 96_000,
+            "yearly_points": [
+                {
+                    "year": 2026,
+                    "gross_income_usd": 96_000,
+                    "pre_tax_income_usd": 0,
+                    "post_tax_income_usd": 96_000,
+                }
+            ],
+        },
+        expense_projection={
+            "first_year_expenses_usd": 54_000,
+            "yearly_points": [{"year": 2026, "total_expenses_usd": 54_000}],
+        },
+        filing_status="single",
+        state_tax_rate=0.068,
+        start_year=2026,
+    )
+
+    point = result.scenarios[0].timeline_points[0]
+    assert point.taxes_usd == 0
+    assert point.contributions_usd == 42_000
+    assert point.withdrawals_usd == 0
+    assert point.ending_balance_usd == 57_000
+
+
 def test_scenario_engine_withdrawal_order_prefers_taxable_first() -> None:
     engine = ScenarioEngine(
         years_to_retirement=1,

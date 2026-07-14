@@ -52,6 +52,16 @@ test('unpriced holdings render as pending instead of zero and a total loss', () 
 
 test('readiness uses milestone language instead of competing percentages', () => {
   assert.deepEqual(decisionReadiness({
+    decision_stage: 'portfolio',
+    decision_headline: 'Enough for a first forecast',
+    decision_detail: 'Add your portfolio next.',
+    profile_readiness: { status: 'incomplete', next_gap_title: 'Income' },
+  }), {
+    label: 'Enough for a first forecast',
+    detail: 'Add your portfolio next.',
+    stage: 'portfolio',
+  });
+  assert.deepEqual(decisionReadiness({
     ready_for_daily_review: false,
     profile_readiness: { status: 'attention', next_gap_title: 'Income' },
   }), {
