@@ -24,6 +24,39 @@ test('copilot thread shows durable stopped and failed turn state', () => {
   assert.match(html, />Failed</);
 });
 
+test('copilot thread renders readable activity and contextual response actions', () => {
+  const streamingHtml = String(renderThread([], {
+    streaming: {
+      stage: 'thinking',
+      activities: [
+        { key: 'stage:assembling_context', name: 'assembling_context', status: 'done' },
+        { key: 'tool:get_financial_profile', name: 'get_financial_profile', status: 'running' },
+      ],
+    },
+  }));
+  assert.match(streamingHtml, /Reading your financial context/);
+  assert.match(streamingHtml, /Reviewing your financial profile/);
+  assert.doesNotMatch(streamingHtml, /get_financial_profile/);
+
+  const responseHtml = String(renderThread([
+    {
+      id: 'assistant-1',
+      turn_id: 'turn-1',
+      role: 'assistant',
+      content: 'Increase the contribution after confirming the emergency fund.',
+      created_at: '2026-07-14T12:00:00.000Z',
+      metadata: {},
+    },
+  ], {
+    planId: 'plan-1',
+    conversationId: 'conversation-1',
+    trackedMessageKeys: new Set(),
+  }));
+  assert.match(responseHtml, /data-message-copy="assistant-1"/);
+  assert.match(responseHtml, /Ask a follow-up/);
+  assert.match(responseHtml, /Track decision/);
+});
+
 test('copilot thread renders financial profile draft review card', () => {
   const html = String(renderThread([
     {
@@ -332,7 +365,7 @@ test('copilot thread renders compact context-use trace links', () => {
     },
   ]));
 
-  assert.match(html, /Context used/);
+  assert.match(html, /Sources &amp; calculations/);
   assert.match(html, /plan scoped · 1 saved simulation · 1 symbol · 4 retrieved · 2 citations · 1 capture · 1 context issue/);
   assert.match(html, /href="#plan\?id=plan-1"/);
   assert.match(html, /href="#plan\?id=plan-1&amp;section=scenarios&amp;saved=saved-simulation-1"/);

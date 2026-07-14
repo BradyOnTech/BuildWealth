@@ -9,13 +9,37 @@ const DAY_FMT = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long
 const MONEY_FMT = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const GOAL_DATE_FMT = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
-export function renderThread(messages, { thinking, streaming } = {}) {
+const ACTIVITY_LABELS = {
+  starting: 'Preparing your review',
+  assembling_context: 'Reading your financial context',
+  thinking: 'Evaluating tradeoffs',
+  get_financial_profile: 'Reviewing your financial profile',
+  get_onboarding_status: 'Checking decision readiness',
+  get_plan_review_context: 'Reviewing plan assumptions and health',
+  run_plan_scenario_diff: 'Calculating the scenario tradeoffs',
+  list_plan_saved_simulations: 'Reviewing saved simulations',
+  get_plan_saved_simulation: 'Reading the saved simulation',
+  compare_plan_saved_simulation_current: 'Comparing saved and current assumptions',
+  assess_portfolio_fit: 'Checking portfolio fit and concentration',
+  draft_financial_profile_update: 'Preparing a profile update for review',
+  draft_investment_research_recommendation: 'Preparing an investment recommendation',
+};
+
+export function renderThread(messages, {
+  thinking,
+  streaming,
+  planId = null,
+  conversationId = null,
+  trackedMessageKeys = new Set(),
+} = {}) {
   if (!messages.length && !thinking && !streaming) return '';
   const groups = groupByDay(messages);
   const blocks = [];
   for (const [dayKey, items] of groups) {
     blocks.push(html`<div class="day-divider">${dayKey}</div>`);
-    for (const m of items) blocks.push(renderMessage(m));
+    for (const m of items) {
+      blocks.push(renderMessage(m, { planId, conversationId, trackedMessageKeys }));
+    }
   }
   if (streaming) blocks.push(renderStreaming(streaming));
   else if (thinking) blocks.push(renderThinking());
@@ -23,15 +47,37 @@ export function renderThread(messages, { thinking, streaming } = {}) {
 }
 
 function streamingStatusLabel(streaming) {
-  if (streaming.tool) return `running ${streaming.tool}`;
-  if (streaming.stage === 'assembling_context') return 'is reading your context';
-  return 'is thinking';
+  const running = [...(streaming.activities || [])].reverse().find(activity => activity.status === 'running');
+  return running ? activityLabel(running.name) : 'Preparing your answer';
+}
+
+function activityLabel(value) {
+  const key = String(value || '');
+  if (ACTIVITY_LABELS[key]) return ACTIVITY_LABELS[key];
+  const clean = key.replace(/^(get|list|run|compare|draft|assess)_/, '').replace(/[_-]+/g, ' ').trim();
+  return clean ? `Reviewing ${clean}` : 'Reviewing your financial context';
+}
+
+function renderStreamingActivities(streaming) {
+  const activities = Array.isArray(streaming.activities) ? streaming.activities : [];
+  if (!activities.length) return '';
+  return html`
+    <div class="copilot-activity" aria-label="Copilot activity">
+      ${activities.map(activity => html`
+        <div class="copilot-activity-row ${activity.status === 'running' ? 'running' : 'done'}">
+          <span class="copilot-activity-icon" aria-hidden="true">${activity.status === 'running' ? '' : '✓'}</span>
+          <span>${activityLabel(activity.name)}</span>
+        </div>
+      `)}
+    </div>
+  `;
 }
 
 function renderStreaming(streaming) {
   const partial = String(streaming.partial || '');
   return html`
     <div class="streaming-turn" aria-live="polite">
+      ${raw(renderStreamingActivities(streaming))}
       ${partial ? html`
         <article class="message assistant">
           <div class="message-bubble">
@@ -52,7 +98,7 @@ function renderStreaming(streaming) {
   `;
 }
 
-function renderMessage(m) {
+function renderMessage(m, { planId, conversationId, trackedMessageKeys } = {}) {
   const role = m.role === 'user' ? 'user' : 'assistant';
   const ts = m.created_at ? formatTime(m.created_at) : '';
   const tools = role === 'assistant' && Array.isArray(m.metadata?.tool_calls) ? m.metadata.tool_calls : [];
@@ -83,8 +129,35 @@ function renderMessage(m) {
         <div class="message-body ${role}">${bodyHtml}</div>
         ${contextTrace ? raw(renderContextTraceSummary(contextTrace)) : ''}
         ${tools.length ? raw(renderToolTraces(tools)) : ''}
+        ${role === 'assistant' ? raw(renderMessageActions(m, {
+          planId,
+          conversationId,
+          trackedMessageKeys,
+        })) : ''}
       </div>
     </article>
+  `;
+}
+
+function renderMessageActions(message, { planId, conversationId, trackedMessageKeys } = {}) {
+  const messageKey = String(message?.id || message?.turn_id || '');
+  if (!messageKey || !String(message?.content || '').trim()) return '';
+  const trackedKey = `${planId || 'no-plan'}:${conversationId || 'new'}:${messageKey}`;
+  const tracked = trackedMessageKeys instanceof Set && trackedMessageKeys.has(trackedKey);
+  const planHref = planId
+    ? `#plan?id=${encodeURIComponent(planId)}&section=decisions`
+    : '#plan?section=decisions';
+  return html`
+    <div class="copilot-message-actions" aria-label="Response actions">
+      <button type="button" data-message-copy="${esc(messageKey)}">Copy</button>
+      <button type="button" data-message-follow-up="${esc(messageKey)}">Ask a follow-up</button>
+      ${planId ? html`
+        <button type="button" data-message-track="${esc(messageKey)}" ${tracked ? 'disabled' : ''}>
+          ${tracked ? 'Tracked in Plan' : 'Track decision'}
+        </button>
+        ${tracked ? html`<a href="${planHref}">Open Plan</a>` : ''}
+      ` : ''}
+    </div>
   `;
 }
 
@@ -134,7 +207,7 @@ function renderContextTraceSummary(trace = {}) {
   return html`
     <details class="context-trace-summary">
       <summary>
-        <span class="context-trace-kicker">Context used</span>
+        <span class="context-trace-kicker">Sources &amp; calculations</span>
         <span>${summary.join(' · ') || 'trace available'}</span>
       </summary>
       ${links.length ? html`
@@ -293,8 +366,8 @@ function renderToolTrace(t) {
   return html`
     <details class="tool-trace">
       <summary>
-        called <span class="tool-name">${esc(t.name || 'tool')}</span>
-        ${t.error ? html`· <span style="color:var(--oxblood);">errored</span>` : ''}
+        <span class="tool-name">${esc(activityLabel(t.name || 'tool'))}</span>
+        ${t.error ? html`· <span style="color:var(--oxblood);">could not complete</span>` : html`· evidence reviewed`}
       </summary>
       <pre>${esc(formatTrace(t))}</pre>
     </details>

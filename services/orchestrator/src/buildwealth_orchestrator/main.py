@@ -35,6 +35,7 @@ from buildwealth_orchestrator.schemas import (
     CopilotContextResponse,
     CopilotConversationResponse,
     CopilotConversationSummary,
+    CopilotConversationUpdateRequest,
     SessionFocus,
     SessionFocusUpdateRequest,
     CsvImportRequest,

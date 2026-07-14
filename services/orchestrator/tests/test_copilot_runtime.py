@@ -168,6 +168,24 @@ def test_conversation_store_updates_latest_assistant_metadata(tmp_path: Path) ->
     assert metadata["context_trace"]["retrieval"]["returned_count"] == 3
 
 
+def test_conversation_store_renames_archives_and_filters_history(tmp_path: Path) -> None:
+    store = ConversationStore(tmp_path)
+    conversation = store.get_or_create(None, "Original title")
+
+    renamed = store.update_details(conversation["id"], title="Retirement decision")
+    assert renamed["title"] == "Retirement decision"
+    assert renamed["archived_at"] is None
+
+    archived = store.update_details(conversation["id"], archived=True)
+    assert archived["archived_at"]
+    assert store.list(limit=10) == []
+    assert store.list(limit=10, include_archived=True)[0]["title"] == "Retirement decision"
+
+    restored = store.update_details(conversation["id"], archived=False)
+    assert restored["archived_at"] is None
+    assert store.list(limit=10)[0]["id"] == conversation["id"]
+
+
 def test_copilot_fallback_mode_persists_conversation(tmp_path: Path) -> None:
     store = ConversationStore(tmp_path)
     llm = OpenAIChatToolClient(api_key="", model="gpt-test", base_url="https://example.com/v1")

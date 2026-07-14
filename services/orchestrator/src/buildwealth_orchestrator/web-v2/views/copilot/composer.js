@@ -1,14 +1,15 @@
 // Composer — multi-line textarea with auto-grow and ⌘+Enter submit.
 // Stateless renderer; the parent orchestrator wires events via delegation.
 
-import { html } from '../../lib/dom.js';
+import { html, raw } from '../../lib/dom.js';
 
-export function renderComposer({ busy = false, draft = '', useLive = false, disabledReason = '' } = {}) {
+export function renderComposer({ busy = false, draft = '', contextHtml = '', disabledReason = '' } = {}) {
   const disabled = busy || Boolean(disabledReason);
   return html`
     <form class="composer" id="composer" autocomplete="off">
       <div class="composer-inner">
         <div class="composer-card">
+          ${contextHtml ? raw(contextHtml) : ''}
           <textarea
             class="composer-textarea"
             id="composer-textarea"
@@ -18,10 +19,6 @@ export function renderComposer({ busy = false, draft = '', useLive = false, disa
             ${disabled ? 'disabled' : ''}>${draft}</textarea>
           <div class="composer-row">
             <div class="composer-options">
-              <label class="composer-option" title="Use a live portfolio snapshot">
-                <input type="checkbox" id="composer-live" ${useLive ? 'checked' : ''} />
-                Live
-              </label>
               <span class="composer-hint">
                 <kbd>${isMac() ? '⌘' : 'Ctrl'}</kbd><kbd>↵</kbd>
               </span>
@@ -36,13 +33,13 @@ export function renderComposer({ busy = false, draft = '', useLive = false, disa
   `;
 }
 
-export function attachComposerBehavior(rootEl, { onSubmit, onDraftChange = () => {} }) {
+export function attachComposerBehavior(rootEl, { onSubmit, onDraftChange = () => {}, autoFocus = true }) {
   const textarea = rootEl.querySelector('#composer-textarea');
   const form     = rootEl.querySelector('#composer');
   if (!textarea || !form) return;
 
   // Focus + auto-grow.
-  textarea.focus();
+  if (autoFocus) textarea.focus();
   autoGrow(textarea);
   textarea.addEventListener('input', () => {
     autoGrow(textarea);

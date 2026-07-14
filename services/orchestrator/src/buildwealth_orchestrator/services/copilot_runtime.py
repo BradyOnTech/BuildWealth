@@ -40,6 +40,7 @@ class ConversationStore:
             "title": title,
             "created_at": now,
             "updated_at": now,
+            "archived_at": None,
             "focus": {
                 "mode": "balanced",
                 "primary_domains": [],
@@ -74,6 +75,7 @@ class ConversationStore:
     def _normalize_conversation(self, conversation: dict[str, Any]) -> dict[str, Any]:
         """Upgrade legacy conversation documents in memory without losing content."""
         conversation["schema_version"] = CONVERSATION_SCHEMA_VERSION
+        conversation.setdefault("archived_at", None)
         messages = conversation.get("messages")
         if not isinstance(messages, list):
             messages = []
@@ -356,13 +358,33 @@ class ConversationStore:
         self.save(conversation)
         return conversation
 
-    def list(self, limit: int = 20) -> list[dict[str, Any]]:
+    def update_details(
+        self,
+        conversation_id: str,
+        *,
+        title: str | None = None,
+        archived: bool | None = None,
+    ) -> dict[str, Any]:
+        """Rename or archive a conversation without touching its message history."""
+        conversation = self.get(conversation_id)
+        if title is not None:
+            clean_title = title.strip()
+            if not clean_title:
+                raise ValueError("Conversation title cannot be empty")
+            conversation["title"] = clean_title
+        if archived is not None:
+            conversation["archived_at"] = utc_now_iso() if archived else None
+        self.save(conversation)
+        return conversation
+
+    def list(self, limit: int = 20, *, include_archived: bool = False) -> list[dict[str, Any]]:
         docs: list[dict[str, Any]] = []
 
         for path in self.base_dir.glob("*.json"):
             try:
                 doc = self._normalize_conversation(json.loads(path.read_text(encoding="utf-8")))
-                docs.append(doc)
+                if include_archived or not doc.get("archived_at"):
+                    docs.append(doc)
             except Exception:
                 continue
 
@@ -385,6 +407,7 @@ class ConversationStore:
                     "title": doc.get("title", "Conversation"),
                     "created_at": doc.get("created_at"),
                     "updated_at": doc.get("updated_at"),
+                    "archived_at": doc.get("archived_at"),
                     "last_message_preview": last_message_preview,
                     "message_count": len(messages),
                     "last_turn_status": str((doc.get("turns") or [{}])[-1].get("status") or ""),

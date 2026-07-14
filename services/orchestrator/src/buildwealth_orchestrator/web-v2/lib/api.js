@@ -468,8 +468,14 @@ export const api = {
   contextCandidateEvents: (id) => fetchJson(`/api/context/candidates/${encodeURIComponent(id)}/events`),
 
   // Copilot
-  conversations:     (limit = 25) => fetchJson(`/api/copilot/conversations?limit=${limit}`),
+  conversations:     (limit = 25, includeArchived = false) => fetchJson(
+    `/api/copilot/conversations?limit=${limit}&include_archived=${includeArchived ? 'true' : 'false'}`,
+  ),
   conversation:      (id) => fetchJson(`/api/copilot/conversations/${encodeURIComponent(id)}`),
+  patchConversation: (id, body = {}) => patchJson(
+    `/api/copilot/conversations/${encodeURIComponent(id)}`,
+    body,
+  ),
   patchConversationFocus: (id, body = {}) => patchJson(
     `/api/copilot/conversations/${encodeURIComponent(id)}/focus`,
     body,

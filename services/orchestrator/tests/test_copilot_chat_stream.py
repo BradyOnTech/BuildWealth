@@ -159,6 +159,46 @@ def test_copilot_chat_stream_reports_errors_as_events(monkeypatch, tmp_path: Pat
         assert "context assembly exploded" in failed["turns"][-1]["error"]
 
 
+def test_copilot_conversation_can_be_renamed_archived_and_restored(monkeypatch, tmp_path: Path) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    monkeypatch.setattr(main, "assemble_copilot_context_payload", _fake_assemble)
+    monkeypatch.setattr(main, "copilot", StreamingFakeCopilot())
+
+    with TestClient(main.app) as client:
+        streamed = client.post(
+            "/api/copilot/chat/stream",
+            json={"question": "Should I increase my contribution?"},
+        )
+        conversation_id = _sse_events(streamed.text)[-1]["data"]["conversation_id"]
+
+        renamed = client.patch(
+            f"/api/copilot/conversations/{conversation_id}",
+            json={"title": "Retirement contribution decision"},
+        )
+        assert renamed.status_code == 200
+        assert renamed.json()["title"] == "Retirement contribution decision"
+
+        archived = client.patch(
+            f"/api/copilot/conversations/{conversation_id}",
+            json={"archived": True},
+        )
+        assert archived.status_code == 200
+        assert archived.json()["archived_at"]
+        assert client.get("/api/copilot/conversations").json() == []
+        archived_list = client.get(
+            "/api/copilot/conversations?include_archived=true",
+        ).json()
+        assert archived_list[0]["id"] == conversation_id
+
+        restored = client.patch(
+            f"/api/copilot/conversations/{conversation_id}",
+            json={"archived": False},
+        )
+        assert restored.status_code == 200
+        assert restored.json()["archived_at"] is None
+        assert client.get("/api/copilot/conversations").json()[0]["id"] == conversation_id
+
+
 def test_copilot_chat_stream_works_with_legacy_fake_signature(monkeypatch, tmp_path: Path) -> None:
     """A copilot whose chat() lacks progress_cb still completes the stream."""
     _install_temp_workspace_spine(monkeypatch, tmp_path)

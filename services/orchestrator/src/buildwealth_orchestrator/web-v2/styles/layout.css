@@ -1037,7 +1037,9 @@ a.status-row:hover {
 @media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
+  .app-main { height: auto; }
   .sidebar {
     position: static;
     height: auto;
@@ -1054,4 +1056,13 @@ a.status-row:hover {
   .topbar { padding: 0 var(--s-4); }
   .content { padding: var(--s-3) var(--s-4) var(--s-5); }
   .status-label { max-width: 110px; }
+}
+
+@media (max-width: 600px) {
+  .sidebar {
+    padding: var(--s-3) var(--s-4);
+  }
+  .sidebar-brand {
+    display: none;
+  }
 }

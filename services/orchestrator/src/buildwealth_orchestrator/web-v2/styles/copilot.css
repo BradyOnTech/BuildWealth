@@ -90,6 +90,10 @@
   color: var(--ink-soft);
   font-size: 20px;
   cursor: pointer;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
 }
 
 .copilot-history-new {
@@ -105,11 +109,61 @@
   font-size: 12px;
   cursor: pointer;
   margin-bottom: 12px;
+  min-height: 40px;
+  transition:
+    color var(--d-fast) var(--ease-press),
+    border-color var(--d-fast) var(--ease-press),
+    box-shadow var(--d-fast) var(--ease-press),
+    scale var(--d-fast) var(--ease-press);
 }
 
 .copilot-history-new:hover {
   border-color: var(--forest);
   color: var(--forest);
+}
+
+.copilot-history-new:active {
+  scale: 0.96;
+}
+
+.copilot-history-search {
+  min-height: 40px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: var(--paper-bright);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--ink) 7%, transparent),
+    0 1px 2px color-mix(in srgb, var(--ink) 4%, transparent);
+  color: var(--ink-faint);
+}
+
+.copilot-history-search:focus-within {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--forest) 32%, transparent),
+    0 2px 5px color-mix(in srgb, var(--ink) 5%, transparent);
+}
+
+.copilot-history-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink-strong);
+  font-family: var(--sans);
+  font-size: 12px;
+}
+
+.copilot-history-search kbd {
+  font-family: var(--mono);
+  font-size: 8px;
+  color: var(--ink-faint);
+  white-space: nowrap;
 }
 
 .copilot-history-list {
@@ -118,7 +172,30 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  gap: 14px;
+}
+
+.copilot-history-group {
+  display: grid;
   gap: 3px;
+}
+
+.copilot-history-group h3 {
+  margin: 0;
+  padding: 0 9px 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-faint);
+}
+
+.copilot-history-item-shell {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  align-items: stretch;
 }
 
 .copilot-history-item {
@@ -132,6 +209,7 @@
   text-align: left;
   padding: 9px 10px;
   cursor: pointer;
+  min-height: 48px;
 }
 
 .copilot-history-item:hover {
@@ -141,6 +219,114 @@
 .copilot-history-item.active {
   background: color-mix(in srgb, var(--forest) 9%, var(--paper-bright));
   box-shadow: inset 2px 0 0 var(--forest);
+}
+
+.copilot-history-more {
+  width: 40px;
+  min-height: 40px;
+  align-self: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--d-fast) var(--ease-out),
+    background var(--d-fast) var(--ease-press),
+    color var(--d-fast) var(--ease-press),
+    scale var(--d-fast) var(--ease-press);
+}
+
+.copilot-history-item-shell:hover .copilot-history-more,
+.copilot-history-item-shell.menu-open .copilot-history-more,
+.copilot-history-more:focus-visible {
+  opacity: 1;
+}
+
+.copilot-history-more:hover {
+  background: var(--shade);
+  color: var(--ink-strong);
+}
+
+.copilot-history-more:active {
+  scale: 0.96;
+}
+
+.copilot-history-menu {
+  position: absolute;
+  z-index: 90;
+  top: 38px;
+  right: 2px;
+  width: 132px;
+  padding: 5px;
+  border-radius: 12px;
+  background: var(--paper-bright);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--ink) 8%, transparent),
+    0 8px 24px color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.copilot-history-menu button {
+  width: 100%;
+  min-height: 40px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-strong);
+  text-align: left;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.copilot-history-menu button:hover {
+  background: var(--shade);
+}
+
+.copilot-history-rename {
+  display: grid;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--paper-bright);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--forest) 20%, transparent);
+}
+
+.copilot-history-rename input {
+  min-height: 38px;
+  width: 100%;
+  border: 0;
+  border-radius: 7px;
+  outline: 0;
+  background: var(--shade);
+  color: var(--ink-strong);
+  padding: 0 9px;
+  font: inherit;
+}
+
+.copilot-history-rename-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.copilot-history-rename-actions button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 0 9px;
+  cursor: pointer;
+}
+
+.copilot-history-rename-actions button:first-child {
+  color: var(--forest);
+  font-weight: 600;
+}
+
+.copilot-history-rename-actions button:hover {
+  background: var(--shade);
 }
 
 .copilot-history-title {
@@ -165,6 +351,34 @@
   font-size: 12px;
   line-height: 1.5;
   color: var(--ink-faint);
+}
+
+.copilot-history-archive-toggle {
+  flex: 0 0 auto;
+  min-height: 40px;
+  margin-top: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition:
+    background var(--d-fast) var(--ease-press),
+    color var(--d-fast) var(--ease-press),
+    scale var(--d-fast) var(--ease-press);
+}
+
+.copilot-history-archive-toggle:hover {
+  background: var(--shade);
+  color: var(--ink-soft);
+}
+
+.copilot-history-archive-toggle:active {
+  scale: 0.96;
 }
 
 /* ───────────  Top bar  ─────────── */
@@ -1053,6 +1267,110 @@
   color: var(--ink-soft);
 }
 
+.copilot-activity {
+  display: grid;
+  gap: 5px;
+  margin: 2px 0 10px;
+  padding-left: 2px;
+}
+
+.copilot-activity-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 24px;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink-faint);
+  text-wrap: pretty;
+  transition:
+    color var(--d-fast) var(--ease-out),
+    opacity var(--d-fast) var(--ease-out);
+}
+
+.copilot-activity-row.running {
+  color: var(--ink-soft);
+}
+
+.copilot-activity-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--forest) 10%, transparent);
+  color: var(--forest);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.copilot-activity-row.running .copilot-activity-icon {
+  background: transparent;
+  border: 1.5px solid color-mix(in srgb, var(--forest) 35%, transparent);
+  border-top-color: var(--forest);
+  animation: copilot-activity-spin 900ms linear infinite;
+}
+
+@keyframes copilot-activity-spin {
+  to { transform: rotate(360deg); }
+}
+
+.copilot-message-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-top: 5px;
+  opacity: 0.7;
+  transition: opacity var(--d-fast) var(--ease-out);
+}
+
+.message.assistant:hover .copilot-message-actions,
+.copilot-message-actions:focus-within {
+  opacity: 1;
+}
+
+.copilot-message-actions button,
+.copilot-message-actions a {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-faint);
+  padding: 0 9px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background var(--d-fast) var(--ease-press),
+    color var(--d-fast) var(--ease-press),
+    scale var(--d-fast) var(--ease-press);
+}
+
+.copilot-message-actions button:hover,
+.copilot-message-actions a:hover {
+  background: var(--shade);
+  color: var(--ink-strong);
+}
+
+.copilot-message-actions button:active,
+.copilot-message-actions a:active {
+  scale: 0.96;
+}
+
+.copilot-message-actions button:disabled {
+  color: var(--forest);
+  cursor: default;
+  opacity: 1;
+}
+
 /* Thinking indicator */
 .thinking-line {
   display: flex;
@@ -1442,6 +1760,48 @@
   .copilot-scope-pills {
     display: none;
   }
+
+  .copilot-history-more {
+    opacity: 1;
+  }
+
+  .copilot-history-search kbd,
+  .composer-hint {
+    display: none;
+  }
+
+  .composer-context {
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+
+  .composer-context-lead {
+    flex-basis: 100%;
+    padding: 0 7px 2px;
+  }
+
+  .composer-context-chip > span:last-child {
+    max-width: 120px;
+  }
+
+  .composer-context-more {
+    margin-left: 0;
+  }
+
+  .composer-context-picker .copilot-picker-menu {
+    position: fixed;
+    inset: auto 12px 118px 12px;
+    min-width: 0;
+    max-width: none;
+    max-height: min(460px, 58vh);
+  }
+
+  .copilot-empty {
+    justify-content: flex-start;
+    height: auto;
+    min-height: 100%;
+    padding-top: var(--s-5);
+  }
 }
 
 /* ───────────  Composer  ─────────── */
@@ -1487,6 +1847,131 @@
 .composer-card:focus-within {
   border-color: color-mix(in srgb, var(--forest) 35%, var(--rule));
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.07);
+}
+
+.composer-context {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: visible;
+  padding-bottom: 8px;
+  border-bottom: var(--hair) solid var(--rule-soft);
+  color: var(--ink-faint);
+}
+
+.composer-context-lead {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.composer-context-picker {
+  min-width: 0;
+}
+
+.composer-context-chip,
+.composer-context-static,
+.composer-context-settings {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 0 8px;
+  font-family: var(--sans);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+button.composer-context-chip,
+.composer-context-live,
+.composer-context-settings {
+  cursor: pointer;
+  transition:
+    background var(--d-fast) var(--ease-press),
+    color var(--d-fast) var(--ease-press),
+    scale var(--d-fast) var(--ease-press);
+}
+
+button.composer-context-chip:hover,
+.composer-context-live:hover,
+.composer-context-settings:hover {
+  background: var(--shade);
+  color: var(--ink-strong);
+}
+
+button.composer-context-chip:active,
+.composer-context-live:active,
+.composer-context-settings:active {
+  scale: 0.96;
+}
+
+.composer-context-chip > span:last-child {
+  max-width: 145px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-context-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}
+
+.composer-context-dot.plan { background: var(--forest); }
+.composer-context-dot.focus { background: var(--gilt); }
+.composer-context-live:has(input:checked) .composer-context-dot.data { background: var(--forest); }
+
+.composer-context-live input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.composer-context-live {
+  position: relative;
+}
+
+.composer-context-settings {
+  width: 40px;
+  justify-content: center;
+  padding: 0;
+  letter-spacing: 0.08em;
+}
+
+.composer-context-picker .copilot-picker-menu {
+  top: auto;
+  bottom: calc(100% + 10px);
+  transform: scale(0.98) translateY(4px);
+  transform-origin: bottom left;
+}
+
+.composer-context-picker .copilot-picker-menu.open {
+  transform: none;
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.98) translateY(4px);
+  }
+}
+
+.composer-context-more {
+  margin-left: auto;
+}
+
+.composer-context-more .copilot-model-panel,
+.composer-context-picker .copilot-focus-panel {
+  left: auto;
+  right: 0;
 }
 
 .composer-textarea {

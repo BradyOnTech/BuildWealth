@@ -6,6 +6,7 @@ import { api } from '../lib/api.js';
 import { state } from '../lib/state.js';
 import { html, raw, esc, $, delegate } from '../lib/dom.js';
 import { buildLlmOptionsFromSettings } from '../lib/llm_catalog.js';
+import { showUndoToast } from '../lib/undo.js';
 import { renderThread } from './copilot/thread.js';
 import { renderComposer, attachComposerBehavior } from './copilot/composer.js';
 import { fmtRelative } from '../lib/format.js';
@@ -26,6 +27,7 @@ const SUGGESTIONS = [
 ];
 
 const COPILOT_DRAFTS_STORAGE_KEY = 'buildwealth.copilot.drafts.v1';
+const COPILOT_TRACKED_DECISIONS_STORAGE_KEY = 'buildwealth.copilot.tracked-decisions.v1';
 
 const PROFILE_SETUP_PROMPT = [
   'Help me fill out my financial profile.',
@@ -241,15 +243,23 @@ const ui = {
   error: null,
   retryTurn: null,
   historyOpen: false,
+  historyQuery: '',
+  showArchived: false,
+  historyMenuId: null,
+  renamingConversationId: null,
+  renamingTitle: '',
   planId: null,
+  useLive: false,
   recommendationFocus: null,
   pickerOpen: null,                 // 'plans' | 'focus' | 'model' | null
   draftFocus: null,
+  composerReady: false,
   sessionFocus: defaultSessionFocus(),
   // Model menu (Grok/Codex-style): workspace default + per-conversation override
   llmOptions: null,                 // payload from GET /api/copilot/llm-options
   conversationLlm: null,            // { provider, model, label, cost_band, source, cheap }
   showCheapOnly: false,
+  trackedMessageKeys: new Set(),
 };
 
 export function template() {
@@ -280,17 +290,26 @@ export async function init(params = {}) {
   ui.error = null;
   ui.retryTurn = null;
   ui.historyOpen = false;
+  ui.historyQuery = '';
+  ui.showArchived = false;
+  ui.historyMenuId = null;
+  ui.renamingConversationId = null;
+  ui.renamingTitle = '';
+  ui.useLive = false;
   ui.recommendationFocus = String(params.focus || '').trim() || null;
   ui.pickerOpen = null;
+  ui.draftFocus = null;
+  ui.composerReady = false;
   ui.sessionFocus = seedFocusFromEntry(params);
   ui.conversationLlm = null;
   ui.showCheapOnly = false;
+  ui.trackedMessageKeys = readTrackedDecisionKeys();
   attachHandlers();
 
   rerenderAll();
 
   // Load past conversations, then the active one (if any).
-  loadConversations().then(() => rerenderMasthead()).catch(() => {});
+  loadConversations().catch(() => {});
   const wantsProfileSetup = String(params.intent || '').trim().toLowerCase() === 'profile-setup';
   loadOnboarding().then(() => {
     rerenderBody();
@@ -300,7 +319,7 @@ export async function init(params = {}) {
     }
   }).catch(() => {});
   loadLlmOptions().then(() => {
-    rerenderMasthead();
+    rerenderComposer();
     if (copilotConnectionState(ui.llmOptions).status === 'unavailable') {
       rerenderBody();
       rerenderComposer();
@@ -327,7 +346,7 @@ export async function init(params = {}) {
 
 async function loadConversations() {
   try {
-    const list = await api.conversations(100);
+    const list = await api.conversations(100, ui.showArchived);
     ui.conversations = Array.isArray(list) ? list : [];
   } catch {
     ui.conversations = [];
@@ -380,7 +399,7 @@ async function loadConversation(id) {
     if (res.llm && typeof res.llm === 'object') {
       ui.conversationLlm = res.llm;
     }
-    loadLlmOptions(id).then(() => rerenderMasthead()).catch(() => {});
+    loadLlmOptions(id).then(() => rerenderComposer()).catch(() => {});
   } catch (err) {
     ui.error = err.message;
   } finally {
@@ -388,6 +407,73 @@ async function loadConversation(id) {
     ui.historyOpen = false;
     rerenderAll();
   }
+}
+
+async function renameConversation(id, title) {
+  const cleanTitle = String(title || '').trim();
+  if (!cleanTitle) return;
+  try {
+    const updated = await api.patchConversation(id, { title: cleanTitle });
+    const summary = ui.conversations.find(conversation => conversation.id === id);
+    if (summary) summary.title = updated.title || cleanTitle;
+    if (ui.conversationId === id) ui.conversationTitle = updated.title || cleanTitle;
+    ui.renamingConversationId = null;
+    ui.renamingTitle = '';
+    ui.historyMenuId = null;
+    rerenderHistory();
+    rerenderMasthead();
+  } catch (err) {
+    ui.error = err.message;
+    rerenderBody();
+  }
+}
+
+async function setConversationArchived(id, archived) {
+  const conversation = ui.conversations.find(item => item.id === id);
+  if (!conversation) return;
+  try {
+    const updated = await api.patchConversation(id, { archived });
+    if (archived && !ui.showArchived) {
+      ui.conversations = ui.conversations.filter(item => item.id !== id);
+    } else {
+      Object.assign(conversation, {
+        title: updated.title || conversation.title,
+        updated_at: updated.updated_at || conversation.updated_at,
+        archived_at: updated.archived_at || null,
+      });
+    }
+    ui.historyMenuId = null;
+    if (archived && ui.conversationId === id) resetConversationState();
+    rerenderAll();
+    showUndoToast({
+      message: archived
+        ? `Archived “${conversation.title || 'Untitled chat'}”.`
+        : `Restored “${conversation.title || 'Untitled chat'}”.`,
+      onUndo: async () => {
+        await api.patchConversation(id, { archived: !archived });
+        await loadConversations();
+      },
+    });
+  } catch (err) {
+    ui.error = err.message;
+    rerenderBody();
+  }
+}
+
+function resetConversationState() {
+  ui.conversationId = null;
+  ui.conversationTitle = '';
+  ui.messages = [];
+  ui.turns = [];
+  ui.error = null;
+  ui.retryTurn = null;
+  ui.historyOpen = false;
+  ui.historyMenuId = null;
+  ui.renamingConversationId = null;
+  ui.renamingTitle = '';
+  ui.draftFocus = true;
+  ui.sessionFocus = defaultSessionFocus();
+  resetConversationLlmToWorkspaceDefault();
 }
 
 async function loadLlmOptions(conversationId = ui.conversationId) {
@@ -425,6 +511,25 @@ function rerenderStreamingThrottled() {
   streamRenderAt = now;
   rerenderBody();
   scrollToBottom();
+}
+
+function updateStreamingActivity(streaming, { key, kind, name, status }) {
+  if (!streaming) return;
+  const activities = Array.isArray(streaming.activities) ? streaming.activities : [];
+  streaming.activities = activities;
+  if (status === 'running') {
+    for (const activity of activities) {
+      if (activity.status === 'running' && activity.key !== key) activity.status = 'done';
+    }
+  }
+  const existing = activities.find(activity => activity.key === key);
+  if (existing) {
+    existing.status = status;
+    existing.name = name || existing.name;
+    return;
+  }
+  activities.push({ key, kind, name, status });
+  if (activities.length > 6) activities.splice(0, activities.length - 6);
 }
 
 export function stopStreaming() {
@@ -467,7 +572,7 @@ function applyChatResult(question, res) {
     rerenderMasthead();
     rerenderHistory();
   }).catch(() => {});
-  loadLlmOptions(ui.conversationId).then(() => rerenderMasthead()).catch(() => {});
+  loadLlmOptions(ui.conversationId).then(() => rerenderComposer()).catch(() => {});
 }
 
 async function sendMessage(question, { useLive, turnId = null, retry = false } = {}) {
@@ -494,7 +599,13 @@ async function sendMessage(question, { useLive, turnId = null, retry = false } =
     setClientTurnStatus(durableTurnId, 'running');
   }
   ui.thinking = true;
-  ui.streaming = { stage: 'starting', tool: '', partial: '', turnId: durableTurnId };
+  ui.streaming = {
+    stage: 'starting',
+    tool: '',
+    partial: '',
+    turnId: durableTurnId,
+    activities: [{ key: 'stage:starting', kind: 'stage', name: 'starting', status: 'running' }],
+  };
   ui.error = null;
   ui.retryTurn = null;
   clearStoredDraft();
@@ -528,6 +639,12 @@ async function sendMessage(question, { useLive, turnId = null, retry = false } =
           if (!ui.streaming) return;
           if (event.type === 'stage') {
             ui.streaming.stage = event.stage;
+            updateStreamingActivity(ui.streaming, {
+              key: `stage:${event.stage}`,
+              kind: 'stage',
+              name: event.stage,
+              status: 'running',
+            });
           } else if (event.type === 'turn') {
             ui.streaming.turnId = event.turn_id || durableTurnId;
             const optimistic = ui.messages.find(message => message.turn_id === durableTurnId && message.role === 'user');
@@ -538,9 +655,18 @@ async function sendMessage(question, { useLive, turnId = null, retry = false } =
             ui.streaming.tool = '';
           } else if (event.type === 'tool') {
             ui.streaming.tool = event.status === 'start' ? event.name : '';
+            updateStreamingActivity(ui.streaming, {
+              key: `tool:${event.name}`,
+              kind: 'tool',
+              name: event.name,
+              status: event.status === 'start' ? 'running' : 'done',
+            });
           } else if (event.type === 'answer_delta') {
             ui.streaming.partial += event.text || '';
             ui.streaming.tool = '';
+            for (const activity of ui.streaming.activities || []) {
+              if (activity.status === 'running') activity.status = 'done';
+            }
           } else if (event.type === 'result') {
             result = event.data;
           } else if (event.type === 'error') {
@@ -618,12 +744,18 @@ function rerenderComposer({ draft = readStoredDraft() } = {}) {
   root.innerHTML = renderComposer({
     busy: ui.busy || ui.thinking,
     draft,
+    contextHtml: renderComposerContext(),
     disabledReason: connection.status === 'unavailable' ? 'Connect an AI provider in Settings' : '',
   });
   attachComposerBehavior(root, {
-    onSubmit: ({ question, useLive }) => sendMessage(question, { useLive }),
+    onSubmit: ({ question, useLive }) => {
+      ui.useLive = useLive;
+      sendMessage(question, { useLive });
+    },
     onDraftChange: value => writeStoredDraft(value),
+    autoFocus: Boolean(ui.draftFocus) || (!ui.composerReady && !isCompactViewport()),
   });
+  ui.composerReady = true;
   if (ui.draftFocus) {
     const ta = root.querySelector('#composer-textarea');
     if (ta) {
@@ -634,7 +766,45 @@ function rerenderComposer({ draft = readStoredDraft() } = {}) {
   }
 }
 
+function renderComposerContext() {
+  const plans = state.plans || [];
+  const plan = plans.find(item => item.id === ui.planId) || null;
+  const focusLabel = focusSummaryLabel(ui.sessionFocus);
+  const modelLabel = modelSummaryLabel(ui.conversationLlm, ui.llmOptions);
+  return html`
+    <div class="composer-context" role="toolbar" aria-label="Context used for this message">
+      <span class="composer-context-lead">Using</span>
+      ${plans.length ? html`
+        <span class="copilot-picker composer-context-picker">
+          <button type="button" class="composer-context-chip" data-picker="plans" title="Choose the plan used for this message">
+            <span class="composer-context-dot plan"></span>
+            <span>${esc(plan?.title || 'No plan')}</span>
+          </button>
+          ${ui.pickerOpen === 'plans' ? raw(renderPlansMenu(plans, plan?.id)) : ''}
+        </span>
+      ` : html`<span class="composer-context-static">Profile + portfolio</span>`}
+      <span class="copilot-picker composer-context-picker">
+        <button type="button" class="composer-context-chip" data-picker="focus" title="Choose which parts of your financial picture get extra attention">
+          <span class="composer-context-dot focus"></span>
+          <span>${esc(focusLabel)}</span>
+        </button>
+        ${ui.pickerOpen === 'focus' ? raw(renderFocusMenu()) : ''}
+      </span>
+      <label class="composer-context-chip composer-context-live" title="Refresh market-sensitive portfolio data for this message">
+        <input type="checkbox" id="composer-live" data-context-live ${ui.useLive ? 'checked' : ''} />
+        <span class="composer-context-dot data"></span>
+        <span>${ui.useLive ? 'Live data' : 'Saved data'}</span>
+      </label>
+      <span class="copilot-picker composer-context-picker composer-context-more">
+        <button type="button" class="composer-context-settings" data-picker="model" title="Chat model: ${esc(modelLabel)}" aria-label="Chat model settings">•••</button>
+        ${ui.pickerOpen === 'model' ? raw(renderModelMenu()) : ''}
+      </span>
+    </div>
+  `;
+}
+
 function renderHistory() {
+  const groups = groupedHistoryConversations(ui.conversations, ui.historyQuery);
   return html`
     <div class="copilot-history-head">
       <div>
@@ -646,41 +816,133 @@ function renderHistory() {
     <button type="button" class="copilot-history-new" data-action="new-chat">
       <span>＋</span> New chat
     </button>
+    <label class="copilot-history-search">
+      <span aria-hidden="true">⌕</span>
+      <input
+        type="search"
+        data-history-search
+        value="${esc(ui.historyQuery)}"
+        placeholder="Search chats"
+        aria-label="Search chat history"
+      />
+      <kbd>${isMacPlatform() ? '⌘' : 'Ctrl'} K</kbd>
+    </label>
     <div class="copilot-history-list">
-      ${ui.conversations.length ? ui.conversations.map(renderHistoryItem) : html`
-        <p class="copilot-history-empty">Your conversations will appear here after you send a message.</p>
+      ${groups.length ? groups.map(([label, conversations]) => html`
+        <section class="copilot-history-group" aria-label="${esc(label)}">
+          <h3>${esc(label)}</h3>
+          ${conversations.map(renderHistoryItem)}
+        </section>
+      `) : html`
+        <p class="copilot-history-empty">${ui.historyQuery
+          ? 'No chats match your search.'
+          : 'Your conversations will appear here after you send a message.'}</p>
       `}
     </div>
+    <button type="button" class="copilot-history-archive-toggle" data-history-show-archived>
+      ${ui.showArchived ? 'Hide archived chats' : 'Show archived chats'}
+    </button>
   `;
+}
+
+function groupedHistoryConversations(conversations, query = '') {
+  const needle = String(query || '').trim().toLowerCase();
+  const filtered = (Array.isArray(conversations) ? conversations : []).filter(conversation => {
+    if (!needle) return true;
+    return [conversation.title, conversation.last_message_preview]
+      .some(value => String(value || '').toLowerCase().includes(needle));
+  });
+  const groups = new Map([
+    ['Today', []],
+    ['Previous 7 days', []],
+    ['Older', []],
+    ['Archived', []],
+  ]);
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const weekAgo = startOfToday - (6 * 24 * 60 * 60 * 1000);
+  for (const conversation of filtered) {
+    if (conversation.archived_at) {
+      groups.get('Archived').push(conversation);
+      continue;
+    }
+    const updatedAt = new Date(conversation.updated_at || conversation.created_at || 0).getTime();
+    const label = updatedAt >= startOfToday
+      ? 'Today'
+      : updatedAt >= weekAgo
+        ? 'Previous 7 days'
+        : 'Older';
+    groups.get(label).push(conversation);
+  }
+  return [...groups.entries()].filter(([, items]) => items.length);
 }
 
 function renderHistoryItem(conversation) {
   const active = conversation.id === ui.conversationId;
   const count = Number(conversation.message_count || 0);
   const status = String(conversation.last_turn_status || '');
-  const statusLabel = status === 'failed' ? 'Needs retry' : status === 'stopped' ? 'Stopped' : '';
+  const statusLabel = conversation.archived_at
+    ? 'Archived'
+    : status === 'failed'
+      ? 'Needs retry'
+      : status === 'stopped'
+        ? 'Stopped'
+        : '';
+  if (ui.renamingConversationId === conversation.id) {
+    return html`
+      <div class="copilot-history-rename" data-history-row="${esc(conversation.id)}">
+        <input
+          type="text"
+          data-history-rename-input="${esc(conversation.id)}"
+          value="${esc(ui.renamingTitle)}"
+          maxlength="120"
+          aria-label="Rename chat"
+        />
+        <div class="copilot-history-rename-actions">
+          <button type="button" data-history-rename-save="${esc(conversation.id)}">Save</button>
+          <button type="button" data-history-rename-cancel>Cancel</button>
+        </div>
+      </div>
+    `;
+  }
   return html`
-    <button
-      type="button"
-      class="copilot-history-item ${active ? 'active' : ''}"
-      data-conversation="${esc(conversation.id)}"
-      aria-current="${active ? 'page' : 'false'}"
-    >
-      <span class="copilot-history-title">${esc(conversation.title || 'Untitled chat')}</span>
-      <span class="copilot-history-meta">
-        ${conversation.updated_at ? esc(fmtRelative(conversation.updated_at)) : ''}
-        ${count ? ` · ${Math.max(1, Math.ceil(count / 2))} turn${Math.ceil(count / 2) === 1 ? '' : 's'}` : ''}
-        ${statusLabel ? ` · ${statusLabel}` : ''}
-      </span>
-    </button>
+    <div class="copilot-history-item-shell ${ui.historyMenuId === conversation.id ? 'menu-open' : ''}">
+      <button
+        type="button"
+        class="copilot-history-item ${active ? 'active' : ''}"
+        data-conversation="${esc(conversation.id)}"
+        aria-current="${active ? 'page' : 'false'}"
+      >
+        <span class="copilot-history-title">${esc(conversation.title || 'Untitled chat')}</span>
+        <span class="copilot-history-meta">
+          ${conversation.updated_at ? esc(fmtRelative(conversation.updated_at)) : ''}
+          ${count ? ` · ${Math.max(1, Math.ceil(count / 2))} turn${Math.ceil(count / 2) === 1 ? '' : 's'}` : ''}
+          ${statusLabel ? ` · ${statusLabel}` : ''}
+        </span>
+      </button>
+      <button
+        type="button"
+        class="copilot-history-more"
+        data-history-menu="${esc(conversation.id)}"
+        aria-label="Chat actions for ${esc(conversation.title || 'Untitled chat')}"
+        aria-expanded="${ui.historyMenuId === conversation.id ? 'true' : 'false'}"
+      >•••</button>
+      ${ui.historyMenuId === conversation.id ? html`
+        <div class="copilot-history-menu" role="menu">
+          <button type="button" role="menuitem" data-history-rename="${esc(conversation.id)}">Rename</button>
+          <button
+            type="button"
+            role="menuitem"
+            data-history-archive="${esc(conversation.id)}"
+            data-archive-value="${conversation.archived_at ? 'false' : 'true'}"
+          >${conversation.archived_at ? 'Unarchive' : 'Archive'}</button>
+        </div>
+      ` : ''}
+    </div>
   `;
 }
 
 function renderMasthead() {
-  const plans = state.plans || [];
-  const plan = plans.find(p => p.id === ui.planId) || plans.find(p => p.is_active) || plans[0];
-  const focusLabel = focusSummaryLabel(ui.sessionFocus);
-  const modelLabel = modelSummaryLabel(ui.conversationLlm, ui.llmOptions);
   const title = ui.conversationId
     ? (ui.conversationTitle || 'Untitled')
     : 'New chat';
@@ -694,31 +956,6 @@ function renderMasthead() {
         <div class="copilot-masthead-actions">
           <button type="button" class="copilot-new-btn" data-action="new-chat" title="New conversation">New chat</button>
         </div>
-      </div>
-      <div class="copilot-scope-pills" role="toolbar" aria-label="Chat scope">
-        ${plans.length ? html`
-          <span class="copilot-picker">
-            <button type="button" class="copilot-scope-pill" data-picker="plans" title="Plan scope">
-              <span class="copilot-scope-k">Plan</span>
-              <span class="copilot-scope-v">${esc(plan?.title || 'none')}</span>
-            </button>
-            ${ui.pickerOpen === 'plans' ? raw(renderPlansMenu(plans, plan?.id)) : ''}
-          </span>
-        ` : ''}
-        <span class="copilot-picker">
-          <button type="button" class="copilot-scope-pill" data-picker="focus" title="Session Focus — which domains expand in the brief">
-            <span class="copilot-scope-k">Focus</span>
-            <span class="copilot-scope-v">${esc(focusLabel)}</span>
-          </button>
-          ${ui.pickerOpen === 'focus' ? raw(renderFocusMenu()) : ''}
-        </span>
-        <span class="copilot-picker">
-          <button type="button" class="copilot-scope-pill copilot-model-pill" data-picker="model" title="Model for this conversation">
-            <span class="copilot-scope-k">Model</span>
-            <span class="copilot-scope-v">${esc(modelLabel)}</span>
-          </button>
-          ${ui.pickerOpen === 'model' ? raw(renderModelMenu()) : ''}
-        </span>
       </div>
     </header>
   `;
@@ -880,7 +1117,13 @@ function renderBody() {
   return html`
     <div class="copilot-scroll">
       <div class="copilot-thread-wrap">
-        ${raw(renderThread(ui.messages, { thinking: ui.thinking, streaming: ui.streaming }))}
+        ${raw(renderThread(ui.messages, {
+          thinking: ui.thinking,
+          streaming: ui.streaming,
+          planId: ui.planId,
+          conversationId: ui.conversationId,
+          trackedMessageKeys: ui.trackedMessageKeys,
+        }))}
         ${ui.error ? html`
           <div class="error-banner copilot-error-banner" role="status">
             <span>${esc(ui.error)}</span>
@@ -1049,6 +1292,35 @@ function writeStoredDraft(value) {
 
 function clearStoredDraft() {
   writeStoredDraft('');
+}
+
+function readTrackedDecisionKeys() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(COPILOT_TRACKED_DECISIONS_STORAGE_KEY) || '[]');
+    return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeTrackedDecisionKeys() {
+  try {
+    window.localStorage.setItem(
+      COPILOT_TRACKED_DECISIONS_STORAGE_KEY,
+      JSON.stringify([...ui.trackedMessageKeys].slice(-500)),
+    );
+  } catch {
+    // The Plan decision is durable; this local marker only prevents accidental duplicates.
+  }
+}
+
+function isMacPlatform() {
+  if (typeof navigator === 'undefined') return false;
+  return /Mac|iPod|iPhone|iPad/.test(navigator.platform || '');
+}
+
+function isCompactViewport() {
+  return typeof window !== 'undefined' && window.matchMedia?.('(max-width: 680px)').matches;
 }
 
 function fillDraft(text) {
@@ -1280,14 +1552,15 @@ function clientFocusPayload(focus) {
 
 function focusSummaryLabel(focus) {
   const f = normalizeClientFocus(focus);
+  const modeLabel = String(f.mode || 'balanced').replace(/^./, char => char.toUpperCase());
   if (f.primary_domains.length) {
     const labels = f.primary_domains
       .map(id => FOCUS_DOMAIN_OPTIONS.find(opt => opt.id === id)?.label || id)
       .slice(0, 2);
-    return `${f.mode} · ${labels.join(', ')}`;
+    return `${modeLabel} · ${labels.join(', ')}`;
   }
-  if (f.muted_domains.length) return `${f.mode} · muted ${f.muted_domains.length}`;
-  return f.mode;
+  if (f.muted_domains.length) return `${modeLabel} · muted ${f.muted_domains.length}`;
+  return modeLabel;
 }
 
 function modelSummaryLabel(llm, options) {
@@ -1396,6 +1669,82 @@ function seedFocusFromOnboardingIfNeeded(force = false) {
   }
 }
 
+function assistantMessageByKey(key) {
+  const cleanKey = String(key || '');
+  return ui.messages.find(message =>
+    message.role === 'assistant'
+      && [message.id, message.turn_id].map(value => String(value || '')).includes(cleanKey));
+}
+
+function trackedDecisionKey(planId, conversationId, message) {
+  const messageKey = String(message?.id || message?.turn_id || '');
+  return `${planId || 'no-plan'}:${conversationId || 'new'}:${messageKey}`;
+}
+
+function decisionSummary(content) {
+  const clean = String(content || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/[#*_>`\[\]()]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const firstSentence = clean.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim() || clean;
+  return firstSentence.length > 140 ? `${firstSentence.slice(0, 137)}...` : firstSentence;
+}
+
+async function copyAssistantMessage(key) {
+  const message = assistantMessageByKey(key);
+  if (!message?.content) return;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(message.content);
+    } else {
+      const textarea = document.createElement('textarea');
+      textarea.value = message.content;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      textarea.remove();
+    }
+    showUndoToast({ message: 'Copied Copilot’s response.' });
+  } catch (err) {
+    ui.error = err.message || 'Could not copy this response.';
+    rerenderBody();
+  }
+}
+
+async function trackAssistantDecision(key, button) {
+  const message = assistantMessageByKey(key);
+  if (!message?.content || !ui.planId) return;
+  const durableKey = trackedDecisionKey(ui.planId, ui.conversationId, message);
+  if (ui.trackedMessageKeys.has(durableKey)) return;
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Tracking…';
+  }
+  try {
+    await api.appendDecision(ui.planId, {
+      summary: decisionSummary(message.content) || 'Copilot decision note',
+      rationale: message.content,
+      status: 'proposed',
+      action_payload: {
+        source: 'copilot_conversation',
+        conversation_id: ui.conversationId,
+        message_id: message.id || null,
+        turn_id: message.turn_id || null,
+      },
+    });
+    ui.trackedMessageKeys.add(durableKey);
+    writeTrackedDecisionKeys();
+    rerenderBody();
+    showUndoToast({ message: 'Tracked as a proposed decision in your Plan.' });
+  } catch (err) {
+    ui.error = err.message;
+    rerenderBody();
+  }
+}
+
 /* ─────────────  events  ───────────── */
 
 function attachHandlers() {
@@ -1406,28 +1755,25 @@ function attachHandlers() {
     e.stopPropagation();
     const which = t.getAttribute('data-picker');
     ui.pickerOpen = ui.pickerOpen === which ? null : which;
-    rerenderMasthead();
+    rerenderComposer();
+  });
+
+  delegate(page, 'change', '[data-context-live]', (_, t) => {
+    ui.useLive = !!t.checked;
+    rerenderComposer();
   });
 
   delegate(page, 'click', '[data-conversation]', async (_, t) => {
     const id = t.getAttribute('data-conversation');
     ui.pickerOpen = null;
     if (id === '__new__') {
-      ui.conversationId = null;
-      ui.conversationTitle = '';
-      ui.messages = [];
-      ui.turns = [];
-      ui.error = null;
-      ui.retryTurn = null;
-      ui.historyOpen = false;
-      ui.sessionFocus = defaultSessionFocus();
-      resetConversationLlmToWorkspaceDefault();
-      loadLlmOptions(null).then(() => rerenderMasthead()).catch(() => {});
+      resetConversationState();
+      loadLlmOptions(null).then(() => rerenderComposer()).catch(() => {});
       rerenderAll();
       return;
     }
     ui.historyOpen = false;
-    rerenderMasthead();
+    rerenderHistory();
     await loadConversation(id);
   });
 
@@ -1435,7 +1781,7 @@ function attachHandlers() {
     const id = t.getAttribute('data-plan');
     ui.planId = id === '__none__' ? null : id;
     ui.pickerOpen = null;
-    rerenderMasthead();
+    rerenderComposer();
   });
 
   delegate(page, 'click', '[data-action="stop-copilot"]', () => {
@@ -1463,17 +1809,80 @@ function attachHandlers() {
   });
 
   delegate(page, 'click', '[data-action="new-chat"]', () => {
-    ui.conversationId = null;
-    ui.conversationTitle = '';
-    ui.messages = [];
-    ui.turns = [];
-    ui.error = null;
-    ui.retryTurn = null;
-    ui.historyOpen = false;
-    ui.sessionFocus = defaultSessionFocus();
-    resetConversationLlmToWorkspaceDefault();
-    loadLlmOptions(null).then(() => rerenderMasthead()).catch(() => {});
+    resetConversationState();
+    loadLlmOptions(null).then(() => rerenderComposer()).catch(() => {});
     rerenderAll();
+  });
+
+  delegate(page, 'input', '[data-history-search]', (_, t) => {
+    ui.historyQuery = t.value;
+    rerenderHistory();
+    const input = document.querySelector('[data-history-search]');
+    if (input) {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+  });
+
+  delegate(page, 'click', '[data-history-menu]', (e, t) => {
+    e.stopPropagation();
+    const id = t.getAttribute('data-history-menu');
+    ui.historyMenuId = ui.historyMenuId === id ? null : id;
+    rerenderHistory();
+  });
+
+  delegate(page, 'click', '[data-history-rename]', (e, t) => {
+    e.stopPropagation();
+    const id = t.getAttribute('data-history-rename');
+    const conversation = ui.conversations.find(item => item.id === id);
+    if (!conversation) return;
+    ui.renamingConversationId = id;
+    ui.renamingTitle = conversation.title || '';
+    ui.historyMenuId = null;
+    rerenderHistory();
+    const input = document.querySelector('[data-history-rename-input]');
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  });
+
+  delegate(page, 'input', '[data-history-rename-input]', (_, t) => {
+    ui.renamingTitle = t.value;
+  });
+
+  delegate(page, 'keydown', '[data-history-rename-input]', (e, t) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      renameConversation(t.getAttribute('data-history-rename-input'), t.value);
+    } else if (e.key === 'Escape') {
+      ui.renamingConversationId = null;
+      ui.renamingTitle = '';
+      rerenderHistory();
+    }
+  });
+
+  delegate(page, 'click', '[data-history-rename-save]', (_, t) => {
+    renameConversation(t.getAttribute('data-history-rename-save'), ui.renamingTitle);
+  });
+
+  delegate(page, 'click', '[data-history-rename-cancel]', () => {
+    ui.renamingConversationId = null;
+    ui.renamingTitle = '';
+    rerenderHistory();
+  });
+
+  delegate(page, 'click', '[data-history-archive]', (e, t) => {
+    e.stopPropagation();
+    setConversationArchived(
+      t.getAttribute('data-history-archive'),
+      t.getAttribute('data-archive-value') !== 'false',
+    );
+  });
+
+  delegate(page, 'click', '[data-history-show-archived]', async () => {
+    ui.showArchived = !ui.showArchived;
+    await loadConversations();
   });
 
   delegate(page, 'click', '[data-menu="focus"]', (e) => {
@@ -1489,7 +1898,7 @@ function attachHandlers() {
     e.stopPropagation();
     ui.showCheapOnly = !!t.checked;
     ui.pickerOpen = 'model';
-    rerenderMasthead();
+    rerenderComposer();
   });
 
   delegate(page, 'click', '[data-model-id]', async (e, t) => {
@@ -1519,7 +1928,7 @@ function attachHandlers() {
         ui.error = err.message;
       }
     }
-    rerenderMasthead();
+    rerenderComposer();
   });
 
   delegate(page, 'click', '[data-model-reset]', async (e) => {
@@ -1547,7 +1956,7 @@ function attachHandlers() {
         ui.error = err.message;
       }
     }
-    rerenderMasthead();
+    rerenderComposer();
   });
 
   delegate(page, 'click', '[data-focus-mode]', (e, t) => {
@@ -1560,7 +1969,7 @@ function attachHandlers() {
       set_by: 'user',
     };
     ui.pickerOpen = 'focus';
-    rerenderMasthead();
+    rerenderComposer();
   });
 
   delegate(page, 'click', '[data-focus-domain]', (e, t) => {
@@ -1569,14 +1978,26 @@ function attachHandlers() {
     if (!domain) return;
     ui.sessionFocus = cycleFocusDomain(ui.sessionFocus, domain);
     ui.pickerOpen = 'focus';
-    rerenderMasthead();
+    rerenderComposer();
   });
 
   delegate(page, 'click', '[data-focus-reset]', (e) => {
     e.stopPropagation();
     ui.sessionFocus = defaultSessionFocus();
     ui.pickerOpen = 'focus';
-    rerenderMasthead();
+    rerenderComposer();
+  });
+
+  delegate(page, 'click', '[data-message-copy]', (_, t) => {
+    copyAssistantMessage(t.getAttribute('data-message-copy'));
+  });
+
+  delegate(page, 'click', '[data-message-follow-up]', () => {
+    fillDraft('Help me turn this into a concrete next action. What should I do first, and which tradeoffs or assumptions should I review?');
+  });
+
+  delegate(page, 'click', '[data-message-track]', (_, t) => {
+    trackAssistantDecision(t.getAttribute('data-message-track'), t);
   });
 
   delegate(page, 'click', '[data-suggest]', (_, t) => {
@@ -1606,7 +2027,10 @@ function attachHandlers() {
   });
 
   // Outside-click closes pickers.
+  document.removeEventListener('click', closePickersOnOutsideClick);
   document.addEventListener('click', closePickersOnOutsideClick, { passive: true });
+  document.removeEventListener('keydown', handleCopilotShortcut);
+  document.addEventListener('keydown', handleCopilotShortcut);
 }
 
 async function applyProfileDraft(button) {
@@ -1720,11 +2144,39 @@ function mergeProfileDraft(current, patch) {
 }
 
 function closePickersOnOutsideClick(e) {
-  if (!ui.pickerOpen) return;
-  const masthead = document.querySelector('#copilot-masthead');
-  if (!masthead) return;
-  if (!masthead.contains(e.target)) {
+  const composer = document.querySelector('#copilot-composer');
+  if (ui.pickerOpen && (!composer || !composer.contains(e.target))) {
     ui.pickerOpen = null;
-    rerenderMasthead();
+    rerenderComposer();
+  }
+  const history = document.querySelector('#copilot-history');
+  if (ui.historyMenuId && (!history || !history.contains(e.target))) {
+    ui.historyMenuId = null;
+    rerenderHistory();
+  }
+}
+
+function handleCopilotShortcut(e) {
+  if ((e.metaKey || e.ctrlKey) && String(e.key || '').toLowerCase() === 'k') {
+    e.preventDefault();
+    ui.historyOpen = true;
+    rerenderHistory();
+    document.querySelector('[data-history-search]')?.focus();
+    return;
+  }
+  if (e.key !== 'Escape') return;
+  if (ui.renamingConversationId) {
+    ui.renamingConversationId = null;
+    ui.renamingTitle = '';
+    rerenderHistory();
+  } else if (ui.historyMenuId) {
+    ui.historyMenuId = null;
+    rerenderHistory();
+  } else if (ui.historyOpen) {
+    ui.historyOpen = false;
+    rerenderHistory();
+  } else if (ui.pickerOpen) {
+    ui.pickerOpen = null;
+    rerenderComposer();
   }
 }

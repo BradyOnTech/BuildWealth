@@ -2008,6 +2008,7 @@ class CopilotConversationSummary(BaseModel):
     title: str
     created_at: datetime
     updated_at: datetime
+    archived_at: datetime | None = None
     last_message_preview: str
     message_count: int = 0
     last_turn_status: str = ""
@@ -2018,10 +2019,16 @@ class CopilotConversationResponse(BaseModel):
     title: str
     created_at: datetime
     updated_at: datetime
+    archived_at: datetime | None = None
     messages: list[dict[str, Any]] = Field(default_factory=list)
     turns: list[dict[str, Any]] = Field(default_factory=list)
     focus: SessionFocus = Field(default_factory=SessionFocus)
     llm: ConversationLlm | None = None
+
+
+class CopilotConversationUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=120)
+    archived: bool | None = None
 
 
 TimelineEventType = Literal[*TIMELINE_EVENT_TYPE_VALUES]

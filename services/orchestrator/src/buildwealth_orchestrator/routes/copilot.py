@@ -120,10 +120,14 @@ def reset_copilot_context_cache(
 @router.get("/api/copilot/conversations", response_model=list[m.CopilotConversationSummary])
 def list_copilot_conversations(
     limit: int = 30,
+    include_archived: bool = False,
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> list[m.CopilotConversationSummary]:
     m.require_permission(services.context, "copilot.use")
-    summaries = services.conversation_store.list(limit=max(1, min(limit, 200)))
+    summaries = services.conversation_store.list(
+        limit=max(1, min(limit, 200)),
+        include_archived=include_archived,
+    )
     return [m.CopilotConversationSummary(**summary) for summary in summaries]
 
 
@@ -147,6 +151,42 @@ def get_copilot_conversation(
     )
     payload = dict(conversation)
     payload["focus"] = m.public_focus(conversation.get("focus") if isinstance(conversation, dict) else None)
+    payload["llm"] = m.ConversationLlm(**resolved_llm)
+    return m.CopilotConversationResponse(**payload)
+
+
+@router.patch(
+    "/api/copilot/conversations/{conversation_id}",
+    response_model=m.CopilotConversationResponse,
+)
+def patch_copilot_conversation(
+    conversation_id: str,
+    request: m.CopilotConversationUpdateRequest,
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> m.CopilotConversationResponse:
+    """Rename or archive a Copilot conversation while preserving its durable turns."""
+    m.require_permission(services.context, "copilot.use")
+    patch = request.model_dump(exclude_unset=True)
+    try:
+        conversation = services.conversation_store.update_details(
+            conversation_id,
+            title=patch.get("title"),
+            archived=patch.get("archived"),
+        )
+    except FileNotFoundError as exc:
+        raise m.HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise m.HTTPException(status_code=400, detail=str(exc)) from exc
+
+    workspace_settings = services.settings_store.load_raw()
+    resolved_llm = m._resolve_conversation_llm(
+        workspace_settings=workspace_settings,
+        conversation_llm=conversation.get("llm") if isinstance(conversation, dict) else None,
+        request_llm=None,
+        settings_store=services.settings_store,
+    )
+    payload = dict(conversation)
+    payload["focus"] = m.public_focus(conversation.get("focus"))
     payload["llm"] = m.ConversationLlm(**resolved_llm)
     return m.CopilotConversationResponse(**payload)
 
