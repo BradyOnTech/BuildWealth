@@ -59,6 +59,14 @@ function renderMessage(m) {
   const contextTrace = role === 'assistant' && m.metadata?.context_trace && typeof m.metadata.context_trace === 'object'
     ? m.metadata.context_trace
     : null;
+  const turnStatus = String(m.turn_status || '');
+  const statusLabel = turnStatus === 'failed'
+    ? 'Failed'
+    : turnStatus === 'stopped'
+      ? 'Stopped'
+      : turnStatus === 'running' && role === 'user'
+        ? 'Running'
+        : '';
 
   const bodyHtml = role === 'user'
     ? esc(String(m.content || ''))
@@ -70,6 +78,7 @@ function renderMessage(m) {
         <header class="message-eyebrow">
           <span class="role-tag">${role === 'user' ? 'You' : 'Copilot'}</span>
           ${ts ? html`<span class="timestamp">${ts}</span>` : ''}
+          ${statusLabel ? html`<span class="turn-status ${turnStatus}">${statusLabel}</span>` : ''}
         </header>
         <div class="message-body ${role}">${bodyHtml}</div>
         ${contextTrace ? raw(renderContextTraceSummary(contextTrace)) : ''}

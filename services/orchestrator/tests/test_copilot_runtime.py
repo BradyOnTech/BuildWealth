@@ -110,6 +110,39 @@ def test_conversation_store_round_trip(tmp_path: Path) -> None:
     assert "Start by reducing concentration" in summaries[0]["last_message_preview"]
 
 
+def test_conversation_store_upgrades_legacy_messages_with_stable_turn_ids(tmp_path: Path) -> None:
+    path = tmp_path / "legacy-chat.json"
+    path.write_text(
+        '{"id":"legacy-chat","title":"Legacy","created_at":"2026-01-01T00:00:00+00:00",'
+        '"updated_at":"2026-01-01T00:01:00+00:00","messages":['
+        '{"role":"user","content":"Hello","created_at":"2026-01-01T00:00:00+00:00"},'
+        '{"role":"assistant","content":"Hi","created_at":"2026-01-01T00:01:00+00:00"}]}'
+    )
+    store = ConversationStore(tmp_path)
+
+    first = store.get("legacy-chat")
+    second = store.get("legacy-chat")
+
+    assert first["schema_version"] == 2
+    assert first["messages"][0]["id"] == second["messages"][0]["id"]
+    assert first["messages"][0]["turn_id"] == first["messages"][1]["turn_id"]
+    assert first["turns"][0]["status"] == "completed"
+
+
+def test_conversation_store_resumes_failed_turn_without_duplicate_user_message(tmp_path: Path) -> None:
+    store = ConversationStore(tmp_path)
+    conversation = store.get_or_create(None, "Can I afford this?")
+    turn = store.start_turn(conversation, "Can I afford this?", turn_id="turn-retry")
+    store.update_turn_status(conversation["id"], turn["id"], "failed", error="provider down")
+
+    loaded = store.get(conversation["id"])
+    resumed = store.start_turn(loaded, "Can I afford this?", turn_id="turn-retry")
+
+    assert resumed["status"] == "running"
+    assert len(loaded["messages"]) == 1
+    assert loaded["messages"][0]["turn_id"] == "turn-retry"
+
+
 def test_conversation_store_updates_latest_assistant_metadata(tmp_path: Path) -> None:
     store = ConversationStore(tmp_path)
     conversation = store.get_or_create(None, "What context did you use?")
@@ -198,12 +231,17 @@ def test_copilot_tool_round_trip(tmp_path: Path) -> None:
     )
 
     assert result["answer"] == "Your account summary is ready."
+    assert result["turn_status"] == "completed"
+    assert result["turn_id"]
+    assert result["user_message_id"]
+    assert result["assistant_message_id"]
     assert len(result["tool_calls"]) == 1
     assert result["tool_calls"][0]["name"] == "echo_tool"
     assert result["tool_calls"][0]["result"] == {"echo": 7}
     assert result["tool_calls"][0]["error"] is None
 
     loaded = store.get(result["conversation_id"])
+    assert loaded["turns"][-1]["status"] == "completed"
     assert loaded["messages"][-1]["metadata"]["tool_calls"][0]["name"] == "echo_tool"
     assert loaded["messages"][-1]["metadata"]["context_trace"]["plan_id"] == "plan-1"
     assert loaded["messages"][-1]["metadata"]["context_trace"]["retrieval"]["returned_count"] == 2

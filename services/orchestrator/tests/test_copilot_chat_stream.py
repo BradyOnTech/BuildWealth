@@ -53,6 +53,7 @@ class StreamingFakeCopilot:
         question,
         conversation_id=None,
         conversation=None,
+        turn=None,
         contextual_brief=None,
         context_trace=None,
         conversation_store=None,
@@ -62,7 +63,8 @@ class StreamingFakeCopilot:
         assert conversation_store is not None
         if conversation is None:
             conversation = conversation_store.get_or_create(conversation_id, question)
-        conversation_store.append_message(conversation, "user", question)
+        if turn is None:
+            turn = conversation_store.start_turn(conversation, question)
         if progress_cb is not None:
             progress_cb({"type": "round", "round": 1})
             progress_cb({"type": "tool", "name": "get_financial_profile", "status": "start"})
@@ -70,12 +72,26 @@ class StreamingFakeCopilot:
             progress_cb({"type": "answer_delta", "text": "Streamed "})
             progress_cb({"type": "answer_delta", "text": "answer."})
         answer = "Streamed answer."
-        conversation_store.append_message(
-            conversation, "assistant", answer, metadata={"context_trace": context_trace or {}}
+        assistant_message = conversation_store.append_message(
+            conversation,
+            "assistant",
+            answer,
+            metadata={"context_trace": context_trace or {}},
+            turn_id=turn["id"],
+        )
+        conversation_store.set_turn_status(
+            conversation,
+            turn["id"],
+            "completed",
+            assistant_message_id=assistant_message["id"],
         )
         conversation_store.save(conversation)
         return {
             "conversation_id": conversation["id"],
+            "turn_id": turn["id"],
+            "user_message_id": turn["user_message_id"],
+            "assistant_message_id": assistant_message["id"],
+            "turn_status": "completed",
             "answer": answer,
             "tool_calls": [],
             "model": "test-copilot",
@@ -103,7 +119,8 @@ def test_copilot_chat_stream_emits_progress_then_result(monkeypatch, tmp_path: P
 
         events = _sse_events(response.text)
         types = [event["type"] for event in events]
-        assert types[0] == "stage"
+        assert types[0] == "turn"
+        assert "stage" in types
         assert "tool" in types
         assert "answer_delta" in types
         assert types[-1] == "result"
@@ -135,6 +152,11 @@ def test_copilot_chat_stream_reports_errors_as_events(monkeypatch, tmp_path: Pat
         assert events[-1]["type"] == "error"
         assert events[-1]["status"] == 500
         assert "context assembly exploded" in events[-1]["detail"]
+        conversations = client.get("/api/copilot/conversations").json()
+        assert len(conversations) == 1
+        failed = client.get(f"/api/copilot/conversations/{conversations[0]['id']}").json()
+        assert failed["turns"][-1]["status"] == "failed"
+        assert "context assembly exploded" in failed["turns"][-1]["error"]
 
 
 def test_copilot_chat_stream_works_with_legacy_fake_signature(monkeypatch, tmp_path: Path) -> None:

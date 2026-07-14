@@ -1971,6 +1971,7 @@ class ConversationLlmUpdateRequest(BaseModel):
 class CopilotChatRequest(BaseModel):
     question: str
     conversation_id: str | None = None
+    turn_id: str | None = Field(default=None, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
     use_live_snapshot: bool = False
     plan_id: str | None = None
     context_options: CopilotContextOptions = Field(default_factory=CopilotContextOptions)
@@ -1989,6 +1990,10 @@ class CopilotToolTrace(BaseModel):
 
 class CopilotChatResponse(BaseModel):
     conversation_id: str
+    turn_id: str | None = None
+    user_message_id: str | None = None
+    assistant_message_id: str | None = None
+    turn_status: Literal["running", "completed", "stopped", "failed", "incomplete"] | None = None
     answer: str
     tool_calls: list[CopilotToolTrace] = Field(default_factory=list)
     model: str | None = None
@@ -2004,6 +2009,8 @@ class CopilotConversationSummary(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_message_preview: str
+    message_count: int = 0
+    last_turn_status: str = ""
 
 
 class CopilotConversationResponse(BaseModel):
@@ -2012,6 +2019,7 @@ class CopilotConversationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     messages: list[dict[str, Any]] = Field(default_factory=list)
+    turns: list[dict[str, Any]] = Field(default_factory=list)
     focus: SessionFocus = Field(default_factory=SessionFocus)
     llm: ConversationLlm | None = None
 

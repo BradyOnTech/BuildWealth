@@ -186,7 +186,7 @@ def patch_copilot_conversation_llm(
     """Set or clear the model used for this conversation (any connected provider)."""
     m.require_permission(services.context, "copilot.use")
     try:
-        conversation = services.conversation_store.get(conversation_id)
+        services.conversation_store.get(conversation_id)
     except FileNotFoundError as exc:
         raise m.HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -351,6 +351,27 @@ async def _copilot_chat_pipeline(
             conversation = store.update_focus(conversation["id"], resolved_focus_public)
             conversation["focus"] = resolved_focus_public
 
+        try:
+            accepts_turn = "turn" in inspect.signature(m.copilot.chat).parameters
+        except (TypeError, ValueError):
+            accepts_turn = False
+        turn = None
+        if accepts_turn:
+            turn = store.start_turn(
+                conversation,
+                question=request.question,
+                turn_id=request.turn_id,
+            )
+            if progress is not None:
+                progress(
+                    {
+                        "type": "turn",
+                        "turn_id": turn["id"],
+                        "user_message_id": turn.get("user_message_id"),
+                        "status": turn.get("status"),
+                    }
+                )
+
         conv_token = m.current_copilot_conversation_id.set(str(conversation.get("id") or ""))
         boost_enabled = bool(getattr(m.settings, "copilot_retrieval_focus_boost", True))
         try:
@@ -437,6 +458,8 @@ async def _copilot_chat_pipeline(
                     conversation_store=store,
                     llm_client=turn_llm_client,
                 )
+                if turn is not None:
+                    chat_kwargs["turn"] = turn
                 if progress is not None:
                     progress({"type": "stage", "stage": "thinking"})
                     try:
@@ -500,6 +523,32 @@ async def _copilot_chat_pipeline(
                 raise m.HTTPException(status_code=502, detail=detail) from exc
             except Exception as exc:
                 raise m.HTTPException(status_code=500, detail=f"Copilot failed: {exc}") from exc
+        except asyncio.CancelledError:
+            if turn is not None:
+                store.update_turn_status(
+                    conversation["id"],
+                    str(turn["id"]),
+                    "stopped",
+                )
+            raise
+        except m.HTTPException as exc:
+            if turn is not None:
+                store.update_turn_status(
+                    conversation["id"],
+                    str(turn["id"]),
+                    "failed",
+                    error=str(exc.detail),
+                )
+            raise
+        except Exception as exc:
+            if turn is not None:
+                store.update_turn_status(
+                    conversation["id"],
+                    str(turn["id"]),
+                    "failed",
+                    error=str(exc),
+                )
+            raise
         finally:
             m.current_copilot_conversation_id.reset(conv_token)
     finally:

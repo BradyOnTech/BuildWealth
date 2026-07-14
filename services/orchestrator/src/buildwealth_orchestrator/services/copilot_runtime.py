@@ -11,6 +11,10 @@ import httpx
 from buildwealth_orchestrator.services.store_locks import synchronized_store
 
 
+CONVERSATION_SCHEMA_VERSION = 2
+TURN_STATUSES = {"running", "completed", "stopped", "failed", "incomplete"}
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -31,6 +35,7 @@ class ConversationStore:
     def _new_conversation(self, title: str) -> dict[str, Any]:
         now = utc_now_iso()
         return {
+            "schema_version": CONVERSATION_SCHEMA_VERSION,
             "id": uuid.uuid4().hex,
             "title": title,
             "created_at": now,
@@ -52,7 +57,114 @@ class ConversationStore:
                 "model": "",
             },
             "messages": [],
+            "turns": [],
         }
+
+    @staticmethod
+    def _new_id() -> str:
+        return uuid.uuid4().hex
+
+    @staticmethod
+    def _legacy_id(conversation_id: str, kind: str, index: int) -> str:
+        return uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"buildwealth:conversation:{conversation_id}:{kind}:{index}",
+        ).hex
+
+    def _normalize_conversation(self, conversation: dict[str, Any]) -> dict[str, Any]:
+        """Upgrade legacy conversation documents in memory without losing content."""
+        conversation["schema_version"] = CONVERSATION_SCHEMA_VERSION
+        messages = conversation.get("messages")
+        if not isinstance(messages, list):
+            messages = []
+            conversation["messages"] = messages
+        turns = conversation.get("turns")
+        if not isinstance(turns, list):
+            turns = []
+            conversation["turns"] = turns
+
+        now = utc_now_iso()
+        turns_by_id: dict[str, dict[str, Any]] = {}
+        conversation_id = str(conversation.get("id") or "legacy")
+        for turn_index, raw_turn in enumerate(turns):
+            if not isinstance(raw_turn, dict):
+                continue
+            turn_id = str(
+                raw_turn.get("id") or self._legacy_id(conversation_id, "turn", turn_index)
+            )
+            raw_turn["id"] = turn_id
+            status = str(raw_turn.get("status") or "incomplete")
+            raw_turn["status"] = status if status in TURN_STATUSES else "incomplete"
+            raw_turn.setdefault("created_at", conversation.get("created_at") or now)
+            raw_turn.setdefault("updated_at", raw_turn["created_at"])
+            raw_turn.setdefault("user_message_id", None)
+            raw_turn.setdefault("assistant_message_id", None)
+            raw_turn.setdefault("error", None)
+            turns_by_id[turn_id] = raw_turn
+
+        normalized_turns = list(turns_by_id.values())
+        conversation["turns"] = normalized_turns
+        active_legacy_turn: dict[str, Any] | None = None
+
+        for message_index, raw_message in enumerate(messages):
+            if not isinstance(raw_message, dict):
+                continue
+            created_at = str(raw_message.get("created_at") or conversation.get("created_at") or now)
+            message_id = str(
+                raw_message.get("id")
+                or self._legacy_id(conversation_id, "message", message_index)
+            )
+            raw_message["id"] = message_id
+            raw_message["created_at"] = created_at
+            raw_message.setdefault("updated_at", created_at)
+            raw_message.setdefault("metadata", {})
+            raw_message.setdefault("status", "complete")
+
+            turn_id = str(raw_message.get("turn_id") or "").strip()
+            role = str(raw_message.get("role") or "")
+            if not turn_id and role == "user":
+                turn_id = self._legacy_id(conversation_id, "message-turn", message_index)
+                active_legacy_turn = {
+                    "id": turn_id,
+                    "status": "incomplete",
+                    "user_message_id": message_id,
+                    "assistant_message_id": None,
+                    "error": None,
+                    "created_at": created_at,
+                    "updated_at": created_at,
+                }
+                normalized_turns.append(active_legacy_turn)
+                turns_by_id[turn_id] = active_legacy_turn
+            elif not turn_id and role == "assistant" and active_legacy_turn is not None:
+                turn_id = str(active_legacy_turn["id"])
+            elif turn_id:
+                active_legacy_turn = turns_by_id.get(turn_id)
+
+            raw_message["turn_id"] = turn_id or None
+            if not turn_id:
+                continue
+            turn = turns_by_id.get(turn_id)
+            if turn is None:
+                turn = {
+                    "id": turn_id,
+                    "status": "incomplete",
+                    "user_message_id": None,
+                    "assistant_message_id": None,
+                    "error": None,
+                    "created_at": created_at,
+                    "updated_at": created_at,
+                }
+                normalized_turns.append(turn)
+                turns_by_id[turn_id] = turn
+            if role == "user":
+                turn["user_message_id"] = message_id
+            elif role == "assistant":
+                turn["assistant_message_id"] = message_id
+                if turn.get("status") == "incomplete":
+                    turn["status"] = "completed"
+                turn["updated_at"] = raw_message["updated_at"]
+
+        return conversation
 
     def create(self, title: str = "New Conversation") -> dict[str, Any]:
         doc = self._new_conversation(title=title)
@@ -64,9 +176,10 @@ class ConversationStore:
         if not path.exists():
             raise FileNotFoundError(f"Conversation not found: {conversation_id}")
 
-        return json.loads(path.read_text(encoding="utf-8"))
+        return self._normalize_conversation(json.loads(path.read_text(encoding="utf-8")))
 
     def save(self, conversation: dict[str, Any]) -> None:
+        self._normalize_conversation(conversation)
         conversation["updated_at"] = utc_now_iso()
         path = self._path(conversation["id"])
         path.write_text(json.dumps(conversation, indent=2), encoding="utf-8")
@@ -91,16 +204,111 @@ class ConversationStore:
         role: str,
         content: str,
         metadata: dict[str, Any] | None = None,
-    ) -> None:
+        *,
+        turn_id: str | None = None,
+        status: str = "complete",
+    ) -> dict[str, Any]:
         conversation.setdefault("messages", [])
-        conversation["messages"].append(
-            {
-                "role": role,
-                "content": content,
-                "created_at": utc_now_iso(),
-                "metadata": metadata or {},
-            }
+        now = utc_now_iso()
+        message = {
+            "id": self._new_id(),
+            "turn_id": turn_id,
+            "role": role,
+            "content": content,
+            "created_at": now,
+            "updated_at": now,
+            "status": status,
+            "metadata": metadata or {},
+        }
+        conversation["messages"].append(message)
+        return message
+
+    def start_turn(
+        self,
+        conversation: dict[str, Any],
+        question: str,
+        turn_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create or resume one durable Copilot turn and persist it immediately."""
+        self._normalize_conversation(conversation)
+        requested_id = str(turn_id or "").strip()
+        existing = next(
+            (turn for turn in conversation["turns"] if turn.get("id") == requested_id),
+            None,
+        ) if requested_id else None
+        now = utc_now_iso()
+        if existing is not None:
+            if existing.get("status") != "completed":
+                existing["status"] = "running"
+                existing["error"] = None
+                existing["updated_at"] = now
+                self.save(conversation)
+            return existing
+
+        durable_turn_id = requested_id or self._new_id()
+        user_message = self.append_message(
+            conversation,
+            role="user",
+            content=question,
+            turn_id=durable_turn_id,
         )
+        turn = {
+            "id": durable_turn_id,
+            "status": "running",
+            "user_message_id": user_message["id"],
+            "assistant_message_id": None,
+            "error": None,
+            "created_at": now,
+            "updated_at": now,
+        }
+        conversation["turns"].append(turn)
+        self.save(conversation)
+        return turn
+
+    def set_turn_status(
+        self,
+        conversation: dict[str, Any],
+        turn_id: str,
+        status: str,
+        *,
+        assistant_message_id: str | None = None,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        if status not in TURN_STATUSES:
+            raise ValueError(f"Unsupported Copilot turn status: {status}")
+        self._normalize_conversation(conversation)
+        turn = next(
+            (item for item in conversation["turns"] if item.get("id") == turn_id),
+            None,
+        )
+        if turn is None:
+            raise KeyError(f"Copilot turn not found: {turn_id}")
+        turn["status"] = status
+        turn["updated_at"] = utc_now_iso()
+        turn["error"] = error
+        if assistant_message_id is not None:
+            turn["assistant_message_id"] = assistant_message_id
+        return turn
+
+    def update_turn_status(
+        self,
+        conversation_id: str,
+        turn_id: str,
+        status: str,
+        *,
+        assistant_message_id: str | None = None,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        conversation = self.get(conversation_id)
+        turn = self.set_turn_status(
+            conversation,
+            turn_id,
+            status,
+            assistant_message_id=assistant_message_id,
+            error=error,
+        )
+        self.save(conversation)
+        return turn
 
     def update_latest_assistant_metadata(
         self,
@@ -153,7 +361,7 @@ class ConversationStore:
 
         for path in self.base_dir.glob("*.json"):
             try:
-                doc = json.loads(path.read_text(encoding="utf-8"))
+                doc = self._normalize_conversation(json.loads(path.read_text(encoding="utf-8")))
                 docs.append(doc)
             except Exception:
                 continue
@@ -178,6 +386,8 @@ class ConversationStore:
                     "created_at": doc.get("created_at"),
                     "updated_at": doc.get("updated_at"),
                     "last_message_preview": last_message_preview,
+                    "message_count": len(messages),
+                    "last_turn_status": str((doc.get("turns") or [{}])[-1].get("status") or ""),
                 }
             )
 
@@ -373,6 +583,8 @@ class FinancialCopilot:
         conversation_id: str | None = None,
         *,
         conversation: dict[str, Any] | None = None,
+        turn: dict[str, Any] | None = None,
+        turn_id: str | None = None,
         contextual_brief: str,
         context_trace: dict[str, Any] | None = None,
         conversation_store: ConversationStore | None = None,
@@ -395,12 +607,11 @@ class FinancialCopilot:
                 conversation_id=conversation_id,
                 first_user_message=question,
             )
-        # else: preloaded/created by caller (e.g. focus resolved before assembly)
-        store.append_message(
-            conversation,
-            role="user",
-            content=question,
-        )
+        # The route may create the turn before context assembly so failures and
+        # cancellations remain visible in history. Direct callers start it here.
+        if turn is None:
+            turn = store.start_turn(conversation, question=question, turn_id=turn_id)
+        durable_turn_id = str(turn["id"])
 
         tool_traces: list[dict[str, Any]] = []
         answer = ""
@@ -501,7 +712,7 @@ class FinancialCopilot:
                 "I can still use direct endpoints for sync/import/planning, but conversational reasoning is limited."
             )
 
-        store.append_message(
+        assistant_message = store.append_message(
             conversation,
             role="assistant",
             content=answer,
@@ -510,11 +721,22 @@ class FinancialCopilot:
                 "model": model_name,
                 "context_trace": context_trace or {},
             },
+            turn_id=durable_turn_id,
+        )
+        store.set_turn_status(
+            conversation,
+            durable_turn_id,
+            "completed",
+            assistant_message_id=str(assistant_message["id"]),
         )
         store.save(conversation)
 
         return {
             "conversation_id": conversation["id"],
+            "turn_id": durable_turn_id,
+            "user_message_id": turn.get("user_message_id"),
+            "assistant_message_id": assistant_message["id"],
+            "turn_status": "completed",
             "answer": answer,
             "tool_calls": tool_traces,
             "model": model_name,

@@ -1,5 +1,5 @@
 // COPILOT — chat masthead, thread, sticky composer.
-// One conversation visible at a time. Past conversations live behind a picker.
+// One conversation visible at a time. Past conversations live in chat history.
 // Plan scope sets which plan's context is used. Composer auto-grows; ⌘↵ to send.
 
 import { api } from '../lib/api.js';
@@ -24,6 +24,8 @@ const SUGGESTIONS = [
   'Compare AAPL and MSFT for a $10,000 add.',
   'Can I afford a $450,000 house given my plan?',
 ];
+
+const COPILOT_DRAFTS_STORAGE_KEY = 'buildwealth.copilot.drafts.v1';
 
 const PROFILE_SETUP_PROMPT = [
   'Help me fill out my financial profile.',
@@ -230,15 +232,18 @@ const ui = {
   conversationId: null,
   conversationTitle: '',
   messages: [],
+  turns: [],
   conversations: [],
   onboarding: null,
   busy: false,
   thinking: false,
   streaming: null,                  // { stage, tool, partial } while a turn streams
   error: null,
+  retryTurn: null,
+  historyOpen: false,
   planId: null,
   recommendationFocus: null,
-  pickerOpen: null,                 // 'conversations' | 'plans' | 'focus' | 'model' | null
+  pickerOpen: null,                 // 'plans' | 'focus' | 'model' | null
   draftFocus: null,
   sessionFocus: defaultSessionFocus(),
   // Model menu (Grok/Codex-style): workspace default + per-conversation override
@@ -251,9 +256,13 @@ export function template() {
   return html`
     <section class="page" id="copilot-page">
       <div class="copilot-shell" id="copilot-shell">
-        <div class="copilot-top" id="copilot-masthead"></div>
-        <div class="copilot-main" id="copilot-body"></div>
-        <div class="copilot-bottom" id="copilot-composer"></div>
+        <button type="button" class="copilot-history-backdrop" data-action="close-history" aria-label="Close chat history"></button>
+        <aside class="copilot-history" id="copilot-history" aria-label="Chat history"></aside>
+        <div class="copilot-chat-pane">
+          <div class="copilot-top" id="copilot-masthead"></div>
+          <div class="copilot-main" id="copilot-body"></div>
+          <div class="copilot-bottom" id="copilot-composer"></div>
+        </div>
       </div>
     </section>
   `;
@@ -264,10 +273,13 @@ export async function init(params = {}) {
   ui.conversationId = params.conversation_id || null;
   ui.conversations = [];
   ui.messages = [];
+  ui.turns = [];
   ui.onboarding = null;
   ui.busy = false;
   ui.thinking = false;
   ui.error = null;
+  ui.retryTurn = null;
+  ui.historyOpen = false;
   ui.recommendationFocus = String(params.focus || '').trim() || null;
   ui.pickerOpen = null;
   ui.sessionFocus = seedFocusFromEntry(params);
@@ -315,10 +327,12 @@ export async function init(params = {}) {
 
 async function loadConversations() {
   try {
-    const list = await api.conversations(25);
+    const list = await api.conversations(100);
     ui.conversations = Array.isArray(list) ? list : [];
   } catch {
     ui.conversations = [];
+  } finally {
+    rerenderHistory();
   }
 }
 
@@ -338,7 +352,28 @@ async function loadConversation(id) {
     const res = await api.conversation(id);
     ui.conversationId = res.id;
     ui.conversationTitle = res.title || '';
-    ui.messages = Array.isArray(res.messages) ? res.messages : [];
+    ui.turns = Array.isArray(res.turns) ? res.turns : [];
+    ui.messages = attachTurnState(
+      Array.isArray(res.messages) ? res.messages : [],
+      ui.turns,
+    );
+    const retryableTurn = [...ui.turns].reverse().find(turn => ['failed', 'stopped'].includes(turn?.status));
+    if (retryableTurn) {
+      const userMessage = ui.messages.find(message => message.id === retryableTurn.user_message_id)
+        || ui.messages.find(message => message.turn_id === retryableTurn.id && message.role === 'user');
+      if (userMessage?.content) {
+        ui.retryTurn = {
+          question: userMessage.content,
+          useLive: false,
+          turnId: retryableTurn.id,
+        };
+        ui.error = retryableTurn.error || (retryableTurn.status === 'stopped'
+          ? 'This response was stopped.'
+          : 'This response did not complete.');
+      }
+    } else {
+      ui.retryTurn = null;
+    }
     if (res.focus && typeof res.focus === 'object') {
       ui.sessionFocus = normalizeClientFocus(res.focus);
     }
@@ -350,6 +385,7 @@ async function loadConversation(id) {
     ui.error = err.message;
   } finally {
     ui.busy = false;
+    ui.historyOpen = false;
     rerenderAll();
   }
 }
@@ -397,6 +433,14 @@ export function stopStreaming() {
 
 function applyChatResult(question, res) {
   ui.conversationId = res.conversation_id;
+  const turnId = String(res.turn_id || '');
+  if (turnId) {
+    const userMessage = ui.messages.find(message => message.turn_id === turnId && message.role === 'user');
+    if (userMessage) {
+      userMessage.id = res.user_message_id || userMessage.id;
+      userMessage.turn_status = res.turn_status || 'completed';
+    }
+  }
   if (res.focus && typeof res.focus === 'object') {
     ui.sessionFocus = normalizeClientFocus(res.focus);
   }
@@ -404,6 +448,9 @@ function applyChatResult(question, res) {
     ui.conversationLlm = res.llm;
   }
   ui.messages.push({
+    id: res.assistant_message_id || null,
+    turn_id: turnId || null,
+    turn_status: res.turn_status || 'completed',
     role: 'assistant',
     content: res.answer || '',
     created_at: res.created_at || new Date().toISOString(),
@@ -413,29 +460,51 @@ function applyChatResult(question, res) {
       context_trace: res.context_trace || {},
     },
   });
+  ui.retryTurn = null;
+  clearStoredDraft();
   if (!ui.conversationTitle) ui.conversationTitle = derivedTitle(question);
-  loadConversations().then(() => rerenderMasthead()).catch(() => {});
+  loadConversations().then(() => {
+    rerenderMasthead();
+    rerenderHistory();
+  }).catch(() => {});
   loadLlmOptions(ui.conversationId).then(() => rerenderMasthead()).catch(() => {});
 }
 
-async function sendMessage(question, { useLive }) {
+async function sendMessage(question, { useLive, turnId = null, retry = false } = {}) {
   if (copilotConnectionState(ui.llmOptions).status === 'unavailable') {
     ui.error = 'Connect an AI provider in Settings before starting a Copilot conversation.';
     rerenderBody();
     return;
   }
-  // Optimistic user message.
+  const durableTurnId = turnId || newClientTurnId();
+  // Optimistic user message. A retry reuses the durable turn instead of
+  // creating a duplicate user message.
   const now = new Date().toISOString();
-  ui.messages.push({ role: 'user', content: question, created_at: now, metadata: {} });
+  if (!retry) {
+    ui.messages.push({
+      id: null,
+      turn_id: durableTurnId,
+      turn_status: 'running',
+      role: 'user',
+      content: question,
+      created_at: now,
+      metadata: {},
+    });
+  } else {
+    setClientTurnStatus(durableTurnId, 'running');
+  }
   ui.thinking = true;
-  ui.streaming = { stage: 'starting', tool: '', partial: '' };
+  ui.streaming = { stage: 'starting', tool: '', partial: '', turnId: durableTurnId };
   ui.error = null;
+  ui.retryTurn = null;
+  clearStoredDraft();
   rerenderBody();
   rerenderComposer({ draft: '' });
 
   const payload = {
     question,
     conversation_id: ui.conversationId,
+    turn_id: durableTurnId,
     use_live_snapshot: !!useLive,
     plan_id: ui.planId,
     context_options: { detail_level: 'light' },
@@ -459,6 +528,10 @@ async function sendMessage(question, { useLive }) {
           if (!ui.streaming) return;
           if (event.type === 'stage') {
             ui.streaming.stage = event.stage;
+          } else if (event.type === 'turn') {
+            ui.streaming.turnId = event.turn_id || durableTurnId;
+            const optimistic = ui.messages.find(message => message.turn_id === durableTurnId && message.role === 'user');
+            if (optimistic) optimistic.id = event.user_message_id || optimistic.id;
           } else if (event.type === 'round') {
             // A new model round starts a fresh answer; drop any provisional text.
             ui.streaming.partial = '';
@@ -479,6 +552,8 @@ async function sendMessage(question, { useLive }) {
     } catch (err) {
       if (err.name === 'AbortError') {
         ui.error = 'Stopped — the response was cancelled.';
+        setClientTurnStatus(durableTurnId, 'stopped');
+        ui.retryTurn = { question, useLive, turnId: durableTurnId };
         return;
       }
       // Streaming endpoint unavailable (proxy, old server) and nothing
@@ -496,6 +571,8 @@ async function sendMessage(question, { useLive }) {
     // Transport/provider failures surface as a transient banner; they are not
     // part of the conversation and must not be persisted as assistant turns.
     ui.error = err.message;
+    setClientTurnStatus(durableTurnId, 'failed');
+    ui.retryTurn = { question, useLive, turnId: durableTurnId };
   } finally {
     streamController = null;
     ui.thinking = false;
@@ -508,9 +585,18 @@ async function sendMessage(question, { useLive }) {
 /* ─────────────  rendering  ───────────── */
 
 function rerenderAll() {
+  rerenderHistory();
   rerenderMasthead();
   rerenderBody();
   rerenderComposer();
+}
+
+function rerenderHistory() {
+  const root = $('#copilot-history');
+  const shell = $('#copilot-shell');
+  if (!root || !shell) return;
+  root.innerHTML = renderHistory();
+  shell.classList.toggle('history-open', ui.historyOpen);
 }
 
 function rerenderMasthead() {
@@ -525,17 +611,18 @@ function rerenderBody() {
   root.innerHTML = renderBody();
 }
 
-function rerenderComposer({ draft = readDraft() } = {}) {
+function rerenderComposer({ draft = readStoredDraft() } = {}) {
   const root = $('#copilot-composer');
   if (!root) return;
   const connection = copilotConnectionState(ui.llmOptions);
   root.innerHTML = renderComposer({
-    busy: ui.busy,
+    busy: ui.busy || ui.thinking,
     draft,
     disabledReason: connection.status === 'unavailable' ? 'Connect an AI provider in Settings' : '',
   });
   attachComposerBehavior(root, {
     onSubmit: ({ question, useLive }) => sendMessage(question, { useLive }),
+    onDraftChange: value => writeStoredDraft(value),
   });
   if (ui.draftFocus) {
     const ta = root.querySelector('#composer-textarea');
@@ -545,6 +632,48 @@ function rerenderComposer({ draft = readDraft() } = {}) {
     }
     ui.draftFocus = null;
   }
+}
+
+function renderHistory() {
+  return html`
+    <div class="copilot-history-head">
+      <div>
+        <span class="copilot-history-kicker">Copilot</span>
+        <h2>Chat history</h2>
+      </div>
+      <button type="button" class="copilot-history-close" data-action="close-history" aria-label="Close chat history">×</button>
+    </div>
+    <button type="button" class="copilot-history-new" data-action="new-chat">
+      <span>＋</span> New chat
+    </button>
+    <div class="copilot-history-list">
+      ${ui.conversations.length ? ui.conversations.map(renderHistoryItem) : html`
+        <p class="copilot-history-empty">Your conversations will appear here after you send a message.</p>
+      `}
+    </div>
+  `;
+}
+
+function renderHistoryItem(conversation) {
+  const active = conversation.id === ui.conversationId;
+  const count = Number(conversation.message_count || 0);
+  const status = String(conversation.last_turn_status || '');
+  const statusLabel = status === 'failed' ? 'Needs retry' : status === 'stopped' ? 'Stopped' : '';
+  return html`
+    <button
+      type="button"
+      class="copilot-history-item ${active ? 'active' : ''}"
+      data-conversation="${esc(conversation.id)}"
+      aria-current="${active ? 'page' : 'false'}"
+    >
+      <span class="copilot-history-title">${esc(conversation.title || 'Untitled chat')}</span>
+      <span class="copilot-history-meta">
+        ${conversation.updated_at ? esc(fmtRelative(conversation.updated_at)) : ''}
+        ${count ? ` · ${Math.max(1, Math.ceil(count / 2))} turn${Math.ceil(count / 2) === 1 ? '' : 's'}` : ''}
+        ${statusLabel ? ` · ${statusLabel}` : ''}
+      </span>
+    </button>
+  `;
 }
 
 function renderMasthead() {
@@ -558,15 +687,13 @@ function renderMasthead() {
   return html`
     <header class="copilot-masthead">
       <div class="copilot-masthead-top">
-        <span class="copilot-picker">
-          <button type="button" class="copilot-title-btn" data-picker="conversations" title="Conversations">
-            <span class="copilot-title-text">${esc(title)}</span>
-          </button>
-          ${ui.pickerOpen === 'conversations' ? raw(renderConversationsMenu()) : ''}
-        </span>
-        <button type="button" class="copilot-new-btn" data-action="new-chat" title="New conversation">
-          New chat
-        </button>
+        <div class="copilot-title-row">
+          <button type="button" class="copilot-history-toggle" data-action="open-history" aria-label="Open chat history">☰</button>
+          <span class="copilot-title-text">${esc(title)}</span>
+        </div>
+        <div class="copilot-masthead-actions">
+          <button type="button" class="copilot-new-btn" data-action="new-chat" title="New conversation">New chat</button>
+        </div>
       </div>
       <div class="copilot-scope-pills" role="toolbar" aria-label="Chat scope">
         ${plans.length ? html`
@@ -725,24 +852,6 @@ function renderFocusMenu() {
   `;
 }
 
-function renderConversationsMenu() {
-  return html`
-    <div class="copilot-picker-menu open" data-menu="conversations">
-      <button class="copilot-picker-item" data-conversation="__new__">
-        <span class="copilot-picker-item-meta">New conversation</span>
-        <span class="copilot-picker-item-title">Start a fresh thread</span>
-      </button>
-      ${ui.conversations.length ? html`<div class="copilot-picker-divider"></div>` : ''}
-      ${ui.conversations.map(c => html`
-        <button class="copilot-picker-item ${c.id === ui.conversationId ? 'active' : ''}" data-conversation="${c.id}">
-          <span class="copilot-picker-item-meta">${c.updated_at ? fmtRelative(c.updated_at) : ''}</span>
-          <span class="copilot-picker-item-title">${esc(c.title || c.last_message_preview || 'Untitled')}</span>
-        </button>
-      `)}
-    </div>
-  `;
-}
-
 function renderPlansMenu(plans, currentId) {
   return html`
     <div class="copilot-picker-menu open" data-menu="plans">
@@ -772,7 +881,12 @@ function renderBody() {
     <div class="copilot-scroll">
       <div class="copilot-thread-wrap">
         ${raw(renderThread(ui.messages, { thinking: ui.thinking, streaming: ui.streaming }))}
-        ${ui.error ? html`<p class="error-banner" role="status">${esc(ui.error)}</p>` : ''}
+        ${ui.error ? html`
+          <div class="error-banner copilot-error-banner" role="status">
+            <span>${esc(ui.error)}</span>
+            ${ui.retryTurn ? html`<button type="button" data-action="retry-turn">Retry</button>` : ''}
+          </div>
+        ` : ''}
       </div>
     </div>
   `;
@@ -898,14 +1012,70 @@ function renderProfileReadinessHint(readiness) {
 
 /* ─────────────  helpers  ───────────── */
 
-function readDraft() {
-  const ta = document.querySelector('#composer-textarea');
-  return ta ? ta.value : '';
+function draftStorageScope() {
+  let workspace = 'default';
+  try {
+    workspace = window.sessionStorage.getItem('buildwealth.active_workspace_id') || 'default';
+  } catch {
+    // Storage can be unavailable in private contexts.
+  }
+  return `${workspace}:${ui.conversationId || '__new__'}`;
+}
+
+function readDraftMap() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(COPILOT_DRAFTS_STORAGE_KEY) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function readStoredDraft() {
+  return String(readDraftMap()[draftStorageScope()] || '');
+}
+
+function writeStoredDraft(value) {
+  try {
+    const drafts = readDraftMap();
+    const scope = draftStorageScope();
+    if (String(value || '')) drafts[scope] = String(value);
+    else delete drafts[scope];
+    window.localStorage.setItem(COPILOT_DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
+  } catch {
+    // Draft persistence is best effort; the live composer remains usable.
+  }
+}
+
+function clearStoredDraft() {
+  writeStoredDraft('');
 }
 
 function fillDraft(text) {
+  writeStoredDraft(text);
   ui.draftFocus = true;
   rerenderComposer({ draft: text });
+}
+
+function newClientTurnId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `turn_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function attachTurnState(messages, turns) {
+  const statusByTurn = new Map(
+    (turns || []).map(turn => [String(turn?.id || ''), String(turn?.status || '')]),
+  );
+  return messages.map(message => ({
+    ...message,
+    turn_status: statusByTurn.get(String(message?.turn_id || '')) || message?.turn_status || '',
+  }));
+}
+
+function setClientTurnStatus(turnId, status) {
+  for (const message of ui.messages) {
+    if (message.turn_id === turnId) message.turn_status = status;
+  }
 }
 
 function nextOnboardingStep(status) {
@@ -1246,12 +1416,17 @@ function attachHandlers() {
       ui.conversationId = null;
       ui.conversationTitle = '';
       ui.messages = [];
+      ui.turns = [];
+      ui.error = null;
+      ui.retryTurn = null;
+      ui.historyOpen = false;
       ui.sessionFocus = defaultSessionFocus();
       resetConversationLlmToWorkspaceDefault();
       loadLlmOptions(null).then(() => rerenderMasthead()).catch(() => {});
       rerenderAll();
       return;
     }
+    ui.historyOpen = false;
     rerenderMasthead();
     await loadConversation(id);
   });
@@ -1267,11 +1442,34 @@ function attachHandlers() {
     stopStreaming();
   });
 
+  delegate(page, 'click', '[data-action="open-history"]', () => {
+    ui.historyOpen = true;
+    rerenderHistory();
+  });
+
+  delegate(page, 'click', '[data-action="close-history"]', () => {
+    ui.historyOpen = false;
+    rerenderHistory();
+  });
+
+  delegate(page, 'click', '[data-action="retry-turn"]', () => {
+    if (!ui.retryTurn) return;
+    const retryTurn = { ...ui.retryTurn };
+    sendMessage(retryTurn.question, {
+      useLive: retryTurn.useLive,
+      turnId: retryTurn.turnId,
+      retry: true,
+    });
+  });
+
   delegate(page, 'click', '[data-action="new-chat"]', () => {
     ui.conversationId = null;
     ui.conversationTitle = '';
     ui.messages = [];
+    ui.turns = [];
     ui.error = null;
+    ui.retryTurn = null;
+    ui.historyOpen = false;
     ui.sessionFocus = defaultSessionFocus();
     resetConversationLlmToWorkspaceDefault();
     loadLlmOptions(null).then(() => rerenderMasthead()).catch(() => {});

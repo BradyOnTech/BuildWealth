@@ -7,6 +7,23 @@ import { dirname, resolve } from 'node:path';
 import { buildPlanReviewPrompt } from '../views/copilot.js';
 import { renderThread } from '../views/copilot/thread.js';
 
+test('copilot thread shows durable stopped and failed turn state', () => {
+  const html = String(renderThread([
+    {
+      id: 'message-1',
+      turn_id: 'turn-1',
+      turn_status: 'failed',
+      role: 'user',
+      content: 'Try this question',
+      created_at: '2026-07-14T12:00:00.000Z',
+      metadata: {},
+    },
+  ]));
+
+  assert.match(html, /turn-status failed/);
+  assert.match(html, />Failed</);
+});
+
 test('copilot thread renders financial profile draft review card', () => {
   const html = String(renderThread([
     {

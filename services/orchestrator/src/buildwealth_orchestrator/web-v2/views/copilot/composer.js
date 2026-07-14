@@ -36,7 +36,7 @@ export function renderComposer({ busy = false, draft = '', useLive = false, disa
   `;
 }
 
-export function attachComposerBehavior(rootEl, { onSubmit }) {
+export function attachComposerBehavior(rootEl, { onSubmit, onDraftChange = () => {} }) {
   const textarea = rootEl.querySelector('#composer-textarea');
   const form     = rootEl.querySelector('#composer');
   if (!textarea || !form) return;
@@ -44,7 +44,10 @@ export function attachComposerBehavior(rootEl, { onSubmit }) {
   // Focus + auto-grow.
   textarea.focus();
   autoGrow(textarea);
-  textarea.addEventListener('input', () => autoGrow(textarea));
+  textarea.addEventListener('input', () => {
+    autoGrow(textarea);
+    onDraftChange(textarea.value);
+  });
 
   textarea.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {

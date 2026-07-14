@@ -41,7 +41,7 @@ async function staticResponse(pathname) {
   };
 }
 
-function installBaseRoutes(page, handleChatStream) {
+function installBaseRoutes(page, handleChatStream, { conversations = [], conversationById = {} } = {}) {
   return page.route('**/*', async route => {
     const request = route.request();
     const url = new URL(request.url());
@@ -59,7 +59,12 @@ function installBaseRoutes(page, handleChatStream) {
       return;
     }
     if (url.pathname === '/api/copilot/conversations') {
-      await route.fulfill(jsonResponse([]));
+      await route.fulfill(jsonResponse(conversations));
+      return;
+    }
+    if (url.pathname.startsWith('/api/copilot/conversations/') && request.method() === 'GET') {
+      const id = decodeURIComponent(url.pathname.split('/').pop());
+      await route.fulfill(jsonResponse(conversationById[id] || {}, conversationById[id] ? 200 : 404));
       return;
     }
     if (url.pathname === '/api/onboarding/status') {
@@ -127,4 +132,105 @@ test('Copilot stream errors surface as a banner, not an assistant message', asyn
   await page.locator('.error-banner').getByText(/upstream unavailable/).waitFor({ state: 'visible' });
   // The failed turn must not be persisted as an assistant reply.
   assert.equal(await page.locator('.message.assistant').count(), 0);
+});
+
+test('Copilot history reopens old chats and preserves drafts per conversation', async ({ page }) => {
+  const oldChat = {
+    id: 'conv-old',
+    title: 'Retirement contribution review',
+    created_at: '2026-07-10T12:00:00.000Z',
+    updated_at: '2026-07-12T12:00:00.000Z',
+    last_message_preview: 'Increasing the contribution improves plan strength.',
+    message_count: 2,
+    last_turn_status: 'completed',
+  };
+  await installBaseRoutes(page, async route => {
+    await route.fulfill(sseResponse([]));
+  }, {
+    conversations: [oldChat],
+    conversationById: {
+      'conv-old': {
+        ...oldChat,
+        focus: {},
+        llm: {},
+        turns: [{
+          id: 'turn-old',
+          status: 'completed',
+          user_message_id: 'user-old',
+          assistant_message_id: 'assistant-old',
+        }],
+        messages: [
+          {
+            id: 'user-old',
+            turn_id: 'turn-old',
+            role: 'user',
+            content: 'Should I increase my retirement contribution?',
+            created_at: '2026-07-10T12:00:00.000Z',
+            metadata: {},
+          },
+          {
+            id: 'assistant-old',
+            turn_id: 'turn-old',
+            role: 'assistant',
+            content: 'Increasing the contribution improves plan strength.',
+            created_at: '2026-07-10T12:01:00.000Z',
+            metadata: {},
+          },
+        ],
+      },
+    },
+  });
+
+  await page.goto('http://buildwealth-v2.test/#copilot');
+  const composer = page.getByPlaceholder(/Message Copilot/);
+  await composer.fill('Unsent new-chat question');
+
+  await page.locator('.copilot-history-item', { hasText: 'Retirement contribution review' }).click();
+  await page.getByText('Increasing the contribution improves plan strength.').waitFor();
+  await composer.fill('Unsent follow-up for the old chat');
+
+  await page.locator('.copilot-history-new').click();
+  assert.equal(await composer.inputValue(), 'Unsent new-chat question');
+
+  await page.locator('.copilot-history-item', { hasText: 'Retirement contribution review' }).click();
+  await page.getByText('Increasing the contribution improves plan strength.').waitFor();
+  assert.equal(await composer.inputValue(), 'Unsent follow-up for the old chat');
+});
+
+test('Copilot history opens as a usable drawer on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const conversation = {
+    id: 'conv-mobile',
+    title: 'Mobile history chat',
+    created_at: '2026-07-10T12:00:00.000Z',
+    updated_at: '2026-07-12T12:00:00.000Z',
+    last_message_preview: '',
+    message_count: 0,
+    last_turn_status: '',
+  };
+  await installBaseRoutes(page, async route => route.fulfill(sseResponse([])), {
+    conversations: [conversation],
+    conversationById: {
+      'conv-mobile': { ...conversation, focus: {}, llm: {}, turns: [], messages: [] },
+    },
+  });
+
+  await page.goto('http://buildwealth-v2.test/#copilot');
+  await page.getByRole('button', { name: 'Open chat history' }).click();
+
+  const history = page.locator('#copilot-history');
+  await history.getByText('Mobile history chat').waitFor();
+  await page.waitForFunction(() => {
+    const element = document.querySelector('#copilot-history');
+    return element && element.getBoundingClientRect().x >= 0;
+  });
+  const box = await history.boundingBox();
+  assert.ok(box && box.x >= 0 && box.x < 30, 'history drawer should be inside the viewport');
+
+  await history.getByText('Mobile history chat').click();
+  await page.getByRole('button', { name: 'Open chat history' }).waitFor();
+  await page.waitForFunction(() => {
+    const element = document.querySelector('#copilot-history');
+    return element && element.getBoundingClientRect().right <= 25;
+  });
 });
