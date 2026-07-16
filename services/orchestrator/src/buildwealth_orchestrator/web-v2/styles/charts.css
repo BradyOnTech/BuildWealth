@@ -207,6 +207,51 @@
   color: var(--ink-strong);
 }
 
+/* Path cloud — individual Monte Carlo trials as faint ink strokes beneath
+   the percentile fan. Failed trials bleed oxblood so risk reads at a glance. */
+.chart-cloud-path {
+  fill: none;
+  stroke: var(--forest);
+  stroke-width: 0.8;
+  stroke-opacity: 0.14;
+  stroke-linejoin: round;
+}
+
+.chart-cloud-path-failed {
+  stroke: var(--oxblood);
+  stroke-opacity: 0.30;
+}
+
+/* Distribution histograms (terminal outcomes, failure years) */
+.chart-hist-bar {
+  fill: var(--forest);
+  fill-opacity: 0.55;
+}
+
+.chart-hist-bar-short {
+  fill: var(--oxblood);
+  fill-opacity: 0.62;
+}
+
+.chart-marker.chart-marker-median { stroke: var(--ink-strong); stroke-dasharray: none; }
+.chart-marker-label.chart-marker-median { fill: var(--ink-strong); }
+.chart-marker.chart-marker-quiet { stroke: var(--ink-faint); }
+.chart-marker-label.chart-marker-quiet { fill: var(--ink-soft); }
+
+/* Stacked composition by tax treatment */
+.chart-area-taxable { fill: var(--brass); fill-opacity: 0.34; }
+.chart-area-tax-deferred { fill: var(--forest); fill-opacity: 0.30; }
+.chart-area-tax-free { fill: var(--forest); fill-opacity: 0.58; }
+.chart-area-topline { stroke-width: 1.2; }
+
+.legend-swatch.area-taxable { background: rgba(168, 132, 44, 0.44); }
+.legend-swatch.area-tax-deferred { background: rgba(45, 93, 62, 0.34); }
+.legend-swatch.area-tax-free { background: rgba(45, 93, 62, 0.62); }
+.legend-swatch.cloud-funded { background: rgba(45, 93, 62, 0.30); height: 2px; border-radius: 0; }
+.legend-swatch.cloud-failed { background: rgba(125, 46, 46, 0.45); height: 2px; border-radius: 0; }
+.legend-swatch.hist-terminal { background: rgba(45, 93, 62, 0.55); }
+.legend-swatch.hist-short { background: rgba(125, 46, 46, 0.62); }
+
 /* Life events on the fan — softer than the milestone markers so the
    money's own milestones (Coast FI, Retirement) keep visual rank. */
 .chart-marker.chart-marker-event {

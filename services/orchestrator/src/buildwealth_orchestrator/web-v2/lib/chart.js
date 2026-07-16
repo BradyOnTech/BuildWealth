@@ -76,6 +76,7 @@ export function fanChart({
   lines = [],
   markers = [],
   guides = [],
+  cloud = null,
   width = 720,
   height = 300,
   formatX = String,
@@ -108,6 +109,32 @@ export function fanChart({
   if (yMax <= yMin) return '';
   const x = linearScale([xValues[0], xValues[xValues.length - 1]], [plot.left, plot.right]);
   const y = linearScale([yMin, yMax * 1.04], [plot.bottom, plot.top]);
+
+  // Path cloud: individual simulated trajectories drawn as faint strokes
+  // beneath the percentile bands. cloud = { xs: [...], paths: [{ values, failed }] }.
+  // Values are clamped to the band domain's ceiling so a runaway trial
+  // thickens the top edge instead of flattening the fan.
+  let cloudShapes = '';
+  if (cloud && Array.isArray(cloud.paths) && Array.isArray(cloud.xs) && cloud.xs.length > 1) {
+    const yCeil = yMax * 1.04;
+    cloudShapes = cloud.paths
+      .map(path => {
+        const values = Array.isArray(path?.values) ? path.values : [];
+        const points = cloud.xs
+          .map((xValue, index) => {
+            const value = Number(values[index]);
+            return Number.isFinite(value) && Number.isFinite(Number(xValue))
+              ? [x(Number(xValue)), y(Math.min(value, yCeil))]
+              : null;
+          })
+          .filter(Boolean);
+        const d = linePath(points);
+        return d
+          ? `<path class="chart-cloud-path${path.failed ? ' chart-cloud-path-failed' : ''}" d="${d}"></path>`
+          : '';
+      })
+      .join('');
+  }
 
   const bandShapes = bands
     .map(band => {
@@ -171,6 +198,7 @@ export function fanChart({
       yAxis({ ticks: niceTicks(yMin, yMax, yTickCount), y, plot, formatY }),
       xAxis({ values: xValues, x, plot, formatX }),
       guideShapes,
+      cloudShapes,
       bandShapes,
       lineShapes,
       markerShapes,
@@ -248,13 +276,13 @@ export function barChart({
    crosshair readout. Each point carries its viewBox x (px) so hover code
    never re-derives scales; values are rounded to keep the attribute small. */
 
-function hoverAttr({ xKey, formatY, plot, labels, points }) {
+export function hoverAttr({ xKey, formatY, plot, labels, points }) {
   if (!points.length) return '';
   const payload = { xKey, formatY, plot: { t: plot.top, b: plot.bottom }, labels, points };
   return ` data-chart-hover="${esc(JSON.stringify(payload))}"`;
 }
 
-function hoverLabels(keys, seriesLabels = {}) {
+export function hoverLabels(keys, seriesLabels = {}) {
   const labels = {};
   for (const key of keys) labels[key] = seriesLabels[key] || defaultSeriesLabel(key);
   return labels;
@@ -277,11 +305,11 @@ function defaultSeriesLabel(key) {
   return String(key).replace(/_usd$/, '').replace(/_/g, ' ');
 }
 
-function roundHover(value) {
+export function roundHover(value) {
   return Math.round(value * 100) / 100;
 }
 
-function plotArea(width, height) {
+export function plotArea(width, height) {
   return {
     top: FAN_MARGIN.top,
     right: width - FAN_MARGIN.right,
@@ -290,7 +318,7 @@ function plotArea(width, height) {
   };
 }
 
-function seriesPoints(rows, xKey, yKey, x, y) {
+export function seriesPoints(rows, xKey, yKey, x, y) {
   return rows
     .map(row => {
       const value = Number(row[yKey]);
@@ -299,7 +327,7 @@ function seriesPoints(rows, xKey, yKey, x, y) {
     .filter(Boolean);
 }
 
-function yAxis({ ticks, y, plot, formatY }) {
+export function yAxis({ ticks, y, plot, formatY }) {
   return ticks
     .map(tick => {
       const ty = rnd(y(tick));
@@ -311,7 +339,7 @@ function yAxis({ ticks, y, plot, formatY }) {
     .join('');
 }
 
-function xAxis({ values, x, plot, formatX }) {
+export function xAxis({ values, x, plot, formatX }) {
   const step = Math.max(1, Math.ceil(values.length / 6));
   const last = values[values.length - 1];
   const picked = values
@@ -326,7 +354,7 @@ function xAxis({ values, x, plot, formatX }) {
   );
 }
 
-function svgShell({ width, height, ariaLabel, content, hover = '' }) {
+export function svgShell({ width, height, ariaLabel, content, hover = '' }) {
   return (
     `<svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(ariaLabel)}" preserveAspectRatio="xMidYMid meet"${hover}>` +
     `<title>${esc(ariaLabel)}</title>${content}</svg>`
