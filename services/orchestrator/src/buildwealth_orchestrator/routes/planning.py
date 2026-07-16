@@ -175,6 +175,26 @@ async def plan_scenarios(
     if request.simulation_seed is not None:
         planning_settings_for_run["simulation_seed"] = request.simulation_seed
 
+    # Per-request assumption overrides (Simulation Studio sliders). A baseline
+    # return override shifts optimistic/conservative by the same delta so the
+    # scenario spread keeps its shape around the new center.
+    assumption_overrides_provided = any(
+        value is not None
+        for value in (request.expected_return_baseline, request.return_volatility, request.inflation_rate)
+    )
+    if assumption_overrides_provided:
+        engine_before = service.scenario_engine
+        if request.expected_return_baseline is not None:
+            delta = float(request.expected_return_baseline) - float(engine_before.baseline_return)
+            planning_settings_for_run["expected_return_baseline"] = float(request.expected_return_baseline)
+            planning_settings_for_run["expected_return_optimistic"] = float(engine_before.optimistic_return) + delta
+            planning_settings_for_run["expected_return_conservative"] = float(engine_before.conservative_return) + delta
+        if request.return_volatility is not None:
+            planning_settings_for_run["return_volatility"] = float(request.return_volatility)
+        if request.inflation_rate is not None:
+            planning_settings_for_run["inflation_rate"] = float(request.inflation_rate)
+        service = m.build_plan_simulation_service_for_plan_settings(planning_settings_for_run)
+
     resolved_start_year = m.utc_now().year
     household_settings = m._resolve_household_settings(
         plan_settings=planning_settings_for_run,

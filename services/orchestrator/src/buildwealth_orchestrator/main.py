@@ -1910,7 +1910,11 @@ def build_scenario_engine_for_plan_settings(plan_settings: dict[str, Any]) -> Sc
             if conservative_return is not None
             else settings.planner_expected_return_conservative
         ),
-        return_volatility=settings.planner_return_volatility,
+        return_volatility=(
+            float(plan_settings["return_volatility"])
+            if plan_settings.get("return_volatility") is not None
+            else settings.planner_return_volatility
+        ),
         inflation=(
             float(inflation_rate)
             if inflation_rate is not None

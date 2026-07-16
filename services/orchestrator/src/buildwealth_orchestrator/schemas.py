@@ -195,6 +195,9 @@ class ScenarioRequest(BaseModel):
     roth_conversion_annual_amount_usd: float | None = Field(default=None, ge=0)
     roth_conversion_start_age: int | None = Field(default=None, ge=0, le=120)
     roth_conversion_end_age: int | None = Field(default=None, ge=0, le=120)
+    expected_return_baseline: float | None = Field(default=None, ge=-0.5, le=0.5)
+    return_volatility: float | None = Field(default=None, ge=0, le=0.6)
+    inflation_rate: float | None = Field(default=None, ge=-0.05, le=0.25)
 
 
 class IncomeProjectionIncomeInput(BaseModel):

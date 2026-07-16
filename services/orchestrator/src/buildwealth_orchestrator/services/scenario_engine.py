@@ -1655,6 +1655,7 @@ class ScenarioEngine:
     ) -> dict[str, Any]:
         outcomes: list[float] = []
         paths: list[list[float]] = []
+        path_failed: list[bool] = []
         first_failure_years: list[int] = []
         drag = min(max(float(effective_tax_rate), 0.0), 0.5)
         rng = random.Random(simulation_seed)
@@ -1685,6 +1686,7 @@ class ScenarioEngine:
                 path.append(value)
             if first_failure_year is not None:
                 first_failure_years.append(first_failure_year)
+            path_failed.append(first_failure_year is not None)
             outcomes.append(value)
             paths.append(path)
 
@@ -1714,6 +1716,14 @@ class ScenarioEngine:
                 first_failure_years=first_failure_years,
                 runs=len(paths),
                 funded_trial_rate=funded_trial_rate,
+            ),
+            "sampled_paths": self._monte_carlo_sampled_paths(
+                paths=paths,
+                path_failed=path_failed,
+                profiles=profiles,
+            ),
+            "terminal_distribution": self._monte_carlo_terminal_distribution(
+                sorted_outcomes=outcomes,
             ),
         }
         for key, value in percentile_values.items():
@@ -1785,6 +1795,87 @@ class ScenarioEngine:
                 )
             rows.append(row)
         return rows
+
+    @staticmethod
+    def _monte_carlo_sampled_paths(
+        *,
+        paths: list[list[float]],
+        path_failed: list[bool],
+        profiles: list[dict[str, float | int]],
+        sample_size: int = 60,
+    ) -> dict[str, Any]:
+        """A distribution-representative subset of full trial paths (the
+        "path cloud"). Trials are ordered by terminal value and sampled at
+        even quantile steps so the subset spans best-to-worst, including
+        failed trials, without shipping every run over the wire."""
+        usable = [
+            (path, bool(path_failed[index]) if index < len(path_failed) else False)
+            for index, path in enumerate(paths)
+            if path
+        ]
+        years = [int(profile["year"]) for profile in profiles]
+        ages = [int(profile["age"]) for profile in profiles]
+        if not usable:
+            return {"sample_size": 0, "total_runs": len(paths), "years": years, "ages": ages, "paths": []}
+        usable.sort(key=lambda item: item[0][-1])
+        count = min(sample_size, len(usable))
+        step = (len(usable) - 1) / max(1, count - 1)
+        picked_indices = sorted({round(index * step) for index in range(count)})
+        sampled = [
+            {
+                "terminal_usd": round(usable[index][0][-1], 2),
+                "failed": usable[index][1],
+                "values_usd": [round(value) for value in usable[index][0]],
+            }
+            for index in picked_indices
+        ]
+        return {
+            "sample_size": len(sampled),
+            "total_runs": len(paths),
+            "years": years,
+            "ages": ages,
+            "paths": sampled,
+        }
+
+    @staticmethod
+    def _monte_carlo_terminal_distribution(
+        *,
+        sorted_outcomes: list[float],
+        bin_count: int = 24,
+    ) -> dict[str, Any]:
+        """Histogram of terminal portfolio values across all trials. Bins run
+        from the minimum outcome to P99 so a single runaway trial cannot
+        flatten the shape; outcomes above P99 land in the last bin."""
+        if not sorted_outcomes:
+            return {"bin_count": 0, "min_usd": 0.0, "max_usd": 0.0, "bins": []}
+        total = len(sorted_outcomes)
+        lo = float(sorted_outcomes[0])
+        hi_cap = _percentile_value(sorted_outcomes, 0.99)
+        hi = float(sorted_outcomes[-1])
+        span = max(hi_cap - lo, 1.0)
+        counts = [0] * bin_count
+        for value in sorted_outcomes:
+            index = int(((value - lo) / span) * bin_count)
+            counts[min(max(index, 0), bin_count - 1)] += 1
+        # The last bin also holds the >P99 tail; its edge stays at P99 so one
+        # runaway trial can't smear a wide bar across the axis. max_usd carries
+        # the true extreme for captions.
+        bins = [
+            {
+                "lo_usd": round(lo + (span / bin_count) * index, 2),
+                "hi_usd": round(lo + (span / bin_count) * (index + 1), 2),
+                "count": count,
+                "share_pct": round((count / total) * 100, 2),
+            }
+            for index, count in enumerate(counts)
+        ]
+        return {
+            "bin_count": bin_count,
+            "min_usd": round(lo, 2),
+            "max_usd": round(hi, 2),
+            "p99_usd": round(float(hi_cap), 2),
+            "bins": bins,
+        }
 
     @staticmethod
     def _monte_carlo_failure_analysis(
