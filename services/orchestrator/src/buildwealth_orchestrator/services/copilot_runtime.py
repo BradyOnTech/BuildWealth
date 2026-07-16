@@ -57,6 +57,11 @@ class ConversationStore:
                 "provider": "",
                 "model": "",
             },
+            "risk_lens": {
+                "mode": "profile",
+                "posture": None,
+                "schema_version": 1,
+            },
             "messages": [],
             "turns": [],
         }
@@ -76,6 +81,10 @@ class ConversationStore:
         """Upgrade legacy conversation documents in memory without losing content."""
         conversation["schema_version"] = CONVERSATION_SCHEMA_VERSION
         conversation.setdefault("archived_at", None)
+        risk_lens = conversation.get("risk_lens")
+        if not isinstance(risk_lens, dict):
+            risk_lens = {"mode": "profile", "posture": None, "schema_version": 1}
+        conversation["risk_lens"] = risk_lens
         messages = conversation.get("messages")
         if not isinstance(messages, list):
             messages = []
@@ -358,6 +367,23 @@ class ConversationStore:
         self.save(conversation)
         return conversation
 
+    def update_risk_lens(
+        self,
+        conversation_id: str,
+        risk_lens: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Persist only the reversible Copilot lens, never Profile risk tolerance."""
+        conversation = self.get(conversation_id)
+        mode = str(risk_lens.get("mode") or "profile").strip().lower()
+        posture = str(risk_lens.get("posture") or "").strip().lower() or None
+        conversation["risk_lens"] = {
+            "mode": "override" if mode == "override" else "profile",
+            "posture": posture,
+            "schema_version": 1,
+        }
+        self.save(conversation)
+        return conversation
+
     def update_details(
         self,
         conversation_id: str,
@@ -613,6 +639,8 @@ class FinancialCopilot:
         conversation_store: ConversationStore | None = None,
         llm_client: ChatToolClient | None = None,
         progress_cb: Any = None,
+        assistant_metadata: dict[str, Any] | None = None,
+        fallback_answer: str | None = None,
     ) -> dict[str, Any]:
         store = conversation_store or self.conversation_store
         client = llm_client or self.llm_client
@@ -730,20 +758,23 @@ class FinancialCopilot:
                     "Try asking a narrower question or run a portfolio sync first."
                 )
         else:
-            answer = (
+            answer = fallback_answer or (
                 "Copilot is running in fallback mode because an LLM API key is not configured. "
                 "I can still use direct endpoints for sync/import/planning, but conversational reasoning is limited."
             )
 
+        message_metadata = {
+            "tool_calls": tool_traces,
+            "model": model_name,
+            "context_trace": context_trace or {},
+        }
+        if isinstance(assistant_metadata, dict):
+            message_metadata.update(assistant_metadata)
         assistant_message = store.append_message(
             conversation,
             role="assistant",
             content=answer,
-            metadata={
-                "tool_calls": tool_traces,
-                "model": model_name,
-                "context_trace": context_trace or {},
-            },
+            metadata=message_metadata,
             turn_id=durable_turn_id,
         )
         store.set_turn_status(

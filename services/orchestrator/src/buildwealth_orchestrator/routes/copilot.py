@@ -322,6 +322,24 @@ async def _copilot_chat_pipeline(
         except FileNotFoundError as exc:
             raise m.HTTPException(status_code=404, detail=str(exc)) from exc
 
+        profile_payload = m.get_financial_profile_payload(resolved_services.financial_profile_store)
+        request_risk_lens = (
+            request.risk_lens.model_dump(mode="json") if request.risk_lens is not None else None
+        )
+        resolved_risk_lens = m.resolve_risk_lens(
+            request_risk_lens,
+            stored=conversation.get("risk_lens") if isinstance(conversation, dict) else None,
+            profile=profile_payload,
+        )
+        if request.persist_risk_lens and request_risk_lens is not None:
+            conversation = store.update_risk_lens(conversation["id"], request_risk_lens)
+        compare_all = (
+            request.risk_comparison.mode == "all"
+            or bool(resolved_risk_lens.get("is_override"))
+            or m.question_requests_risk_comparison(request.question)
+        )
+        risk_comparison = None
+
         workspace_settings = resolved_services.settings_store.load_raw()
         request_llm_payload = (
             request.llm.model_dump(exclude_unset=True) if request.llm is not None else None
@@ -412,6 +430,20 @@ async def _copilot_chat_pipeline(
                     }
                 )
 
+        if compare_all:
+            try:
+                holdings_payload = resolved_services.portfolio_store.get_holdings()
+            except Exception:
+                holdings_payload = {}
+            risk_comparison = m.build_risk_comparison(
+                question=request.question,
+                profile=profile_payload,
+                holdings=holdings_payload,
+                lens=resolved_risk_lens,
+                plan_id=request.plan_id or resolved_services.plan_workspace.get_active_plan_id(),
+                source_turn_id=str(turn.get("id") or "") if isinstance(turn, dict) else request.turn_id,
+            )
+
         conv_token = m.current_copilot_conversation_id.set(str(conversation.get("id") or ""))
         boost_enabled = bool(getattr(m.settings, "copilot_retrieval_focus_boost", True))
         try:
@@ -465,6 +497,8 @@ async def _copilot_chat_pipeline(
                 focus=resolved_focus_public,
                 effective_focus=effective_from_assembly,
             )
+            if risk_comparison is not None:
+                contextual_brief += m.risk_comparison_prompt_block(risk_comparison)
             context_trace = (
                 dict(assembled_context.get("trace"))
                 if isinstance(assembled_context, dict) and isinstance(assembled_context.get("trace"), dict)
@@ -489,6 +523,17 @@ async def _copilot_chat_pipeline(
                 retrieval_focus_boost=boost_enabled,
                 detail_level=context_options.detail_level,
             )
+            context_trace["risk_lens_applied"] = {
+                **resolved_risk_lens,
+                "comparison_available": m.question_supports_risk_comparison(request.question),
+                "comparison_generated": risk_comparison is not None,
+                "input_fingerprint": risk_comparison.get("input_fingerprint") if risk_comparison else None,
+                "comparison_id": risk_comparison.get("id") if risk_comparison else None,
+                "comparison_schema_version": risk_comparison.get("schema_version") if risk_comparison else None,
+                "policy_version": risk_comparison.get("policy_version") if risk_comparison else None,
+                "adapter_versions": risk_comparison.get("adapter_versions") if risk_comparison else {},
+                "source_turn_id": risk_comparison.get("source_turn_id") if risk_comparison else request.turn_id,
+            }
             try:
                 chat_kwargs: dict[str, m.Any] = dict(
                     question=request.question,
@@ -498,6 +543,22 @@ async def _copilot_chat_pipeline(
                     conversation_store=store,
                     llm_client=turn_llm_client,
                 )
+                try:
+                    chat_parameters = inspect.signature(m.copilot.chat).parameters
+                except (TypeError, ValueError):
+                    chat_parameters = {}
+                if "assistant_metadata" in chat_parameters:
+                    chat_kwargs["assistant_metadata"] = {
+                        "risk_lens": resolved_risk_lens,
+                        "risk_comparison": risk_comparison,
+                        "risk_replay_context": {
+                            "question": request.question,
+                            "plan_id": request.plan_id,
+                            "use_live_snapshot": request.use_live_snapshot,
+                        },
+                    }
+                if risk_comparison is not None and "fallback_answer" in chat_parameters:
+                    chat_kwargs["fallback_answer"] = m.risk_comparison_fallback_answer(risk_comparison)
                 if turn is not None:
                     chat_kwargs["turn"] = turn
                 if progress is not None:
@@ -556,6 +617,21 @@ async def _copilot_chat_pipeline(
                     )
                 result["focus"] = response_focus
                 result["llm"] = m.ConversationLlm(**resolved_llm)
+                result["risk_lens"] = resolved_risk_lens
+                result["risk_comparison"] = risk_comparison
+                if conversation_id:
+                    store.update_latest_assistant_metadata(
+                        conversation_id,
+                        {
+                            "risk_lens": resolved_risk_lens,
+                            "risk_comparison": risk_comparison,
+                            "risk_replay_context": {
+                                "question": request.question,
+                                "plan_id": request.plan_id,
+                                "use_live_snapshot": request.use_live_snapshot,
+                            },
+                        },
+                    )
             except FileNotFoundError as exc:
                 raise m.HTTPException(status_code=404, detail=str(exc)) from exc
             except m.httpx.HTTPStatusError as exc:

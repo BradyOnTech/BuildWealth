@@ -377,6 +377,14 @@ from buildwealth_orchestrator.services.buildwealth_context import (
     utc_now_iso as context_utc_now_iso,
 )
 from buildwealth_orchestrator.services.copilot_prompt_brief import build_copilot_prompt_brief
+from buildwealth_orchestrator.services.risk_lens import (
+    build_risk_comparison,
+    question_requests_risk_comparison,
+    question_supports_risk_comparison,
+    resolve_risk_lens,
+    risk_comparison_fallback_answer,
+    risk_comparison_prompt_block,
+)
 from buildwealth_orchestrator.services.session_focus import (
     FOCUS_DOMAIN_CATALOG,
     EffectiveFocus,

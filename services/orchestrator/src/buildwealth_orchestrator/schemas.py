@@ -1968,6 +1968,17 @@ class ConversationLlmUpdateRequest(BaseModel):
     model: str | None = None
 
 
+class CopilotRiskLens(BaseModel):
+    """A reversible per-conversation view; it never mutates Profile by itself."""
+
+    mode: Literal["profile", "override"] = "profile"
+    posture: Literal["conservative", "moderate", "aggressive"] | None = None
+
+
+class CopilotRiskComparisonRequest(BaseModel):
+    mode: Literal["none", "all"] = "none"
+
+
 class CopilotChatRequest(BaseModel):
     question: str
     conversation_id: str | None = None
@@ -1979,6 +1990,9 @@ class CopilotChatRequest(BaseModel):
     persist_focus: bool = True
     llm: ConversationLlmUpdateRequest | None = None
     persist_llm: bool = True
+    risk_lens: CopilotRiskLens | None = None
+    persist_risk_lens: bool = True
+    risk_comparison: CopilotRiskComparisonRequest = Field(default_factory=CopilotRiskComparisonRequest)
 
 
 class CopilotToolTrace(BaseModel):
@@ -2001,6 +2015,8 @@ class CopilotChatResponse(BaseModel):
     created_at: datetime
     focus: SessionFocus | None = None
     llm: ConversationLlm | None = None
+    risk_lens: dict[str, Any] = Field(default_factory=dict)
+    risk_comparison: dict[str, Any] | None = None
 
 
 class CopilotConversationSummary(BaseModel):
@@ -2024,6 +2040,7 @@ class CopilotConversationResponse(BaseModel):
     turns: list[dict[str, Any]] = Field(default_factory=list)
     focus: SessionFocus = Field(default_factory=SessionFocus)
     llm: ConversationLlm | None = None
+    risk_lens: dict[str, Any] = Field(default_factory=dict)
 
 
 class CopilotConversationUpdateRequest(BaseModel):

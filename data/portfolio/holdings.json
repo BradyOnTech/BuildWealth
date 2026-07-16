@@ -931,13 +931,13 @@
   "unpriced_cost_basis": 0.0,
   "performance": {
     "start_date": "2024-01-05T00:00:00+00:00",
-    "as_of": "2026-07-13T18:38:53.799955+00:00",
-    "period_days": 921,
+    "as_of": "2026-07-15T20:00:06.983678+00:00",
+    "period_days": 923,
     "gross_contributions": 1014544.7,
     "net_contributions": 1014544.7,
     "ending_value": 498984.5,
     "twr_return_pct": 10.13,
-    "twr_annualized_return_pct": 3.9,
+    "twr_annualized_return_pct": 3.89,
     "xirr_annualized_return_pct": null,
     "realized_gains_usd": 0.0,
     "unrealized_gains_usd": 11212.15,
@@ -1281,7 +1281,7 @@
   },
   "risk_alerts": {
     "schema_version": 1,
-    "generated_at": "2026-07-13T18:38:53.799955+00:00",
+    "generated_at": "2026-07-15T20:00:06.983678+00:00",
     "status": "critical",
     "breach_count": 7,
     "watch_count": 0,
@@ -1447,11 +1447,11 @@
   },
   "total_cash": 39000.0,
   "total_portfolio_value": 537984.5,
-  "updated_at": "2026-07-13T18:38:53.809984+00:00",
+  "updated_at": "2026-07-15T20:00:06.999359+00:00",
   "total_value": 498984.5,
   "total_cost_basis": 487772.35,
   "net_performance": 11212.15,
   "net_performance_pct": 2.3,
-  "prices_updated_at": "2026-07-13T18:38:53.799955+00:00",
-  "asset_metadata_updated_at": "2026-07-13T18:38:53.806481+00:00"
+  "prices_updated_at": "2026-07-15T20:00:06.983678+00:00",
+  "asset_metadata_updated_at": "2026-07-15T20:00:06.994252+00:00"
 }

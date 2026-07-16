@@ -1933,6 +1933,356 @@ button.composer-context-chip:active,
 
 .composer-context-dot.plan { background: var(--forest); }
 .composer-context-dot.focus { background: var(--gilt); }
+.composer-context-dot.risk { background: #8d6a45; }
+
+.risk-lens-chip.override {
+  border-color: color-mix(in srgb, var(--gilt) 55%, var(--rule));
+  background: color-mix(in srgb, var(--gilt) 9%, var(--paper));
+}
+
+.risk-lens-override {
+  margin: 6px 14px 0;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--gilt) 38%, var(--rule));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--gilt) 7%, var(--paper));
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.risk-lens-override strong {
+  color: var(--ink);
+  text-transform: capitalize;
+}
+
+.copilot-risk-panel {
+  width: min(360px, calc(100vw - 32px));
+  padding-bottom: 8px;
+}
+
+.copilot-risk-options {
+  display: grid;
+  gap: 4px;
+  padding: 4px 8px;
+}
+
+.copilot-risk-option {
+  display: grid;
+  min-height: 48px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 100ms ease;
+}
+
+.copilot-risk-option:hover,
+.copilot-risk-option.active {
+  border-color: var(--rule);
+  background: var(--paper-bright);
+}
+
+.copilot-risk-option:active,
+.risk-default-action:active {
+  transform: scale(0.96);
+}
+
+.copilot-risk-option small {
+  margin-top: 2px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.risk-comparison-card {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--paper-bright) 72%, var(--paper));
+  box-shadow: 0 12px 32px rgba(42, 34, 24, 0.07);
+}
+
+.risk-comparison-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.risk-comparison-head h3 {
+  margin: 2px 0 0;
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.risk-fingerprint {
+  flex: none;
+  padding: 5px 7px;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+.risk-comparison-note {
+  max-width: 68ch;
+  margin: 9px 0 16px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.risk-variant-switch {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+  margin: 0 0 10px;
+  padding: 3px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--paper-deep);
+}
+
+.risk-variant-switch button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  transition: background-color 140ms ease, color 140ms ease, transform 100ms ease;
+}
+
+.risk-variant-switch button:hover,
+.risk-variant-switch button.active {
+  background: var(--paper-bright);
+  color: var(--ink);
+}
+
+.risk-variant-switch button:active,
+.risk-default-confirm button:active {
+  transform: scale(0.96);
+}
+
+.risk-comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.risk-variant {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 14px;
+  border: 1px solid var(--rule);
+  border-radius: 11px;
+  background: var(--paper);
+}
+
+.risk-variant.selected {
+  border-color: color-mix(in srgb, var(--gilt) 58%, var(--rule));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gilt) 16%, transparent);
+}
+
+.risk-variant-title {
+  display: flex;
+  min-height: 24px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.risk-variant-title h4 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.risk-variant-title span,
+.risk-saved-label {
+  color: var(--brass);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.risk-status {
+  min-height: 28px;
+  margin: 8px 0 10px;
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.risk-status.not_recommended,
+.risk-status.caution {
+  color: #9a5a2a;
+}
+
+.risk-variant dl {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 12px;
+}
+
+.risk-variant dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.risk-variant dt,
+.risk-variant dd {
+  margin: 0;
+  font-size: 11px;
+}
+
+.risk-variant dt { color: var(--ink-soft); }
+.risk-variant dd {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  text-transform: capitalize;
+}
+
+.risk-variant-action,
+.risk-leading-candidate,
+.risk-variant-upside,
+.risk-variant-downside,
+.risk-variant-tradeoff,
+.risk-variant-warning {
+  margin: 0 0 9px;
+  font-size: 11px;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.risk-leading-candidate,
+.risk-variant-upside,
+.risk-variant-downside {
+  color: var(--ink-soft);
+}
+
+.risk-leading-candidate strong,
+.risk-variant-upside strong,
+.risk-variant-downside strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--ink);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.risk-variant-tradeoff { color: var(--ink-soft); }
+.risk-variant-warning {
+  padding: 8px;
+  border-radius: 7px;
+  background: rgba(185, 111, 45, 0.09);
+  color: #815027;
+}
+
+.risk-default-action {
+  min-height: 40px;
+  margin-top: auto;
+  padding: 8px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 100ms ease;
+}
+
+.risk-default-control {
+  margin-top: auto;
+}
+
+.risk-default-confirm {
+  display: none;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding-top: 8px;
+}
+
+.risk-default-control.confirming .risk-default-action { display: none; }
+.risk-default-control.confirming .risk-default-confirm { display: grid; }
+
+.risk-default-confirm span {
+  grid-column: 1 / -1;
+  color: var(--ink-soft);
+  font-size: 10px;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+
+.risk-default-confirm button {
+  min-height: 40px;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 100ms ease;
+}
+
+.risk-default-confirm button:first-of-type {
+  border-color: var(--forest);
+  background: var(--forest);
+  color: var(--paper-bright);
+}
+
+.risk-default-action:hover {
+  border-color: var(--gilt);
+  background: color-mix(in srgb, var(--gilt) 8%, var(--paper));
+}
+
+.risk-saved-label {
+  display: flex;
+  min-height: 40px;
+  margin-top: auto;
+  align-items: center;
+}
+
+@media (max-width: 880px) {
+  .risk-comparison-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .risk-status { min-height: 0; }
+
+  .risk-variant:not(.selected) { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .copilot-risk-option,
+  .risk-variant-switch button,
+  .risk-default-action,
+  .risk-default-confirm button {
+    transition-duration: 0.01ms;
+  }
+}
 .composer-context-live:has(input:checked) .composer-context-dot.data { background: var(--forest); }
 
 .composer-context-live input {

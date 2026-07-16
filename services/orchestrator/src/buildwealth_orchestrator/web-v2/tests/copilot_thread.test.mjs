@@ -57,6 +57,68 @@ test('copilot thread renders readable activity and contextual response actions',
   assert.match(responseHtml, /Track decision/);
 });
 
+test('copilot thread keeps all risk postures visible including not recommended exploration', () => {
+  const variants = ['conservative', 'moderate', 'aggressive'].map((posture, index) => ({
+    posture,
+    label: posture[0].toUpperCase() + posture.slice(1),
+    recommendation_status: index === 2 ? 'not_recommended' : 'recommended',
+    capacity_fit: index === 2 ? 'exceeds' : 'within',
+    reserve_months: [9, 6, 4][index],
+    reserve_target_usd: [45000, 30000, 20000][index],
+    action: `Explore ${posture}.`,
+    tradeoff: 'Same frozen inputs, different risk posture.',
+    warning: index === 2 ? 'Not recommended from current capacity, but still available.' : '',
+  }));
+  const output = String(renderThread([{
+    id: 'assistant-risk',
+    role: 'assistant',
+    content: 'Here is the comparison.',
+    created_at: '2026-07-15T12:00:00.000Z',
+    metadata: {
+      risk_lens: { effective_posture: 'moderate' },
+      risk_comparison: {
+        input_fingerprint: 'abc123456789',
+        selected_posture: 'moderate',
+        profile_posture: 'moderate',
+        variants,
+      },
+    },
+  }]));
+
+  assert.match(output, /Compare all three postures/);
+  assert.match(output, /Conservative/);
+  assert.match(output, /Moderate/);
+  assert.match(output, /Aggressive/);
+  assert.match(output, /Not recommended · still explorable/);
+  assert.match(output, /does not change your saved Profile/);
+  assert.match(output, /Review as my Profile default/);
+  assert.match(output, /Profile will change from moderate to aggressive/);
+  assert.match(output, /data-risk-variant="conservative"/);
+  assert.match(output, /data-risk-variant="moderate"/);
+  assert.match(output, /data-risk-variant="aggressive"/);
+});
+
+test('risk-relevant answers offer comparison without nagging unrelated answers', () => {
+  const available = String(renderThread([{
+    id: 'risk-ready',
+    role: 'assistant',
+    content: 'Review the portfolio tradeoff.',
+    metadata: {
+      context_trace: { risk_lens_applied: { comparison_available: true } },
+      risk_replay_context: { question: 'Should I invest this cash?' },
+    },
+  }]));
+  const unrelated = String(renderThread([{
+    id: 'not-risk-ready',
+    role: 'assistant',
+    content: 'Your tax filing status is incomplete.',
+    metadata: { context_trace: { risk_lens_applied: { comparison_available: false } } },
+  }]));
+
+  assert.match(available, /Compare risk approaches/);
+  assert.doesNotMatch(unrelated, /Compare risk approaches/);
+});
+
 test('copilot thread renders financial profile draft review card', () => {
   const html = String(renderThread([
     {

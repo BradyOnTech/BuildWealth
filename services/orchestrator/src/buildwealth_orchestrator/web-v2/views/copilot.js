@@ -175,6 +175,51 @@ function defaultSessionFocus() {
   };
 }
 
+function savedRiskPosture() {
+  const posture = String(state.financialProfile?.investment_policy?.risk_tolerance || '').toLowerCase();
+  return ['conservative', 'moderate', 'aggressive'].includes(posture) ? posture : null;
+}
+
+function defaultRiskLens() {
+  const profilePosture = savedRiskPosture();
+  return {
+    mode: 'profile',
+    posture: null,
+    profile_posture: profilePosture,
+    effective_posture: profilePosture || 'moderate',
+    is_override: false,
+  };
+}
+
+function normalizeRiskLens(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  const profilePosture = ['conservative', 'moderate', 'aggressive'].includes(source.profile_posture)
+    ? source.profile_posture
+    : savedRiskPosture();
+  const mode = source.mode === 'override' ? 'override' : 'profile';
+  const posture = mode === 'override' && ['conservative', 'moderate', 'aggressive'].includes(source.posture)
+    ? source.posture
+    : null;
+  return {
+    mode,
+    posture,
+    profile_posture: profilePosture,
+    effective_posture: posture || profilePosture || 'moderate',
+    is_override: mode === 'override' && posture !== profilePosture,
+  };
+}
+
+function clientRiskLensPayload(lens) {
+  const value = normalizeRiskLens(lens);
+  return { mode: value.mode, posture: value.posture };
+}
+
+function riskLensLabel(lens) {
+  const value = normalizeRiskLens(lens);
+  const posture = value.effective_posture[0].toUpperCase() + value.effective_posture.slice(1);
+  return value.mode === 'profile' ? `Risk: Profile · ${posture}` : `Risk: ${posture}`;
+}
+
 function seedFocusFromEntry(params = {}) {
   const intent = String(params.intent || '').trim().toLowerCase();
   const focusId = String(params.focus || '').trim();
@@ -251,10 +296,11 @@ const ui = {
   planId: null,
   useLive: false,
   recommendationFocus: null,
-  pickerOpen: null,                 // 'plans' | 'focus' | 'model' | null
+  pickerOpen: null,                 // 'plans' | 'focus' | 'risk' | 'model' | null
   draftFocus: null,
   composerReady: false,
   sessionFocus: defaultSessionFocus(),
+  riskLens: defaultRiskLens(),
   // Model menu (Grok/Codex-style): workspace default + per-conversation override
   llmOptions: null,                 // payload from GET /api/copilot/llm-options
   conversationLlm: null,            // { provider, model, label, cost_band, source, cheap }
@@ -301,6 +347,7 @@ export async function init(params = {}) {
   ui.draftFocus = null;
   ui.composerReady = false;
   ui.sessionFocus = seedFocusFromEntry(params);
+  ui.riskLens = defaultRiskLens();
   ui.conversationLlm = null;
   ui.showCheapOnly = false;
   ui.trackedMessageKeys = readTrackedDecisionKeys();
@@ -317,6 +364,11 @@ export async function init(params = {}) {
       seedFocusFromOnboardingIfNeeded(true);
       fillDraft(onboardingPrompt(ui.onboarding));
     }
+  }).catch(() => {});
+  api.profile().then((profile) => {
+    state.financialProfile = profile;
+    ui.riskLens = normalizeRiskLens(ui.riskLens);
+    rerenderComposer();
   }).catch(() => {});
   loadLlmOptions().then(() => {
     rerenderComposer();
@@ -399,6 +451,9 @@ async function loadConversation(id) {
     if (res.llm && typeof res.llm === 'object') {
       ui.conversationLlm = res.llm;
     }
+    if (res.risk_lens && typeof res.risk_lens === 'object') {
+      ui.riskLens = normalizeRiskLens(res.risk_lens);
+    }
     loadLlmOptions(id).then(() => rerenderComposer()).catch(() => {});
   } catch (err) {
     ui.error = err.message;
@@ -473,6 +528,7 @@ function resetConversationState() {
   ui.renamingTitle = '';
   ui.draftFocus = true;
   ui.sessionFocus = defaultSessionFocus();
+  ui.riskLens = defaultRiskLens();
   resetConversationLlmToWorkspaceDefault();
 }
 
@@ -552,6 +608,9 @@ function applyChatResult(question, res) {
   if (res.llm && typeof res.llm === 'object') {
     ui.conversationLlm = res.llm;
   }
+  if (res.risk_lens && typeof res.risk_lens === 'object') {
+    ui.riskLens = normalizeRiskLens(res.risk_lens);
+  }
   ui.messages.push({
     id: res.assistant_message_id || null,
     turn_id: turnId || null,
@@ -563,6 +622,9 @@ function applyChatResult(question, res) {
       tool_calls: res.tool_calls || [],
       model: res.model || null,
       context_trace: res.context_trace || {},
+      risk_lens: res.risk_lens || null,
+      risk_comparison: res.risk_comparison || null,
+      risk_replay_context: { question, plan_id: ui.planId, use_live_snapshot: ui.useLive },
     },
   });
   ui.retryTurn = null;
@@ -575,7 +637,12 @@ function applyChatResult(question, res) {
   loadLlmOptions(ui.conversationId).then(() => rerenderComposer()).catch(() => {});
 }
 
-async function sendMessage(question, { useLive, turnId = null, retry = false } = {}) {
+async function sendMessage(question, {
+  useLive,
+  turnId = null,
+  retry = false,
+  forceRiskComparison = false,
+} = {}) {
   if (copilotConnectionState(ui.llmOptions).status === 'unavailable') {
     ui.error = 'Connect an AI provider in Settings before starting a Copilot conversation.';
     rerenderBody();
@@ -623,6 +690,11 @@ async function sendMessage(question, { useLive, turnId = null, retry = false } =
     persist_focus: true,
     llm: clientLlmPayload(ui.conversationLlm),
     persist_llm: true,
+    risk_lens: clientRiskLensPayload(ui.riskLens),
+    persist_risk_lens: true,
+    risk_comparison: {
+      mode: forceRiskComparison || ui.riskLens.mode === 'override' ? 'all' : 'none',
+    },
   };
 
   streamController = new AbortController();
@@ -790,6 +862,13 @@ function renderComposerContext() {
         </button>
         ${ui.pickerOpen === 'focus' ? raw(renderFocusMenu()) : ''}
       </span>
+      <span class="copilot-picker composer-context-picker">
+        <button type="button" class="composer-context-chip risk-lens-chip ${ui.riskLens.is_override ? 'override' : ''}" data-picker="risk" title="Explore the same conditions under a different risk posture">
+          <span class="composer-context-dot risk"></span>
+          <span>${esc(riskLensLabel(ui.riskLens))}</span>
+        </button>
+        ${ui.pickerOpen === 'risk' ? raw(renderRiskLensMenu()) : ''}
+      </span>
       <label class="composer-context-chip composer-context-live" title="Refresh market-sensitive portfolio data for this message">
         <input type="checkbox" id="composer-live" data-context-live ${ui.useLive ? 'checked' : ''} />
         <span class="composer-context-dot data"></span>
@@ -800,6 +879,12 @@ function renderComposerContext() {
         ${ui.pickerOpen === 'model' ? raw(renderModelMenu()) : ''}
       </span>
     </div>
+    ${ui.riskLens.is_override ? html`
+      <div class="risk-lens-override" role="status">
+        Exploring <strong>${esc(ui.riskLens.effective_posture)}</strong> · Saved profile remains
+        <strong>${esc(ui.riskLens.profile_posture || 'not set')}</strong>
+      </div>
+    ` : ''}
   `;
 }
 
@@ -813,7 +898,7 @@ function renderHistory() {
       </div>
       <button type="button" class="copilot-history-close" data-action="close-history" aria-label="Close chat history">×</button>
     </div>
-    <button type="button" class="copilot-history-new" data-action="new-chat">
+    <button type="button" class="copilot-history-new" data-action="new-chat" aria-label="Start conversation">
       <span>＋</span> New chat
     </button>
     <label class="copilot-history-search">
@@ -1089,6 +1174,39 @@ function renderFocusMenu() {
   `;
 }
 
+function renderRiskLensMenu() {
+  const lens = normalizeRiskLens(ui.riskLens);
+  const options = [
+    { mode: 'profile', posture: '', label: 'Use profile', detail: `Saved default: ${lens.profile_posture || 'not set (Moderate fallback)'}` },
+    { mode: 'override', posture: 'conservative', label: 'Conservative', detail: 'More cushion, less immediately deployable cash' },
+    { mode: 'override', posture: 'moderate', label: 'Moderate', detail: 'Balanced cushion and growth exposure' },
+    { mode: 'override', posture: 'aggressive', label: 'Aggressive', detail: 'Thinner cushion, more growth exposure' },
+  ];
+  return html`
+    <div class="copilot-picker-menu copilot-risk-panel open" data-menu="risk">
+      <div class="copilot-focus-panel-head">
+        <span class="copilot-focus-panel-title">Risk Lens</span>
+        <span class="copilot-model-tag">explore only</span>
+      </div>
+      <p class="copilot-focus-hint">
+        Re-runs the same conditions. Cautions never hide an option, and this does not change Profile.
+      </p>
+      <div class="copilot-risk-options" role="radiogroup" aria-label="Risk posture">
+        ${options.map(option => {
+          const active = lens.mode === option.mode && (option.mode === 'profile' || lens.posture === option.posture);
+          return html`
+            <button type="button" class="copilot-risk-option ${active ? 'active' : ''}"
+                    data-risk-mode="${option.mode}" data-risk-posture="${option.posture}" role="radio" aria-checked="${active ? 'true' : 'false'}">
+              <span>${esc(option.label)}</span>
+              <small>${esc(option.detail)}</small>
+            </button>
+          `;
+        })}
+      </div>
+    </div>
+  `;
+}
+
 function renderPlansMenu(plans, currentId) {
   return html`
     <div class="copilot-picker-menu open" data-menu="plans">
@@ -1218,7 +1336,7 @@ export function onboardingQuickReplies(status) {
   if (isInvestmentPolicyOnboardingStep(step)) {
     return [
       { label: 'Conservative', message: 'My risk tolerance is conservative.' },
-      { label: 'Balanced', message: 'My risk tolerance is balanced.' },
+      { label: 'Moderate', message: 'My risk tolerance is moderate.' },
       { label: 'Aggressive', message: 'My risk tolerance is aggressive.' },
     ];
   }
@@ -1894,6 +2012,23 @@ function attachHandlers() {
     e.stopPropagation();
   });
 
+  delegate(page, 'click', '[data-menu="risk"]', (e) => {
+    e.stopPropagation();
+  });
+
+  delegate(page, 'click', '[data-risk-mode]', (e, t) => {
+    e.stopPropagation();
+    const mode = t.getAttribute('data-risk-mode') === 'override' ? 'override' : 'profile';
+    const posture = t.getAttribute('data-risk-posture') || null;
+    ui.riskLens = normalizeRiskLens({
+      mode,
+      posture,
+      profile_posture: savedRiskPosture(),
+    });
+    ui.pickerOpen = null;
+    rerenderComposer();
+  });
+
   delegate(page, 'change', '[data-model-cheap-only]', (e, t) => {
     e.stopPropagation();
     ui.showCheapOnly = !!t.checked;
@@ -1996,6 +2131,39 @@ function attachHandlers() {
     fillDraft('Help me turn this into a concrete next action. What should I do first, and which tradeoffs or assumptions should I review?');
   });
 
+  delegate(page, 'click', '[data-message-risk-compare]', (_, t) => {
+    const message = assistantMessageByKey(t.getAttribute('data-message-risk-compare'));
+    const replay = message?.metadata?.risk_replay_context;
+    const question = String(replay?.question || '').trim();
+    if (!question) return;
+    sendMessage(question, {
+      useLive: Boolean(replay?.use_live_snapshot),
+      forceRiskComparison: true,
+    });
+  });
+
+  delegate(page, 'click', '[data-risk-variant]', (_, t) => {
+    const card = t.closest('.risk-comparison-card');
+    const posture = t.getAttribute('data-risk-variant');
+    if (!card || !posture) return;
+    for (const tab of card.querySelectorAll('[data-risk-variant]')) {
+      const active = tab.getAttribute('data-risk-variant') === posture;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    }
+    for (const panel of card.querySelectorAll('[data-risk-variant-panel]')) {
+      panel.classList.toggle('selected', panel.getAttribute('data-risk-variant-panel') === posture);
+    }
+  });
+
+  delegate(page, 'click', '[data-risk-default-review]', (_, t) => {
+    t.closest('.risk-default-control')?.classList.add('confirming');
+  });
+
+  delegate(page, 'click', '[data-risk-default-cancel]', (_, t) => {
+    t.closest('.risk-default-control')?.classList.remove('confirming');
+  });
+
   delegate(page, 'click', '[data-message-track]', (_, t) => {
     trackAssistantDecision(t.getAttribute('data-message-track'), t);
   });
@@ -2055,6 +2223,10 @@ async function applyProfileDraft(button) {
       { source: 'copilot_profile_draft' },
     );
     state.financialProfile = saved;
+    ui.riskLens = normalizeRiskLens({
+      ...ui.riskLens,
+      profile_posture: saved?.investment_policy?.risk_tolerance || null,
+    });
     ui.messages.push({
       role: 'assistant',
       content: 'Profile update applied. Your financial profile is now updated for future reviews.',
@@ -2065,7 +2237,7 @@ async function applyProfileDraft(button) {
   } catch (err) {
     ui.error = err.message;
   } finally {
-    rerenderBody();
+    rerenderAll();
     scrollToBottom();
   }
 }

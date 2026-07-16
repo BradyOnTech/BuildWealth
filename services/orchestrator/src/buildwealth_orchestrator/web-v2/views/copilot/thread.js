@@ -127,6 +127,9 @@ function renderMessage(m, { planId, conversationId, trackedMessageKeys } = {}) {
           ${statusLabel ? html`<span class="turn-status ${turnStatus}">${statusLabel}</span>` : ''}
         </header>
         <div class="message-body ${role}">${bodyHtml}</div>
+        ${role === 'assistant' && m.metadata?.risk_comparison
+          ? raw(renderRiskComparison(m.metadata.risk_comparison, m.metadata?.risk_lens))
+          : ''}
         ${contextTrace ? raw(renderContextTraceSummary(contextTrace)) : ''}
         ${tools.length ? raw(renderToolTraces(tools)) : ''}
         ${role === 'assistant' ? raw(renderMessageActions(m, {
@@ -139,11 +142,103 @@ function renderMessage(m, { planId, conversationId, trackedMessageKeys } = {}) {
   `;
 }
 
+function riskStatusLabel(value) {
+  const labels = {
+    recommended: 'Recommended',
+    reasonable: 'Reasonable to explore',
+    caution: 'Caution',
+    not_recommended: 'Not recommended · still explorable',
+  };
+  return labels[String(value || '')] || 'Available to explore';
+}
+
+function riskMoney(value) {
+  return value !== null && value !== undefined && Number.isFinite(Number(value))
+    ? MONEY_FMT.format(Number(value))
+    : 'Needs cash-flow details';
+}
+
+export function renderRiskComparison(comparison, lens = {}) {
+  const variants = Array.isArray(comparison?.variants) ? comparison.variants.filter(Boolean) : [];
+  if (!variants.length) return '';
+  const fingerprint = String(comparison?.input_fingerprint || '').slice(0, 10);
+  const selected = String(comparison?.selected_posture || lens?.effective_posture || 'moderate');
+  return html`
+    <section class="risk-comparison-card" aria-label="Risk posture comparison">
+      <header class="risk-comparison-head">
+        <div>
+          <p class="profile-draft-eyebrow">Same conditions · different risk lens</p>
+          <h3>Compare all three postures</h3>
+        </div>
+        ${fingerprint ? html`<span class="risk-fingerprint" title="Frozen input fingerprint">Inputs ${esc(fingerprint)}</span>` : ''}
+      </header>
+      <p class="risk-comparison-note">
+        Warnings are advisory. Every option stays visible, and exploring here does not change your saved Profile.
+      </p>
+      <div class="risk-variant-switch" role="tablist" aria-label="Inspect a calculated risk posture">
+        ${variants.map(variant => {
+          const posture = String(variant.posture || 'moderate');
+          const active = posture === selected;
+          return html`
+            <button type="button" role="tab" aria-selected="${active ? 'true' : 'false'}"
+                    class="${active ? 'active' : ''}" data-risk-variant="${esc(posture)}">
+              ${esc(variant.label || posture)}
+            </button>
+          `;
+        })}
+      </div>
+      <div class="risk-comparison-grid">
+        ${variants.map(variant => {
+          const posture = String(variant.posture || 'moderate');
+          const isSelected = posture === selected;
+          const encoded = encodeURIComponent(JSON.stringify({ investment_policy: { risk_tolerance: posture } }));
+          return html`
+            <article class="risk-variant ${isSelected ? 'selected' : ''}" data-risk-variant-panel="${esc(posture)}">
+              <div class="risk-variant-title">
+                <h4>${esc(variant.label || posture)}</h4>
+                ${isSelected ? html`<span>Current lens</span>` : ''}
+              </div>
+              <p class="risk-status ${esc(variant.recommendation_status || 'reasonable')}">${esc(riskStatusLabel(variant.recommendation_status))}</p>
+              <dl>
+                <div><dt>Cash reserve</dt><dd>${Number(variant.reserve_months || 0).toFixed(0)} months</dd></div>
+                <div><dt>Target</dt><dd>${esc(riskMoney(variant.reserve_target_usd))}</dd></div>
+                <div><dt>Capacity</dt><dd>${esc(String(variant.capacity_fit || 'unknown'))}</dd></div>
+              </dl>
+              <p class="risk-variant-action">${esc(variant.action || '')}</p>
+              ${variant.leading_candidate ? html`
+                <p class="risk-leading-candidate"><strong>Leading approach</strong>${esc(variant.leading_candidate)}</p>
+              ` : ''}
+              ${variant.upside ? html`<p class="risk-variant-upside"><strong>Upside</strong>${esc(variant.upside)}</p>` : ''}
+              ${variant.downside ? html`<p class="risk-variant-downside"><strong>Downside</strong>${esc(variant.downside)}</p>` : ''}
+              <p class="risk-variant-tradeoff">${esc(variant.tradeoff || '')}</p>
+              ${variant.warning ? html`<p class="risk-variant-warning">${esc(variant.warning)}</p>` : ''}
+              ${posture !== comparison?.profile_posture ? html`
+                <div class="risk-default-control">
+                  <button type="button" class="risk-default-action" data-risk-default-review>
+                    Review as my Profile default
+                  </button>
+                  <div class="risk-default-confirm" role="group" aria-label="Confirm Profile default change">
+                    <span>Profile will change from ${esc(comparison?.profile_posture || 'not set')} to ${esc(posture)}.</span>
+                    <button type="button" data-profile-draft="${encoded}">Confirm</button>
+                    <button type="button" data-risk-default-cancel>Cancel</button>
+                  </div>
+                </div>
+              ` : html`<span class="risk-saved-label">Saved Profile default</span>`}
+            </article>
+          `;
+        })}
+      </div>
+    </section>
+  `;
+}
+
 function renderMessageActions(message, { planId, conversationId, trackedMessageKeys } = {}) {
   const messageKey = String(message?.id || message?.turn_id || '');
   if (!messageKey || !String(message?.content || '').trim()) return '';
   const trackedKey = `${planId || 'no-plan'}:${conversationId || 'new'}:${messageKey}`;
   const tracked = trackedMessageKeys instanceof Set && trackedMessageKeys.has(trackedKey);
+  const comparisonAvailable = Boolean(message?.metadata?.context_trace?.risk_lens_applied?.comparison_available);
+  const hasComparison = Boolean(message?.metadata?.risk_comparison);
   const planHref = planId
     ? `#plan?id=${encodeURIComponent(planId)}&section=decisions`
     : '#plan?section=decisions';
@@ -151,6 +246,9 @@ function renderMessageActions(message, { planId, conversationId, trackedMessageK
     <div class="copilot-message-actions" aria-label="Response actions">
       <button type="button" data-message-copy="${esc(messageKey)}">Copy</button>
       <button type="button" data-message-follow-up="${esc(messageKey)}">Ask a follow-up</button>
+      ${comparisonAvailable && !hasComparison ? html`
+        <button type="button" data-message-risk-compare="${esc(messageKey)}">Compare risk approaches</button>
+      ` : ''}
       ${planId ? html`
         <button type="button" data-message-track="${esc(messageKey)}" ${tracked ? 'disabled' : ''}>
           ${tracked ? 'Tracked in Plan' : 'Track decision'}

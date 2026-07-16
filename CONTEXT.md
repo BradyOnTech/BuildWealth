@@ -135,6 +135,14 @@ _Avoid_: Confidence, certainty, model score, Session Focus, user domain weights
 Conversation-scoped priorities that steer which context domains/sections Copilot expands, orders, or mutes in the Prompt Brief and retrieval ordering for that conversation.
 _Avoid_: Memory weights, materiality weights, chatbot memory, user importance score, Candidate Prompt Influence
 
+**Risk Lens**:
+A reversible Copilot view that re-runs the same frozen financial conditions under Conservative, Moderate, or Aggressive posture policy. A Risk Lens is exploratory context, not **Canonical State**; it cannot silently change the saved Profile risk tolerance.
+_Avoid_: Permission gate, Profile mutation, LLM opinion mode
+
+**Risk Comparison**:
+A deterministic, versioned set of all three **Risk Lens** variants produced from one input fingerprint. Recommendation and capacity statuses describe evidence and tradeoffs; they never remove permission to view or model a variant.
+_Avoid_: Three unrelated LLM opinions, suitability gate
+
 **Focus Domain**:
 User-legible domain label used by Session Focus (for example `plan`, `profile.goals`, `research`).
 _Avoid_: Arbitrary tag, memory category
@@ -187,6 +195,8 @@ Allowed values: `none`, `mention_only`, `supporting_context`, `authoritative_aft
 _Avoid_: Memory confidence, hidden weight, model belief, Session Focus
 
 Session Focus steers which *domains/sections* are expanded in the Prompt Brief. Context Materiality and Candidate Prompt Influence still govern whether *candidates/conflicts/items* may shape advice. Session Focus must not lower materiality, change candidate lifecycle, or suppress required safety surfaces.
+
+Risk Lens changes the posture used to compare candidate actions, not the underlying facts, restrictions, taxes, concentration limits, or saved Profile. `not_recommended` and `exceeds` are advisory assessment states, never exploration failures.
 
 **Context Registry**:
 The rebuildable operational index that stores retrievable context items for **Context Intelligence**.
@@ -310,6 +320,7 @@ _Avoid_: Context Registry, live index
 - Accepting a **Plan Lever** saves supporting evidence, presents an explicit active-plan patch, updates **Canonical State** only after user confirmation, and records a **Plan Decision** linking the lever, evidence, patch, risks, review date, and any originating recommendation.
 - High-impact **Plan Levers** should default to a branch or decision draft before active-plan mutation.
 - Copilot may operate a **BuildWealth-Native Capability** only through the same reviewed BuildWealth API and review/apply boundaries as the UI.
+- Copilot must precompute explicit **Risk Comparison** results before explanation; an LLM may explain those results but may not invent, hide, or block a posture. Saving a posture as the Profile default requires visible review and explicit confirmation.
 - **Context Intelligence** may index or summarize **Canonical State**, but it does not replace it.
 - A **Material Financial Fact** must live in **Canonical State** before BuildWealth treats it as authoritative.
 - **Context Materiality** is separate from confidence; a low-confidence candidate can still be high materiality if it would change important advice.
