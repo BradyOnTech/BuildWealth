@@ -979,6 +979,7 @@ a.status-row:hover {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  padding-left: 0;
   padding-bottom: var(--s-3);
 }
 .content:has(#copilot-page) > .page {

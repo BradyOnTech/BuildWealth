@@ -4,8 +4,16 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
-import { buildPlanReviewPrompt } from '../views/copilot.js';
+import { buildPlanReviewPrompt, clampCopilotHistoryWidth } from '../views/copilot.js';
 import { renderThread } from '../views/copilot/thread.js';
+
+test('copilot history width stays usable for both history and chat panes', () => {
+  assert.equal(clampCopilotHistoryWidth(120), 220);
+  assert.equal(clampCopilotHistoryWidth(300), 300);
+  assert.equal(clampCopilotHistoryWidth(600), 420);
+  assert.equal(clampCopilotHistoryWidth(400, 760), 280);
+  assert.equal(clampCopilotHistoryWidth('not-a-width'), 260);
+});
 
 test('copilot thread shows durable stopped and failed turn state', () => {
   const html = String(renderThread([

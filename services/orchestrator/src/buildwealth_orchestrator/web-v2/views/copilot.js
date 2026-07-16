@@ -28,6 +28,11 @@ const SUGGESTIONS = [
 
 const COPILOT_DRAFTS_STORAGE_KEY = 'buildwealth.copilot.drafts.v1';
 const COPILOT_TRACKED_DECISIONS_STORAGE_KEY = 'buildwealth.copilot.tracked-decisions.v1';
+const COPILOT_HISTORY_LAYOUT_STORAGE_KEY = 'buildwealth.copilot.history-layout.v1';
+const COPILOT_HISTORY_DEFAULT_WIDTH = 260;
+const COPILOT_HISTORY_MIN_WIDTH = 220;
+const COPILOT_HISTORY_MAX_WIDTH = 420;
+const COPILOT_CHAT_MIN_WIDTH = 480;
 
 const PROFILE_SETUP_PROMPT = [
   'Help me fill out my financial profile.',
@@ -288,6 +293,8 @@ const ui = {
   error: null,
   retryTurn: null,
   historyOpen: false,
+  historyCollapsed: false,
+  historyWidth: COPILOT_HISTORY_DEFAULT_WIDTH,
   historyQuery: '',
   showArchived: false,
   historyMenuId: null,
@@ -314,6 +321,25 @@ export function template() {
       <div class="copilot-shell" id="copilot-shell">
         <button type="button" class="copilot-history-backdrop" data-action="close-history" aria-label="Close chat history"></button>
         <aside class="copilot-history" id="copilot-history" aria-label="Chat history"></aside>
+        <button
+          type="button"
+          class="copilot-history-expand"
+          data-action="expand-history"
+          aria-label="Expand chat history"
+          title="Expand chat history"
+        ><span aria-hidden="true">›</span></button>
+        <div
+          class="copilot-history-resizer"
+          data-history-resizer
+          role="separator"
+          aria-label="Resize chat history"
+          aria-orientation="vertical"
+          aria-valuemin="${COPILOT_HISTORY_MIN_WIDTH}"
+          aria-valuemax="${COPILOT_HISTORY_MAX_WIDTH}"
+          aria-valuenow="${COPILOT_HISTORY_DEFAULT_WIDTH}"
+          tabindex="0"
+          title="Drag to resize chat history"
+        ></div>
         <div class="copilot-chat-pane">
           <div class="copilot-top" id="copilot-masthead"></div>
           <div class="copilot-main" id="copilot-body"></div>
@@ -336,6 +362,9 @@ export async function init(params = {}) {
   ui.error = null;
   ui.retryTurn = null;
   ui.historyOpen = false;
+  const historyLayout = readHistoryLayout();
+  ui.historyCollapsed = historyLayout.collapsed;
+  ui.historyWidth = historyLayout.width;
   ui.historyQuery = '';
   ui.showArchived = false;
   ui.historyMenuId = null;
@@ -795,6 +824,7 @@ function rerenderHistory() {
   if (!root || !shell) return;
   root.innerHTML = renderHistory();
   shell.classList.toggle('history-open', ui.historyOpen);
+  applyHistoryLayout();
 }
 
 function rerenderMasthead() {
@@ -896,7 +926,16 @@ function renderHistory() {
         <span class="copilot-history-kicker">Copilot</span>
         <h2>Chat history</h2>
       </div>
-      <button type="button" class="copilot-history-close" data-action="close-history" aria-label="Close chat history">×</button>
+      <div class="copilot-history-head-actions">
+        <button
+          type="button"
+          class="copilot-history-collapse"
+          data-action="collapse-history"
+          aria-label="Collapse chat history"
+          title="Collapse chat history"
+        ><span aria-hidden="true">‹</span></button>
+        <button type="button" class="copilot-history-close" data-action="close-history" aria-label="Close chat history">×</button>
+      </div>
     </div>
     <button type="button" class="copilot-history-new" data-action="new-chat" aria-label="Start conversation">
       <span>＋</span> New chat
@@ -1372,6 +1411,133 @@ function renderProfileReadinessHint(readiness) {
 }
 
 /* ─────────────  helpers  ───────────── */
+
+export function clampCopilotHistoryWidth(value, availableWidth = Infinity) {
+  const parsed = Number(value);
+  const desired = Number.isFinite(parsed) ? parsed : COPILOT_HISTORY_DEFAULT_WIDTH;
+  const layoutMaximum = Number.isFinite(Number(availableWidth))
+    ? Number(availableWidth) - COPILOT_CHAT_MIN_WIDTH
+    : COPILOT_HISTORY_MAX_WIDTH;
+  const maximum = Math.max(
+    COPILOT_HISTORY_MIN_WIDTH,
+    Math.min(COPILOT_HISTORY_MAX_WIDTH, layoutMaximum),
+  );
+  return Math.round(Math.max(COPILOT_HISTORY_MIN_WIDTH, Math.min(maximum, desired)));
+}
+
+function readHistoryLayout() {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(COPILOT_HISTORY_LAYOUT_STORAGE_KEY) || '{}');
+    return {
+      collapsed: stored?.collapsed === true,
+      width: clampCopilotHistoryWidth(stored?.width),
+    };
+  } catch {
+    return { collapsed: false, width: COPILOT_HISTORY_DEFAULT_WIDTH };
+  }
+}
+
+function writeHistoryLayout() {
+  try {
+    window.localStorage.setItem(COPILOT_HISTORY_LAYOUT_STORAGE_KEY, JSON.stringify({
+      collapsed: ui.historyCollapsed,
+      width: ui.historyWidth,
+    }));
+  } catch {
+    // Layout persistence is best effort; resizing remains available for this visit.
+  }
+}
+
+function isHistoryDrawerViewport() {
+  return typeof window !== 'undefined' && window.matchMedia?.('(max-width: 980px)').matches;
+}
+
+function historyWidthLimit(shell = document.querySelector('#copilot-shell')) {
+  return shell?.getBoundingClientRect?.().width || Infinity;
+}
+
+function applyHistoryLayout({ persist = false } = {}) {
+  const shell = document.querySelector('#copilot-shell');
+  if (!shell) return;
+  const drawer = isHistoryDrawerViewport();
+  ui.historyWidth = clampCopilotHistoryWidth(ui.historyWidth, historyWidthLimit(shell));
+  shell.style.setProperty('--copilot-history-width', `${ui.historyWidth}px`);
+  shell.classList.toggle('history-collapsed', !drawer && ui.historyCollapsed);
+
+  const resizer = shell.querySelector('[data-history-resizer]');
+  if (resizer) {
+    const maximum = clampCopilotHistoryWidth(COPILOT_HISTORY_MAX_WIDTH, historyWidthLimit(shell));
+    resizer.setAttribute('aria-valuemax', String(maximum));
+    resizer.setAttribute('aria-valuenow', String(ui.historyWidth));
+    resizer.setAttribute('aria-hidden', drawer || ui.historyCollapsed ? 'true' : 'false');
+    resizer.tabIndex = drawer || ui.historyCollapsed ? -1 : 0;
+  }
+  if (persist) writeHistoryLayout();
+}
+
+function setHistoryCollapsed(collapsed) {
+  if (isHistoryDrawerViewport()) return;
+  ui.historyCollapsed = !!collapsed;
+  applyHistoryLayout({ persist: true });
+  if (!ui.historyCollapsed) {
+    window.requestAnimationFrame(() => document.querySelector('[data-history-resizer]')?.focus());
+  }
+}
+
+function setHistoryWidth(width, { persist = false } = {}) {
+  ui.historyWidth = clampCopilotHistoryWidth(width, historyWidthLimit());
+  ui.historyCollapsed = false;
+  applyHistoryLayout({ persist });
+}
+
+function startHistoryResize(event, handle) {
+  if (isHistoryDrawerViewport() || event.button !== 0) return;
+  const shell = document.querySelector('#copilot-shell');
+  if (!shell) return;
+  event.preventDefault();
+  const shellLeft = shell.getBoundingClientRect().left;
+  shell.classList.add('history-resizing');
+  handle.setPointerCapture?.(event.pointerId);
+
+  const move = moveEvent => {
+    moveEvent.preventDefault();
+    setHistoryWidth(moveEvent.clientX - shellLeft);
+  };
+  const finish = () => {
+    shell.classList.remove('history-resizing');
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', finish);
+    window.removeEventListener('pointercancel', finish);
+    writeHistoryLayout();
+  };
+
+  window.addEventListener('pointermove', move, { passive: false });
+  window.addEventListener('pointerup', finish, { once: true });
+  window.addEventListener('pointercancel', finish, { once: true });
+}
+
+function handleHistoryResizeKey(event) {
+  const steps = {
+    ArrowLeft: -16,
+    ArrowRight: 16,
+    PageUp: 48,
+    PageDown: -48,
+  };
+  if (event.key === 'Home') {
+    event.preventDefault();
+    setHistoryWidth(COPILOT_HISTORY_MIN_WIDTH, { persist: true });
+  } else if (event.key === 'End') {
+    event.preventDefault();
+    setHistoryWidth(COPILOT_HISTORY_MAX_WIDTH, { persist: true });
+  } else if (steps[event.key]) {
+    event.preventDefault();
+    setHistoryWidth(ui.historyWidth + steps[event.key], { persist: true });
+  }
+}
+
+function handleHistoryViewportChange() {
+  applyHistoryLayout();
+}
 
 function draftStorageScope() {
   let workspace = 'default';
@@ -1916,6 +2082,26 @@ function attachHandlers() {
     rerenderHistory();
   });
 
+  delegate(page, 'click', '[data-action="collapse-history"]', () => {
+    setHistoryCollapsed(true);
+  });
+
+  delegate(page, 'click', '[data-action="expand-history"]', () => {
+    setHistoryCollapsed(false);
+  });
+
+  delegate(page, 'pointerdown', '[data-history-resizer]', (event, handle) => {
+    startHistoryResize(event, handle);
+  });
+
+  delegate(page, 'dblclick', '[data-history-resizer]', () => {
+    setHistoryWidth(COPILOT_HISTORY_DEFAULT_WIDTH, { persist: true });
+  });
+
+  delegate(page, 'keydown', '[data-history-resizer]', event => {
+    handleHistoryResizeKey(event);
+  });
+
   delegate(page, 'click', '[data-action="retry-turn"]', () => {
     if (!ui.retryTurn) return;
     const retryTurn = { ...ui.retryTurn };
@@ -2199,6 +2385,8 @@ function attachHandlers() {
   document.addEventListener('click', closePickersOnOutsideClick, { passive: true });
   document.removeEventListener('keydown', handleCopilotShortcut);
   document.addEventListener('keydown', handleCopilotShortcut);
+  window.removeEventListener('resize', handleHistoryViewportChange);
+  window.addEventListener('resize', handleHistoryViewportChange, { passive: true });
 }
 
 async function applyProfileDraft(button) {
@@ -2331,9 +2519,14 @@ function closePickersOnOutsideClick(e) {
 function handleCopilotShortcut(e) {
   if ((e.metaKey || e.ctrlKey) && String(e.key || '').toLowerCase() === 'k') {
     e.preventDefault();
-    ui.historyOpen = true;
-    rerenderHistory();
-    document.querySelector('[data-history-search]')?.focus();
+    if (isHistoryDrawerViewport()) {
+      ui.historyOpen = true;
+      rerenderHistory();
+    } else if (ui.historyCollapsed) {
+      ui.historyCollapsed = false;
+      applyHistoryLayout({ persist: true });
+    }
+    window.requestAnimationFrame(() => document.querySelector('[data-history-search]')?.focus());
     return;
   }
   if (e.key !== 'Escape') return;
