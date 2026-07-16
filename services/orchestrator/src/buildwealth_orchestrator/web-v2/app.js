@@ -4,6 +4,7 @@
 import * as today from './views/today.js';
 import * as portfolio from './views/portfolio.js';
 import * as plan from './views/plan.js';
+import * as studio from './views/studio.js';
 import * as copilot from './views/copilot.js';
 import * as atelier from './views/atelier.js';
 import * as inbox from './views/inbox.js';
@@ -22,13 +23,13 @@ import { api, setActiveWorkspaceId } from './lib/api.js';
 import { html, raw, $, $$, esc } from './lib/dom.js';
 import { fmtDateLong } from './lib/format.js';
 
-const VIEWS = [today, inbox, plan, portfolio, profile, copilot, research, atelier, settings, importSync, workflows, review, tax];
+const VIEWS = [today, inbox, plan, studio, portfolio, profile, copilot, research, atelier, settings, importSync, workflows, review, tax];
 
 const VIEW_BY_ID = new Map(VIEWS.map(v => [v.meta.id, v]));
 
 // Primary sidebar order (fixed). Anything not listed here that has a primary
-// group still appears, but the canonical six should match the IA strategy.
-const PRIMARY_ORDER = ['today', 'inbox', 'plan', 'portfolio', 'profile', 'copilot'];
+// group still appears, but the canonical seven should match the IA strategy.
+const PRIMARY_ORDER = ['today', 'inbox', 'plan', 'studio', 'portfolio', 'profile', 'copilot'];
 
 // Data & Tools menu — utility surfaces that don't belong in the main sidebar.
 // Items reference v2 view ids when available, or external hrefs when not.

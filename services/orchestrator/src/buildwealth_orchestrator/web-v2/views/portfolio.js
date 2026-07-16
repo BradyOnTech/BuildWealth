@@ -22,7 +22,7 @@ const MONEY_FMT = new Intl.NumberFormat('en-US', { style: 'currency', currency: 
 export const meta = {
   id: 'portfolio',
   label: 'Portfolio',
-  numeral: 'IV',
+  numeral: 'V',
   group: 'primary',
 };
 

@@ -33,7 +33,7 @@ import {
 export const meta = {
   id: 'profile',
   label: 'Profile',
-  numeral: 'V',
+  numeral: 'VI',
   group: 'primary',
 };
 

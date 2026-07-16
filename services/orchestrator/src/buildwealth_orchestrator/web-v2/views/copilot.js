@@ -14,7 +14,7 @@ import { fmtRelative } from '../lib/format.js';
 export const meta = {
   id: 'copilot',
   label: 'Copilot',
-  numeral: 'VI',
+  numeral: 'VII',
   group: 'primary',
 };
 
