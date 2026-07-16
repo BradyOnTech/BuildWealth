@@ -213,6 +213,11 @@ async def plan_scenarios(
     )
     income_projection_payload = income_projection.model_dump(mode="json") if income_projection is not None else None
     expense_projection_payload = expense_projection.model_dump(mode="json") if expense_projection is not None else None
+    if request.expense_scale is not None and isinstance(expense_projection_payload, dict):
+        expense_projection_payload = m.scale_expense_projection_payload(
+            expense_projection_payload,
+            scale=float(request.expense_scale),
+        )
     (
         income_projection_payload,
         expense_projection_payload,
@@ -332,6 +337,8 @@ async def plan_scenarios(
         and primary_member.get("retirement_age") is not None
     ):
         active_retirement_age = max(18, min(100, m._coerce_int(primary_member.get("retirement_age"), 65)))
+    if request.target_retirement_age is not None:
+        active_retirement_age = max(18, min(100, int(request.target_retirement_age)))
     requested_drawdown_order = str(request.drawdown_order or "").strip() or None
     if requested_drawdown_order is not None:
         active_drawdown_order = requested_drawdown_order

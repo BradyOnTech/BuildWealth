@@ -198,6 +198,9 @@ class ScenarioRequest(BaseModel):
     expected_return_baseline: float | None = Field(default=None, ge=-0.5, le=0.5)
     return_volatility: float | None = Field(default=None, ge=0, le=0.6)
     inflation_rate: float | None = Field(default=None, ge=-0.05, le=0.25)
+    # Studio life-lever overrides (do not mutate the active plan).
+    target_retirement_age: int | None = Field(default=None, ge=18, le=100)
+    expense_scale: float | None = Field(default=None, ge=0.25, le=2.0)
 
 
 class IncomeProjectionIncomeInput(BaseModel):

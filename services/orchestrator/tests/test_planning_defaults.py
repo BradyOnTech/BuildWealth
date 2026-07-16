@@ -113,3 +113,26 @@ def test_plan_value_falls_back_to_current_holdings_without_snapshot(tmp_path) ->
     snapshots = main.SnapshotStore(tmp_path / "snapshots")
 
     assert main.resolve_portfolio_value(None, store=snapshots, portfolio=portfolio) == 1_234
+
+
+def test_scale_expense_projection_payload_scales_money_fields_immutably() -> None:
+    payload = {
+        "first_year_expenses_usd": 100_000.0,
+        "final_year_expenses_usd": 120_000.0,
+        "yearly_points": [
+            {"year": 2026, "total_expenses_usd": 100_000.0, "fixed_expenses_usd": 60_000.0},
+            {"year": 2027, "total_expenses_usd": 103_000.0, "fixed_expenses_usd": 61_800.0},
+        ],
+    }
+    scaled = main.scale_expense_projection_payload(payload, scale=0.9)
+    assert scaled is not payload
+    assert scaled["first_year_expenses_usd"] == 90_000.0
+    assert scaled["final_year_expenses_usd"] == 108_000.0
+    assert scaled["yearly_points"][0]["total_expenses_usd"] == 90_000.0
+    assert scaled["yearly_points"][0]["fixed_expenses_usd"] == 54_000.0
+    assert scaled["expense_scale"] == 0.9
+    # Original untouched
+    assert payload["first_year_expenses_usd"] == 100_000.0
+    assert payload["yearly_points"][0]["total_expenses_usd"] == 100_000.0
+    # Identity scale returns original reference
+    assert main.scale_expense_projection_payload(payload, scale=1.0) is payload

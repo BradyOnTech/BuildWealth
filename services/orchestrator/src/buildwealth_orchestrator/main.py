@@ -3469,6 +3469,56 @@ def build_expense_projection_for_plan_settings(
     )
 
 
+def scale_expense_projection_payload(
+    expense_projection: dict[str, Any] | None,
+    *,
+    scale: float,
+) -> dict[str, Any] | None:
+    """Scale yearly spending in an expense projection payload (Studio life lever).
+
+    Does not mutate the caller's dict. Used only for exploratory simulations.
+    """
+    if not isinstance(expense_projection, dict):
+        return expense_projection
+    factor = max(0.25, min(2.0, float(scale)))
+    if abs(factor - 1.0) < 1e-9:
+        return expense_projection
+
+    money_keys = (
+        "total_expenses_usd",
+        "fixed_expenses_usd",
+        "variable_expenses_usd",
+        "first_year_expenses_usd",
+        "final_year_expenses_usd",
+        "cumulative_expenses_usd",
+    )
+    scaled: dict[str, Any] = dict(expense_projection)
+    for key in money_keys:
+        if key in scaled and scaled[key] is not None:
+            try:
+                scaled[key] = round(float(scaled[key]) * factor, 2)
+            except (TypeError, ValueError):
+                pass
+    points = scaled.get("yearly_points")
+    if isinstance(points, list):
+        next_points: list[Any] = []
+        for point in points:
+            if not isinstance(point, dict):
+                next_points.append(point)
+                continue
+            next_point = dict(point)
+            for key in money_keys:
+                if key in next_point and next_point[key] is not None:
+                    try:
+                        next_point[key] = round(float(next_point[key]) * factor, 2)
+                    except (TypeError, ValueError):
+                        pass
+            next_points.append(next_point)
+        scaled["yearly_points"] = next_points
+    scaled["expense_scale"] = factor
+    return scaled
+
+
 def build_debt_projection_from_profile(
     *,
     max_years: int,
