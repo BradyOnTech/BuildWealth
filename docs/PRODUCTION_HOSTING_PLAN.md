@@ -99,6 +99,36 @@ Independent of hosting choice: fill `AUTH_OIDC_*`, flip `AUTH_MODE=hosted`.
 Password login turns off; Auth0 owns MFA/resets/passkeys
 (decision record: HOSTED_IDENTITY_PROVIDER_DECISION_2026-05-14.md).
 
+## Optional — household-funded Copilot through ChatGPT/Codex
+
+The orchestrator image includes a pinned Codex CLI and BuildWealth can connect
+each household workspace to that household's ChatGPT/Codex subscription. This
+is an AI-provider connection, not BuildWealth identity. Auth0/local auth still
+controls access to the financial workspace.
+
+On a remote host, the normal Codex browser callback points to `localhost` and
+cannot safely complete in the container. BuildWealth therefore starts Codex's
+headless device flow, shows the one-time code, and polls app-server for
+completion. The returned `auth.json` is immediately encrypted in the workspace
+secret vault; each Copilot turn decrypts it into a temporary, mode-`0600`
+`CODEX_HOME`, uses a read-only ephemeral thread, saves refreshed credentials
+back to the vault, and removes the temporary directory.
+
+Hosting requirements are the same on Render, Fly, and a VPS:
+
+- one always-on app process while a device authorization is pending
+- persistent `/app/data` storage
+- a stable `BUILDWEALTH_SECRET_KEY` supplied from the host's secret manager
+- the pinned Codex CLI from `services/orchestrator/Dockerfile`
+- outbound HTTPS access to OpenAI authentication and Codex services
+
+Usage follows the connected ChatGPT workspace's Codex plan limits and policy.
+There is no BuildWealth-owned OpenAI API key or per-token API invoice in this
+mode, but the subscription, rate limits, and application hosting costs still
+exist. The app-server dynamic-tool API is experimental; validate a real login,
+tool-backed Copilot answer, disconnect, and credential rotation before inviting
+hosted users.
+
 ## Phase 3 — Public product (the checklist that gates it)
 
 In order, from ROADMAP + DEPLOYMENT docs:

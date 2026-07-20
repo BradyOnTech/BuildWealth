@@ -116,6 +116,38 @@ LLM_API_KEY=... ./scripts/seed-demo-data.py
 The key is stored in the active workspace's encrypted local secret store and is only returned
 to the UI as a masked value.
 
+### Use a ChatGPT/Codex subscription instead of an API key
+
+BuildWealth can also run Copilot through the Codex app-server included in the
+orchestrator image:
+
+1. Open **Connections & AI**.
+2. Choose **ChatGPT subscription** as the provider.
+3. Select **Connect ChatGPT**, then enter the one-time code on OpenAI's device
+   authorization page.
+
+This connection is deliberately separate from BuildWealth account sign-in.
+ChatGPT is the AI entitlement; BuildWealth local/OIDC auth still protects the
+household workspace. The Codex credential is encrypted in the workspace secret
+store and materialized only inside a temporary `CODEX_HOME` for each turn.
+
+Subscription-backed usage follows the connected ChatGPT workspace's Codex plan,
+credits, rate limits, retention, and admin policy. It avoids a BuildWealth-owned
+OpenAI API key and per-token API bill; it does not make inference unlimited or
+remove the cost of hosting BuildWealth and Codex app-server. The app-server
+dynamic-tool bridge is experimental, so keep the pinned Codex CLI version in
+the Docker image and upgrade it deliberately after running the Copilot tests.
+
+Relevant endpoints:
+
+- `GET /api/settings/codex-subscription`
+- `POST /api/settings/codex-subscription/connect`
+- `POST /api/settings/codex-subscription/disconnect`
+
+For a hosted container (Render, Fly, or a VPS), keep one persistent `/app/data`
+volume and one stable `BUILDWEALTH_SECRET_KEY`. Set `CODEX_BIN` only if the CLI
+is installed somewhere other than `codex` on `PATH`.
+
 ## Maintenance Jobs
 
 Due account-data deletion requests are purged by a private maintenance command, not a public API button:
