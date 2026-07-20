@@ -6,7 +6,9 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl \
+  && apt-get install -y --no-install-recommends curl nodejs npm \
+  && npm install -g @openai/codex@0.142.5 \
+  && npm cache clean --force \
   && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml /app/

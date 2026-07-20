@@ -9,6 +9,7 @@ import {
   accountDataDeletionPanel,
   hostedReadinessPanel,
   usageCard,
+  codexSubscriptionPanel,
 } from '../views/settings.js';
 
 test('toDraft: reads provider settings with sensible defaults', () => {
@@ -26,6 +27,32 @@ test('toDraft: reads provider settings with sensible defaults', () => {
   assert.equal(draft.llm_max_tokens, 4096);
   assert.equal(draft.llm_timeout_seconds, 90);
   assert.equal(draft.llm_parallel_tool_calls, false);
+});
+
+test('codexSubscriptionPanel: renders cloud-safe ChatGPT device authorization', () => {
+  const disconnected = String(codexSubscriptionPanel({
+    status: { state: 'disconnected', connected: false },
+  }));
+  assert.match(disconnected, /Connect ChatGPT/);
+  assert.match(disconnected, /device flow avoids a localhost OAuth callback/);
+
+  const waiting = String(codexSubscriptionPanel({
+    status: {
+      state: 'waiting_for_user',
+      connected: false,
+      user_code: 'ABCD-EFGH',
+      verification_url: 'https://auth.openai.com/codex/device',
+    },
+  }));
+  assert.match(waiting, /ABCD-EFGH/);
+  assert.match(waiting, /Open ChatGPT sign-in/);
+  assert.match(waiting, /auth\.openai\.com\/codex\/device/);
+
+  const connected = String(codexSubscriptionPanel({
+    status: { state: 'connected', connected: true },
+  }));
+  assert.match(connected, /ChatGPT subscription connected/);
+  assert.match(connected, /No OpenAI API key is stored/);
 });
 
 test('usageCard renders monthly spend rows and hides when empty', () => {

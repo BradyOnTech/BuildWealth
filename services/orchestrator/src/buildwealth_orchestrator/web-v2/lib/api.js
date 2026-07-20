@@ -234,6 +234,9 @@ function contextCandidatesUrl({
 export const api = {
   authConfig: () => fetchJson('/api/auth/config'),
   hostedAuthReadiness: () => fetchJson('/api/auth/hosted/readiness'),
+  codexSubscriptionStatus: () => fetchJson('/api/settings/codex-subscription'),
+  connectCodexSubscription: () => postJson('/api/settings/codex-subscription/connect', {}),
+  disconnectCodexSubscription: () => postJson('/api/settings/codex-subscription/disconnect', {}),
   authLogin: async (body = {}) => {
     const result = await postJson('/api/auth/login', body);
     setCsrfToken(result?.csrf_token || '');

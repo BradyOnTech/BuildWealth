@@ -12,6 +12,7 @@ from buildwealth_orchestrator.services.llm_clients import (
     default_base_url_for_provider,
     default_model_for_provider,
 )
+from buildwealth_orchestrator.services.codex_app_server import CodexAppServerChatClient
 from buildwealth_orchestrator.services.llm_model_catalog import (
     CATALOG_VERSION,
     build_llm_options_payload,
@@ -45,6 +46,23 @@ def test_openrouter_client_is_openai_compatible() -> None:
     assert client.model == "deepseek/deepseek-chat"
     assert default_model_for_provider("openrouter") == "openrouter/auto"
     assert default_base_url_for_provider("openrouter") == "https://openrouter.ai/api/v1"
+
+
+def test_codex_subscription_uses_app_server_without_an_api_base_url() -> None:
+    client = build_llm_client(
+        LLMProviderConfig(
+            provider="codex_subscription",
+            api_key='{"tokens":{"access_token":"test"}}',
+            model="codex-recommended",
+            base_url="",
+        )
+    )
+    assert isinstance(client, CodexAppServerChatClient)
+    assert client.enabled is True
+    assert default_model_for_provider("codex_subscription") == "codex-recommended"
+    assert default_base_url_for_provider("codex_subscription") == ""
+    models = models_for_provider("codex_subscription")
+    assert models[0]["id"] == "codex-recommended"
 
 
 def test_normalize_conversation_llm_prefers_override() -> None:

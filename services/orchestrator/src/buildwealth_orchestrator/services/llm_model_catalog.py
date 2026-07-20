@@ -40,6 +40,26 @@ def _model(
 
 
 PROVIDER_CATALOG: dict[str, dict[str, Any]] = {
+    "codex_subscription": {
+        "id": "codex_subscription",
+        "label": "ChatGPT subscription",
+        "hint": "Codex app-server · no API key",
+        "default_model": "codex-recommended",
+        "default_base_url": "",
+        "auth_note": (
+            "Connect ChatGPT with a one-time device code. Usage follows the "
+            "connected ChatGPT workspace's Codex limits."
+        ),
+        "models": [
+            _model(
+                id="codex-recommended",
+                label="Codex recommended",
+                cost_band="plan",
+                blurb="Uses the best compatible model for the installed Codex runtime",
+                recommended=True,
+            ),
+        ],
+    },
     "xai": {
         "id": "xai",
         "label": "xAI",

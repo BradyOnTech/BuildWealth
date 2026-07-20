@@ -8,6 +8,12 @@ from typing import Any, Protocol
 
 import httpx
 
+from buildwealth_orchestrator.services.codex_app_server import (
+    CODEX_SUBSCRIPTION_PROVIDER,
+    DEFAULT_CODEX_MODEL,
+    CodexAppServerChatClient,
+)
+
 
 # Single source of truth for provider default models/base URLs.
 # user_settings.LLM_PROVIDER_DEFAULTS derives from these — update HERE only.
@@ -30,6 +36,7 @@ LLM_PROVIDER_ANTHROPIC = "anthropic"
 LLM_PROVIDER_XAI = "xai"
 LLM_PROVIDER_OPENROUTER = "openrouter"
 LLM_PROVIDER_CUSTOM_OPENAI_COMPATIBLE = "custom_openai_compatible"
+LLM_PROVIDER_CODEX_SUBSCRIPTION = CODEX_SUBSCRIPTION_PROVIDER
 
 OPENAI_COMPATIBLE_PROVIDERS = {
     LLM_PROVIDER_OPENAI,
@@ -48,6 +55,8 @@ class LLMProviderConfig:
     timeout_seconds: float = 60.0
     max_tokens: int = 2048
     parallel_tool_calls: bool = True
+    codex_bin: str = "codex"
+    credential_persist: Any = None
 
 
 class ChatToolClient(Protocol):
@@ -121,9 +130,38 @@ async def run_tool_call_probe(client: ChatToolClient) -> dict[str, Any]:
             "provider": getattr(client, "provider", "unknown"),
             "model": getattr(client, "model", None),
             "stage": "configuration",
-            "detail": "LLM API key is not configured.",
+            "detail": "LLM provider credentials are not configured.",
             "tool_calls": [],
             "answer": "",
+        }
+
+    if hasattr(client, "run_agent"):
+        completion = await client.run_agent(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Connection probe. Reply in plain text with exactly CODEX_PROBE_OK.",
+                },
+                {"role": "user", "content": "Confirm the connection."},
+            ],
+            tools=[],
+            tool_handler=None,
+        )
+        answer = _message_text((completion.get("message") or {}).get("content")).strip()
+        ok = "CODEX_PROBE_OK" in answer
+        return {
+            "ok": ok,
+            "provider": completion.get("provider", getattr(client, "provider", "unknown")),
+            "model": completion.get("model", getattr(client, "model", None)),
+            "stage": "complete" if ok else "final_answer",
+            "capability": "agent_dynamic_tools",
+            "detail": (
+                "Codex app-server completed a ChatGPT-subscription-backed turn."
+                if ok
+                else "Codex app-server did not return the expected probe answer."
+            ),
+            "tool_calls": [],
+            "answer": answer,
         }
 
     tools = [echo_probe_tool_definition()]
@@ -230,11 +268,14 @@ def _coerce_provider(provider: str | None) -> str:
         LLM_PROVIDER_XAI,
         LLM_PROVIDER_OPENROUTER,
         LLM_PROVIDER_CUSTOM_OPENAI_COMPATIBLE,
+        LLM_PROVIDER_CODEX_SUBSCRIPTION,
     }
     return value if value in supported else LLM_PROVIDER_OPENAI
 
 
 def default_base_url_for_provider(provider: str) -> str:
+    if provider == LLM_PROVIDER_CODEX_SUBSCRIPTION:
+        return ""
     if provider == LLM_PROVIDER_GEMINI:
         return DEFAULT_GEMINI_BASE_URL
     if provider == LLM_PROVIDER_ANTHROPIC:
@@ -247,6 +288,8 @@ def default_base_url_for_provider(provider: str) -> str:
 
 
 def default_model_for_provider(provider: str) -> str:
+    if provider == LLM_PROVIDER_CODEX_SUBSCRIPTION:
+        return DEFAULT_CODEX_MODEL
     if provider == LLM_PROVIDER_GEMINI:
         return DEFAULT_GEMINI_MODEL
     if provider == LLM_PROVIDER_ANTHROPIC:
@@ -266,6 +309,7 @@ def provider_label(provider: str) -> str:
         LLM_PROVIDER_XAI: "xAI",
         LLM_PROVIDER_OPENROUTER: "OpenRouter",
         LLM_PROVIDER_CUSTOM_OPENAI_COMPATIBLE: "Custom OpenAI-compatible",
+        LLM_PROVIDER_CODEX_SUBSCRIPTION: "ChatGPT subscription (Codex)",
     }
     return labels.get(provider, provider)
 
@@ -824,6 +868,14 @@ def build_llm_client(config: LLMProviderConfig) -> ChatToolClient:
     provider = _coerce_provider(config.provider)
     model = config.model or default_model_for_provider(provider)
     base_url = config.base_url or default_base_url_for_provider(provider)
+    if provider == LLM_PROVIDER_CODEX_SUBSCRIPTION:
+        return CodexAppServerChatClient(
+            credential_json=config.api_key,
+            model=model,
+            codex_bin=config.codex_bin,
+            timeout_seconds=config.timeout_seconds,
+            persist_credentials=config.credential_persist,
+        )
     if provider in OPENAI_COMPATIBLE_PROVIDERS:
         return OpenAICompatibleChatClient(
             api_key=config.api_key,

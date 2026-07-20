@@ -440,6 +440,10 @@ class WorkspaceSettingsStore:
         for provider in known_llm_providers():
             slot = provider_api_key_secret_name(provider)
             entry = self.secret_store.secret_metadata(slot)
+            if provider == "codex_subscription" and entry.get("configured"):
+                # The credential is a complete encrypted auth.json document,
+                # not an API key. Never expose even a cosmetic suffix.
+                entry = {**entry, "last4": None}
             if not entry.get("configured") and provider == "openai":
                 legacy = self.secret_store.secret_metadata(LEGACY_OPENAI_API_KEY)
                 if legacy.get("configured"):

@@ -674,7 +674,52 @@ class FinancialCopilot:
                 contextual_brief=contextual_brief,
             )
 
-            for round_index in range(self.max_tool_rounds):
+            agent_client = hasattr(client, "run_agent")
+            if agent_client:
+                _emit({"type": "round", "round": 1})
+
+                async def handle_agent_tool(
+                    name: str,
+                    arguments: dict[str, Any],
+                ) -> dict[str, Any]:
+                    _emit({"type": "tool", "name": name, "status": "start"})
+                    result, error = await self._execute_tool(name=name, arguments=arguments)
+                    _emit(
+                        {
+                            "type": "tool",
+                            "name": name,
+                            "status": "error" if error else "done",
+                        }
+                    )
+                    tool_traces.append(
+                        {
+                            "name": name,
+                            "arguments": arguments,
+                            "result": result,
+                            "error": error,
+                        }
+                    )
+                    return {
+                        "ok": error is None,
+                        "result": result,
+                        "error": error,
+                    }
+
+                completion = await client.run_agent(
+                    messages=messages,
+                    tools=self._tool_definitions(),
+                    tool_handler=handle_agent_tool,
+                    on_delta=(
+                        (lambda text: _emit({"type": "answer_delta", "text": text}))
+                        if progress_cb is not None
+                        else None
+                    ),
+                )
+                model_name = completion.get("model", model_name)
+                assistant_message = completion.get("message", {})
+                answer = self._message_text(assistant_message.get("content")).strip()
+
+            for round_index in ([] if agent_client else range(self.max_tool_rounds)):
                 _emit({"type": "round", "round": round_index + 1})
                 if progress_cb is not None and hasattr(client, "complete_stream"):
                     completion = await client.complete_stream(

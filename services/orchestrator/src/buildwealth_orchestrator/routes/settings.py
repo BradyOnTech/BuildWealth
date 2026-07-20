@@ -9,8 +9,15 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 import buildwealth_orchestrator.main as m
+from buildwealth_orchestrator.services.codex_app_server import (
+    CODEX_SUBSCRIPTION_PROVIDER,
+    DEFAULT_CODEX_MODEL,
+    CodexAppServerError,
+    CodexSubscriptionManager,
+)
 
 router = APIRouter()
+codex_subscription_manager = CodexSubscriptionManager()
 
 __all__ = [
     "get_user_settings",
@@ -19,7 +26,74 @@ __all__ = [
     "get_llm_routing",
     "get_llm_usage",
     "get_context_settings",
+    "get_codex_subscription_status",
+    "start_codex_subscription_login",
+    "disconnect_codex_subscription",
 ]
+
+
+def _codex_credential(services: m.WorkspaceServices) -> str:
+    return str(
+        services.settings_store.get_provider_api_key(CODEX_SUBSCRIPTION_PROVIDER) or ""
+    )
+
+
+@router.get("/api/settings/codex-subscription")
+def get_codex_subscription_status(
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> dict[str, m.Any]:
+    m.require_permission(services.context, "settings.read")
+    return codex_subscription_manager.status(
+        workspace_id=services.context.workspace_id,
+        connected=bool(_codex_credential(services)),
+    )
+
+
+@router.post("/api/settings/codex-subscription/connect")
+async def start_codex_subscription_login(
+    http_request: m.Request,
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> dict[str, m.Any]:
+    m.require_csrf(http_request)
+    m.require_permission(services.context, "settings.write")
+
+    def persist(credential: str) -> None:
+        services.settings_store.set_provider_api_key(CODEX_SUBSCRIPTION_PROVIDER, credential)
+        services.settings_store.save(
+            {
+                "llm_provider": CODEX_SUBSCRIPTION_PROVIDER,
+                "llm_model": DEFAULT_CODEX_MODEL,
+                "llm_base_url": "",
+            }
+        )
+
+    try:
+        return await codex_subscription_manager.start_login(
+            workspace_id=services.context.workspace_id,
+            codex_bin=str(m.settings.codex_bin or "codex"),
+            persist_credentials=persist,
+            connected=bool(_codex_credential(services)),
+        )
+    except CodexAppServerError as exc:
+        raise m.HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/api/settings/codex-subscription/disconnect")
+async def disconnect_codex_subscription(
+    http_request: m.Request,
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> dict[str, m.Any]:
+    m.require_csrf(http_request)
+    m.require_permission(services.context, "settings.write")
+    await codex_subscription_manager.disconnect(workspace_id=services.context.workspace_id)
+    services.settings_store.set_provider_api_key(CODEX_SUBSCRIPTION_PROVIDER, "")
+    current = services.settings_store.load_stored_raw()
+    if str(current.get("llm_provider") or "") == CODEX_SUBSCRIPTION_PROVIDER:
+        services.settings_store.save({"llm_provider": "openai"})
+    return codex_subscription_manager.status(
+        workspace_id=services.context.workspace_id,
+        connected=False,
+    )
 
 
 @router.get("/api/settings")

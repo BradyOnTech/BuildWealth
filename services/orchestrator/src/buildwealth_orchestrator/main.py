@@ -12,6 +12,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager, suppress
 from contextvars import ContextVar
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -1183,6 +1184,7 @@ def _llm_config_from_payload(
             payload.get("llm_parallel_tool_calls", settings.llm_parallel_tool_calls),
             settings.llm_parallel_tool_calls,
         ),
+        codex_bin=str(settings.codex_bin or "codex"),
     )
 
 
@@ -17647,6 +17649,13 @@ def _chat_client_for_resolved_llm(
     # Always treat model/base_url/key as explicit for the resolved turn.
     explicit_keys.update({"llm_provider", "llm_model", "llm_base_url", "llm_api_key"})
     config = _llm_config_from_payload(payload, explicit_keys=explicit_keys)
+    if provider == "codex_subscription" and settings_store is not None:
+        config = replace(
+            config,
+            credential_persist=lambda credential: settings_store.set_provider_api_key(
+                "codex_subscription", credential
+            ),
+        )
     # Meter per-conversation override clients too — otherwise turns that pick
     # a model in the chat UI never reach the usage ledger.
     return metered_chat_client(build_llm_client(config), task="chat", ledger=llm_usage_ledger)

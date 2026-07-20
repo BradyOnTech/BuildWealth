@@ -334,6 +334,13 @@
   background: color-mix(in srgb, var(--brass) 8%, var(--paper-bright));
 }
 
+.settings-device-code {
+  margin: 0.8rem 0;
+  font-size: clamp(1.35rem, 4vw, 2rem);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
 .settings-model-guide {
   display: flex;
   flex-wrap: wrap;

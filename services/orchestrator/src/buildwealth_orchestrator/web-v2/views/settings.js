@@ -65,6 +65,9 @@ const ui = {
   accountDeletionRequesting: false,
   accountDeletionCancelingId: null,
   accountDeletionResult: null,
+  codexSubscription: null,
+  codexSubscriptionBusy: false,
+  codexSubscriptionPoll: 0,
 };
 
 const EMBEDDING_PROVIDERS = [
@@ -105,7 +108,7 @@ async function load() {
   ui.loaded = false;
   ui.loadError = null;
   try {
-    const [settings, contextSettings, workspaces, session, authConfig, deletionRequests, llmUsage] = await Promise.all([
+    const [settings, contextSettings, workspaces, session, authConfig, deletionRequests, llmUsage, codexSubscription] = await Promise.all([
       api.settings(),
       api.contextSettings().catch(() => null),
       api.workspaces().catch(() => null),
@@ -113,6 +116,7 @@ async function load() {
       api.authConfig().catch(() => null),
       api.accountDataDeletionRequests().catch(() => null),
       api.llmUsage().catch(() => null),
+      api.codexSubscriptionStatus().catch(() => null),
     ]);
     const hostedReadiness = authConfig?.hosted_auth_enabled
       ? await api.hostedAuthReadiness().catch((err) => ({ error: err.message || 'Could not load hosted readiness.' }))
@@ -154,6 +158,8 @@ async function load() {
     ui.accountDeletionRequesting = false;
     ui.accountDeletionCancelingId = null;
     ui.accountDeletionResult = null;
+    ui.codexSubscription = codexSubscription;
+    ui.codexSubscriptionBusy = false;
     ui.loaded = true;
   } catch (err) {
     ui.loadError = err.message || 'Could not load settings.';
@@ -428,6 +434,7 @@ function providerCard() {
   const knownModel = models.some(m => m.id === selectedModel);
   const showCustomModel = d.llm_provider === 'custom_openai_compatible' || (selectedModel && !knownModel) || d._modelCustom;
   const connected = connectedProvidersSummary();
+  const isCodexSubscription = d.llm_provider === 'codex_subscription';
 
   return html`
     <section class="settings-card">
@@ -435,8 +442,8 @@ function providerCard() {
         <div class="settings-card-kicker">Copilot</div>
         <h2 class="settings-card-title">AI providers</h2>
         <p class="settings-card-lede">
-          Keys stay local. Save a key for each vendor you want — several can stay connected at once.
-          Copilot’s model menu then lists every connected provider. Prefer <strong>OpenRouter</strong> for many cheap models under one key.
+          Connect a ChatGPT/Codex subscription or save provider keys — several can stay connected at once.
+          Credentials are isolated to this household workspace and never returned by the API.
         </p>
       </header>
 
@@ -445,7 +452,7 @@ function providerCard() {
           <span class="settings-connected-label">Connected</span>
           ${connected.map(p => html`
             <span class="settings-connected-chip ${p.is_active_default ? 'active' : ''}" title="${esc(p.id)}">
-              ${esc(p.label || p.id)}${p.last4 ? html`<span class="settings-connected-last4">…${esc(String(p.last4))}</span>` : ''}
+              ${esc(p.label || p.id)}${p.last4 && p.id !== 'codex_subscription' ? html`<span class="settings-connected-last4">…${esc(String(p.last4))}</span>` : ''}
               ${p.is_active_default ? html`<span class="settings-connected-default">default</span>` : ''}
             </span>
           `)}
@@ -458,7 +465,9 @@ function providerCard() {
           <select id="settings-provider" class="settings-input">
             ${raw(PROVIDERS.map(p => {
               const meta = providerKeyMeta(p.value);
-              const mark = meta?.configured ? ' · key saved' : '';
+              const mark = meta?.configured
+                ? (p.value === 'codex_subscription' ? ' · connected' : ' · key saved')
+                : '';
               return `
               <option value="${esc(p.value)}" ${p.value === d.llm_provider ? 'selected' : ''}>
                 ${esc(p.label)} · ${esc(p.hint)}${esc(mark)}
@@ -466,13 +475,15 @@ function providerCard() {
             }).join(''))}
           </select>
           <span class="settings-hint">
-            ${d.llm_provider === 'openrouter'
+            ${d.llm_provider === 'codex_subscription'
+              ? 'Uses this workspace’s connected ChatGPT Codex allowance. BuildWealth login remains separate.'
+              : d.llm_provider === 'openrouter'
               ? 'One OpenRouter key unlocks DeepSeek, Llama, mini models, and more — ideal for low cost.'
               : 'Default for new chats. Other connected providers stay available in the Copilot model picker.'}
           </span>
         </label>
 
-        <div class="settings-field span-2">
+        ${isCodexSubscription ? raw(codexSubscriptionPanel()) : html`<div class="settings-field span-2">
           <span class="settings-label">
             API key
             ${configured
@@ -494,9 +505,9 @@ function providerCard() {
               ? 'A key is stored for this workspace. Paste a new key only if you want to replace it, then Save.'
               : 'Paste the key, then Save provider. Test connection uses what you save (or the text in this field).'}
           </span>
-        </div>
+        </div>`}
 
-        <label class="settings-field span-2">
+        ${isCodexSubscription ? '' : html`<label class="settings-field span-2">
           <span class="settings-label">Model</span>
           ${models.length ? html`
             <select id="settings-model-select" class="settings-input">
@@ -525,16 +536,16 @@ function providerCard() {
               `)}
             </div>
           ` : ''}
-        </label>
+        </label>`}
 
-        <label class="settings-field span-2">
+        ${isCodexSubscription ? '' : html`<label class="settings-field span-2">
           <span class="settings-label">Base URL</span>
           <input id="settings-base-url" class="settings-input mono"
                  type="text" autocomplete="off" spellcheck="false"
                  placeholder="${esc(PROVIDER_DEFAULTS[d.llm_provider]?.llm_base_url || 'https://...')}"
                  value="${esc(d.llm_base_url || '')}" />
           <span class="settings-hint">Filled automatically when you switch providers.</span>
-        </label>
+        </label>`}
       </div>
 
       <details class="settings-advanced">
@@ -639,7 +650,7 @@ function providerCard() {
 
       <footer class="settings-actions">
         <button class="btn btn-primary" id="settings-save" ${ui.saving ? 'disabled' : ''}>
-          ${ui.saving ? 'Saving…' : 'Save provider'}
+          ${ui.saving ? 'Saving…' : (isCodexSubscription ? 'Save routing' : 'Save provider')}
         </button>
         <button class="btn btn-ghost" id="settings-test" ${ui.testing ? 'disabled' : ''}>
           ${ui.testing ? 'Testing…' : 'Test connection'}
@@ -652,6 +663,54 @@ function providerCard() {
 
       ${raw(testResultBlock())}
     </section>
+  `;
+}
+
+export function codexSubscriptionPanel(model = {}) {
+  const status = model.status || ui.codexSubscription || { state: 'disconnected', connected: false };
+  const busy = model.busy ?? ui.codexSubscriptionBusy;
+  const waiting = status.state === 'waiting_for_user';
+  const connected = Boolean(status.connected);
+  return html`
+    <div class="settings-field span-2" data-codex-subscription>
+      <span class="settings-label">ChatGPT connection</span>
+      ${connected ? html`
+        <div class="settings-test-block ok">
+          <p class="settings-test-headline">ChatGPT subscription connected.</p>
+          <p class="settings-test-detail">
+            Copilot usage follows this ChatGPT workspace’s Codex plan and limits. No OpenAI API key is stored.
+          </p>
+        </div>
+        <div class="settings-actions">
+          <button class="btn btn-quiet" id="codex-subscription-disconnect" ${busy ? 'disabled' : ''}>
+            ${busy ? 'Disconnecting…' : 'Disconnect ChatGPT'}
+          </button>
+        </div>
+      ` : waiting ? html`
+        <div class="settings-test-block">
+          <p class="settings-test-headline">Finish signing in with ChatGPT</p>
+          <p class="settings-test-detail">Enter this one-time code on OpenAI’s verification page:</p>
+          <p class="settings-device-code mono" aria-label="ChatGPT device code">${esc(status.user_code || '')}</p>
+          <div class="settings-actions">
+            <a class="btn btn-primary" href="${esc(status.verification_url || 'https://auth.openai.com/codex/device')}" target="_blank" rel="noopener noreferrer">
+              Open ChatGPT sign-in
+            </a>
+            <button class="btn btn-quiet" id="codex-subscription-refresh">I finished signing in</button>
+          </div>
+        </div>
+      ` : html`
+        <p class="settings-hint">
+          BuildWealth uses Codex app-server in an isolated, read-only runtime. On a cloud host, OpenAI’s
+          device flow avoids a localhost OAuth callback. The resulting credential is encrypted in this workspace.
+        </p>
+        <div class="settings-actions">
+          <button class="btn btn-primary" id="codex-subscription-connect" ${busy ? 'disabled' : ''}>
+            ${busy ? 'Starting…' : 'Connect ChatGPT'}
+          </button>
+        </div>
+      `}
+      ${status.error ? html`<p class="inline-warning" role="alert">${esc(status.error)}</p>` : ''}
+    </div>
   `;
 }
 
@@ -1251,6 +1310,9 @@ function attachHandlers() {
   delegate(root, 'click',  '#settings-test',           (e) => { e.preventDefault(); testProvider(); });
   delegate(root, 'click',  '#settings-reset-defaults', (e) => { e.preventDefault(); resetDefaults(); });
   delegate(root, 'click',  '#settings-clear-key',      (e) => { e.preventDefault(); clearSavedKey(); });
+  delegate(root, 'click',  '#codex-subscription-connect', (e) => { e.preventDefault(); connectCodexSubscription(); });
+  delegate(root, 'click',  '#codex-subscription-refresh', (e) => { e.preventDefault(); refreshCodexSubscription(); });
+  delegate(root, 'click',  '#codex-subscription-disconnect', (e) => { e.preventDefault(); disconnectCodexSubscription(); });
 
   // Context Intelligence card
   delegate(root, 'change', '#context-enabled', (_, el) => { ui.contextDraft.context_embeddings_enabled = !!el.checked; });
@@ -1357,6 +1419,15 @@ async function save() {
 async function testProvider() {
   if (ui.testing) return;
   syncApiKeyFromDom();
+  if (ui.draft?.llm_provider === 'codex_subscription' && !ui.codexSubscription?.connected) {
+    ui.testResult = {
+      ok: false,
+      stage: 'configuration',
+      detail: 'Connect ChatGPT above before testing the Codex subscription connection.',
+    };
+    render();
+    return;
+  }
   if (!hasProbeableKey()) {
     ui.testResult = {
       ok: false,
@@ -1421,6 +1492,83 @@ async function clearSavedKey() {
     ui.saveError = err?.message || 'Could not clear the saved key.';
   }
   render();
+}
+
+async function connectCodexSubscription() {
+  if (ui.codexSubscriptionBusy) return;
+  ui.codexSubscriptionBusy = true;
+  ui.saveError = null;
+  render();
+  try {
+    ui.codexSubscription = await api.connectCodexSubscription();
+    const url = ui.codexSubscription?.verification_url;
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
+    scheduleCodexSubscriptionPoll();
+  } catch (err) {
+    ui.codexSubscription = {
+      state: 'failed',
+      connected: false,
+      error: err?.message || 'Could not start ChatGPT sign-in.',
+    };
+  } finally {
+    ui.codexSubscriptionBusy = false;
+    render();
+  }
+}
+
+function scheduleCodexSubscriptionPoll() {
+  const token = ++ui.codexSubscriptionPoll;
+  setTimeout(async () => {
+    if (token !== ui.codexSubscriptionPoll || !document.getElementById('settings-page')) return;
+    await refreshCodexSubscription({ quiet: true });
+    if (ui.codexSubscription?.state === 'waiting_for_user') scheduleCodexSubscriptionPoll();
+  }, 2000);
+}
+
+async function refreshCodexSubscription({ quiet = false } = {}) {
+  if (!quiet) ui.codexSubscriptionBusy = true;
+  try {
+    const status = await api.codexSubscriptionStatus();
+    ui.codexSubscription = status;
+    if (status?.connected) {
+      ui.codexSubscriptionPoll += 1;
+      const settings = await api.settings();
+      ui.loadedSettings = settings;
+      ui.draft = toDraft(settings);
+      ui.apiKeyDirty = false;
+      window.dispatchEvent(new CustomEvent('buildwealth:settings-saved'));
+    }
+  } catch (err) {
+    ui.codexSubscription = {
+      ...(ui.codexSubscription || {}),
+      error: err?.message || 'Could not refresh ChatGPT connection.',
+    };
+  } finally {
+    if (!quiet) ui.codexSubscriptionBusy = false;
+    render();
+  }
+}
+
+async function disconnectCodexSubscription() {
+  if (ui.codexSubscriptionBusy) return;
+  ui.codexSubscriptionBusy = true;
+  render();
+  try {
+    ui.codexSubscription = await api.disconnectCodexSubscription();
+    const settings = await api.settings();
+    ui.loadedSettings = settings;
+    ui.draft = toDraft(settings);
+    ui.apiKeyDirty = false;
+    window.dispatchEvent(new CustomEvent('buildwealth:settings-saved'));
+  } catch (err) {
+    ui.codexSubscription = {
+      ...(ui.codexSubscription || {}),
+      error: err?.message || 'Could not disconnect ChatGPT.',
+    };
+  } finally {
+    ui.codexSubscriptionBusy = false;
+    render();
+  }
 }
 
 async function saveContext() {

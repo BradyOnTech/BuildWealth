@@ -115,6 +115,7 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = Field(default=60.0, alias="LLM_TIMEOUT_SECONDS")
     llm_max_tokens: int = Field(default=2048, alias="LLM_MAX_TOKENS")
     llm_parallel_tool_calls: bool = Field(default=True, alias="LLM_PARALLEL_TOOL_CALLS")
+    codex_bin: str = Field(default="codex", alias="CODEX_BIN")
     copilot_max_history_messages: int = Field(default=24, alias="COPILOT_MAX_HISTORY_MESSAGES")
     copilot_max_tool_rounds: int = Field(default=6, alias="COPILOT_MAX_TOOL_ROUNDS")
     copilot_context_cache_enabled: bool = Field(default=True, alias="COPILOT_CONTEXT_CACHE_ENABLED")

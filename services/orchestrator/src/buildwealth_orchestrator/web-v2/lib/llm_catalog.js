@@ -3,6 +3,7 @@
 // is unavailable (e.g. container not rebuilt yet).
 
 export const PROVIDERS = [
+  { value: 'codex_subscription',        label: 'ChatGPT subscription',          hint: 'Codex · no API key' },
   { value: 'openai',                   label: 'OpenAI',                       hint: 'gpt-5.5 · default' },
   { value: 'anthropic',                label: 'Anthropic',                    hint: 'Claude family' },
   { value: 'gemini',                   label: 'Google Gemini',                hint: 'gemini-3.1' },
@@ -12,6 +13,7 @@ export const PROVIDERS = [
 ];
 
 export const PROVIDER_DEFAULTS = {
+  codex_subscription:         { llm_model: 'codex-recommended',    llm_base_url: '' },
   openai:                   { llm_model: 'gpt-5.5',               llm_base_url: 'https://api.openai.com/v1' },
   anthropic:                { llm_model: 'claude-opus-4-8',       llm_base_url: 'https://api.anthropic.com/v1' },
   gemini:                   { llm_model: 'gemini-3.1-flash-lite', llm_base_url: 'https://generativelanguage.googleapis.com/v1beta/openai' },
@@ -22,6 +24,9 @@ export const PROVIDER_DEFAULTS = {
 
 /** @type {Record<string, Array<{id:string,label:string,cost:string,blurb?:string,recommended?:boolean,cheap?:boolean,price?:string}>>} */
 export const PROVIDER_MODELS = {
+  codex_subscription: [
+    { id: 'codex-recommended', label: 'Codex recommended', cost: 'plan', blurb: 'Uses the best compatible model for the installed Codex runtime', recommended: true },
+  ],
   xai: [
     { id: 'grok-4.5', label: 'Grok 4.5', cost: '$$$', blurb: 'Flagship · tools & reasoning', recommended: true, price: '$2 / $6' },
     { id: 'grok-4.3', label: 'Grok 4.3', cost: '$$', blurb: 'Strong general chat', price: '$1.25 / $2.50' },

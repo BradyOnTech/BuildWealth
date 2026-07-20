@@ -41,6 +41,10 @@ LLM_PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
         "llm_model": "",
         "llm_base_url": "",
     },
+    "codex_subscription": {
+        "llm_model": llm_client_defaults.DEFAULT_CODEX_MODEL,
+        "llm_base_url": "",
+    },
 }
 
 LEGACY_LLM_PROVIDER_DEFAULT_MODELS: dict[str, set[str]] = {
