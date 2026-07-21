@@ -20,6 +20,12 @@ const jsonResponse = (body, status = 200) => ({
   body: JSON.stringify(body),
 });
 
+const sseResponse = event => ({
+  status: 200,
+  contentType: 'text/event-stream',
+  body: `data: ${JSON.stringify(event)}\n\n`,
+});
+
 async function staticResponse(pathname) {
   const relativePath = pathname === '/' ? 'index.html' : pathname.replace(/^\/static-v2\//, '');
   const filePath = resolve(webRoot, relativePath);
@@ -105,12 +111,15 @@ test('Copilot drafted investment review surfaces in Today and opens focused Inbo
       return;
     }
 
-    if (url.pathname === '/api/copilot/chat' && request.method() === 'POST') {
+    if (
+      ['/api/copilot/chat', '/api/copilot/chat/stream'].includes(url.pathname)
+      && request.method() === 'POST'
+    ) {
       const payload = request.postDataJSON();
       chatPayloads.push(payload);
       assert.match(payload.question || '', /NVDA/i);
       draftCreated = true;
-      await route.fulfill(jsonResponse({
+      const result = {
         conversation_id: 'conversation-investment-fit',
         answer: 'I drafted a review-only investment recommendation for your Inbox.',
         created_at: '2026-04-26T12:00:00.000Z',
@@ -126,7 +135,12 @@ test('Copilot drafted investment review surfaces in Today and opens focused Inbo
             },
           },
         ],
-      }));
+      };
+      await route.fulfill(
+        url.pathname.endsWith('/stream')
+          ? sseResponse({ type: 'result', data: result })
+          : jsonResponse(result),
+      );
       return;
     }
 

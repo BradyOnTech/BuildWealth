@@ -215,7 +215,7 @@ test('Inbox thesis review opens v2 Research and refreshes review metadata', asyn
   await page.getByRole('link', { name: /Review thesis/ }).click();
 
   await page.waitForURL('**/#research?thesisReview=artifact-dossier-msft&plan=plan-1&focus=rec-thesis-expired');
-  await page.getByText('Thesis review').waitFor({ state: 'visible' });
+  await page.getByText('Thesis review', { exact: true }).waitFor({ state: 'visible' });
   await page.getByText('Review due', { exact: true }).waitFor({ state: 'visible' });
   await page.getByText('$410.00').first().waitFor({ state: 'visible' });
   await page.getByText('$460.02').first().waitFor({ state: 'visible' });

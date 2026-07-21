@@ -7,6 +7,7 @@ import { test } from '@playwright/test';
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const webRoot = resolve(currentDir, '..');
+const currentIso = () => new Date().toISOString();
 
 const CONTENT_TYPES = {
   '.css': 'text/css',
@@ -85,9 +86,9 @@ function installBaseRoutes(page, handleChatStream, {
       const patch = request.postDataJSON();
       if (typeof patch.title === 'string') existing.title = patch.title;
       if (typeof patch.archived === 'boolean') {
-        existing.archived_at = patch.archived ? '2026-07-14T15:00:00.000Z' : null;
+        existing.archived_at = patch.archived ? currentIso() : null;
       }
-      existing.updated_at = '2026-07-14T15:00:00.000Z';
+      existing.updated_at = currentIso();
       const summary = conversations.find(conversation => conversation.id === id);
       if (summary) Object.assign(summary, {
         title: existing.title,
@@ -317,8 +318,8 @@ test('Copilot history is searchable, grouped, renameable, and archivable with un
   const today = {
     id: 'conv-today',
     title: 'Contribution review',
-    created_at: '2026-07-14T12:00:00.000Z',
-    updated_at: '2026-07-14T13:00:00.000Z',
+    created_at: currentIso(),
+    updated_at: currentIso(),
     archived_at: null,
     last_message_preview: 'Review the monthly contribution.',
     message_count: 2,
