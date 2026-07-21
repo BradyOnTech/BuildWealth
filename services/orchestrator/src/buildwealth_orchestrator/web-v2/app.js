@@ -15,6 +15,7 @@ import * as importSync from './views/import_sync.js';
 import * as workflows from './views/workflows.js';
 import * as tax from './views/tax.js';
 import * as review from './views/review.js';
+import * as setup from './views/setup.js';
 import { authScreen } from './views/auth.js';
 
 import { state } from './lib/state.js';
@@ -23,7 +24,7 @@ import { api, setActiveWorkspaceId } from './lib/api.js';
 import { html, raw, $, $$, esc } from './lib/dom.js';
 import { fmtDateLong } from './lib/format.js';
 
-const VIEWS = [today, inbox, plan, studio, portfolio, profile, copilot, research, atelier, settings, importSync, workflows, review, tax];
+const VIEWS = [today, inbox, plan, studio, portfolio, profile, copilot, research, atelier, settings, importSync, workflows, review, setup, tax];
 
 const VIEW_BY_ID = new Map(VIEWS.map(v => [v.meta.id, v]));
 
@@ -38,6 +39,7 @@ const TOOLS_GROUPS = [
     label: 'The Almanac',
     items: [
       { id: 'review',       label: 'Annual Edition',     hint: 'The year in review, printable' },
+      { id: 'setup',        label: 'Setup',              hint: 'Resume the first decision picture' },
     ],
   },
   {
@@ -812,8 +814,13 @@ function wireAuthEvents() {
     const data = Object.fromEntries(new FormData(form).entries());
     setAuthBusy(mode, true);
     try {
-      if (mode === 'register') await api.authRegister(data);
-      else await api.authLogin(data);
+      if (mode === 'register') {
+        await api.authRegister(data);
+        await api.startOnboarding().catch(err => console.warn('[v2 setup] could not start:', err.message));
+        window.location.hash = 'setup';
+      } else {
+        await api.authLogin(data);
+      }
       await bootAuthenticatedShell();
     } catch (err) {
       setAuthBusy(mode, false, err?.message || 'Could not sign in.');
@@ -853,6 +860,10 @@ async function bootAuthenticatedShell() {
   state.bootedAt = new Date();
   wireShellEventsOnce();
   await preloadGlobalState();
+  if (!window.location.hash) {
+    const progress = await api.onboardingProgress().catch(() => null);
+    if (progress?.needs_setup) window.location.replace('#setup');
+  }
   route();
   refreshSystemStatus();
   clearAppTimers();

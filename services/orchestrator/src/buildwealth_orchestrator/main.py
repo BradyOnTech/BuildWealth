@@ -17731,6 +17731,9 @@ app.include_router(_settings_router)
 from buildwealth_orchestrator.routes.dashboard import router as _dashboard_router
 from buildwealth_orchestrator.routes.dashboard import *  # noqa: F401,F403 — keep main.<handler> importable
 app.include_router(_dashboard_router)
+from buildwealth_orchestrator.routes.onboarding import router as _onboarding_router
+from buildwealth_orchestrator.routes.onboarding import *  # noqa: F401,F403 — keep main.<handler> importable
+app.include_router(_onboarding_router)
 from buildwealth_orchestrator.routes.profile import router as _profile_router
 from buildwealth_orchestrator.routes.profile import *  # noqa: F401,F403 — keep main.<handler> importable
 app.include_router(_profile_router)

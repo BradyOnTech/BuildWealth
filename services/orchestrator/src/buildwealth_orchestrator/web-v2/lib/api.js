@@ -428,6 +428,9 @@ export const api = {
   lifePlanDrafts: (answers = {}) => postJson('/api/life-plans/drafts', { answers }),
   updateProfile: (body, opts = {}) => putJson(financialProfileUrl(opts), body),
   onboarding:   () => fetchJson('/api/onboarding/status'),
+  onboardingProgress: () => fetchJson('/api/onboarding/progress'),
+  startOnboarding: () => postJson('/api/onboarding/progress/start', {}),
+  updateOnboardingProgress: (body = {}) => patchJson('/api/onboarding/progress', body),
 
   // User settings
   settings:       () => fetchJson('/api/settings'),
