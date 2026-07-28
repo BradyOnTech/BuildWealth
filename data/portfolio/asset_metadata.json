@@ -7714,20 +7714,6 @@
       "metadata_source": null,
       "expense_ratio": null,
       "updated_at": "2026-07-16T19:04:18.695878+00:00"
-    },
-    "DEMO_HOME": {
-      "symbol": "DEMO_HOME",
-      "name": "Primary residence estimate",
-      "asset_type": "real_estate",
-      "asset_class": "real_estate",
-      "sector": "Residential Real Estate",
-      "region": "United States",
-      "data_source": "MANUAL",
-      "is_custom_asset": true,
-      "valuation_method": "MANUAL_PRICE_OVERRIDE",
-      "metadata_source": null,
-      "expense_ratio": null,
-      "updated_at": "2026-07-16T19:04:18.695880+00:00"
     }
   },
   "updated_at": "2026-07-16T19:04:18.696549+00:00"

@@ -8,56 +8,7 @@
       "type": "taxable",
       "currency": "USD",
       "created_at": "2026-04-09T21:45:01.219671+00:00"
-    },
-    {
-      "id": "demo_checking",
-      "name": "Household Checking",
-      "type": "depository",
-      "currency": "USD",
-      "created_at": "2026-05-12T22:00:56.830022+00:00"
-    },
-    {
-      "id": "demo_emergency_savings",
-      "name": "Emergency Savings",
-      "type": "depository",
-      "currency": "USD",
-      "created_at": "2026-05-12T22:00:56.830571+00:00"
-    },
-    {
-      "id": "demo_401k",
-      "name": "Alex 401k",
-      "type": "401k",
-      "currency": "USD",
-      "created_at": "2026-05-12T22:00:56.830721+00:00"
-    },
-    {
-      "id": "demo_roth_ira",
-      "name": "Jordan Roth IRA",
-      "type": "roth_ira",
-      "currency": "USD",
-      "created_at": "2026-05-12T22:00:56.830843+00:00"
-    },
-    {
-      "id": "demo_taxable",
-      "name": "Taxable Brokerage",
-      "type": "taxable",
-      "currency": "USD",
-      "created_at": "2026-05-12T22:00:56.830958+00:00"
-    },
-    {
-      "id": "demo_hsa",
-      "name": "Family HSA",
-      "type": "hsa",
-      "currency": "USD",
-      "created_at": "2026-05-12T22:00:56.831090+00:00"
-    },
-    {
-      "id": "demo_home_equity",
-      "name": "Home Equity",
-      "type": "real_estate",
-      "currency": "USD",
-      "created_at": "2026-05-12T22:00:56.831281+00:00"
     }
   ],
-  "updated_at": "2026-05-12T22:00:56.831282+00:00"
+  "updated_at": "2026-07-28T20:08:27.204705+00:00"
 }
