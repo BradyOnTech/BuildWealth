@@ -87,6 +87,54 @@ class FakeProbeClient:
         }
 
 
+class FakeTextOnlyProbeClient:
+    provider = "custom_openai_compatible"
+    model = "qwen-local"
+    enabled = True
+
+    def __init__(self):
+        self.calls = 0
+
+    async def complete(self, messages: list[dict], tools: list[dict]) -> dict:
+        self.calls += 1
+        if tools:
+            return {
+                "provider": self.provider,
+                "model": self.model,
+                "message": {"content": "I cannot call tools."},
+            }
+        return {
+            "provider": self.provider,
+            "model": self.model,
+            "message": {"content": "TEXT_PROBE_OK"},
+        }
+
+
+class FakeJsonBlobClient:
+    provider = "custom_openai_compatible"
+    model = "qwen-local"
+    enabled = True
+
+    def __init__(self):
+        self.calls = 0
+
+    async def complete(self, messages: list[dict], tools: list[dict]) -> dict:
+        self.calls += 1
+        if self.calls == 1:
+            return {
+                "model": self.model,
+                "message": {
+                    "content": '{"name":"set_contribution_rules","arguments":{"age":22}}',
+                },
+            }
+        assert tools == []
+        assert "plain text" in messages[-1]["content"].lower()
+        return {
+            "model": self.model,
+            "message": {"content": "Your current savings rate leaves room to raise contributions gradually."},
+        }
+
+
 def test_conversation_store_round_trip(tmp_path: Path) -> None:
     store = ConversationStore(tmp_path)
     conversation = store.get_or_create(None, "What should I rebalance first?")
@@ -213,6 +261,36 @@ def test_copilot_fallback_mode_persists_conversation(tmp_path: Path) -> None:
     assert len(loaded["messages"]) == 2
     assert loaded["messages"][0]["role"] == "user"
     assert loaded["messages"][1]["role"] == "assistant"
+
+
+def test_tool_probe_accepts_connected_text_only_local_model() -> None:
+    result = asyncio.run(run_tool_call_probe(FakeTextOnlyProbeClient()))
+
+    assert result["ok"] is True
+    assert result["stage"] == "text_only"
+    assert result["capability"] == "text_only"
+
+
+def test_copilot_retries_json_tool_blob_as_safe_plain_text(tmp_path: Path) -> None:
+    store = ConversationStore(tmp_path)
+    copilot = FinancialCopilot(
+        conversation_store=store,
+        llm_client=FakeJsonBlobClient(),
+        max_history_messages=10,
+        max_tool_rounds=2,
+        system_prompt="System prompt",
+    )
+
+    result = asyncio.run(
+        copilot.chat(
+            question="Can I increase my 401(k) contribution?",
+            contextual_brief='{"monthly_surplus_usd":1200}',
+        )
+    )
+
+    assert result["answer"].startswith("Your current savings rate")
+    assert result["tool_calls"] == []
+    assert "set_contribution_rules" not in result["answer"]
 
 
 def test_copilot_tool_round_trip(tmp_path: Path) -> None:

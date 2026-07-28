@@ -77,6 +77,49 @@ class FakeTurnProcess:
         self.closed = True
 
 
+class FakeDeviceLoginProcess:
+    instances: list["FakeDeviceLoginProcess"] = []
+
+    def __init__(self, *, codex_bin: str, codex_home: Path, cwd: Path, timeout_seconds: float):
+        self.codex_home = codex_home
+        self.notification_handler = None
+        self.request_handler = None
+        self.account_available = False
+        self.closed = False
+        self.__class__.instances.append(self)
+
+    async def start(self) -> None:
+        self.codex_home.mkdir(parents=True, exist_ok=True)
+        (self.codex_home / "auth.json").write_text(
+            json.dumps({"tokens": {"access_token": "device-secret"}}),
+            encoding="utf-8",
+        )
+
+    async def request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        if method == "account/login/start":
+            return {
+                "type": "chatgptDeviceCode",
+                "loginId": "login-1",
+                "verificationUrl": "https://auth.openai.com/codex/device",
+                "userCode": "ABCD-EFGH",
+            }
+        if method == "account/read":
+            if not self.account_available:
+                return {"account": None, "requiresOpenaiAuth": True}
+            return {
+                "account": {
+                    "type": "chatgpt",
+                    "email": "household@example.test",
+                    "planType": "plus",
+                },
+                "requiresOpenaiAuth": True,
+            }
+        raise AssertionError(f"Unexpected method: {method}")
+
+    async def close(self) -> None:
+        self.closed = True
+
+
 def test_codex_chat_client_bridges_dynamic_tools_and_uses_read_only_thread(monkeypatch):
     FakeTurnProcess.instances.clear()
     monkeypatch.setattr(module, "_AppServerProcess", FakeTurnProcess)
@@ -151,3 +194,50 @@ def test_codex_dynamic_tools_ignore_malformed_entries():
             "inputSchema": {"type": "object", "properties": {}},
         }
     ]
+
+
+def test_device_login_waits_for_account_updated_before_reading_account(monkeypatch):
+    FakeDeviceLoginProcess.instances.clear()
+    monkeypatch.setattr(module, "_AppServerProcess", FakeDeviceLoginProcess)
+    persisted: list[str] = []
+
+    async def run_login() -> module._DeviceLoginSession:
+        login = module._DeviceLoginSession(
+            workspace_id="ws-test",
+            codex_bin="codex",
+            persist_credentials=persisted.append,
+            timeout_seconds=1.0,
+        )
+        await login.start()
+        process = FakeDeviceLoginProcess.instances[-1]
+        assert process.notification_handler is not None
+        await process.notification_handler(
+            "account/login/completed",
+            {"loginId": "login-1", "success": True, "error": None},
+        )
+
+        async def publish_account_update() -> None:
+            await asyncio.sleep(0.01)
+            process.account_available = True
+            assert process.notification_handler is not None
+            await process.notification_handler(
+                "account/updated",
+                {"authMode": "chatgpt", "planType": "plus"},
+            )
+
+        update_task = asyncio.create_task(publish_account_update())
+        assert login._watch_task is not None
+        await login._watch_task
+        await update_task
+        return login
+
+    login = asyncio.run(run_login())
+
+    assert login.state == "connected"
+    assert login.error == ""
+    assert login.account == {
+        "type": "chatgpt",
+        "email": "household@example.test",
+        "planType": "plus",
+    }
+    assert persisted and json.loads(persisted[-1])["tokens"]["access_token"] == "device-secret"

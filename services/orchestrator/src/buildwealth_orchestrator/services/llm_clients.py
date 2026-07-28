@@ -186,6 +186,29 @@ async def run_tool_call_probe(client: ChatToolClient) -> dict[str, Any]:
     assistant_message = first.get("message", {})
     tool_calls = assistant_message.get("tool_calls") or []
     if not tool_calls:
+        text_messages = [
+            {
+                "role": "system",
+                "content": "Connection probe. Reply in plain text with exactly TEXT_PROBE_OK. Do not emit JSON.",
+            },
+            {"role": "user", "content": "Confirm this model can return a plain-text answer."},
+        ]
+        text_completion = await client.complete(messages=text_messages, tools=[])
+        text_message = text_completion.get("message", {})
+        text_answer = _message_text(text_message.get("content")).strip()
+        if "TEXT_PROBE_OK" in text_answer:
+            return {
+                "ok": True,
+                "provider": text_completion.get("provider", provider),
+                "model": text_completion.get("model", model),
+                "stage": "text_only",
+                "capability": "text_only",
+                "detail": (
+                    "Provider connection succeeded in text-only mode; this model did not demonstrate native tool calls."
+                ),
+                "tool_calls": [],
+                "answer": text_answer,
+            }
         return {
             "ok": False,
             "provider": provider,
@@ -256,6 +279,7 @@ async def run_tool_call_probe(client: ChatToolClient) -> dict[str, Any]:
         "detail": "Provider completed a client-side tool call loop." if ok else "Final answer did not include the expected probe value.",
         "tool_calls": traces,
         "answer": answer,
+        "capability": "tool_calling",
     }
 
 

@@ -280,6 +280,53 @@ test('Copilot history opens as a usable drawer on mobile', async ({ page }) => {
   });
 });
 
+test('Copilot preserves a useful conversation viewport on a short phone', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await installBaseRoutes(page, async route => route.fulfill(sseResponse([])), {
+    onboardingStatus: {
+      ready_for_daily_review: false,
+      completion_percent: 0,
+      profile_readiness: {
+        status: 'incomplete',
+        next_gap_title: 'Income profile',
+        next_gap_detail: 'Add what comes in each month — salary, business, anything recurring.',
+        blocking_recommendation_sources: ['profile_completeness', 'tax_planning'],
+        sections: [{ key: 'household', status: 'incomplete' }],
+      },
+      steps: [{ id: 'income', title: 'Income profile', status: 'incomplete' }],
+    },
+  });
+
+  await page.goto('http://buildwealth-v2.test/#copilot');
+  await page.getByText('How can I help?').waitFor();
+
+  const layout = await page.evaluate(() => {
+    const main = document.querySelector('.copilot-main')?.getBoundingClientRect();
+    const composer = document.querySelector('.copilot-bottom')?.getBoundingClientRect();
+    const content = document.querySelector('.content');
+    return {
+      mainHeight: main?.height,
+      composerHeight: composer?.height,
+      contentClientWidth: content?.clientWidth,
+      contentScrollWidth: content?.scrollWidth,
+    };
+  });
+
+  assert.ok(
+    layout.mainHeight >= 120,
+    `short-phone conversation viewport should remain useful (measured ${layout.mainHeight}px)`,
+  );
+  assert.ok(
+    layout.composerHeight <= 180,
+    `short-phone composer should stay compact (measured ${layout.composerHeight}px)`,
+  );
+  assert.equal(
+    layout.contentScrollWidth,
+    layout.contentClientWidth,
+    'Copilot should not create horizontal content overflow on a short phone',
+  );
+});
+
 test('Copilot desktop empty state keeps its headline and starter cards inside the scroll viewport', async ({ page }) => {
   await page.setViewportSize({ width: 1536, height: 844 });
   await installBaseRoutes(page, async route => route.fulfill(sseResponse([])), {

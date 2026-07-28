@@ -474,12 +474,18 @@ class _DeviceLoginSession:
         self.user_code = ""
         self.account: dict[str, Any] | None = None
         self._completed: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
+        self._account_ready = asyncio.Event()
         self._watch_task: asyncio.Task[None] | None = None
 
     async def start(self) -> dict[str, Any]:
         async def notification(method: str, params: dict[str, Any]) -> None:
             if method == "account/login/completed" and not self._completed.done():
                 self._completed.set_result(params)
+            elif method == "account/updated" and params.get("authMode") == "chatgpt":
+                # Codex emits login/completed before account/updated. Waiting
+                # for the latter prevents account/read from racing persisted
+                # device credentials and returning account=null.
+                self._account_ready.set()
 
         self.session.notification_handler = notification
         await self.session.start()
@@ -502,6 +508,15 @@ class _DeviceLoginSession:
             result = await asyncio.wait_for(self._completed, timeout=self.timeout_seconds)
             if not result.get("success"):
                 raise CodexAppServerError(str(result.get("error") or "ChatGPT sign-in was not completed"))
+            try:
+                await asyncio.wait_for(
+                    self._account_ready.wait(),
+                    timeout=min(10.0, self.timeout_seconds),
+                )
+            except TimeoutError:
+                # Older Codex builds may omit account/updated. Fall through to
+                # account/read so a completed login can still succeed.
+                pass
             account_result = await self.session.request("account/read", {"refreshToken": True})
             account = account_result.get("account")
             if not isinstance(account, dict) or account.get("type") != "chatgpt":

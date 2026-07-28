@@ -583,6 +583,21 @@ class FinancialCopilot:
             return ""
         return str(content)
 
+    @staticmethod
+    def _looks_like_json_tool_blob(content: str) -> bool:
+        text = str(content or "").strip()
+        if not text.startswith("{") or not text.endswith("}"):
+            return False
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(payload, dict):
+            return False
+        return bool(payload.get("name") or payload.get("tool")) and isinstance(
+            payload.get("arguments"), dict
+        )
+
     async def _execute_tool(
         self,
         name: str,
@@ -721,7 +736,15 @@ class FinancialCopilot:
 
             for round_index in ([] if agent_client else range(self.max_tool_rounds)):
                 _emit({"type": "round", "round": round_index + 1})
-                if progress_cb is not None and hasattr(client, "complete_stream"):
+                # Local OpenAI-compatible models vary widely in tool-call
+                # formatting. Keep their first response buffered so a JSON
+                # pseudo-call can be normalized before anything reaches the UI.
+                use_stream = (
+                    progress_cb is not None
+                    and hasattr(client, "complete_stream")
+                    and getattr(client, "provider", "") != "custom_openai_compatible"
+                )
+                if use_stream:
                     completion = await client.complete_stream(
                         messages=messages,
                         tools=self._tool_definitions(),
@@ -736,6 +759,24 @@ class FinancialCopilot:
                 assistant_message = completion.get("message", {})
                 content = self._message_text(assistant_message.get("content"))
                 tool_calls = assistant_message.get("tool_calls") or []
+
+                if not tool_calls and self._looks_like_json_tool_blob(content):
+                    plain_messages = [
+                        *messages,
+                        {
+                            "role": "system",
+                            "content": (
+                                "Answer the user's request in plain text using the Financial Context above. "
+                                "Do not emit JSON, a function name, or tool arguments. Do not claim that a "
+                                "change was saved."
+                            ),
+                        },
+                    ]
+                    plain_completion = await client.complete(messages=plain_messages, tools=[])
+                    model_name = plain_completion.get("model", model_name)
+                    plain_message = plain_completion.get("message", {})
+                    plain_content = self._message_text(plain_message.get("content")).strip()
+                    content = "" if self._looks_like_json_tool_blob(plain_content) else plain_content
 
                 if tool_calls:
                     messages.append(

@@ -1655,10 +1655,17 @@ export function decisionReadiness(status = {}) {
   const steps = Array.isArray(status?.steps) ? status.steps : [];
   const stepId = step => String(step?.id || step?.key || '').toLowerCase();
   const snapshot = steps.find(step => stepId(step) === 'snapshot' || stepId(step) === 'portfolio_snapshot');
-  if (snapshot && snapshot.status !== 'complete') {
+  if (snapshot && snapshot.status !== 'complete' && snapshot.status !== 'attention') {
     return {
       label: 'Enough for a first forecast',
       detail: 'Add or connect your portfolio next for allocation and performance guidance.',
+      stage: 'portfolio',
+    };
+  }
+  if (snapshot && snapshot.status === 'attention') {
+    return {
+      label: 'Your portfolio is connected',
+      detail: `Refresh it before relying on current allocation or performance advice. ${String(snapshot.detail || '').trim()}`.trim(),
       stage: 'portfolio',
     };
   }

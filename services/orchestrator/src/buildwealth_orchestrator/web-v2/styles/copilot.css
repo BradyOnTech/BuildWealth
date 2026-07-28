@@ -2614,3 +2614,52 @@ button.composer-context-chip:active,
   gap: var(--s-2);
   margin: 10px 0 2px;
 }
+
+@media (max-width: 680px) and (max-height: 700px) {
+  .copilot-main {
+    min-height: 120px;
+  }
+
+  .copilot-scroll,
+  .copilot-empty {
+    padding-top: var(--s-2);
+  }
+
+  .copilot-bottom {
+    padding: 4px 0;
+  }
+
+  .composer-card {
+    padding: 6px 10px;
+    gap: 3px;
+  }
+
+  .composer-context {
+    flex-wrap: nowrap;
+    gap: 2px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 4px;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .composer-context::-webkit-scrollbar {
+    display: none;
+  }
+
+  .composer-context-lead {
+    display: none;
+  }
+
+  .composer-context-picker,
+  .composer-context-static,
+  .composer-context-live,
+  .composer-context-settings {
+    flex: 0 0 auto;
+  }
+
+  .composer-context-more {
+    margin-left: 0;
+  }
+}
