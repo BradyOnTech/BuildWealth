@@ -1334,39 +1334,68 @@ class TodayDashboardResponse(BaseModel):
     workflow_steps: list[str] = Field(default_factory=list)
 
 
-class IncomeItem(BaseModel):
+class ProfileListItem(BaseModel):
+    source: str = "profile_editor"
+    status: Literal["confirmed", "pending_review", "stale", "rejected", "draft"] = "confirmed"
+    last_confirmed_at: datetime | None = None
+
+
+class IncomeItem(ProfileListItem):
     id: str
     label: str
     monthly_amount_usd: float = Field(ge=0)
     source_type: str = "salary"
+    owner_member_id: str | None = None
+    linked_asset_id: str | None = None
+    employer_name: str | None = None
+    variability: Literal["fixed", "variable", "seasonal"] = "fixed"
     is_pre_tax: bool = False
     annual_growth_rate: float | None = Field(default=None, ge=-1, le=1)
     start_date: datetime | None = None
     end_date: datetime | None = None
 
 
-class ExpenseItem(BaseModel):
+class ExpenseItem(ProfileListItem):
     id: str
     label: str
     monthly_amount_usd: float = Field(ge=0)
     category: str = "general"
+    linked_asset_id: str | None = None
+    linked_debt_id: str | None = None
+    related_member_id: str | None = None
     is_fixed: bool = True
+    is_essential: bool = False
     inflation_rate: float | None = Field(default=None, ge=-1, le=1)
     start_date: datetime | None = None
     end_date: datetime | None = None
 
 
-class DebtItem(BaseModel):
+class DebtItem(ProfileListItem):
     id: str
     label: str
     balance_usd: float = Field(ge=0)
+    debt_type: Literal[
+        "mortgage",
+        "auto_loan",
+        "recreational_vehicle_loan",
+        "student_loan",
+        "credit_card",
+        "personal_loan",
+        "heloc",
+        "other",
+    ] = "other"
+    linked_asset_id: str | None = None
+    original_principal_usd: float | None = Field(default=None, ge=0)
+    term_months: int | None = Field(default=None, ge=1, le=1200)
+    opened_at: datetime | None = None
+    maturity_date: datetime | None = None
     interest_rate: float | None = Field(default=None, ge=0, le=1)
     minimum_payment_usd: float | None = Field(default=None, ge=0)
     payoff_strategy: Literal["minimum", "snowball", "avalanche", "custom"] = "minimum"
     custom_monthly_payment_usd: float | None = Field(default=None, ge=0)
 
 
-class GoalItem(BaseModel):
+class GoalItem(ProfileListItem):
     id: str
     label: str
     target_amount_usd: float = Field(ge=0)
@@ -1420,7 +1449,7 @@ class ProfileFlags(BaseModel):
     expenses_complete: bool = False
 
 
-class HouseholdMemberItem(BaseModel):
+class HouseholdMemberItem(ProfileListItem):
     id: str
     display_name: str
     relationship: Literal["self", "partner", "child", "dependent", "other"] = "self"
@@ -1430,16 +1459,101 @@ class HouseholdMemberItem(BaseModel):
     notes: str = ""
 
 
-class PhysicalAssetItem(BaseModel):
+class PhysicalAssetItem(ProfileListItem):
     id: str
     label: str
     current_value_usd: float = Field(ge=0)
     asset_type: Literal["real_estate", "vehicle", "jewelry", "equipment", "collectible", "other"] = "other"
+    asset_subtype: Literal[
+        "home",
+        "rental_property",
+        "land",
+        "car",
+        "truck",
+        "motorcycle",
+        "rv",
+        "boat",
+        "trailer",
+        "utv_atv",
+        "machinery",
+        "jewelry",
+        "collectible",
+        "other",
+    ] = "other"
+    owner_member_id: str | None = None
+    acquisition_cost_usd: float | None = Field(default=None, ge=0)
+    valuation_date: datetime | None = None
+    valuation_source: Literal["user_estimate", "statement", "market_guide", "import"] = "user_estimate"
+    liquidity: Literal["liquid", "sellable", "illiquid"] = "sellable"
+    include_in_plan_funding: bool = False
+    disposition_intent: Literal["keep", "sell", "replace", "undecided"] = "keep"
+    planned_disposition_date: datetime | None = None
+    ownership_pct: float = Field(default=100.0, ge=0, le=100)
     annual_growth_rate: float | None = Field(default=None, ge=-1, le=1)
     purchase_date: datetime | None = None
     # When this asset is also valued in Portfolio, that valuation is
     # authoritative and the Profile record supplies household context only.
     portfolio_symbol: str | None = None
+
+
+class InsurancePolicyItem(ProfileListItem):
+    id: str
+    label: str
+    coverage_type: Literal[
+        "life",
+        "disability",
+        "umbrella",
+        "home",
+        "renters",
+        "auto",
+        "health",
+        "long_term_care",
+        "other",
+    ] = "other"
+    insured_member_id: str | None = None
+    linked_asset_id: str | None = None
+    premium_expense_id: str | None = None
+    coverage_amount_usd: float | None = Field(default=None, ge=0)
+    deductible_usd: float | None = Field(default=None, ge=0)
+    renewal_date: datetime | None = None
+    beneficiary_reviewed: bool = False
+    notes: str = ""
+
+
+class BenefitItem(ProfileListItem):
+    id: str
+    label: str
+    benefit_type: Literal[
+        "retirement_match",
+        "pension",
+        "equity_compensation",
+        "social_security",
+        "health",
+        "disability",
+        "hsa",
+        "other",
+    ] = "other"
+    owner_member_id: str | None = None
+    employer_name: str | None = None
+    estimated_annual_value_usd: float | None = Field(default=None, ge=0)
+    employee_contribution_pct: float | None = Field(default=None, ge=0, le=100)
+    employer_match_pct: float | None = Field(default=None, ge=0, le=100)
+    vesting_date: datetime | None = None
+    start_date: datetime | None = None
+    notes: str = ""
+
+
+class EstateReadiness(BaseModel):
+    will_status: Literal["not_started", "in_progress", "complete", "not_needed", "unknown"] = "unknown"
+    trust_status: Literal["not_started", "in_progress", "complete", "not_needed", "unknown"] = "unknown"
+    power_of_attorney_status: Literal[
+        "not_started", "in_progress", "complete", "not_needed", "unknown"
+    ] = "unknown"
+    healthcare_directive_status: Literal[
+        "not_started", "in_progress", "complete", "not_needed", "unknown"
+    ] = "unknown"
+    beneficiaries_reviewed_at: datetime | None = None
+    notes: str = ""
 
 
 class FinancialProfileRequest(BaseModel):
@@ -1449,6 +1563,9 @@ class FinancialProfileRequest(BaseModel):
     debt_items: list[DebtItem] = Field(default_factory=list)
     goal_items: list[GoalItem] = Field(default_factory=list)
     physical_assets: list[PhysicalAssetItem] = Field(default_factory=list)
+    insurance_policies: list[InsurancePolicyItem] = Field(default_factory=list)
+    benefit_items: list[BenefitItem] = Field(default_factory=list)
+    estate_readiness: EstateReadiness = Field(default_factory=EstateReadiness)
     tax_profile: TaxProfile = Field(default_factory=TaxProfile)
     investment_policy: InvestmentPolicy = Field(default_factory=InvestmentPolicy)
     flags: ProfileFlags = Field(default_factory=ProfileFlags)
@@ -1457,8 +1574,14 @@ class FinancialProfileRequest(BaseModel):
 
 
 class FinancialProfileResponse(FinancialProfileRequest):
-    schema_version: int = 1
+    schema_version: int = 3
     updated_at: datetime
+
+
+class ProfileSectionUpdateRequest(BaseModel):
+    mode: Literal["replace", "merge"] = "replace"
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    expected_updated_at: datetime | None = None
 
 
 class OnboardingStep(BaseModel):
@@ -2828,6 +2951,9 @@ class FinancialHealthResponse(BaseModel):
     # Market-tradable money only — excludes the home, collectibles, and other
     # custom-valued positions. This is the base FI progress is measured on.
     investable_assets_usd: float = 0.0
+    # Property the household explicitly marked as available for a future sale.
+    # Kept separate from liquid/investable assets until a dated plan event uses it.
+    plan_funding_assets_usd: float = 0.0
 
     # Cash flow
     gross_monthly_income_usd: float

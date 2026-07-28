@@ -123,18 +123,28 @@ export async function saveRowEdit(ui, section) {
   editing.draft = draft; // keep typed values if validation fails
   let row;
   try {
-    row = rebuildRow(section, applyAmountUnit(section, draft, amountUnit), rowId);
+    row = {
+      ...items[index],
+      ...rebuildRow(section, applyAmountUnit(section, draft, amountUnit), rowId),
+    };
   } catch (err) {
     ui.saveError = err.message || 'Could not validate row.';
     renderProfile();
     return;
   }
+  const previous = items[index];
+  const previousFlags = { ...(ui.profile.flags || {}) };
   items[index] = row;
   if (section.key === 'expense_items') {
     ui.profile.flags = { ...(ui.profile.flags || {}), expenses_complete: false };
   }
   editing = null;
-  await persist();
+  const saved = await persist();
+  if (!saved) {
+    items[index] = previous;
+    ui.profile.flags = previousFlags;
+    renderProfile();
+  }
 }
 
 function readEditDraft(section) {
@@ -211,30 +221,33 @@ export function renderEditRow(section, item) {
   const draft = editing?.draft && editing.rowId === item.id
     ? editing.draft
     : displayDraft(section, item);
-  const cells = section.columns.map(col => {
-    const field = section.composer.find(f => f.key === col.key);
-    if (!field) {
-      const value = col.format ? col.format(item[col.key], item) : item[col.key] ?? '—';
-      return `<td class="${col.numeric ? 'num' : ''} profile-edit-static">${esc(value)}</td>`;
-    }
-    return `<td class="${col.numeric ? 'num' : ''} profile-edit-cell">${editInputHtml(section, field, draft[field.key])}</td>`;
-  }).join('');
+  const fields = section.composer
+    .map(field => editFieldHtml(section, field, draft[field.key]))
+    .join('');
+  const columnCount = section.columns.length + 3;
   return `
     <tr class="profile-row-editing">
-      ${cells}
-      <td class="profile-row-source">You</td>
-      <td class="profile-row-status">
-        <span class="status-pill pending"><span class="dot"></span>Editing</span>
-      </td>
-      <td class="profile-row-actions">
-        <button class="link-quiet" type="button"
-                data-table-action="edit-save"
-                data-table-key="${esc(section.key)}"
-                data-row-id="${esc(item.id || '')}">Save</button>
-        <button class="link-quiet" type="button"
-                data-table-action="edit-cancel"
-                data-table-key="${esc(section.key)}"
-                data-row-id="${esc(item.id || '')}">Cancel</button>
+      <td colspan="${columnCount}">
+        <section class="profile-row-edit-panel" aria-label="Edit ${esc(item.label || item.display_name || section.singular)}">
+          <header>
+            <div>
+              <span class="status-pill pending"><span class="dot"></span>Editing</span>
+              <strong>${esc(item.label || item.display_name || `This ${section.singular}`)}</strong>
+            </div>
+            <span class="profile-edit-keyboard">Enter to save · Esc to cancel</span>
+          </header>
+          <div class="profile-row-edit-grid">${fields}</div>
+          <footer>
+            <button class="btn btn-quiet" type="button"
+                    data-table-action="edit-cancel"
+                    data-table-key="${esc(section.key)}"
+                    data-row-id="${esc(item.id || '')}">Cancel</button>
+            <button class="btn btn-primary" type="button"
+                    data-table-action="edit-save"
+                    data-table-key="${esc(section.key)}"
+                    data-row-id="${esc(item.id || '')}">Save changes</button>
+          </footer>
+        </section>
       </td>
     </tr>
   `;
@@ -253,7 +266,10 @@ function editInputHtml(section, field, value) {
   const id = `edit-${section.key}-${field.key}`;
   const label = field.key === AMOUNT_FIELD_KEY ? 'Amount' : field.label;
   if (field.kind === 'select') {
-    const options = field.options.map(o => `<option value="${esc(o.value)}" ${o.value === value ? 'selected' : ''}>${esc(o.label)}</option>`).join('');
+    const source = typeof field.options === 'function' ? field.options(editing?.ui) : field.options;
+    const options = (Array.isArray(source) ? source : [])
+      .map(o => `<option value="${esc(o.value)}" ${o.value === value ? 'selected' : ''}>${esc(o.label)}</option>`)
+      .join('');
     return `
       <select class="settings-input" id="${id}" aria-label="${esc(label)}"
               data-edit-input="${esc(field.key)}" data-edit-table="${esc(section.key)}">
@@ -286,4 +302,20 @@ function editInputHtml(section, field, value) {
       ${input}
       ${amountToggleHtml(section.key)}
     </span>`;
+}
+
+function editFieldHtml(section, field, value) {
+  if (field.kind === 'checkbox') {
+    return `
+      <label class="settings-field settings-field-toggle">
+        ${editInputHtml(section, field, value)}
+        <span><span class="settings-label">${esc(field.label)}</span></span>
+      </label>`;
+  }
+  return `
+    <label class="settings-field">
+      <span class="settings-label">${esc(field.key === AMOUNT_FIELD_KEY ? 'Amount' : field.label)}</span>
+      ${editInputHtml(section, field, value)}
+      ${field.hint ? `<small class="settings-hint">${esc(field.hint)}</small>` : ''}
+    </label>`;
 }

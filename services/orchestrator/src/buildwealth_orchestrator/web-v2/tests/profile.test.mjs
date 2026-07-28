@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderOverview } from '../views/profile/overview.js';
+import { renderOverview, renderRegistrationCard } from '../views/profile/overview.js';
 import { TABLE_SECTIONS, sectionForKey, renderTable } from '../views/profile/tables.js';
 
 test('overview: renders household snapshot from filled income and expense rows', () => {
@@ -45,6 +45,21 @@ test('overview: empty profile shows em-dashes for unknown values', () => {
   assert.match(markup, /Gross monthly income/);
   // no formatted dollar value should appear when there are no items
   assert.doesNotMatch(markup, /\$\d/);
+});
+
+test('overview: registration and reset controls stay discoverable in Profile', () => {
+  const complete = String(renderRegistrationCard({
+    onboardingProgress: { started: true, status: 'complete' },
+  }));
+  const unfinished = String(renderRegistrationCard({
+    onboardingProgress: { started: true, status: 'active' },
+  }));
+
+  assert.match(complete, /Registration &amp; setup/);
+  assert.match(complete, /Review setup journey/);
+  assert.match(complete, /Reset financial data &amp; register again/);
+  assert.match(complete, /keeps your BuildWealth sign-in/);
+  assert.match(unfinished, /Continue setup/);
 });
 
 test('overview: canonical financial health keeps taxes and debt out of surplus', () => {
@@ -109,9 +124,18 @@ test('overview: life changes show focused connected-section checklists', () => {
   assert.match(markup, /#profile\?section=goals/);
 });
 
-test('tables: defines all six editable sections', () => {
+test('tables: defines the complete editable profile sections', () => {
   const keys = TABLE_SECTIONS.map(s => s.key).sort();
-  assert.deepEqual(keys, ['debt_items', 'expense_items', 'goal_items', 'household_members', 'income_items', 'physical_assets']);
+  assert.deepEqual(keys, [
+    'benefit_items',
+    'debt_items',
+    'expense_items',
+    'goal_items',
+    'household_members',
+    'income_items',
+    'insurance_policies',
+    'physical_assets',
+  ]);
 });
 
 test('tables: household member build normalizes relationship and dependent flag', () => {
@@ -160,6 +184,81 @@ test('tables: debt build() defaults strategy and stores rate as decimal fraction
   assert.equal(row.balance_usd, 5000);
   // 21.99% → 0.2199 (allow tiny float epsilon)
   assert.ok(Math.abs(row.interest_rate - 0.2199) < 1e-9);
+});
+
+test('tables: vehicle property carries valuation and plan treatment', () => {
+  const assets = sectionForKey('physical_assets');
+  const row = assets.build({
+    label: 'Fishing boat',
+    current_value_usd: '42000',
+    asset_subtype: 'boat',
+    acquisition_cost_usd: '51000',
+    valuation_date: '2026-07-01',
+    valuation_source: 'market_guide',
+    annual_growth_rate: '-8',
+    liquidity: 'sellable',
+    include_in_plan_funding: false,
+    disposition_intent: 'replace',
+    planned_disposition_date: '2030-06-01',
+    ownership_pct: '50',
+  });
+  assert.equal(row.asset_type, 'vehicle');
+  assert.equal(row.asset_subtype, 'boat');
+  assert.equal(row.acquisition_cost_usd, 51000);
+  assert.equal(row.annual_growth_rate, -0.08);
+  assert.equal(row.ownership_pct, 50);
+  assert.equal(row.include_in_plan_funding, false);
+});
+
+test('tables: linked property card shows net equity and avoids debt-payment expense duplication', () => {
+  const ui = {
+    profile: {
+      physical_assets: [{
+        id: 'boat-1',
+        label: 'Fishing boat',
+        current_value_usd: 42000,
+        asset_type: 'vehicle',
+        asset_subtype: 'boat',
+        include_in_plan_funding: false,
+      }],
+      debt_items: [{
+        id: 'debt-1',
+        linked_asset_id: 'boat-1',
+        balance_usd: 30000,
+        minimum_payment_usd: 620,
+      }],
+      expense_items: [
+        { id: 'expense-1', linked_asset_id: 'boat-1', category: 'storage', monthly_amount_usd: 200 },
+        { id: 'expense-2', linked_asset_id: 'boat-1', linked_debt_id: 'debt-1', monthly_amount_usd: 620 },
+      ],
+    },
+  };
+  const markup = String(renderTable(ui, sectionForKey('physical_assets')));
+  assert.match(markup, /Fishing boat/);
+  assert.match(markup, /\$12,000/);
+  assert.match(markup, /\$620/);
+  assert.match(markup, /\$200/);
+  assert.match(markup, /Net worth only/);
+});
+
+test('tables: protection and benefits normalize linked profile context', () => {
+  const insurance = sectionForKey('insurance_policies').build({
+    label: 'Umbrella',
+    coverage_type: 'umbrella',
+    coverage_amount_usd: '2000000',
+    premium_expense_id: 'expense-premium',
+    beneficiary_reviewed: true,
+  });
+  const benefit = sectionForKey('benefit_items').build({
+    label: '401(k) match',
+    benefit_type: 'retirement_match',
+    owner_member_id: 'member-1',
+    employer_match_pct: '5',
+  });
+  assert.equal(insurance.coverage_amount_usd, 2000000);
+  assert.equal(insurance.premium_expense_id, 'expense-premium');
+  assert.equal(benefit.owner_member_id, 'member-1');
+  assert.equal(benefit.employer_match_pct, 5);
 });
 
 test('tables: renderTable shows empty hint when there are no entries', () => {

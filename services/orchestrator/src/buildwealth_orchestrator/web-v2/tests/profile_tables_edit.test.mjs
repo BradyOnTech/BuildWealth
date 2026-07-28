@@ -25,7 +25,9 @@ const EXPECTED_PRIMARY = {
   expense_items:     ['label', 'monthly_amount_usd'],
   debt_items:        ['label', 'balance_usd'],
   goal_items:        ['label', 'target_amount_usd', 'target_date'],
-  physical_assets:   ['label', 'current_value_usd'],
+  physical_assets:   ['label', 'current_value_usd', 'asset_subtype'],
+  insurance_policies:['label', 'coverage_type', 'coverage_amount_usd'],
+  benefit_items:     ['label', 'benefit_type', 'owner_member_id'],
 };
 
 test('every table section declares its primary composer fields', () => {
@@ -42,7 +44,10 @@ test('composerFieldSplit separates primary from more-detail fields', () => {
   const income = sectionForKey('income_items');
   const { primary, more } = composerFieldSplit(income);
   assert.deepEqual(primary.map(f => f.key), ['label', 'monthly_amount_usd']);
-  assert.deepEqual(more.map(f => f.key), ['source_type', 'is_pre_tax', 'annual_growth_rate', 'start_date', 'end_date']);
+  assert.deepEqual(more.map(f => f.key), [
+    'source_type', 'owner_member_id', 'linked_asset_id', 'employer_name', 'variability',
+    'is_pre_tax', 'annual_growth_rate', 'start_date', 'end_date',
+  ]);
   // Every composer field lands in exactly one bucket.
   assert.equal(primary.length + more.length, income.composer.length);
 });
@@ -56,6 +61,10 @@ test('income: buildRowDraft/rebuildRow round-trip preserves semantics and id', (
     label: 'Salary',
     monthly_amount_usd: 8000,
     source_type: 'salary',
+    owner_member_id: null,
+    linked_asset_id: null,
+    employer_name: null,
+    variability: 'fixed',
     is_pre_tax: true,
     annual_growth_rate: 0.03,
     start_date: '2024-01-01',
@@ -101,6 +110,12 @@ test('debt: APR percent input round-trips through the stored decimal fraction', 
     id: 'd-1',
     label: 'Card',
     balance_usd: 4200,
+    debt_type: 'other',
+    linked_asset_id: null,
+    original_principal_usd: null,
+    term_months: null,
+    opened_at: null,
+    maturity_date: null,
     interest_rate: 0.2299,
     minimum_payment_usd: 85,
     payoff_strategy: 'avalanche',

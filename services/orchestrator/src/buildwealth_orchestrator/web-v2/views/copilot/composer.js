@@ -60,6 +60,10 @@ export function attachComposerBehavior(rootEl, { onSubmit, onDraftChange = () =>
     const useLive = !!rootEl.querySelector('#composer-live')?.checked;
     onSubmit({ question: value, useLive });
   });
+  // The form can appear before its behavior is attached while a view is
+  // initializing. Mark the interactive state so browser automation and
+  // assistive integrations do not race the inert shell.
+  form.dataset.composerReady = 'true';
 }
 
 function autoGrow(textarea) {

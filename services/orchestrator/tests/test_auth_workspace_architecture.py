@@ -212,6 +212,97 @@ def test_registered_users_get_separate_household_workspaces(monkeypatch, tmp_pat
     assert blocked_cross_read.status_code == 403
 
 
+def test_profile_partial_and_section_updates_preserve_unrelated_state(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "local"
+
+    with TestClient(main.app) as client:
+        registration = client.post(
+            "/api/auth/register",
+            json={
+                "email": "profile-sections@example.test",
+                "password": "correct-horse-1",
+                "display_name": "Profile Sections",
+            },
+        )
+        csrf = _csrf_headers(client)
+        initial = client.put(
+            "/api/financial-profile",
+            headers=csrf,
+            json={
+                "income_items": [
+                    {
+                        "id": "income-old",
+                        "label": "Old salary",
+                        "monthly_amount_usd": 5000,
+                    }
+                ],
+                "expense_items": [
+                    {
+                        "id": "expense-rent",
+                        "label": "Rent",
+                        "monthly_amount_usd": 1800,
+                        "category": "housing",
+                    }
+                ],
+                "physical_assets": [
+                    {
+                        "id": "asset-boat",
+                        "label": "Boat",
+                        "current_value_usd": 42000,
+                        "asset_type": "vehicle",
+                        "asset_subtype": "boat",
+                    }
+                ],
+            },
+        )
+        notes_only = client.put(
+            "/api/financial-profile",
+            headers=csrf,
+            json={"notes": "Only this field should change."},
+        )
+        replaced = client.patch(
+            "/api/financial-profile/sections/income_items",
+            headers=csrf,
+            json={
+                "mode": "replace",
+                "expected_updated_at": notes_only.json()["updated_at"],
+                "items": [
+                    {
+                        "id": "income-new",
+                        "label": "New salary",
+                        "monthly_amount_usd": 9000,
+                        "owner_member_id": "member-1",
+                    }
+                ],
+            },
+        )
+        stale = client.patch(
+            "/api/financial-profile/sections/income_items",
+            headers=csrf,
+            json={
+                "mode": "replace",
+                "expected_updated_at": initial.json()["updated_at"],
+                "items": [],
+            },
+        )
+
+    assert registration.status_code == 200
+    assert initial.status_code == 200
+    assert notes_only.status_code == 200
+    assert notes_only.json()["expense_items"][0]["label"] == "Rent"
+    assert notes_only.json()["physical_assets"][0]["asset_subtype"] == "boat"
+    assert replaced.status_code == 200
+    assert [item["label"] for item in replaced.json()["income_items"]] == ["New salary"]
+    assert replaced.json()["expense_items"][0]["label"] == "Rent"
+    assert replaced.json()["physical_assets"][0]["label"] == "Boat"
+    assert stale.status_code == 409
+    assert "changed after you opened it" in stale.json()["detail"]["message"]
+
+
 def test_registered_users_get_separate_recommendation_closure_analytics(
     monkeypatch,
     tmp_path: Path,

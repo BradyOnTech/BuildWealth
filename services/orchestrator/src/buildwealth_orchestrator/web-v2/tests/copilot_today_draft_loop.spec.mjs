@@ -215,6 +215,7 @@ test('Copilot drafted investment review surfaces in Today and opens focused Inbo
 
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('http://buildwealth-v2.test/#copilot');
+  await page.locator('#composer[data-composer-ready="true"]').waitFor();
   await page.locator('#composer-textarea').fill('Draft a review-only recommendation for NVDA from this investment-fit discussion.');
   await page.locator('#composer-submit').click();
 

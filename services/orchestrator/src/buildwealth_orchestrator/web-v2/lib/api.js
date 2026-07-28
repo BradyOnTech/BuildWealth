@@ -429,10 +429,17 @@ export const api = {
   lifeInterview: () => fetchJson('/api/life-plans/interview'),
   lifePlanDrafts: (answers = {}) => postJson('/api/life-plans/drafts', { answers }),
   updateProfile: (body, opts = {}) => putJson(financialProfileUrl(opts), body),
+  patchProfile: (body, opts = {}) => patchJson(financialProfileUrl(opts), body),
+  updateProfileSection: (sectionKey, body = {}) => patchJson(
+    `/api/financial-profile/sections/${encodeURIComponent(sectionKey)}`,
+    body,
+  ),
   onboarding:   () => fetchJson('/api/onboarding/status'),
   onboardingProgress: () => fetchJson('/api/onboarding/progress'),
   startOnboarding: () => postJson('/api/onboarding/progress/start', {}),
   updateOnboardingProgress: (body = {}) => patchJson('/api/onboarding/progress', body),
+  onboardingResetPreview: () => fetchJson('/api/onboarding/reset/preview'),
+  resetOnboarding: (body = {}) => postJson('/api/onboarding/reset', body),
 
   // User settings
   settings:       () => fetchJson('/api/settings'),

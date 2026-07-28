@@ -64,6 +64,26 @@ class TestNetWorth:
         assert r.total_assets_usd == 550000
         assert r.net_worth_usd == 550000
 
+    def test_property_ownership_and_plan_funding_use_household_share(self):
+        r = _health(
+            physical_assets=[
+                PhysicalAssetItem(
+                    id="asset-boat",
+                    label="Boat",
+                    current_value_usd=40000,
+                    asset_type="vehicle",
+                    asset_subtype="boat",
+                    ownership_pct=50,
+                    include_in_plan_funding=True,
+                )
+            ],
+        )
+
+        assert r.physical_assets_value_usd == 20000
+        assert r.total_assets_usd == 120000
+        assert r.plan_funding_assets_usd == 20000
+        assert r.investable_assets_usd == 100000
+
     def test_net_worth_does_not_count_profile_asset_already_in_portfolio(self):
         snapshot = _snap(total_value=600000)
         snapshot.holdings = [
@@ -135,6 +155,45 @@ class TestNetWorth:
         assert r.physical_assets_value_usd == 0
         assert r.net_worth_usd == 625000
 
+    def test_linked_portfolio_property_applies_household_ownership_once(self):
+        snapshot = _snap(total_value=600000)
+        snapshot.holdings = [
+            Holding(
+                symbol="VTI",
+                name="Total Market",
+                asset_type="etf",
+                asset_class="equity",
+                value_usd=100000,
+            ),
+            Holding(
+                symbol="MY_HOME",
+                name="Primary residence",
+                asset_type="property",
+                asset_class="real_estate",
+                value_usd=500000,
+            ),
+        ]
+        r = _health(
+            snapshot=snapshot,
+            physical_assets=[
+                PhysicalAssetItem(
+                    id="asset-home",
+                    label="House",
+                    current_value_usd=500000,
+                    asset_type="real_estate",
+                    asset_subtype="home",
+                    ownership_pct=50,
+                    include_in_plan_funding=True,
+                    portfolio_symbol="MY_HOME",
+                )
+            ],
+        )
+
+        assert r.physical_assets_value_usd == 0
+        assert r.total_assets_usd == 350000
+        assert r.net_worth_usd == 350000
+        assert r.plan_funding_assets_usd == 250000
+
     def test_net_worth_no_portfolio(self):
         r = _health(snapshot=None)
         assert r.portfolio_value_usd == 0
@@ -194,6 +253,40 @@ class TestCashFlow:
     def test_surplus_with_debt_payments(self):
         r = _health(debt_items=[DebtItem(id="d1", label="Car", balance_usd=20000, minimum_payment_usd=400)])
         assert r.monthly_surplus_usd == 5600
+
+    def test_debt_linked_expense_is_context_not_a_second_payment(self):
+        r = _health(
+            debt_items=[
+                DebtItem(
+                    id="auto-debt",
+                    label="Truck loan",
+                    balance_usd=20000,
+                    minimum_payment_usd=400,
+                    debt_type="auto_loan",
+                    linked_asset_id="truck",
+                )
+            ],
+            expense_items=[
+                ExpenseItem(
+                    id="payment-copy",
+                    label="Truck payment",
+                    monthly_amount_usd=400,
+                    linked_asset_id="truck",
+                    linked_debt_id="auto-debt",
+                ),
+                ExpenseItem(
+                    id="insurance",
+                    label="Truck insurance",
+                    monthly_amount_usd=150,
+                    linked_asset_id="truck",
+                    category="insurance",
+                ),
+            ],
+        )
+
+        assert r.total_monthly_expenses_usd == 150
+        assert r.total_monthly_debt_payments_usd == 400
+        assert r.monthly_surplus_usd == 7450
 
     def test_deficit(self):
         r = _health(expense_items=[ExpenseItem(id="e1", label="Life", monthly_amount_usd=9000)])

@@ -8,9 +8,9 @@ from typing import Any, Mapping
 from buildwealth_orchestrator.services.store_locks import synchronized_store
 from buildwealth_orchestrator.services.json_store_migrations import migrate_payload
 
-PROFILE_SCHEMA_VERSION = 2
+PROFILE_SCHEMA_VERSION = 3
 PROFILE_METADATA_REVIEW_STATUSES = {"copilot_drafted", "inferred", "stale"}
-PROFILE_METADATA_MATERIAL_SECTIONS = ("tax_profile", "investment_policy")
+PROFILE_METADATA_MATERIAL_SECTIONS = ("tax_profile", "investment_policy", "estate_readiness")
 PROFILE_METADATA_DEFAULT_STALE_AFTER_DAYS = {
     "tax_profile.filing_status": 365,
     "tax_profile.marginal_tax_rate": 180,
@@ -29,6 +29,12 @@ PROFILE_METADATA_DEFAULT_STALE_AFTER_DAYS = {
     "investment_policy.preferred_account_locations": 365,
     "investment_policy.restricted_symbols": 365,
     "investment_policy.restricted_sectors": 365,
+    "estate_readiness.will_status": 365,
+    "estate_readiness.trust_status": 365,
+    "estate_readiness.power_of_attorney_status": 365,
+    "estate_readiness.healthcare_directive_status": 365,
+    "estate_readiness.beneficiaries_reviewed_at": 365,
+    "estate_readiness.notes": 365,
 }
 
 
@@ -286,6 +292,16 @@ class FinancialProfileStore:
             "debt_items": [],
             "goal_items": [],
             "physical_assets": [],
+            "insurance_policies": [],
+            "benefit_items": [],
+            "estate_readiness": {
+                "will_status": "unknown",
+                "trust_status": "unknown",
+                "power_of_attorney_status": "unknown",
+                "healthcare_directive_status": "unknown",
+                "beneficiaries_reviewed_at": None,
+                "notes": "",
+            },
             "tax_profile": {
                 "filing_status": None,
                 "marginal_tax_rate": None,
@@ -388,6 +404,10 @@ class FinancialProfileStore:
             "income",
         )
         for item in defaults["income_items"]:
+            item.setdefault("owner_member_id", None)
+            item.setdefault("linked_asset_id", None)
+            item.setdefault("employer_name", None)
+            item.setdefault("variability", "fixed")
             item.setdefault("annual_growth_rate", None)
             item.setdefault("start_date", None)
             item.setdefault("end_date", None)
@@ -397,6 +417,10 @@ class FinancialProfileStore:
             "expense",
         )
         for item in defaults["expense_items"]:
+            item.setdefault("linked_asset_id", None)
+            item.setdefault("linked_debt_id", None)
+            item.setdefault("related_member_id", None)
+            item.setdefault("is_essential", False)
             item.setdefault("inflation_rate", None)
             item.setdefault("start_date", None)
             item.setdefault("end_date", None)
@@ -406,6 +430,12 @@ class FinancialProfileStore:
             "debt",
         )
         for item in defaults["debt_items"]:
+            item.setdefault("debt_type", "other")
+            item.setdefault("linked_asset_id", None)
+            item.setdefault("original_principal_usd", None)
+            item.setdefault("term_months", None)
+            item.setdefault("opened_at", None)
+            item.setdefault("maturity_date", None)
             item.setdefault("payoff_strategy", "minimum")
             item.setdefault("custom_monthly_payment_usd", None)
 
@@ -420,8 +450,70 @@ class FinancialProfileStore:
         )
         for item in defaults["physical_assets"]:
             item.setdefault("asset_type", "other")
+            item.setdefault("asset_subtype", "other")
+            item.setdefault("owner_member_id", None)
+            item.setdefault("acquisition_cost_usd", None)
+            item.setdefault("valuation_date", None)
+            item.setdefault("valuation_source", "user_estimate")
+            item.setdefault("liquidity", "sellable")
+            item.setdefault("include_in_plan_funding", False)
+            item.setdefault("disposition_intent", "keep")
+            item.setdefault("planned_disposition_date", None)
+            item.setdefault("ownership_pct", 100.0)
             item.setdefault("annual_growth_rate", None)
             item.setdefault("purchase_date", None)
+
+        defaults["insurance_policies"] = self._ensure_id(
+            [item for item in defaults.get("insurance_policies", []) if isinstance(item, dict)],
+            "insurance",
+        )
+        for item in defaults["insurance_policies"]:
+            item.setdefault("coverage_type", "other")
+            item.setdefault("insured_member_id", None)
+            item.setdefault("linked_asset_id", None)
+            item.setdefault("premium_expense_id", None)
+            item.setdefault("coverage_amount_usd", None)
+            item.setdefault("deductible_usd", None)
+            item.setdefault("renewal_date", None)
+            item.setdefault("beneficiary_reviewed", False)
+            item.setdefault("notes", "")
+
+        defaults["benefit_items"] = self._ensure_id(
+            [item for item in defaults.get("benefit_items", []) if isinstance(item, dict)],
+            "benefit",
+        )
+        for item in defaults["benefit_items"]:
+            item.setdefault("benefit_type", "other")
+            item.setdefault("owner_member_id", None)
+            item.setdefault("employer_name", None)
+            item.setdefault("estimated_annual_value_usd", None)
+            item.setdefault("employee_contribution_pct", None)
+            item.setdefault("employer_match_pct", None)
+            item.setdefault("vesting_date", None)
+            item.setdefault("start_date", None)
+            item.setdefault("notes", "")
+
+        for section_name in (
+            "household_members",
+            "income_items",
+            "expense_items",
+            "debt_items",
+            "goal_items",
+            "physical_assets",
+            "insurance_policies",
+            "benefit_items",
+        ):
+            for item in defaults[section_name]:
+                item.setdefault("source", "profile_editor")
+                item.setdefault("status", "confirmed")
+                item.setdefault("last_confirmed_at", None)
+
+        estate_readiness = defaults.get("estate_readiness")
+        if not isinstance(estate_readiness, dict):
+            estate_readiness = {}
+        estate_defaults = self._default_payload()["estate_readiness"]
+        estate_defaults.update(estate_readiness)
+        defaults["estate_readiness"] = estate_defaults
 
         tax_profile = defaults.get("tax_profile")
         if not isinstance(tax_profile, dict):

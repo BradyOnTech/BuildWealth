@@ -17,7 +17,10 @@ export function renderOverview(ui) {
   const tax = p.tax_profile || {};
   const flags = p.flags || {};
   const income = finiteOr(health.gross_monthly_income_usd, sumMonthly(p.income_items));
-  const expenses = finiteOr(health.total_monthly_expenses_usd, sumMonthly(p.expense_items));
+  const expenses = finiteOr(
+    health.total_monthly_expenses_usd,
+    sumMonthly((p.expense_items || []).filter(item => !item?.linked_debt_id)),
+  );
   const estimatedTaxes = finiteOr(health.estimated_monthly_taxes_usd, null);
   const debtPayments = finiteOr(health.total_monthly_debt_payments_usd, null);
   const householdMembers = Array.isArray(p.household_members) ? p.household_members : [];
@@ -27,7 +30,11 @@ export function renderOverview(ui) {
   );
   const debtTotal = sumField(p.debt_items, 'balance_usd');
   const goalsCount = (p.goal_items || []).length;
-  const assetsTotal = sumField(p.physical_assets, 'current_value_usd');
+  const assetsTotal = sumOwnedAssets(p.physical_assets);
+  const planFundingAssets = finiteOr(
+    health.plan_funding_assets_usd,
+    sumOwnedAssets((p.physical_assets || []).filter(asset => asset.include_in_plan_funding)),
+  );
   const runwayMonths = (income != null && expenses != null && expenses > 0)
     ? estimateRunway(p, expenses)
     : null;
@@ -54,6 +61,14 @@ export function renderOverview(ui) {
         line('Active plan',       p.notes ? 'Notes attached' : 'No plan-specific notes',        'Notes here travel with Copilot context.'),
       ]))}
 
+      ${raw(card('Protection & property', [
+        line('Property and vehicles', assetsTotal == null ? 'None tracked' : fmtUsdOrEmpty(assetsTotal), 'Included in net worth; not treated as liquid cash.'),
+        line('Available to fund the plan', planFundingAssets == null ? 'None designated' : fmtUsdOrEmpty(planFundingAssets), 'Only property you explicitly make available is considered a possible funding source.'),
+        line('Insurance policies', `${(p.insurance_policies || []).length} tracked`, 'Coverage lives here; premiums remain linked Expenses.'),
+        line('Benefits', `${(p.benefit_items || []).length} tracked`, 'Employer and public benefits inform planning without being counted as current cash.'),
+        line('Estate documents', estateSummary(p.estate_readiness), 'Readiness only—BuildWealth does not store legal document contents here.'),
+      ], { footer: 'Review property, insurance, benefits, and estate readiness in their Profile tabs.' }))}
+
       ${raw(renderLifeChangeGuide(p))}
 
       ${raw(card('Investment guardrails', [
@@ -65,6 +80,8 @@ export function renderOverview(ui) {
       ], { footer: 'Edit guardrails on the Investing tab.' }))}
 
       ${raw(renderDocumentCapture())}
+
+      ${raw(renderRegistrationCard(ui))}
 
       ${raw(needsReviewCard(ui))}
     </div>
@@ -97,6 +114,15 @@ function card(title, lines, opts = {}) {
 
 function line(label, value, detail) {
   return { label, value: value || '—', detail };
+}
+
+function estateSummary(estate) {
+  if (!estate || typeof estate !== 'object') return 'Not reviewed';
+  const keys = ['will_status', 'trust_status', 'power_of_attorney_status', 'healthcare_directive_status'];
+  const complete = keys.filter(key => estate[key] === 'complete').length;
+  const answered = keys.filter(key => estate[key] && estate[key] !== 'unknown').length;
+  if (!answered) return 'Not reviewed';
+  return `${complete} of ${keys.length} complete`;
 }
 
 function needsReviewCard(ui) {
@@ -134,6 +160,40 @@ function needsReviewCard(ui) {
       <footer class="profile-card-foot">
         <a class="link-editorial" href="#inbox" data-route>Open Inbox</a>
       </footer>
+    </article>
+  `;
+}
+
+export function renderRegistrationCard(ui = {}) {
+  const progress = ui.onboardingProgress || {};
+  const started = progress.started === true;
+  const complete = progress.status === 'complete';
+  const journeyLabel = !started
+    ? 'Setup has not been started for this workspace.'
+    : complete
+      ? 'Your first setup journey is complete. You can review it without changing current data.'
+      : 'Your setup journey is still in progress and will resume where you left it.';
+  return html`
+    <article class="profile-card profile-registration-card">
+      <header class="profile-card-head">
+        <div>
+          <p class="profile-card-kicker">Registration &amp; setup</p>
+          <h3 class="profile-card-title">Your first financial picture</h3>
+        </div>
+      </header>
+      <p class="profile-card-empty">${journeyLabel}</p>
+      <div class="profile-registration-actions">
+        <a class="btn btn-quiet" href="#setup" data-route>
+          ${complete ? 'Review setup journey' : 'Continue setup'}
+        </a>
+        <button class="link-editorial danger" type="button" data-profile-reset-open>
+          Reset financial data &amp; register again
+        </button>
+      </div>
+      <p class="profile-registration-note">
+        Resetting keeps your BuildWealth sign-in and household ownership. It creates a recovery backup,
+        clears this workspace’s financial data, and starts Setup again from the beginning.
+      </p>
     </article>
   `;
 }
@@ -258,6 +318,16 @@ function sumField(items, key) {
     if (Number.isFinite(v)) { total += v; any = true; }
   }
   return any ? total : null;
+}
+
+function sumOwnedAssets(items) {
+  if (!Array.isArray(items) || !items.length) return null;
+  return items.reduce((total, item) => {
+    const value = Number(item?.current_value_usd);
+    const ownership = Number(item?.ownership_pct ?? 100);
+    if (!Number.isFinite(value) || !Number.isFinite(ownership)) return total;
+    return total + value * Math.min(Math.max(ownership, 0), 100) / 100;
+  }, 0);
 }
 
 function finiteOr(value, fallback) {

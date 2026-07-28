@@ -114,7 +114,13 @@ def compute_monthly_cash_flow(
     combined_rate = min(max(federal_rate + state_rate, 0.0), 1.0)
     estimated_taxes = pre_tax_income * combined_rate
     net_income = gross_income - estimated_taxes
-    total_expenses = sum(float(item.monthly_amount_usd or 0.0) for item in expense_items)
+    # A debt-linked expense is descriptive context for the obligation, not a
+    # second cash-flow charge. Debt.minimum_payment_usd owns that outflow.
+    total_expenses = sum(
+        float(item.monthly_amount_usd or 0.0)
+        for item in expense_items
+        if not str(item.linked_debt_id or "").strip()
+    )
     total_debt_payments = sum(float(item.minimum_payment_usd or 0.0) for item in debt_items)
     monthly_surplus = net_income - total_expenses - total_debt_payments
     return {
@@ -179,10 +185,22 @@ def compute_financial_health(
     # physical holdings. Add only Profile assets that do not resolve to one of
     # those positions.
     physical_assets_value = reconciled_assets.profile_only_value_usd
-    total_assets = portfolio_value + physical_assets_value
+    total_assets = (
+        portfolio_value
+        + reconciled_assets.portfolio_value_adjustment_usd
+        + physical_assets_value
+    )
     total_debt = sum(d.balance_usd for d in debt_items)
     net_worth = total_assets - total_debt
     investable_assets = _investable_assets_value(snapshot)
+    plan_funding_profile_ids = {
+        asset.id for asset in physical_assets if asset.include_in_plan_funding
+    }
+    plan_funding_assets = sum(
+        asset.value_usd
+        for asset in reconciled_assets.assets
+        if asset.profile_id in plan_funding_profile_ids
+    )
 
     # --- Cash Flow ---
     cash_flow = compute_monthly_cash_flow(
@@ -218,6 +236,7 @@ def compute_financial_health(
             total_debt_usd=0.0,
             net_worth_usd=0.0,
             investable_assets_usd=0.0,
+            plan_funding_assets_usd=0.0,
             gross_monthly_income_usd=0.0,
             net_monthly_income_usd=0.0,
             estimated_monthly_taxes_usd=0.0,
@@ -240,6 +259,10 @@ def compute_financial_health(
     if physical_assets_value > 0:
         highlights.append(
             f"Physical assets contribute ${physical_assets_value:,.0f} to net worth."
+        )
+    if plan_funding_assets > 0:
+        highlights.append(
+            f"${plan_funding_assets:,.0f} of property is explicitly available for a future plan."
         )
 
     # Cash flow highlights
@@ -328,6 +351,7 @@ def compute_financial_health(
         total_debt_usd=round(total_debt, 2),
         net_worth_usd=round(net_worth, 2),
         investable_assets_usd=round(investable_assets, 2),
+        plan_funding_assets_usd=round(plan_funding_assets, 2),
         gross_monthly_income_usd=round(gross_income, 2),
         net_monthly_income_usd=round(net_income, 2),
         estimated_monthly_taxes_usd=round(estimated_taxes, 2),

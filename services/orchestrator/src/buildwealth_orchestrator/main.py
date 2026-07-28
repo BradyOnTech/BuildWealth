@@ -49,6 +49,7 @@ from buildwealth_orchestrator.schemas import (
     ImportWorkbenchPreviewResponse,
     FinancialProfileRequest,
     FinancialProfileResponse,
+    ProfileSectionUpdateRequest,
     OnboardingStatusResponse,
     OptionsChainRequest,
     PriceHistoryRequest,
@@ -4809,9 +4810,21 @@ def save_financial_profile_payload(
     profile_store: FinancialProfileStore | None = None,
 ) -> dict[str, Any]:
     resolved_store = profile_store or financial_profile_store
-    payload = request.model_dump(mode="json")
+    # Preserve sections omitted by API callers. The v2 editor sends a complete
+    # profile, while integrations and older callers often send one section.
+    # Using fields-set semantics makes those writes genuinely partial instead
+    # of allowing Pydantic defaults to clear unrelated Canonical State.
+    payload = request.model_dump(mode="json", exclude_unset=True)
 
-    for key in ("income_items", "expense_items", "debt_items", "goal_items", "physical_assets"):
+    for key in (
+        "income_items",
+        "expense_items",
+        "debt_items",
+        "goal_items",
+        "physical_assets",
+        "insurance_policies",
+        "benefit_items",
+    ):
         rows = payload.get(key)
         if not isinstance(rows, list):
             continue
@@ -4848,6 +4861,9 @@ PROFILE_AUDIT_SECTION_ORDER = [
     "debt_items",
     "goal_items",
     "physical_assets",
+    "insurance_policies",
+    "benefit_items",
+    "estate_readiness",
     "tax_profile",
     "investment_policy",
     "flags",
@@ -4875,7 +4891,7 @@ def _has_meaningful_profile_value(value: Any) -> bool:
 
 def _profile_update_sections_from_payload(payload: Any) -> list[str]:
     if hasattr(payload, "model_dump"):
-        payload = payload.model_dump(mode="json")
+        payload = payload.model_dump(mode="json", exclude_unset=True)
     if not isinstance(payload, dict):
         return []
     sections: list[str] = []
@@ -12842,6 +12858,8 @@ PROFILE_UPDATE_LIST_KEYS = (
     "debt_items",
     "goal_items",
     "physical_assets",
+    "insurance_policies",
+    "benefit_items",
 )
 PROFILE_UPDATE_ITEM_ID_PREFIXES = {
     "household_members": "member",
@@ -12850,6 +12868,8 @@ PROFILE_UPDATE_ITEM_ID_PREFIXES = {
     "debt_items": "debt",
     "goal_items": "goal",
     "physical_assets": "asset",
+    "insurance_policies": "insurance",
+    "benefit_items": "benefit",
 }
 
 
@@ -12926,6 +12946,16 @@ def _build_financial_profile_update_draft(
         patch_payload["flags"] = flags
         section_counts["flags"] = len(flags)
 
+    estate_readiness = arguments.get("estate_readiness")
+    if estate_readiness is not None:
+        if not isinstance(estate_readiness, dict):
+            raise ValueError("estate_readiness must be an object")
+        merged_estate = dict(proposed_payload.get("estate_readiness", {}))
+        merged_estate.update(estate_readiness)
+        proposed_payload["estate_readiness"] = merged_estate
+        patch_payload["estate_readiness"] = estate_readiness
+        section_counts["estate_readiness"] = len(estate_readiness)
+
     validated = FinancialProfileRequest(**proposed_payload)
     validated_payload = validated.model_dump(mode="json")
     draft_field_paths = patch_material_profile_field_paths(patch_payload)
@@ -12979,6 +13009,8 @@ async def tool_update_financial_profile(arguments: dict[str, object]) -> dict[st
     _merge_list("debt_items")
     _merge_list("goal_items")
     _merge_list("physical_assets")
+    _merge_list("insurance_policies")
+    _merge_list("benefit_items")
 
     notes = arguments.get("notes")
     if notes is not None:
@@ -13007,6 +13039,14 @@ async def tool_update_financial_profile(arguments: dict[str, object]) -> dict[st
         merged_flags = dict(profile_payload.get("flags", {}))
         merged_flags.update(flags)
         profile_payload["flags"] = merged_flags
+
+    estate_readiness = arguments.get("estate_readiness")
+    if estate_readiness is not None:
+        if not isinstance(estate_readiness, dict):
+            raise ValueError("estate_readiness must be an object")
+        merged_estate = dict(profile_payload.get("estate_readiness", {}))
+        merged_estate.update(estate_readiness)
+        profile_payload["estate_readiness"] = merged_estate
 
     validated = FinancialProfileRequest(**profile_payload)
     saved = save_financial_profile_payload(
@@ -16019,6 +16059,9 @@ def configure_copilot_tools() -> None:
                 "debt_items": {"type": "array", "items": {"type": "object"}},
                 "goal_items": {"type": "array", "items": {"type": "object"}},
                 "physical_assets": {"type": "array", "items": {"type": "object"}},
+                "insurance_policies": {"type": "array", "items": {"type": "object"}},
+                "benefit_items": {"type": "array", "items": {"type": "object"}},
+                "estate_readiness": {"type": "object"},
                 "tax_profile": {"type": "object"},
                 "investment_policy": {"type": "object"},
                 "flags": {"type": "object"},
@@ -16033,7 +16076,8 @@ def configure_copilot_tools() -> None:
         description=(
             "Update financial profile collections and tax settings. "
             "You may provide any subset of household_members, income_items, expense_items, debt_items, goal_items, "
-            "physical_assets, tax_profile, investment_policy, flags, and notes. Only use after explicit user confirmation."
+            "physical_assets, insurance_policies, benefit_items, estate_readiness, tax_profile, investment_policy, "
+            "flags, and notes. Only use after explicit user confirmation."
         ),
         parameters={
             "type": "object",
@@ -16060,6 +16104,9 @@ def configure_copilot_tools() -> None:
                 "debt_items": {"type": "array", "items": {"type": "object"}},
                 "goal_items": {"type": "array", "items": {"type": "object"}},
                 "physical_assets": {"type": "array", "items": {"type": "object"}},
+                "insurance_policies": {"type": "array", "items": {"type": "object"}},
+                "benefit_items": {"type": "array", "items": {"type": "object"}},
+                "estate_readiness": {"type": "object"},
                 "tax_profile": {"type": "object"},
                 "investment_policy": {"type": "object"},
                 "flags": {"type": "object"},

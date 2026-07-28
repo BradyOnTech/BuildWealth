@@ -257,6 +257,13 @@ def _focused_structured_pr1(assembled: Mapping[str, Any]) -> dict[str, Any]:
                 "debt_items_count": profile.get("debt_items_count"),
                 "goal_items_count": profile.get("goal_items_count"),
                 "physical_assets_count": profile.get("physical_assets_count"),
+                "insurance_policies_count": profile.get("insurance_policies_count"),
+                "benefit_items_count": profile.get("benefit_items_count"),
+                "estate_readiness": (
+                    profile.get("estate_readiness")
+                    if isinstance(profile.get("estate_readiness"), Mapping)
+                    else {}
+                ),
                 "tax_profile": profile.get("tax_profile") if isinstance(profile.get("tax_profile"), Mapping) else {},
                 "investment_policy": (
                     profile.get("investment_policy")
@@ -273,6 +280,13 @@ def _focused_structured_pr1(assembled: Mapping[str, Any]) -> dict[str, Any]:
                 "debt_items_count": len(_as_list(profile.get("debt_items"))),
                 "goal_items_count": len(_as_list(profile.get("goal_items"))),
                 "physical_assets_count": len(_as_list(profile.get("physical_assets"))),
+                "insurance_policies_count": len(_as_list(profile.get("insurance_policies"))),
+                "benefit_items_count": len(_as_list(profile.get("benefit_items"))),
+                "estate_readiness": (
+                    profile.get("estate_readiness")
+                    if isinstance(profile.get("estate_readiness"), Mapping)
+                    else {}
+                ),
                 "tax_profile": profile.get("tax_profile") if isinstance(profile.get("tax_profile"), Mapping) else {},
                 "investment_policy": (
                     profile.get("investment_policy")

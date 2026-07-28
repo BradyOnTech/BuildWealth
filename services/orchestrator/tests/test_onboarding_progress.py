@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from buildwealth_orchestrator import main
 from buildwealth_orchestrator.services.onboarding_progress import OnboardingProgressStore
+from buildwealth_orchestrator.services.onboarding_reset import OnboardingResetService
 
 
 def test_onboarding_progress_does_not_start_existing_workspaces_implicitly(tmp_path) -> None:
@@ -109,3 +110,82 @@ def test_onboarding_progress_routes_are_workspace_scoped(tmp_path) -> None:
     assert advanced.json()["current_step"] == "foundation"
     assert invalid.status_code == 400
     assert (tmp_path / "workspace-a" / "onboarding" / "progress.json").exists()
+
+
+def test_onboarding_reset_archives_live_data_and_restarts_setup(tmp_path) -> None:
+    root = tmp_path / "workspaces" / "workspace-a"
+    backup_dir = root / "backups"
+    profile_path = root / "profile" / "financial_profile.json"
+    plan_path = root / "plans" / "active_plan.json"
+    profile_path.parent.mkdir(parents=True)
+    plan_path.parent.mkdir(parents=True)
+    profile_path.write_text('{"household_members":[{"name":"Taylor"}]}', encoding="utf-8")
+    plan_path.write_text('{"name":"Current plan"}', encoding="utf-8")
+    progress_store = OnboardingProgressStore(root / "onboarding" / "progress.json")
+    progress_store.start()
+    progress_store.update(completed_step="first_picture", complete=True)
+
+    service = OnboardingResetService(data_root=root, backup_dir=backup_dir)
+    preview = service.preview()
+    result = service.reset()
+
+    assert preview["file_count"] == 3
+    assert result["identity_preserved"] is True
+    assert result["files_cleared"] == 3
+    assert not profile_path.exists()
+    assert not plan_path.exists()
+    assert result["progress"]["status"] == "active"
+    assert result["progress"]["current_step"] == "welcome"
+    assert result["progress"]["completed_steps"] == []
+    assert (backup_dir / f"buildwealth-backup-{result['backup_id']}.tar.gz").exists()
+
+
+def test_onboarding_reset_routes_preserve_owner_identity_and_require_confirmation(tmp_path) -> None:
+    root = tmp_path / "workspaces" / "workspace-a"
+    profile_path = root / "profile" / "financial_profile.json"
+    profile_path.parent.mkdir(parents=True)
+    profile_path.write_text('{"income_items":[{"monthly_amount_usd":8000}]}', encoding="utf-8")
+    identity_path = tmp_path / "control-plane-owner.json"
+    identity_path.write_text('{"email":"owner@example.test"}', encoding="utf-8")
+    services = SimpleNamespace(
+        paths=SimpleNamespace(
+            root=root,
+            backup_archive_dir=root / "backups",
+        ),
+        context=SimpleNamespace(
+            permissions={"account.delete"},
+            user_id="user-a",
+            organization_id="org-a",
+            workspace_id="workspace-a",
+            role="owner",
+            is_demo_workspace=False,
+        ),
+    )
+    main.app.dependency_overrides[main.get_workspace_services] = lambda: services
+    try:
+        with TestClient(main.app) as client:
+            preview = client.get("/api/onboarding/reset/preview")
+            rejected = client.post(
+                "/api/onboarding/reset",
+                json={"confirm": "reset"},
+            )
+            profile_survived_rejection = profile_path.exists()
+            reset = client.post(
+                "/api/onboarding/reset",
+                json={"confirm": "reset and register again"},
+            )
+    finally:
+        main.app.dependency_overrides.pop(main.get_workspace_services, None)
+
+    assert preview.status_code == 200
+    assert preview.json()["confirmation_phrase"] == "reset and register again"
+    assert rejected.status_code == 400
+    assert profile_survived_rejection is True
+    assert reset.status_code == 200
+    assert reset.json()["identity_preserved"] is True
+    assert reset.json()["next_path"] == "/v2#setup"
+    assert identity_path.read_text(encoding="utf-8") == '{"email":"owner@example.test"}'
+    assert not profile_path.exists()
+    restarted = OnboardingProgressStore(root / "onboarding" / "progress.json").get()
+    assert restarted["needs_setup"] is True
+    assert restarted["current_step"] == "welcome"

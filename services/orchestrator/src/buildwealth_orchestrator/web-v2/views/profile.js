@@ -20,6 +20,7 @@ import { renderTable, sectionForKey, TABLE_SECTIONS } from './profile/tables.js'
 import { renderTaxes, submitTaxesForm } from './profile/taxes.js';
 import { renderInvesting, submitInvestingForm, addRestricted, removeRestricted } from './profile/investing.js';
 import { renderDataQuality, resolveConflict } from './profile/data_quality.js';
+import { renderEstateReadiness, submitEstateReadiness } from './profile/estate.js';
 import { renderSetupRail, onRailAction } from './profile/setup_rail.js';
 import {
   renderLifeInterview,
@@ -41,12 +42,15 @@ const SECTIONS = [
   { id: 'overview',     label: 'Overview',     kind: 'overview' },
   { id: 'household',    label: 'Household',    kind: 'table',   tableKey: 'household_members' },
   { id: 'income',       label: 'Income',       kind: 'table',   tableKey: 'income_items' },
+  { id: 'benefits',     label: 'Benefits',     kind: 'table',   tableKey: 'benefit_items' },
   { id: 'expenses',     label: 'Expenses',     kind: 'table',   tableKey: 'expense_items' },
   { id: 'debt',         label: 'Debt',         kind: 'table',   tableKey: 'debt_items' },
   { id: 'goals',        label: 'Goals',        kind: 'goals',   tableKey: 'goal_items' },
   { id: 'taxes',        label: 'Taxes & status', kind: 'taxes' },
   { id: 'investing',    label: 'Investing',    kind: 'investing' },
-  { id: 'assets',       label: 'Assets',       kind: 'table',   tableKey: 'physical_assets' },
+  { id: 'assets',       label: 'Property & vehicles', kind: 'table', tableKey: 'physical_assets' },
+  { id: 'insurance',    label: 'Insurance',    kind: 'table',   tableKey: 'insurance_policies' },
+  { id: 'estate',       label: 'Estate',       kind: 'estate' },
   { id: 'data-quality', label: 'Data quality', kind: 'data-quality' },
 ];
 
@@ -57,9 +61,15 @@ export const ui = {
   saving:       false,
   profile:      null,
   onboarding:   null,
+  onboardingProgress: null,
   candidates:   [],          // pending profile context candidates
   financialHealth: null,
   section:      'overview',
+  resetOpen:    false,
+  resetLoading: false,
+  resetSubmitting: false,
+  resetPreview: null,
+  resetError:   null,
 };
 
 export function template() {
@@ -84,9 +94,10 @@ async function load() {
   ui.loaded = false;
   ui.loadError = null;
   try {
-    const [profile, onboarding, candidates, defaults, financialHealth] = await Promise.all([
+    const [profile, onboarding, onboardingProgress, candidates, defaults, financialHealth] = await Promise.all([
       api.profile(),
       api.onboarding().catch(() => null),
+      api.onboardingProgress().catch(() => null),
       api.contextCandidates({ lifecycleState: 'proposed' }).catch(() => []),
       api.profileDefaults().catch(() => null),
       api.financialHealth().catch(() => null),
@@ -94,6 +105,7 @@ async function load() {
     ui.profile = ensureShape(profile);
     ui.suggestions = defaults?.suggestions || {};
     ui.onboarding = onboarding;
+    ui.onboardingProgress = onboardingProgress;
     ui.financialHealth = financialHealth;
     ui.candidates = Array.isArray(candidates) ? candidates : (candidates?.items || []);
     ui.loaded = true;
@@ -136,6 +148,31 @@ export async function persist({ optimistic = true } = {}) {
   }
 }
 
+export async function replaceProfileSection(sectionKey, items) {
+  if (!ui.profile || !sectionKey || !Array.isArray(items)) return false;
+  ui.saving = true;
+  ui.saveError = null;
+  render();
+  try {
+    const saved = await api.updateProfileSection(sectionKey, {
+      mode: 'replace',
+      items,
+      expected_updated_at: ui.profile.updated_at || null,
+    });
+    ui.profile = ensureShape(saved);
+    ui.financialHealth = await api.financialHealth().catch(() => ui.financialHealth);
+    state.financialProfile = ui.profile;
+    emit('profile:loaded', ui.profile);
+    return true;
+  } catch (err) {
+    ui.saveError = err?.detail?.message || err.message || 'Could not replace this profile section.';
+    return false;
+  } finally {
+    ui.saving = false;
+    render();
+  }
+}
+
 export function render() {
   const shell = $('#profile-shell');
   if (!shell) return;
@@ -163,7 +200,9 @@ export function render() {
     <section class="profile-section profile-section-${section.id}">
       ${raw(renderSectionBody(section))}
     </section>
+    ${raw(resetRegistrationDialog())}
   `);
+  syncResetDialog();
 }
 
 /* ─────────────  Composition  ───────────── */
@@ -251,6 +290,7 @@ function renderSectionBody(section) {
   if (section.kind === 'overview')     return renderOverview(ui);
   if (section.kind === 'taxes')        return renderTaxes(ui);
   if (section.kind === 'investing')    return renderInvesting(ui);
+  if (section.kind === 'estate')       return renderEstateReadiness(ui);
   if (section.kind === 'data-quality') return renderDataQuality(ui);
   if (section.kind === 'table')        return renderTable(ui, sectionForKey(section.tableKey));
   // Goals: the life-plans interview sits above the editable table it feeds.
@@ -261,6 +301,86 @@ function renderSectionBody(section) {
     `;
   }
   return '';
+}
+
+function resetRegistrationDialog() {
+  const preview = ui.resetPreview || null;
+  const phrase = preview?.confirmation_phrase || 'reset and register again';
+  return html`
+    <dialog class="profile-reset-dialog" data-profile-reset-dialog aria-labelledby="profile-reset-title">
+      <form method="dialog" class="profile-reset-dialog-shell" data-profile-reset-form>
+        <header class="profile-reset-dialog-head">
+          <div>
+            <p class="profile-card-kicker">Protected reset</p>
+            <h2 id="profile-reset-title">Register this profile again</h2>
+          </div>
+          <button class="profile-reset-close" type="button" data-profile-reset-close aria-label="Close reset dialog">×</button>
+        </header>
+
+        ${ui.resetLoading ? html`
+          <p class="profile-reset-loading">Reviewing the current workspace…</p>
+        ` : html`
+          <p class="profile-reset-lede">
+            This restarts the financial setup for your current workspace. It does not create a second
+            account or change how you sign in.
+          </p>
+          <div class="profile-reset-split">
+            <section>
+              <h3>Cleared from the active workspace</h3>
+              <ul>
+                ${(preview?.will_clear || []).map(item => html`<li>${esc(item)}</li>`)}
+              </ul>
+            </section>
+            <section>
+              <h3>Kept for you</h3>
+              <ul>
+                ${(preview?.will_preserve || []).map(item => html`<li>${esc(item)}</li>`)}
+              </ul>
+            </section>
+          </div>
+          ${preview ? html`
+            <p class="profile-reset-count">
+              ${Number(preview.file_count || 0).toLocaleString('en-US')} active file${Number(preview.file_count || 0) === 1 ? '' : 's'}
+              · ${formatBytes(Number(preview.size_bytes || 0))}
+              · ${Number(preview.existing_backup_count || 0)} existing backup${Number(preview.existing_backup_count || 0) === 1 ? '' : 's'}
+            </p>
+          ` : ''}
+          <label class="settings-field">
+            <span class="settings-label">Type ${esc(phrase)} to confirm</span>
+            <input class="settings-input" name="confirm" type="text" autocomplete="off" />
+          </label>
+          ${ui.resetError ? html`<p class="inline-warning">${esc(ui.resetError)}</p>` : ''}
+          <div class="profile-reset-actions">
+            <button class="btn btn-quiet" type="button" data-profile-reset-close>Keep my current data</button>
+            <button class="btn btn-danger" type="submit" ${ui.resetSubmitting || !preview ? 'disabled' : ''}>
+              ${ui.resetSubmitting ? 'Resetting…' : 'Create backup & restart setup'}
+            </button>
+          </div>
+        `}
+      </form>
+    </dialog>
+  `;
+}
+
+function syncResetDialog() {
+  const dialog = document.querySelector('[data-profile-reset-dialog]');
+  if (!(dialog instanceof HTMLDialogElement)) return;
+  dialog.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    if (ui.resetSubmitting) return;
+    ui.resetOpen = false;
+    ui.resetError = null;
+    render();
+  }, { once: true });
+  if (ui.resetOpen && !dialog.open) dialog.showModal();
+  if (!ui.resetOpen && dialog.open) dialog.close();
+}
+
+function formatBytes(value) {
+  const bytes = Number(value || 0);
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /* ─────────────  Events  ───────────── */
@@ -275,6 +395,48 @@ function attachHandlers() {
     ui.section = next;
     history.replaceState(null, '', `#profile?section=${encodeURIComponent(next)}`);
     render();
+  });
+
+  delegate(root, 'click', '[data-profile-reset-open]', async (e) => {
+    e.preventDefault();
+    ui.resetOpen = true;
+    ui.resetLoading = true;
+    ui.resetPreview = null;
+    ui.resetError = null;
+    render();
+    try {
+      ui.resetPreview = await api.onboardingResetPreview();
+    } catch (err) {
+      ui.resetError = err?.message || 'Could not preview the workspace reset.';
+    } finally {
+      ui.resetLoading = false;
+      render();
+    }
+  });
+
+  delegate(root, 'click', '[data-profile-reset-close]', (e) => {
+    e.preventDefault();
+    if (ui.resetSubmitting) return;
+    ui.resetOpen = false;
+    ui.resetError = null;
+    render();
+  });
+
+  delegate(root, 'submit', '[data-profile-reset-form]', async (e, form) => {
+    e.preventDefault();
+    if (ui.resetSubmitting || !ui.resetPreview) return;
+    const payload = Object.fromEntries(new FormData(form).entries());
+    ui.resetSubmitting = true;
+    ui.resetError = null;
+    render();
+    try {
+      const result = await api.resetOnboarding({ confirm: String(payload.confirm || '') });
+      window.location.replace(result?.next_path || '/v2#setup');
+    } catch (err) {
+      ui.resetError = err?.message || 'Could not reset this workspace.';
+      ui.resetSubmitting = false;
+      render();
+    }
   });
 
   // Table-level row events. Each table sub-view declares data-table-action,
@@ -341,6 +503,11 @@ function attachHandlers() {
     submitInvestingForm(ui);
   });
 
+  delegate(root, 'click', '[data-estate-save]', (e) => {
+    e.preventDefault();
+    submitEstateReadiness(ui, root);
+  });
+
   delegate(root, 'click', '[data-investing-add]', (e, el) => {
     e.preventDefault();
     addRestricted(ui, el.getAttribute('data-investing-add'));
@@ -384,11 +551,21 @@ function attachHandlers() {
 // inference candidate and must normalize it the same way load() does.
 export function ensureShape(profile) {
   const next = profile && typeof profile === 'object' ? { ...profile } : {};
-  for (const key of ['household_members', 'income_items', 'expense_items', 'debt_items', 'goal_items', 'physical_assets']) {
+  for (const key of [
+    'household_members',
+    'income_items',
+    'expense_items',
+    'debt_items',
+    'goal_items',
+    'physical_assets',
+    'insurance_policies',
+    'benefit_items',
+  ]) {
     if (!Array.isArray(next[key])) next[key] = [];
   }
   if (!next.tax_profile || typeof next.tax_profile !== 'object') next.tax_profile = {};
   if (!next.flags || typeof next.flags !== 'object') next.flags = {};
+  if (!next.estate_readiness || typeof next.estate_readiness !== 'object') next.estate_readiness = {};
   return next;
 }
 

@@ -8,7 +8,7 @@
 import { html, raw, esc } from '../../lib/dom.js';
 import { fmtUsdOrDash, fmtPctOrDash, unwrapDisplayValue } from '../../lib/format.js';
 import { showUndoToast } from '../../lib/undo.js';
-import { persist, render as renderProfile } from '../profile.js';
+import { persist, render as renderProfile, replaceProfileSection } from '../profile.js';
 import {
   AMOUNT_FIELD_KEY,
   amountToggleHtml,
@@ -24,6 +24,7 @@ import {
 /* ─────────────  Specs  ───────────── */
 
 const COMPOSER_DRAFTS = new Map();
+const REPLACEMENT_DRAFTS = new Map();
 
 const SECTIONS_BY_KEY = new Map();
 
@@ -34,6 +35,8 @@ export const TABLE_SECTIONS = [
   defineDebt(),
   defineGoals(),
   defineAssets(),
+  defineInsurance(),
+  defineBenefits(),
 ];
 
 for (const section of TABLE_SECTIONS) SECTIONS_BY_KEY.set(section.key, section);
@@ -57,11 +60,19 @@ export function renderTable(ui, section) {
         </div>
         <div class="profile-table-meta">
           <span class="profile-table-count">${items.length} entr${items.length === 1 ? 'y' : 'ies'}</span>
+          <button class="btn btn-ghost profile-replace-trigger" type="button"
+                  data-table-action="replace-open"
+                  data-table-key="${esc(section.key)}">
+            Replace section
+          </button>
         </div>
       </header>
 
-      ${raw(renderComposer(section))}
-      ${raw(renderRows(section, items))}
+      ${replacementDraft(section.key)
+        ? raw(renderReplacement(ui, section, items))
+        : raw(renderComposer(section, ui))}
+      ${section.key === 'physical_assets' ? raw(renderAssetConnections(ui, items)) : ''}
+      ${raw(renderRows(section, items, ui))}
       ${section.key === 'expense_items' ? raw(renderExpenseConfirmation(ui, items)) : ''}
       ${ui.saveError ? html`<p class="inline-warning">${ui.saveError}</p>` : ''}
     </div>
@@ -86,7 +97,7 @@ function renderExpenseConfirmation(ui, items) {
   `;
 }
 
-function renderRows(section, items) {
+function renderRows(section, items, ui) {
   if (!items.length) {
     return html`
       <div class="empty-block">
@@ -105,7 +116,7 @@ function renderRows(section, items) {
     if (isRowEditing(section.key, item.id)) return renderEditRow(section, item);
     const cells = section.columns.map(col => {
       const rawValue = col.format
-        ? col.format(item[col.key], item)
+        ? col.format(item[col.key], item, ui)
         : unwrapDisplayValue(item[col.key]);
       const displayValue = rawValue == null || typeof rawValue === 'object' ? '—' : rawValue;
       return `<td class="${col.numeric ? 'num' : ''}">${esc(displayValue)}</td>`;
@@ -177,11 +188,11 @@ export function composerFieldSplit(section) {
   };
 }
 
-function renderComposer(section) {
+function renderComposer(section, ui) {
   const draft = composerDraft(section.key);
   const { primary, more } = composerFieldSplit(section);
-  const primaryFields = (primary.length ? primary : section.composer).map(f => fieldHtml(section.key, f, draft)).join('');
-  const moreFields = primary.length ? more.map(f => fieldHtml(section.key, f, draft)).join('') : '';
+  const primaryFields = (primary.length ? primary : section.composer).map(f => fieldHtml(section.key, f, draft, ui)).join('');
+  const moreFields = primary.length ? more.map(f => fieldHtml(section.key, f, draft, ui)).join('') : '';
   return html`
     <form class="profile-composer" data-composer-key="${esc(section.key)}" novalidate>
       <div class="profile-composer-grid">
@@ -203,11 +214,13 @@ function renderComposer(section) {
   `;
 }
 
-function fieldHtml(key, field, draft) {
+function fieldHtml(key, field, draft, ui, scope = 'composer') {
   const value = draft[field.key] ?? (
     key === 'income_items' && field.key === 'is_pre_tax' ? true : ''
   );
-  const id = `composer-${key}-${field.key}`;
+  const id = `${scope}-${key}-${field.key}`;
+  const inputAttr = scope === 'replace' ? 'data-replace-input' : 'data-composer-input';
+  const tableAttr = scope === 'replace' ? 'data-replace-table' : 'data-composer-table';
   if (field.key === AMOUNT_FIELD_KEY) {
     // People think in annual salary; storage is monthly. The unit rides on
     // the segmented toggle (module-level, remembered), so the label is just
@@ -220,8 +233,8 @@ function fieldHtml(key, field, draft) {
                  id="${id}"
                  type="number"
                  aria-label="Amount"
-                 data-composer-input="${esc(field.key)}"
-                 data-composer-table="${esc(key)}"
+                 ${inputAttr}="${esc(field.key)}"
+                 ${tableAttr}="${esc(key)}"
                  data-amount-input="1"
                  ${field.placeholder ? `placeholder="${esc(field.placeholder)}"` : ''}
                  ${field.min != null ? `min="${esc(field.min)}"` : ''}
@@ -233,11 +246,11 @@ function fieldHtml(key, field, draft) {
     `;
   }
   if (field.kind === 'select') {
-    const options = field.options.map(o => `<option value="${esc(o.value)}" ${o.value === value ? 'selected' : ''}>${esc(o.label)}</option>`).join('');
+    const options = fieldOptions(field, ui).map(o => `<option value="${esc(o.value)}" ${o.value === value ? 'selected' : ''}>${esc(o.label)}</option>`).join('');
     return `
       <label class="settings-field">
         <span class="settings-label">${esc(field.label)}</span>
-        <select class="settings-input" id="${id}" data-composer-input="${esc(field.key)}" data-composer-table="${esc(key)}">
+        <select class="settings-input" id="${id}" ${inputAttr}="${esc(field.key)}" ${tableAttr}="${esc(key)}">
           ${options}
         </select>
       </label>
@@ -246,7 +259,7 @@ function fieldHtml(key, field, draft) {
   if (field.kind === 'checkbox') {
     return `
       <label class="settings-field settings-field-toggle">
-        <input type="checkbox" id="${id}" data-composer-input="${esc(field.key)}" data-composer-table="${esc(key)}" ${value ? 'checked' : ''} />
+        <input type="checkbox" id="${id}" ${inputAttr}="${esc(field.key)}" ${tableAttr}="${esc(key)}" ${value ? 'checked' : ''} />
         <span><span class="settings-label">${esc(field.label)}</span></span>
       </label>
     `;
@@ -257,8 +270,8 @@ function fieldHtml(key, field, draft) {
       <input class="settings-input ${field.kind === 'number' ? 'mono' : ''}"
              id="${id}"
              type="${esc(field.kind)}"
-             data-composer-input="${esc(field.key)}"
-             data-composer-table="${esc(key)}"
+             ${inputAttr}="${esc(field.key)}"
+             ${tableAttr}="${esc(key)}"
              ${field.placeholder ? `placeholder="${esc(field.placeholder)}"` : ''}
              ${field.min != null ? `min="${esc(field.min)}"` : ''}
              ${field.max != null ? `max="${esc(field.max)}"` : ''}
@@ -266,6 +279,135 @@ function fieldHtml(key, field, draft) {
              value="${esc(value)}" />
       ${field.hint ? `<small class="settings-hint">${esc(field.hint)}</small>` : ''}
     </label>
+  `;
+}
+
+function fieldOptions(field, ui) {
+  const options = typeof field.options === 'function' ? field.options(ui) : field.options;
+  return Array.isArray(options) ? options : [];
+}
+
+function replacementDraft(key) {
+  return REPLACEMENT_DRAFTS.get(key) || null;
+}
+
+function renderReplacement(ui, section, currentItems) {
+  const replacement = replacementDraft(section.key);
+  if (!replacement) return '';
+  const { primary, more } = composerFieldSplit(section);
+  const fields = primary.length ? [...primary, ...more] : section.composer;
+  const draft = replacement.entry || {};
+  const proposed = replacement.items || [];
+  return html`
+    <section class="profile-replace-panel" aria-label="Replace ${esc(section.title)}">
+      <header class="profile-replace-head">
+        <div>
+          <p class="profile-card-kicker">Section-only change</p>
+          <h3>Replace ${section.title.toLowerCase()}</h3>
+          <p>
+            ${currentItems.length} current entr${currentItems.length === 1 ? 'y' : 'ies'} will be replaced by
+            ${proposed.length} reviewed entr${proposed.length === 1 ? 'y' : 'ies'}.
+            Nothing outside ${section.title} will change.
+          </p>
+        </div>
+        <button class="btn btn-quiet" type="button" data-table-action="replace-cancel"
+                data-table-key="${esc(section.key)}">Cancel</button>
+      </header>
+      <div class="profile-replace-current">
+        <span>Currently saved</span>
+        <strong>${currentItems.length ? currentItems.map(item => item.label || item.display_name || 'Untitled').slice(0, 4).join(' · ') : 'No entries'}</strong>
+      </div>
+      <div class="profile-replace-composer">
+        <div class="profile-composer-grid">
+          ${raw(fields.map(field => fieldHtml(section.key, field, draft, ui, 'replace')).join(''))}
+        </div>
+        <button class="btn btn-ghost" type="button" data-table-action="replace-add"
+                data-table-key="${esc(section.key)}">Add to replacement</button>
+      </div>
+      <div class="profile-replace-proposed">
+        <p class="settings-label">Proposed replacement</p>
+        ${proposed.length ? html`
+          <ol>
+            ${proposed.map(item => html`
+              <li>
+                <span>
+                  <strong>${item.label || item.display_name || 'Untitled'}</strong>
+                  ${item.monthly_amount_usd != null ? html`<small>${fmtUsdOrDash(item.monthly_amount_usd)} monthly</small>` : ''}
+                </span>
+                <button class="link-quiet danger" type="button"
+                        data-table-action="replace-remove"
+                        data-table-key="${esc(section.key)}"
+                        data-replace-id="${esc(item.id || '')}">Remove</button>
+              </li>
+            `)}
+          </ol>
+        ` : html`<p class="profile-replace-empty">Add at least one entry, or apply an empty replacement to clear this section.</p>`}
+      </div>
+      <footer class="profile-replace-actions">
+        <p><strong>Before:</strong> ${currentItems.length} · <strong>After:</strong> ${proposed.length}</p>
+        <button class="btn ${proposed.length ? 'btn-primary' : 'btn-danger'}" type="button"
+                data-table-action="replace-apply"
+                data-table-key="${esc(section.key)}"
+                ${ui.saving ? 'disabled' : ''}>
+          ${ui.saving ? 'Applying…' : proposed.length ? `Replace only ${section.title}` : `Clear only ${section.title}`}
+        </button>
+      </footer>
+    </section>
+  `;
+}
+
+function renderAssetConnections(ui, assets) {
+  if (!assets.length) return '';
+  const debts = ui.profile?.debt_items || [];
+  const expenses = ui.profile?.expense_items || [];
+  const incomeItems = ui.profile?.income_items || [];
+  return html`
+    <section class="property-card-grid" aria-label="Property and vehicle overview">
+      ${assets.map(asset => {
+        const linkedDebts = debts.filter(debt => debt.linked_asset_id === asset.id);
+        const linkedExpenses = expenses.filter(expense => expense.linked_asset_id === asset.id);
+        const linkedIncome = incomeItems.filter(income => income.linked_asset_id === asset.id);
+        const debtBalance = linkedDebts.reduce((sum, debt) => sum + Number(debt.balance_usd || 0), 0);
+        const debtPayment = linkedDebts.reduce((sum, debt) => sum + Number(debt.minimum_payment_usd || 0), 0);
+        const operatingCost = linkedExpenses
+          .filter(expense => !expense.linked_debt_id)
+          .reduce((sum, expense) => sum + Number(expense.monthly_amount_usd || 0), 0);
+        const monthlyIncome = linkedIncome.reduce(
+          (sum, income) => sum + Number(income.monthly_amount_usd || 0),
+          0,
+        );
+        const ownership = Math.min(Math.max(Number(asset.ownership_pct ?? 100), 0), 100) / 100;
+        const householdValue = Number(asset.current_value_usd || 0) * ownership;
+        const equity = householdValue - debtBalance;
+        return html`
+          <article class="property-card">
+            <header>
+              <div>
+                <p class="profile-card-kicker">${humanWord(asset.asset_subtype || asset.asset_type)}</p>
+                <h3>${asset.label || 'Untitled asset'}</h3>
+              </div>
+              <span class="status-pill ${asset.include_in_plan_funding ? 'applied' : 'pending'}">
+                <span class="dot"></span>${asset.include_in_plan_funding ? 'Plan funding' : 'Net worth only'}
+              </span>
+            </header>
+            <dl>
+              <div><dt>Household value</dt><dd>${fmtUsdOrDash(householdValue)}</dd></div>
+              <div><dt>Linked debt</dt><dd>${fmtUsdOrDash(debtBalance)}</dd></div>
+              <div><dt>Net equity</dt><dd>${fmtUsdOrDash(equity)}</dd></div>
+              <div><dt>Monthly payment</dt><dd>${fmtUsdOrDash(debtPayment)}</dd></div>
+              <div><dt>Operating costs</dt><dd>${fmtUsdOrDash(operatingCost)}</dd></div>
+              <div><dt>Linked income</dt><dd>${fmtUsdOrDash(monthlyIncome)}</dd></div>
+              <div><dt>Intent</dt><dd>${humanWord(asset.disposition_intent || 'keep')}</dd></div>
+            </dl>
+            <p class="property-card-foot">
+              ${linkedDebts.length || linkedExpenses.length
+                ? `${linkedDebts.length} linked debt${linkedDebts.length === 1 ? '' : 's'} · ${linkedExpenses.length} linked cost${linkedExpenses.length === 1 ? '' : 's'}`
+                : 'Link its financing in Debt and operating costs in Expenses.'}
+            </p>
+          </article>
+        `;
+      })}
+    </section>
   `;
 }
 
@@ -277,17 +419,23 @@ async function handleRemove(ui, section, dataset) {
   const items = ui.profile?.[section.key] || [];
   const removed = items.find(item => item.id === id);
   if (!removed) return;
-  const prior = items.slice();
+  const prior = captureLinkedState(ui);
   ui.profile[section.key] = items.filter(item => item.id !== id);
+  unlinkReferences(ui, section.key, id);
   if (section.key === 'expense_items') {
     ui.profile.flags = { ...(ui.profile.flags || {}), expenses_complete: false };
   }
-  await persist();
+  const saved = await persist();
+  if (!saved) {
+    restoreLinkedState(ui, prior);
+    renderProfile();
+    return;
+  }
   const label = removed.label || removed.display_name || `this ${section.singular}`;
   showUndoToast({
     message: `Removed ${label}`,
     onUndo: async () => {
-      ui.profile[section.key] = prior;
+      restoreLinkedState(ui, prior);
       await persist();
     },
   });
@@ -319,12 +467,112 @@ async function handleAdd(ui, section, root) {
     return;
   }
   if (!Array.isArray(ui.profile[section.key])) ui.profile[section.key] = [];
+  const priorItems = ui.profile[section.key].slice();
+  const priorFlags = { ...(ui.profile.flags || {}) };
   ui.profile[section.key].push(row);
   if (section.key === 'expense_items') {
     ui.profile.flags = { ...(ui.profile.flags || {}), expenses_complete: false };
   }
   COMPOSER_DRAFTS.set(section.key, {});
-  await persist();
+  const saved = await persist();
+  if (!saved) {
+    ui.profile[section.key] = priorItems;
+    ui.profile.flags = priorFlags;
+    renderProfile();
+  }
+}
+
+function handleReplaceOpen(ui, section) {
+  REPLACEMENT_DRAFTS.set(section.key, { items: [], entry: {} });
+  ui.saveError = null;
+  renderProfile();
+}
+
+function handleReplaceCancel(ui, section) {
+  REPLACEMENT_DRAFTS.delete(section.key);
+  ui.saveError = null;
+  renderProfile();
+}
+
+function handleReplaceAdd(ui, section) {
+  const replacement = replacementDraft(section.key);
+  if (!replacement || typeof document === 'undefined') return;
+  const draft = {};
+  for (const el of document.querySelectorAll(`[data-replace-table="${section.key}"]`)) {
+    const fieldKey = el.getAttribute('data-replace-input');
+    const field = section.composer.find(item => item.key === fieldKey);
+    if (!field) continue;
+    draft[fieldKey] = field.kind === 'checkbox' ? !!el.checked : el.value;
+  }
+  replacement.entry = draft;
+  try {
+    replacement.items.push(section.build(applyAmountUnit(section, draft)));
+    replacement.entry = {};
+    ui.saveError = null;
+  } catch (err) {
+    ui.saveError = err.message || 'Could not validate the replacement entry.';
+  }
+  renderProfile();
+}
+
+function handleReplaceRemove(ui, section, dataset) {
+  const replacement = replacementDraft(section.key);
+  if (!replacement) return;
+  replacement.items = replacement.items.filter(item => item.id !== dataset.replaceId);
+  renderProfile();
+}
+
+async function handleReplaceApply(ui, section) {
+  const replacement = replacementDraft(section.key);
+  if (!replacement) return;
+  const saved = await replaceProfileSection(section.key, replacement.items);
+  if (saved) REPLACEMENT_DRAFTS.delete(section.key);
+}
+
+function captureLinkedState(ui) {
+  const keys = [
+    'household_members',
+    'income_items',
+    'expense_items',
+    'debt_items',
+    'physical_assets',
+    'insurance_policies',
+    'benefit_items',
+  ];
+  return Object.fromEntries(keys.map(key => [
+    key,
+    (ui.profile?.[key] || []).map(item => ({ ...item })),
+  ]));
+}
+
+function restoreLinkedState(ui, snapshot) {
+  for (const [key, items] of Object.entries(snapshot || {})) {
+    ui.profile[key] = items.map(item => ({ ...item }));
+  }
+}
+
+function unlinkReferences(ui, removedSection, removedId) {
+  const clear = (sectionKey, field) => {
+    ui.profile[sectionKey] = (ui.profile?.[sectionKey] || []).map(item => (
+      item[field] === removedId ? { ...item, [field]: null } : item
+    ));
+  };
+  if (removedSection === 'physical_assets') {
+    clear('debt_items', 'linked_asset_id');
+    clear('expense_items', 'linked_asset_id');
+    clear('income_items', 'linked_asset_id');
+    clear('insurance_policies', 'linked_asset_id');
+  } else if (removedSection === 'debt_items') {
+    clear('expense_items', 'linked_debt_id');
+  } else if (removedSection === 'expense_items') {
+    clear('insurance_policies', 'premium_expense_id');
+  } else if (removedSection === 'household_members') {
+    clear('income_items', 'owner_member_id');
+    clear('expense_items', 'related_member_id');
+    clear('physical_assets', 'owner_member_id');
+    clear('insurance_policies', 'insured_member_id');
+    clear('benefit_items', 'owner_member_id');
+  }
 }
 
 /* ─────────────  Drafts  ───────────── */
@@ -403,6 +651,7 @@ function defineIncome() {
       { key: 'label',                header: 'Item' },
       { key: 'monthly_amount_usd',   header: 'Monthly',     numeric: true, format: fmtUsdOrDash },
       { key: 'source_type',          header: 'Type',        format: humanWord },
+      { key: 'variability',          header: 'Pattern',     format: humanWord },
       { key: 'is_pre_tax',           header: 'Pre-tax',     format: boolWord },
       { key: 'annual_growth_rate',   header: 'Growth',      numeric: true, format: fmtPctOrDash },
       { key: 'start_date',           header: 'Start',       format: dateSafe },
@@ -417,6 +666,14 @@ function defineIncome() {
         { value: 'business', label: 'Business' },
         { value: 'rental',   label: 'Rental' },
         { value: 'other',    label: 'Other' },
+      ] },
+      { key: 'owner_member_id',    kind: 'select',   label: 'Household member', options: ui => memberOptions(ui) },
+      { key: 'linked_asset_id',    kind: 'select',   label: 'Related rental property', options: ui => assetOptions(ui) },
+      { key: 'employer_name',      kind: 'text',     label: 'Employer / source', placeholder: 'optional' },
+      { key: 'variability',        kind: 'select',   label: 'Pattern', options: [
+        { value: 'fixed', label: 'Steady' },
+        { value: 'variable', label: 'Variable' },
+        { value: 'seasonal', label: 'Seasonal' },
       ] },
       { key: 'is_pre_tax',         kind: 'checkbox', label: 'Gross / before tax (usual for salary)' },
       { key: 'annual_growth_rate', kind: 'number',   label: 'Growth %/yr',   step: 0.01, placeholder: 'optional', ratio: true },
@@ -433,6 +690,10 @@ function defineIncome() {
         label,
         monthly_amount_usd: amount,
         source_type: draft.source_type || 'salary',
+        owner_member_id: draft.owner_member_id || null,
+        linked_asset_id: draft.linked_asset_id || null,
+        employer_name: String(draft.employer_name || '').trim() || null,
+        variability: draft.variability || 'fixed',
         is_pre_tax: draft.is_pre_tax == null ? true : !!draft.is_pre_tax,
         annual_growth_rate: parseRatio(draft.annual_growth_rate),
         start_date: draft.start_date || null,
@@ -458,8 +719,10 @@ function defineExpenses() {
     columns: [
       { key: 'label',              header: 'Item' },
       { key: 'monthly_amount_usd', header: 'Monthly',  numeric: true, format: fmtUsdOrDash },
-      { key: 'category',           header: 'Category' },
+      { key: 'category',           header: 'Category', format: humanWord },
+      { key: 'linked_asset_id',    header: 'Related property', format: (value, _, ui) => relatedLabel(ui, 'physical_assets', value) },
       { key: 'is_fixed',           header: 'Fixed',    format: boolWord },
+      { key: 'is_essential',       header: 'Essential',format: boolWord },
       { key: 'inflation_rate',     header: 'Inflation',numeric: true, format: fmtPctOrDash },
       { key: 'start_date',         header: 'Start',    format: dateSafe },
       { key: 'end_date',           header: 'End',      format: dateSafe },
@@ -467,8 +730,29 @@ function defineExpenses() {
     composer: [
       { key: 'label',              kind: 'text',     label: 'Label',       placeholder: 'Rent, groceries…' },
       { key: 'monthly_amount_usd', kind: 'number',   label: 'Monthly USD', min: 0, step: 1, placeholder: '0' },
-      { key: 'category',           kind: 'text',     label: 'Category',    placeholder: 'housing, food, …' },
+      { key: 'category',           kind: 'select',   label: 'Category', options: [
+        { value: 'general', label: 'General' },
+        { value: 'housing', label: 'Housing' },
+        { value: 'food', label: 'Food' },
+        { value: 'transportation', label: 'Transportation' },
+        { value: 'insurance', label: 'Insurance premium' },
+        { value: 'fuel', label: 'Fuel' },
+        { value: 'maintenance', label: 'Maintenance' },
+        { value: 'registration_tax', label: 'Registration / property tax' },
+        { value: 'hoa', label: 'HOA' },
+        { value: 'storage', label: 'Storage' },
+        { value: 'lease_payment', label: 'Lease payment' },
+        { value: 'childcare', label: 'Childcare' },
+        { value: 'education', label: 'Education' },
+        { value: 'support', label: 'Support obligation' },
+        { value: 'medical', label: 'Medical / care' },
+        { value: 'elder_care', label: 'Elder care' },
+      ] },
+      { key: 'linked_asset_id',    kind: 'select',   label: 'Related property / vehicle', options: ui => assetOptions(ui) },
+      { key: 'linked_debt_id',     kind: 'select',   label: 'Already counted debt payment', options: ui => debtOptions(ui), hint: 'Link only when this row describes a payment already counted in Debt.' },
+      { key: 'related_member_id',  kind: 'select',   label: 'Related household member', options: ui => memberOptions(ui) },
       { key: 'is_fixed',           kind: 'checkbox', label: 'Fixed' },
+      { key: 'is_essential',       kind: 'checkbox', label: 'Required expense' },
       { key: 'inflation_rate',     kind: 'number',   label: 'Inflation %/yr', step: 0.01, placeholder: 'optional', ratio: true },
       { key: 'start_date',         kind: 'date',     label: 'Start' },
       { key: 'end_date',           kind: 'date',     label: 'End' },
@@ -483,7 +767,11 @@ function defineExpenses() {
         label,
         monthly_amount_usd: amount,
         category: draft.category || 'general',
+        linked_asset_id: draft.linked_asset_id || null,
+        linked_debt_id: draft.linked_debt_id || null,
+        related_member_id: draft.related_member_id || null,
         is_fixed: !!draft.is_fixed,
+        is_essential: !!draft.is_essential,
         inflation_rate: parseRatio(draft.inflation_rate),
         start_date: draft.start_date || null,
         end_date: draft.end_date || null,
@@ -507,6 +795,7 @@ function defineDebt() {
     primary: ['label', 'balance_usd'],
     columns: [
       { key: 'label',                  header: 'Debt' },
+      { key: 'debt_type',              header: 'Type',        format: humanWord },
       { key: 'balance_usd',            header: 'Balance',     numeric: true, format: fmtUsdOrDash },
       { key: 'interest_rate',          header: 'Rate',        numeric: true, format: fmtPctOrDash },
       { key: 'minimum_payment_usd',    header: 'Min payment', numeric: true, format: fmtUsdOrDash },
@@ -516,6 +805,21 @@ function defineDebt() {
     composer: [
       { key: 'label',                      kind: 'text',   label: 'Debt label',    placeholder: 'Credit card, student loan…' },
       { key: 'balance_usd',                kind: 'number', label: 'Balance USD',   min: 0, step: 1, placeholder: '0' },
+      { key: 'debt_type',                  kind: 'select', label: 'Debt type', options: [
+        { value: 'mortgage', label: 'Mortgage' },
+        { value: 'auto_loan', label: 'Auto loan' },
+        { value: 'recreational_vehicle_loan', label: 'Boat / RV / recreational loan' },
+        { value: 'student_loan', label: 'Student loan' },
+        { value: 'credit_card', label: 'Credit card' },
+        { value: 'personal_loan', label: 'Personal loan' },
+        { value: 'heloc', label: 'HELOC' },
+        { value: 'other', label: 'Other' },
+      ] },
+      { key: 'linked_asset_id',             kind: 'select', label: 'Secured by property / vehicle', options: ui => assetOptions(ui) },
+      { key: 'original_principal_usd',      kind: 'number', label: 'Original principal', min: 0, step: 1, placeholder: 'optional' },
+      { key: 'term_months',                 kind: 'number', label: 'Original term (months)', min: 1, max: 1200, step: 1, placeholder: 'optional' },
+      { key: 'opened_at',                   kind: 'date',   label: 'Opened' },
+      { key: 'maturity_date',               kind: 'date',   label: 'Matures' },
       { key: 'interest_rate',              kind: 'number', label: 'APR %',         min: 0, step: 0.01, placeholder: '0', ratio: true },
       { key: 'minimum_payment_usd',        kind: 'number', label: 'Min payment',   min: 0, step: 1, placeholder: '0' },
       { key: 'payoff_strategy',            kind: 'select', label: 'Strategy',      options: [
@@ -535,6 +839,12 @@ function defineDebt() {
         id: uid(),
         label,
         balance_usd: balance,
+        debt_type: draft.debt_type || 'other',
+        linked_asset_id: draft.linked_asset_id || null,
+        original_principal_usd: numOr(draft.original_principal_usd, null),
+        term_months: integerOr(draft.term_months, null),
+        opened_at: draft.opened_at || null,
+        maturity_date: draft.maturity_date || null,
         interest_rate: parseRatio(draft.interest_rate),
         minimum_payment_usd: numOr(draft.minimum_payment_usd, 0),
         payoff_strategy: draft.payoff_strategy || 'minimum',
@@ -596,31 +906,63 @@ function defineGoals() {
 function defineAssets() {
   const section = {
     key: 'physical_assets',
-    title: 'Physical assets',
+    title: 'Property & vehicles',
     singular: 'asset',
     eyebrow: 'Foundation · Assets',
-    lede: 'Real estate, vehicles, and other non-portfolio holdings that affect net worth and runway.',
-    emptyHint: 'No physical assets tracked. Liquid investments belong in Portfolio.',
-    primary: ['label', 'current_value_usd'],
+    lede: 'Homes, cars, boats, trailers, UTVs, and other property. Value belongs in net worth; only assets you explicitly make available can fund a plan.',
+    emptyHint: 'No property or vehicles tracked. Liquid investments belong in Portfolio.',
+    primary: ['label', 'current_value_usd', 'asset_subtype'],
     columns: [
       { key: 'label',              header: 'Asset' },
       { key: 'current_value_usd',  header: 'Value',   numeric: true, format: fmtUsdOrDash },
-      { key: 'asset_type',         header: 'Type',    format: humanWord },
-      { key: 'annual_growth_rate', header: 'Growth',  numeric: true, format: fmtPctOrDash },
-      { key: 'purchase_date',      header: 'Bought',  format: dateSafe },
+      { key: 'asset_subtype',      header: 'Type',    format: humanWord },
+      { key: 'valuation_date',     header: 'Valued',  format: dateSafe },
+      { key: 'annual_growth_rate', header: 'Expected change', numeric: true, format: fmtPctOrDash },
+      { key: 'include_in_plan_funding', header: 'Plan funding', format: boolWord },
     ],
     composer: [
       { key: 'label',              kind: 'text',   label: 'Asset label',   placeholder: 'House, car…' },
       { key: 'current_value_usd',  kind: 'number', label: 'Current value', min: 0, step: 1, placeholder: '0' },
-      { key: 'asset_type',         kind: 'select', label: 'Type',          options: [
-        { value: 'real_estate', label: 'Real estate' },
-        { value: 'vehicle',     label: 'Vehicle' },
-        { value: 'jewelry',     label: 'Jewelry' },
-        { value: 'equipment',   label: 'Equipment' },
+      { key: 'asset_subtype',      kind: 'select', label: 'Specific kind', options: [
+        { value: 'home', label: 'Home' },
+        { value: 'rental_property', label: 'Rental property' },
+        { value: 'land', label: 'Land' },
+        { value: 'car', label: 'Car' },
+        { value: 'truck', label: 'Truck' },
+        { value: 'motorcycle', label: 'Motorcycle' },
+        { value: 'rv', label: 'RV' },
+        { value: 'boat', label: 'Boat' },
+        { value: 'trailer', label: 'Trailer' },
+        { value: 'utv_atv', label: 'UTV / ATV' },
+        { value: 'machinery', label: 'Machinery / equipment' },
+        { value: 'jewelry', label: 'Jewelry' },
         { value: 'collectible', label: 'Collectible' },
-        { value: 'other',       label: 'Other' },
+        { value: 'other', label: 'Other' },
       ] },
-      { key: 'annual_growth_rate', kind: 'number', label: 'Growth %/yr',   step: 0.01, placeholder: 'optional', ratio: true },
+      { key: 'owner_member_id',    kind: 'select', label: 'Owner', options: ui => memberOptions(ui) },
+      { key: 'acquisition_cost_usd', kind: 'number', label: 'Purchase cost', min: 0, step: 1, placeholder: 'optional' },
+      { key: 'valuation_date',     kind: 'date',   label: 'Valuation date' },
+      { key: 'valuation_source',   kind: 'select', label: 'Valuation source', options: [
+        { value: 'user_estimate', label: 'My estimate' },
+        { value: 'statement', label: 'Statement / appraisal' },
+        { value: 'market_guide', label: 'Market guide' },
+        { value: 'import', label: 'Imported' },
+      ] },
+      { key: 'liquidity',          kind: 'select', label: 'How sellable is it?', options: [
+        { value: 'liquid', label: 'Readily sellable' },
+        { value: 'sellable', label: 'Sellable with time' },
+        { value: 'illiquid', label: 'Illiquid / not practical to sell' },
+      ] },
+      { key: 'include_in_plan_funding', kind: 'checkbox', label: 'Make proceeds available to fund the plan' },
+      { key: 'disposition_intent', kind: 'select', label: 'Intent', options: [
+        { value: 'keep', label: 'Keep' },
+        { value: 'sell', label: 'Sell' },
+        { value: 'replace', label: 'Replace' },
+        { value: 'undecided', label: 'Undecided' },
+      ] },
+      { key: 'planned_disposition_date', kind: 'date', label: 'Planned sale / replacement' },
+      { key: 'ownership_pct',      kind: 'number', label: 'Household ownership %', min: 0, max: 100, step: 0.01, placeholder: '100' },
+      { key: 'annual_growth_rate', kind: 'number', label: 'Expected value change %/yr', step: 0.01, placeholder: 'Use a negative number for depreciation', ratio: true },
       { key: 'purchase_date',      kind: 'date',   label: 'Purchase date' },
     ],
     build(draft) {
@@ -632,9 +974,144 @@ function defineAssets() {
         id: uid(),
         label,
         current_value_usd: value,
-        asset_type: draft.asset_type || 'other',
+        asset_type: assetTypeForSubtype(draft.asset_subtype || 'other'),
+        asset_subtype: draft.asset_subtype || 'other',
+        owner_member_id: draft.owner_member_id || null,
+        acquisition_cost_usd: numOr(draft.acquisition_cost_usd, null),
+        valuation_date: draft.valuation_date || null,
+        valuation_source: draft.valuation_source || 'user_estimate',
+        liquidity: draft.liquidity || 'sellable',
+        include_in_plan_funding: !!draft.include_in_plan_funding,
+        disposition_intent: draft.disposition_intent || 'keep',
+        planned_disposition_date: draft.planned_disposition_date || null,
+        ownership_pct: numOr(draft.ownership_pct, 100),
         annual_growth_rate: parseRatio(draft.annual_growth_rate),
         purchase_date: draft.purchase_date || null,
+      };
+    },
+    onAction: () => {},
+    onAdd: () => {},
+  };
+  bindActions(section);
+  return section;
+}
+
+function defineInsurance() {
+  const section = {
+    key: 'insurance_policies',
+    title: 'Insurance',
+    singular: 'policy',
+    eyebrow: 'Protection · Coverage',
+    lede: 'Coverage that protects the household and its property. Link the premium to an Expense instead of entering the payment twice.',
+    emptyHint: 'No insurance coverage tracked yet. Start with life, disability, umbrella, home or renters, auto, and health.',
+    primary: ['label', 'coverage_type', 'coverage_amount_usd'],
+    columns: [
+      { key: 'label', header: 'Policy' },
+      { key: 'coverage_type', header: 'Coverage', format: humanWord },
+      { key: 'coverage_amount_usd', header: 'Limit', numeric: true, format: fmtUsdOrDash },
+      { key: 'deductible_usd', header: 'Deductible', numeric: true, format: fmtUsdOrDash },
+      { key: 'renewal_date', header: 'Renews', format: dateSafe },
+      { key: 'beneficiary_reviewed', header: 'Beneficiaries', format: value => value ? 'Reviewed' : 'Not reviewed' },
+    ],
+    composer: [
+      { key: 'label', kind: 'text', label: 'Policy label', placeholder: 'Term life, auto policy…' },
+      { key: 'coverage_type', kind: 'select', label: 'Coverage type', options: [
+        { value: 'life', label: 'Life' },
+        { value: 'disability', label: 'Disability' },
+        { value: 'umbrella', label: 'Umbrella' },
+        { value: 'home', label: 'Home' },
+        { value: 'renters', label: 'Renters' },
+        { value: 'auto', label: 'Auto' },
+        { value: 'health', label: 'Health' },
+        { value: 'long_term_care', label: 'Long-term care' },
+        { value: 'other', label: 'Other' },
+      ] },
+      { key: 'coverage_amount_usd', kind: 'number', label: 'Coverage amount', min: 0, step: 1, placeholder: 'optional' },
+      { key: 'insured_member_id', kind: 'select', label: 'Insured household member', options: ui => memberOptions(ui) },
+      { key: 'linked_asset_id', kind: 'select', label: 'Covered property / vehicle', options: ui => assetOptions(ui) },
+      { key: 'premium_expense_id', kind: 'select', label: 'Premium expense', options: ui => expenseOptions(ui), hint: 'The linked Expense owns the monthly cash-flow amount.' },
+      { key: 'deductible_usd', kind: 'number', label: 'Deductible', min: 0, step: 1, placeholder: 'optional' },
+      { key: 'renewal_date', kind: 'date', label: 'Renewal date' },
+      { key: 'beneficiary_reviewed', kind: 'checkbox', label: 'Beneficiaries reviewed' },
+      { key: 'notes', kind: 'text', label: 'Notes', placeholder: 'Coverage gaps or follow-up' },
+    ],
+    build(draft) {
+      const label = String(draft.label || '').trim();
+      if (!label) throw new Error('Policy label is required.');
+      return {
+        id: uid(),
+        label,
+        coverage_type: draft.coverage_type || 'other',
+        insured_member_id: draft.insured_member_id || null,
+        linked_asset_id: draft.linked_asset_id || null,
+        premium_expense_id: draft.premium_expense_id || null,
+        coverage_amount_usd: numOr(draft.coverage_amount_usd, null),
+        deductible_usd: numOr(draft.deductible_usd, null),
+        renewal_date: draft.renewal_date || null,
+        beneficiary_reviewed: !!draft.beneficiary_reviewed,
+        notes: String(draft.notes || '').trim(),
+      };
+    },
+    onAction: () => {},
+    onAdd: () => {},
+  };
+  bindActions(section);
+  return section;
+}
+
+function defineBenefits() {
+  const section = {
+    key: 'benefit_items',
+    title: 'Benefits',
+    singular: 'benefit',
+    eyebrow: 'Foundation · Compensation & benefits',
+    lede: 'Employer benefits, retirement matches, pensions, equity compensation, and expected public benefits that shape the plan without pretending they are cash today.',
+    emptyHint: 'No benefits tracked yet. Add an employer match, pension, equity compensation, or other material benefit.',
+    primary: ['label', 'benefit_type', 'owner_member_id'],
+    columns: [
+      { key: 'label', header: 'Benefit' },
+      { key: 'benefit_type', header: 'Type', format: humanWord },
+      { key: 'owner_member_id', header: 'For', format: (value, _, ui) => relatedLabel(ui, 'household_members', value) },
+      { key: 'estimated_annual_value_usd', header: 'Est. annual value', numeric: true, format: fmtUsdOrDash },
+      { key: 'employer_match_pct', header: 'Match', numeric: true, format: value => value == null ? '—' : `${Number(value).toFixed(2)}%` },
+      { key: 'vesting_date', header: 'Vests', format: dateSafe },
+    ],
+    composer: [
+      { key: 'label', kind: 'text', label: 'Benefit label', placeholder: '401(k) match, pension…' },
+      { key: 'benefit_type', kind: 'select', label: 'Benefit type', options: [
+        { value: 'retirement_match', label: 'Retirement match' },
+        { value: 'pension', label: 'Pension' },
+        { value: 'equity_compensation', label: 'Equity compensation' },
+        { value: 'social_security', label: 'Social Security estimate' },
+        { value: 'health', label: 'Health benefit' },
+        { value: 'disability', label: 'Disability benefit' },
+        { value: 'hsa', label: 'HSA contribution' },
+        { value: 'other', label: 'Other' },
+      ] },
+      { key: 'owner_member_id', kind: 'select', label: 'Household member', options: ui => memberOptions(ui) },
+      { key: 'employer_name', kind: 'text', label: 'Employer / provider', placeholder: 'optional' },
+      { key: 'estimated_annual_value_usd', kind: 'number', label: 'Estimated annual value', min: 0, step: 1, placeholder: 'optional' },
+      { key: 'employee_contribution_pct', kind: 'number', label: 'Employee contribution %', min: 0, max: 100, step: 0.01, placeholder: 'optional' },
+      { key: 'employer_match_pct', kind: 'number', label: 'Employer match %', min: 0, max: 100, step: 0.01, placeholder: 'optional' },
+      { key: 'vesting_date', kind: 'date', label: 'Vesting date' },
+      { key: 'start_date', kind: 'date', label: 'Benefit starts' },
+      { key: 'notes', kind: 'text', label: 'Notes', placeholder: 'Vesting terms or assumptions' },
+    ],
+    build(draft) {
+      const label = String(draft.label || '').trim();
+      if (!label) throw new Error('Benefit label is required.');
+      return {
+        id: uid(),
+        label,
+        benefit_type: draft.benefit_type || 'other',
+        owner_member_id: draft.owner_member_id || null,
+        employer_name: String(draft.employer_name || '').trim() || null,
+        estimated_annual_value_usd: numOr(draft.estimated_annual_value_usd, null),
+        employee_contribution_pct: numOr(draft.employee_contribution_pct, null),
+        employer_match_pct: numOr(draft.employer_match_pct, null),
+        vesting_date: draft.vesting_date || null,
+        start_date: draft.start_date || null,
+        notes: String(draft.notes || '').trim(),
       };
     },
     onAction: () => {},
@@ -654,6 +1131,11 @@ function bindActions(section) {
     if (action === 'edit-save')   return saveRowEdit(ui, section);
     if (action === 'edit-cancel') return cancelRowEdit();
     if (action === 'amount-unit') return handleAmountUnit(dataset);
+    if (action === 'replace-open') return handleReplaceOpen(ui, section);
+    if (action === 'replace-cancel') return handleReplaceCancel(ui, section);
+    if (action === 'replace-add') return handleReplaceAdd(ui, section);
+    if (action === 'replace-remove') return handleReplaceRemove(ui, section, dataset);
+    if (action === 'replace-apply') return handleReplaceApply(ui, section);
   };
   section.onAdd = (ui, root) => handleAdd(ui, section, root);
 }
@@ -671,6 +1153,53 @@ function numOr(value, fallback) {
   if (value === '' || value == null) return fallback;
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function integerOr(value, fallback) {
+  const number = numOr(value, fallback);
+  return Number.isFinite(number) ? Math.round(number) : fallback;
+}
+
+function memberOptions(ui) {
+  return relatedOptions(ui, 'household_members', 'No household member');
+}
+
+function assetOptions(ui) {
+  return relatedOptions(ui, 'physical_assets', 'No linked property');
+}
+
+function debtOptions(ui) {
+  return relatedOptions(ui, 'debt_items', 'Not already counted in Debt');
+}
+
+function expenseOptions(ui) {
+  return relatedOptions(ui, 'expense_items', 'No linked premium expense');
+}
+
+function relatedOptions(ui, sectionKey, blankLabel) {
+  const items = ui?.profile?.[sectionKey] || [];
+  return [
+    { value: '', label: blankLabel },
+    ...items.map(item => ({
+      value: item.id || '',
+      label: item.label || item.display_name || 'Untitled',
+    })),
+  ];
+}
+
+function relatedLabel(ui, sectionKey, id) {
+  if (!id) return '—';
+  const item = (ui?.profile?.[sectionKey] || []).find(candidate => candidate.id === id);
+  return item?.label || item?.display_name || 'Missing link';
+}
+
+function assetTypeForSubtype(subtype) {
+  if (['home', 'rental_property', 'land'].includes(subtype)) return 'real_estate';
+  if (['car', 'truck', 'motorcycle', 'rv', 'boat', 'trailer', 'utv_atv'].includes(subtype)) return 'vehicle';
+  if (subtype === 'machinery') return 'equipment';
+  if (subtype === 'jewelry') return 'jewelry';
+  if (subtype === 'collectible') return 'collectible';
+  return 'other';
 }
 
 function parseRatio(value) {

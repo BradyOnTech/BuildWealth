@@ -38,7 +38,11 @@ async function staticResponse(pathname) {
   };
 }
 
-async function installRoutes(page, { initiallySignedIn = false, initialProgress = null } = {}) {
+async function installRoutes(page, {
+  initiallySignedIn = false,
+  initialProgress = null,
+  initialProfile = null,
+} = {}) {
   let signedIn = initiallySignedIn;
   let progress = initialProgress || {
     started: false,
@@ -51,8 +55,9 @@ async function installRoutes(page, { initiallySignedIn = false, initialProgress 
   const patches = [];
   const profileWrites = [];
   const portfolioAdds = [];
+  const resetRequests = [];
   let portfolioReady = false;
-  let profile = {
+  let profile = initialProfile || {
     household_members: [], income_items: [], expense_items: [], debt_items: [], goal_items: [],
     physical_assets: [], tax_profile: {}, investment_policy: {},
     flags: { no_debt: false, no_goals: false, expenses_complete: false },
@@ -103,6 +108,47 @@ async function installRoutes(page, { initiallySignedIn = false, initialProgress 
     if (url.pathname === '/api/onboarding/progress/start') {
       progress = { ...progress, started: true, needs_setup: true, status: 'active' };
       await route.fulfill(jsonResponse(progress));
+      return;
+    }
+    if (url.pathname === '/api/onboarding/reset/preview') {
+      await route.fulfill(jsonResponse({
+        confirmation_phrase: 'reset and register again',
+        file_count: 17,
+        size_bytes: 18432,
+        existing_backup_count: 2,
+        will_clear: [
+          'financial profile and household details',
+          'portfolio, snapshots, and account history',
+        ],
+        will_preserve: [
+          'your BuildWealth sign-in and email',
+          'a new recovery backup of the current workspace',
+        ],
+      }));
+      return;
+    }
+    if (url.pathname === '/api/onboarding/reset' && request.method() === 'POST') {
+      resetRequests.push(request.postDataJSON());
+      profile = {
+        household_members: [], income_items: [], expense_items: [], debt_items: [], goal_items: [],
+        physical_assets: [], tax_profile: {}, investment_policy: {},
+        flags: { no_debt: false, no_goals: false, expenses_complete: false },
+        notes: '', profile_metadata: {}, updated_at: new Date().toISOString(),
+      };
+      progress = {
+        started: true,
+        needs_setup: true,
+        status: 'active',
+        current_step: 'welcome',
+        completed_steps: [],
+        skipped_steps: [],
+      };
+      await route.fulfill(jsonResponse({
+        ok: true,
+        identity_preserved: true,
+        next_path: '/#setup',
+        progress,
+      }));
       return;
     }
     if (url.pathname === '/api/onboarding/progress' && request.method() === 'PATCH') {
@@ -183,7 +229,7 @@ async function installRoutes(page, { initiallySignedIn = false, initialProgress 
     await route.fulfill(jsonResponse({}));
   });
 
-  return { patches, profileWrites, portfolioAdds };
+  return { patches, profileWrites, portfolioAdds, resetRequests };
 }
 
 test('new owner registration enters Setup and persists the first step', async ({ page }) => {
@@ -296,4 +342,41 @@ test('an unfinished journey resumes when an authenticated owner opens the app ro
   await page.getByRole('heading', { name: 'Name one thing the money needs to make possible.' }).waitFor();
   assert.match(page.url(), /#setup$/);
   await page.getByText('1 left for later').waitFor();
+});
+
+test('an existing owner can reset financial data from Profile and restart Setup', async ({ page }) => {
+  const state = await installRoutes(page, {
+    initiallySignedIn: true,
+    initialProgress: {
+      started: true,
+      needs_setup: false,
+      status: 'complete',
+      current_step: 'first_picture',
+      completed_steps: ['welcome', 'foundation', 'portfolio', 'future', 'first_picture'],
+      skipped_steps: [],
+    },
+    initialProfile: {
+      household_members: [{ id: 'person-1', display_name: 'Taylor', relationship: 'self' }],
+      income_items: [{ id: 'income-1', label: 'Salary', monthly_amount_usd: 8000 }],
+      expense_items: [{ id: 'expense-1', label: 'Living', monthly_amount_usd: 4000 }],
+      debt_items: [], goal_items: [], physical_assets: [],
+      tax_profile: {}, investment_policy: {},
+      flags: { no_debt: true, no_goals: false, expenses_complete: true },
+      notes: '', profile_metadata: {}, updated_at: new Date().toISOString(),
+    },
+  });
+
+  await page.goto('http://buildwealth-v2.test/#profile');
+  await page.getByRole('button', { name: 'Reset financial data & register again' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Register this profile again' });
+  await dialog.getByText('your BuildWealth sign-in and email').waitFor();
+  await dialog.getByText(/17 active files/).waitFor();
+  await dialog.getByLabel('Type reset and register again to confirm').fill('reset and register again');
+  await dialog.getByRole('button', { name: 'Create backup & restart setup' }).click();
+
+  await page.getByRole('heading', { name: 'Build your first decision picture.' }).waitFor();
+  assert.match(page.url(), /#setup$/);
+  assert.deepEqual(state.resetRequests, [{ confirm: 'reset and register again' }]);
+  await page.getByText('Private by design').waitFor();
 });

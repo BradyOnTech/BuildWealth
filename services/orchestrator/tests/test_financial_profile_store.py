@@ -12,12 +12,15 @@ def test_financial_profile_store_defaults(tmp_path: Path) -> None:
     store = FinancialProfileStore(tmp_path / "financial_profile.json")
     payload = store.get()
 
-    assert payload["schema_version"] == 2
+    assert payload["schema_version"] == 3
     assert payload["income_items"] == []
     assert payload["expense_items"] == []
     assert payload["debt_items"] == []
     assert payload["goal_items"] == []
     assert payload["physical_assets"] == []
+    assert payload["insurance_policies"] == []
+    assert payload["benefit_items"] == []
+    assert payload["estate_readiness"]["will_status"] == "unknown"
     assert payload["tax_profile"]["filing_status"] is None
     assert payload["tax_profile"]["state_tax_rate"] is None
     assert payload["investment_policy"]["max_single_symbol_exposure_pct"] is None
@@ -107,12 +110,15 @@ def test_financial_profile_store_migrates_legacy_payload(tmp_path: Path) -> None
     store = FinancialProfileStore(path)
     payload = store.get()
 
-    assert payload["schema_version"] == 2
+    assert payload["schema_version"] == 3
     assert payload["income_items"][0]["annual_growth_rate"] is None
     assert payload["expense_items"][0]["inflation_rate"] is None
     assert payload["debt_items"][0]["payoff_strategy"] == "minimum"
     assert payload["debt_items"][0]["custom_monthly_payment_usd"] is None
     assert payload["physical_assets"] == []
+    assert payload["insurance_policies"] == []
+    assert payload["benefit_items"] == []
+    assert payload["estate_readiness"]["will_status"] == "unknown"
     assert payload["investment_policy"]["max_single_symbol_exposure_pct"] is None
     assert payload["profile_metadata"] == {}
 

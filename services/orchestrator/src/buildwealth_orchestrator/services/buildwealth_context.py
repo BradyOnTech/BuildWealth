@@ -584,6 +584,17 @@ def shape_context_payload(
                 "physical_assets_count": len(financial_profile.get("physical_assets", []))
                 if isinstance(financial_profile.get("physical_assets"), list)
                 else 0,
+                "insurance_policies_count": len(financial_profile.get("insurance_policies", []))
+                if isinstance(financial_profile.get("insurance_policies"), list)
+                else 0,
+                "benefit_items_count": len(financial_profile.get("benefit_items", []))
+                if isinstance(financial_profile.get("benefit_items"), list)
+                else 0,
+                "estate_readiness": (
+                    financial_profile.get("estate_readiness")
+                    if isinstance(financial_profile.get("estate_readiness"), dict)
+                    else {}
+                ),
                 "tax_profile": (
                     financial_profile.get("tax_profile")
                     if isinstance(financial_profile.get("tax_profile"), dict)

@@ -9,7 +9,7 @@ do not each invent their own duplicate heuristic.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import re
 from typing import Any, Iterable, Mapping
 
@@ -38,6 +38,7 @@ class CanonicalHouseholdAsset:
 class HouseholdAssetReconciliation:
     assets: tuple[CanonicalHouseholdAsset, ...]
     matched_profile_ids: tuple[str, ...]
+    portfolio_value_adjustment_usd: float = 0.0
 
     @property
     def profile_only_value_usd(self) -> float:
@@ -86,13 +87,16 @@ def reconcile_household_assets(
 
     matched_profile_ids: list[str] = []
     claimed_portfolio_keys: set[str] = set()
+    portfolio_value_adjustment = 0.0
     for index, raw in enumerate(profile_assets or ()):
         if not isinstance(raw, Mapping):
             continue
         profile_id = str(raw.get("id") or f"profile-{index}").strip()
-        value = _money(raw.get("current_value_usd", raw.get("current_value")))
-        if value <= 0:
+        gross_value = _money(raw.get("current_value_usd", raw.get("current_value")))
+        if gross_value <= 0:
             continue
+        ownership_fraction = _ownership_fraction(raw.get("ownership_pct"))
+        household_value = round(gross_value * ownership_fraction, 2)
         kind = _asset_kind(raw.get("asset_type"), None)
         explicit_symbol = _clean_symbol(raw.get("portfolio_symbol"))
         match = portfolio_by_symbol.get(explicit_symbol) if explicit_symbol else None
@@ -101,7 +105,7 @@ def reconcile_household_assets(
         if match is None:
             match = _legacy_match(
                 raw,
-                value=value,
+                value=gross_value,
                 kind=kind,
                 candidates=[
                     record
@@ -112,6 +116,15 @@ def reconcile_household_assets(
         if match is not None:
             claimed_portfolio_keys.add(match.key)
             matched_profile_ids.append(profile_id)
+            adjusted = replace(
+                match,
+                value_usd=round(match.value_usd * ownership_fraction, 2),
+                profile_id=profile_id,
+            )
+            portfolio_value_adjustment += adjusted.value_usd - match.value_usd
+            canonical[canonical.index(match)] = adjusted
+            if explicit_symbol:
+                portfolio_by_symbol[explicit_symbol] = adjusted
             continue
 
         canonical.append(
@@ -119,7 +132,7 @@ def reconcile_household_assets(
                 key=f"profile:{profile_id}",
                 label=str(raw.get("label") or "Asset").strip(),
                 asset_type=kind,
-                value_usd=value,
+                value_usd=household_value,
                 source="profile",
                 portfolio_symbol=explicit_symbol or None,
                 profile_id=profile_id,
@@ -131,6 +144,7 @@ def reconcile_household_assets(
     return HouseholdAssetReconciliation(
         assets=tuple(canonical),
         matched_profile_ids=tuple(matched_profile_ids),
+        portfolio_value_adjustment_usd=round(portfolio_value_adjustment, 2),
     )
 
 
@@ -186,3 +200,11 @@ def _money(value: Any) -> float:
         return round(float(value or 0.0), 2)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _ownership_fraction(value: Any) -> float:
+    try:
+        percentage = float(100.0 if value is None else value)
+    except (TypeError, ValueError):
+        percentage = 100.0
+    return min(max(percentage, 0.0), 100.0) / 100.0
