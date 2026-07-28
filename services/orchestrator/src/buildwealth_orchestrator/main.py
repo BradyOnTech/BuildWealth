@@ -893,7 +893,7 @@ def data_protection_service_for_workspace(services: Any) -> DataProtectionServic
     )
 
 
-def _seed_demo_workspace_data(workspace_root: Path) -> dict[str, Any]:
+def _load_demo_seed_module() -> Any:
     script_path = Path(__file__).resolve().parents[4] / "scripts" / "seed-demo-data.py"
     if not script_path.exists():
         raise RuntimeError("Demo seed script was not found")
@@ -902,10 +902,38 @@ def _seed_demo_workspace_data(workspace_root: Path) -> dict[str, Any]:
         raise RuntimeError("Demo seed script could not be loaded")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    return module
+
+
+def _validate_demo_workspace_root(
+    workspace_root: Path,
+    *,
+    workspace_type: str | None = None,
+) -> Path:
+    module = _load_demo_seed_module()
+    validate_demo_data_root = getattr(module, "validate_demo_data_root", None)
+    if not callable(validate_demo_data_root):
+        raise RuntimeError("Demo seed target validator was not found")
+    return validate_demo_data_root(
+        workspace_root,
+        workspace_type=workspace_type,
+    )
+
+
+def _seed_demo_workspace_data(
+    workspace_root: Path,
+    *,
+    workspace_type: str | None = None,
+) -> dict[str, Any]:
+    module = _load_demo_seed_module()
     seed_demo_dataset = getattr(module, "seed_demo_dataset", None)
     if not callable(seed_demo_dataset):
         raise RuntimeError("Demo seed function was not found")
-    return seed_demo_dataset(workspace_root, include_settings=False)
+    return seed_demo_dataset(
+        workspace_root,
+        include_settings=False,
+        workspace_type=workspace_type,
+    )
 
 
 snapshot_store = SnapshotStore(settings.snapshot_dir)

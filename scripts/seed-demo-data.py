@@ -30,6 +30,37 @@ DEMO_PLAN_TITLE = "Average Household Retirement Simulation"
 DEMO_IMPORT_FILE = "average-household-brokerage-import.csv"
 
 
+def validate_demo_data_root(
+    data_root: Path,
+    *,
+    workspace_type: str | None = None,
+) -> Path:
+    """Refuse to seed a household root that is not explicitly demo-scoped."""
+    resolved = Path(data_root).resolve()
+    repository_data_root = (REPO_ROOT / "data").resolve()
+    forbidden_broad_roots = {
+        Path("/").resolve(),
+        Path.home().resolve(),
+        REPO_ROOT.resolve(),
+        REPO_ROOT.parent.resolve(),
+    }
+    workspace_name = resolved.name.lower()
+    is_demo_workspace = (
+        workspace_name == "ws_demo_household"
+        or (workspace_name.startswith("ws_") and workspace_name.endswith("_demo"))
+    )
+    verified_demo_workspace = str(workspace_type or "").strip().lower() == "demo"
+    if resolved in forbidden_broad_roots or resolved == repository_data_root or not (
+        is_demo_workspace or verified_demo_workspace
+    ):
+        raise ValueError(
+            "Demo data may only be seeded into a demo workspace root "
+            "(ws_demo_household or ws_*_demo); refusing "
+            f"{resolved}"
+        )
+    return resolved
+
+
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -655,8 +686,13 @@ def seed_settings(data_root: Path) -> dict[str, Any]:
     }
 
 
-def seed_demo_dataset(data_root: Path, *, include_settings: bool = True) -> dict[str, Any]:
-    data_root = Path(data_root).resolve()
+def seed_demo_dataset(
+    data_root: Path,
+    *,
+    include_settings: bool = True,
+    workspace_type: str | None = None,
+) -> dict[str, Any]:
+    data_root = validate_demo_data_root(data_root, workspace_type=workspace_type)
     data_root.mkdir(parents=True, exist_ok=True)
 
     profile = seed_profile(data_root)
@@ -690,7 +726,11 @@ def seed_demo_dataset(data_root: Path, *, include_settings: bool = True) -> dict
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Seed BuildWealth with a realistic average-household demo dataset.")
-    parser.add_argument("--data-root", default=str(REPO_ROOT / "data"), help="BuildWealth data root to seed.")
+    parser.add_argument(
+        "--data-root",
+        required=True,
+        help="Demo workspace data root (ws_demo_household or ws_*_demo).",
+    )
     args = parser.parse_args()
 
     summary = seed_demo_dataset(Path(args.data_root), include_settings=True)

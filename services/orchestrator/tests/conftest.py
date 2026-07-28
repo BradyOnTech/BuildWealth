@@ -12,6 +12,9 @@ import pytest
 _TEST_DATA_ROOT = Path(tempfile.mkdtemp(prefix="buildwealth-orchestrator-tests-"))
 
 _PATH_OVERRIDES: dict[str, Path] = {
+    "CONTROL_DB_PATH": _TEST_DATA_ROOT / "control" / "control.db",
+    "WORKSPACE_ROOT_DIR": _TEST_DATA_ROOT / "workspaces",
+    "SECRET_KEY_PATH": _TEST_DATA_ROOT / "control" / "local_secret.key",
     "SNAPSHOT_DIR": _TEST_DATA_ROOT / "snapshots",
     "DURABLE_STORAGE_DIR": _TEST_DATA_ROOT / "storage",
     "BACKUP_ARCHIVE_DIR": _TEST_DATA_ROOT / "backups",

@@ -92,11 +92,29 @@ def reset_demo_workspace(
     if workspace.workspace_type != "demo":
         raise m.HTTPException(status_code=400, detail="Only demo workspaces can be reset")
     paths = m.workspace_service_factory.paths_for_record(workspace)
+    try:
+        reset_root = m._validate_demo_workspace_root(
+            paths.root,
+            workspace_type=workspace.workspace_type,
+        )
+    except (RuntimeError, ValueError) as exc:
+        raise m.HTTPException(status_code=400, detail=str(exc)) from exc
+    for other_workspace in m.control_plane_store.list_active_workspaces():
+        if other_workspace.id == workspace.id:
+            continue
+        if other_workspace.storage_path.resolve() == reset_root:
+            raise m.HTTPException(
+                status_code=400,
+                detail="Demo workspace storage overlaps another workspace",
+            )
     if paths.root.exists():
         m.shutil.rmtree(paths.root)
     paths.root.mkdir(parents=True, exist_ok=True)
     try:
-        summary = m._seed_demo_workspace_data(paths.root)
+        summary = m._seed_demo_workspace_data(
+            paths.root,
+            workspace_type=workspace.workspace_type,
+        )
     except Exception as exc:
         raise m.HTTPException(status_code=500, detail=f"Demo workspace reset failed: {exc}") from exc
     m.control_plane_store.record_audit_event(

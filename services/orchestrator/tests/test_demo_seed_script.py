@@ -22,7 +22,7 @@ def _run_seed(data_root: Path) -> dict:
 
 
 def test_demo_seed_script_creates_realistic_idempotent_household(tmp_path: Path) -> None:
-    data_root = tmp_path / "data"
+    data_root = tmp_path / "ws_test_demo"
 
     first = _run_seed(data_root)
     second = _run_seed(data_root)
@@ -65,3 +65,19 @@ def test_demo_seed_script_creates_realistic_idempotent_household(tmp_path: Path)
     assert {row["source"] for row in recommendations["recommendations"]} == {
         "demo_average_household"
     }
+
+
+def test_demo_seed_script_refuses_a_non_demo_household_root(tmp_path: Path) -> None:
+    data_root = tmp_path / "real-household"
+
+    completed = subprocess.run(
+        [sys.executable, str(SEED_SCRIPT), "--data-root", str(data_root)],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode != 0
+    assert "Demo data may only be seeded into a demo workspace root" in completed.stderr
+    assert not data_root.exists()

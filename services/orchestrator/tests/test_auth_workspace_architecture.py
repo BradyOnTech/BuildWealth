@@ -2346,3 +2346,29 @@ def test_demo_workspace_reset_seeds_demo_without_touching_real_workspace(monkeyp
     assert len(demo_response.json()["household_members"]) == 3
     assert demo_response.json()["tax_profile"]["filing_status"] == "married_filing_jointly"
     assert blocked_reset.status_code == 400
+
+
+def test_demo_workspace_reset_refuses_storage_shared_with_real_workspace(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    real_root = tmp_path / "real"
+    real_root.mkdir(parents=True, exist_ok=True)
+    sentinel = real_root / "must-survive.txt"
+    sentinel.write_text("real household", encoding="utf-8")
+    with main.control_plane_store._connect() as connection:
+        connection.execute(
+            "UPDATE workspaces SET storage_path = ? WHERE id = ?",
+            (str(real_root), DEMO_HOUSEHOLD_WORKSPACE_ID),
+        )
+
+    with TestClient(main.app) as client:
+        response = client.post(
+            f"/api/workspaces/{DEMO_HOUSEHOLD_WORKSPACE_ID}/demo/reset",
+            headers={"x-buildwealth-workspace-id": DEMO_HOUSEHOLD_WORKSPACE_ID},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Demo workspace storage overlaps another workspace"
+    assert sentinel.read_text(encoding="utf-8") == "real household"
