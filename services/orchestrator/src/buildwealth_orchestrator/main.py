@@ -283,8 +283,14 @@ from buildwealth_orchestrator.services.statement_importer import parse_statement
 from buildwealth_orchestrator.services.statement_vision import extract_statement_from_image
 from buildwealth_orchestrator.services.portfolio_simulator import simulate_trade
 from buildwealth_orchestrator.services.portfolio_fit import assess_portfolio_fit
+from buildwealth_orchestrator.services.portfolio_risk_alerts import calculate_profile_aware_portfolio_risk_alerts
 from buildwealth_orchestrator.services.goal_tracker import compute_goal_progress
-from buildwealth_orchestrator.services.financial_health import compute_financial_health
+from buildwealth_orchestrator.services.financial_health import (
+    compute_financial_health,
+    compute_monthly_cash_flow,
+    estimate_liquid_cash_value,
+    portfolio_value_with_cash,
+)
 from buildwealth_orchestrator.services.peer_benchmark import build_peer_benchmark
 from buildwealth_orchestrator.services.life_plans import build_life_interview, build_life_plan_drafts
 from buildwealth_orchestrator.services.plan_tracker import compute_plan_tracking
@@ -1994,6 +2000,55 @@ def _coerce_bool(value: Any, fallback: bool = False) -> bool:
     return fallback
 
 
+def _primary_profile_member(profile_payload: dict[str, Any]) -> dict[str, Any] | None:
+    members = profile_payload.get("household_members")
+    if not isinstance(members, list):
+        return None
+    candidates = [item for item in members if isinstance(item, dict)]
+    return next(
+        (
+            item
+            for item in candidates
+            if str(item.get("relationship") or "").strip().lower() == "self"
+        ),
+        candidates[0] if candidates else None,
+    )
+
+
+def resolve_profile_plan_horizon(profile_payload: dict[str, Any]) -> int:
+    """Cover accumulation plus a meaningful retirement period by default."""
+    member = _primary_profile_member(profile_payload)
+    if not isinstance(member, dict):
+        return int(settings.planner_years_to_retirement)
+    birth_year = member.get("birth_year")
+    retirement_age = member.get("retirement_age")
+    if birth_year is None or retirement_age is None:
+        return int(settings.planner_years_to_retirement)
+    current_age = max(0, min(120, utc_now().year - _coerce_int(birth_year, utc_now().year - 35)))
+    retirement_age_value = max(18, min(100, _coerce_int(retirement_age, 65)))
+    return max(
+        int(settings.planner_years_to_retirement),
+        min(80, retirement_age_value - current_age + 30),
+    )
+
+
+def resolve_profile_annual_contribution(profile_payload: dict[str, Any]) -> float:
+    """Use current after-tax surplus as a transparent starting capacity."""
+    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, IncomeItem, TaxProfile
+
+    try:
+        cash_flow = compute_monthly_cash_flow(
+            income_items=[IncomeItem(**item) for item in profile_payload.get("income_items", [])],
+            expense_items=[ExpenseItem(**item) for item in profile_payload.get("expense_items", [])],
+            debt_items=[DebtItem(**item) for item in profile_payload.get("debt_items", [])],
+            tax_profile=TaxProfile(**profile_payload.get("tax_profile", {})),
+        )
+    except (TypeError, ValueError):
+        return float(settings.planner_annual_contribution_usd)
+    annual_capacity = max(0.0, float(cash_flow["monthly_surplus"]) * 12.0)
+    return round(annual_capacity, 2) if annual_capacity > 0 else float(settings.planner_annual_contribution_usd)
+
+
 def _context_filter_values(*values: Any) -> list[str]:
     resolved: list[str] = []
     for value in values:
@@ -3260,6 +3315,59 @@ def resolve_plan_branch_templates(detail: dict[str, Any]) -> dict[str, Any]:
     return parse_branch_templates_payload(raw_payload)
 
 
+def personalize_branch_templates_for_profile(
+    branch_templates_payload: dict[str, Any],
+    profile_payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Return a display/run copy whose job-loss amount cannot exceed saved income.
+
+    Branch templates remain durable starting points. The personalized copy is
+    intentionally not written back: a later salary edit should immediately
+    change the preview without silently mutating the plan workspace.
+    """
+    payload = json.loads(json.dumps(branch_templates_payload))
+    income_items = profile_payload.get("income_items")
+    monthly_incomes = [
+        _coerce_float(item.get("monthly_amount_usd"), 0.0)
+        for item in income_items
+        if isinstance(item, dict) and _coerce_float(item.get("monthly_amount_usd"), 0.0) > 0
+    ] if isinstance(income_items, list) else []
+    largest_monthly_income = max(monthly_incomes, default=0.0)
+    if largest_monthly_income <= 0:
+        return payload
+
+    templates = payload.get("templates")
+    if not isinstance(templates, list):
+        return payload
+    for template in templates:
+        if not isinstance(template, dict):
+            continue
+        template_id = str(template.get("id") or "").strip().lower()
+        if template_id not in {"job_change", "job_loss_6_months"}:
+            continue
+        events = template.get("branch_events")
+        if not isinstance(events, list):
+            continue
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            if (
+                str(event.get("impact_type") or "").strip().lower() == "income"
+                and str(event.get("recurring_frequency") or "").strip().lower() == "monthly"
+                and _coerce_float(event.get("amount_usd"), 0.0) < 0
+            ):
+                event["amount_usd"] = -round(largest_monthly_income, 2)
+                event["notes"] = (
+                    "Personalized to the largest current monthly income in Profile; "
+                    "review the event before relying on the simulation."
+                )
+        template["description"] = (
+            f"Income change with a transition gap based on the current Profile "
+            f"(${largest_monthly_income:,.0f}/month)."
+        )
+    return payload
+
+
 def select_branch_template(
     *,
     branch_templates_payload: dict[str, Any] | None,
@@ -3957,19 +4065,17 @@ async def run_scenarios_for_plan_settings(
             if plan_settings.get(key) is None and tax_profile.get(key) is not None:
                 plan_settings[key] = tax_profile.get(key)
 
-    primary_member: dict[str, Any] | None = None
-    household_members = resolved_profile.get("household_members")
-    if isinstance(household_members, list):
-        candidates = [item for item in household_members if isinstance(item, dict)]
-        primary_member = next(
-            (item for item in candidates if str(item.get("relationship") or "").strip().lower() == "self"),
-            candidates[0] if candidates else None,
-        )
+    primary_member = _primary_profile_member(resolved_profile)
     start_age = 35
     if isinstance(primary_member, dict) and primary_member.get("birth_year") is not None:
         start_age = max(0, min(120, utc_now().year - _coerce_int(primary_member.get("birth_year"), utc_now().year - 35)))
     if retirement_age is None and isinstance(primary_member, dict) and primary_member.get("retirement_age") is not None:
         retirement_age = max(18, min(100, _coerce_int(primary_member.get("retirement_age"), 65)))
+
+    if plan_settings.get("years") is None:
+        plan_settings["years"] = resolve_profile_plan_horizon(resolved_profile)
+    if plan_settings.get("annual_contribution_usd") is None:
+        plan_settings["annual_contribution_usd"] = resolve_profile_annual_contribution(resolved_profile)
 
     validate_plan_return_relationships(plan_settings)
     service = build_plan_simulation_service_for_plan_settings(plan_settings)
@@ -4186,7 +4292,7 @@ def resolve_portfolio_value(
             detail="Provide current_portfolio_value_usd or create a snapshot first",
         ) from exc
 
-    return float(latest_snapshot.total_value_usd)
+    return portfolio_value_with_cash(latest_snapshot)
 
 
 def build_scenario_diff_payload(
@@ -4360,7 +4466,10 @@ async def compute_plan_scenario_branch(
     timeline_withdrawal_strategy = resolve_timeline_withdrawal_strategy(timeline_payload)
     timeline_drawdown_order = resolve_timeline_drawdown_order(timeline_payload)
     assumption_sets_payload = resolve_plan_assumption_sets(detail)
-    branch_templates_payload = resolve_plan_branch_templates(detail)
+    branch_templates_payload = personalize_branch_templates_for_profile(
+        resolve_plan_branch_templates(detail),
+        profile_payload,
+    )
     selected_branch_template = (
         select_branch_template(
             branch_templates_payload=branch_templates_payload,
@@ -10571,6 +10680,14 @@ def _build_profile_readiness_summary(
     except (TypeError, ValueError):
         single_symbol_cap_value = None
     policy_complete = single_symbol_cap_value is not None
+    # Profiles created before explicit budget confirmation existed retain
+    # their prior readiness; every newly initialized profile carries the flag
+    # and must be confirmed.
+    expenses_complete = (
+        bool(flags.get("expenses_complete"))
+        if "expenses_complete" in flags
+        else bool(expense_items)
+    )
 
     members = [m for m in (household_members or []) if isinstance(m, dict)]
     partners = [m for m in members if str(m.get("relationship") or "") in {"partner"}]
@@ -10625,14 +10742,26 @@ def _build_profile_readiness_summary(
         ProfileReadinessSection(
             key="expenses",
             title="Expense profile",
-            status="complete" if len(expense_items) > 0 else "incomplete",
+            status=(
+                "complete"
+                if len(expense_items) > 0 and expenses_complete
+                else "attention"
+                if len(expense_items) > 0
+                else "incomplete"
+            ),
             detail=(
-                f"{len(expense_items)} recurring expense(s) on record."
-                if expense_items
-                else "Add what goes out each month — housing, food, the usual suspects."
+                f"{len(expense_items)} recurring expense(s) confirmed as a representative monthly budget."
+                if expense_items and expenses_complete
+                else (
+                    f"{len(expense_items)} expense(s) on record, but the monthly budget is not confirmed complete."
+                    if expense_items
+                    else "Add what goes out each month — housing, food, the usual suspects."
+                )
             ),
             required_for=["cash_flow", "liquidity", "affordability"],
-            blocking_recommendations=len(expense_items) == 0,
+            blocking_recommendations=(
+                len(expense_items) == 0 or not expenses_complete
+            ),
         ),
         ProfileReadinessSection(
             key="debt",
@@ -10882,11 +11011,16 @@ def build_onboarding_status_response(
         decision_headline = "Build your first forecast"
         decision_detail = f"Next: {profile_readiness.next_gap_title or 'complete your profile'}."
         next_action_label = "Continue profile setup"
-    elif snapshot_step["status"] != "complete":
+    elif snapshot_step["status"] == "incomplete":
         decision_stage = "portfolio"
         decision_headline = "Enough for a first forecast"
         decision_detail = "Add or connect your portfolio next for allocation and performance guidance."
         next_action_label = "Add your portfolio"
+    elif snapshot_step["status"] == "attention":
+        decision_stage = "portfolio"
+        decision_headline = "Your portfolio is connected"
+        decision_detail = f"Refresh it before relying on current allocation or performance advice. {snapshot_step['detail']}"
+        next_action_label = "Refresh portfolio data"
     elif active_plan_step["status"] != "complete":
         decision_stage = "plan"
         decision_headline = "Ready for tailored advice"
@@ -10938,6 +11072,20 @@ def build_today_dashboard_response(
         resolved_services.recommendation_inbox,
     )
     last_review_checkpoint = resolved_services.today_review_checkpoint_store.latest()
+    portfolio_risk_alerts: dict[str, Any] | None = None
+    try:
+        holdings_payload = resolved_services.portfolio_store.get_holdings()
+        investment_policy = (
+            profile_payload.get("investment_policy")
+            if isinstance(profile_payload.get("investment_policy"), dict)
+            else {}
+        )
+        portfolio_risk_alerts = calculate_profile_aware_portfolio_risk_alerts(
+            holdings_payload,
+            investment_policy,
+        )
+    except (OSError, TypeError, ValueError):
+        portfolio_risk_alerts = None
 
     dashboard = build_today_dashboard_payload(
         now=utc_now(),
@@ -10953,11 +11101,12 @@ def build_today_dashboard_response(
         inbox_open_count=inbox_open_count,
         inbox_high_priority_count=inbox_high_priority_count,
         last_review_checkpoint=last_review_checkpoint,
+        portfolio_risk_alerts=portfolio_risk_alerts,
     )
 
     # Enrich with financial health summary
     try:
-        from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem, PhysicalAssetItem
+        from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem, PhysicalAssetItem, TaxProfile
 
         health = compute_financial_health(
             income_items=[IncomeItem(**i) for i in profile_payload.get("income_items", [])],
@@ -10966,6 +11115,7 @@ def build_today_dashboard_response(
             goal_items=[GoalItem(**g) for g in profile_payload.get("goal_items", [])],
             physical_assets=[PhysicalAssetItem(**a) for a in profile_payload.get("physical_assets", [])],
             snapshot=latest_snapshot,
+            tax_profile=TaxProfile(**profile_payload.get("tax_profile", {})),
         )
         dashboard.net_worth_usd = health.net_worth_usd
         dashboard.monthly_surplus_usd = health.monthly_surplus_usd
@@ -11959,7 +12109,7 @@ async def build_buildwealth_context_payload(
                         ),
                     )
                     baseline_projection = await run_scenarios_for_plan_settings(
-                        current_portfolio_value_usd=float(resolved_snapshot.total_value_usd),
+                        current_portfolio_value_usd=portfolio_value_with_cash(resolved_snapshot),
                         plan_settings=projection_settings,
                         income_projection=income_projection,
                         expense_projection=expense_projection,
@@ -12551,7 +12701,7 @@ async def tool_get_financial_profile(_: dict[str, object]) -> dict[str, object]:
 
 async def tool_get_financial_health(_: dict[str, object]) -> dict[str, object]:
     services = resolve_workspace_services(None)
-    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem, PhysicalAssetItem
+    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem, PhysicalAssetItem, TaxProfile
 
     profile = services.financial_profile_store.load()
     try:
@@ -12565,30 +12715,32 @@ async def tool_get_financial_health(_: dict[str, object]) -> dict[str, object]:
         goal_items=[GoalItem(**g) for g in profile.get("goal_items", [])],
         physical_assets=[PhysicalAssetItem(**a) for a in profile.get("physical_assets", [])],
         snapshot=snap,
+        tax_profile=TaxProfile(**profile.get("tax_profile", {})),
     ).model_dump(mode="json")
 
 
 async def tool_get_goal_progress(_: dict[str, object]) -> dict[str, object]:
     services = resolve_workspace_services(None)
-    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem
+    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem, TaxProfile
 
     profile = services.financial_profile_store.load()
     try:
-        portfolio_value = services.snapshot_store.latest().total_value_usd
+        portfolio_value = portfolio_value_with_cash(services.snapshot_store.latest())
     except FileNotFoundError:
         portfolio_value = 0.0
     income_items = [IncomeItem(**i) for i in profile.get("income_items", [])]
     expense_items = [ExpenseItem(**e) for e in profile.get("expense_items", [])]
     debt_items = [DebtItem(**d) for d in profile.get("debt_items", [])]
     goal_items = [GoalItem(**g) for g in profile.get("goal_items", [])]
-    monthly_surplus = (
-        sum(i.monthly_amount_usd for i in income_items)
-        - sum(e.monthly_amount_usd for e in expense_items)
-        - sum(d.minimum_payment_usd or 0.0 for d in debt_items)
+    monthly_surplus = compute_monthly_cash_flow(
+        income_items=income_items,
+        expense_items=expense_items,
+        debt_items=debt_items,
+        tax_profile=TaxProfile(**profile.get("tax_profile", {})),
     )
     return compute_goal_progress(
         goals=goal_items,
-        monthly_surplus_usd=monthly_surplus,
+        monthly_surplus_usd=monthly_surplus["monthly_surplus"],
         portfolio_value_usd=portfolio_value,
     ).model_dump(mode="json")
 
@@ -12643,10 +12795,15 @@ async def tool_assess_affordability(arguments: dict[str, object]) -> dict[str, o
         loan_rate_pct=arguments.get("loan_rate_pct"),
         loan_term_years=arguments.get("loan_term_years"),
         down_payment_pct=arguments.get("down_payment_pct"),
+        financing_mode=arguments.get("financing_mode"),
     )
-    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, IncomeItem
+    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, IncomeItem, TaxProfile
 
     profile = services.financial_profile_store.load()
+    try:
+        snap = services.snapshot_store.latest()
+    except FileNotFoundError:
+        snap = None
     return assess_affordability(
         description=request.description,
         monthly_amount_usd=request.monthly_amount_usd,
@@ -12654,6 +12811,9 @@ async def tool_assess_affordability(arguments: dict[str, object]) -> dict[str, o
         loan_rate_pct=request.loan_rate_pct,
         loan_term_years=request.loan_term_years,
         down_payment_pct=request.down_payment_pct,
+        financing_mode=request.financing_mode,
+        available_cash_usd=estimate_liquid_cash_value(snap),
+        tax_profile=TaxProfile(**profile.get("tax_profile", {})),
         income_items=[IncomeItem(**i) for i in profile.get("income_items", [])],
         expense_items=[ExpenseItem(**e) for e in profile.get("expense_items", [])],
         debt_items=[DebtItem(**d) for d in profile.get("debt_items", [])],
@@ -13477,7 +13637,7 @@ async def tool_run_planning(arguments: dict[str, object]) -> dict[str, object]:
             simulation_seed = DEFAULT_SIMULATION_SEED
 
     if current_value is None:
-        current_value = services.snapshot_store.latest().total_value_usd
+        current_value = portfolio_value_with_cash(services.snapshot_store.latest())
 
     resolved_roth_conversion_start_age: int | None = None
     resolved_roth_conversion_end_age: int | None = None
@@ -15031,7 +15191,10 @@ async def tool_update_plan_assumption_sets(arguments: dict[str, object]) -> dict
 async def tool_get_plan_branch_templates(arguments: dict[str, object]) -> dict[str, object]:
     services = resolve_workspace_services(None)
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
-    branch_templates = services.plan_workspace.get_plan_branch_templates(plan_id)
+    branch_templates = personalize_branch_templates_for_profile(
+        services.plan_workspace.get_plan_branch_templates(plan_id),
+        get_financial_profile_payload(services.financial_profile_store),
+    )
     return {
         "plan_id": plan_id,
         "branch_templates": branch_templates,
@@ -17009,7 +17172,7 @@ def _llm_probe_failure_response(payload: dict[str, Any], client: Any, stage: str
 
 def _life_interview_context(resolved_services: WorkspaceServices) -> tuple[dict[str, Any], float | None]:
     """Profile payload + the household's real monthly spend for the interview."""
-    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem, PhysicalAssetItem
+    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem, PhysicalAssetItem, TaxProfile
 
     profile = resolved_services.financial_profile_store.load()
     try:
@@ -17023,6 +17186,7 @@ def _life_interview_context(resolved_services: WorkspaceServices) -> tuple[dict[
         goal_items=[GoalItem(**g) for g in profile.get("goal_items", [])],
         physical_assets=[PhysicalAssetItem(**a) for a in profile.get("physical_assets", [])],
         snapshot=snap,
+        tax_profile=TaxProfile(**profile.get("tax_profile", {})),
     )
     monthly_expenses = health.total_monthly_expenses_usd or None
     return profile, monthly_expenses
@@ -17322,7 +17486,7 @@ def build_portfolio_fit_assessment_payload(
 
     emergency_fund_months: float | None = None
     try:
-        from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem, PhysicalAssetItem
+        from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem, PhysicalAssetItem, TaxProfile
 
         health = compute_financial_health(
             income_items=[IncomeItem(**i) for i in profile_payload.get("income_items", [])],
@@ -17331,6 +17495,7 @@ def build_portfolio_fit_assessment_payload(
             goal_items=[GoalItem(**g) for g in profile_payload.get("goal_items", [])],
             physical_assets=[PhysicalAssetItem(**a) for a in profile_payload.get("physical_assets", [])],
             snapshot=snap,
+            tax_profile=TaxProfile(**profile_payload.get("tax_profile", {})),
         )
         emergency_fund_months = health.emergency_fund_months
     except Exception:

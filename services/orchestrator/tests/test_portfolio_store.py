@@ -707,6 +707,27 @@ class TestAccounts:
         assert len(accounts) == 2
         assert accounts[1]["id"] == "roth_ira"
 
+    def test_update_account_preserves_id_and_changes_editable_fields(self, store):
+        created = store.add_account("Savings", "savings", currency="USD")
+
+        updated = store.update_account(
+            created["id"],
+            name="Emergency HYSA",
+            account_type="savings",
+            currency="EUR",
+        )
+
+        assert updated["id"] == created["id"]
+        assert updated["name"] == "Emergency HYSA"
+        assert updated["type"] == "savings"
+        assert updated["currency"] == "EUR"
+        assert updated["updated_at"]
+        assert next(account for account in store.get_accounts() if account["id"] == created["id"]) == updated
+
+    def test_update_account_rejects_unknown_account(self, store):
+        with pytest.raises(ValueError, match="Account not found"):
+            store.update_account("missing", name="Nope")
+
 
 class TestPersistence:
     def test_data_persists_across_instances(self, tmp_path):

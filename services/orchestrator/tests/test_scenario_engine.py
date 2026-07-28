@@ -191,9 +191,63 @@ def test_scenario_engine_monte_carlo_variant_controls_terminal_values() -> None:
     monte = p10.monte_carlo
     assert "p25_future_value_usd" in monte
     assert "p75_future_value_usd" in monte
-    assert monte["plan_strength_label"] in {"Strong", "Workable", "Needs attention", "Fragile"}
+    assert monte["plan_strength_label"] in {"Strong", "Workable", "Not Ready To Rely On", "Fragile"}
     assert monte["funded_trial_rate_pct"] >= 0
     assert monte["percentile_timeline"][0]["p50_ending_balance_usd"] > 0
+
+
+def test_short_horizon_before_retirement_is_not_presented_as_strong() -> None:
+    engine = ScenarioEngine(
+        years_to_retirement=30,
+        annual_contribution_usd=18000,
+        baseline_return=0.06,
+        optimistic_return=0.08,
+        conservative_return=0.04,
+        return_volatility=0.12,
+        inflation=0.025,
+        monte_carlo_runs=25,
+        hsa_delta_default=1000,
+        marginal_tax_rate=0.22,
+    )
+
+    result = engine.run(
+        current_portfolio_value_usd=1000,
+        years=30,
+        start_age=22,
+        retirement_age=67,
+    )
+
+    assert result.monte_carlo["funded_trial_rate_pct"] == 100
+    assert result.monte_carlo["horizon_covers_retirement"] is False
+    assert result.monte_carlo["plan_strength_label"] == "Not Ready To Rely On"
+    assert "ends" in result.monte_carlo["plan_strength_summary"].lower()
+
+
+def test_long_horizon_without_retirement_spending_is_not_presented_as_strong() -> None:
+    engine = ScenarioEngine(
+        years_to_retirement=75,
+        annual_contribution_usd=18_000,
+        baseline_return=0.06,
+        optimistic_return=0.08,
+        conservative_return=0.04,
+        return_volatility=0.12,
+        inflation=0.025,
+        monte_carlo_runs=25,
+        hsa_delta_default=1000,
+        marginal_tax_rate=0.22,
+    )
+
+    result = engine.run(
+        current_portfolio_value_usd=1_000,
+        years=75,
+        start_age=22,
+        retirement_age=67,
+    )
+
+    assert result.monte_carlo["horizon_covers_retirement"] is True
+    assert result.monte_carlo["retirement_spending_modeled"] is False
+    assert result.monte_carlo["plan_strength_label"] == "Not Ready To Rely On"
+    assert "spending need" in result.monte_carlo["plan_strength_summary"].lower()
 
 
 def test_scenario_engine_reports_plan_strength_and_failure_years() -> None:

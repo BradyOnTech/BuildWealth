@@ -2,8 +2,36 @@ from buildwealth_orchestrator.main import (
     build_branch_timeline_payload,
     normalize_branch_events_payload,
     parse_branch_templates_payload,
+    personalize_branch_templates_for_profile,
     select_branch_template,
 )
+
+
+def test_job_change_template_is_personalized_to_saved_monthly_income() -> None:
+    payload = {
+        "default_template_id": "job_change",
+        "templates": [{
+            "id": "job_change",
+            "name": "Job change",
+            "description": "Generic",
+            "branch_events": [{
+                "label": "Transition Gap",
+                "impact_type": "income",
+                "amount_usd": -6000,
+                "recurring_frequency": "monthly",
+            }],
+        }],
+    }
+
+    personalized = personalize_branch_templates_for_profile(
+        payload,
+        {"income_items": [{"monthly_amount_usd": 5166.67}, {"monthly_amount_usd": 800}]},
+    )
+
+    event = personalized["templates"][0]["branch_events"][0]
+    assert event["amount_usd"] == -5166.67
+    assert "income in Profile" in event["notes"]
+    assert payload["templates"][0]["branch_events"][0]["amount_usd"] == -6000
 
 
 def test_normalize_branch_events_payload_supports_monthly_temporary_event() -> None:

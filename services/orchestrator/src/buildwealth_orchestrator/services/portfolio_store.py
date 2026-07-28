@@ -436,15 +436,16 @@ class PortfolioStore:
                 account_id = self._generate_account_id(name, existing_ids)
             existing_ids.add(account_id)
 
-            accounts.append(
-                {
-                    "id": account_id,
-                    "name": name,
-                    "type": str(raw_account.get("type") or "taxable").strip().lower() or "taxable",
-                    "currency": str(raw_account.get("currency") or DEFAULT_CURRENCY).strip().upper() or DEFAULT_CURRENCY,
-                    "created_at": str(raw_account.get("created_at") or _utc_now()),
-                }
-            )
+            account = {
+                "id": account_id,
+                "name": name,
+                "type": str(raw_account.get("type") or "taxable").strip().lower() or "taxable",
+                "currency": str(raw_account.get("currency") or DEFAULT_CURRENCY).strip().upper() or DEFAULT_CURRENCY,
+                "created_at": str(raw_account.get("created_at") or _utc_now()),
+            }
+            if raw_account.get("updated_at"):
+                account["updated_at"] = str(raw_account["updated_at"])
+            accounts.append(account)
 
         if not accounts:
             accounts = default_payload["accounts"]
@@ -3730,3 +3731,31 @@ class PortfolioStore:
         payload["updated_at"] = _utc_now()
         self._write_json(self._accounts_path, payload)
         return account
+
+    def update_account(
+        self,
+        account_id: str,
+        *,
+        name: str | None = None,
+        account_type: str | None = None,
+        currency: str | None = None,
+    ) -> dict[str, Any]:
+        payload = self._read_accounts_payload()
+        target_id = str(account_id or "").strip().lower()
+        for account in payload.get("accounts", []):
+            if str(account.get("id") or "").strip().lower() != target_id:
+                continue
+            if name is not None:
+                normalized_name = str(name).strip()
+                if not normalized_name:
+                    raise ValueError("Account name is required.")
+                account["name"] = normalized_name
+            if account_type is not None:
+                account["type"] = str(account_type).strip().lower() or "taxable"
+            if currency is not None:
+                account["currency"] = str(currency).strip().upper() or DEFAULT_CURRENCY
+            account["updated_at"] = _utc_now()
+            payload["updated_at"] = account["updated_at"]
+            self._write_json(self._accounts_path, payload)
+            return dict(account)
+        raise ValueError(f"Account not found: {account_id}")

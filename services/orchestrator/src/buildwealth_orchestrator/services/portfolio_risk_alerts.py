@@ -67,6 +67,54 @@ def normalize_risk_thresholds(raw_thresholds: Any) -> dict[str, float]:
     }
 
 
+def apply_investment_policy_thresholds(
+    raw_thresholds: Any,
+    investment_policy: Any,
+) -> dict[str, float]:
+    """Resolve portfolio monitoring limits from the confirmed Profile policy."""
+    merged = normalize_risk_thresholds(raw_thresholds)
+    policy = investment_policy if isinstance(investment_policy, dict) else {}
+    if policy.get("max_single_symbol_exposure_pct") is not None:
+        merged["single_holding_max_pct"] = safe_float(
+            policy.get("max_single_symbol_exposure_pct"),
+            merged["single_holding_max_pct"],
+        )
+    if policy.get("max_sector_exposure_pct") is not None:
+        merged["sector_max_pct"] = safe_float(
+            policy.get("max_sector_exposure_pct"),
+            merged["sector_max_pct"],
+        )
+    asset_class_limits = policy.get("max_asset_class_exposure_pct")
+    if isinstance(asset_class_limits, dict):
+        limits = [safe_float(value, 0.0) for value in asset_class_limits.values()]
+        positive_limits = [value for value in limits if value > 0]
+        if positive_limits:
+            merged["asset_class_max_pct"] = max(positive_limits)
+    return normalize_risk_thresholds(merged)
+
+
+def calculate_profile_aware_portfolio_risk_alerts(
+    holdings_payload: dict[str, Any],
+    investment_policy: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Calculate one canonical risk view using confirmed Profile guardrails."""
+    stored_policy = (
+        holdings_payload.get("risk_policy")
+        if isinstance(holdings_payload.get("risk_policy"), dict)
+        else {}
+    )
+    thresholds = apply_investment_policy_thresholds(
+        stored_policy.get("thresholds"),
+        investment_policy,
+    )
+    return calculate_portfolio_risk_alerts(
+        holdings=holdings_payload.get("holdings", {}),
+        account_totals=holdings_payload.get("account_totals"),
+        allocation_breakdowns=holdings_payload.get("allocation_breakdowns"),
+        thresholds=thresholds,
+    )
+
+
 def _severity_from_drift(metric: str, drift: float) -> Literal["low", "medium", "high"]:
     magnitude = abs(drift)
     if metric == "hhi":
@@ -267,19 +315,60 @@ def calculate_portfolio_risk_alerts(
     )
     investable_market_value = round(sum(item["value"] for item in ranked_positions), 2)
 
-    top_holding_symbol = ranked_positions[0]["symbol"] if ranked_positions else None
-    top_holding_pct = (
+    top_wrapper_symbol = ranked_positions[0]["symbol"] if ranked_positions else None
+    top_wrapper_pct = (
         round((ranked_positions[0]["value"] / investable_market_value) * 100, 2)
         if ranked_positions and investable_market_value > 0
         else None
     )
-    top3_holdings_pct = (
+    top3_wrapper_pct = (
         round((sum(item["value"] for item in ranked_positions[:3]) / investable_market_value) * 100, 2)
         if ranked_positions and investable_market_value > 0
         else None
     )
 
-    if investable_market_value > 0:
+    lookthrough_report: dict[str, Any] = {}
+    try:
+        from buildwealth_orchestrator.services.fund_composition import FundCompositionService
+
+        lookthrough_report = FundCompositionService().look_through_report({"holdings": investable_rows})
+    except (OSError, TypeError, ValueError):
+        lookthrough_report = {}
+    coverage = lookthrough_report.get("coverage") if isinstance(lookthrough_report, dict) else {}
+    covered_fund_value = safe_float(
+        coverage.get("covered_value_usd") if isinstance(coverage, dict) else None,
+        0.0,
+    )
+    economic_positions = (
+        lookthrough_report.get("effective_company_exposure")
+        if isinstance(lookthrough_report.get("effective_company_exposure"), list)
+        else []
+    )
+    uses_lookthrough = covered_fund_value > 0 and bool(economic_positions)
+    top_holding_symbol = (
+        str(economic_positions[0].get("symbol") or "").strip().upper() or None
+        if uses_lookthrough and isinstance(economic_positions[0], dict)
+        else top_wrapper_symbol
+    )
+    top_holding_pct = (
+        safe_float(economic_positions[0].get("exposure_pct"), None)
+        if uses_lookthrough and isinstance(economic_positions[0], dict)
+        else top_wrapper_pct
+    )
+    top3_holdings_pct = (
+        round(
+            sum(
+                safe_float(item.get("exposure_pct"), 0.0)
+                for item in economic_positions[:3]
+                if isinstance(item, dict)
+            ),
+            2,
+        )
+        if uses_lookthrough
+        else top3_wrapper_pct
+    )
+
+    if investable_market_value > 0 and not uses_lookthrough:
         hhi = round(sum((item["value"] / investable_market_value) ** 2 for item in ranked_positions), 4)
         effective_positions = round((1 / hhi) if hhi > 0 else 0.0, 2)
     else:
@@ -337,6 +426,15 @@ def calculate_portfolio_risk_alerts(
         field="region",
         fallback_label="Unknown",
     )
+    if uses_lookthrough:
+        sector_rows = lookthrough_report.get("sector_exposure")
+        region_rows = lookthrough_report.get("region_exposure")
+        if isinstance(sector_rows, list) and sector_rows and isinstance(sector_rows[0], dict):
+            largest_sector = str(sector_rows[0].get("key") or "").strip() or largest_sector
+            largest_sector_pct = safe_float(sector_rows[0].get("exposure_pct"), largest_sector_pct)
+        if isinstance(region_rows, list) and region_rows and isinstance(region_rows[0], dict):
+            largest_region = str(region_rows[0].get("key") or "").strip() or largest_region
+            largest_region_pct = safe_float(region_rows[0].get("exposure_pct"), largest_region_pct)
     # The breakdown fallback covers callers that supplied no holdings detail
     # at all. When holdings exist, breakdowns stay unused: they are computed
     # over the full portfolio (house included), the wrong base for this lens.
@@ -364,6 +462,36 @@ def calculate_portfolio_risk_alerts(
     if single_alert:
         alerts.append(single_alert)
 
+    if uses_lookthrough and top_wrapper_pct is not None and top_wrapper_pct > normalized_thresholds["single_holding_max_pct"]:
+        alerts.append(
+            {
+                "id": "fund_wrapper_concentration",
+                "category": "lookthrough",
+                "state": "watch",
+                "severity": "low",
+                "label": "Single fund wrapper concentration",
+                "metric": "fund_wrapper",
+                "direction": "max",
+                "unit": "pct",
+                "observed": top_wrapper_pct,
+                "threshold": normalized_thresholds["single_holding_max_pct"],
+                "drift_from_threshold": round(top_wrapper_pct - normalized_thresholds["single_holding_max_pct"], 2),
+                "context": {
+                    "symbol": top_wrapper_symbol,
+                    "largest_company_symbol": top_holding_symbol,
+                    "largest_company_exposure_pct": top_holding_pct,
+                    "lookthrough_covered_value_usd": round(covered_fund_value, 2),
+                },
+                "message": (
+                    f"{top_wrapper_symbol} is {top_wrapper_pct}% as a fund wrapper; "
+                    f"its largest covered company exposure is {top_holding_pct}%."
+                ),
+                "recommendation": (
+                    "Review the fund look-through before adding another fund solely to reduce the wrapper percentage."
+                ),
+            }
+        )
+
     top3_alert = _max_threshold_alert(
         alert_id="top3_concentration",
         category="concentration",
@@ -372,7 +500,13 @@ def calculate_portfolio_risk_alerts(
         observed=top3_holdings_pct,
         threshold=normalized_thresholds["top3_holdings_max_pct"],
         unit="pct",
-        context={"symbols": [item["symbol"] for item in ranked_positions[:3]]},
+        context={
+            "symbols": (
+                [str(item.get("symbol") or "") for item in economic_positions[:3] if isinstance(item, dict)]
+                if uses_lookthrough
+                else [item["symbol"] for item in ranked_positions[:3]]
+            )
+        },
         recommendation="Rebalance into underweight positions or broaden index exposure.",
     )
     if top3_alert:
@@ -498,6 +632,10 @@ def calculate_portfolio_risk_alerts(
         "total_market_value": total_market_value,
         "investable_market_value": investable_market_value,
         "positions_count": len(ranked_positions),
+        "top_wrapper_symbol": top_wrapper_symbol,
+        "top_wrapper_pct": top_wrapper_pct,
+        "top3_wrapper_pct": top3_wrapper_pct,
+        "lookthrough_covered_value_usd": round(covered_fund_value, 2),
         "top_holding_symbol": top_holding_symbol,
         "top_holding_pct": top_holding_pct,
         "top3_holdings_pct": top3_holdings_pct,

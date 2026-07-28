@@ -546,6 +546,7 @@ def build_today_dashboard_payload(
     inbox_open_count: int = 0,
     inbox_high_priority_count: int = 0,
     last_review_checkpoint: dict[str, Any] | None = None,
+    portfolio_risk_alerts: dict[str, Any] | None = None,
 ) -> TodayDashboardResponse:
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
@@ -592,6 +593,20 @@ def build_today_dashboard_payload(
             top_weight = float(first["weight"]) * 100
             top_holding_percent = round(top_weight, 2)
             top_holding_symbol = first["symbol"] or top_holding_symbol
+
+    economic_metrics = (
+        portfolio_risk_alerts.get("metrics")
+        if isinstance(portfolio_risk_alerts, dict)
+        and isinstance(portfolio_risk_alerts.get("metrics"), dict)
+        else {}
+    )
+    if economic_metrics:
+        economic_symbol = str(economic_metrics.get("top_holding_symbol") or "").strip()
+        economic_pct = _float_or_none(economic_metrics.get("top_holding_pct"))
+        if economic_symbol:
+            top_holding_symbol = economic_symbol
+        if economic_pct is not None:
+            top_holding_percent = round(economic_pct, 2)
 
     concentration_risk = _concentration_risk(top_holding_percent)
 
@@ -645,7 +660,7 @@ def build_today_dashboard_payload(
     elif snapshot_age_minutes is not None and snapshot_age_minutes > (24 * 60):
         context_notes.append("Portfolio snapshot is older than 24 hours.")
 
-    if not onboarding_ready_for_daily_review:
+    if profile_readiness is not None and str(profile_readiness.status).lower() != "ready":
         context_notes.append("Unified financial profile is incomplete.")
     if profile_readiness is not None and profile_readiness.next_gap_title:
         context_notes.append(f"Profile readiness: next gap is {profile_readiness.next_gap_title}.")

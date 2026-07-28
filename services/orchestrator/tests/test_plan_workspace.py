@@ -709,6 +709,8 @@ def test_plan_workspace_branch_templates_round_trip(tmp_path: Path) -> None:
         "early_retirement",
         "home_purchase",
         "job_change",
+        "marriage",
+        "new_child",
         "one_income_household",
         "roth_conversion_ladder",
         "market_stress",
@@ -760,6 +762,23 @@ def test_plan_workspace_branch_templates_round_trip(tmp_path: Path) -> None:
     assert refreshed["decisions"][0]["summary"].startswith("Updated branch templates:")
     branch_templates_json = json.loads(refreshed["files"]["branch_templates_json"])
     assert branch_templates_json["default_template_id"] == "custom_branch"
+
+
+def test_plan_workspace_repairs_versioned_catalog_missing_life_templates(tmp_path: Path) -> None:
+    workspace = PlanWorkspace(tmp_path)
+    detail = workspace.create_plan(title="Interrupted Template Migration")
+    path = workspace._branch_templates_path(detail["id"])
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["standard_templates_version"] = 2
+    payload["templates"] = [
+        item for item in payload["templates"] if item["id"] not in {"marriage", "new_child"}
+    ]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    repaired = workspace.get_plan_branch_templates(detail["id"])
+
+    ids = {item["id"] for item in repaired["templates"]}
+    assert {"marriage", "new_child"} <= ids
 
 
 def test_plan_workspace_branch_templates_validation(tmp_path: Path) -> None:

@@ -12,6 +12,7 @@ from buildwealth_orchestrator.schemas import (
     GoalItem,
     PhysicalAssetItem,
     PortfolioSnapshot,
+    TaxProfile,
 )
 from buildwealth_orchestrator.services.household_assets import reconcile_household_assets
 
@@ -27,7 +28,7 @@ LIQUID_ACCOUNT_TYPES = {"depository", "checking", "savings", "cash", "money_mark
 ILLIQUID_ACCOUNT_TYPES = {"401k", "ira", "roth_ira", "traditional_ira", "hsa", "real_estate"}
 
 
-def _estimate_emergency_fund_value(snapshot: PortfolioSnapshot | None) -> float:
+def estimate_liquid_cash_value(snapshot: PortfolioSnapshot | None) -> float:
     if snapshot is None:
         return 0.0
 
@@ -63,6 +64,71 @@ def _estimate_emergency_fund_value(snapshot: PortfolioSnapshot | None) -> float:
     return float(snapshot.total_value_usd or 0.0)
 
 
+def portfolio_value_with_cash(snapshot: PortfolioSnapshot | None) -> float:
+    """Return the canonical account value, including account cash.
+
+    Some importers keep invested holdings in ``total_value_usd`` and put the
+    uninvested account balance only in ``raw.account_totals``. Prefer an
+    explicit sum of account totals when it is larger, without double-counting
+    snapshots whose headline total already includes that cash.
+    """
+    if snapshot is None:
+        return 0.0
+    headline = float(snapshot.total_value_usd or 0.0)
+    account_totals = snapshot.raw.get("account_totals") if isinstance(snapshot.raw, dict) else None
+    if not isinstance(account_totals, dict) or not account_totals:
+        return headline
+    explicit_total = 0.0
+    saw_explicit_total = False
+    reconstructed_total = 0.0
+    saw_reconstructable = False
+    for account in account_totals.values():
+        if not isinstance(account, dict):
+            continue
+        if account.get("total_value") is not None:
+            explicit_total += float(account.get("total_value") or 0.0)
+            saw_explicit_total = True
+        market_value = account.get("market_value")
+        cash_balance = account.get("cash_balance")
+        if market_value is not None or cash_balance is not None:
+            reconstructed_total += float(market_value or 0.0) + float(cash_balance or 0.0)
+            saw_reconstructable = True
+    account_value = explicit_total if saw_explicit_total else reconstructed_total if saw_reconstructable else 0.0
+    return max(headline, account_value)
+
+
+def compute_monthly_cash_flow(
+    *,
+    income_items: list[IncomeItem],
+    expense_items: list[ExpenseItem],
+    debt_items: list[DebtItem],
+    tax_profile: TaxProfile | None = None,
+) -> dict[str, float]:
+    """Compute the shared cash-flow basis used by Today and decision tools."""
+    gross_income = sum(float(item.monthly_amount_usd or 0.0) for item in income_items)
+    pre_tax_income = sum(
+        float(item.monthly_amount_usd or 0.0) for item in income_items if item.is_pre_tax
+    )
+    federal_rate = float(tax_profile.effective_tax_rate or 0.0) if tax_profile else 0.0
+    state_rate = float(tax_profile.state_tax_rate or 0.0) if tax_profile else 0.0
+    combined_rate = min(max(federal_rate + state_rate, 0.0), 1.0)
+    estimated_taxes = pre_tax_income * combined_rate
+    net_income = gross_income - estimated_taxes
+    total_expenses = sum(float(item.monthly_amount_usd or 0.0) for item in expense_items)
+    total_debt_payments = sum(float(item.minimum_payment_usd or 0.0) for item in debt_items)
+    monthly_surplus = net_income - total_expenses - total_debt_payments
+    return {
+        "gross_income": gross_income,
+        "net_income": net_income,
+        "estimated_taxes": estimated_taxes,
+        "total_expenses": total_expenses,
+        "total_debt_payments": total_debt_payments,
+        "monthly_surplus": monthly_surplus,
+        "savings_rate": (monthly_surplus / gross_income * 100.0) if gross_income > 0 else 0.0,
+        "dti": (total_debt_payments / gross_income * 100.0) if gross_income > 0 else 0.0,
+    }
+
+
 def _investable_assets_value(snapshot: PortfolioSnapshot | None) -> float:
     """Market-tradable portfolio value: the home, collectibles, and other
     custom-valued positions are housing/personal property, not money that can
@@ -79,7 +145,14 @@ def _investable_assets_value(snapshot: PortfolioSnapshot | None) -> float:
         if is_untradable_position(entry):
             continue
         total += float(holding.value_usd or 0.0)
-    return total
+    cash_in_holdings = sum(
+        float(holding.value_usd or 0.0)
+        for holding in snapshot.holdings
+        if str(holding.asset_class or "").strip().lower() in {"cash", "cash_equivalent"}
+        or str(holding.asset_type or "").strip().lower() in {"cash", "money_market"}
+    )
+    detailed_cash = estimate_liquid_cash_value(snapshot)
+    return total + max(0.0, detailed_cash - cash_in_holdings)
 
 
 def compute_financial_health(
@@ -90,11 +163,12 @@ def compute_financial_health(
     goal_items: list[GoalItem],
     physical_assets: list[PhysicalAssetItem],
     snapshot: PortfolioSnapshot | None,
+    tax_profile: TaxProfile | None = None,
 ) -> FinancialHealthResponse:
     now = datetime.now(timezone.utc)
 
     # --- Portfolio & Debt ---
-    portfolio_value = snapshot.total_value_usd if snapshot else 0.0
+    portfolio_value = portfolio_value_with_cash(snapshot)
     reconciled_assets = reconcile_household_assets(
         portfolio_assets=(holding.model_dump(mode="python") for holding in snapshot.holdings)
         if snapshot is not None
@@ -111,16 +185,24 @@ def compute_financial_health(
     investable_assets = _investable_assets_value(snapshot)
 
     # --- Cash Flow ---
-    gross_income = sum(i.monthly_amount_usd for i in income_items)
-    total_expenses = sum(e.monthly_amount_usd for e in expense_items)
-    total_debt_payments = sum(d.minimum_payment_usd or 0.0 for d in debt_items)
-    monthly_surplus = gross_income - total_expenses - total_debt_payments
+    cash_flow = compute_monthly_cash_flow(
+        income_items=income_items,
+        expense_items=expense_items,
+        debt_items=debt_items,
+        tax_profile=tax_profile,
+    )
+    gross_income = cash_flow["gross_income"]
+    net_income = cash_flow["net_income"]
+    estimated_taxes = cash_flow["estimated_taxes"]
+    total_expenses = cash_flow["total_expenses"]
+    total_debt_payments = cash_flow["total_debt_payments"]
+    monthly_surplus = cash_flow["monthly_surplus"]
 
     # --- Ratios ---
-    savings_rate = (monthly_surplus / gross_income * 100.0) if gross_income > 0 else 0.0
-    dti = (total_debt_payments / gross_income * 100.0) if gross_income > 0 else 0.0
+    savings_rate = cash_flow["savings_rate"]
+    dti = cash_flow["dti"]
     monthly_burn = total_expenses + total_debt_payments
-    emergency_fund_value = _estimate_emergency_fund_value(snapshot)
+    emergency_fund_value = estimate_liquid_cash_value(snapshot)
     emergency_months = (emergency_fund_value / monthly_burn) if monthly_burn > 0 else 0.0
 
     # --- Highlights ---
@@ -137,6 +219,8 @@ def compute_financial_health(
             net_worth_usd=0.0,
             investable_assets_usd=0.0,
             gross_monthly_income_usd=0.0,
+            net_monthly_income_usd=0.0,
+            estimated_monthly_taxes_usd=0.0,
             total_monthly_expenses_usd=0.0,
             total_monthly_debt_payments_usd=0.0,
             monthly_surplus_usd=0.0,
@@ -245,6 +329,8 @@ def compute_financial_health(
         net_worth_usd=round(net_worth, 2),
         investable_assets_usd=round(investable_assets, 2),
         gross_monthly_income_usd=round(gross_income, 2),
+        net_monthly_income_usd=round(net_income, 2),
+        estimated_monthly_taxes_usd=round(estimated_taxes, 2),
         total_monthly_expenses_usd=round(total_expenses, 2),
         total_monthly_debt_payments_usd=round(total_debt_payments, 2),
         monthly_surplus_usd=round(monthly_surplus, 2),

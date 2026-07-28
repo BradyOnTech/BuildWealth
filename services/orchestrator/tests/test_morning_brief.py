@@ -20,11 +20,22 @@ class _FakeInbox:
 
 
 class _FakePortfolio:
-    def __init__(self, alerts_payload):
+    def __init__(self, alerts_payload, holdings_payload=None):
         self.alerts_payload = alerts_payload
+        self.holdings_payload = holdings_payload
 
     def get_holdings(self):
+        if self.holdings_payload is not None:
+            return self.holdings_payload
         return {"risk_alerts": self.alerts_payload}
+
+
+class _FakeProfile:
+    def __init__(self, investment_policy):
+        self.investment_policy = investment_policy
+
+    def load(self):
+        return {"investment_policy": self.investment_policy}
 
 
 class _FakeSnapshots:
@@ -108,6 +119,42 @@ def test_risk_alerts_summarized(tmp_path: Path) -> None:
     assert brief["risk_alerts"]["breach_count"] == 1
     assert brief["risk_alerts"]["items"][0]["message"].startswith("NVDA")
     assert brief["has_news"] is True
+
+
+def test_profile_aware_risk_replaces_fund_wrapper_concentration(tmp_path: Path) -> None:
+    service = MorningBriefService(
+        recommendation_inbox=_FakeInbox([]),
+        portfolio_store=_FakePortfolio(
+            {},
+            holdings_payload={
+                "holdings": {
+                    "taxable": [
+                        {
+                            "symbol": "VTI",
+                            "name": "Vanguard Total Stock Market ETF",
+                            "market_value": 10_000.0,
+                            "asset_class": "equity",
+                        }
+                    ]
+                },
+                "allocation_breakdowns": {
+                    "security": [
+                        {"key": "AAPL", "exposure_pct": 6.0},
+                        {"key": "MSFT", "exposure_pct": 5.5},
+                    ]
+                },
+            },
+        ),
+        financial_profile_store=_FakeProfile({"max_single_symbol_exposure_pct": 20.0}),
+        snapshot_store=_FakeSnapshots([]),
+        context_intelligence_service=_FakeContext(0),
+        seen_path=tmp_path / "today" / "brief_seen.json",
+    )
+
+    brief = service.build()
+
+    assert brief["risk_alerts"]["breach_count"] == 0
+    assert not any("VTI" in str(item.get("message")) for item in brief["risk_alerts"]["items"])
 
 
 def test_quiet_brief_reports_no_news(tmp_path: Path) -> None:

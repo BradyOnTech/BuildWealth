@@ -16,9 +16,10 @@ real exposure, but it is a different lens, not a seat in this score. REIT
 funds remain investable; the discriminator is personal illiquidity, not the
 real-estate asset class.)
 
-Known limit, stated rather than hidden: without fund look-through the score
-treats each fund as one diversified unit. Three overlapping S&P 500 funds
-will look more varied than they are.
+Covered broad funds use constituent look-through for the position-spread
+component. The seed data covers only the largest constituents, so the score
+uses largest-company exposure rather than pretending it knows an exact
+effective position count for the unlisted tail.
 """
 
 from typing import Any
@@ -86,14 +87,42 @@ def build_diversification_payload(holdings: dict[str, Any]) -> dict[str, Any]:
     overlap_findings = build_overlap_findings(by_symbol)
     merged_by_symbol = merge_duplicate_positions(by_symbol)
     effective = _effective_positions(list(merged_by_symbol.values()), total)
+    lookthrough: dict[str, Any] = {}
+    try:
+        from buildwealth_orchestrator.services.fund_composition import FundCompositionService
+
+        lookthrough = FundCompositionService().look_through_report({"holdings": holdings})
+    except (OSError, TypeError, ValueError):
+        lookthrough = {}
+    coverage = lookthrough.get("coverage") if isinstance(lookthrough, dict) else {}
+    covered_value = _safe(coverage.get("covered_value_usd")) if isinstance(coverage, dict) else 0.0
+    company_rows = (
+        lookthrough.get("effective_company_exposure")
+        if isinstance(lookthrough.get("effective_company_exposure"), list)
+        else []
+    )
+    top_company = company_rows[0] if company_rows and isinstance(company_rows[0], dict) else None
+    top_company_pct = _safe(top_company.get("exposure_pct")) if top_company else 0.0
+    uses_lookthrough = covered_value > 0 and top_company_pct > 0
+    if uses_lookthrough:
+        position_score = _scale(100.0 - top_company_pct, low=65.0, full=90.0)
+        position_sentence = (
+            f"Fund look-through puts the largest covered company, "
+            f"{str(top_company.get('symbol') or 'unknown').upper()}, at {top_company_pct:.1f}% — "
+            "this is not a one-stock position."
+        )
+    else:
+        position_score = _scale(effective, low=1.0, full=6.0)
+        position_sentence = (
+            f"The portfolio behaves like about {effective:.1f} independent "
+            f"position{'s' if effective >= 1.05 else ''}."
+        )
     components = [
         _component(
             "effective_positions",
             "Independent positions",
-            # Six independent fund-sized positions is genuine household
-            # diversification; don't demand a stock-picker's twenty.
-            _scale(effective, low=1.0, full=6.0),
-            f"The portfolio behaves like about {effective:.1f} independent position{'s' if effective >= 1.05 else ''}.",
+            position_score,
+            position_sentence,
         ),
         _component(
             "asset_class_spread",
@@ -119,9 +148,13 @@ def build_diversification_payload(holdings: dict[str, Any]) -> dict[str, Any]:
     reasons = [c["sentence"] for c in sorted(components, key=lambda c: c["score"])[:3]]
 
     caveats = [
-        "Funds tracking the same index are counted as one position; deeper "
-        "constituent-level look-through (partial overlaps between different "
-        "indexes) is not modeled.",
+        (
+            "Covered funds use seeded top-constituent look-through; the long tail and partial "
+            "overlap between different indexes remain estimates."
+            if uses_lookthrough
+            else "Funds tracking the same index are counted as one position; constituent-level "
+            "look-through is unavailable for uncovered funds."
+        )
     ]
     if excluded_rows:
         excluded_total = sum(row["value_usd"] for row in excluded_rows)

@@ -12,6 +12,19 @@ class FakePortfolioStore:
     def get_holdings(self) -> dict:
         return {
             "total_portfolio_value": 1200,
+            "holdings": {
+                "taxable:VTI": {
+                    "symbol": "VTI",
+                    "name": "Vanguard Total Stock Market ETF",
+                    "account": "taxable",
+                    "asset_type": "ETF",
+                    "asset_class": "US Stocks",
+                    "sector": "Broad Market",
+                    "region": "US",
+                    "current_value": 1200,
+                }
+            },
+            "account_totals": {"taxable": {"total_value": 1200}},
             "performance": {
                 "total_return_usd": 200,
                 "price_return_usd": 180,
@@ -62,7 +75,11 @@ def test_portfolio_analytics_route(monkeypatch) -> None:
         context=SimpleNamespace(permissions=ControlPlaneStore.OWNER_PERMISSIONS),
         portfolio_store=FakePortfolioStore(),
         asset_registry=SimpleNamespace(search=lambda limit=500: {"items": []}),
-        financial_profile_store=SimpleNamespace(get=lambda: {"debt_items": [], "physical_assets": []}),
+        financial_profile_store=SimpleNamespace(get=lambda: {
+            "debt_items": [],
+            "physical_assets": [],
+            "investment_policy": {"max_sector_exposure_pct": 30},
+        }),
     )
     main.app.dependency_overrides[main.get_workspace_services] = lambda: services
     monkeypatch.setattr(main, "benchmark_service_for_workspace", lambda services: benchmark)
@@ -81,4 +98,14 @@ def test_portfolio_analytics_route(monkeypatch) -> None:
     assert benchmark.last_kwargs["limit"] == 31
     assert payload["benchmark"]["rows"][0]["symbol"] == "SPY"
     assert payload["attribution"]["contributors"][0]["symbol"] == "VTI"
+    assert payload["risk_explanations"]["rows"][0]["context"] == "AAPL"
+    sector_alert = next(
+        item for item in payload["risk_explanations"]["alerts"] if item["metric"] == "sector"
+    )
+    assert sector_alert["threshold"] == 30
+    spread = next(
+        item for item in payload["diversification"]["components"]
+        if item["key"] == "effective_positions"
+    )
+    assert "one-stock position" in spread["sentence"]
     assert "Portfolio Analysis" not in " ".join(payload["warnings"])

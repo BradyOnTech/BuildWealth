@@ -310,6 +310,7 @@ class FinancialProfileStore:
             "flags": {
                 "no_debt": False,
                 "no_goals": False,
+                "expenses_complete": False,
             },
             "profile_metadata": {},
             "notes": "",

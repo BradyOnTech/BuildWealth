@@ -346,6 +346,7 @@ class PlanWorkspace:
     def _default_branch_templates() -> dict[str, Any]:
         return {
             "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
+            "standard_templates_version": 2,
             "default_template_id": "early_retirement",
             "templates": [
                 {
@@ -413,12 +414,12 @@ class PlanWorkspace:
                             "label": "Transition Gap",
                             "event_type": "job_change",
                             "impact_type": "income",
-                            "amount_usd": -6000.0,
+                            "amount_usd": -3000.0,
                             "recurring_frequency": "monthly",
                             "start_year_offset": 0,
                             "duration_months": 3,
                             "account_id": None,
-                            "notes": "Three-month income interruption.",
+                            "notes": "Three-month starting point; the Plan view personalizes this to current profile income.",
                         },
                         {
                             "label": "New Compensation",
@@ -431,6 +432,59 @@ class PlanWorkspace:
                             "account_id": None,
                             "notes": "Annualized salary lift.",
                         }
+                    ],
+                },
+                {
+                    "id": "marriage",
+                    "name": "Marriage / combined household",
+                    "description": "Preview a wedding cash need and the effect of combining ongoing household saving.",
+                    "branch_name": "Marriage / Combined Household",
+                    "assumption_set_id": None,
+                    "compare_settings": {},
+                    "branch_events": [
+                        {
+                            "label": "Wedding or Household Setup",
+                            "event_type": "purchase",
+                            "impact_type": "expense",
+                            "amount_usd": 15000.0,
+                            "recurring_frequency": "one_time",
+                            "start_year_offset": 1,
+                            "duration_months": None,
+                            "account_id": None,
+                            "notes": "Editable starting point for a wedding, move, or combined-household setup.",
+                        }
+                    ],
+                },
+                {
+                    "id": "new_child",
+                    "name": "Child / parental leave",
+                    "description": "Preview first-year setup, childcare, and a temporary income step-down.",
+                    "branch_name": "Child / Parental Leave",
+                    "assumption_set_id": None,
+                    "compare_settings": {},
+                    "branch_events": [
+                        {
+                            "label": "First-Year Child Costs",
+                            "event_type": "purchase",
+                            "impact_type": "expense",
+                            "amount_usd": 18000.0,
+                            "recurring_frequency": "one_time",
+                            "start_year_offset": 1,
+                            "duration_months": None,
+                            "account_id": None,
+                            "notes": "Starting point from the life-plans interview; edit to fit the household.",
+                        },
+                        {
+                            "label": "Childcare",
+                            "event_type": "milestone",
+                            "impact_type": "expense",
+                            "amount_usd": 1500.0,
+                            "recurring_frequency": "monthly",
+                            "start_year_offset": 1,
+                            "duration_months": 60,
+                            "account_id": None,
+                            "notes": "Five-year childcare starting point; edit duration and amount to fit.",
+                        },
                     ],
                 },
                 {
@@ -1288,6 +1342,11 @@ class PlanWorkspace:
 
         return {
             "schema_version": PLAN_WORKSPACE_SCHEMA_VERSION,
+            "standard_templates_version": int(
+                input_payload.get("standard_templates_version")
+                or default_payload.get("standard_templates_version")
+                or 1
+            ),
             "default_template_id": default_template_id or None,
             "templates": templates,
         }
@@ -2247,6 +2306,33 @@ class PlanWorkspace:
             self._branch_templates_path(plan_id),
             self._default_branch_templates(),
         )
+        default_payload = self._default_branch_templates()
+        current_catalog_version = int(payload.get("standard_templates_version") or 1)
+        target_catalog_version = int(default_payload.get("standard_templates_version") or 1)
+        existing_templates = payload.get("templates")
+        if not isinstance(existing_templates, list):
+            existing_templates = []
+        existing_ids = {
+            str(item.get("id") or "").strip().lower()
+            for item in existing_templates
+            if isinstance(item, dict)
+        }
+        # Reconcile required standard IDs even if an interrupted or older
+        # migration already stamped the catalog version. User-created and
+        # edited templates remain untouched.
+        additions = [
+            item
+            for item in default_payload.get("templates", [])
+            if isinstance(item, dict)
+            and str(item.get("id") or "").strip().lower() in {"marriage", "new_child"}
+            and str(item.get("id") or "").strip().lower() not in existing_ids
+        ]
+        if current_catalog_version < target_catalog_version or additions:
+            payload = {
+                **payload,
+                "standard_templates_version": target_catalog_version,
+                "templates": [*existing_templates, *additions],
+            }
         sanitized = self._sanitize_branch_templates_payload(payload)
         self._branch_templates_path(plan_id).write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
         return sanitized

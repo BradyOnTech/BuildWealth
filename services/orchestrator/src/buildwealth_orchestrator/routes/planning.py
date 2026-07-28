@@ -51,7 +51,7 @@ async def plan_scenarios(
     if current_value is None:
         try:
             latest_snapshot = resolved_services.snapshot_store.latest()
-            current_value = latest_snapshot.total_value_usd
+            current_value = m.portfolio_value_with_cash(latest_snapshot)
         except FileNotFoundError:
             holdings = resolved_services.portfolio_store.get_holdings()
             current_value = m._coerce_float(holdings.get("total_value"), 0.0)
@@ -643,11 +643,21 @@ def planning_assumption_defaults(
 
     marginal = tax_profile.get("marginal_tax_rate")
     filing = tax_profile.get("filing_status")
+    profile_horizon = m.resolve_profile_plan_horizon(profile)
+    profile_contribution = m.resolve_profile_annual_contribution(profile)
+    has_cash_flow = bool(profile.get("income_items")) and bool(profile.get("expense_items"))
+    has_retirement_horizon = profile_horizon != m.settings.planner_years_to_retirement
 
     return {
         "defaults": {
-            "annual_contribution_usd": default(m.settings.planner_annual_contribution_usd),
-            "years": default(m.settings.planner_years_to_retirement),
+            "annual_contribution_usd": default(
+                profile_contribution,
+                "profile_cash_flow" if has_cash_flow else "buildwealth_default",
+            ),
+            "years": default(
+                profile_horizon,
+                "profile_retirement_horizon" if has_retirement_horizon else "buildwealth_default",
+            ),
             "expected_return_baseline": default(m.settings.planner_expected_return_baseline),
             "inflation_rate": default(m.settings.planner_inflation),
             "marginal_tax_rate": (

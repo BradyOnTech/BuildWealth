@@ -32,7 +32,7 @@ def get_peer_benchmark(
 ) -> dict[str, m.Any]:
     """Where the household stands versus US households its age (SCF 2022),
     computed locally from public survey data — no peer network involved."""
-    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem, PhysicalAssetItem
+    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem, PhysicalAssetItem, TaxProfile
 
     resolved_services = m.route_workspace_services(services, permission="profile.read")
     profile = resolved_services.financial_profile_store.load()
@@ -47,6 +47,7 @@ def get_peer_benchmark(
         goal_items=[GoalItem(**g) for g in profile.get("goal_items", [])],
         physical_assets=[PhysicalAssetItem(**a) for a in profile.get("physical_assets", [])],
         snapshot=snap,
+        tax_profile=TaxProfile(**profile.get("tax_profile", {})),
     )
     return m.build_peer_benchmark(
         net_worth_usd=health.net_worth_usd,
@@ -62,6 +63,7 @@ def _morning_brief_service(services: m.Any) -> m.Any:
     return MorningBriefService(
         recommendation_inbox=services.recommendation_inbox,
         portfolio_store=services.portfolio_store,
+        financial_profile_store=services.financial_profile_store,
         snapshot_store=services.snapshot_store,
         context_intelligence_service=services.context_intelligence_service,
         seen_path=seen_path,
@@ -164,7 +166,7 @@ def onboarding_status(
 def get_financial_health(
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> m.FinancialHealthResponse:
-    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem, PhysicalAssetItem
+    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem, PhysicalAssetItem, TaxProfile
 
     resolved_services = m.route_workspace_services(services, permission="profile.read")
     m.require_permission(resolved_services.context, "portfolio.read")
@@ -180,6 +182,7 @@ def get_financial_health(
         goal_items=[GoalItem(**g) for g in profile.get("goal_items", [])],
         physical_assets=[PhysicalAssetItem(**a) for a in profile.get("physical_assets", [])],
         snapshot=snap,
+        tax_profile=TaxProfile(**profile.get("tax_profile", {})),
     )
 
 
@@ -188,10 +191,15 @@ def check_affordability(
     request: m.AffordabilityRequest,
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> m.AffordabilityResponse:
-    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, IncomeItem
+    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, IncomeItem, TaxProfile
 
     resolved_services = m.route_workspace_services(services, permission="profile.read")
+    m.require_permission(resolved_services.context, "portfolio.read")
     profile = resolved_services.financial_profile_store.load()
+    try:
+        snap = resolved_services.snapshot_store.latest()
+    except FileNotFoundError:
+        snap = None
     return m.assess_affordability(
         description=request.description,
         monthly_amount_usd=request.monthly_amount_usd,
@@ -199,6 +207,9 @@ def check_affordability(
         loan_rate_pct=request.loan_rate_pct,
         loan_term_years=request.loan_term_years,
         down_payment_pct=request.down_payment_pct,
+        financing_mode=request.financing_mode,
+        available_cash_usd=m.estimate_liquid_cash_value(snap),
+        tax_profile=TaxProfile(**profile.get("tax_profile", {})),
         income_items=[IncomeItem(**i) for i in profile.get("income_items", [])],
         expense_items=[ExpenseItem(**e) for e in profile.get("expense_items", [])],
         debt_items=[DebtItem(**d) for d in profile.get("debt_items", [])],
@@ -209,14 +220,14 @@ def check_affordability(
 def get_goal_progress(
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> m.GoalProgressResponse:
-    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem
+    from buildwealth_orchestrator.schemas import DebtItem, ExpenseItem, GoalItem, IncomeItem, TaxProfile
 
     resolved_services = m.route_workspace_services(services, permission="profile.read")
     m.require_permission(resolved_services.context, "portfolio.read")
     profile = resolved_services.financial_profile_store.load()
     try:
         snap = resolved_services.snapshot_store.latest()
-        portfolio_value = snap.total_value_usd
+        portfolio_value = m.portfolio_value_with_cash(snap)
     except FileNotFoundError:
         portfolio_value = 0.0
 
@@ -225,10 +236,13 @@ def get_goal_progress(
     debt_items = [DebtItem(**d) for d in profile.get("debt_items", [])]
     goal_items = [GoalItem(**g) for g in profile.get("goal_items", [])]
 
-    gross_income = sum(i.monthly_amount_usd for i in income_items)
-    total_expenses = sum(e.monthly_amount_usd for e in expense_items)
-    total_debt_payments = sum(d.minimum_payment_usd or 0.0 for d in debt_items)
-    monthly_surplus = gross_income - total_expenses - total_debt_payments
+    cash_flow = m.compute_monthly_cash_flow(
+        income_items=income_items,
+        expense_items=expense_items,
+        debt_items=debt_items,
+        tax_profile=TaxProfile(**profile.get("tax_profile", {})),
+    )
+    monthly_surplus = cash_flow["monthly_surplus"]
 
     return m.compute_goal_progress(
         goals=goal_items,

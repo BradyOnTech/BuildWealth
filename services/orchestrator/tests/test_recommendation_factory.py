@@ -6,6 +6,7 @@ import pytest
 import buildwealth_orchestrator.main as main
 from buildwealth_orchestrator.schemas import PortfolioSnapshot
 from buildwealth_orchestrator.services.portfolio_risk_alerts import calculate_portfolio_risk_alerts
+from buildwealth_orchestrator.schemas import RecommendationItem
 from buildwealth_orchestrator.services.recommendation_factory import (
     generate_cash_liquidity_recommendations,
     generate_plan_tracking_recommendations,
@@ -16,6 +17,21 @@ from buildwealth_orchestrator.services.recommendation_factory import (
     generate_watchlist_research_recommendations,
 )
 from buildwealth_orchestrator.services.recommendation_inbox import RecommendationInbox
+
+
+def test_context_conflict_review_is_a_valid_inbox_recommendation_type() -> None:
+    now = datetime.now(timezone.utc)
+    item = RecommendationItem(
+        id="rec-context",
+        created_at=now,
+        updated_at=now,
+        title="Review context",
+        detail="Confirm a stale source before relying on advice.",
+        recommendation_type="context_conflict_review",
+        source="context_intelligence",
+    )
+
+    assert item.recommendation_type == "context_conflict_review"
 
 
 def _assert_quality_metadata(candidate: dict[str, object], *, expected_source: str) -> None:

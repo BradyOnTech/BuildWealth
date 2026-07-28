@@ -569,7 +569,7 @@ def _plan_strength_label(funded_trial_rate: float) -> str:
     if funded_trial_rate >= 0.75:
         return "Workable"
     if funded_trial_rate >= 0.60:
-        return "Needs attention"
+        return "Not Ready To Rely On"
     return "Fragile"
 
 
@@ -579,7 +579,7 @@ def _plan_strength_summary(label: str, funded_trial_rate: float) -> str:
         return f"Most simulated paths stayed funded through the full horizon ({pct}%)."
     if label == "Workable":
         return f"Most simulated paths stayed funded, but the plan still has years worth reviewing ({pct}%)."
-    if label == "Needs attention":
+    if label == "Not Ready To Rely On":
         return f"Several simulated paths ran short before the horizon ended ({pct}% stayed funded)."
     return f"Too many simulated paths ran short before the horizon ended ({pct}% stayed funded)."
 
@@ -1652,6 +1652,8 @@ class ScenarioEngine:
         simulation_seed: int,
         timeline_points: list[ScenarioTimelinePoint] | None = None,
         inflation: float | None = None,
+        start_age: int = 35,
+        retirement_age: int | None = None,
     ) -> dict[str, Any]:
         outcomes: list[float] = []
         paths: list[list[float]] = []
@@ -1697,7 +1699,30 @@ class ScenarioEngine:
         }
         funded_count = max(0, len(paths) - len(first_failure_years))
         funded_trial_rate = (funded_count / len(paths)) if paths else 0.0
-        plan_strength_label = _plan_strength_label(funded_trial_rate)
+        normalized_retirement_age = _normalize_retirement_age(retirement_age)
+        minimum_horizon_age = normalized_retirement_age + 30
+        horizon_end_age = max(0, int(start_age)) + resolved_years
+        horizon_covers_retirement = horizon_end_age >= minimum_horizon_age
+        retirement_spending_modeled = any(
+            _safe_int(getattr(point, "age", None), 0) >= normalized_retirement_age
+            and _safe_float(getattr(point, "withdrawals_usd", None), 0.0) > 0
+            and _safe_float(getattr(point, "expenses_usd", None), 0.0) > 0
+            and (
+                _safe_float(getattr(point, "expenses_usd", None), 0.0)
+                + _safe_float(getattr(point, "taxes_usd", None), 0.0)
+                > _safe_float(getattr(point, "income_usd", None), 0.0)
+            )
+            for point in (timeline_points or [])
+        )
+        funded_strength_label = _plan_strength_label(funded_trial_rate)
+        plan_strength_label = (
+            "Not Ready To Rely On"
+            if (
+                (not horizon_covers_retirement or not retirement_spending_modeled)
+                and funded_strength_label != "Fragile"
+            )
+            else funded_strength_label
+        )
         resolved_inflation = self.inflation if inflation is None else float(inflation)
 
         payload: dict[str, Any] = {
@@ -1706,7 +1731,26 @@ class ScenarioEngine:
             "funded_trial_rate_pct": round(funded_trial_rate * 100, 1),
             "plan_strength_label": plan_strength_label,
             "plan_strength_score": round(funded_trial_rate * 100, 1),
-            "plan_strength_summary": _plan_strength_summary(plan_strength_label, funded_trial_rate),
+            "plan_strength_summary": (
+                (
+                    "Add or confirm a retirement spending need before treating this projection "
+                    "as a retirement success result. No portfolio withdrawals are modeled after "
+                    f"age {normalized_retirement_age}."
+                )
+                if horizon_covers_retirement
+                and not retirement_spending_modeled
+                and plan_strength_label != "Fragile"
+                else _plan_strength_summary(plan_strength_label, funded_trial_rate)
+                if horizon_covers_retirement or plan_strength_label == "Fragile"
+                else (
+                    f"The projection ends at age {horizon_end_age}, before it covers "
+                    f"30 retirement years through age {minimum_horizon_age}."
+                )
+            ),
+            "horizon_covers_retirement": horizon_covers_retirement,
+            "retirement_spending_modeled": retirement_spending_modeled,
+            "horizon_end_age": horizon_end_age,
+            "minimum_horizon_age": minimum_horizon_age,
             "percentile_timeline": self._monte_carlo_percentile_timeline(
                 paths=paths,
                 profiles=profiles,
@@ -2117,6 +2161,8 @@ class ScenarioEngine:
                     simulation_seed=resolved_simulation_seed,
                     timeline_points=scenario.timeline_points,
                     inflation=float(scenario.assumptions.get("inflation") or self.inflation),
+                    start_age=resolved_start_age,
+                    retirement_age=resolved_retirement_age,
                 )
                 monte_carlo_by_label[label] = monte_carlo_for_scenario
                 selected_future_value = _safe_float(
@@ -2201,6 +2247,8 @@ class ScenarioEngine:
                         if baseline is not None
                         else self.inflation
                     ),
+                    start_age=resolved_start_age,
+                    retirement_age=resolved_retirement_age,
                 )
         else:
             monte_carlo = self._monte_carlo(
@@ -2221,6 +2269,8 @@ class ScenarioEngine:
                     if baseline is not None
                     else self.inflation
                 ),
+                start_age=resolved_start_age,
+                retirement_age=resolved_retirement_age,
             )
 
         monte_carlo["mode"] = resolved_simulation_mode

@@ -319,7 +319,10 @@ def get_plan_branch_templates(
 ) -> m.PlanScenarioBranchTemplatesResponse:
     resolved_services = m.route_workspace_services(services, permission="plan.read")
     try:
-        payload = resolved_services.plan_workspace.get_plan_branch_templates(plan_id)
+        payload = m.personalize_branch_templates_for_profile(
+            resolved_services.plan_workspace.get_plan_branch_templates(plan_id),
+            m.get_financial_profile_payload(resolved_services.financial_profile_store),
+        )
     except m.PlanNotFoundError as exc:
         raise m.HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

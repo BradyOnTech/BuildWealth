@@ -40,9 +40,11 @@ class MorningBriefService:
         snapshot_store: Any,
         context_intelligence_service: Any,
         seen_path: Path,
+        financial_profile_store: Any | None = None,
     ):
         self.recommendation_inbox = recommendation_inbox
         self.portfolio_store = portfolio_store
+        self.financial_profile_store = financial_profile_store
         self.snapshot_store = snapshot_store
         self.context_intelligence_service = context_intelligence_service
         self.seen_path = seen_path
@@ -115,6 +117,21 @@ class MorningBriefService:
         except Exception:
             holdings = {}
         alerts_payload = holdings.get("risk_alerts") if isinstance(holdings, dict) else {}
+        if self.financial_profile_store is not None and isinstance(holdings, dict):
+            try:
+                from buildwealth_orchestrator.services.portfolio_risk_alerts import (
+                    calculate_profile_aware_portfolio_risk_alerts,
+                )
+
+                profile = self.financial_profile_store.load()
+                alerts_payload = calculate_profile_aware_portfolio_risk_alerts(
+                    holdings,
+                    profile.get("investment_policy") if isinstance(profile, dict) else None,
+                )
+            except Exception:
+                # The brief remains available even if profile-aware risk
+                # enrichment cannot be computed for an older workspace.
+                pass
         if not isinstance(alerts_payload, dict):
             alerts_payload = {}
         alerts = alerts_payload.get("alerts")

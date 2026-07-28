@@ -1,4 +1,5 @@
 from buildwealth_orchestrator.services.portfolio_risk_alerts import (
+    apply_investment_policy_thresholds,
     calculate_portfolio_risk_alerts,
     normalize_risk_thresholds,
 )
@@ -218,3 +219,54 @@ def test_normalize_risk_thresholds_clamps_bounds() -> None:
     assert normalized["top3_holdings_max_pct"] == 0.0
     assert normalized["hhi_max"] == 0.01
     assert normalized["effective_positions_min"] == 100.0
+
+
+def test_profile_investment_policy_overrides_generic_risk_defaults() -> None:
+    thresholds = apply_investment_policy_thresholds(
+        None,
+        {
+            "max_single_symbol_exposure_pct": 10,
+            "max_sector_exposure_pct": 30,
+            "max_asset_class_exposure_pct": {"equity": 75},
+        },
+    )
+
+    assert thresholds["single_holding_max_pct"] == 10
+    assert thresholds["sector_max_pct"] == 30
+    assert thresholds["asset_class_max_pct"] == 75
+
+
+def test_broad_index_fund_uses_company_lookthrough_not_wrapper_as_single_stock_risk() -> None:
+    payload = calculate_portfolio_risk_alerts(
+        holdings={
+            "brokerage:VTI": {
+                "symbol": "VTI",
+                "account": "brokerage",
+                "current_value": 100_000,
+                "asset_type": "etf",
+                "asset_class": "equity",
+            }
+        },
+        account_totals={"brokerage": {"total_value": 100_000}},
+        allocation_breakdowns=None,
+        thresholds={
+            "single_holding_max_pct": 10,
+            "top3_holdings_max_pct": 60,
+            "sector_max_pct": 35,
+        },
+    )
+
+    metrics = payload["metrics"]
+    assert metrics["top_wrapper_symbol"] == "VTI"
+    assert metrics["top_wrapper_pct"] == 100
+    assert metrics["lookthrough_covered_value_usd"] == 100_000
+    assert metrics["top_holding_symbol"] != "VTI"
+    assert metrics["top_holding_pct"] < 10
+    alert_ids = {item["id"] for item in payload["alerts"]}
+    assert "single_holding_concentration" not in alert_ids
+    assert "hhi_concentration" not in alert_ids
+    assert "effective_positions" not in alert_ids
+    assert "fund_wrapper_concentration" in alert_ids
+    wrapper = next(item for item in payload["alerts"] if item["id"] == "fund_wrapper_concentration")
+    assert wrapper["state"] == "watch"
+    assert wrapper["severity"] == "low"

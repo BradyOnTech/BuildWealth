@@ -1417,6 +1417,7 @@ class InvestmentPolicy(BaseModel):
 class ProfileFlags(BaseModel):
     no_debt: bool = False
     no_goals: bool = False
+    expenses_complete: bool = False
 
 
 class HouseholdMemberItem(BaseModel):
@@ -1504,6 +1505,7 @@ RecommendationType = Literal[
     "workflow_action",
     "asset_review_item",
     "portfolio_account_review_item",
+    "context_conflict_review",
     "general",
 ]
 
@@ -2767,6 +2769,7 @@ class AffordabilityRequest(BaseModel):
     loan_rate_pct: float | None = Field(default=None, ge=0, le=100)
     loan_term_years: int | None = Field(default=None, ge=1, le=50)
     down_payment_pct: float | None = Field(default=None, ge=0, le=100)
+    financing_mode: Literal["cash", "loan"] | None = None
 
 
 class AffordabilityResponse(BaseModel):
@@ -2784,6 +2787,10 @@ class AffordabilityResponse(BaseModel):
     estimated_monthly_payment_usd: float | None = None
     loan_rate_pct: float | None = None
     loan_term_years: int | None = None
+    one_time_cash_required_usd: float | None = None
+    available_cash_usd: float | None = None
+    cash_after_purchase_usd: float | None = None
+    runway_after_purchase_months: float | None = None
 
     # Current state
     current_monthly_surplus_usd: float
@@ -2824,6 +2831,8 @@ class FinancialHealthResponse(BaseModel):
 
     # Cash flow
     gross_monthly_income_usd: float
+    net_monthly_income_usd: float = 0.0
+    estimated_monthly_taxes_usd: float = 0.0
     total_monthly_expenses_usd: float
     total_monthly_debt_payments_usd: float
     monthly_surplus_usd: float

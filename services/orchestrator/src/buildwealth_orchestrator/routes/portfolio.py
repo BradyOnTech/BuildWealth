@@ -61,7 +61,35 @@ def get_portfolio_holdings(
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> dict[str, m.Any]:
     m.require_permission(services.context, "portfolio.read")
-    return services.portfolio_store.get_holdings()
+    payload = services.portfolio_store.get_holdings()
+    profile = services.financial_profile_store.get()
+    investment_policy = (
+        profile.get("investment_policy")
+        if isinstance(profile.get("investment_policy"), dict)
+        else {}
+    )
+    if not investment_policy:
+        return payload
+
+    from buildwealth_orchestrator.services.portfolio_risk_alerts import (
+        apply_investment_policy_thresholds,
+        calculate_profile_aware_portfolio_risk_alerts,
+    )
+
+    stored_policy = payload.get("risk_policy") if isinstance(payload.get("risk_policy"), dict) else {}
+    thresholds = apply_investment_policy_thresholds(
+        stored_policy.get("thresholds"),
+        investment_policy,
+    )
+    result = dict(payload)
+    result["investment_policy"] = investment_policy
+    result["risk_policy"] = {
+        **stored_policy,
+        "thresholds": thresholds,
+        "source": "profile_investment_policy",
+    }
+    result["risk_alerts"] = calculate_profile_aware_portfolio_risk_alerts(result, investment_policy)
+    return result
 
 
 @router.get("/api/portfolio/transactions")
@@ -195,6 +223,21 @@ async def get_portfolio_analytics(
 ) -> m.PortfolioAnalyticsResponse:
     m.require_permission(services.context, "portfolio.read")
     holdings_payload = services.portfolio_store.get_holdings()
+    profile_payload = services.financial_profile_store.get()
+    investment_policy = (
+        profile_payload.get("investment_policy")
+        if isinstance(profile_payload, dict)
+        and isinstance(profile_payload.get("investment_policy"), dict)
+        else {}
+    )
+    # Keep the analytics panel on the same fund look-through and Profile
+    # guardrails as the Holdings/Watch response. Otherwise two adjacent risk
+    # summaries can disagree about both the largest holding and its threshold.
+    holdings_payload = dict(holdings_payload)
+    holdings_payload["risk_alerts"] = m.calculate_profile_aware_portfolio_risk_alerts(
+        holdings_payload,
+        investment_policy,
+    )
     benchmark_response: m.PortfolioBenchmarkResponse | None = None
     benchmark_error = ""
     attribution_response: m.PortfolioAttributionResponse | None = None
@@ -232,7 +275,6 @@ async def get_portfolio_analytics(
         attribution_error = str(exc)
 
     registry_payload = services.asset_registry.search(limit=500)
-    profile_payload = services.financial_profile_store.get()
     return m.PortfolioAnalyticsResponse(
         **m.build_portfolio_analytics_payload(
             holdings_payload=holdings_payload,
@@ -398,6 +440,26 @@ def add_portfolio_account(
         account_type=str(request.get("type") or "taxable"),
         currency=str(request.get("currency") or "USD"),
     )
+
+
+@router.patch("/api/portfolio/accounts/{account_id}")
+def update_portfolio_account(
+    account_id: str,
+    request: dict[str, m.Any],
+    http_request: m.Request,
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> dict[str, m.Any]:
+    m.require_csrf(http_request)
+    m.require_permission(services.context, "portfolio.write")
+    try:
+        return services.portfolio_store.update_account(
+            account_id,
+            name=request.get("name") if "name" in request else None,
+            account_type=request.get("type") if "type" in request else None,
+            currency=request.get("currency") if "currency" in request else None,
+        )
+    except ValueError as exc:
+        raise m.HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/api/portfolio/watchlist", response_model=m.WatchlistRankResponse)

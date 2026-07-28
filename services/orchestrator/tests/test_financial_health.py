@@ -10,6 +10,7 @@ from buildwealth_orchestrator.schemas import (
     GoalItem,
     PhysicalAssetItem,
     PortfolioSnapshot,
+    TaxProfile,
 )
 from buildwealth_orchestrator.services.financial_health import compute_financial_health
 
@@ -140,6 +141,28 @@ class TestNetWorth:
         assert r.net_worth_usd == 0
         assert r.investable_assets_usd == 0
 
+    def test_account_cash_is_included_when_snapshot_total_only_contains_holdings(self):
+        snapshot = _snap(total_value=1000, total_investment=1000)
+        snapshot.holdings = [
+            Holding(symbol="VTI", name="Total Market", asset_type="etf", value_usd=1000),
+        ]
+        snapshot.raw = {
+            "account_totals": {
+                "brokerage": {
+                    "type": "taxable",
+                    "market_value": 1000,
+                    "cash_balance": 4300,
+                    "total_value": 5300,
+                }
+            }
+        }
+
+        r = _health(snapshot=snapshot)
+
+        assert r.portfolio_value_usd == 5300
+        assert r.net_worth_usd == 5300
+        assert r.investable_assets_usd == 5300
+
 
 class TestInvestableAssets:
     def test_home_in_holdings_is_excluded_from_investable(self):
@@ -183,6 +206,24 @@ class TestCashFlow:
         ]
         r = _health(income_items=items)
         assert r.gross_monthly_income_usd == 8500
+
+    def test_pre_tax_income_uses_saved_effective_and_state_tax_rates(self):
+        r = _health(
+            income_items=[
+                IncomeItem(
+                    id="i1",
+                    label="Salary",
+                    monthly_amount_usd=8000,
+                    is_pre_tax=True,
+                )
+            ],
+            tax_profile=TaxProfile(effective_tax_rate=0.12, state_tax_rate=0.05),
+        )
+
+        assert r.estimated_monthly_taxes_usd == 1360
+        assert r.net_monthly_income_usd == 6640
+        assert r.monthly_surplus_usd == 4640
+        assert r.savings_rate_pct == 58.0
 
 
 class TestSavingsRate:

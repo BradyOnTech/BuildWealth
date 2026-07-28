@@ -61,6 +61,44 @@ def test_copilot_native_boundary_tool_descriptions() -> None:
     assert "BuildWealth portfolio accounts" in descriptions
 
 
+def test_goal_progress_tool_uses_canonical_monthly_surplus(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeProfileStore:
+        def load(self):
+            return {
+                "income_items": [
+                    {
+                        "id": "salary",
+                        "label": "Salary",
+                        "monthly_amount_usd": 8000,
+                        "is_pre_tax": True,
+                    }
+                ],
+                "expense_items": [
+                    {"id": "living", "label": "Living", "monthly_amount_usd": 3000}
+                ],
+                "debt_items": [],
+                "goal_items": [],
+                "tax_profile": {"effective_tax_rate": 0.12, "state_tax_rate": 0.05},
+            }
+
+    class FakeSnapshotStore:
+        def latest(self):
+            raise FileNotFoundError
+
+    monkeypatch.setattr(
+        main,
+        "resolve_workspace_services",
+        lambda services: SimpleNamespace(
+            financial_profile_store=FakeProfileStore(),
+            snapshot_store=FakeSnapshotStore(),
+        ),
+    )
+
+    result = asyncio.run(main.tool_get_goal_progress({}))
+
+    assert result["monthly_surplus_usd"] == 3640
+
+
 def test_import_report_copilot_tools(monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeImportWorkbenchStore:
         def list_reports(self, limit: int = 10):

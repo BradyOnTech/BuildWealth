@@ -7,7 +7,9 @@ from buildwealth_orchestrator.schemas import (
     DebtItem,
     ExpenseItem,
     IncomeItem,
+    TaxProfile,
 )
+from buildwealth_orchestrator.services.financial_health import compute_monthly_cash_flow
 
 # Assessment thresholds
 MIN_SURPLUS_AFTER_USD = 200.0     # Must keep at least $200/month surplus
@@ -41,13 +43,22 @@ def assess_affordability(
     income_items: list[IncomeItem],
     expense_items: list[ExpenseItem],
     debt_items: list[DebtItem],
+    financing_mode: str | None = None,
+    available_cash_usd: float = 0.0,
+    tax_profile: TaxProfile | None = None,
 ) -> AffordabilityResponse:
-    gross_income = sum(i.monthly_amount_usd for i in income_items)
-    total_expenses = sum(e.monthly_amount_usd for e in expense_items)
-    total_debt_payments = sum(d.minimum_payment_usd or 0.0 for d in debt_items)
-    current_surplus = gross_income - total_expenses - total_debt_payments
-    current_savings_rate = (current_surplus / gross_income * 100.0) if gross_income > 0 else 0.0
-    current_dti = (total_debt_payments / gross_income * 100.0) if gross_income > 0 else 0.0
+    cash_flow = compute_monthly_cash_flow(
+        income_items=income_items,
+        expense_items=expense_items,
+        debt_items=debt_items,
+        tax_profile=tax_profile,
+    )
+    gross_income = cash_flow["gross_income"]
+    total_expenses = cash_flow["total_expenses"]
+    total_debt_payments = cash_flow["total_debt_payments"]
+    current_surplus = cash_flow["monthly_surplus"]
+    current_savings_rate = cash_flow["savings_rate"]
+    current_dti = cash_flow["dti"]
 
     if gross_income <= 0:
         return AffordabilityResponse(
@@ -78,17 +89,31 @@ def assess_affordability(
     est_monthly_payment = None
     rate = loan_rate_pct
     term = loan_term_years
+    one_time_cash_required = None
+    cash_after_purchase = None
+    runway_after_purchase = None
 
     if purchase_price_usd is not None and purchase_price_usd > 0:
-        # Loan/mortgage calculation
-        is_loan = True
-        dp_pct = down_payment_pct if down_payment_pct is not None else DEFAULT_DOWN_PAYMENT_PCT
-        rate = rate if rate is not None else DEFAULT_MORTGAGE_RATE
-        term = term if term is not None else DEFAULT_MORTGAGE_TERM
-        down_payment = purchase_price_usd * (dp_pct / 100.0)
-        loan_principal = purchase_price_usd - down_payment
-        est_monthly_payment = _monthly_loan_payment(loan_principal, rate, term)
-        proposed_monthly = est_monthly_payment
+        inferred_loan = any(
+            value is not None for value in (loan_rate_pct, loan_term_years, down_payment_pct)
+        )
+        is_loan = financing_mode == "loan" or (financing_mode is None and inferred_loan)
+        if is_loan:
+            dp_pct = down_payment_pct if down_payment_pct is not None else DEFAULT_DOWN_PAYMENT_PCT
+            rate = rate if rate is not None else DEFAULT_MORTGAGE_RATE
+            term = term if term is not None else DEFAULT_MORTGAGE_TERM
+            down_payment = purchase_price_usd * (dp_pct / 100.0)
+            loan_principal = purchase_price_usd - down_payment
+            est_monthly_payment = _monthly_loan_payment(loan_principal, rate, term)
+            proposed_monthly = est_monthly_payment
+        else:
+            one_time_cash_required = float(purchase_price_usd)
+            proposed_monthly = 0.0
+            cash_after_purchase = float(available_cash_usd) - one_time_cash_required
+            monthly_burn = total_expenses + total_debt_payments
+            runway_after_purchase = (
+                cash_after_purchase / monthly_burn if monthly_burn > 0 else None
+            )
     elif monthly_amount_usd is not None and monthly_amount_usd > 0:
         proposed_monthly = monthly_amount_usd
     else:
@@ -127,7 +152,27 @@ def assess_affordability(
     # Assessment
     highlights: list[str] = []
 
-    if new_surplus < 0:
+    if one_time_cash_required is not None and cash_after_purchase is not None:
+        if cash_after_purchase < 0:
+            assessment = "not_affordable"
+            highlights.append(
+                f"This purchase needs ${one_time_cash_required:,.0f} in cash, "
+                f"but only ${available_cash_usd:,.0f} is available."
+            )
+        elif runway_after_purchase is not None and runway_after_purchase < 3:
+            assessment = "stretch"
+            highlights.append(
+                f"Cash after purchase would cover only {runway_after_purchase:.1f} months of current expenses."
+            )
+        else:
+            assessment = "affordable"
+            if runway_after_purchase is None:
+                highlights.append("The purchase fits within available cash.")
+            else:
+                highlights.append(
+                    f"Cash after purchase would cover {runway_after_purchase:.1f} months of current expenses."
+                )
+    elif new_surplus < 0:
         assessment = "not_affordable"
         highlights.append(f"This expense would create a monthly deficit of ${abs(new_surplus):,.0f}.")
     elif new_surplus < MIN_SURPLUS_AFTER_USD:
@@ -147,7 +192,12 @@ def assess_affordability(
         highlights.append(f"Savings rate would remain at {new_savings_rate:.1f}% after this expense.")
 
     # Cash flow impact
-    highlights.append(f"Monthly surplus changes from ${current_surplus:,.0f} to ${new_surplus:,.0f} (−${proposed_monthly:,.0f}/month).")
+    if one_time_cash_required is not None:
+        highlights.append(
+            f"This is a one-time cash use; monthly surplus remains ${current_surplus:,.0f}."
+        )
+    else:
+        highlights.append(f"Monthly surplus changes from ${current_surplus:,.0f} to ${new_surplus:,.0f} (−${proposed_monthly:,.0f}/month).")
 
     # Plan trajectory impact
     if annual_reduction > 0:
@@ -171,6 +221,13 @@ def assess_affordability(
         "not_affordable": "This expense would strain your finances beyond sustainable limits.",
         "insufficient_data": "Not enough data to assess.",
     }[assessment]
+    if one_time_cash_required is not None:
+        assessment_detail = {
+            "affordable": "This purchase fits within available cash while preserving a reasonable reserve.",
+            "stretch": "You have the cash, but the purchase would leave a thin emergency reserve.",
+            "not_affordable": "Available cash does not fully cover this purchase.",
+            "insufficient_data": "Not enough data to assess.",
+        }[assessment]
 
     plan_impact = None
     if annual_reduction > 0:
@@ -190,6 +247,10 @@ def assess_affordability(
         estimated_monthly_payment_usd=round(est_monthly_payment, 2) if est_monthly_payment is not None else None,
         loan_rate_pct=rate if is_loan else None,
         loan_term_years=term if is_loan else None,
+        one_time_cash_required_usd=round(one_time_cash_required, 2) if one_time_cash_required is not None else None,
+        available_cash_usd=round(float(available_cash_usd), 2) if one_time_cash_required is not None else None,
+        cash_after_purchase_usd=round(cash_after_purchase, 2) if cash_after_purchase is not None else None,
+        runway_after_purchase_months=round(runway_after_purchase, 1) if runway_after_purchase is not None else None,
         current_monthly_surplus_usd=round(current_surplus, 2),
         current_savings_rate_pct=round(current_savings_rate, 1),
         current_dti_pct=round(current_dti, 1),
