@@ -460,6 +460,10 @@ export const api = {
   profileDocumentVision:      (formData) => postForm('/api/profile/document-vision', formData),
   applyProfileDocumentVision: (body = {}) => postJson('/api/profile/document-vision/apply', body),
   applyStatementSuggestions: (body = {}) => postJson('/api/import/statement/apply', body),
+  resolveStatementPaymentConflict: (id, resolution) => postJson(
+    `/api/import/statement/conflicts/${encodeURIComponent(id)}/resolve`,
+    { resolution },
+  ),
   importWorkbenchPreview: (formData) => postForm('/api/import/workbench/preview', formData),
   applyImportWorkbench: (sessionId, body = {}) => postJson(
     `/api/import/workbench/${encodeURIComponent(sessionId)}/apply`,
@@ -474,6 +478,7 @@ export const api = {
 
   // Context intelligence
   contextCandidates: (opts = {}) => fetchJson(contextCandidatesUrl(opts)),
+  contextCandidate: (id) => fetchJson(`/api/context/candidates/${encodeURIComponent(id)}`),
   updateContextCandidateLifecycle: (id, body = {}) => patchJson(
     `/api/context/candidates/${encodeURIComponent(id)}/lifecycle`,
     body,

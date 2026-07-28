@@ -9,7 +9,7 @@ import { buildLlmOptionsFromSettings } from '../lib/llm_catalog.js';
 import { showUndoToast } from '../lib/undo.js';
 import { renderThread } from './copilot/thread.js';
 import { renderComposer, attachComposerBehavior } from './copilot/composer.js';
-import { fmtRelative } from '../lib/format.js';
+import { fmtRelative, fmtUsd } from '../lib/format.js';
 
 export const meta = {
   id: 'copilot',
@@ -313,6 +313,11 @@ const ui = {
   conversationLlm: null,            // { provider, model, label, cost_band, source, cheap }
   showCheapOnly: false,
   trackedMessageKeys: new Set(),
+  statementConflict: null,
+  statementConflictRequestedId: null,
+  statementConflictLoading: false,
+  statementConflictResolving: false,
+  statementConflictResult: null,
 };
 
 export function template() {
@@ -380,6 +385,11 @@ export async function init(params = {}) {
   ui.conversationLlm = null;
   ui.showCheapOnly = false;
   ui.trackedMessageKeys = readTrackedDecisionKeys();
+  ui.statementConflict = null;
+  ui.statementConflictRequestedId = null;
+  ui.statementConflictLoading = false;
+  ui.statementConflictResolving = false;
+  ui.statementConflictResult = null;
   attachHandlers();
 
   rerenderAll();
@@ -415,9 +425,18 @@ export async function init(params = {}) {
   if (isPlanReviewIntent(params.intent)) {
     fillDraft(buildPlanReviewPrompt(params.intent, { planId: ui.planId, chart: params.chart }));
   }
-  if (params.focus) {
+  if (
+    params.focus
+    && String(params.intent || '').trim().toLowerCase() !== 'statement-payment-conflict'
+  ) {
     // Linked from inbox: prefill question. Conversation stays empty until sent.
     fillDraft(recommendationFocusPrompt(params.focus, params.intent));
+  }
+  if (
+    String(params.intent || '').trim().toLowerCase() === 'statement-payment-conflict'
+    && params.focus
+  ) {
+    loadStatementPaymentConflict(String(params.focus)).catch(() => {});
   }
   // Goal/debt setup cards still use prompts; seed focus when those prompts apply.
   seedFocusFromOnboardingIfNeeded();
@@ -441,6 +460,43 @@ async function loadOnboarding() {
     ui.onboarding = await api.onboarding();
   } catch {
     ui.onboarding = null;
+  }
+}
+
+async function loadStatementPaymentConflict(candidateId) {
+  ui.statementConflictRequestedId = candidateId;
+  ui.statementConflictLoading = true;
+  ui.error = null;
+  rerenderBody();
+  try {
+    const candidate = await api.contextCandidate(candidateId);
+    if (candidate?.metadata?.clarification_kind !== 'statement_payment_conflict') {
+      throw new Error('This Copilot question is not a statement payment conflict.');
+    }
+    ui.statementConflict = candidate;
+  } catch (err) {
+    ui.error = err.message || 'Could not load the payment question.';
+  } finally {
+    ui.statementConflictLoading = false;
+    rerenderBody();
+  }
+}
+
+async function resolveStatementPaymentConflict(resolution) {
+  const candidateId = String(ui.statementConflict?.id || '');
+  if (!candidateId || ui.statementConflictResolving) return;
+  ui.statementConflictResolving = true;
+  ui.error = null;
+  rerenderBody();
+  try {
+    const result = await api.resolveStatementPaymentConflict(candidateId, resolution);
+    ui.statementConflict = result.candidate || ui.statementConflict;
+    ui.statementConflictResult = result;
+  } catch (err) {
+    ui.error = err.message || 'Could not save that answer.';
+  } finally {
+    ui.statementConflictResolving = false;
+    rerenderBody();
   }
 }
 
@@ -1293,6 +1349,32 @@ function renderBody() {
 }
 
 function renderEmpty() {
+  if (ui.statementConflictLoading) {
+    return html`<div class="skeleton copilot-skeleton">Loading payment question…</div>`;
+  }
+  if (ui.statementConflict) {
+    return renderStatementPaymentConflict(ui.statementConflict, {
+      resolving: ui.statementConflictResolving,
+      result: ui.statementConflictResult,
+      error: ui.error,
+    });
+  }
+  if (ui.statementConflictRequestedId && ui.error) {
+    return html`
+      <div class="copilot-empty statement-conflict-empty">
+        <article class="profile-onboarding-card statement-conflict-card">
+          <p class="profile-draft-eyebrow">Copilot clarification</p>
+          <h2>That payment question could not be loaded</h2>
+          <p class="inline-warning">${esc(String(ui.error))}</p>
+          <div class="entry-actions">
+            <a class="action-link" href="#import-sync" data-route>
+              Back to Import &amp; Review <span class="arrow">›</span>
+            </a>
+          </div>
+        </article>
+      </div>
+    `;
+  }
   const connection = copilotConnectionState(ui.llmOptions);
   if (connection.status === 'unavailable') {
     return html`
@@ -1326,6 +1408,72 @@ function renderEmpty() {
           </button>
         `)}
       </div>
+    </div>
+  `;
+}
+
+export function renderStatementPaymentConflict(candidate, {
+  resolving = false,
+  result = null,
+  error = null,
+} = {}) {
+  const metadata = candidate?.metadata || {};
+  const suggestion = metadata.statement_suggestion || {};
+  const matches = Array.isArray(metadata.profile_matches) ? metadata.profile_matches : [];
+  const pending = ['pending_review', 'deferred'].includes(candidate?.lifecycle_state);
+  const resolvedChoice = result?.resolution || metadata.resolution || null;
+  const resolutionMessage = resolvedChoice === 'same_as_existing'
+    ? 'Linked conceptually to the payment already in Profile. No new expense was added.'
+    : resolvedChoice === 'separate_expense'
+      ? result?.added_expenses
+        ? 'Saved as a separate expense because you confirmed it is different.'
+        : 'Kept separate, but an identical expense was already present, so nothing new was added.'
+      : resolvedChoice === 'ignore'
+        ? 'Ignored. Nothing was added to Profile.'
+        : '';
+  return html`
+    <div class="copilot-empty statement-conflict-empty">
+      <article class="profile-onboarding-card statement-conflict-card">
+        <p class="profile-draft-eyebrow">Copilot clarification · payment held safely</p>
+        <h2>One quick question before I count this</h2>
+        <p class="profile-draft-summary">
+          ${esc(String(metadata.question || 'Is this statement payment already represented in Profile?'))}
+        </p>
+        <dl class="statement-conflict-facts">
+          <div>
+            <dt>Statement line</dt>
+            <dd>${esc(String(suggestion.label || 'Payment'))} · ${fmtUsd(suggestion.monthly_amount_usd || 0)}/mo</dd>
+          </div>
+          ${raw(matches.slice(0, 3).map(match => html`
+            <div>
+              <dt>Possible match</dt>
+              <dd>${esc(String(match.label || 'Profile item'))} · ${fmtUsd(match.monthly_amount_usd || 0)}/mo</dd>
+            </div>
+          `).join(''))}
+        </dl>
+        ${pending ? html`
+          <p class="profile-readiness-hint">
+            The statement line has not been added. Your answer controls whether it stays linked,
+            becomes a separate expense, or is ignored.
+          </p>
+          <div class="onboarding-quick-replies statement-conflict-actions">
+            <button class="chip" type="button" data-statement-conflict-resolution="same_as_existing"
+                    ${resolving ? 'disabled' : ''}>Same payment</button>
+            <button class="chip" type="button" data-statement-conflict-resolution="separate_expense"
+                    ${resolving ? 'disabled' : ''}>Separate expense</button>
+            <button class="chip" type="button" data-statement-conflict-resolution="ignore"
+                    ${resolving ? 'disabled' : ''}>Ignore this line</button>
+          </div>
+        ` : html`
+          <p class="quality-quote small">${esc(resolutionMessage || 'This payment question is resolved.')}</p>
+          <div class="entry-actions">
+            <a class="action-link" href="#import-sync" data-route>
+              Back to Import &amp; Review <span class="arrow">›</span>
+            </a>
+          </div>
+        `}
+        ${error ? html`<p class="inline-warning">${esc(String(error))}</p>` : ''}
+      </article>
     </div>
   `;
 }
@@ -2379,6 +2527,12 @@ function attachHandlers() {
     if (!message) return;
     seedFocusFromOnboardingIfNeeded(true);
     sendMessage(message, { useLive: false });
+  });
+
+  delegate(page, 'click', '[data-statement-conflict-resolution]', (_, t) => {
+    resolveStatementPaymentConflict(
+      String(t.getAttribute('data-statement-conflict-resolution') || ''),
+    );
   });
 
   delegate(page, 'click', '[data-profile-onboarding-prompt]', () => {

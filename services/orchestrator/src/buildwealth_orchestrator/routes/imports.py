@@ -10,6 +10,11 @@ from fastapi import APIRouter
 
 import buildwealth_orchestrator.main as m
 from buildwealth_orchestrator.services.profile_mutation import apply_reviewed_profile_patch
+from buildwealth_orchestrator.services.statement_profile_reconciliation import (
+    draft_statement_conflict_candidate,
+    reconcile_statement_expenses,
+    resolve_statement_payment_conflict,
+)
 
 router = APIRouter()
 
@@ -17,6 +22,7 @@ __all__ = [
     "upload_statement",
     "upload_statement_image",
     "apply_statement_suggestions",
+    "resolve_statement_conflict",
     "list_import_files",
     "list_import_csv_templates",
     "import_csv_transactions",
@@ -147,9 +153,43 @@ def apply_statement_suggestions(
     """Apply selected expense/income suggestions to the financial profile."""
     m.require_csrf(http_request)
     m.require_permission(services.context, "profile.write")
+    reconciliation = reconcile_statement_expenses(
+        services.financial_profile_store.get(),
+        request.get("expenses", []),
+    )
+    clarifications: list[dict[str, m.Any]] = []
+    previously_resolved: list[dict[str, m.Any]] = []
+    for conflict in reconciliation["conflicts"]:
+        candidate = draft_statement_conflict_candidate(
+            services.context_intelligence_service,
+            conflict,
+        )
+        candidate_id = str(candidate.get("id") or "")
+        if str(candidate.get("lifecycle_state") or "") not in {"pending_review", "deferred"}:
+            metadata = candidate.get("metadata")
+            metadata = metadata if isinstance(metadata, dict) else {}
+            previously_resolved.append(
+                {
+                    "candidate_id": candidate_id,
+                    "resolution": metadata.get("resolution"),
+                    "suggestion": conflict["suggestion"],
+                }
+            )
+            continue
+        clarifications.append(
+            {
+                "candidate_id": candidate_id,
+                "question": conflict["question"],
+                "suggestion": conflict["suggestion"],
+                "matches": conflict["matches"],
+                "copilot_href": (
+                    f"#copilot?intent=statement-payment-conflict&focus={candidate_id}"
+                ),
+            }
+        )
     result = apply_reviewed_profile_patch(
         {
-            "expense_items": request.get("expenses", []),
+            "expense_items": reconciliation["safe_expenses"],
             "income_items": request.get("income", []),
         },
         services.financial_profile_store,
@@ -159,14 +199,52 @@ def apply_statement_suggestions(
     added_expenses = int(counts.get("expense_items") or 0)
     added_income = int(counts.get("income_items") or 0)
     profile = services.financial_profile_store.get()
+    resolved_as_existing = sum(
+        1
+        for item in previously_resolved
+        if item.get("resolution") == "same_as_existing"
+    )
 
     return {
         "added_expenses": added_expenses,
         "added_income": added_income,
-        "skipped_duplicates": int(result.get("skipped_duplicates") or 0),
+        "skipped_duplicates": (
+            int(result.get("skipped_duplicates") or 0)
+            + len(reconciliation["already_counted"])
+            + resolved_as_existing
+        ),
+        "held_for_clarification": len(clarifications),
+        "previously_resolved": previously_resolved,
+        "already_counted": reconciliation["already_counted"],
+        "clarifications": clarifications,
         "total_expense_items": len(profile.get("expense_items", [])),
         "total_income_items": len(profile.get("income_items", [])),
     }
+
+
+@router.post("/api/import/statement/conflicts/{candidate_id}/resolve")
+def resolve_statement_conflict(
+    candidate_id: str,
+    request: dict[str, m.Any],
+    http_request: m.Request,
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> dict[str, m.Any]:
+    """Apply the user's explicit answer to a held statement-payment question."""
+    m.require_csrf(http_request)
+    m.require_permission(services.context, "profile.write")
+    try:
+        candidate = services.context_intelligence_service.get_context_candidate(candidate_id)
+    except KeyError as exc:
+        raise m.HTTPException(status_code=404, detail=str(exc)) from exc
+    try:
+        return resolve_statement_payment_conflict(
+            candidate=candidate,
+            resolution=str(request.get("resolution") or ""),
+            profile_store=services.financial_profile_store,
+            context_service=services.context_intelligence_service,
+        )
+    except ValueError as exc:
+        raise m.HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/api/import/files")

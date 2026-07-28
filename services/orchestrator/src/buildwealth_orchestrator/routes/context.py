@@ -27,6 +27,7 @@ __all__ = [
     "infer_profile_context_candidates",
     "apply_context_candidate_to_profile",
     "update_context_candidate_lifecycle",
+    "get_context_candidate",
     "list_context_candidate_events",
 ]
 
@@ -300,6 +301,18 @@ def update_context_candidate_lifecycle(
             ),
             metadata_patch=request.get("metadata") if isinstance(request.get("metadata"), dict) else {},
         )
+    except KeyError as exc:
+        raise m.HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/api/context/candidates/{candidate_id}")
+def get_context_candidate(
+    candidate_id: str,
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> dict[str, m.Any]:
+    m.require_permission(services.context, "copilot.use")
+    try:
+        return services.context_intelligence_service.get_context_candidate(candidate_id)
     except KeyError as exc:
         raise m.HTTPException(status_code=404, detail=str(exc)) from exc
 

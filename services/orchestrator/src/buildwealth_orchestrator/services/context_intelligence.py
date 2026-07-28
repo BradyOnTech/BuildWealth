@@ -934,6 +934,25 @@ class ContextRegistry:
                 payload["prompt_influence"] = merged.get("prompt_influence")
                 payload["applied_at"] = merged.get("applied_at")
                 payload["archived_at"] = merged.get("archived_at")
+                # Re-detecting the same evidence may refresh the claim, but it
+                # must not erase the user's terminal resolution. In
+                # particular, a statement re-upload should remember that a
+                # held payment was confirmed as the same, separate, or ignored.
+                existing_metadata = merged.get("metadata")
+                existing_metadata = (
+                    existing_metadata if isinstance(existing_metadata, Mapping) else {}
+                )
+                refreshed_metadata = dict(payload.get("metadata") or {})
+                for key in (
+                    "resolution_state",
+                    "resolution",
+                    "profile_mutated",
+                    "applied_sections",
+                    "review_action",
+                ):
+                    if key in existing_metadata:
+                        refreshed_metadata[key] = existing_metadata[key]
+                payload["metadata"] = refreshed_metadata
             payload["id"] = merged["id"]
             payload["created_at"] = merged["created_at"]
             payload["updated_at"] = utc_now_iso()

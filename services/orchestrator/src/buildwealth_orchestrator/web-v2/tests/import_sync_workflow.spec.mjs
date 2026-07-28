@@ -240,3 +240,159 @@ test('Import & Review previews unresolved assets, applies ready rows, and opens 
   await page.getByRole('heading', { name: 'Sent to Inbox' }).waitFor({ state: 'visible' });
   await page.getByRole('link', { name: /portfolio history/i }).waitFor({ state: 'visible' });
 });
+
+test('statement payment conflicts stay out of Profile until Copilot gets an answer', async ({ page }) => {
+  const candidateId = 'candidate-payment-browser-1';
+  let applyBody = null;
+  let resolutionBody = null;
+  const pendingCandidate = {
+    id: candidateId,
+    lifecycle_state: 'pending_review',
+    metadata: {
+      clarification_kind: 'statement_payment_conflict',
+      question: 'Is "ACH Withdrawal" at $410.00 per month the same payment as "Fishing boat loan" already in your Profile, or is it a separate expense?',
+      statement_suggestion: {
+        label: 'ACH Withdrawal',
+        monthly_amount_usd: 410,
+        category: 'general',
+      },
+      profile_matches: [
+        {
+          kind: 'debt',
+          id: 'debt-boat',
+          label: 'Fishing boat loan',
+          monthly_amount_usd: 410,
+        },
+      ],
+    },
+  };
+
+  await page.route('**/*', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.hostname !== 'buildwealth-v2.test') {
+      await route.abort();
+      return;
+    }
+    if (url.pathname === '/' || url.pathname.startsWith('/static-v2/')) {
+      await route.fulfill(await staticResponse(url.pathname));
+      return;
+    }
+    if (url.pathname === '/api/sync/status') {
+      await route.fulfill(jsonResponse({ running: false, runs_total: 0, runs_failed: 0 }));
+      return;
+    }
+    if (url.pathname === '/api/import/files') {
+      await route.fulfill(jsonResponse({ items: [] }));
+      return;
+    }
+    if (url.pathname === '/api/import/csv-templates') {
+      await route.fulfill(jsonResponse({ templates: [] }));
+      return;
+    }
+    if (url.pathname === '/api/import/reports') {
+      await route.fulfill(jsonResponse({ reports: [] }));
+      return;
+    }
+    if (url.pathname === '/api/import/statement' && request.method() === 'POST') {
+      await route.fulfill(jsonResponse({
+        file_name: 'checking.csv',
+        transaction_count: 1,
+        months_covered: 1,
+        total_monthly_expenses: 410,
+        total_monthly_income: 0,
+        expense_suggestions: [
+          {
+            label: 'ACH Withdrawal',
+            monthly_amount_usd: 410,
+            category: 'general',
+            is_fixed: true,
+            transaction_count: 1,
+            sample_descriptions: ['ACH WITHDRAWAL 8841'],
+          },
+        ],
+        income_suggestions: [],
+        parse_errors: [],
+      }));
+      return;
+    }
+    if (url.pathname === '/api/import/statement/apply' && request.method() === 'POST') {
+      applyBody = request.postDataJSON();
+      await route.fulfill(jsonResponse({
+        added_expenses: 0,
+        added_income: 0,
+        skipped_duplicates: 0,
+        held_for_clarification: 1,
+        clarifications: [
+          {
+            candidate_id: candidateId,
+            question: pendingCandidate.metadata.question,
+            suggestion: pendingCandidate.metadata.statement_suggestion,
+            matches: pendingCandidate.metadata.profile_matches,
+            copilot_href: `#copilot?intent=statement-payment-conflict&focus=${candidateId}`,
+          },
+        ],
+        total_expense_items: 0,
+        total_income_items: 0,
+      }));
+      return;
+    }
+    if (url.pathname === `/api/context/candidates/${candidateId}`) {
+      await route.fulfill(jsonResponse(pendingCandidate));
+      return;
+    }
+    if (
+      url.pathname === `/api/import/statement/conflicts/${candidateId}/resolve`
+      && request.method() === 'POST'
+    ) {
+      resolutionBody = request.postDataJSON();
+      await route.fulfill(jsonResponse({
+        candidate: {
+          ...pendingCandidate,
+          lifecycle_state: 'applied',
+          metadata: {
+            ...pendingCandidate.metadata,
+            resolution_state: 'resolved',
+            resolution: 'same_as_existing',
+          },
+        },
+        resolution: 'same_as_existing',
+        added_expenses: 0,
+        skipped_duplicates: 0,
+        profile_changed: false,
+      }));
+      return;
+    }
+    if (url.pathname === '/api/copilot/conversations') {
+      await route.fulfill(jsonResponse([]));
+      return;
+    }
+    await route.fulfill(jsonResponse({}));
+  });
+
+  const dir = await mkdtemp(join(tmpdir(), 'buildwealth-statement-conflict-'));
+  const filePath = join(dir, 'checking.csv');
+  await writeFile(
+    filePath,
+    'date,description,amount\n2026-07-01,ACH WITHDRAWAL 8841,-410\n',
+    'utf8',
+  );
+
+  await page.goto('http://buildwealth-v2.test/#import-sync');
+  const budgetReader = page.locator('#budget-reader-card');
+  await budgetReader.locator('input[type="file"]').setInputFiles(filePath);
+  await budgetReader.getByRole('button', { name: 'Read statement' }).click();
+  await budgetReader.getByText('ACH Withdrawal').waitFor({ state: 'visible' });
+  await budgetReader.getByRole('button', { name: 'Apply checked to Profile' }).click();
+
+  await budgetReader.getByRole('heading', { name: 'Possible duplicate payments' }).waitFor({ state: 'visible' });
+  await budgetReader.getByText('These were not added to Profile', { exact: false }).waitFor({ state: 'visible' });
+  assert.equal(applyBody.expenses.length, 1);
+  await budgetReader.getByRole('link', { name: 'Answer with Copilot' }).click();
+
+  await page.getByRole('heading', { name: 'One quick question before I count this' }).waitFor({ state: 'visible' });
+  await page.locator('.statement-conflict-facts dd').getByText(/Fishing boat loan/).waitFor({ state: 'visible' });
+  await page.getByRole('button', { name: 'Same payment' }).click();
+  await page.getByText('No new expense was added').waitFor({ state: 'visible' });
+  assert.deepEqual(resolutionBody, { resolution: 'same_as_existing' });
+});

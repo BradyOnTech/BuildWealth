@@ -1491,6 +1491,144 @@ def test_registered_users_get_separate_statement_import_suggestions(monkeypatch,
     assert bob_profile.json()["expense_items"] == []
 
 
+def test_statement_payments_reconcile_with_profile_debts_before_apply(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    main.settings.auth_mode = "local"
+
+    with TestClient(main.app) as client:
+        registered = client.post(
+            "/api/auth/register",
+            json={
+                "email": "statement-reconcile@example.test",
+                "password": "correct-horse-1",
+                "display_name": "Statement Reconcile",
+            },
+        )
+        csrf = _csrf_headers(client)
+        profile_saved = client.put(
+            "/api/financial-profile?source=test",
+            headers=csrf,
+            json={
+                "physical_assets": [
+                    {
+                        "id": "asset-car",
+                        "label": "Toyota Tacoma",
+                        "current_value_usd": 32_000,
+                        "asset_type": "vehicle",
+                        "asset_subtype": "truck",
+                    },
+                    {
+                        "id": "asset-boat",
+                        "label": "Fishing boat",
+                        "current_value_usd": 42_000,
+                        "asset_type": "vehicle",
+                        "asset_subtype": "boat",
+                    },
+                ],
+                "debt_items": [
+                    {
+                        "id": "debt-auto",
+                        "label": "Toyota auto loan",
+                        "balance_usd": 18_000,
+                        "debt_type": "auto_loan",
+                        "minimum_payment_usd": 620,
+                        "linked_asset_id": "asset-car",
+                    },
+                    {
+                        "id": "debt-boat",
+                        "label": "Fishing boat loan",
+                        "balance_usd": 30_000,
+                        "debt_type": "recreational_vehicle_loan",
+                        "minimum_payment_usd": 410,
+                        "linked_asset_id": "asset-boat",
+                    },
+                ],
+            },
+        )
+        clear_match = client.post(
+            "/api/import/statement/apply",
+            headers=csrf,
+            json={
+                "expenses": [
+                    {
+                        "label": "Toyota Financial",
+                        "monthly_amount_usd": 620,
+                        "category": "transportation",
+                        "sample_descriptions": ["TOYOTA FINANCIAL ACH PAYMENT"],
+                    }
+                ]
+            },
+        )
+        ambiguous_match = client.post(
+            "/api/import/statement/apply",
+            headers=csrf,
+            json={
+                "expenses": [
+                    {
+                        "label": "ACH Withdrawal",
+                        "monthly_amount_usd": 410,
+                        "category": "general",
+                        "sample_descriptions": ["ACH WITHDRAWAL 8841"],
+                    }
+                ]
+            },
+        )
+        clarification = ambiguous_match.json()["clarifications"][0]
+        candidate_id = clarification["candidate_id"]
+        candidate = client.get(f"/api/context/candidates/{candidate_id}")
+        generic_apply_blocked = client.post(
+            f"/api/context/candidates/{candidate_id}/apply",
+            headers=csrf,
+        )
+        resolved = client.post(
+            f"/api/import/statement/conflicts/{candidate_id}/resolve",
+            headers=csrf,
+            json={"resolution": "same_as_existing"},
+        )
+        repeated_after_resolution = client.post(
+            "/api/import/statement/apply",
+            headers=csrf,
+            json={
+                "expenses": [
+                    {
+                        "label": "ACH Withdrawal",
+                        "monthly_amount_usd": 410,
+                        "category": "general",
+                        "sample_descriptions": ["ACH WITHDRAWAL 8841"],
+                    }
+                ]
+            },
+        )
+        profile = client.get("/api/financial-profile")
+
+    assert registered.status_code == 200
+    assert profile_saved.status_code == 200
+    assert clear_match.status_code == 200
+    assert clear_match.json()["added_expenses"] == 0
+    assert clear_match.json()["skipped_duplicates"] == 1
+    assert clear_match.json()["held_for_clarification"] == 0
+    assert ambiguous_match.status_code == 200
+    assert ambiguous_match.json()["added_expenses"] == 0
+    assert ambiguous_match.json()["held_for_clarification"] == 1
+    assert clarification["copilot_href"].startswith(
+        "#copilot?intent=statement-payment-conflict"
+    )
+    assert candidate.status_code == 200
+    assert candidate.json()["metadata"]["clarification_kind"] == "statement_payment_conflict"
+    assert candidate.json()["review_route"]["route"] == "copilot"
+    assert generic_apply_blocked.status_code == 400
+    assert resolved.status_code == 200
+    assert resolved.json()["resolution"] == "same_as_existing"
+    assert resolved.json()["added_expenses"] == 0
+    assert repeated_after_resolution.status_code == 200
+    assert repeated_after_resolution.json()["held_for_clarification"] == 0
+    assert repeated_after_resolution.json()["skipped_duplicates"] == 1
+    assert profile.json()["expense_items"] == []
+
+
 def test_registered_users_get_separate_plan_workspaces(monkeypatch, tmp_path: Path) -> None:
     _install_temp_workspace_spine(monkeypatch, tmp_path)
     main.settings.auth_mode = "local"

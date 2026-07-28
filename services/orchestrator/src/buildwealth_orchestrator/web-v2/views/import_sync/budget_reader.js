@@ -87,7 +87,9 @@ function resultPanel() {
           <button class="btn btn-primary" id="budget-reader-apply" ${ui.busy ? 'disabled' : ''}>
             Apply checked to Profile
           </button>
-          <span class="settings-hint">Adds them as expense/income items in Profile → Budget; edit or remove them there any time.</span>
+          <span class="settings-hint">
+            Adds only items with no credible Profile match. Possible duplicate payments are held for a Copilot question.
+          </span>
         </footer>
       ` : html`<p class="fit-empty">No recurring expenses could be suggested from this statement.</p>`}
 
@@ -99,9 +101,40 @@ function resultPanel() {
         <p class="quality-quote small">
           Added ${ui.applied.added_expenses} expense item${ui.applied.added_expenses === 1 ? '' : 's'}
           and ${ui.applied.added_income} income item${ui.applied.added_income === 1 ? '' : 's'} to your profile.
+          ${ui.applied.skipped_duplicates
+            ? `${ui.applied.skipped_duplicates} already-counted payment${ui.applied.skipped_duplicates === 1 ? ' was' : 's were'} not added again.`
+            : ''}
         </p>
+        ${raw(renderStatementClarifications(ui.applied))}
       ` : ''}
     </div>
+  `;
+}
+
+export function renderStatementClarifications(applied) {
+  const clarifications = Array.isArray(applied?.clarifications) ? applied.clarifications : [];
+  if (!clarifications.length) return '';
+  return html`
+    <section class="statement-clarifications" aria-label="Statement payment questions">
+      <header>
+        <p class="settings-eyebrow">Held safely · needs your answer</p>
+        <h3>Possible duplicate payments</h3>
+        <p>
+          These were not added to Profile. Answer the focused question in Copilot
+          so BuildWealth can link the payment or keep it separate.
+        </p>
+      </header>
+      ${raw(clarifications.map(item => html`
+        <article class="statement-clarification">
+          <p>${esc(String(item.question || 'Is this payment already represented in Profile?'))}</p>
+          <div class="entry-actions">
+            <a class="action-link" href="${esc(String(item.copilot_href || '#copilot'))}" data-route>
+              Answer with Copilot <span class="arrow">›</span>
+            </a>
+          </div>
+        </article>
+      `).join(''))}
+    </section>
   `;
 }
 

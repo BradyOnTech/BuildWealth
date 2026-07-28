@@ -16,6 +16,9 @@ from buildwealth_orchestrator.services.profile_mutation import (
     numeric_or_none as _numeric_or_none,
     profile_item_dedupe_key as _item_dedupe_key,
 )
+from buildwealth_orchestrator.services.statement_profile_reconciliation import (
+    CLARIFICATION_KIND as STATEMENT_PAYMENT_CLARIFICATION_KIND,
+)
 
 APPLY_METADATA_SOURCE = "context_candidate_apply"
 
@@ -42,6 +45,15 @@ def apply_candidate_to_profile(
     metadata = metadata if isinstance(metadata, Mapping) else {}
     patch_kind = str(metadata.get("profile_patch_kind") or "").strip().lower()
     target_field = str(candidate.get("target_field") or "").strip()
+
+    if str(metadata.get("clarification_kind") or "") == STATEMENT_PAYMENT_CLARIFICATION_KIND:
+        return {
+            "applied": False,
+            "reason": (
+                "This possible duplicate payment needs the focused Copilot question. "
+                "Choose same payment, separate expense, or ignore it there."
+            ),
+        }
 
     if patch_kind in ITEM_PATCH_KINDS or target_field in ITEM_PATCH_KINDS:
         section = patch_kind if patch_kind in ITEM_PATCH_KINDS else target_field
