@@ -59,11 +59,11 @@ export const PLAN_ASSUMPTION_FIELDS = [
   },
 ];
 
-export function renderAssumptions(plan = {}, state = {}) {
+export function renderAssumptions(plan = {}, state = {}, defaults = {}) {
   const assumptionSets = normalizeAssumptionSets(state.assumptionSets);
   const activeSet = activeAssumptionSet(assumptionSets);
   const draft = state.draft && typeof state.draft === 'object' ? state.draft : {};
-  const warnings = assumptionWarnings(plan);
+  const warnings = assumptionWarnings(plan, defaults);
 
   return html`
     <section class="plan-assumptions" data-plan-section="assumptions">
@@ -91,7 +91,7 @@ export function renderAssumptions(plan = {}, state = {}) {
       ${state.error ? html`<p class="error-banner">${esc(state.error)}</p>` : ''}
 
       <div class="assumption-grid" data-form="plan-assumptions">
-        ${raw(PLAN_ASSUMPTION_FIELDS.map(field => renderAssumptionField(field, plan, draft)).join(''))}
+        ${raw(PLAN_ASSUMPTION_FIELDS.map(field => renderAssumptionField(field, plan, draft, defaults)).join(''))}
         ${renderAssumptionSetPicker(assumptionSets, draft)}
       </div>
 
@@ -149,21 +149,32 @@ export function assumptionCoverageSummary(settings = {}, defaults = {}) {
   return 'Assumptions need review';
 }
 
-export function draftValueForField(field, plan = {}, draft = {}) {
+export function draftValueForField(field, plan = {}, draft = {}, defaults = {}) {
   if (Object.prototype.hasOwnProperty.call(draft, field.key)) {
     return String(draft[field.key] ?? '');
   }
   const settings = plan.settings && typeof plan.settings === 'object' ? plan.settings : {};
-  const value = settings[field.key];
+  const durable = settings[field.key];
+  const fallback = defaults?.[field.key];
+  const value = durable == null || durable === ''
+    ? (fallback && typeof fallback === 'object' ? fallback.value : fallback)
+    : durable;
   if (value == null) return '';
   if (field.type === 'percent') return trimNumber(Number(value) * 100);
   return String(value);
 }
 
-function renderAssumptionField(field, plan, draft) {
-  const value = draftValueForField(field, plan, draft);
-  const displayValue = displayFieldValue(field, plan.settings?.[field.key]);
-  const weak = isWeakField(field.key, plan.settings?.[field.key]);
+function renderAssumptionField(field, plan, draft, defaults) {
+  const durableValue = plan.settings?.[field.key];
+  const fallback = defaults?.[field.key];
+  const fallbackValue = fallback && typeof fallback === 'object' ? fallback.value : fallback;
+  const source = fallback && typeof fallback === 'object' ? fallback.source : 'starting value';
+  const value = draftValueForField(field, plan, draft, defaults);
+  const usesFallback = durableValue == null || durableValue === '';
+  const displayValue = usesFallback && fallbackValue != null && fallbackValue !== ''
+    ? `Starting: ${displayFieldValue(field, fallbackValue)} · ${humanText(source)}; review and save`
+    : displayFieldValue(field, durableValue);
+  const weak = isWeakField(field.key, usesFallback ? fallbackValue : durableValue);
   return html`
     <label class="assumption-field ${weak ? 'weak' : ''}">
       <span class="assumption-label">${esc(field.label)}</span>
@@ -237,17 +248,27 @@ function activeAssumptionSet(assumptionSets) {
     || { id: 'default', name: 'Default' };
 }
 
-function assumptionWarnings(plan = {}) {
+function assumptionWarnings(plan = {}, defaults = {}) {
   const settings = plan.settings && typeof plan.settings === 'object' ? plan.settings : {};
   const warnings = [];
-  if (settings.marginal_tax_rate == null || settings.marginal_tax_rate === '') {
+  if ((settings.marginal_tax_rate == null || settings.marginal_tax_rate === '') && defaults?.marginal_tax_rate?.value == null) {
     warnings.push('Tax assumption missing');
   }
-  if (settings.annual_contribution_usd == null || Number(settings.annual_contribution_usd) <= 0) {
+  if (
+    (settings.annual_contribution_usd == null || Number(settings.annual_contribution_usd) <= 0)
+    && !(Number(defaults?.annual_contribution_usd?.value) > 0)
+  ) {
     warnings.push('Contribution assumption missing');
   }
-  if (settings.expected_return_baseline == null || settings.expected_return_baseline === '') {
+  if ((settings.expected_return_baseline == null || settings.expected_return_baseline === '') && defaults?.expected_return_baseline?.value == null) {
     warnings.push('Expected return missing');
+  }
+  for (const key of ['marginal_tax_rate', 'filing_status']) {
+    const fallback = defaults?.[key];
+    if (fallback?.source !== 'profile' || settings[key] == null || settings[key] === '') continue;
+    if (String(settings[key]) !== String(fallback.value)) {
+      warnings.push(`${PLAN_ASSUMPTION_FIELDS.find(field => field.key === key)?.label || key} differs from Profile`);
+    }
   }
   return warnings;
 }

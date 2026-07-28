@@ -50,6 +50,9 @@ export const meta = {
 
 const ui = {
   selectedId: null,
+  createOpen: false,
+  createBusy: false,
+  createError: '',
   assumptionDefaults: null,
   section: '',
   openFolds: new Set(),
@@ -93,6 +96,13 @@ export async function init(params = {}) {
     setPeerBenchmark(await api.peerBenchmark());
   } catch {
     setPeerBenchmark(null);
+  }
+
+  try {
+    const payload = await api.planningAssumptionDefaults();
+    ui.assumptionDefaults = payload?.defaults || null;
+  } catch {
+    ui.assumptionDefaults = null;
   }
 
   if (!ui.selectedId) {
@@ -161,18 +171,14 @@ async function loadPlan(id) {
     ui.plan = null;
     ui.error = err.message;
   }
-  if (!ui.assumptionDefaults) {
-    // Engine fallback values + provenance; the ledger shows real numbers
-    // instead of the words "app default".
-    api.planningAssumptionDefaults()
-      .then((d) => {
-        if (!d?.defaults) return;
-        ui.assumptionDefaults = d.defaults;
-        // Never clobber in-flight edits: the ledger provenance can wait a
-        // render; a half-typed assumption draft cannot.
-        if (!ui.assumptions?.dirty) rerenderAll();
-      })
-      .catch(() => { ui.assumptionDefaults = null; });
+  // Profile-derived defaults can change after a raise, marriage, or tax edit.
+  // Refresh on every Plan visit so an old session cannot label stale values as
+  // current.
+  try {
+    const payload = await api.planningAssumptionDefaults();
+    ui.assumptionDefaults = payload?.defaults || null;
+  } catch {
+    ui.assumptionDefaults = null;
   }
 }
 
@@ -444,6 +450,7 @@ function rerenderBody() {
   }
 
   root.innerHTML = html`
+    ${raw(renderCreatePlanForm())}
     ${raw(renderStory(ui.plan, ui.assumptions, ui.timeline, ui.assumptionDefaults))}
     <div id="plan-trajectory-preview">${raw(renderTrajectoryPreview(ui.trajectoryPreview, ui.plan?.id))}</div>
     <div id="plan-trajectory" data-plan-section="trajectory">${raw(renderTrajectory(ui.trajectory))}</div>
@@ -455,6 +462,52 @@ function rerenderBody() {
   `;
 }
 
+function renderCreatePlanForm() {
+  if (!ui.createOpen) return '';
+  const defaults = ui.assumptionDefaults || {};
+  const contribution = defaults.annual_contribution_usd?.value;
+  const years = defaults.years?.value;
+  const filing = defaults.filing_status?.value;
+  const profileDate = state.financialProfile?.updated_at
+    ? new Date(state.financialProfile.updated_at).toLocaleDateString()
+    : 'current Profile';
+  return html`
+    <section class="plan-assumptions" data-plan-create-panel>
+      <header class="section-head compact">
+        <span class="section-eyebrow">New plan</span>
+        <h2 class="section-title">Start from your current financial picture</h2>
+        <p class="section-lede">Name the plan and review the profile-linked starting values. You can edit and save each assumption after creation.</p>
+      </header>
+      <form class="assumption-grid" data-plan-create-form>
+        <label class="assumption-field assumption-field-wide">
+          <span class="assumption-label">Plan name</span>
+          <input name="title" type="text" placeholder="Avery's long-term plan" required autofocus>
+          <span class="assumption-current">Profile source: ${profileDate}</span>
+        </label>
+        <label class="assumption-field assumption-field-wide">
+          <span class="assumption-label">Description</span>
+          <input name="description" type="text" placeholder="Optional: what this plan is meant to answer">
+        </label>
+      </form>
+      <div class="assumption-summary">
+        <div><span class="story-block-eyebrow">Profile-linked starting values</span>
+          <p class="marginalia">${contribution != null ? fmtMoney(contribution) + '/yr saving' : 'Saving capacity pending'} · ${years != null ? years + ' years' : 'Horizon pending'} · ${String(filing || 'filing status pending').replace(/_/g, ' ')}</p>
+        </div>
+      </div>
+      ${ui.createError ? html`<p class="error-banner">${esc(ui.createError)}</p>` : ''}
+      <div class="assumption-actions">
+        <button class="btn btn-primary" type="button" data-plan-action="submit-create" ${ui.createBusy ? 'disabled' : ''}>${ui.createBusy ? 'Creating…' : 'Create plan'}</button>
+        <button class="btn btn-ghost" type="button" data-plan-action="cancel-create" ${ui.createBusy ? 'disabled' : ''}>Cancel</button>
+      </div>
+    </section>
+  `;
+}
+
+function fmtMoney(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? `$${Math.round(number).toLocaleString('en-US')}` : '—';
+}
+
 /* ─────────────  workbench folds  ─────────────
    Nine tools condensed to nine scannable rows — the rows are the table of
    contents. Bodies render up front (hidden while closed), so delegated
@@ -463,7 +516,7 @@ function rerenderBody() {
 const FOLDS = [
   { key: 'assumptions', id: 'plan-assumptions', numeral: 'IA', title: 'The assumptions',
     summary: assumptionsFoldSummary,
-    body: () => renderAssumptions(ui.plan, ui.assumptions) },
+    body: () => renderAssumptions(ui.plan, ui.assumptions, ui.assumptionDefaults) },
   { key: 'health', id: 'plan-health', numeral: 'IB', title: 'The health',
     summary: healthFoldSummary,
     body: () => renderPlanHealth(ui.plan, currentPlanHealth()) },
@@ -604,7 +657,7 @@ function currentPlanHealth() {
 function rerenderAssumptions() {
   const root = $('#plan-assumptions');
   if (!root || !ui.plan) return;
-  root.innerHTML = renderAssumptions(ui.plan, ui.assumptions);
+  root.innerHTML = renderAssumptions(ui.plan, ui.assumptions, ui.assumptionDefaults);
 }
 
 function rerenderHealth() {
@@ -720,6 +773,7 @@ function renderEmptyState() {
       <div class="entry-actions">
         <button class="action-link" data-plan-action="create">Create your first plan <span class="arrow">›</span></button>
       </div>
+      ${raw(renderCreatePlanForm())}
     </div>
   `;
 }
@@ -790,10 +844,18 @@ function attachHandlers() {
   });
 
   delegate(page, 'click', '[data-plan-action="create"]', () => {
-    const title = window.prompt('Title for the new plan:');
-    if (!title) return;
-    createPlan({ title: title.trim(), description: '' });
+    ui.createOpen = true;
+    ui.createError = '';
+    if (ui.plan) rerenderBody();
+    else renderEmptyState();
   });
+  delegate(page, 'click', '[data-plan-action="cancel-create"]', () => {
+    ui.createOpen = false;
+    ui.createError = '';
+    if (ui.plan) rerenderBody();
+    else renderEmptyState();
+  });
+  delegate(page, 'click', '[data-plan-action="submit-create"]', () => submitCreatePlan());
 
   delegate(page, 'change', '[data-assumption-field]', (_, el) => stageAssumptionEdit(el));
   delegate(page, 'click', '[data-assumption-action="reset"]', () => resetAssumptionEdits());
@@ -838,10 +900,14 @@ function attachHandlers() {
 }
 
 async function createPlan(body) {
+  ui.createBusy = true;
+  ui.createError = '';
   try {
     const created = await api.createPlan(body);
     await refreshPlanList();
     ui.selectedId = created.id;
+    ui.createOpen = false;
+    ui.createBusy = false;
     await loadPlan(created.id);
     await loadAssumptionSets(created.id);
     await loadPlanHealth(created.id);
@@ -853,8 +919,28 @@ async function createPlan(body) {
     rerenderAll();
     loadTrajectory(created.id);
   } catch (err) {
-    window.alert(`Could not create plan: ${err.message}`);
+    ui.createBusy = false;
+    ui.createError = err.message || 'Could not create plan.';
+    if (ui.plan) rerenderBody();
+    else renderEmptyState();
   }
+}
+
+function submitCreatePlan() {
+  const form = document.querySelector('[data-plan-create-form]');
+  if (!form || ui.createBusy) return;
+  const data = new FormData(form);
+  const title = String(data.get('title') || '').trim();
+  if (!title) {
+    ui.createError = 'Plan name is required.';
+    if (ui.plan) rerenderBody();
+    else renderEmptyState();
+    return;
+  }
+  createPlan({
+    title,
+    description: String(data.get('description') || '').trim(),
+  });
 }
 
 function stageAssumptionEdit(el) {

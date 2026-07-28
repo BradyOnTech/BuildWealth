@@ -62,8 +62,27 @@ export function renderTable(ui, section) {
 
       ${raw(renderComposer(section))}
       ${raw(renderRows(section, items))}
+      ${section.key === 'expense_items' ? raw(renderExpenseConfirmation(ui, items)) : ''}
       ${ui.saveError ? html`<p class="inline-warning">${ui.saveError}</p>` : ''}
     </div>
+  `;
+}
+
+function renderExpenseConfirmation(ui, items) {
+  if (!items.length) return '';
+  const complete = !!ui.profile?.flags?.expenses_complete;
+  return html`
+    <aside class="suggestion-banner">
+      <strong>${complete ? 'Monthly budget confirmed.' : 'Is this a representative monthly budget?'}</strong>
+      <span>
+        ${complete
+          ? 'Cash flow, runway, and affordability can use this budget. Editing an expense will ask you to confirm again.'
+          : 'Include normal housing, food, transport, insurance, and recurring costs. One rough all-in total is okay if it represents a typical month.'}
+      </span>
+      <button class="btn btn-ghost" type="button" data-expenses-complete="${complete ? 'false' : 'true'}">
+        ${complete ? 'Mark incomplete' : 'Yes, use this budget'}
+      </button>
+    </aside>
   `;
 }
 
@@ -185,7 +204,9 @@ function renderComposer(section) {
 }
 
 function fieldHtml(key, field, draft) {
-  const value = draft[field.key] ?? '';
+  const value = draft[field.key] ?? (
+    key === 'income_items' && field.key === 'is_pre_tax' ? true : ''
+  );
   const id = `composer-${key}-${field.key}`;
   if (field.key === AMOUNT_FIELD_KEY) {
     // People think in annual salary; storage is monthly. The unit rides on
@@ -258,6 +279,9 @@ async function handleRemove(ui, section, dataset) {
   if (!removed) return;
   const prior = items.slice();
   ui.profile[section.key] = items.filter(item => item.id !== id);
+  if (section.key === 'expense_items') {
+    ui.profile.flags = { ...(ui.profile.flags || {}), expenses_complete: false };
+  }
   await persist();
   const label = removed.label || removed.display_name || `this ${section.singular}`;
   showUndoToast({
@@ -296,6 +320,9 @@ async function handleAdd(ui, section, root) {
   }
   if (!Array.isArray(ui.profile[section.key])) ui.profile[section.key] = [];
   ui.profile[section.key].push(row);
+  if (section.key === 'expense_items') {
+    ui.profile.flags = { ...(ui.profile.flags || {}), expenses_complete: false };
+  }
   COMPOSER_DRAFTS.set(section.key, {});
   await persist();
 }
@@ -391,7 +418,7 @@ function defineIncome() {
         { value: 'rental',   label: 'Rental' },
         { value: 'other',    label: 'Other' },
       ] },
-      { key: 'is_pre_tax',         kind: 'checkbox', label: 'Pre-tax' },
+      { key: 'is_pre_tax',         kind: 'checkbox', label: 'Gross / before tax (usual for salary)' },
       { key: 'annual_growth_rate', kind: 'number',   label: 'Growth %/yr',   step: 0.01, placeholder: 'optional', ratio: true },
       { key: 'start_date',         kind: 'date',     label: 'Start' },
       { key: 'end_date',           kind: 'date',     label: 'End' },
@@ -406,7 +433,7 @@ function defineIncome() {
         label,
         monthly_amount_usd: amount,
         source_type: draft.source_type || 'salary',
-        is_pre_tax: !!draft.is_pre_tax,
+        is_pre_tax: draft.is_pre_tax == null ? true : !!draft.is_pre_tax,
         annual_growth_rate: parseRatio(draft.annual_growth_rate),
         start_date: draft.start_date || null,
         end_date: draft.end_date || null,

@@ -66,6 +66,16 @@ test('plan view wires assumptions workspace loading and save actions', () => {
   assert.match(planSource, /data-assumption-action="save"/);
 });
 
+test('plan creation stays in-product instead of using a browser prompt', () => {
+  const planSource = readFileSync(
+    resolve(import.meta.dirname, '../views/plan.js'),
+    'utf8',
+  );
+  assert.doesNotMatch(planSource, /window\.prompt/);
+  assert.match(planSource, /data-plan-create-form/);
+  assert.match(planSource, /Profile-linked starting values/);
+});
+
 test('plan view wires plan health data and section routing', () => {
   const planSource = readFileSync(
     resolve(import.meta.dirname, '../views/plan.js'),
@@ -267,6 +277,25 @@ test('plan assumptions workspace renders active set, weak fields, and staged sav
 
   assert.match(dirtyMarkup, /value="30000"/);
   assert.match(dirtyMarkup, /Save assumptions/);
+});
+
+test('unreviewed assumptions show their resolved profile values in the editor', () => {
+  const markup = String(renderAssumptions(
+    { settings: { annual_contribution_usd: null, years: null, marginal_tax_rate: null } },
+    { assumptionSets: { sets: [] }, draft: {}, dirty: false },
+    {
+      annual_contribution_usd: { value: 43680, source: 'profile_cash_flow' },
+      years: { value: 75, source: 'profile_retirement_horizon' },
+      marginal_tax_rate: { value: 0.22, source: 'profile' },
+    },
+  ));
+
+  assert.match(markup, /value="43680"/);
+  assert.match(markup, /value="75"/);
+  assert.match(markup, /value="22"/);
+  assert.match(markup, /Starting:.*profile cash flow/);
+  assert.doesNotMatch(markup, /Contribution assumption missing/);
+  assert.doesNotMatch(markup, /Tax assumption missing/);
 });
 
 test('plan assumptions workspace builds precise settings patch from staged edits', () => {

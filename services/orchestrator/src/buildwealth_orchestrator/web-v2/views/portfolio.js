@@ -563,6 +563,7 @@ function renderMaintenanceDetail(section, maintenance) {
         <p class="section-lede">${maintenanceCopy(section)}</p>
       </header>
       ${section === 'audit' ? raw(renderPortfolioAudit(maintenance?.payload || {})) : ''}
+      ${section === 'accounts' ? raw(renderAccountTools(rows)) : ''}
       ${section === 'assets' ? raw(renderAssetRegistryTools(maintenance)) : ''}
       ${section === 'assets' ? raw(renderAssetDetail(maintenance?.payload?.selectedAsset)) : ''}
       ${section === 'assets' ? raw(renderCustomAssetTools()) : ''}
@@ -570,10 +571,62 @@ function renderMaintenanceDetail(section, maintenance) {
       ${section === 'fx' ? raw(renderFxRateTools(maintenance?.payload || {})) : ''}
       ${section === 'risk-policy' ? raw(renderRiskGuardrails(maintenance)) : ''}
       ${section === 'export' ? raw(renderExportBundle(maintenance?.payload || {})) : ''}
-      ${section === 'audit' || section === 'risk-policy' || section === 'export'
+      ${section === 'audit' || section === 'accounts' || section === 'risk-policy' || section === 'export'
         ? ''
         : (rows.length ? raw(renderMaintenanceRows(section, rows)) : html`<p class="fit-empty">Nothing recorded here yet.</p>`)}
     </article>
+  `;
+}
+
+function accountTypeOptions(selected = '') {
+  const options = [
+    ['taxable', 'Taxable brokerage'],
+    ['traditional', 'Traditional / pre-tax'],
+    ['roth', 'Roth'],
+    ['hsa', 'HSA'],
+    ['cash', 'Checking / savings'],
+  ];
+  return options.map(([value, label]) => html`
+    <option value="${value}" ${String(selected) === value ? 'selected' : ''}>${label}</option>
+  `).join('');
+}
+
+function renderAccountTools(rows = []) {
+  return html`
+    <div class="portfolio-accounts-manager">
+      <form class="portfolio-custom-asset-form" data-account-create-form>
+        <label class="fit-field"><span>New account name</span>
+          <input name="name" type="text" placeholder="Checking, workplace 401(k), Roth IRA…" required>
+        </label>
+        <label class="fit-field"><span>Account type</span>
+          <select name="type">${raw(accountTypeOptions('cash'))}</select>
+        </label>
+        <label class="fit-field"><span>Currency</span>
+          <input name="currency" type="text" maxlength="3" value="USD" required>
+        </label>
+        <button class="fit-review-button" type="submit">Create account</button>
+        <p class="portfolio-guardrails-status" data-account-create-status>
+          Create checking, savings, retirement, and brokerage accounts before assigning money to them.
+        </p>
+      </form>
+      <div class="portfolio-account-edit-list">
+        ${raw(rows.map(account => html`
+          <form class="portfolio-custom-asset-form" data-account-edit-form data-account-id="${account.id || ''}">
+            <label class="fit-field"><span>Name</span>
+              <input name="name" type="text" value="${account.name || account.id || ''}" required>
+            </label>
+            <label class="fit-field"><span>Type</span>
+              <select name="type">${raw(accountTypeOptions(account.type))}</select>
+            </label>
+            <label class="fit-field"><span>Currency</span>
+              <input name="currency" type="text" maxlength="3" value="${account.currency || 'USD'}" required>
+            </label>
+            <button class="btn btn-ghost" type="submit">Save account</button>
+            <p class="portfolio-guardrails-status" data-account-edit-status>${account.id || ''}</p>
+          </form>
+        `).join(''))}
+      </div>
+    </div>
   `;
 }
 
@@ -1034,6 +1087,17 @@ function renderFxRateTools(payload = {}) {
 
 function bindMaintenanceTools(root, maintenance = null, params = {}) {
   bindTransactionRemoval(root, maintenance, params);
+  const accountCreateForm = root.querySelector('[data-account-create-form]');
+  if (accountCreateForm) accountCreateForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    await savePortfolioAccount(accountCreateForm, { create: true });
+  });
+  root.querySelectorAll('[data-account-edit-form]').forEach((form) => {
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      await savePortfolioAccount(form, { create: false });
+    });
+  });
   const registryForm = root.querySelector('[data-asset-registry-search]');
   if (registryForm) registryForm.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -1096,6 +1160,27 @@ function bindMaintenanceTools(root, maintenance = null, params = {}) {
       await api.clearPortfolioFxRate(currency);
       await init({ section: 'fx' });
     });
+  });
+}
+
+async function savePortfolioAccount(form, { create = false } = {}) {
+  const statusEl = form.querySelector(create ? '[data-account-create-status]' : '[data-account-edit-status]');
+  const button = form.querySelector('button[type="submit"]');
+  const data = new FormData(form);
+  const body = {
+    name: String(data.get('name') || '').trim(),
+    type: String(data.get('type') || 'taxable').trim(),
+    currency: String(data.get('currency') || 'USD').trim().toUpperCase(),
+  };
+  const accountId = String(form.getAttribute('data-account-id') || '').trim();
+  await submitMaintenanceForm({
+    statusEl,
+    button,
+    savingText: create ? 'Creating' : 'Saving',
+    savedText: create ? 'Account created. Reloading accounts...' : 'Account updated. Reloading accounts...',
+    defaultButtonText: create ? 'Create account' : 'Save account',
+    action: () => create ? api.createPortfolioAccount(body) : api.updatePortfolioAccount(accountId, body),
+    refresh: () => init({ section: 'accounts' }),
   });
 }
 
@@ -1411,7 +1496,7 @@ function maintenanceColumnLabel(column) {
 function maintenanceCopy(section) {
   return ({
     audit: 'A plain-English audit of recent imports, review items, asset readiness, prices, and cost basis follow-through.',
-    accounts: 'Accounts created by imports or manual setup. Imported account names should land here before future review.',
+    accounts: 'Create and rename the checking, savings, retirement, and brokerage accounts that organize your money. Holdings and cash can then be assigned to the right account.',
     transactions: 'Recent portfolio activity created from applied imports and manual entries.',
     assets: 'A single searchable registry for holdings, watchlist names, custom assets, price overrides, and imported metadata.',
     prices: 'Manual quote overrides for assets that need local pricing evidence.',

@@ -35,7 +35,16 @@ export function buildAffordabilityPayload(draft = {}) {
   if (rate != null && rate > 0) payload.loan_rate_pct = rate;
   if (term != null && term > 0) payload.loan_term_years = Math.round(term);
   if (down != null && down >= 0) payload.down_payment_pct = down;
+  payload.financing_mode = (rate != null && rate > 0) || (term != null && term > 0) || (down != null && down >= 0)
+    ? 'loan'
+    : 'cash';
   return payload;
+}
+
+export function resetAffordabilityResult() {
+  ui.result = null;
+  ui.error = null;
+  ui.busy = false;
 }
 
 export function renderAffordabilitySection(state = ui) {
@@ -117,10 +126,27 @@ function renderVerdict(result = {}) {
       </header>
       <p>${clean(result.assessment_detail)}${loanNote}</p>
       <dl class="scenario-change-list">
-        <div>
-          <dt>Monthly cost</dt>
-          <dd>${fmtUsd(result.proposed_monthly_usd)}</dd>
-        </div>
+        ${result.one_time_cash_required_usd != null ? html`
+          <div>
+            <dt>Upfront cash</dt>
+            <dd>${fmtUsd(result.one_time_cash_required_usd)}</dd>
+          </div>
+          <div>
+            <dt>Cash after purchase</dt>
+            <dd>${fmtUsd(result.cash_after_purchase_usd)}</dd>
+          </div>
+          ${result.runway_after_purchase_months != null ? html`
+            <div>
+              <dt>Reserve after purchase</dt>
+              <dd>${Number(result.runway_after_purchase_months).toFixed(1)} months</dd>
+            </div>
+          ` : ''}
+        ` : html`
+          <div>
+            <dt>Monthly cost</dt>
+            <dd>${fmtUsd(result.proposed_monthly_usd)}</dd>
+          </div>
+        `}
         <div>
           <dt>Monthly surplus</dt>
           <dd>${fmtUsd(result.current_monthly_surplus_usd)} -> ${fmtUsd(result.new_monthly_surplus_usd)}</dd>

@@ -34,10 +34,12 @@ export function crossoverYear(points = []) {
 export function coastFireYear(points = []) {
   const rows = normalize(points);
   if (rows.length < 2) return null;
+  const firstWithdrawal = rows.findIndex(row => row.withdrawals > 0);
+  if (firstWithdrawal < 0) return null;
   // A plan that already fails on its own timeline has no coast year.
   if (rows.some(row => row.ending <= 0 && row.withdrawals > 0)) return null;
 
-  for (let start = 0; start < rows.length - 1; start++) {
+  for (let start = 0; start < firstWithdrawal; start++) {
     if (rows[start].contributions <= 0 && start > 0) continue; // coasting is only meaningful while still contributing
     if (survivesWithoutContributions(rows, start)) return rows[start].year;
   }

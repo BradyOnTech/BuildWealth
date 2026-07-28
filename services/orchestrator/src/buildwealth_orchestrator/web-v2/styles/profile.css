@@ -7,7 +7,9 @@
 
 .profile-shell {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s-6);
+  min-width: 0;
 }
 
 /* ───────────  Masthead  ─────────── */
@@ -204,7 +206,9 @@
 
 .profile-section {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s-5);
+  min-width: 0;
 }
 
 /* ───────────  Overview cards  ─────────── */
@@ -337,6 +341,18 @@
   border-bottom: var(--hair) dotted var(--rule);
 }
 .profile-review-item:last-child { border-bottom: 0; padding-bottom: 0; }
+
+.profile-life-transition + .profile-life-transition {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+}
+
+.profile-life-transition h4 {
+  margin: 0 0 0.35rem;
+  font: inherit;
+  font-weight: 650;
+}
 
 .profile-review-tag {
   font-family: var(--mono);
@@ -816,6 +832,8 @@
   .profile-guardrail { grid-template-columns: 1fr; }
   .profile-guardrail-input input,
   .profile-guardrail-input select { width: 100%; }
+  .profile-tab { min-height: 40px; align-items: center; }
+  .btn.btn-sm { min-height: 40px; }
 }
 
 /* ───────────  Taxes block  ─────────── */
@@ -826,7 +844,11 @@
 }
 
 @media (max-width: 760px) {
-  .profile-overview { grid-template-columns: 1fr; }
+  .profile-overview {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+  .profile-card { min-width: 0; }
   .profile-table-head { grid-template-columns: 1fr; align-items: start; }
   .profile-table-meta { text-align: left; }
 }

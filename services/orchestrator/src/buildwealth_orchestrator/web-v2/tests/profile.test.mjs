@@ -42,9 +42,31 @@ test('overview: renders household snapshot from filled income and expense rows',
 test('overview: empty profile shows em-dashes for unknown values', () => {
   const ui = { profile: { income_items: [], expense_items: [] }, candidates: [] };
   const markup = String(renderOverview(ui));
-  assert.match(markup, /Monthly income/);
+  assert.match(markup, /Gross monthly income/);
   // no formatted dollar value should appear when there are no items
   assert.doesNotMatch(markup, /\$\d/);
+});
+
+test('overview: canonical financial health keeps taxes and debt out of surplus', () => {
+  const markup = String(renderOverview({
+    profile: {
+      income_items: [{ monthly_amount_usd: 10_000 }],
+      expense_items: [{ monthly_amount_usd: 4_000 }],
+    },
+    financialHealth: {
+      gross_monthly_income_usd: 10_000,
+      estimated_monthly_taxes_usd: 2_000,
+      total_monthly_expenses_usd: 4_000,
+      total_monthly_debt_payments_usd: 500,
+      monthly_surplus_usd: 3_500,
+    },
+    candidates: [],
+  }));
+
+  assert.match(markup, /Gross monthly income[\s\S]*\$10,000/);
+  assert.match(markup, /Estimated monthly taxes[\s\S]*\$2,000/);
+  assert.match(markup, /Minimum debt payments[\s\S]*\$500/);
+  assert.match(markup, /After-tax surplus[\s\S]*\$3,500/);
 });
 
 test('overview: surfaces pending context candidates in the Needs Review card', () => {
@@ -57,6 +79,34 @@ test('overview: surfaces pending context candidates in the Needs Review card', (
   const markup = String(renderOverview(ui));
   assert.match(markup, /Needs review/);
   assert.match(markup, /Confirm marginal tax rate/);
+});
+
+test('overview: life changes show focused connected-section checklists', () => {
+  const markup = String(renderOverview({
+    profile: {
+      household_members: [
+        { relationship: 'self' },
+        { relationship: 'partner' },
+        { relationship: 'child', dependent: true },
+      ],
+      income_items: [{ label: 'Salary', monthly_amount_usd: 5000 }],
+      expense_items: [{ label: 'Rent', category: 'housing', monthly_amount_usd: 1500 }],
+      debt_items: [],
+      goal_items: [],
+      physical_assets: [{ label: 'Home', asset_type: 'real_estate', current_value_usd: 350000 }],
+      tax_profile: { filing_status: 'single' },
+      flags: { expenses_complete: false },
+    },
+    candidates: [],
+  }));
+
+  assert.match(markup, /Partner or marriage/);
+  assert.match(markup, /Child or new dependent/);
+  assert.match(markup, /Home purchase/);
+  assert.match(markup, /Review only the connected sections/);
+  assert.match(markup, /#profile\?section=taxes/);
+  assert.match(markup, /#profile\?section=debt/);
+  assert.match(markup, /#profile\?section=goals/);
 });
 
 test('tables: defines all six editable sections', () => {

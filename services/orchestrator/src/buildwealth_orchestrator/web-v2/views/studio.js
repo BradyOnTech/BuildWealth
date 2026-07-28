@@ -68,7 +68,7 @@ const LIFE_CONTROLS = [
     key: 'years',
     label: 'Years ahead to show',
     min: 5,
-    max: 60,
+    max: 80,
     step: 1,
     format: formatYears,
   },

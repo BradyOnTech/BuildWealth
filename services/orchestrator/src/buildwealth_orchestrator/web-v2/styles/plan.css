@@ -207,6 +207,18 @@
 }
 @media (max-width: 640px) {
   .assumption-grid { grid-template-columns: minmax(0, 1fr); }
+
+  .ledger-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  }
+
+  .ledger-value,
+  .ledger-value .link-editorial {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 .assumption-field {

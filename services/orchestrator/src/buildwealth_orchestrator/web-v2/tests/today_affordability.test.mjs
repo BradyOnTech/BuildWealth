@@ -9,7 +9,7 @@ import { computeFiProgress } from '../views/today.js';
 test('buildAffordabilityPayload shapes one-time and monthly requests', () => {
   assert.deepEqual(
     buildAffordabilityPayload({ description: 'A newer car', mode: 'one_time', amount: '42000', loan_rate_pct: '6.5', loan_term_years: '5', down_payment_pct: '20' }),
-    { description: 'A newer car', purchase_price_usd: 42000, loan_rate_pct: 6.5, loan_term_years: 5, down_payment_pct: 20 },
+    { description: 'A newer car', purchase_price_usd: 42000, financing_mode: 'loan', loan_rate_pct: 6.5, loan_term_years: 5, down_payment_pct: 20 },
   );
   assert.deepEqual(
     buildAffordabilityPayload({ description: 'Gym', mode: 'monthly', amount: '180' }),
@@ -17,11 +17,42 @@ test('buildAffordabilityPayload shapes one-time and monthly requests', () => {
   );
   assert.equal(buildAffordabilityPayload({ mode: 'monthly', amount: '' }), null);
   assert.equal(buildAffordabilityPayload({ mode: 'one_time', amount: '0' }), null);
-  // cash purchase: loan fields omitted when blank
+  // Cash purchases are explicit so the backend never invents financing.
   assert.deepEqual(
     buildAffordabilityPayload({ description: 'Roof', mode: 'one_time', amount: '18000' }),
-    { description: 'Roof', purchase_price_usd: 18000 },
+    { description: 'Roof', purchase_price_usd: 18000, financing_mode: 'cash' },
   );
+});
+
+test('cash verdict shows liquidity impact instead of a fictitious monthly cost', () => {
+  const verdict = String(renderAffordabilitySection({
+    draft: { mode: 'one_time' },
+    busy: false,
+    error: null,
+    result: {
+      description: 'Laptop',
+      assessment: 'stretch',
+      assessment_detail: 'This purchase would leave a thin cash reserve.',
+      proposed_monthly_usd: 0,
+      is_loan_estimate: false,
+      one_time_cash_required_usd: 3000,
+      available_cash_usd: 7000,
+      cash_after_purchase_usd: 4000,
+      runway_after_purchase_months: 2.5,
+      current_monthly_surplus_usd: 2000,
+      new_monthly_surplus_usd: 2000,
+      current_savings_rate_pct: 25,
+      new_savings_rate_pct: 25,
+      current_dti_pct: 5,
+      new_dti_pct: 5,
+      annual_savings_reduction_usd: 0,
+      highlights: [],
+    },
+  }));
+  assert.match(verdict, /Upfront cash/);
+  assert.match(verdict, /Cash after purchase/);
+  assert.match(verdict, /2\.5 months/);
+  assert.doesNotMatch(verdict, /Yearly savings impact/);
 });
 
 test('renderAffordabilitySection renders form and verdict states', () => {

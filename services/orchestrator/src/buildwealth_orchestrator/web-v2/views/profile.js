@@ -58,6 +58,7 @@ export const ui = {
   profile:      null,
   onboarding:   null,
   candidates:   [],          // pending profile context candidates
+  financialHealth: null,
   section:      'overview',
 };
 
@@ -83,15 +84,17 @@ async function load() {
   ui.loaded = false;
   ui.loadError = null;
   try {
-    const [profile, onboarding, candidates, defaults] = await Promise.all([
+    const [profile, onboarding, candidates, defaults, financialHealth] = await Promise.all([
       api.profile(),
       api.onboarding().catch(() => null),
       api.contextCandidates({ lifecycleState: 'proposed' }).catch(() => []),
       api.profileDefaults().catch(() => null),
+      api.financialHealth().catch(() => null),
     ]);
     ui.profile = ensureShape(profile);
     ui.suggestions = defaults?.suggestions || {};
     ui.onboarding = onboarding;
+    ui.financialHealth = financialHealth;
     ui.candidates = Array.isArray(candidates) ? candidates : (candidates?.items || []);
     ui.loaded = true;
     state.financialProfile = ui.profile;
@@ -117,6 +120,7 @@ export async function persist({ optimistic = true } = {}) {
   try {
     const saved = await api.updateProfile(ui.profile);
     ui.profile = ensureShape(saved);
+    ui.financialHealth = await api.financialHealth().catch(() => ui.financialHealth);
     state.financialProfile = ui.profile;
     api.onboarding().then((o) => { ui.onboarding = o; render(); }).catch(() => {});
     api.profileDefaults()
@@ -288,6 +292,16 @@ function attachHandlers() {
     const handler = TABLE_SECTIONS.find(s => s.key === el.getAttribute('data-table-add'));
     if (!handler) return;
     handler.onAdd(ui, root);
+  });
+
+  delegate(root, 'click', '[data-expenses-complete]', async (e, el) => {
+    e.preventDefault();
+    if (!ui.profile) return;
+    ui.profile.flags = {
+      ...(ui.profile.flags || {}),
+      expenses_complete: el.getAttribute('data-expenses-complete') === 'true',
+    };
+    await persist();
   });
 
   // Guided setup rail: skip / dismiss / doc-capture toggle / use-estimates /

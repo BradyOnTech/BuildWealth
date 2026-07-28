@@ -10,7 +10,7 @@ import {
 } from '../lib/format.js';
 import { compactUsd } from '../lib/chart.js';
 import { skeleton } from '../lib/skeleton.js';
-import { renderAffordabilitySection, bindAffordabilitySection } from './today/affordability.js';
+import { renderAffordabilitySection, bindAffordabilitySection, resetAffordabilityResult } from './today/affordability.js';
 
 export const meta = {
   id: 'today',
@@ -40,6 +40,7 @@ export async function init(params = {}) {
 async function load(params = {}) {
   const root = $('#today-shell');
   if (!root) return;
+  resetAffordabilityResult();
 
   let payload = null;
   let services = null;
@@ -748,8 +749,9 @@ export function renderRoom(payload, services, health = null) {
     sync.failed_count === 0
   );
 
-  const firstRun = payload.onboarding_ready_for_daily_review === false;
-  const headline = firstRun
+  const setupIncomplete = payload.onboarding_ready_for_daily_review === false;
+  const profileReady = String(payload.profile_readiness?.status || '').toLowerCase() === 'ready';
+  const headline = setupIncomplete
     ? 'Your decision picture is taking shape.'
     : allQuiet
     ? 'All systems quiet.'
@@ -764,8 +766,14 @@ export function renderRoom(payload, services, health = null) {
           <span class="glyph">§</span>
           ${headline}
           <span class="marginalia">
-            ${firstRun
-              ? `Next: ${esc(payload.profile_readiness?.next_gap_title || 'finish your core profile')}`
+            ${setupIncomplete
+              ? `Next: ${esc(
+                  !profileReady
+                    ? (payload.profile_readiness?.next_gap_title || 'review your profile')
+                    : !payload.active_plan
+                      ? 'create or activate a plan'
+                      : 'review the plan assumptions that still need attention'
+                )}`
               : `Last sync ${lastSync ? fmtRelative(lastSync) : '—'} · ${servicesReachable}/${servicesEnabled} services ready`}
           </span>
         </p>

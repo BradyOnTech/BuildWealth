@@ -833,4 +833,26 @@ details.command-overflow > summary::after {
 }
 details.command-overflow[open] > summary::after { transform: rotate(180deg); }
 details.command-overflow > summary:hover { color: var(--ink); }
-details.command-overflow { margin-top: var(--s-3); display: grid; gap: var(--s-4); }
+details.command-overflow {
+  margin-top: var(--s-3);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-4);
+  min-width: 0;
+}
+
+details.command-overflow > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (max-width: 600px) {
+  details.diagnostics-toggle > summary,
+  details.command-overflow > summary {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    white-space: normal;
+  }
+}

@@ -130,6 +130,9 @@ export async function saveRowEdit(ui, section) {
     return;
   }
   items[index] = row;
+  if (section.key === 'expense_items') {
+    ui.profile.flags = { ...(ui.profile.flags || {}), expenses_complete: false };
+  }
   editing = null;
   await persist();
 }
@@ -174,6 +177,10 @@ export function handleAmountUnit(dataset) {
   amountUnit = next;
   if (typeof document === 'undefined') return;
   for (const input of document.querySelectorAll('[data-amount-input]')) {
+    // In a new-row composer, changing the unit commonly corrects the user's
+    // intent after typing (for example 62000, then Annual). Preserve that
+    // typed number. Existing saved rows still convert for convenient review.
+    if (input.hasAttribute('data-composer-input') && String(input.value || '').trim()) continue;
     const converted = convertAmount(input.value, prev, next);
     if (converted !== input.value) input.value = String(converted);
   }

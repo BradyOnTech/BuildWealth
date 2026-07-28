@@ -223,4 +223,47 @@ test('Today daily review routes command cards into review flows', async ({ page 
   await openOverflow();
   await page.getByRole('link', { name: 'Complete context' }).click();
   await page.waitForURL('**/#copilot?intent=complete-context');
+
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto('http://buildwealth-v2.test/#today');
+  await page.getByText('Command center').waitFor({ state: 'visible' });
+
+  const mobileShell = await page.evaluate(() => {
+    const content = document.querySelector('.content');
+    const topbarActions = document.querySelector('.topbar-actions')?.getBoundingClientRect();
+    const navItems = [...document.querySelectorAll('.nav-item')]
+      .map(item => item.getBoundingClientRect().height);
+    return {
+      viewportWidth: document.documentElement.clientWidth,
+      contentClientWidth: content?.clientWidth,
+      contentScrollWidth: content?.scrollWidth,
+      topbarLeft: topbarActions?.left,
+      topbarRight: topbarActions?.right,
+      minimumNavHeight: Math.min(...navItems),
+    };
+  });
+
+  assert.equal(
+    mobileShell.contentScrollWidth,
+    mobileShell.contentClientWidth,
+    'Today content should not clip or scroll horizontally at 320px',
+  );
+  assert.ok(
+    mobileShell.topbarLeft >= 0 && mobileShell.topbarRight <= mobileShell.viewportWidth,
+    'all mobile topbar actions should remain inside the viewport',
+  );
+  assert.ok(
+    mobileShell.minimumNavHeight >= 40,
+    `mobile navigation should retain 40px hit areas (measured ${mobileShell.minimumNavHeight}px)`,
+  );
+
+  await page.goto('http://buildwealth-v2.test/#inbox');
+  await page.locator('.inbox-shell').waitFor({ state: 'visible' });
+  const minimumInboxControlHeight = await page.locator('.inbox-filters button').evaluateAll(
+    buttons => Math.min(...buttons.map(button => button.getBoundingClientRect().height)),
+  );
+  assert.ok(
+    minimumInboxControlHeight >= 40,
+    `mobile Inbox filters should retain 40px hit areas (measured ${minimumInboxControlHeight}px)`,
+  );
 });

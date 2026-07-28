@@ -378,6 +378,8 @@ export const api = {
     { method: 'DELETE' },
   ),
   portfolioAccounts: () => fetchJson('/api/portfolio/accounts'),
+  createPortfolioAccount: (body = {}) => postJson('/api/portfolio/accounts', body),
+  updatePortfolioAccount: (id, body = {}) => patchJson(`/api/portfolio/accounts/${encodeURIComponent(id)}`, body),
   portfolioAudit: (limit = 25) => fetchJson(`/api/portfolio/audit?limit=${encodeURIComponent(limit)}`),
   portfolioExportBundle: (limit = 10000) => fetchJson(`/api/portfolio/export-bundle?limit=${encodeURIComponent(limit)}`),
   portfolioAssetSearch: (opts = {}) => fetchJson(portfolioAssetSearchUrl(opts)),

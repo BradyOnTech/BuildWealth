@@ -74,6 +74,11 @@ test('coastFireYear identifies healthy coast plans and rejects failing plans', (
 
   assert.equal(coastFireYear(failingTimeline), null);
   assert.equal(coastFireYear([healthy[0]]), null);
+  assert.equal(
+    coastFireYear(makeTimeline({ withdrawals: 0 })),
+    null,
+    'a horizon with no retirement withdrawals cannot prove Coast FI',
+  );
 });
 
 test('coastFireYear is monotonic with a larger starting balance', () => {

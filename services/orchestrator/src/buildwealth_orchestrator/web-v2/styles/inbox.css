@@ -134,7 +134,9 @@
 
 .context-captures {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s-4);
+  min-width: 0;
   padding: var(--s-5) 0 var(--s-6);
   border-top: var(--hair) solid var(--rule);
   border-bottom: var(--hair) solid var(--rule);
@@ -560,4 +562,45 @@
   color: var(--ink-strong);
   font-variant-numeric: tabular-nums lining-nums;
   letter-spacing: -0.01em;
+}
+
+@media (max-width: 600px) {
+  .context-captures > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .inbox-filters {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--s-2);
+  }
+
+  .filter-chips {
+    width: 100%;
+    min-width: 0;
+    gap: 4px var(--s-2);
+  }
+
+  .chip {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .chip::after,
+  .sort-toggle button::after,
+  .action-link::after {
+    inset: 0;
+  }
+
+  .sort-toggle {
+    align-items: center;
+  }
+
+  .sort-toggle button,
+  .action-link {
+    min-height: 40px;
+    align-items: center;
+  }
 }

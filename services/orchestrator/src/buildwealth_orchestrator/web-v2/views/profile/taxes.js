@@ -160,7 +160,7 @@ export async function submitTaxesForm(ui) {
 
 function toPercent(decimal) {
   if (decimal == null || !Number.isFinite(Number(decimal))) return '';
-  return (Number(decimal) * 100).toString();
+  return String(Math.round(Number(decimal) * 100 * 10000) / 10000);
 }
 
 function parsePercent(value) {

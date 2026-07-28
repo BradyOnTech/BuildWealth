@@ -647,9 +647,6 @@
 
 @media (max-width: 600px) {
   .studio-sticky-verdict {
-    left: var(--s-3);
-    right: var(--s-3);
-    transform: none;
-    max-width: none;
+    display: none !important;
   }
 }

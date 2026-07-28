@@ -13,12 +13,18 @@ export { renderDocumentCapture } from './document_capture.js';
 
 export function renderOverview(ui) {
   const p = ui.profile || {};
+  const health = ui.financialHealth || {};
   const tax = p.tax_profile || {};
   const flags = p.flags || {};
-  const income = sumMonthly(p.income_items);
-  const expenses = sumMonthly(p.expense_items);
+  const income = finiteOr(health.gross_monthly_income_usd, sumMonthly(p.income_items));
+  const expenses = finiteOr(health.total_monthly_expenses_usd, sumMonthly(p.expense_items));
+  const estimatedTaxes = finiteOr(health.estimated_monthly_taxes_usd, null);
+  const debtPayments = finiteOr(health.total_monthly_debt_payments_usd, null);
   const householdMembers = Array.isArray(p.household_members) ? p.household_members : [];
-  const surplus = income != null && expenses != null ? income - expenses : null;
+  const surplus = finiteOr(
+    health.monthly_surplus_usd,
+    income != null && expenses != null ? income - expenses : null,
+  );
   const debtTotal = sumField(p.debt_items, 'balance_usd');
   const goalsCount = (p.goal_items || []).length;
   const assetsTotal = sumField(p.physical_assets, 'current_value_usd');
@@ -30,9 +36,11 @@ export function renderOverview(ui) {
     <div class="profile-overview">
       ${raw(card('Household snapshot', [
         line('Household',        householdSummary(householdMembers), 'People this financial picture is built around.'),
-        line('Monthly income',   fmtUsdOrEmpty(income),       'Sum of all income items entered.'),
-        line('Monthly expenses', fmtUsdOrEmpty(expenses),     'Sum of all expense items entered.'),
-        line('Monthly surplus',  fmtUsdOrEmpty(surplus),      surplus != null && surplus < 0 ? 'Spending exceeds income — cash runway is at risk.' : 'What is left to save or invest each month.'),
+        line('Gross monthly income', fmtUsdOrEmpty(income),       'Sum of all income items entered before estimated taxes.'),
+        line('Estimated monthly taxes', fmtUsdOrEmpty(estimatedTaxes), 'Uses saved effective federal and state tax rates for pre-tax income.'),
+        line('Monthly living expenses', fmtUsdOrEmpty(expenses),     'Recurring expenses entered in the Profile.'),
+        line('Minimum debt payments', fmtUsdOrEmpty(debtPayments), 'Required monthly debt payments entered in the Profile.'),
+        line('After-tax surplus',  fmtUsdOrEmpty(surplus),      surplus != null && surplus < 0 ? 'Spending exceeds after-tax income — cash runway is at risk.' : 'What is left after estimated taxes, living expenses, and minimum debt payments.'),
         line('Total debt',       flags.no_debt ? 'None tracked' : fmtUsdOrEmpty(debtTotal), flags.no_debt ? 'Marked as debt-free.' : 'Sum of outstanding balances.'),
         line('Goals',            goalsCount > 0 ? `${goalsCount} tracked` : (flags.no_goals ? 'Not tracking yet' : 'None added'), 'Add goals to drive plan and saving recommendations.'),
         line('Cash runway',      runwayMonths != null ? `${runwayMonths} mo` : 'Unknown',  'Months of expenses your liquid assets cover. Investment-fit advice depends on this.'),
@@ -45,6 +53,8 @@ export function renderOverview(ui) {
         line('State',             tax.state ? esc(tax.state) : 'Not set',                       tax.state_tax_rate != null ? `State rate ${fmtPctOrDash(tax.state_tax_rate, null)}.` : 'State rate not set.'),
         line('Active plan',       p.notes ? 'Notes attached' : 'No plan-specific notes',        'Notes here travel with Copilot context.'),
       ]))}
+
+      ${raw(renderLifeChangeGuide(p))}
 
       ${raw(card('Investment guardrails', [
         line('Single-investment limit',  guardrail(p, 'max_single_symbol_exposure_pct', 'pct'), 'Most of your portfolio BuildWealth should be comfortable seeing in one stock or fund.'),
@@ -128,6 +138,101 @@ function needsReviewCard(ui) {
   `;
 }
 
+function renderLifeChangeGuide(profile) {
+  const members = Array.isArray(profile.household_members) ? profile.household_members : [];
+  const expenses = Array.isArray(profile.expense_items) ? profile.expense_items : [];
+  const debts = Array.isArray(profile.debt_items) ? profile.debt_items : [];
+  const goals = Array.isArray(profile.goal_items) ? profile.goal_items : [];
+  const assets = Array.isArray(profile.physical_assets) ? profile.physical_assets : [];
+  const tax = profile.tax_profile || {};
+  const transitions = [];
+
+  if (members.some(member => String(member?.relationship || '').toLowerCase() === 'partner')) {
+    const marriedTax = String(tax.filing_status || '').startsWith('married_');
+    transitions.push({
+      title: 'Partner or marriage',
+      detail: marriedTax
+        ? 'Household and tax status agree. Review income, shared expenses, and goals when they change.'
+        : 'A partner is saved, but filing status is not married. Review only the connected sections—no need to restart setup.',
+      tasks: [
+        task(true, 'Partner in household', 'household'),
+        task(marriedTax, 'Filing status reviewed', 'taxes'),
+        task((profile.income_items || []).length > 1, 'Household income reviewed', 'income'),
+        task(Boolean(profile.flags?.expenses_complete), 'Shared expenses confirmed', 'expenses'),
+        task(hasKeyword(goals, ['wedding', 'marriage']), 'Related goal reviewed', 'goals', true),
+      ],
+    });
+  }
+
+  if (members.some(member => ['child', 'dependent'].includes(String(member?.relationship || '').toLowerCase()))) {
+    transitions.push({
+      title: 'Child or new dependent',
+      detail: 'Keep the household change connected to childcare, leave, insurance-sized expenses, and a dated cash goal.',
+      tasks: [
+        task(true, 'Dependent in household', 'household'),
+        task(hasKeyword(expenses, ['child', 'daycare', 'care', 'school']), 'Child-related expenses reviewed', 'expenses'),
+        task(hasKeyword(goals, ['child', 'baby', 'college', 'education']), 'Dated child goal reviewed', 'goals'),
+        task((profile.income_items || []).length > 0, 'Leave or income step-down reviewed', 'income', true),
+      ],
+    });
+  }
+
+  if (assets.some(asset => String(asset?.asset_type || '').toLowerCase() === 'real_estate')) {
+    const hasMortgage = hasKeyword(debts, ['mortgage', 'home loan']);
+    const hasRent = hasKeyword(expenses, ['rent']);
+    transitions.push({
+      title: 'Home purchase',
+      detail: 'The property is saved. Finish the connected debt and housing-cost changes so net worth and cash flow move together.',
+      tasks: [
+        task(true, 'Property asset recorded', 'assets'),
+        task(hasMortgage, 'Mortgage or financing reviewed', 'debt'),
+        task(!hasRent, 'Rent removed or end-dated', 'expenses'),
+        task(hasKeyword(expenses, ['mortgage', 'property tax', 'home insurance', 'hoa']), 'Ongoing home costs reviewed', 'expenses'),
+      ],
+    });
+  }
+
+  return html`
+    <article class="profile-card ${transitions.some(item => item.tasks.some(row => !row.done && !row.optional)) ? 'profile-card-attn' : ''}">
+      <header class="profile-card-head">
+        <h3 class="profile-card-title">Life changes</h3>
+      </header>
+      ${transitions.length ? raw(transitions.map(transition => html`
+        <section class="profile-life-transition">
+          <h4>${esc(transition.title)}</h4>
+          <p class="profile-card-empty">${esc(transition.detail)}</p>
+          <ul class="profile-review-list">
+            ${raw(transition.tasks.map(row => html`
+              <li class="profile-review-item">
+                <span class="profile-review-tag">${row.done ? 'Done' : row.optional ? 'Optional' : 'Review'}</span>
+                <span class="profile-review-headline">${esc(row.label)}</span>
+                <a class="link-editorial" href="#profile?section=${esc(row.section)}" data-route>${row.done ? 'Open' : 'Review now'}</a>
+              </li>
+            `).join(''))}
+          </ul>
+        </section>
+      `).join('')) : html`
+        <p class="profile-card-empty">No connected transition is in progress. When a partner, dependent, or home is added, the related checklist appears here.</p>
+      `}
+      <footer class="profile-card-foot">
+        <a class="link-editorial" href="#profile?section=goals" data-route>Plan a future life event</a>
+        <span class="marginalia">Draft goals and preview Plan what-ifs before saving anything durable.</span>
+      </footer>
+    </article>
+  `;
+}
+
+function task(done, label, section, optional = false) {
+  return { done: Boolean(done), label, section, optional };
+}
+
+function hasKeyword(items, keywords) {
+  return (Array.isArray(items) ? items : []).some(item => {
+    const text = `${item?.label || ''} ${item?.category || ''} ${item?.notes || ''}`.toLowerCase();
+    return keywords.some(keyword => text.includes(keyword));
+  });
+}
+
 /* ─────────────  Aggregations  ───────────── */
 
 function sumMonthly(items) {
@@ -153,6 +258,11 @@ function sumField(items, key) {
     if (Number.isFinite(v)) { total += v; any = true; }
   }
   return any ? total : null;
+}
+
+function finiteOr(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
 }
 
 function estimateRunway(profile, monthlyExpenses) {
