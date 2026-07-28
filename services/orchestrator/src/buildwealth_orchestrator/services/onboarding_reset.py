@@ -124,12 +124,38 @@ class OnboardingResetService:
             raise OnboardingResetError(
                 "Workspace backup directory must be a direct child of the workspace root."
             )
-        forbidden = {
+        forbidden_exact = {
             Path("/").resolve(),
             Path.cwd().resolve(),
             Path.home().resolve(),
         }
-        if self.data_root in forbidden or len(self.data_root.parts) < 4:
+        forbidden_parents = {
+            Path("/").resolve(),
+            Path("/bin").resolve(),
+            Path("/boot").resolve(),
+            Path("/dev").resolve(),
+            Path("/etc").resolve(),
+            Path("/lib").resolve(),
+            Path("/lib64").resolve(),
+            Path("/proc").resolve(),
+            Path("/root").resolve(),
+            Path("/run").resolve(),
+            Path("/sbin").resolve(),
+            Path("/sys").resolve(),
+            Path("/tmp").resolve(),
+            Path("/usr").resolve(),
+            Path("/var").resolve(),
+            Path("/Applications").resolve(),
+            Path("/Library").resolve(),
+            Path("/System").resolve(),
+            Path("/private/tmp").resolve(),
+            Path("/private/var").resolve(),
+        }
+        if (
+            self.data_root in forbidden_exact
+            or self.data_root.parent in forbidden_parents
+            or len(self.data_root.parts) < 3
+        ):
             raise OnboardingResetError(
                 f"Refusing to reset unsafe workspace path: {self.data_root}"
             )

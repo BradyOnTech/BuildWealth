@@ -140,6 +140,16 @@ def test_onboarding_reset_archives_live_data_and_restarts_setup(tmp_path) -> Non
     assert (backup_dir / f"buildwealth-backup-{result['backup_id']}.tar.gz").exists()
 
 
+def test_onboarding_reset_accepts_the_container_data_root(monkeypatch, tmp_path) -> None:
+    monkeypatch.chdir(tmp_path)
+    service = OnboardingResetService(
+        data_root=tmp_path / "data",
+        backup_dir=tmp_path / "data" / "backups",
+    )
+
+    assert service.data_root == tmp_path / "data"
+
+
 def test_onboarding_reset_routes_preserve_owner_identity_and_require_confirmation(tmp_path) -> None:
     root = tmp_path / "workspaces" / "workspace-a"
     profile_path = root / "profile" / "financial_profile.json"
