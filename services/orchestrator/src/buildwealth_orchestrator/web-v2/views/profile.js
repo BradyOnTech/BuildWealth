@@ -2,10 +2,11 @@
 // The user-facing expression of Context Intelligence: what does BuildWealth
 // know, what's confirmed, what needs review, what is missing.
 //
-// The Profile view is composed of three concerns:
-//   - masthead + completion stats        (top of page)
-//   - tab navigation across sections     (#profile?section=...)
-//   - section content                    (overview cards or editable tables)
+// The Profile view is a two-pane workspace:
+//   - compact sticky header carrying the readiness meter   (./profile/shell.js)
+//   - grouped section rail, sticky and visible on load     (./profile/shell.js)
+//   - a "Needs you" band, capped at three gaps             (./profile/needs.js)
+//   - one section at a time in the pane                    (./profile/*.js)
 //
 // Section render is delegated to ./profile/*.js to keep this file under the
 // 300-line ceiling.
@@ -13,7 +14,6 @@
 import { api } from '../lib/api.js';
 import { state, emit } from '../lib/state.js';
 import { html, raw, $, esc, setView, delegate } from '../lib/dom.js';
-import { fmtRelative } from '../lib/format.js';
 import { skeleton } from '../lib/skeleton.js';
 import { renderOverview } from './profile/overview.js';
 import { renderTable, sectionForKey, TABLE_SECTIONS } from './profile/tables.js';
@@ -21,7 +21,8 @@ import { renderTaxes, submitTaxesForm } from './profile/taxes.js';
 import { renderInvesting, submitInvestingForm, addRestricted, removeRestricted } from './profile/investing.js';
 import { renderDataQuality, resolveConflict } from './profile/data_quality.js';
 import { renderEstateReadiness, submitEstateReadiness } from './profile/estate.js';
-import { renderSetupRail, onRailAction } from './profile/setup_rail.js';
+import { renderHeader, renderRail, renderResetDialog } from './profile/shell.js';
+import { renderNeedsBand, onNeedsAction } from './profile/needs.js';
 import {
   renderLifeInterview,
   onInterviewAction,
@@ -76,7 +77,6 @@ export function template() {
   return html`
     <section class="page" id="profile-page">
       <div class="profile-shell" id="profile-shell">
-        ${raw(masthead())}
         ${raw(skeletonBody())}
       </div>
     </section>
@@ -177,113 +177,31 @@ export function render() {
   const shell = $('#profile-shell');
   if (!shell) return;
   if (ui.loadError) {
-    setView(shell, html`
-      ${raw(masthead())}
-      <p class="error-banner">${ui.loadError}</p>
-    `);
+    setView(shell, html`<p class="error-banner">${ui.loadError}</p>`);
     return;
   }
   if (!ui.loaded) {
-    setView(shell, html`
-      ${raw(masthead())}
-      ${raw(skeletonBody())}
-    `);
+    setView(shell, raw(skeletonBody()));
     return;
   }
 
   const section = SECTIONS.find(s => s.id === ui.section) || SECTIONS[0];
   setView(shell, html`
-    ${raw(masthead())}
-    ${raw(reviewBanner())}
-    ${raw(renderSetupRail(ui))}
-    ${raw(tabs())}
-    <section class="profile-section profile-section-${section.id}">
-      ${raw(renderSectionBody(section))}
-    </section>
-    ${raw(resetRegistrationDialog())}
+    ${raw(renderHeader(ui))}
+    <div class="profile-workspace">
+      ${raw(renderRail(ui, SECTIONS))}
+      <div class="profile-pane">
+        ${raw(renderNeedsBand(ui))}
+        <section class="profile-section profile-section-${section.id}"
+                 id="profile-section" aria-label="${esc(section.label)}">
+          ${raw(renderSectionBody(section))}
+        </section>
+      </div>
+    </div>
+    ${raw(renderResetDialog(ui))}
   `);
   syncResetDialog();
-}
-
-/* ─────────────  Composition  ───────────── */
-
-function masthead() {
-  const o = ui.onboarding;
-  const readiness = o?.profile_readiness || null;
-  const readinessReady = String(readiness?.status || '').toLowerCase() === 'ready';
-  const readinessLabel = readinessReady
-    ? 'Core profile ready'
-    : readiness?.next_gap_title
-      ? `Needs ${readiness.next_gap_title}`
-      : 'In progress';
-  const reviewCount = ui.candidates.length;
-  const updated = ui.profile?.updated_at ? fmtRelative(ui.profile.updated_at) : null;
-
-  return html`
-    <header class="profile-masthead">
-      <p class="profile-eyebrow">§ Foundation · Personal context</p>
-      <h1 class="profile-title">Your financial picture</h1>
-      <p class="profile-lede">
-        BuildWealth uses this to personalize planning, Copilot, and review.
-        Confirm what's true, mark what's missing, and let the rest become
-        fewer surprises later.
-      </p>
-      <ul class="profile-stat-strip">
-        ${raw(stat('Readiness', readinessLabel, readinessReady ? 'ok' : 'warn'))}
-        ${raw(stat('Need review', reviewCount ? `${reviewCount}` : 'None', reviewCount ? 'attn' : 'ok'))}
-        ${raw(stat('Last updated', updated || '—', 'quiet'))}
-      </ul>
-    </header>
-  `;
-}
-
-function stat(label, value, tone) {
-  return html`
-    <li class="profile-stat ${tone || ''}">
-      <span class="profile-stat-label">${label}</span>
-      <span class="profile-stat-value">${value}</span>
-    </li>
-  `;
-}
-
-function reviewBanner() {
-  if (!ui.candidates.length) return '';
-  const first = ui.candidates[0];
-  const more = ui.candidates.length - 1;
-  return html`
-    <aside class="profile-review-banner">
-      <p class="profile-review-eyebrow">Review before relying on advice</p>
-      <p class="profile-review-body">
-        ${esc(first.headline || first.title || 'A suggested context update is waiting.')}
-        ${more > 0 ? html`<span class="profile-review-more">· ${more} more in Inbox</span>` : ''}
-      </p>
-      <div class="profile-review-actions">
-        <a class="link-editorial" href="#inbox" data-route>Review in Inbox</a>
-        <a class="link-editorial muted" href="#copilot" data-route>Ask Copilot to explain</a>
-      </div>
-    </aside>
-  `;
-}
-
-function tabs() {
-  return html`
-    <nav class="profile-tabs" aria-label="Profile sections">
-      ${raw(SECTIONS.map(tab).join(''))}
-    </nav>
-  `;
-}
-
-function tab(section) {
-  const isActive = section.id === ui.section;
-  const count = section.kind === 'table' ? (ui.profile?.[section.tableKey]?.length || 0) : null;
-  return html`
-    <button class="profile-tab ${isActive ? 'active' : ''}"
-            data-tab="${esc(section.id)}"
-            aria-pressed="${isActive ? 'true' : 'false'}">
-      <span class="profile-tab-label">${section.label}</span>
-      ${count != null ? html`<span class="profile-tab-count">${count}</span>` : ''}
-    </button>
-  `;
+  trackHeaderHeight();
 }
 
 function renderSectionBody(section) {
@@ -303,65 +221,6 @@ function renderSectionBody(section) {
   return '';
 }
 
-function resetRegistrationDialog() {
-  const preview = ui.resetPreview || null;
-  const phrase = preview?.confirmation_phrase || 'reset and register again';
-  return html`
-    <dialog class="profile-reset-dialog" data-profile-reset-dialog aria-labelledby="profile-reset-title">
-      <form method="dialog" class="profile-reset-dialog-shell" data-profile-reset-form>
-        <header class="profile-reset-dialog-head">
-          <div>
-            <p class="profile-card-kicker">Protected reset</p>
-            <h2 id="profile-reset-title">Register this profile again</h2>
-          </div>
-          <button class="profile-reset-close" type="button" data-profile-reset-close aria-label="Close reset dialog">×</button>
-        </header>
-
-        ${ui.resetLoading ? html`
-          <p class="profile-reset-loading">Reviewing the current workspace…</p>
-        ` : html`
-          <p class="profile-reset-lede">
-            This restarts the financial setup for your current workspace. It does not create a second
-            account or change how you sign in.
-          </p>
-          <div class="profile-reset-split">
-            <section>
-              <h3>Cleared from the active workspace</h3>
-              <ul>
-                ${(preview?.will_clear || []).map(item => html`<li>${esc(item)}</li>`)}
-              </ul>
-            </section>
-            <section>
-              <h3>Kept for you</h3>
-              <ul>
-                ${(preview?.will_preserve || []).map(item => html`<li>${esc(item)}</li>`)}
-              </ul>
-            </section>
-          </div>
-          ${preview ? html`
-            <p class="profile-reset-count">
-              ${Number(preview.file_count || 0).toLocaleString('en-US')} active file${Number(preview.file_count || 0) === 1 ? '' : 's'}
-              · ${formatBytes(Number(preview.size_bytes || 0))}
-              · ${Number(preview.existing_backup_count || 0)} existing backup${Number(preview.existing_backup_count || 0) === 1 ? '' : 's'}
-            </p>
-          ` : ''}
-          <label class="settings-field">
-            <span class="settings-label">Type ${esc(phrase)} to confirm</span>
-            <input class="settings-input" name="confirm" type="text" autocomplete="off" />
-          </label>
-          ${ui.resetError ? html`<p class="inline-warning">${esc(ui.resetError)}</p>` : ''}
-          <div class="profile-reset-actions">
-            <button class="btn btn-quiet" type="button" data-profile-reset-close>Keep my current data</button>
-            <button class="btn btn-danger" type="submit" ${ui.resetSubmitting || !preview ? 'disabled' : ''}>
-              ${ui.resetSubmitting ? 'Resetting…' : 'Create backup & restart setup'}
-            </button>
-          </div>
-        `}
-      </form>
-    </dialog>
-  `;
-}
-
 function syncResetDialog() {
   const dialog = document.querySelector('[data-profile-reset-dialog]');
   if (!(dialog instanceof HTMLDialogElement)) return;
@@ -376,25 +235,20 @@ function syncResetDialog() {
   if (!ui.resetOpen && dialog.open) dialog.close();
 }
 
-function formatBytes(value) {
-  const bytes = Number(value || 0);
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 /* ─────────────  Events  ───────────── */
 
 function attachHandlers() {
   const root = $('#profile-page');
   if (!root) return;
 
-  delegate(root, 'click', '[data-tab]', (_, el) => {
+  delegate(root, 'click', '[data-tab]', (event, el) => {
+    // Rail items are real anchors so they can be opened in a new tab and read by
+    // assistive tech as links. Only take over the plain left-click.
+    if (isModifiedClick(event)) return;
     const next = el.getAttribute('data-tab');
+    event.preventDefault();
     if (!next || next === ui.section) return;
-    ui.section = next;
-    history.replaceState(null, '', `#profile?section=${encodeURIComponent(next)}`);
-    render();
+    showSection(next);
   });
 
   delegate(root, 'click', '[data-profile-reset-open]', async (e) => {
@@ -466,11 +320,21 @@ function attachHandlers() {
     await persist();
   });
 
-  // Guided setup rail: skip / dismiss / doc-capture toggle / use-estimates /
-  // apply-candidate all route through one dispatcher in setup_rail.js.
-  delegate(root, 'click', '[data-rail-action]', (e, el) => {
+  // "Needs you" band: dismiss / doc-capture toggle / use-estimates /
+  // mark-no-debt / defer-goals / apply-candidate all route through one
+  // dispatcher in needs.js.
+  delegate(root, 'click', '[data-needs-action]', (e, el) => {
     e.preventDefault();
-    onRailAction(ui, el.getAttribute('data-rail-action'), el.dataset);
+    onNeedsAction(ui, el.getAttribute('data-needs-action'), el.dataset);
+  });
+
+  // A band row's "Open <section>" is an in-page jump, not a reload.
+  delegate(root, 'click', '[data-needs-goto]', (e, el) => {
+    if (isModifiedClick(e)) return;
+    e.preventDefault();
+    const next = el.getAttribute('data-needs-goto');
+    if (!next || !SECTIONS.some(s => s.id === next)) return;
+    showSection(next);
   });
 
   delegate(root, 'click', '[data-mix-preset]', (e, el) => {
@@ -536,6 +400,16 @@ function attachHandlers() {
   delegate(root, 'change', '[data-draft-field]', (_, el) => onDraftField(el));
   delegate(root, 'input', '[data-draft-field]', (_, el) => onDraftField(el));
 
+  // Overview rows keep their rationale behind a "?" so the value stays legible.
+  delegate(root, 'click', '[data-line-why]', (e, el) => {
+    e.preventDefault();
+    const detail = el.parentElement?.querySelector('.profile-line-detail');
+    if (!detail) return;
+    const open = detail.hasAttribute('hidden');
+    detail.toggleAttribute('hidden', !open);
+    el.setAttribute('aria-expanded', String(open));
+  });
+
   delegate(root, 'click', '[data-conflict-action]', (e, el) => {
     e.preventDefault();
     const action = el.getAttribute('data-conflict-action');
@@ -545,10 +419,55 @@ function attachHandlers() {
   });
 }
 
+// Cmd/Ctrl/Shift/middle-click must reach the browser so rail anchors can open in
+// a new tab.
+function isModifiedClick(event) {
+  return event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0;
+}
+
+function showSection(next) {
+  ui.section = next;
+  history.replaceState(null, '', `#profile?section=${encodeURIComponent(next)}`);
+  render();
+  focusSection();
+}
+
+// Switching sections replaces the pane's whole contents. Without moving focus,
+// keyboard and screen-reader users stay parked on the rail with no signal that
+// anything changed; without scrolling, sighted users land mid-page in the new
+// section with its header off-screen.
+function focusSection() {
+  // .app-main is height-locked with overflow hidden, so .content is the
+  // scroller — window.scrollTo(0, 0) does nothing on this shell.
+  document.querySelector('.content')?.scrollTo({ top: 0, behavior: 'smooth' });
+  const heading = $('#profile-section')?.querySelector('h2, h3');
+  if (!heading) return;
+  heading.setAttribute('tabindex', '-1');
+  heading.focus({ preventScroll: true });
+}
+
+// ── P1: the rail is sticky below a sticky header whose height is not a
+// constant: it is 114px normally and 218px between 901px and 969px, where the
+// header's two flex children wrap. A hard-coded offset let the header cover —
+// and swallow clicks on — the first rail items in that band. Measure instead.
+function trackHeaderHeight() {
+  const shell = $('#profile-shell');
+  const header = shell?.querySelector('.profile-header');
+  if (!shell || !header || typeof ResizeObserver === 'undefined') return;
+  const apply = () => shell.style.setProperty(
+    '--profile-header-h', `${Math.ceil(header.getBoundingClientRect().height)}px`);
+  apply();
+  headerObserver?.disconnect();
+  headerObserver = new ResizeObserver(apply);
+  headerObserver.observe(header);
+}
+
+let headerObserver = null;
+
 /* ─────────────  Plumbing  ───────────── */
 
-// Exported for setup_rail.js, which reloads the profile after applying an
-// inference candidate and must normalize it the same way load() does.
+// Exported for needs.js, which reloads the profile after applying an inference
+// candidate and must normalize it the same way load() does.
 export function ensureShape(profile) {
   const next = profile && typeof profile === 'object' ? { ...profile } : {};
   for (const key of [

@@ -181,19 +181,19 @@
 }
 .alert:last-child { border-bottom: 0; }
 .alert.breach { border-left-color: var(--oxblood); }
-.alert.watch  { border-left-color: var(--brass); }
+.alert.watch  { border-left-color: var(--brass-ink); }
 
 .alert-glyph {
   font-family: var(--serif);
   font-style: italic;
   font-variation-settings: 'opsz' 36;
   font-size: 22px;
-  color: var(--brass);
+  color: var(--brass-ink);
   text-align: center;
   line-height: 1;
 }
 .alert.breach .alert-glyph { color: var(--oxblood); }
-.alert.watch  .alert-glyph { color: var(--brass); }
+.alert.watch  .alert-glyph { color: var(--brass-ink); }
 
 .alert-tag {
   font-family: var(--mono);
@@ -203,7 +203,7 @@
   color: var(--ink-faint);
 }
 .alert.breach .alert-tag { color: var(--oxblood); }
-.alert.watch  .alert-tag { color: var(--brass); }
+.alert.watch  .alert-tag { color: var(--brass-ink); }
 
 .alert-title {
   font-family: var(--serif);
@@ -594,7 +594,7 @@ details.verdict-panel > summary:hover .verdict-line { color: var(--ink-strong); 
 }
 
 details.verdict-panel.tone-good .verdict-line { color: var(--forest); }
-details.verdict-panel.tone-warn .verdict-line { color: var(--brass); }
+details.verdict-panel.tone-warn .verdict-line { color: var(--brass-ink); }
 details.verdict-panel.tone-bad  .verdict-line { color: var(--oxblood); }
 
 .verdict-body {
@@ -960,7 +960,7 @@ details.verdict-panel.tone-bad  .verdict-line { color: var(--oxblood); }
 }
 
 .portfolio-guardrails-pill.warning {
-  color: var(--brass);
+  color: var(--brass-ink);
   border-color: color-mix(in srgb, var(--brass) 45%, var(--rule));
 }
 

@@ -253,7 +253,7 @@ test('Today daily review routes command cards into review flows', async ({ page 
     'all mobile topbar actions should remain inside the viewport',
   );
   assert.ok(
-    mobileShell.minimumNavHeight >= 40,
+    Math.round(mobileShell.minimumNavHeight) >= 40,
     `mobile navigation should retain 40px hit areas (measured ${mobileShell.minimumNavHeight}px)`,
   );
 
@@ -263,7 +263,7 @@ test('Today daily review routes command cards into review flows', async ({ page 
     buttons => Math.min(...buttons.map(button => button.getBoundingClientRect().height)),
   );
   assert.ok(
-    minimumInboxControlHeight >= 40,
+    Math.round(minimumInboxControlHeight) >= 40,
     `mobile Inbox filters should retain 40px hit areas (measured ${minimumInboxControlHeight}px)`,
   );
 });

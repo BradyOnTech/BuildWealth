@@ -1,25 +1,39 @@
 /* ─────────────────────────────────────────────────
    Profile · Your Financial Picture
-   Editorial masthead, stat strip, tab bar, overview cards,
-   editable tables. Shares the .settings-* form atoms for
-   inputs, labels, and hints.
+   Compact header with a readiness meter, grouped section rail,
+   a capped "Needs you" band, overview cards, editable tables.
+   Shares the .settings-* form atoms for inputs, labels, hints.
    ───────────────────────────────────────────────── */
 
 .profile-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--s-6);
   min-width: 0;
 }
 
-/* ───────────  Masthead  ─────────── */
+/* ───────────  Compact header  ───────────
+   Replaces a ~400px editorial masthead. On a working surface the readiness
+   meter is the headline: it answers "what is left" in one glance, which is the
+   question the page exists to answer. */
 
-.profile-masthead {
-  display: grid;
-  gap: var(--s-3);
-  max-width: 76ch;
-  padding-top: var(--s-2);
+.profile-header {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--s-6);
+  flex-wrap: wrap;
+  padding: var(--s-4) 0 var(--s-3);
+  margin: 0 calc(var(--gutter) * -1);
+  padding-left: var(--gutter);
+  padding-right: var(--gutter);
+  background: var(--paper);
+  border-bottom: var(--hair) solid var(--rule);
+  box-shadow: 0 8px 20px rgba(20, 24, 18, 0.04);
 }
+
+.profile-header-id { flex: 1 1 320px; min-width: 0; }
 
 .profile-eyebrow {
   font-family: var(--mono);
@@ -42,165 +56,271 @@
   font-family: var(--serif);
   font-variation-settings: 'opsz' 144;
   font-weight: 600;
-  font-size: var(--t-display);
+  font-size: var(--t-h1);
   letter-spacing: -0.022em;
-  line-height: 1.02;
+  line-height: 1.1;
   color: var(--ink-strong);
-  margin: 0;
-  text-wrap: balance;
+  margin: 2px 0 0;
 }
 
-.profile-lede {
-  font-family: var(--serif);
-  font-variation-settings: 'opsz' 24;
-  font-style: italic;
-  font-size: 17px;
-  line-height: var(--lh-body);
-  color: var(--ink-soft);
-  text-wrap: pretty;
-  margin: 0;
-  max-width: 64ch;
+.profile-subline {
+  margin: 3px 0 0;
+  font-size: var(--t-caption);
+  color: var(--ink-faint);
 }
+.profile-subline .link-editorial { font-size: var(--t-caption); color: var(--brass-ink); }
 
-.profile-stat-strip {
-  list-style: none;
-  margin: var(--s-3) 0 0;
-  padding: var(--s-3) 0;
+.profile-readiness {
+  flex: 0 1 300px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--s-5);
-  border-top: var(--hair) solid var(--rule);
-  border-bottom: var(--hair) solid var(--rule);
+  gap: 6px;
+  align-content: end;
 }
 
-.profile-stat {
-  display: grid;
-  gap: 2px;
-  position: relative;
-  padding-left: 14px;
+.profile-readiness-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+  flex-wrap: wrap;
 }
 
-.profile-stat::before {
-  content: '';
-  position: absolute;
-  left: 0; top: 6px;
-  width: 4px; height: 4px;
-  border-radius: 50%;
-  background: var(--ink-quiet);
-}
-.profile-stat.ok::before   { background: var(--forest); }
-.profile-stat.warn::before { background: var(--brass); }
-.profile-stat.attn::before { background: var(--oxblood); }
-
-.profile-stat-label {
+.profile-readiness-label {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--t-eyebrow);
   text-transform: uppercase;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.12em;
   color: var(--ink-faint);
 }
 
-.profile-stat-value {
-  font-family: var(--serif);
-  font-variation-settings: 'opsz' 72;
-  font-weight: 500;
-  font-size: 22px;
-  letter-spacing: var(--track-tight);
-  color: var(--ink-strong);
-  font-variant-numeric: tabular-nums;
+.profile-readiness-value { font-size: var(--t-body-sm); color: var(--ink); }
+
+.profile-readiness-meter {
+  height: 3px;
+  background: var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.profile-readiness-meter > i {
+  display: block;
+  height: 100%;
+  background: var(--forest);
+  transition: width var(--d-mid) var(--ease-out);
 }
 
-/* ───────────  Review banner  ─────────── */
-
-.profile-review-banner {
-  display: grid;
-  gap: var(--s-2);
-  padding: var(--s-4) var(--s-5);
-  border-left: 2px solid var(--brass);
-  background: var(--paper-bright);
-  border-radius: 0 var(--r-md) var(--r-md) 0;
-}
-
-.profile-review-eyebrow {
+.profile-readiness-next {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--t-eyebrow);
   text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--brass);
-  margin: 0;
-}
-
-.profile-review-body {
-  font-family: var(--serif);
-  font-variation-settings: 'opsz' 24;
-  font-size: 16px;
-  line-height: var(--lh-body);
-  color: var(--ink-strong);
-  margin: 0;
+  letter-spacing: 0.1em;
+  color: var(--brass-ink);
   text-wrap: pretty;
 }
+.profile-readiness-next.ready { color: var(--forest); }
+.profile-readiness .link-editorial { flex: none; font-size: var(--t-caption); }
 
-.profile-review-more {
-  color: var(--ink-faint);
-  font-style: italic;
-  margin-left: 4px;
+/* ───────────  Two-pane workspace  ─────────── */
+
+.profile-workspace {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  align-items: start;
+  gap: 0;
 }
 
-.profile-review-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s-5);
-  margin-top: var(--s-1);
+/* ───────────  Section rail  ───────────
+   Replaces a flat, wrapping 13-tab strip that rendered below an embedded editor
+   and so was never on screen at load. Grouping keeps it scannable and gives the
+   set room to grow. */
+
+.profile-rail {
+  position: sticky;
+  /* Offset measured from the live header by trackHeaderHeight(); the fallback
+     covers the interval before the first ResizeObserver callback. */
+  top: calc(var(--profile-header-h, 118px) + var(--s-2));
+  align-self: start;
+  max-height: calc(100vh - var(--profile-header-h, 118px) - var(--s-5));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--s-4) var(--s-4) var(--s-6) 0;
 }
 
-.link-editorial.muted {
-  color: var(--ink-soft);
-  border-color: var(--ink-quiet);
-}
-.link-editorial.muted:hover { color: var(--ink); border-color: var(--ink-soft); }
+.profile-rail-group + .profile-rail-group { margin-top: var(--s-4); }
 
-/* ───────────  Tabs  ─────────── */
-
-.profile-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s-1);
-  padding: var(--s-3) 0 var(--s-4);
-  border-bottom: var(--hair) solid var(--rule);
-}
-
-.profile-tab {
-  appearance: none;
-  background: transparent;
-  border: 0;
-  padding: 8px 14px;
+.profile-rail-label {
+  margin: 0 0 var(--s-2) var(--s-3);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-eyebrow);
   text-transform: uppercase;
   letter-spacing: 0.14em;
   color: var(--ink-faint);
-  cursor: pointer;
-  border-radius: var(--r-sm);
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  position: relative;
-  transition: color var(--d-fast) var(--ease-press), background var(--d-fast) var(--ease-press);
-}
-.profile-tab:hover { color: var(--ink); background: var(--shade); }
-.profile-tab.active {
-  color: var(--ink-strong);
-  background: var(--paper-bright);
-  box-shadow: inset 0 -2px 0 var(--gilt);
 }
 
-.profile-tab-count {
+.profile-rail-item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 38px;
+  padding: 0 var(--s-3);
+  border: 0;
+  border-radius: var(--r-sm);
+  color: var(--ink-soft);
+  font-size: var(--t-body-sm);
+  text-decoration: none;
+  transition: background var(--d-fast) var(--ease-press), color var(--d-fast) var(--ease-press);
+}
+.profile-rail-item:hover { background: var(--paper-bright); color: var(--ink-strong); }
+.profile-rail-item.active {
+  background: var(--paper-bright);
+  color: var(--ink-strong);
+  font-weight: 500;
+  box-shadow: inset 2px 0 0 var(--gilt);
+}
+
+.profile-rail-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.profile-rail-count {
+  margin-left: auto;
   font-family: var(--mono);
-  font-size: 10px;
-  color: var(--ink-quiet);
+  font-size: var(--t-caption);
+  color: var(--ink-faint);
   font-feature-settings: 'tnum';
 }
-.profile-tab.active .profile-tab-count { color: var(--ink-soft); }
+.profile-rail-count.zero { color: var(--brass-ink); }
+
+/* One status vocabulary, used by the rail and the needs band alike. */
+.profile-mark {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-pill);
+  display: grid;
+  place-items: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1;
+}
+.profile-mark-complete  { background: var(--forest); color: var(--paper-bright); }
+.profile-mark-todo      { border: var(--hair) dashed var(--rule-strong); color: transparent; }
+.profile-mark-attention { background: var(--brass-wash); border: var(--hair) solid var(--brass); color: var(--brass-ink); }
+
+.profile-pane {
+  min-width: 0;
+  padding: var(--s-5) 0 var(--s-8) var(--s-5);
+  border-left: var(--hair) solid var(--rule);
+  display: grid;
+  gap: var(--s-5);
+  align-content: start;
+  /* Sticky header would otherwise cover the top of whatever gets scrolled to. */
+  scroll-margin-top: 100px;
+}
+
+/* ───────────  "Needs you" band  ───────────
+   At most three gaps, each stating what it unlocks. Replaces the embedded
+   setup rail, which duplicated a second differently-numbered "step N of 5"
+   system and buried the page's navigation underneath itself. */
+
+.profile-needs {
+  padding: var(--s-4) var(--s-5);
+  border: var(--hair) solid var(--brass);
+  border-radius: var(--r-md);
+  background: var(--brass-wash);
+  display: grid;
+  gap: var(--s-3);
+}
+
+.profile-needs-eyebrow {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--t-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--brass-ink);
+}
+.profile-needs-title { font-size: var(--t-h3); color: var(--brass-ink); margin-top: 2px; }
+
+.profile-needs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s-2);
+  counter-reset: needs;
+}
+
+.profile-needs-item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 42px;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-sm);
+  background: rgba(245, 241, 230, 0.72);
+  font-size: var(--t-body-sm);
+}
+.profile-needs-item::before {
+  counter-increment: needs;
+  content: counter(needs);
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: var(--hair) solid var(--brass);
+  border-radius: var(--r-pill);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--brass-ink);
+}
+
+.profile-needs-copy { min-width: 0; display: grid; gap: 1px; }
+.profile-needs-copy strong { font-weight: 500; color: var(--ink); }
+.profile-needs-copy small { font-size: var(--t-caption); color: var(--ink-faint); }
+.profile-needs-item .btn { margin-left: auto; flex: none; }
+
+.profile-needs-found {
+  padding: var(--s-3);
+  border-radius: var(--r-sm);
+  background: rgba(245, 241, 230, 0.72);
+}
+.profile-needs-found-title {
+  margin: 0 0 var(--s-2);
+  font-family: var(--mono);
+  font-size: var(--t-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-faint);
+}
+.profile-needs-found-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
+.profile-needs-found-item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  font-size: var(--t-body-sm);
+}
+.profile-needs-found-item .btn { margin-left: auto; flex: none; }
+
+.profile-needs-alternates { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+
+.profile-needs-complete {
+  padding: 0;
+  border-color: var(--forest);
+  background: var(--forest-wash);
+}
+.profile-needs-done {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--t-body-sm);
+  color: var(--forest-deep);
+  padding: var(--s-3) var(--s-5);
+  min-height: var(--tap);
+}
+.profile-needs-done:hover { background: rgba(45, 93, 62, 0.06); }
 
 /* ───────────  Section frame  ─────────── */
 
@@ -215,8 +335,12 @@
 
 .profile-overview {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
   gap: var(--s-5) var(--s-6);
+  /* Cards size to their own content. Without this, grid stretches every card to
+     the tallest in its row and the shorter card's rows spread to fill it —
+     ~280px of dead space inside "Planning inputs". */
+  align-items: start;
 }
 
 .profile-card {
@@ -253,7 +377,7 @@
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.12em;
-  color: var(--brass);
+  color: var(--brass-ink);
   text-transform: uppercase;
 }
 
@@ -263,7 +387,7 @@
   font-size: 10px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--brass);
+  color: var(--brass-ink);
 }
 
 .profile-card-empty {
@@ -289,6 +413,40 @@
   flex-wrap: wrap;
   gap: var(--s-3) var(--s-5);
 }
+
+/* ───────────  Danger zone  ───────────
+   Production styled "Reset financial data & register again" as a bordered
+   oxblood link next to a "Continue setup" that rendered as plain text — the
+   destructive action read as the primary one. */
+
+.profile-danger {
+  margin-top: var(--s-4);
+  padding: var(--s-4);
+  border: var(--hair) dashed var(--rule-strong);
+  border-radius: var(--r-md);
+  display: grid;
+  gap: var(--s-2);
+  justify-items: start;
+}
+.profile-danger-title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: var(--t-h3);
+  color: var(--ink-soft);
+}
+.profile-danger p {
+  margin: 0;
+  max-width: 62ch;
+  font-size: var(--t-caption);
+  color: var(--ink-faint);
+  line-height: 1.55;
+}
+.profile-danger .btn-danger {
+  background: transparent;
+  border: var(--hair) solid var(--oxblood);
+  color: var(--oxblood);
+}
+.profile-danger .btn-danger:hover { background: var(--oxblood-wash); }
 
 .profile-registration-note {
   margin: 0;
@@ -479,14 +637,15 @@
   margin: 0;
   padding: 0;
   display: grid;
-  gap: var(--s-3);
+  align-content: start;   /* rows keep their rhythm instead of spreading */
+  gap: var(--s-2);
 }
 
 .profile-line {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 4px var(--s-4);
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 4px var(--s-3);
   padding-bottom: var(--s-2);
   border-bottom: var(--hair) dotted var(--rule);
 }
@@ -506,6 +665,27 @@
   color: var(--ink-strong);
   letter-spacing: 0.005em;
 }
+
+.profile-line-why {
+  appearance: none;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: var(--hair) solid var(--rule-strong);
+  border-radius: var(--r-pill);
+  background: none;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--ink-faint);
+  transition: color var(--d-fast) var(--ease-press), border-color var(--d-fast) var(--ease-press);
+}
+.profile-line-why:hover { color: var(--forest); border-color: var(--forest); }
+.profile-line-why[aria-expanded="true"] { color: var(--forest); border-color: var(--forest); background: var(--forest-wash); }
 
 .profile-line-detail {
   grid-column: 1 / -1;
@@ -529,11 +709,18 @@
 }
 
 .profile-review-item {
-  display: grid;
-  gap: 2px;
-  padding-bottom: var(--s-3);
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  min-height: 34px;
+  padding-bottom: var(--s-2);
   border-bottom: var(--hair) dotted var(--rule);
 }
+.profile-review-item > .profile-review-tag { flex: none; }
+.profile-review-item > .profile-review-headline { flex: 1 1 12ch; min-width: 0; }
+.profile-review-item > .profile-review-meta { flex: 1 1 100%; }
+.profile-review-item > .link-editorial { flex: none; margin-left: auto; font-size: var(--t-caption); }
 .profile-review-item:last-child { border-bottom: 0; padding-bottom: 0; }
 
 .profile-life-transition + .profile-life-transition {
@@ -553,7 +740,7 @@
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.16em;
-  color: var(--brass);
+  color: var(--brass-ink);
 }
 
 .profile-review-headline {
@@ -767,7 +954,7 @@
   font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.16em;
-  color: var(--brass);
+  color: var(--brass-ink);
   margin: 0;
 }
 
@@ -1026,7 +1213,6 @@
   .profile-guardrail { grid-template-columns: 1fr; }
   .profile-guardrail-input input,
   .profile-guardrail-input select { width: 100%; }
-  .profile-tab { min-height: 40px; align-items: center; }
   .btn.btn-sm { min-height: 40px; }
 }
 
@@ -1188,18 +1374,43 @@
 }
 
 .profile-doc-controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
+  display: grid;
   gap: var(--s-3);
   margin-top: var(--s-3);
+  justify-items: start;
 }
 
-.profile-doc-controls input[type="file"] {
-  font-size: var(--t-body-sm);
-  color: var(--ink-soft);
-  max-width: 100%;
+.profile-dropzone {
+  position: relative;
+  width: 100%;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: var(--s-5);
+  border: var(--hair) dashed var(--rule-strong);
+  border-radius: var(--r-md);
+  background: var(--paper-deep);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color var(--d-fast) var(--ease-press), background var(--d-fast) var(--ease-press);
 }
+.profile-dropzone:hover,
+.profile-dropzone.dragging { border-color: var(--forest); background: var(--forest-wash); }
+.profile-dropzone:focus-within { outline: 2px solid var(--forest); outline-offset: 2px; }
+.profile-dropzone strong { font-family: var(--serif); font-size: var(--t-h3); color: var(--ink-strong); }
+.profile-dropzone span { font-size: var(--t-caption); color: var(--ink-faint); }
+.profile-dropzone .profile-dropzone-file { font-family: var(--mono); color: var(--forest); }
+/* The real input stays in the DOM so its FileList survives; only its native
+   chrome is hidden. */
+.profile-dropzone input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+
 
 .profile-doc-review { margin-top: var(--s-3); }
 
@@ -1359,186 +1570,6 @@
 .profile-edit-static { color: var(--ink-faint); }
 
 .profile-row-actions .link-quiet + .link-quiet { margin-left: var(--s-2); }
-
-/* ─────────────────────────────────────────────────
-   Setup rail — guided profile setup (Workstream C)
-   Progress dots + the current step's editor inline,
-   above the tab strip until readiness is complete.
-   ───────────────────────────────────────────────── */
-
-.setup-rail {
-  display: grid;
-  gap: var(--s-4);
-  padding: var(--s-5);
-  border: var(--hair) solid var(--rule);
-  border-left: 2px solid var(--gilt);
-  background: var(--paper-bright);
-  border-radius: 0 var(--r-md) var(--r-md) 0;
-}
-
-.setup-rail-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--s-4);
-  flex-wrap: wrap;
-}
-
-.setup-rail-eyebrow {
-  font-family: var(--mono);
-  font-size: var(--t-eyebrow);
-  text-transform: uppercase;
-  letter-spacing: var(--track-eyebrow);
-  color: var(--ink-faint);
-  margin: 0;
-}
-.setup-rail-eyebrow::first-letter {
-  color: var(--gilt);
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: 1.4em;
-  vertical-align: -0.06em;
-  margin-right: 4px;
-}
-
-.setup-rail-dots {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-2);
-}
-
-.setup-rail-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ink-quiet);
-}
-.setup-rail-dot.done    { background: var(--forest); }
-.setup-rail-dot.current {
-  background: var(--gilt);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gilt) 25%, transparent);
-}
-
-.setup-rail-title {
-  font-family: var(--serif);
-  font-variation-settings: 'opsz' 72;
-  font-weight: 600;
-  font-size: 24px;
-  letter-spacing: var(--track-tight);
-  color: var(--ink-strong);
-  margin: 0;
-}
-
-.setup-rail-details {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: var(--s-1);
-}
-
-.setup-rail-details li {
-  font-family: var(--serif);
-  font-variation-settings: 'opsz' 24;
-  font-style: italic;
-  font-size: 15px;
-  line-height: var(--lh-body);
-  color: var(--ink-soft);
-  max-width: 64ch;
-}
-
-.setup-rail-alternates {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--s-2);
-}
-
-.setup-rail-alternates .chip { text-decoration: none; }
-
-.setup-rail-alternates .chip-accent {
-  border-color: var(--gilt);
-  color: var(--ink-strong);
-}
-
-.setup-rail-found {
-  display: grid;
-  gap: var(--s-2);
-  padding: var(--s-3) var(--s-4);
-  border-left: 2px solid var(--brass);
-  background: var(--shade);
-  border-radius: 0 var(--r-sm) var(--r-sm) 0;
-}
-
-.setup-rail-found-title {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--brass);
-  margin: 0;
-}
-
-.setup-rail-found-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: var(--s-2);
-}
-
-.setup-rail-found-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s-3);
-}
-
-.setup-rail-found-text {
-  font-size: var(--t-body-sm);
-  color: var(--ink);
-}
-
-.setup-rail-editor { display: grid; gap: var(--s-5); }
-
-.setup-rail-note {
-  font-style: italic;
-  color: var(--ink-faint);
-  margin: 0;
-}
-
-.setup-rail-foot {
-  display: flex;
-  align-items: baseline;
-  gap: var(--s-3);
-  border-top: var(--hair) solid var(--rule);
-  padding-top: var(--s-3);
-}
-
-.setup-rail-foot-note {
-  font-size: var(--t-body-sm);
-  color: var(--ink-faint);
-}
-
-.setup-rail-complete {
-  padding: var(--s-3) var(--s-5);
-  border-left-color: var(--forest);
-}
-
-.setup-rail-done {
-  appearance: none;
-  background: none;
-  border: 0;
-  padding: 0;
-  cursor: pointer;
-  text-align: left;
-  font-family: var(--serif);
-  font-variation-settings: 'opsz' 24;
-  font-style: italic;
-  font-size: 15px;
-  color: var(--ink-soft);
-}
-.setup-rail-done:hover { color: var(--ink-strong); }
 
 /* ───────────  Section replacement + connected property  ─────────── */
 
@@ -1810,4 +1841,136 @@
     display: grid;
     grid-template-columns: 1fr;
   }
+}
+
+/* ───────────  Compact empty state  ───────────
+   Section-scoped: the shared .empty-block spends ~48px of padding on each side
+   of a 36px pilcrow, which is right for a whole empty page and wrong for a
+   table that already has a composer sitting above it. */
+
+.profile-empty-line {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin: 0;
+  padding: var(--s-3) var(--s-4);
+  border: var(--hair) dashed var(--rule-strong);
+  border-radius: var(--r-sm);
+  background: var(--paper-bright);
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 24;
+  font-style: italic;
+  font-size: var(--t-body-sm);
+  color: var(--ink-soft);
+}
+.profile-empty-mark {
+  flex: none;
+  font-family: var(--mono);
+  font-style: normal;
+  font-size: 12px;
+  color: var(--brass-ink);
+}
+
+/* ───────────  Narrow: rail becomes a snap strip  ─────────── */
+
+@media (max-width: 900px) {
+  .profile-workspace { grid-template-columns: minmax(0, 1fr); }
+
+  .profile-rail {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    display: flex;
+    gap: var(--s-2);
+    padding: var(--s-2) 0;
+    background: var(--paper);
+    border-bottom: var(--hair) solid var(--rule);
+  }
+  .profile-rail-group { display: flex; gap: var(--s-2); }
+  .profile-rail-group + .profile-rail-group { margin-top: 0; }
+  .profile-rail-label { display: none; }
+  .profile-rail-item {
+    min-height: var(--tap);
+    white-space: nowrap;
+    scroll-snap-align: start;
+    border: var(--hair) solid var(--rule);
+  }
+  .profile-rail-item.active { border-color: var(--gilt); }
+
+  .profile-pane { border-left: 0; padding: var(--s-4) 0 var(--s-7); }
+  .profile-header { position: static; margin: 0; padding-left: 0; padding-right: 0; }
+  .profile-needs-item { flex-wrap: wrap; }
+  .profile-needs-item .btn { margin-left: 0; width: 100%; justify-content: center; }
+}
+
+.profile-needs-more {
+  margin: 4px 0 0;
+  font-size: var(--t-caption);
+  color: var(--brass-ink);
+}
+
+/* Chips in the band need a visible edge: the global .chip is border-0 and only
+   reveals itself on hover, which is right in a dense toolbar and wrong for the
+   one row of escape hatches on this surface. */
+.profile-needs-alternates .chip {
+  min-height: 34px;
+  border: var(--hair) solid var(--rule-strong);
+  border-radius: var(--r-sm);
+  background: rgba(245, 241, 230, 0.72);
+  text-decoration: none;
+  color: var(--ink-soft);
+}
+.profile-needs-alternates .chip:hover { background: var(--paper-bright); color: var(--ink-strong); border-color: var(--ink-soft); }
+.profile-needs-alternates .chip-accent { border-color: var(--gilt); color: var(--ink-strong); }
+.profile-needs-alternates .chip:disabled {
+  cursor: default;
+  opacity: 0.5;
+  background: transparent;
+  border-color: var(--rule);
+}
+.profile-needs-alternates .chip:disabled:hover { background: transparent; color: var(--ink-soft); }
+.profile-needs-apply { min-height: 32px; border: var(--hair) solid var(--rule-strong); border-radius: var(--r-sm); }
+.profile-needs-item > .link-editorial { margin-left: auto; flex: none; font-size: var(--t-caption); }
+
+/* 20px reads better beside a value than 24px does, so the visual stays small
+   and an inset pseudo-element carries the 24px target. */
+.profile-line-why { position: relative; }
+.profile-line-why::before { content: ''; position: absolute; inset: -4px; }
+
+.profile-dropzone-error:empty { display: none; }
+.profile-dropzone-error {
+  font-size: var(--t-caption);
+  color: var(--oxblood);
+  font-weight: 500;
+}
+
+/* ───────────  "Needs you" — the workbench form  ───────────
+   One line on a section page. The full band is Overview's job; here you are
+   already mid-task, so this only says what is left elsewhere and gets out of
+   the way. ~44px against the band's ~300px. */
+
+.profile-needs-line {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  min-height: var(--tap);
+  padding: var(--s-2) var(--s-4);
+  border: var(--hair) solid var(--rule);
+  border-left: 2px solid var(--brass);
+  border-radius: var(--r-sm);
+  background: var(--paper-bright);
+  font-size: var(--t-body-sm);
+}
+.profile-needs-line-text { min-width: 0; display: flex; align-items: baseline; gap: var(--s-2); flex-wrap: wrap; }
+.profile-needs-line-text strong { font-weight: 500; color: var(--ink); }
+.profile-needs-line-next { color: var(--ink-faint); font-size: var(--t-caption); }
+.profile-needs-line > .link-editorial { margin-left: auto; flex: none; font-size: var(--t-caption); }
+
+@media (max-width: 620px) {
+  .profile-needs-line > .link-editorial { margin-left: 0; }
 }

@@ -630,7 +630,7 @@
 .status-button.quiet .dot {
   background: var(--ink-quiet);
 }
-.status-button.warn { color: var(--brass); }
+.status-button.warn { color: var(--brass-ink); }
 .status-button.attn { color: var(--oxblood); }
 .status-label {
   overflow: hidden;
@@ -785,7 +785,7 @@ a.status-row:hover {
   padding: 2px 6px;
   border-radius: var(--r-pill);
   background: var(--brass-soft);
-  color: var(--brass);
+  color: var(--brass-ink);
 }
 
 .workspace-dropdown {

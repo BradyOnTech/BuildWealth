@@ -90,14 +90,25 @@ export function renderOverview(ui) {
 
 /* ─────────────  Cards  ───────────── */
 
+// Every row used to carry two permanent lines of explanatory prose, which turned
+// a nine-row card into a 570px one. The rationale is still one tap away — it
+// just no longer competes with the number it explains.
 function card(title, lines, opts = {}) {
-  const items = lines.map(line => `
+  const items = lines.map((line, index) => {
+    const detailId = `profile-why-${slug(title)}-${index}`;
+    return `
     <li class="profile-line ${line.tone || ''}">
       <span class="profile-line-label">${esc(line.label)}</span>
       <span class="profile-line-value">${esc(line.value)}</span>
-      ${line.detail ? `<span class="profile-line-detail">${esc(line.detail)}</span>` : ''}
+      ${line.detail ? `
+        <button class="profile-line-why" type="button" data-line-why
+                aria-expanded="false" aria-controls="${detailId}"
+                aria-label="Why ${esc(line.label)} matters">?</button>
+        <span class="profile-line-detail" id="${detailId}" hidden>${esc(line.detail)}</span>
+      ` : ''}
     </li>
-  `).join('');
+  `;
+  }).join('');
 
   return html`
     <article class="profile-card">
@@ -114,6 +125,10 @@ function card(title, lines, opts = {}) {
 
 function line(label, value, detail) {
   return { label, value: value || '—', detail };
+}
+
+function slug(text) {
+  return String(text).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
 
 function estateSummary(estate) {
@@ -183,17 +198,20 @@ export function renderRegistrationCard(ui = {}) {
       </header>
       <p class="profile-card-empty">${journeyLabel}</p>
       <div class="profile-registration-actions">
-        <a class="btn btn-quiet" href="#setup" data-route>
-          ${complete ? 'Review setup journey' : 'Continue setup'}
+        <a class="btn btn-primary" href="#setup" data-route>
+          ${complete ? 'Review setup journey' : 'Continue setup'} <span aria-hidden="true">→</span>
         </a>
-        <button class="link-editorial danger" type="button" data-profile-reset-open>
+      </div>
+      <div class="profile-danger">
+        <p class="profile-danger-title">Danger zone</p>
+        <p class="profile-registration-note">
+          Resetting keeps your BuildWealth sign-in and household ownership. It creates a recovery backup,
+          clears this workspace’s financial data, and starts Setup again from the beginning.
+        </p>
+        <button class="btn btn-danger btn-sm" type="button" data-profile-reset-open>
           Reset financial data &amp; register again
         </button>
       </div>
-      <p class="profile-registration-note">
-        Resetting keeps your BuildWealth sign-in and household ownership. It creates a recovery backup,
-        clears this workspace’s financial data, and starts Setup again from the beginning.
-      </p>
     </article>
   `;
 }

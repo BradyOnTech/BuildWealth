@@ -165,7 +165,7 @@
 .legend-swatch.line-swatch.chart-line-s0 { border-top-color: var(--ink-strong); }
 .legend-swatch.line-swatch.chart-line-s1 { border-top-color: var(--forest); }
 .legend-swatch.line-swatch.chart-line-s2 { border-top-color: var(--oxblood-soft); }
-.legend-swatch.line-swatch.chart-line-s3 { border-top-color: var(--brass); }
+.legend-swatch.line-swatch.chart-line-s3 { border-top-color: var(--brass-ink); }
 .legend-swatch.line-swatch.chart-line-s4 { border-top-color: var(--forest-soft); border-top-style: dashed; }
 
 /* Hover readout — crosshair + floating values (lib/chart_hover.js) */

@@ -721,7 +721,7 @@
 }
 
 .simulation-confidence.high { color: var(--forest); }
-.simulation-confidence.medium { color: var(--brass); }
+.simulation-confidence.medium { color: var(--brass-ink); }
 .simulation-confidence.low { color: var(--oxblood); }
 
 .simulation-explainer-grid {

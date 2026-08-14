@@ -1,382 +1,296 @@
 /* ─────────────────────────────────────────────────
    Setup · first-outcome journey
-   A calm editorial path across existing product surfaces.
+   A focused flow: collapsed app chrome, one bar, one
+   question, one footer. Nothing repeats between them.
    ───────────────────────────────────────────────── */
 
+/* ───────────  Focused shell  ───────────
+   app.js stamps body.shell-focus for any view with meta.focus. Onboarding is a
+   destination, not a page inside the app — a five-step flow should not offer
+   seven sideways exits, and the flow's own bar carries the way back. */
+
+body.shell-focus .app-shell { grid-template-columns: minmax(0, 1fr); }
+body.shell-focus .sidebar,
+body.shell-focus .topbar,
+body.shell-focus .tools-drawer,
+body.shell-focus .tools-scrim { display: none; }
+body.shell-focus .content { padding: 0; }
+body.shell-focus .page { gap: 0; }
+
 .setup-shell {
-  width: min(1120px, 100%);
-  margin: 0 auto;
+  min-height: 100%;
   display: grid;
-  gap: var(--s-6);
-  padding-bottom: var(--s-7);
+  grid-template-rows: auto 1fr auto;
 }
 
-.setup-masthead {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--s-6);
-  padding: var(--s-4) 0 var(--s-5);
+/* ───────────  Flow bar  ─────────── */
+
+.setup-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-5);
+  padding: var(--s-2) var(--gutter);
+  background: var(--paper);
   border-bottom: var(--hair) solid var(--rule);
 }
 
-.setup-masthead > div {
-  max-width: 760px;
+.setup-wordmark {
+  border: 0;
+  font-family: var(--serif);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink-strong);
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+}
+.setup-wordmark i { font-style: italic; color: var(--brass-ink); }
+.setup-wordmark:hover { color: var(--forest); }
+
+/* The journey's only progress indicator. Production also rendered a "0/5
+   journey steps finished" aside beside it, saying the same thing twice. */
+.setup-progress {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: var(--s-2);
+  max-width: 720px;
+  margin: 0 auto;
 }
 
-.setup-folio,
+.setup-progress-step {
+  appearance: none;
+  background: none;
+  border: 0;
+  min-width: 0;
+  min-height: 60px;
+  padding: 8px 4px;
+  cursor: pointer;
+  display: grid;
+  grid-template-rows: 3px auto auto;
+  align-content: center;
+  gap: 5px;
+  text-align: left;
+  font: inherit;
+  color: var(--ink-faint);
+  border-radius: var(--r-sm);
+  transition: color var(--d-fast) var(--ease-press);
+}
+
+.setup-progress-step:hover:not(:disabled) { color: var(--ink-strong); }
+.setup-progress-step:disabled { cursor: default; }
+/* No opacity dimming: the upcoming labels are the only preview of what is
+   left, and 0.7 on --ink-faint composites to 2.81:1. Rank is carried by the
+   track colour instead. */
+
+.setup-progress-track {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--rule);
+  transition: background-color var(--d-mid) var(--ease-out);
+}
+
+.setup-progress-step.complete .setup-progress-track { background: var(--forest); }
+.setup-progress-step.current  .setup-progress-track { background: var(--gilt); }
+.setup-progress-step.skipped  .setup-progress-track { background: var(--brass-soft); }
+
+.setup-progress-step.complete { color: var(--forest); }
+.setup-progress-step.skipped  { color: var(--brass-ink); }
+.setup-progress-step.current  { color: var(--ink-strong); }
+
+.setup-progress-label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.setup-progress-step.current .setup-progress-label { font-weight: 500; }
+
+.setup-progress-state {
+  min-height: 12px;
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.setup-bar-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-4);
+}
+
+.setup-deferred {
+  font-family: var(--mono);
+  font-size: var(--t-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--brass-ink);
+}
+
+.setup-leave {
+  flex: 0 0 auto;
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--t-body-sm);
+  color: var(--ink-soft);
+  border-bottom-color: var(--rule-strong);
+}
+.setup-leave:hover { color: var(--forest); }
+
+/* ───────────  The one question  ─────────── */
+
+.setup-card {
+  width: min(660px, 100%);
+  margin: 0 auto;
+  /* Bottom padding clears the sticky footer; without it the last field sits
+     underneath the primary action. */
+  padding: var(--s-8) var(--s-5) calc(var(--s-8) + var(--tap));
+  display: grid;
+  align-content: start;
+  gap: var(--s-5);
+}
+
+.setup-card-copy { display: grid; gap: var(--s-3); }
 .setup-eyebrow,
 .setup-path-eyebrow {
   font-family: var(--mono);
   font-size: var(--t-eyebrow);
   text-transform: uppercase;
   letter-spacing: var(--track-eyebrow);
-  color: var(--forest);
+  color: var(--ink-faint);
 }
-
-.setup-masthead h1 {
-  margin-top: var(--s-2);
-  font-size: var(--t-display);
-  max-width: 16ch;
+.setup-card h2 {
+  font-size: clamp(28px, 3.6vw, 42px);
+  max-width: 22ch;
 }
-
-.setup-masthead p:last-child {
-  margin-top: var(--s-3);
-  max-width: 62ch;
-  color: var(--ink-soft);
-}
-
-.setup-leave {
-  flex: 0 0 auto;
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ink-soft);
-  border-bottom-color: var(--rule-strong);
-}
-
-.setup-progress {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 1px;
-  padding: 1px;
-  background: rgba(20, 24, 18, 0.06);
-  border-radius: calc(var(--r-lg) + 1px);
-  box-shadow: var(--shadow-quiet);
-  overflow: hidden;
-}
-
-.setup-progress-step {
-  appearance: none;
-  border: 0;
-  min-width: 0;
-  min-height: 64px;
-  padding: 10px 12px;
-  background: var(--paper-bright);
-  color: var(--ink-soft);
-  cursor: pointer;
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  align-items: center;
-  column-gap: 8px;
-  text-align: left;
-  font: inherit;
-  transition-property: background-color, color, transform;
-  transition-duration: var(--d-fast);
-  transition-timing-function: var(--ease-out);
-}
-
-.setup-progress-step:first-child { border-radius: var(--r-lg) 0 0 var(--r-lg); }
-.setup-progress-step:last-child { border-radius: 0 var(--r-lg) var(--r-lg) 0; }
-.setup-progress-step:hover:not(:disabled) { background: #faf6ec; color: var(--ink); }
-.setup-progress-step:active:not(:disabled) { transform: scale(0.96); }
-.setup-progress-step:disabled { cursor: wait; opacity: 0.65; }
-
-.setup-progress-step.current {
-  background: var(--ink);
-  color: var(--paper-bright);
-}
-
-.setup-progress-step.complete { color: var(--forest-deep); }
-.setup-progress-step.skipped { color: var(--brass); }
-
-.setup-progress-number {
-  grid-row: 1 / 3;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--r-pill);
-  display: grid;
-  place-items: center;
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: 12px;
-  background: rgba(20, 24, 18, 0.06);
-}
-
-.setup-progress-step.current .setup-progress-number {
-  background: rgba(245, 241, 230, 0.12);
-  color: var(--gilt);
-}
-
-.setup-progress-label {
-  font-size: var(--t-body-sm);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.setup-progress-state {
-  min-height: 14px;
-  font-family: var(--mono);
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  opacity: 0.68;
-}
-
-.setup-workspace {
-  display: grid;
-  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
-  gap: var(--s-6);
-  align-items: start;
-}
-
-.setup-context {
-  position: sticky;
-  top: var(--s-4);
-  padding: var(--s-5);
-  color: var(--ink-soft);
-}
-
-.setup-context-number {
-  font-size: 32px;
-  color: var(--ink);
-  line-height: 1;
-}
-
-.setup-context-label,
-.setup-context-deferred {
-  margin-top: 6px;
-  font-size: var(--t-caption);
-}
-
-.setup-context-rule {
-  width: 36px;
-  height: 1px;
-  margin: var(--s-5) 0;
-  background: var(--gilt);
-}
-
-.setup-context-note {
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: var(--t-body-sm);
-  line-height: var(--lh-body);
-}
-
-.setup-context-deferred { color: var(--brass); }
-
-.setup-card {
-  min-height: 520px;
-  padding: clamp(28px, 5vw, 56px);
-  background: var(--paper-bright);
-  border-radius: 18px;
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.06),
-    0 1px 2px -1px rgba(0, 0, 0, 0.06),
-    0 18px 48px rgba(20, 24, 18, 0.07);
-  display: grid;
-  align-content: start;
-  gap: var(--s-6);
-}
-
-.setup-card-copy { max-width: 720px; }
-.setup-card h2 { margin-top: 8px; font-size: clamp(28px, 4vw, 44px); max-width: 19ch; }
-.setup-lede { margin-top: var(--s-3); color: var(--ink-soft); max-width: 64ch; font-size: 16px; }
+.setup-card h2:focus-visible { outline: 2px solid var(--forest); outline-offset: 4px; }
+.setup-lede { color: var(--ink-soft); max-width: 48ch; font-size: 16px; }
 
 .setup-enter {
   opacity: 0;
   transform: translateY(8px);
-  filter: blur(2px);
   animation: setup-enter var(--d-page) var(--ease-page) forwards;
 }
-.setup-enter:nth-child(2) { animation-delay: 60ms; }
-.setup-enter:nth-child(3) { animation-delay: 120ms; }
+.setup-enter:nth-child(2) { animation-delay: 50ms; }
+.setup-enter:nth-child(3) { animation-delay: 100ms; }
 
 @keyframes setup-enter {
-  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.setup-principles,
-.setup-checklist {
-  display: grid;
-  gap: var(--s-3);
-}
+.setup-principles { display: grid; gap: 0; }
 
 .setup-principle {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-columns: 26px minmax(0, 1fr);
   gap: var(--s-3);
   padding: var(--s-4) 0;
   border-bottom: var(--hair) solid var(--rule-soft);
 }
-
 .setup-principle:last-child { border-bottom: 0; }
-.setup-principle-mark { font-family: var(--serif); font-style: italic; color: var(--gilt); font-size: 18px; }
+.setup-principle-mark { font-family: var(--serif); font-style: italic; color: var(--brass-ink); font-size: 18px; }
 .setup-principle h3 { font-size: var(--t-h3); }
 .setup-principle p { margin-top: 4px; color: var(--ink-soft); font-size: var(--t-body-sm); }
 
-.setup-actions {
-  margin-top: var(--s-6);
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--s-4);
-}
+/* ───────────  Foundation checklist  ───────────
+   Each item states its own gap and offers a deep link, but the form below
+   covers all four without leaving the flow. Production offered the links
+   *instead* of a return path, which stranded anyone who followed one. */
 
-.setup-actions > p { color: var(--ink-faint); font-size: var(--t-caption); }
-.setup-next { padding-left: 18px; padding-right: 16px; min-height: 44px; }
+.setup-checklist { display: grid; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
 
 .setup-check {
-  min-height: 68px;
-  padding: 12px 14px;
+  min-height: 56px;
+  padding: 10px var(--s-4);
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) 24px;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  border: 0;
-  border-radius: var(--r-lg);
-  background: rgba(20, 24, 18, 0.025);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05);
-  transition-property: background-color, box-shadow, transform;
-  transition-duration: var(--d-fast);
-  transition-timing-function: var(--ease-out);
-}
-
-.setup-check:hover {
-  background: #fffaf0;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), var(--shadow-quiet);
-}
-.setup-check:active { transform: scale(0.96); }
-.setup-check.complete { background: rgba(45, 93, 62, 0.055); }
-.setup-check-mark { color: var(--brass); font-family: var(--mono); }
-.setup-check.complete .setup-check-mark { color: var(--forest); }
-.setup-check-copy { display: grid; gap: 2px; min-width: 0; }
-.setup-check-copy strong { color: var(--ink); font-size: var(--t-body-sm); }
-.setup-check-copy small { color: var(--ink-soft); font-size: var(--t-caption); white-space: normal; }
-.setup-check-arrow { color: var(--ink-faint); transition: transform var(--d-fast) var(--ease-out); }
-.setup-check:hover .setup-check-arrow { transform: translateX(2px); }
-
-.setup-paths {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--s-4);
-}
-
-.setup-path {
-  min-height: 190px;
-  padding: var(--s-5);
-  border: 0;
-  border-radius: 14px;
-  background: rgba(20, 24, 18, 0.025);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.055), var(--shadow-quiet);
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--s-2);
-  transition-property: background-color, box-shadow, transform;
-  transition-duration: var(--d-fast);
-  transition-timing-function: var(--ease-out);
-}
-
-.setup-path:hover { background: #fffaf0; box-shadow: var(--shadow-lift); }
-.setup-path:active { transform: scale(0.96); }
-.setup-path strong { margin-top: var(--s-2); font-family: var(--serif); font-size: var(--t-h2); color: var(--ink); }
-.setup-path > span:not(.setup-path-eyebrow, .setup-path-arrow) { color: var(--ink-soft); font-size: var(--t-body-sm); }
-.setup-path-arrow { margin-top: auto; color: var(--forest); font-weight: 600; font-size: var(--t-caption); }
-
-.setup-evidence {
-  margin-top: var(--s-5);
-  padding: 12px 14px;
-  display: flex;
-  gap: 10px;
-  color: var(--brass);
-  background: rgba(168, 132, 44, 0.06);
+  gap: var(--s-3);
+  border: var(--hair) solid var(--rule);
   border-radius: var(--r-md);
-  font-size: var(--t-body-sm);
+  background: var(--paper-bright);
 }
-.setup-evidence.ready { color: var(--forest); background: rgba(45, 93, 62, 0.06); }
+.setup-check.complete { background: var(--forest-wash); border-color: transparent; }
+.setup-check-mark { font-family: var(--mono); font-size: 12px; color: var(--brass-ink); }
+.setup-check.complete .setup-check-mark { color: var(--forest); }
+.setup-check-copy { display: grid; gap: 1px; min-width: 0; }
+.setup-check-copy strong { color: var(--ink); font-size: var(--t-body-sm); font-weight: 500; }
+.setup-check-copy small { color: var(--ink-faint); font-size: var(--t-caption); }
+.setup-check-link {
+  flex: none;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--t-caption);
+  white-space: nowrap;
+  color: var(--ink-soft);
+  border-bottom-color: var(--rule-strong);
+}
+.setup-check-link:hover { color: var(--forest); }
 
-.setup-notice {
-  padding: 12px 14px;
-  border-left: 2px solid var(--forest);
-  background: rgba(45, 93, 62, 0.06);
-  color: var(--forest-deep);
-  font-size: var(--t-body-sm);
-}
+/* ───────────  Inline forms  ─────────── */
 
 .setup-inline-form {
-  margin-top: var(--s-5);
-  padding: var(--s-5);
-  border-top: 2px solid var(--ink);
-  border-bottom: var(--hair) solid var(--rule);
-  background: rgba(20, 24, 18, 0.018);
-}
-
-.setup-form-heading {
+  padding: var(--s-5) 0 0;
+  border-top: var(--hair) solid var(--rule-strong);
   display: grid;
-  grid-template-columns: minmax(180px, 0.8fr) minmax(240px, 1.2fr);
-  gap: var(--s-5);
-  align-items: end;
-}
-
-.setup-form-heading h3 {
-  margin-top: 5px;
-  font-family: var(--serif);
-  font-size: var(--t-h2);
-}
-
-.setup-form-heading > p {
-  color: var(--ink-soft);
-  font-size: var(--t-body-sm);
-}
-
-.setup-form-grid {
-  margin-top: var(--s-5);
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--s-4);
 }
+
+.setup-form-heading { display: grid; gap: 4px; }
+.setup-form-heading h3 { font-family: var(--serif); font-size: var(--t-h2); }
+.setup-form-note { color: var(--ink-soft); font-size: var(--t-body-sm); max-width: 56ch; }
+
+.setup-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--s-4);
+}
+.setup-field-span { grid-column: 1 / -1; }
 
 .setup-field {
   min-width: 0;
   display: grid;
   align-content: start;
-  gap: 7px;
+  gap: 6px;
   color: var(--ink);
-  font-size: var(--t-caption);
-  font-weight: 600;
+  font-size: var(--t-body-sm);
+  font-weight: 500;
 }
+.setup-field > span i { font-style: normal; font-weight: 400; color: var(--ink-faint); }
 
 .setup-field small {
   color: var(--ink-faint);
-  font-size: 11px;
+  font-size: var(--t-caption);
   font-weight: 400;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 
-.setup-field input,
-.setup-field select,
 .setup-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
   width: 100%;
-  min-height: 44px;
+  min-height: var(--tap);
 }
 
 .setup-field input,
 .setup-field select {
+  width: 100%;
+  min-height: var(--tap);
   appearance: none;
   border: var(--hair) solid var(--rule-strong);
   border-radius: var(--r-md);
@@ -385,25 +299,19 @@
   color: var(--ink);
   font: inherit;
   font-weight: 400;
-  transition-property: border-color, box-shadow, background-color;
+  transition-property: border-color, box-shadow;
   transition-duration: var(--d-fast);
   transition-timing-function: var(--ease-out);
 }
 
 .setup-field input:hover,
-.setup-field select:hover { border-color: var(--ink-faint); }
+.setup-field select:hover { border-color: var(--ink-decor); }
 
 .setup-field input:focus,
 .setup-field select:focus {
   outline: none;
   border-color: var(--forest);
   box-shadow: 0 0 0 3px rgba(45, 93, 62, 0.12);
-}
-
-.setup-input-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
 }
 
 .setup-input-wrap b {
@@ -416,21 +324,39 @@
   font-weight: 400;
   pointer-events: none;
 }
-
 .setup-input-wrap b + input { padding-left: 27px; }
 
 .setup-form-footer {
-  margin-top: var(--s-5);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--s-4);
 }
+.setup-form-footer .btn { min-height: var(--tap); }
 
-.setup-form-footer .btn { min-height: 44px; }
+/* ───────────  Stage extras  ─────────── */
+
+.setup-evidence {
+  padding: 10px 14px;
+  display: flex;
+  gap: 10px;
+  color: var(--brass-ink);
+  background: var(--brass-wash);
+  border-radius: var(--r-md);
+  font-size: var(--t-body-sm);
+}
+.setup-evidence.ready { color: var(--forest-deep); background: var(--forest-wash); }
+.setup-evidence-mark { font-family: var(--mono); flex: none; }
+
+.setup-notice {
+  padding: 12px 14px;
+  border-left: 2px solid var(--forest);
+  background: var(--forest-wash);
+  color: var(--forest-deep);
+  font-size: var(--t-body-sm);
+}
 
 .setup-alternates {
-  margin-top: var(--s-4);
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
@@ -438,13 +364,19 @@
   color: var(--ink-faint);
   font-size: var(--t-caption);
 }
-
-.setup-alternates a { color: var(--forest); border-bottom-color: var(--rule-strong); }
+.setup-alternates a {
+  color: var(--forest);
+  border-bottom-color: var(--rule-strong);
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+}
 
 .setup-future-prompt {
-  padding: var(--s-5);
+  padding: var(--s-4) var(--s-5);
   border-left: 2px solid var(--gilt);
-  background: rgba(20, 24, 18, 0.025);
+  background: var(--paper-bright);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
 }
 .setup-quote { font-family: var(--serif); font-size: var(--t-h2); line-height: var(--lh-snug); color: var(--ink); }
 .setup-future-prompt p:last-child { margin-top: var(--s-3); color: var(--ink-soft); font-size: var(--t-body-sm); }
@@ -453,68 +385,129 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--s-3);
+  margin: 0;
 }
-.setup-metric { padding: var(--s-5); border-radius: var(--r-lg); background: rgba(20, 24, 18, 0.035); }
-.setup-metric dt { font-size: var(--t-caption); color: var(--ink-faint); }
-.setup-metric dd { margin: var(--s-2) 0 0; font-size: clamp(18px, 2.4vw, 26px); color: var(--ink); }
-.setup-picture.not-ready .setup-metric dd { font-family: var(--serif); font-style: italic; font-size: var(--t-body); color: var(--ink-faint); }
-
-.setup-reliance {
-  margin-top: var(--s-4);
+.setup-metric {
   padding: var(--s-4);
   border-radius: var(--r-md);
-  background: rgba(168, 132, 44, 0.07);
-  color: var(--ink-soft);
+  border: var(--hair) solid var(--rule);
+  background: var(--paper-bright);
 }
-.setup-reliance.ready { background: rgba(45, 93, 62, 0.07); }
-.setup-reliance-label { margin-bottom: 4px; font-family: var(--mono); font-size: var(--t-eyebrow); text-transform: uppercase; letter-spacing: var(--track-caps); color: var(--ink); }
+.setup-metric dt {
+  font-family: var(--mono);
+  font-size: var(--t-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-faint);
+}
+.setup-metric dd {
+  margin: var(--s-2) 0 0;
+  font-family: var(--serif);
+  font-variation-settings: 'opsz' 144;
+  font-size: clamp(20px, 2.4vw, 27px);
+  color: var(--ink);
+}
+.setup-picture.not-ready .setup-metric dd {
+  font-family: var(--sans);
+  font-size: var(--t-body-sm);
+  color: var(--ink-faint);
+}
+
+.setup-reliance {
+  padding: var(--s-4);
+  border-radius: var(--r-md);
+  background: var(--brass-wash);
+  color: var(--brass-ink);
+}
+.setup-reliance.ready { background: var(--forest-wash); color: var(--forest-deep); }
+.setup-reliance-label {
+  margin-bottom: 4px;
+  font-family: var(--mono);
+  font-size: var(--t-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: var(--track-caps);
+}
+
+/* ───────────  Sticky footer  ───────────
+   The primary action never scrolls away, and it is the only navigation on the
+   page. Continue stays gated on evidence: a step whose data is missing offers
+   "leave this for later" instead of a Continue that would imply otherwise. */
+
+.setup-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-4) var(--gutter);
+  background: var(--paper);
+  border-top: var(--hair) solid var(--rule);
+  box-shadow: 0 -8px 20px rgba(20, 24, 18, 0.05);
+}
+
+.setup-foot .btn { min-height: var(--tap); }
+.setup-next { padding-left: 18px; padding-right: 16px; }
+.setup-later {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--t-body-sm);
+  min-height: var(--tap);
+  padding: 0;
+  color: var(--ink-soft);
+  box-shadow: inset 0 -1px 0 var(--rule-strong);
+}
+.setup-later:hover { color: var(--forest); }
+.setup-foot-note { color: var(--ink-faint); font-size: var(--t-caption); max-width: 46ch; }
 
 .setup-loading {
-  min-height: 420px;
+  min-height: 60vh;
   display: grid;
   place-content: center;
   justify-items: center;
   gap: var(--s-3);
   color: var(--ink-soft);
 }
-.setup-loading-mark { font-family: var(--serif); font-size: 28px; font-style: italic; color: var(--gilt); }
+.setup-loading-mark { font-family: var(--serif); font-size: 28px; font-style: italic; color: var(--brass-ink); }
 
-@media (max-width: 900px) {
-  .setup-progress { grid-template-columns: repeat(5, minmax(52px, 1fr)); overflow-x: auto; }
-  .setup-progress-step { display: flex; flex-direction: column; justify-content: center; gap: 4px; text-align: center; }
-  .setup-progress-number { flex: 0 0 auto; }
-  .setup-progress-label { font-size: 11px; }
+/* ───────────  Narrow  ─────────── */
+
+@media (max-width: 860px) {
+  .setup-bar { grid-template-columns: auto minmax(0, 1fr); row-gap: var(--s-2); padding: var(--s-2) var(--s-4); }
+  .setup-progress { order: 3; grid-column: 1 / -1; max-width: none; gap: var(--s-2); }
+  .setup-progress-step { min-height: 44px; grid-template-rows: 4px auto; gap: 5px; text-align: center; }
+  .setup-progress-label { font-size: 9px; letter-spacing: 0.04em; }
   .setup-progress-state { display: none; }
-  .setup-workspace { grid-template-columns: 1fr; }
-  .setup-context { position: static; padding: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; align-items: baseline; }
-  .setup-context-rule { display: none; }
-  .setup-context-note { grid-column: 1 / -1; }
-  .setup-context-deferred { margin: 0; }
+  .setup-progress-track { background: var(--rule-strong); }
+  .setup-bar-right { grid-column: 2; }
+  .setup-card { padding: var(--s-6) var(--s-4) var(--s-5); }
+  .setup-card h2 { font-size: 28px; }
+  .setup-picture { grid-template-columns: 1fr; }
+  .setup-foot { padding: var(--s-3) var(--s-4); }
+  .setup-foot-note { display: none; }
+  .setup-foot .btn-primary { flex: 1 1 auto; justify-content: center; }
+  .setup-check { grid-template-columns: 20px minmax(0, 1fr); }
+  .setup-check-link { grid-column: 2; justify-self: start; }
 }
 
-@media (max-width: 680px) {
-  .setup-shell { gap: var(--s-5); }
-  .setup-masthead { align-items: flex-start; flex-direction: column; }
-  .setup-masthead h1 { font-size: 34px; }
-  .setup-card { min-height: 0; padding: var(--s-5); border-radius: 14px; }
-  .setup-card h2 { font-size: 30px; }
-  .setup-paths,
-  .setup-picture,
-  .setup-form-heading,
+@media (max-width: 560px) {
+  .setup-progress { gap: var(--s-1); }
+  .setup-progress-label { font-size: 8.5px; letter-spacing: 0; }
   .setup-form-grid { grid-template-columns: 1fr; }
-  .setup-path { min-height: 160px; }
-  .setup-actions { align-items: stretch; flex-direction: column; }
-  .setup-actions .btn,
-  .setup-actions .link-editorial { width: 100%; justify-content: center; min-height: 44px; }
-  .setup-inline-form { padding: var(--s-4) 0; background: transparent; }
-  .setup-form-footer { align-items: stretch; flex-direction: column; }
-  .setup-form-footer .btn,
-  .setup-form-footer .link-editorial { width: 100%; justify-content: center; min-height: 44px; }
+  .setup-deferred { display: none; }
+  .setup-foot { gap: var(--s-3); padding: var(--s-3) var(--s-4); }
+  .setup-foot .btn-quiet { padding: 0 var(--s-3); }
+  .setup-later { flex: 1 1 auto; text-align: center; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .setup-enter { animation: none; opacity: 1; transform: none; filter: none; }
+  .setup-enter { animation: none; opacity: 1; transform: none; }
   .setup-progress-step,
-  .setup-check,
-  .setup-path { transition-duration: 0ms; }
+  .setup-progress-track,
+  .setup-check { transition-duration: 0ms; }
 }

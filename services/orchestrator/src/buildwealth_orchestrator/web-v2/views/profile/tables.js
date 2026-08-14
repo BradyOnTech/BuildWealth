@@ -99,11 +99,14 @@ function renderExpenseConfirmation(ui, items) {
 
 function renderRows(section, items, ui) {
   if (!items.length) {
+    // A composer sits directly above this, so the empty state's whole job is one
+    // sentence. The shared .empty-block spends ~300px on a centred pilcrow and
+    // an italic line — two of them fill a viewport with nothing to act on.
     return html`
-      <div class="empty-block">
-        <span class="glyph">¶</span>
-        <p>${section.emptyHint}</p>
-      </div>
+      <p class="profile-empty-line">
+        <span class="profile-empty-mark" aria-hidden="true">○</span>
+        ${section.emptyHint}
+      </p>
     `;
   }
   // Per-row Source/Status pulls from optional row-level fields the backend

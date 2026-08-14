@@ -1,5 +1,6 @@
-// Guided setup rail — step derivation, markup, estimates gating, and
-// per-step inference-candidate filtering. Pure string assertions; no DOM.
+// Profile readiness — step derivation, estimates gating, per-step
+// inference-candidate filtering, and the "Needs you" band markup that replaced
+// the embedded setup rail. Pure string assertions; no DOM.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,18 +16,22 @@ globalThis.window = globalThis.window || {
 
 const {
   deriveSetupSteps,
-  renderSetupRail,
   filterStepCandidates,
   stepEstimates,
-  railState,
-} = await import('../views/profile/setup_rail.js');
+  readinessCount,
+} = await import('../views/profile/readiness.js');
+
+const {
+  renderNeedsBand,
+  deriveNeeds,
+  needsState,
+} = await import('../views/profile/needs.js');
 
 function resetRail() {
-  railState.skipped.clear();
-  railState.dismissed = false;
-  railState.docOpen = false;
-  railState.busy = false;
-  railState.error = null;
+  needsState.dismissed = false;
+  needsState.docOpen = false;
+  needsState.busy = false;
+  needsState.error = null;
 }
 
 const readiness = (statuses = {}) => ({
@@ -124,37 +129,58 @@ test('deriveSetupSteps: missing readiness sections count as incomplete', () => {
   assert.ok(steps.slice(1).every(s => s.status === 'incomplete'));
 });
 
-/* ─────────────  renderSetupRail markup  ───────────── */
+/* ─────────────  renderNeedsBand markup  ─────────────
+   The band replaced the embedded setup rail. It keeps every action the rail
+   owned (estimates, debt-free, defer-goals, apply-candidate, document capture)
+   but renders at most three gaps and no section editor, so the page's own
+   navigation stays above the fold. */
 
-test('rail shows step position, dots, alternates, and both money editors', () => {
+test('band names the gaps, says what each unlocks, and offers the alternates', () => {
   resetRail();
-  const markup = String(renderSetupRail(uiWith({
+  const markup = String(renderNeedsBand(uiWith({
     household: 'complete',
     income_detail: 'Add the income streams BuildWealth should plan around.',
   })));
-  assert.match(markup, /step 2 of 5/);
-  assert.match(markup, /Money in &amp; out/);
-  assert.match(markup, /setup-rail-dot done/);
-  assert.match(markup, /setup-rail-dot {2}current/);
+  assert.match(markup, /Needs you/);
+  // Human detail sentence from readiness renders
+  assert.match(markup, /Add the income streams BuildWealth should plan around\./);
+  // Each gap states its consequence — the rail never did
+  assert.match(markup, /Unlocks surplus, savings rate, and every tax estimate\./);
   // Alternates row
   assert.match(markup, /From a document/);
   assert.match(markup, /href="#copilot\?intent=profile-setup"/);
   assert.match(markup, /Ask me in chat/);
   // Money step has no estimate map — no Use-the-estimates button
-  assert.doesNotMatch(markup, /data-rail-use-estimates/);
-  // Human detail sentence from readiness renders
-  assert.match(markup, /Add the income streams BuildWealth should plan around\./);
-  // Both section editors stacked
-  assert.match(markup, /Add income/);
-  assert.match(markup, /Add expense/);
-  // Escape hatch
-  assert.match(markup, /Skip for now/);
+  assert.doesNotMatch(markup, /data-needs-use-estimates/);
+  // Rows link at the editor; the band never embeds one
+  assert.match(markup, /href="#profile\?section=income"/);
+  assert.doesNotMatch(markup, /data-table-add=/);
 });
 
-test('rail hides entirely when readiness has not arrived', () => {
+test('band caps at three gaps so a prompt never becomes a backlog', () => {
   resetRail();
-  assert.equal(String(renderSetupRail(uiWith({}, { onboarding: null }))), '');
-  assert.equal(String(renderSetupRail(uiWith({}, { onboarding: { profile_readiness: {} } }))), '');
+  const ui = uiWith({});   // every section incomplete
+  const needs = deriveNeeds(ui);
+  assert.equal(needs.length, 3);
+  const markup = String(renderNeedsBand(ui));
+  // The heading reports the true remaining count — capping the list must not
+  // understate the work — and the cap is stated rather than silent.
+  assert.match(markup, /8 things are holding the plan back/);
+  assert.match(markup, /Showing the three that unlock the most/);
+  assert.equal((markup.match(/class="profile-needs-item/g) || []).length, 3);
+});
+
+test('band hides entirely when readiness has not arrived', () => {
+  resetRail();
+  assert.equal(String(renderNeedsBand(uiWith({}, { onboarding: null }))), '');
+  assert.equal(String(renderNeedsBand(uiWith({}, { onboarding: { profile_readiness: {} } }))), '');
+});
+
+test('readinessCount tolerates a readiness payload carrying no sections', () => {
+  assert.deepEqual(readinessCount({ profile_readiness: { status: 'partial' } }), { complete: 0, total: 0 });
+  assert.deepEqual(readinessCount(null), { complete: 0, total: 0 });
+  assert.deepEqual(readinessCount({ profile_readiness: readiness({ household: 'complete' }) }),
+    { complete: 1, total: 8 });
 });
 
 test('taxes step: Use-the-estimates appears only when suggestions cover the blanks', () => {
@@ -163,13 +189,11 @@ test('taxes step: Use-the-estimates appears only when suggestions cover the blan
     household: 'complete', income: 'complete', expenses: 'complete',
     debt: 'complete', goals: 'complete',
   };
-  const without = String(renderSetupRail(uiWith(complete)));
-  assert.match(without, /step 4 of 5/);
-  assert.match(without, /Taxes/);
-  assert.doesNotMatch(without, /data-rail-use-estimates/);
+  const without = String(renderNeedsBand(uiWith(complete)));
+  assert.doesNotMatch(without, /data-needs-use-estimates/);
 
-  const withSuggestions = String(renderSetupRail(uiWith(complete, { suggestions: TAX_SUGGESTIONS })));
-  assert.match(withSuggestions, /data-rail-use-estimates/);
+  const withSuggestions = String(renderNeedsBand(uiWith(complete, { suggestions: TAX_SUGGESTIONS })));
+  assert.match(withSuggestions, /data-needs-use-estimates/);
   assert.match(withSuggestions, /Use the estimates/);
 });
 
@@ -180,7 +204,7 @@ test('taxes step: filled rates mean nothing to estimate — no button', () => {
     debt: 'complete', goals: 'complete',
   }, { suggestions: TAX_SUGGESTIONS });
   ui.profile.tax_profile = { marginal_tax_rate: 0.24, effective_tax_rate: 0.18 };
-  assert.doesNotMatch(String(renderSetupRail(ui)), /data-rail-use-estimates/);
+  assert.doesNotMatch(String(renderNeedsBand(ui)), /data-needs-use-estimates/);
   assert.equal(stepEstimates(ui, 'taxes'), null);
 });
 
@@ -196,22 +220,15 @@ test('stepEstimates returns decimal values straight from the suggestion map', ()
   assert.equal(stepEstimates(ui, 'money'), null, 'table steps have no estimate map');
 });
 
-test('rail avoids duplicating the editor when its tab is already active', () => {
-  resetRail();
-  const markup = String(renderSetupRail(uiWith({}, { section: 'household' })));
-  assert.match(markup, /the editor below is the same one/);
-  assert.doesNotMatch(markup, /data-table-add="household_members"/);
-});
-
 test('debt and goals step offers honest not-applicable and not-yet answers', () => {
   resetRail();
-  const markup = String(renderSetupRail(uiWith({
+  const markup = String(renderNeedsBand(uiWith({
     household: 'complete', income: 'complete', expenses: 'complete',
   })));
   assert.match(markup, /I have no debt/);
   assert.match(markup, /I’m not ready to set a goal/);
-  assert.match(markup, /data-rail-action="mark-no-debt"/);
-  assert.match(markup, /data-rail-action="defer-goals"/);
+  assert.match(markup, /data-needs-action="mark-no-debt"/);
+  assert.match(markup, /data-needs-action="defer-goals"/);
 });
 
 test('all core steps complete: readiness milestone stays honest about optional context', () => {
@@ -219,28 +236,16 @@ test('all core steps complete: readiness milestone stays honest about optional c
   const done = {
     household: 'complete', income: 'complete', expenses: 'complete',
     debt: 'complete', goals: 'complete', tax_profile: 'complete',
-    investment_policy: 'complete',
+    investment_policy: 'complete', physical_assets: 'complete',
   };
-  const markup = String(renderSetupRail(uiWith(done)));
+  const markup = String(renderNeedsBand(uiWith(done)));
   assert.match(markup, /Core profile ready/);
   assert.match(markup, /optional details can improve/i);
   assert.doesNotMatch(markup, /Setup complete/);
-  assert.match(markup, /data-rail-action="dismiss"/);
-  assert.doesNotMatch(markup, /Skip for now/);
+  assert.match(markup, /data-needs-action="dismiss"/);
 
-  railState.dismissed = true;
-  assert.equal(String(renderSetupRail(uiWith(done))), '');
-});
-
-test('skipping every remaining step collapses to a paused line, not a trap', () => {
-  resetRail();
-  railState.skipped.add('household');
-  const markup = String(renderSetupRail(uiWith({
-    income: 'complete', expenses: 'complete', debt: 'complete', goals: 'complete',
-    tax_profile: 'complete', investment_policy: 'complete',
-  })));
-  assert.match(markup, /Setup paused — 1 step left/);
-  assert.match(markup, /data-rail-action="resume"/);
+  needsState.dismissed = true;
+  assert.equal(String(renderNeedsBand(uiWith(done))), '');
 });
 
 /* ─────────────  Candidate filtering  ───────────── */
@@ -263,9 +268,9 @@ test('filterStepCandidates routes candidates to their matching step', () => {
   assert.deepEqual(filterStepCandidates(all, 'nonsense-step'), []);
 });
 
-test('matching candidates render inside the step as an apply list', () => {
+test('matching candidates render inside the band as an apply list', () => {
   resetRail();
-  const markup = String(renderSetupRail(uiWith({ household: 'complete' }, {
+  const markup = String(renderNeedsBand(uiWith({ household: 'complete' }, {
     candidates: [
       { id: 'cand-9', metadata: { profile_patch_kind: 'income_items' }, headline: 'Salary $7,500/mo from your paystub' },
       { id: 'cand-x', target_field: 'tax_profile.marginal_tax_rate', headline: 'Marginal rate 22%' },
