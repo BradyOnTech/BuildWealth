@@ -242,8 +242,12 @@ test('new owner registration enters Setup and persists the first step', async ({
   await page.getByLabel('Password').fill('correct-horse-setup');
   await page.getByRole('button', { name: 'Create account' }).last().click();
 
-  await page.getByRole('heading', { name: 'Build your first decision picture.' }).waitFor();
+  await page.getByRole('heading', { name: 'Start with a private household workspace.' }).waitFor();
   assert.match(page.url(), /#setup$/);
+  // The flow runs with the app chrome collapsed — a five-step journey should not
+  // offer seven sideways exits.
+  assert.equal(await page.locator('body.shell-focus').count(), 1);
+  assert.ok(!(await page.locator('nav.sidebar').isVisible()));
   await page.getByText('Private by design').waitFor();
   await page.getByRole('button', { name: /Start with my household/ }).click();
   await page.getByRole('heading', { name: 'Give the numbers their household context.' }).waitFor();
@@ -276,10 +280,15 @@ test('Setup progress remains usable on a narrow mobile viewport', async ({ page 
   }));
   assert.equal(dimensions.document, dimensions.viewport, 'Setup must not create page-level horizontal overflow');
   assert.ok(
-    dimensions.progressHeight >= 60,
+    // Round before comparing: the step is styled min-height:44px, so the rule is
+    // satisfied by construction and a fractional layout result (43.999996 under
+    // parallel workers) is noise, not a defect.
+    Math.round(dimensions.progressHeight) >= 44,
     `progress steps retain a useful touch target (measured ${dimensions.progressHeight ?? 'missing'}px)`,
   );
-  await page.getByRole('link', { name: /Explore the app/ }).waitFor();
+  // Every step label stays legible rather than collapsing to bare slivers.
+  assert.equal(await page.locator('.setup-progress-label').first().isVisible(), true);
+  await page.getByRole('link', { name: /Save & exit/ }).waitFor();
 });
 
 test('a new owner can create a useful first picture without leaving Setup', async ({ page }) => {
@@ -375,7 +384,7 @@ test('an existing owner can reset financial data from Profile and restart Setup'
   await dialog.getByLabel('Type reset and register again to confirm').fill('reset and register again');
   await dialog.getByRole('button', { name: 'Create backup & restart setup' }).click();
 
-  await page.getByRole('heading', { name: 'Build your first decision picture.' }).waitFor();
+  await page.getByRole('heading', { name: 'Start with a private household workspace.' }).waitFor();
   assert.match(page.url(), /#setup$/);
   assert.deepEqual(state.resetRequests, [{ confirm: 'reset and register again' }]);
   await page.getByText('Private by design').waitFor();

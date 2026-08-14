@@ -92,10 +92,19 @@ function phaseBody() {
   return idleBody();
 }
 
+// The <input> stays in the DOM — onExtract reads the live FileList off it, and a
+// drop sets .files via DataTransfer — but its native chrome is hidden so this
+// stops being the one unstyled control in the product.
 function idleBody() {
   return html`
     <div class="profile-doc-controls">
-      <input type="file" accept="image/*" data-doccap-file aria-label="Document photo" />
+      <label class="profile-dropzone" data-doccap-dropzone>
+        <input type="file" accept="image/*" data-doccap-file />
+        <strong>Drop a photo, or choose a file</strong>
+        <span class="profile-dropzone-file" data-doccap-filename></span>
+        <span>JPG or PNG · stays in this workspace until you apply it</span>
+        <span class="profile-dropzone-error" data-doccap-droperror role="alert"></span>
+      </label>
       <button class="btn btn-primary" data-doccap-action="extract" disabled>Extract</button>
     </div>
   `;
@@ -225,9 +234,46 @@ function ensureWired() {
   document.addEventListener('change', (e) => {
     const input = e.target?.closest?.('[data-doccap-file]');
     if (!input || !container()?.contains(input)) return;
+    const picked = Boolean(input.files && input.files.length);
     const button = container()?.querySelector('[data-doccap-action="extract"]');
-    if (button) button.disabled = !(input.files && input.files.length);
+    if (button) button.disabled = !picked;
+    // Hiding the native control means the chosen filename must be echoed back,
+    // or there is no confirmation that anything was picked.
+    const name = container()?.querySelector('[data-doccap-filename]');
+    if (name) name.textContent = picked ? input.files[0].name : '';
   });
+
+  // Drop writes the file straight onto the input, then re-fires change so the
+  // single enable/echo path above stays the only one.
+  for (const type of ['dragenter', 'dragover', 'dragleave', 'drop']) {
+    document.addEventListener(type, (e) => {
+      const zone = e.target?.closest?.('[data-doccap-dropzone]');
+      if (!zone || !container()?.contains(zone)) return;
+      e.preventDefault();
+      if (type === 'dragleave') {
+        // dragleave also fires crossing onto the zone's own children, which
+        // flickers the highlight. Only a leave that exits the zone counts.
+        if (!zone.contains(e.relatedTarget)) zone.classList.remove('dragging');
+        return;
+      }
+      if (type !== 'drop') { zone.classList.add('dragging'); return; }
+      zone.classList.remove('dragging');
+      const input = zone.querySelector('[data-doccap-file]');
+      const file = e.dataTransfer?.files?.[0];
+      if (!input) return;
+      // accept="image/*" only filters the picker; a drop bypasses it entirely,
+      // so a dropped PDF would otherwise go straight to extraction.
+      if (!file || !String(file.type || '').startsWith('image/')) {
+        setDropError(zone, file ? 'That is not an image. Photograph or screenshot the document instead.' : '');
+        return;
+      }
+      setDropError(zone, '');
+      const bag = new DataTransfer();
+      bag.items.add(file);
+      input.files = bag.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
 
   document.addEventListener('click', (e) => {
     const el = e.target?.closest?.('[data-doccap-action]');
@@ -238,6 +284,11 @@ function ensureWired() {
     else if (action === 'apply') onApply();
     else if (action === 'reset') onReset();
   });
+}
+
+function setDropError(zone, message) {
+  const slot = zone.querySelector('[data-doccap-droperror]');
+  if (slot) slot.textContent = message;
 }
 
 function container() {

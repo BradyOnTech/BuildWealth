@@ -37,6 +37,9 @@ from buildwealth_orchestrator.schemas import (
     CopilotConversationResponse,
     CopilotConversationSummary,
     CopilotConversationUpdateRequest,
+    CopilotPendingActionApplyResponse,
+    CopilotPendingActionRejectRequest,
+    CopilotPendingActionResponse,
     SessionFocus,
     SessionFocusUpdateRequest,
     CsvImportRequest,
@@ -224,6 +227,27 @@ from buildwealth_orchestrator.services.coordinator import Coordinator
 from buildwealth_orchestrator.services.copilot_runtime import (
     ConversationStore,
     FinancialCopilot,
+)
+from buildwealth_orchestrator.services.copilot_policy import (
+    InteractionMode,
+    ProviderCapabilities,
+    ToolKind,
+    ToolMetadata,
+    ToolSelectionContext,
+    build_copilot_system_prompt,
+    resolve_model_tools,
+)
+from buildwealth_orchestrator.services.copilot_pending_actions import (
+    FinancialActionImpact,
+    PendingActionExpiredError,
+    PendingActionNotFoundError,
+    PendingActionStaleError,
+    PendingActionStateError,
+    PendingActionStatus,
+    PendingFinancialAction,
+    PendingFinancialActionStore,
+    fingerprint_source_state,
+    validate_source_fingerprint,
 )
 from buildwealth_orchestrator.services.csv_importer import (
     apply_existing_transaction_reconciliation,
@@ -1262,12 +1286,8 @@ copilot = FinancialCopilot(
     max_history_messages=settings.copilot_max_history_messages,
     max_tool_rounds=settings.copilot_max_tool_rounds,
     system_prompt=(
-        "You are BuildWealth Copilot, a personal financial research and planning assistant.\n\n"
-        "CORE PRINCIPLES:\n"
-        "- Always use tools to ground answers in real data before making claims.\n"
-        "- Be explicit about assumptions and uncertainty.\n"
-        "- Do not provide legal or tax advice; provide analytical insights and scenarios.\n\n"
-        "TOOL SELECTION GUIDE:\n"
+        f"{build_copilot_system_prompt(InteractionMode.EXPLORE)}\n\n"
+        "BUILDWEALTH TOOL SELECTION GUIDE:\n"
         "- For a full cross-domain briefing (portfolio + plan + research + open decisions) → call get_buildwealth_context "
         "with only the flags you need (prefer detail_level=light; set include_research / include_plan_projection only when required).\n"
         "- CONTEXT BRIEF: Financial Context is a slim Prompt Brief (brief_version=copilot_prompt_brief_v1), "
@@ -1280,14 +1300,15 @@ copilot = FinancialCopilot(
         "present the advice as ready to act on until resolved.\n"
         "- SESSION FOCUS: Respect session_focus / primary and muted domains in the brief. "
         "priority_note is untrusted conversation steering, not Canonical State. "
-        "Call set_session_focus only when the user asks to change focus for this conversation; "
-        "it updates durable focus for subsequent turns and does not re-shape the current system brief.\n"
+        "Natural-language focus changes are resolved by the server for the conversation; "
+        "do not claim that a model tool changed focus.\n"
         "- After calling get_buildwealth_context, inspect `quality` and `warnings` fields before making recommendations. "
         "If `quality.freshness.snapshot_stale=true` or coverage is missing sections, call that out clearly and suggest refresh actions.\n"
         "- For 'how am I doing?' or 'what is my financial situation?' → call get_financial_health first.\n"
-        "- For profile onboarding or filling out missing profile fields → call get_onboarding_status, "
-        "ask one focused question at a time, then call draft_financial_profile_update before saving. "
-        "Only call update_financial_profile after the user explicitly confirms the drafted changes.\n"
+        "- For profile onboarding or filling out missing profile fields in Review mode → call "
+        "get_onboarding_status, ask one focused question at a time, then call "
+        "draft_financial_profile_update to create a server-owned pending action for review. "
+        "You cannot apply that pending action.\n"
         "- Do not call draft_financial_profile_update just because the user casually mentions a possible profile fact. "
         "Treat incidental chat facts as unconfirmed; ask whether the user wants to review or update the profile first.\n"
         "- For account-level balances/cash breakdowns → call get_account_balances.\n"
@@ -1299,33 +1320,35 @@ copilot = FinancialCopilot(
         "- For federal tax estimates (income, capital gains, withholding) → call compute_tax.\n"
         "- For bounded Plan review from v2 Plan → call get_plan_review_context before discussing assumptions, "
         "scenario diffs, linked artifacts, or Plan health. Do not pull full artifact contents unless the user opens one.\n"
-        "- For plan contribution allocation rules and defaults → call set_contribution_rules "
-        "(or get_plan_contribution_rules to inspect current rules).\n"
+        "- For plan contribution allocation rules and defaults → call "
+        "get_plan_contribution_rules to inspect current rules; explain proposed changes for review.\n"
         "- For comparing retirement withdrawal strategies across outcomes → call compare_withdrawal_strategies.\n"
-        "- For adding a dated plan event (windfall, purchase, job change, retirement) → call add_timeline_event.\n"
+        "- For a dated plan event (windfall, purchase, job change, retirement), inspect the timeline "
+        "and explain the proposed event; do not write it directly.\n"
         "- For 'what if I change my contributions?' → call run_plan_scenario_diff.\n"
         "- For life-event what-ifs (job loss, raise, new recurring costs) → call run_plan_scenario_branch.\n"
-        "- For reusable life-event presets/templates → call get_plan_branch_templates or update_plan_branch_templates.\n"
-        "- To move research watchlist thesis into planning branches → call pin_watchlist_research_to_plan.\n"
+        "- For reusable life-event presets/templates → call get_plan_branch_templates and explain "
+        "any proposed revision for review in Plan.\n"
+        "- Read saved research-plan links from Plan context; creating or changing those links happens "
+        "only in the owning Plan review interface.\n"
         "- For 'what should I do?' → call get_today_dashboard and list_recommendations.\n"
         "- Before applying a high-impact recommendation → call preview_recommendation to inspect scenario and action effects.\n"
-        "- After recommendations are applied/rejected, record realized outcomes → call update_recommendation_outcome.\n"
+        "- Applied/rejected recommendations and realized outcomes are saved only through their "
+        "authenticated review interfaces, not model tools.\n"
         "- For recommendation calibration and closure tracking quality → call get_recommendation_closure_analytics.\n"
-        "- To persist plan-scoped closure calibration reviews as artifacts/decision-log entries → "
-        "call create_plan_recommendation_closure_summary.\n"
+        "- Explain closure calibration from read-only analytics; persistence happens only through "
+        "the owning review interface.\n"
         "- For stock/investment research on one ticker → call research_quote or research_price_history.\n"
         "- For comparing multiple investment candidates → call research_compare, "
         "then call simulate_trade to show how a chosen trade would affect portfolio allocation.\n"
-        "- For structured multi-symbol research memos with thesis/risks/catalysts and plan artifacts → call research_dossier.\n"
+        "- For a new multi-symbol research comparison → call research_compare and summarize thesis, "
+        "risks, catalysts, and evidence gaps without saving a Plan artifact.\n"
         "- To reuse saved dossier evidence and artifact references for recommendation rationale → call research_dossier_lookup.\n"
         "- For ranking watchlist candidates by momentum/trend/target/data quality → call research_watchlist_rank.\n"
-        "- After an investment-fit discussion identifies a safe next review step, call "
-        "draft_investment_research_recommendation to create a proposed review-only Inbox item. "
-        "Never use it to create buy/sell instructions.\n"
-        "- To revise a saved watchlist thesis, call draft_watchlist_thesis_revision for user review without saving. "
-        "Only save thesis revisions after explicit user confirmation.\n"
-        "- To revise a saved research dossier thesis, call draft_dossier_thesis_revision for user review without saving. "
-        "Only save dossier thesis revisions after explicit user confirmation.\n"
+        "- After an investment-fit discussion, explain the safe next review step. Creating an Inbox "
+        "item remains a user-controlled action in the owning interface, never a buy/sell instruction.\n"
+        "- Saved thesis revisions are changed only through their owning authenticated "
+        "Research review interface; do not claim a revision was saved from chat.\n"
         "- For 'what if I buy/sell X?' → call simulate_trade to show allocation and concentration impact.\n"
         "- For Import & Review evidence → call list_import_reports or get_import_report and cite the Import Report ID.\n"
         "- For daily reviews → call get_financial_health, get_plan_tracking, and get_today_dashboard.\n\n"
@@ -1343,6 +1366,20 @@ copilot = FinancialCopilot(
         "- Proactively flag risks you discover (high concentration, low emergency fund, negative cash flow)."
     ),
 )
+
+
+def copilot_system_prompt_for_mode(mode: InteractionMode | str) -> str:
+    """Apply the turn mode while preserving the shared BuildWealth tool guide."""
+
+    explore_policy = build_copilot_system_prompt(InteractionMode.EXPLORE)
+    tool_guide = copilot.system_prompt
+    if tool_guide.startswith(explore_policy):
+        tool_guide = tool_guide[len(explore_policy) :].lstrip()
+    return "\n\n".join(
+        part for part in (build_copilot_system_prompt(mode), tool_guide) if part
+    )
+
+
 copilot_context_research_cache = ExpiringCache(max_entries=settings.copilot_context_cache_max_entries)
 copilot_context_projection_cache = ExpiringCache(max_entries=settings.copilot_context_cache_max_entries)
 current_copilot_workspace_services: ContextVar[WorkspaceServices | None] = ContextVar(
@@ -1353,6 +1390,33 @@ current_copilot_conversation_id: ContextVar[str | None] = ContextVar(
     "current_copilot_conversation_id",
     default=None,
 )
+current_copilot_turn_id: ContextVar[str | None] = ContextVar(
+    "current_copilot_turn_id",
+    default=None,
+)
+
+
+def pending_financial_action_store(
+    services: WorkspaceServices,
+) -> PendingFinancialActionStore:
+    return PendingFinancialActionStore(
+        services.paths.root / "copilot" / "pending_financial_actions.json",
+        workspace_id=str(services.record.id),
+    )
+
+
+def public_pending_financial_action(
+    action: PendingFinancialAction,
+    *,
+    include_payload: bool = False,
+) -> dict[str, Any]:
+    payload = action.to_dict()
+    payload.pop("workspace_id", None)
+    if not include_payload:
+        payload.pop("payload", None)
+        payload.pop("payload_sha256", None)
+        payload.pop("source_state_fingerprint", None)
+    return payload
 
 
 def has_active_copilot_workspace_context() -> bool:
@@ -12986,10 +13050,31 @@ def _build_financial_profile_update_draft(
 
 
 async def tool_draft_financial_profile_update(arguments: dict[str, object]) -> dict[str, object]:
-    return _build_financial_profile_update_draft(
+    services = resolve_workspace_services(None)
+    draft = _build_financial_profile_update_draft(
         arguments,
-        services=resolve_workspace_services(None),
+        services=services,
     )
+    conversation_id = str(current_copilot_conversation_id.get() or "").strip()
+    turn_id = str(current_copilot_turn_id.get() or "").strip()
+    if has_active_copilot_workspace_context() and conversation_id and turn_id:
+        action = pending_financial_action_store(services).create(
+            payload={
+                "kind": "financial_profile_update",
+                "patch_payload": draft["patch_payload"],
+                "proposed_profile": draft["proposed_profile"],
+            },
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            tool_name="draft_financial_profile_update",
+            tool_call_id=f"{turn_id}:draft_financial_profile_update",
+            summary=str(draft["summary"]),
+            impact_level=FinancialActionImpact.MEDIUM,
+            source_state_fingerprint=fingerprint_source_state(draft["current_profile"]),
+            evidence_refs=["profile:financial_profile"],
+        )
+        draft["pending_action"] = public_pending_financial_action(action)
+    return draft
 
 
 async def tool_update_financial_profile(arguments: dict[str, object]) -> dict[str, object]:
@@ -15466,6 +15551,14 @@ async def tool_run_plan_scenario_diff(
     services: WorkspaceServices | None = None,
 ) -> dict[str, object]:
     services = resolve_workspace_services(services)
+    if has_active_copilot_workspace_context() and _coerce_bool(
+        arguments.get("apply_to_plan"),
+        False,
+    ):
+        raise ValueError(
+            "Copilot scenario tools are simulation-only. Apply reviewed Plan changes "
+            "through the authenticated Plan interface."
+        )
     plan_id = resolve_plan_id_or_active(arguments.get("plan_id"), workspace=services.plan_workspace)
     return await execute_tracked_simulation(
         workspace=services.plan_workspace,
@@ -16894,7 +16987,7 @@ def configure_copilot_tools() -> None:
         name="run_plan_scenario_diff",
         description=(
             "Run scenario diff between current plan settings and provided overrides. "
-            "Optional apply_to_plan=true to commit overrides and log a decision."
+            "This model-facing tool is simulation-only and never commits overrides."
         ),
         parameters={
             "type": "object",
@@ -16904,9 +16997,6 @@ def configure_copilot_tools() -> None:
                 "assumption_set_id": {"type": "string"},
                 "candidate_assumption_set_id": {"type": "string"},
                 **plan_settings_properties,
-                "apply_to_plan": {"type": "boolean"},
-                "rationale": {"type": "string"},
-                "status": {"type": "string"},
             },
             "additionalProperties": False,
         },
@@ -17073,6 +17163,137 @@ def configure_copilot_tools() -> None:
 
 
 configure_copilot_tools()
+
+
+def _build_copilot_tool_metadata() -> dict[str, ToolMetadata]:
+    """Classify every tool before it can be exposed to a model.
+
+    This is intentionally explicit. A newly registered tool fails application
+    startup until its financial effect and domains have been reviewed here.
+    """
+
+    query = ToolKind.QUERY
+    calculate = ToolKind.CALCULATE
+    simulate = ToolKind.SIMULATE
+    draft = ToolKind.DRAFT
+    write = ToolKind.WRITE
+    apply = ToolKind.APPLY
+    rows: list[ToolMetadata] = [
+        ToolMetadata(name="get_buildwealth_context", kind=query, core=True, priority=100),
+        ToolMetadata(name="search_context", kind=query, core=True, priority=90),
+        ToolMetadata(name="get_today_dashboard", kind=query, core=True, priority=80),
+        ToolMetadata(name="get_financial_health", kind=calculate, core=True, priority=70),
+        # Natural-language focus changes are parsed and persisted by the route;
+        # the model does not need write authority over conversation controls.
+        ToolMetadata(name="set_session_focus", kind=write, core=True, priority=10),
+        ToolMetadata(name="get_latest_snapshot", kind=query, domains={"portfolio"}),
+        ToolMetadata(name="get_live_snapshot", kind=query, domains={"portfolio"}),
+        ToolMetadata(name="get_snapshot_history", kind=query, domains={"portfolio"}),
+        ToolMetadata(name="list_import_reports", kind=query, domains={"profile", "portfolio"}),
+        ToolMetadata(name="get_import_report", kind=query, domains={"profile", "portfolio"}),
+        ToolMetadata(name="get_financial_profile", kind=query, domains={"profile"}, priority=50),
+        ToolMetadata(name="assess_affordability", kind=calculate, domains={"profile.cashflow", "plan"}),
+        ToolMetadata(name="get_goal_progress", kind=calculate, domains={"profile.goals", "plan"}),
+        ToolMetadata(name="simulate_trade", kind=simulate, domains={"portfolio", "research"}),
+        ToolMetadata(name="assess_portfolio_fit", kind=calculate, domains={"portfolio", "research"}),
+        ToolMetadata(
+            name="draft_investment_research_recommendation",
+            kind=write,
+            domains={"recommendation", "research"},
+        ),
+        # These legacy "draft" tools are hidden because their current UI hands a
+        # client-carried patch to a general write API. Re-enable only after they
+        # create server-owned pending actions like Profile drafts.
+        ToolMetadata(name="draft_watchlist_thesis_revision", kind=write, domains={"research"}),
+        ToolMetadata(name="draft_dossier_thesis_revision", kind=write, domains={"research"}),
+        ToolMetadata(name="get_onboarding_status", kind=query, domains={"profile"}),
+        ToolMetadata(name="draft_financial_profile_update", kind=draft, domains={"profile"}, priority=60),
+        ToolMetadata(name="update_financial_profile", kind=apply, domains={"profile"}),
+        ToolMetadata(name="list_recommendations", kind=query, domains={"recommendation"}),
+        ToolMetadata(name="create_recommendation", kind=write, domains={"recommendation"}),
+        ToolMetadata(name="apply_recommendation", kind=apply, domains={"recommendation", "plan"}),
+        ToolMetadata(name="preview_recommendation", kind=simulate, domains={"recommendation", "plan"}),
+        ToolMetadata(name="reject_recommendation", kind=apply, domains={"recommendation"}),
+        ToolMetadata(name="update_recommendation_outcome", kind=write, domains={"recommendation"}),
+        ToolMetadata(
+            name="get_recommendation_closure_analytics",
+            kind=calculate,
+            domains={"recommendation", "plan"},
+        ),
+        ToolMetadata(
+            name="create_plan_recommendation_closure_summary",
+            kind=write,
+            domains={"recommendation", "plan"},
+        ),
+        ToolMetadata(name="run_sync", kind=write, domains={"portfolio"}),
+        ToolMetadata(name="get_sync_status", kind=query, domains={"portfolio"}),
+        ToolMetadata(name="run_planning_scenarios", kind=simulate, domains={"plan"}),
+        ToolMetadata(name="compute_tax", kind=calculate, domains={"profile.tax", "plan"}),
+        ToolMetadata(name="project_income_growth", kind=calculate, domains={"profile.cashflow", "plan"}),
+        ToolMetadata(
+            name="project_expense_inflation",
+            kind=calculate,
+            domains={"profile.cashflow", "plan"},
+        ),
+        ToolMetadata(name="project_debt_payoff", kind=calculate, domains={"profile.debt", "plan"}),
+        ToolMetadata(name="project_social_security", kind=calculate, domains={"profile", "plan"}),
+        ToolMetadata(name="project_rmd_schedule", kind=calculate, domains={"profile.tax", "plan"}),
+        ToolMetadata(name="research_options_chain", kind=query, domains={"research"}),
+        ToolMetadata(name="research_quote", kind=query, domains={"research"}),
+        ToolMetadata(name="research_price_history", kind=query, domains={"research"}),
+        ToolMetadata(name="research_compare", kind=calculate, domains={"research"}),
+        # research_dossier defaults to saving a Plan artifact, so it remains hidden
+        # until its read-only calculation and user-save paths are split.
+        ToolMetadata(name="research_dossier", kind=write, domains={"research", "plan"}),
+        ToolMetadata(name="research_dossier_lookup", kind=query, domains={"research", "plan"}),
+        ToolMetadata(name="research_watchlist_rank", kind=calculate, domains={"research"}),
+        ToolMetadata(name="list_accounts", kind=query, domains={"portfolio"}),
+        ToolMetadata(name="get_account_balances", kind=query, domains={"portfolio"}),
+        ToolMetadata(name="get_asset_allocation", kind=calculate, domains={"portfolio"}),
+        ToolMetadata(name="list_plans", kind=query, domains={"plan"}),
+        ToolMetadata(name="get_plan_context", kind=query, domains={"plan"}),
+        ToolMetadata(name="get_plan_review_context", kind=query, domains={"plan"}, priority=60),
+        ToolMetadata(name="get_plan_settings", kind=query, domains={"plan"}),
+        ToolMetadata(name="get_plan_timeline", kind=query, domains={"plan"}),
+        ToolMetadata(name="get_plan_contribution_rules", kind=query, domains={"plan"}),
+        ToolMetadata(name="get_plan_assumption_sets", kind=query, domains={"plan"}),
+        ToolMetadata(name="get_plan_branch_templates", kind=query, domains={"plan"}),
+        ToolMetadata(name="get_plan_tracking", kind=calculate, domains={"plan"}),
+        ToolMetadata(name="update_plan_settings", kind=apply, domains={"plan"}),
+        ToolMetadata(name="update_plan_timeline", kind=apply, domains={"plan"}),
+        ToolMetadata(name="add_timeline_event", kind=apply, domains={"plan"}),
+        ToolMetadata(name="set_contribution_rules", kind=apply, domains={"plan"}),
+        ToolMetadata(name="update_plan_assumption_sets", kind=apply, domains={"plan"}),
+        ToolMetadata(name="update_plan_branch_templates", kind=apply, domains={"plan"}),
+        ToolMetadata(name="pin_watchlist_research_to_plan", kind=write, domains={"plan", "research"}),
+        ToolMetadata(name="run_plan_scenario_diff", kind=simulate, domains={"plan"}),
+        ToolMetadata(name="compare_withdrawal_strategies", kind=simulate, domains={"plan"}),
+        ToolMetadata(name="run_plan_scenario_branch", kind=simulate, domains={"plan"}),
+        ToolMetadata(name="list_plan_saved_simulations", kind=query, domains={"plan"}),
+        ToolMetadata(name="get_plan_saved_simulation", kind=query, domains={"plan"}),
+        ToolMetadata(
+            name="compare_plan_saved_simulation_current",
+            kind=calculate,
+            domains={"plan"},
+        ),
+        ToolMetadata(name="append_plan_decision", kind=write, domains={"plan"}),
+        ToolMetadata(name="list_workflow_templates", kind=query, core=True),
+        ToolMetadata(name="run_workflow_template", kind=write, domains={"plan", "recommendation"}),
+    ]
+    metadata = {row.name: row for row in rows}
+    registered = set(copilot.tools)
+    classified = set(metadata)
+    if registered != classified:
+        missing = sorted(registered - classified)
+        unknown = sorted(classified - registered)
+        raise RuntimeError(
+            "Copilot tool policy must classify every registered tool "
+            f"(missing={missing}, unknown={unknown})."
+        )
+    return metadata
+
+
+copilot_tool_metadata = _build_copilot_tool_metadata()
 
 
 @app.put("/api/settings")

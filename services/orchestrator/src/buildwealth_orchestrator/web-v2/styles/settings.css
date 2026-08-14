@@ -329,7 +329,7 @@
   background: color-mix(in srgb, var(--forest) 8%, var(--paper-bright));
 }
 .settings-key-badge.warn {
-  color: var(--brass);
+  color: var(--brass-ink);
   border-color: color-mix(in srgb, var(--brass) 35%, var(--rule));
   background: color-mix(in srgb, var(--brass) 8%, var(--paper-bright));
 }

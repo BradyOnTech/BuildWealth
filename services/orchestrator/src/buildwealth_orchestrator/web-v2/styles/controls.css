@@ -97,6 +97,7 @@
 /* ───────────  Editorial link  ─────────── */
 
 .link-editorial {
+  position: relative;
   display: inline-flex;
   align-items: baseline;
   gap: 6px;
@@ -122,6 +123,15 @@
   font-style: italic;
   transition: transform var(--d-fast) var(--ease-press);
   display: inline-block;
+}
+
+/* Brings the pointer/touch target to 24px without affecting layout: the pad is
+   absolutely positioned, so it cannot move this element's baseline or the cross
+   size of any flex row it sits in. */
+.link-editorial::before {
+  content: '';
+  position: absolute;
+  inset: -3px -2px;
 }
 
 .link-editorial:hover {

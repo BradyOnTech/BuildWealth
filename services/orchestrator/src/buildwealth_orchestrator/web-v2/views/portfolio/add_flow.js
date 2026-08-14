@@ -8,7 +8,7 @@ import { api } from '../../lib/api.js';
 import { html, raw, esc, setView } from '../../lib/dom.js';
 
 // Survives the full-view re-render that follows a successful add, so the
-// card stays open with its success line showing (same idiom as railState).
+// card stays open with its success line showing (same idiom as needsState).
 export const addFlowState = {
   open: false,
   tab: 'investment',

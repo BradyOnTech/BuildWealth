@@ -93,7 +93,7 @@ Tests: node unit tests for inline-edit render/build round-trips, toggle math
 
 ## Workstream C — Guided setup rail (Profile)
 
-New `views/profile/setup_rail.js`, shown at the top of Profile (and linked
+New `views/profile/needs.js (formerly setup_rail.js)`, a capped "Needs you" band at the top of the Profile pane (and linked
 from Today's next-question card) whenever readiness < complete:
 
 - Five steps: **Household → Money in & out → Debt & goals → Taxes →

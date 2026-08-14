@@ -135,6 +135,22 @@ class FakeJsonBlobClient:
         }
 
 
+class CapturingTextClient:
+    enabled = True
+    model = "capture-model"
+
+    def __init__(self):
+        self.messages: list[dict] = []
+
+    async def complete(self, messages: list[dict], tools: list[dict]) -> dict:
+        del tools
+        self.messages = messages
+        return {
+            "model": self.model,
+            "message": {"content": "Bounded context reviewed."},
+        }
+
+
 def test_conversation_store_round_trip(tmp_path: Path) -> None:
     store = ConversationStore(tmp_path)
     conversation = store.get_or_create(None, "What should I rebalance first?")
@@ -291,6 +307,40 @@ def test_copilot_retries_json_tool_blob_as_safe_plain_text(tmp_path: Path) -> No
     assert result["answer"].startswith("Your current savings rate")
     assert result["tool_calls"] == []
     assert "set_contribution_rules" not in result["answer"]
+
+
+def test_copilot_hard_bounds_an_oversized_latest_history_message(
+    tmp_path: Path,
+) -> None:
+    store = ConversationStore(tmp_path)
+    client = CapturingTextClient()
+    copilot = FinancialCopilot(
+        conversation_store=store,
+        llm_client=client,
+        max_history_messages=10,
+        max_history_chars=4_000,
+        max_tool_rounds=2,
+        system_prompt="System prompt",
+    )
+    question = f"important beginning {'x' * 6_000} important ending"
+
+    result = asyncio.run(
+        copilot.chat(
+            question=question,
+            contextual_brief='{"snapshot_summary":"ok"}',
+            context_trace={},
+        )
+    )
+
+    history_messages = client.messages[2:]
+    assert len(history_messages) == 1
+    assert len(history_messages[0]["content"]) == 4_000
+    assert history_messages[0]["content"].startswith("important beginning")
+    assert history_messages[0]["content"].endswith("important ending")
+    assert "older message trimmed to fit the prompt window" in history_messages[0]["content"]
+    prompt_window = result["context_trace"]["prompt_window"]
+    assert prompt_window["history_chars_included"] == 4_000
+    assert prompt_window["history_truncated"] is True
 
 
 def test_copilot_tool_round_trip(tmp_path: Path) -> None:

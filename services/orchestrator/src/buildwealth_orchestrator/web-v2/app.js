@@ -211,6 +211,11 @@ function route() {
   const previousView = currentView;
   currentView = view;
 
+  // Onboarding is a destination, not a page inside the app: while it runs the
+  // sidebar and topbar collapse so there are no seven competing exits from a
+  // five-step flow. Setup owns its own bar and its own way back (#today).
+  document.body.classList.toggle('shell-focus', view.meta.focus === true);
+
   // Closing the tools drawer on navigation matches the "drawer dismisses on use"
   // behavior every command-menu/quick-pick has trained users to expect.
   setToolsOpen(false);

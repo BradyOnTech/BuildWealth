@@ -257,7 +257,7 @@
   margin: 0;
 }
 
-.studio-status.is-busy { color: var(--brass); }
+.studio-status.is-busy { color: var(--brass-ink); }
 .studio-status.is-error { color: var(--oxblood); }
 
 .studio-save-ok {
@@ -324,7 +324,7 @@
   margin: 0;
   padding-left: 1.1rem;
   font-size: var(--t-body-sm);
-  color: var(--brass);
+  color: var(--brass-ink);
 }
 
 .studio-toolbar {
@@ -643,7 +643,7 @@
 
 .studio-sticky-delta.up { color: var(--forest); }
 .studio-sticky-delta.down { color: var(--oxblood); }
-.studio-sticky-busy { color: var(--brass); }
+.studio-sticky-busy { color: var(--brass-ink); }
 
 @media (max-width: 600px) {
   .studio-sticky-verdict {

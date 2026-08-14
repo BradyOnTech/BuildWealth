@@ -512,6 +512,17 @@ export const api = {
   focusDomains:      () => fetchJson('/api/copilot/focus/domains'),
   copilotChat:       (body) => postJson('/api/copilot/chat', body),
   copilotChatStream: (body, options = {}) => fetchSse('/api/copilot/chat/stream', body, options),
+  copilotPendingAction: (id) => fetchJson(
+    `/api/copilot/pending-actions/${encodeURIComponent(id)}`,
+  ),
+  applyCopilotPendingAction: (id) => postJson(
+    `/api/copilot/pending-actions/${encodeURIComponent(id)}/apply`,
+    {},
+  ),
+  rejectCopilotPendingAction: (id, reason = 'Rejected by the user.') => postJson(
+    `/api/copilot/pending-actions/${encodeURIComponent(id)}/reject`,
+    { reason },
+  ),
 
   // Recommendations
   recommendations: (opts) => fetchJson(recommendationsUrl(opts)),
