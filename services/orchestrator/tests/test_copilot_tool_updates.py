@@ -45,9 +45,9 @@ def test_copilot_prompt_includes_context_quality_guidance() -> None:
     prompt = str(main.copilot.system_prompt)
     assert "quality.freshness.snapshot_stale" in prompt
     assert "caveat recommendations when context quality is degraded" in prompt
-    assert "draft_watchlist_thesis_revision" in prompt
-    assert "draft_dossier_thesis_revision" in prompt
-    assert "user review without saving" in prompt
+    assert "server-owned pending action" in prompt
+    assert "You cannot apply that pending action" in prompt
+    assert "owning authenticated Research review interface" in prompt
     assert "Import Report ID" in prompt
     assert "Saved Simulation IDs" in prompt
     assert "draft and review helper" in prompt

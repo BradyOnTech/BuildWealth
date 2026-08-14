@@ -39,6 +39,9 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
   const chatPayloads = [];
   let onboardingStatusCalls = 0;
   let savedProfile = null;
+  let pendingSequence = 0;
+  let directProfileWrites = 0;
+  const pendingProfiles = new Map();
   const baseProfile = {
     income_items: [],
     expense_items: [],
@@ -233,17 +236,20 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
               expense_items: [{ id: 'expense_rent', label: 'Rent', monthly_amount_usd: 2600 }],
             },
             proposed_profile: {
+              ...baseProfile,
               income_items: [{ id: 'income_salary', label: 'Salary', monthly_amount_usd: 11000 }],
               expense_items: [{ id: 'expense_rent', label: 'Rent', monthly_amount_usd: 2600 }],
-              debt_items: [],
-              goal_items: [],
-              physical_assets: [],
-              tax_profile: {},
-              flags: {},
-              notes: '',
             },
             requires_confirmation: true,
           };
+      const actionId = `pfa-browser-${++pendingSequence}`;
+      toolResult.pending_action = {
+        action_id: actionId,
+        status: 'pending',
+        expires_at: '2026-08-01T12:30:00.000Z',
+        summary: toolResult.summary,
+      };
+      pendingProfiles.set(actionId, toolResult.proposed_profile);
       await route.fulfill(jsonResponse({
         conversation_id: isAssetPrompt
           ? 'conversation-asset-setup'
@@ -266,14 +272,37 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
       return;
     }
 
+    const pendingApplyMatch = url.pathname.match(
+      /^\/api\/copilot\/pending-actions\/([^/]+)\/apply$/,
+    );
+    if (pendingApplyMatch && request.method() === 'POST') {
+      const actionId = decodeURIComponent(pendingApplyMatch[1]);
+      const proposedProfile = pendingProfiles.get(actionId);
+      assert.ok(proposedProfile, `unknown pending action ${actionId}`);
+      savedProfile = proposedProfile;
+      await route.fulfill(jsonResponse({
+        action: {
+          action_id: actionId,
+          status: 'applied',
+          applied_at: '2026-07-31T12:00:00.000Z',
+          status_reason: 'Applied after explicit user confirmation.',
+        },
+        result: {
+          already_applied: false,
+          profile: savedProfile,
+        },
+      }));
+      return;
+    }
+
     if (url.pathname === '/api/financial-profile' && request.method() === 'GET') {
       await route.fulfill(jsonResponse(savedProfile || baseProfile));
       return;
     }
 
     if (url.pathname === '/api/financial-profile' && request.method() === 'PUT') {
-      savedProfile = request.postDataJSON();
-      await route.fulfill(jsonResponse(savedProfile));
+      directProfileWrites += 1;
+      await route.fulfill(jsonResponse({ detail: 'Copilot must use pending actions.' }, 409));
       return;
     }
 
@@ -292,7 +321,8 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
   const draft = await textarea.inputValue();
   assert.match(draft, /get_onboarding_status/);
   assert.match(draft, /draft_financial_profile_update/);
-  assert.match(draft, /do not save anything/i);
+  assert.match(draft, /server-owned pending action/i);
+  assert.match(draft, /you cannot apply it/i);
 
   await page.locator('#composer-submit').click();
   await page.getByText('Review profile update').waitFor({ state: 'visible' });
@@ -304,7 +334,7 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
   assert.equal(chatPayloads[0].use_live_snapshot, false);
 
   await page.getByRole('button', { name: /apply profile update/i }).click();
-  await page.getByText('Profile update applied').waitFor({ state: 'visible' });
+  await page.getByText('Applied to your financial profile.').waitFor({ state: 'visible' });
 
   assert.ok(savedProfile, 'expected profile update request to be sent');
   assert.deepEqual(savedProfile.income_items, [
@@ -318,6 +348,7 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
   ]);
   assert.deepEqual(savedProfile.tax_profile, { filing_status: 'single' });
   assert.equal(savedProfile.notes, 'Keep this note.');
+  assert.equal(directProfileWrites, 0);
   assert.equal(onboardingStatusCalls, 3);
 
   await page.getByRole('button', { name: /new chat/i }).click();
@@ -332,7 +363,8 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
   assert.match(goalsDraft, /target_amount_usd/);
   assert.match(goalsDraft, /target_date/);
   assert.match(goalsDraft, /priority/);
-  assert.match(goalsDraft, /do not save anything/i);
+  assert.match(goalsDraft, /server-owned pending action/i);
+  assert.match(goalsDraft, /you cannot apply it/i);
 
   await page.locator('#composer-submit').click();
   await page.getByText('Home down payment').waitFor({ state: 'visible' });
@@ -343,8 +375,8 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
   assert.equal(chatPayloads.length, 2);
   assert.match(chatPayloads[1].question, /Help me add financial goals/);
 
-  await page.locator('[data-profile-draft]').last().click();
-  await page.getByText('Profile update applied').last().waitFor({ state: 'visible' });
+  await page.locator('[data-pending-action-apply]').last().click();
+  await page.getByText('Applied to your financial profile.').last().waitFor({ state: 'visible' });
 
   assert.deepEqual(savedProfile.goal_items, [{
     id: 'goal_home_down_payment',
@@ -370,7 +402,8 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
   assert.match(taxDraft, /filing_status/);
   assert.match(taxDraft, /marginal_tax_rate/);
   assert.match(taxDraft, /state/);
-  assert.match(taxDraft, /do not save anything/i);
+  assert.match(taxDraft, /server-owned pending action/i);
+  assert.match(taxDraft, /you cannot apply it/i);
 
   await page.locator('#composer-submit').click();
   await page.getByText('Tax profile').waitFor({ state: 'visible' });
@@ -380,8 +413,8 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
   assert.equal(chatPayloads.length, 3);
   assert.match(chatPayloads[2].question, /Help me add tax basics/);
 
-  await page.locator('[data-profile-draft]').last().click();
-  await page.getByText('Profile update applied').last().waitFor({ state: 'visible' });
+  await page.locator('[data-pending-action-apply]').last().click();
+  await page.getByText('Applied to your financial profile.').last().waitFor({ state: 'visible' });
 
   assert.deepEqual(savedProfile.tax_profile, {
     filing_status: 'married_filing_jointly',
@@ -410,7 +443,8 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
   assert.match(assetsDraft, /asset_type/);
   assert.match(assetsDraft, /purchase_date/);
   assert.match(assetsDraft, /annual_growth_rate/);
-  assert.match(assetsDraft, /do not save anything/i);
+  assert.match(assetsDraft, /server-owned pending action/i);
+  assert.match(assetsDraft, /you cannot apply it/i);
 
   await page.locator('#composer-submit').click();
   await page.getByText('Primary residence').waitFor({ state: 'visible' });
@@ -420,8 +454,8 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
   assert.equal(chatPayloads.length, 4);
   assert.match(chatPayloads[3].question, /Help me add physical assets/);
 
-  await page.locator('[data-profile-draft]').last().click();
-  await page.getByText('Profile update applied').last().waitFor({ state: 'visible' });
+  await page.locator('[data-pending-action-apply]').last().click();
+  await page.getByText('Applied to your financial profile.').last().waitFor({ state: 'visible' });
 
   assert.deepEqual(savedProfile.physical_assets, [{
     id: 'asset_primary_residence',
@@ -441,9 +475,8 @@ test('Copilot guides profile setup, renders a draft, and applies the reviewed pa
   }]);
 });
 
-test('Copilot reviews and saves a drafted dossier thesis revision', async ({ page }) => {
+test('Copilot keeps a legacy dossier thesis draft review-only and routes to Research', async ({ page }) => {
   const chatPayloads = [];
-  let savedDossierPatch = null;
 
   await page.route('**/*', async route => {
     const request = route.request();
@@ -523,31 +556,6 @@ test('Copilot reviews and saves a drafted dossier thesis revision', async ({ pag
       return;
     }
 
-    if (
-      url.pathname === '/api/plans/plan-1/artifacts/dossier-msft-vti/thesis'
-      && request.method() === 'PUT'
-    ) {
-      savedDossierPatch = request.postDataJSON();
-      await route.fulfill(jsonResponse({
-        artifact: {
-          id: 'dossier-msft-vti',
-          title: 'Research Dossier: MSFT vs VTI',
-          content: '# Research Dossier: MSFT vs VTI\n\n## Thesis\n\nRevised thesis keeps MSFT as a quality watch item but requires concentration review before action.\n',
-        },
-        thesis_review: {
-          status: 'current',
-          target: 'dossier',
-          plan_id: 'plan-1',
-          artifact_id: 'dossier-msft-vti',
-          reviewed_at: '2026-04-29T12:00:00Z',
-          expires_at: '2026-06-13T12:00:00Z',
-          reference_price_usd: 410,
-          age_days: 0,
-        },
-      }));
-      return;
-    }
-
     await route.fulfill(jsonResponse({ detail: `Unhandled test route: ${request.method()} ${url.pathname}` }, 404));
   });
 
@@ -568,19 +576,19 @@ test('Copilot reviews and saves a drafted dossier thesis revision', async ({ pag
   assert.equal(chatPayloads.length, 1);
   assert.match(chatPayloads[0].question, /Review investment-fit recommendation rec-thesis/);
 
-  await page.getByRole('button', { name: /save revised thesis/i }).click();
-  await page.getByText('Dossier thesis updated for dossier-msft-vti.').waitFor({ state: 'visible' });
-
-  assert.ok(savedDossierPatch, 'expected dossier thesis save request to be sent');
-  assert.equal(savedDossierPatch.target_type, 'dossier');
-  assert.equal(savedDossierPatch.plan_id, 'plan-1');
-  assert.equal(savedDossierPatch.artifact_id, 'dossier-msft-vti');
-  assert.equal(savedDossierPatch.recommendation_id, 'rec-thesis');
-  assert.equal(
-    savedDossierPatch.thesis,
-    'Revised thesis keeps MSFT as a quality watch item but requires concentration review before action.',
+  await page.getByText(/legacy chat draft is review-only/i).waitFor({ state: 'visible' });
+  const researchLink = page.getByRole('link', { name: /open research review/i });
+  await researchLink.waitFor({ state: 'visible' });
+  await expectNoSaveAuthority(page);
+  assert.match(
+    await researchLink.getAttribute('href'),
+    /#research\?thesisReview=dossier-msft-vti&plan=plan-1/,
   );
-  assert.equal(savedDossierPatch.reference_price_usd, 410);
-  assert.equal(savedDossierPatch.review_window_days, 45);
-  assert.match(savedDossierPatch.rationale, /portfolio concentration/);
 });
+
+async function expectNoSaveAuthority(page) {
+  assert.equal(
+    await page.getByRole('button', { name: /save revised thesis/i }).count(),
+    0,
+  );
+}

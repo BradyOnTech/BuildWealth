@@ -100,7 +100,8 @@ test('copilot thread keeps all risk postures visible including not recommended e
   assert.match(output, /Not recommended · still explorable/);
   assert.match(output, /does not change your saved Profile/);
   assert.match(output, /Review as my Profile default/);
-  assert.match(output, /Profile will change from moderate to aggressive/);
+  assert.match(output, /data-review-suggest=/);
+  assert.match(output, /do not apply it/);
   assert.match(output, /data-risk-variant="conservative"/);
   assert.match(output, /data-risk-variant="moderate"/);
   assert.match(output, /data-risk-variant="aggressive"/);
@@ -184,6 +185,13 @@ test('copilot thread renders financial profile draft review card', () => {
                 flags: { no_debt: true },
                 notes: '',
               },
+              pending_action: {
+                action_id: 'pfa_profile_1',
+                status: 'pending',
+                summary: 'Drafted financial profile updates for income items, expense items.',
+                impact_level: 'medium',
+                expires_at: '2026-04-26T12:30:00.000Z',
+              },
               requires_confirmation: true,
             },
           },
@@ -221,7 +229,9 @@ test('copilot thread renders financial profile draft review card', () => {
   assert.match(html, /Avoid NVDA/);
   assert.match(html, /Avoid sectors Crypto/);
   assert.match(html, /No debt/);
-  assert.match(html, /data-profile-draft=/);
+  assert.match(html, /data-pending-action-apply="pfa_profile_1"/);
+  assert.match(html, /data-pending-action-reject="pfa_profile_1"/);
+  assert.match(html, /Nothing changes until you apply/);
   assert.match(html, /Apply profile update/);
 });
 
@@ -669,8 +679,9 @@ test('copilot thread renders watchlist thesis revision draft cards', () => {
   assert.match(html, /45 days/);
   assert.match(html, /Price moved materially/);
   assert.match(html, /Tax lot impact not reviewed\./);
-  assert.match(html, /data-thesis-draft=/);
-  assert.match(html, /Save revised thesis/);
+  assert.doesNotMatch(html, /data-thesis-draft=/);
+  assert.match(html, /legacy chat draft is review-only/);
+  assert.match(html, /Open Research/);
   assert.doesNotMatch(html, /"draft_kind"/);
 });
 
@@ -721,42 +732,37 @@ test('copilot thread renders dossier thesis revision draft cards', () => {
   assert.match(html, /60 days/);
   assert.match(html, /prior thesis expired/);
   assert.match(html, /Provider freshness should be refreshed\./);
-  assert.match(html, /data-thesis-draft=/);
-  assert.match(html, /Save revised thesis/);
+  assert.doesNotMatch(html, /data-thesis-draft=/);
+  assert.match(html, /legacy chat draft is review-only/);
+  assert.match(html, /Open Research/);
   assert.doesNotMatch(html, /"draft_kind"/);
 });
 
-test('copilot view wires profile draft apply action to profile API', () => {
+test('copilot view applies profile drafts only through pending-action API', () => {
   const currentDir = dirname(fileURLToPath(import.meta.url));
   const copilotSource = readFileSync(resolve(currentDir, '../views/copilot.js'), 'utf8');
   const apiSource = readFileSync(resolve(currentDir, '../lib/api.js'), 'utf8');
 
-  assert.match(apiSource, /updateProfile/);
-  assert.match(apiSource, /profile:/);
-  assert.match(apiSource, /\/api\/financial-profile/);
-  assert.match(copilotSource, /\[data-profile-draft\]/);
-  assert.match(copilotSource, /api\.profile/);
-  assert.match(copilotSource, /mergeProfileDraft/);
-  assert.match(copilotSource, /api\.updateProfile/);
-  assert.match(copilotSource, /Profile update applied/);
+  assert.match(apiSource, /applyCopilotPendingAction/);
+  assert.match(apiSource, /rejectCopilotPendingAction/);
+  assert.match(apiSource, /\/api\/copilot\/pending-actions/);
+  assert.match(copilotSource, /\[data-pending-action-apply\]/);
+  assert.match(copilotSource, /\[data-pending-action-reject\]/);
+  assert.match(copilotSource, /api\.applyCopilotPendingAction/);
+  assert.doesNotMatch(copilotSource, /\[data-profile-draft\]/);
+  assert.doesNotMatch(copilotSource, /mergeProfileDraft/);
 });
 
-test('copilot view wires thesis draft save action to watchlist thesis API', () => {
+test('copilot view does not save legacy thesis drafts from chat', () => {
   const currentDir = dirname(fileURLToPath(import.meta.url));
   const copilotSource = readFileSync(resolve(currentDir, '../views/copilot.js'), 'utf8');
   const apiSource = readFileSync(resolve(currentDir, '../lib/api.js'), 'utf8');
 
   assert.match(apiSource, /saveWatchlistThesisRevision/);
   assert.match(apiSource, /saveDossierThesisRevision/);
-  assert.match(apiSource, /\/api\/portfolio\/watchlist\/.*thesis/);
-  assert.match(apiSource, /\/api\/plans\/.*artifacts.*thesis/);
-  assert.match(copilotSource, /\[data-thesis-draft\]/);
-  assert.match(copilotSource, /recommendationFocus/);
-  assert.match(copilotSource, /patch\.recommendation_id/);
-  assert.match(copilotSource, /api\.saveWatchlistThesisRevision/);
-  assert.match(copilotSource, /api\.saveDossierThesisRevision/);
-  assert.match(copilotSource, /Watchlist thesis updated/);
-  assert.match(copilotSource, /Dossier thesis updated/);
+  assert.doesNotMatch(copilotSource, /\[data-thesis-draft\]/);
+  assert.doesNotMatch(copilotSource, /api\.saveWatchlistThesisRevision/);
+  assert.doesNotMatch(copilotSource, /api\.saveDossierThesisRevision/);
 });
 
 test('copilot view exposes guided profile onboarding entry point', () => {
@@ -770,7 +776,8 @@ test('copilot view exposes guided profile onboarding entry point', () => {
   assert.match(copilotSource, /data-profile-onboarding-prompt/);
   assert.match(copilotSource, /get_onboarding_status/);
   assert.match(copilotSource, /draft_financial_profile_update/);
-  assert.match(copilotSource, /do not save/);
+  assert.match(copilotSource, /server-owned pending action/);
+  assert.match(copilotSource, /You cannot apply it/);
 });
 
 test('copilot view exposes guided debt onboarding entry point', () => {

@@ -11,12 +11,18 @@
   --paper-bright: #f5f1e6;   /* hover/lift */
   --shade:        rgba(20, 24, 18, 0.04);
 
-  /* Ink */
+  /* Ink.
+     --ink-faint is the muted *text* rung and must clear WCAG AA (4.5:1) on
+     --paper: it carries eyebrows, tab labels, hints, and some controls in
+     ~190 places. The old value (#8c8e80, 2.76:1) failed. Anything genuinely
+     decorative — dashed rules, chart gridlines, unfilled marks — uses
+     --ink-decor instead, which is not readable and must never carry text. */
   --ink:          #1a2117;   /* deep printer's ink */
   --ink-strong:   #0e1209;
-  --ink-soft:     #4d5448;
-  --ink-faint:    #8c8e80;
-  --ink-quiet:    #b0ad9a;
+  --ink-soft:     #4d5448;   /* 6.49:1 */
+  --ink-faint:    #5f6656;   /* 4.93:1 — muted text floor */
+  --ink-decor:    #8c8e80;   /* 2.76:1 — marks and hairlines only */
+  --ink-quiet:    #b0ad9a;   /* 1.87:1 — hairlines only, never text */
 
   /* Hairlines */
   --rule:         #d4cdb8;
@@ -29,8 +35,12 @@
   --forest-soft:  #4a7d5b;
   --oxblood:      #7d2e2e;   /* danger / loss */
   --oxblood-soft: #a14b4b;
-  --brass:        #a8842c;   /* advisory / warning */
+  --brass:        #a8842c;   /* advisory gold — marks, rules, backgrounds */
+  --brass-ink:    #74581a;   /* 5.51:1 — the readable rung for advisory TEXT */
   --brass-soft:   #c4a050;
+  --brass-wash:   #f2ead4;
+  --forest-wash:  #e4e9e0;
+  --oxblood-wash: #f0e2df;
   --gilt:         #c9a04c;   /* gold-leaf accent for active marker */
 
   /* Sidebar */
@@ -89,6 +99,9 @@
   /* Layout widths */
   --sidebar-w:  240px;
   --topbar-h:   48px;
+  /* Touch target for primary actions. WCAG 2.5.8 AA's hard floor is 24px, which
+     compact controls (.btn-sm, chips) meet via inset ::before hit pads. */
+  --tap:        44px;
   --measure:    62ch;       /* prose comfortable width */
   --gutter:     clamp(24px, 4vw, 56px);
 

@@ -9,6 +9,11 @@ const DAY_FMT = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long
 const MONEY_FMT = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const GOAL_DATE_FMT = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
+function formatActionExpiry(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'soon' : TIME_FMT.format(date);
+}
+
 const ACTIVITY_LABELS = {
   starting: 'Preparing your review',
   assembling_context: 'Reading your financial context',
@@ -23,6 +28,7 @@ const ACTIVITY_LABELS = {
   assess_portfolio_fit: 'Checking portfolio fit and concentration',
   draft_financial_profile_update: 'Preparing a profile update for review',
   draft_investment_research_recommendation: 'Preparing an investment recommendation',
+  pending_action_created: 'Pending action ready for your review',
 };
 
 export function renderThread(messages, {
@@ -64,8 +70,10 @@ function renderStreamingActivities(streaming) {
   return html`
     <div class="copilot-activity" aria-label="Copilot activity">
       ${activities.map(activity => html`
-        <div class="copilot-activity-row ${activity.status === 'running' ? 'running' : 'done'}">
-          <span class="copilot-activity-icon" aria-hidden="true">${activity.status === 'running' ? '' : '✓'}</span>
+        <div class="copilot-activity-row ${esc(activity.status || 'succeeded')}">
+          <span class="copilot-activity-icon" aria-hidden="true">${
+            activity.status === 'running' ? '' : activity.status === 'failed' ? '!' : '✓'
+          }</span>
           <span>${activityLabel(activity.name)}</span>
         </div>
       `)}
@@ -117,6 +125,9 @@ function renderMessage(m, { planId, conversationId, trackedMessageKeys } = {}) {
   const bodyHtml = role === 'user'
     ? esc(String(m.content || ''))
     : raw(renderMarkdown(String(m.content || '')));
+  const contextReferences = role === 'user' && Array.isArray(m.metadata?.context_references)
+    ? m.metadata.context_references
+    : [];
 
   return html`
     <article class="message ${role}">
@@ -127,6 +138,9 @@ function renderMessage(m, { planId, conversationId, trackedMessageKeys } = {}) {
           ${statusLabel ? html`<span class="turn-status ${turnStatus}">${statusLabel}</span>` : ''}
         </header>
         <div class="message-body ${role}">${bodyHtml}</div>
+        ${contextReferences.length
+          ? raw(renderMessageContextReferences(contextReferences))
+          : ''}
         ${role === 'assistant' && m.metadata?.risk_comparison
           ? raw(renderRiskComparison(m.metadata.risk_comparison, m.metadata?.risk_lens))
           : ''}
@@ -139,6 +153,27 @@ function renderMessage(m, { planId, conversationId, trackedMessageKeys } = {}) {
         })) : ''}
       </div>
     </article>
+  `;
+}
+
+function renderMessageContextReferences(references) {
+  const labels = {
+    plan: 'Plan',
+    recommendation: 'Inbox decision',
+    saved_simulation: 'Saved simulation',
+    plan_artifact: 'Plan evidence',
+    holding: 'Holding',
+  };
+  return html`
+    <div class="message-context-references" aria-label="Exact references used">
+      ${references.slice(0, 8).map(reference => {
+        const type = String(reference?.type || '').trim();
+        const id = String(reference?.id || '').trim();
+        const label = String(reference?.label || '').trim()
+          || `${labels[type] || 'Reference'} · ${id}`;
+        return html`<span>${esc(label)}</span>`;
+      })}
+    </div>
   `;
 }
 
@@ -191,7 +226,6 @@ export function renderRiskComparison(comparison, lens = {}) {
         ${variants.map(variant => {
           const posture = String(variant.posture || 'moderate');
           const isSelected = posture === selected;
-          const encoded = encodeURIComponent(JSON.stringify({ investment_policy: { risk_tolerance: posture } }));
           return html`
             <article class="risk-variant ${isSelected ? 'selected' : ''}" data-risk-variant-panel="${esc(posture)}">
               <div class="risk-variant-title">
@@ -214,14 +248,13 @@ export function renderRiskComparison(comparison, lens = {}) {
               ${variant.warning ? html`<p class="risk-variant-warning">${esc(variant.warning)}</p>` : ''}
               ${posture !== comparison?.profile_posture ? html`
                 <div class="risk-default-control">
-                  <button type="button" class="risk-default-action" data-risk-default-review>
+                  <button
+                    type="button"
+                    class="risk-default-action"
+                    data-review-suggest="${esc(`Prepare a financial profile update that changes only investment_policy.risk_tolerance to ${posture}. Show me the exact pending change for review; do not apply it.`)}"
+                  >
                     Review as my Profile default
                   </button>
-                  <div class="risk-default-confirm" role="group" aria-label="Confirm Profile default change">
-                    <span>Profile will change from ${esc(comparison?.profile_posture || 'not set')} to ${esc(posture)}.</span>
-                    <button type="button" data-profile-draft="${encoded}">Confirm</button>
-                    <button type="button" data-risk-default-cancel>Cancel</button>
-                  </div>
                 </div>
               ` : html`<span class="risk-saved-label">Saved Profile default</span>`}
             </article>
@@ -271,6 +304,11 @@ function renderContextTraceSummary(trace = {}) {
   const returnedCount = Number(retrieval.returned_count);
   const citationCount = Number(retrieval.citation_count);
   const conflictCount = Number(conflictReview.count);
+  const explicitContext = trace.explicit_context_references
+    && typeof trace.explicit_context_references === 'object'
+    ? trace.explicit_context_references
+    : {};
+  const explicitCount = Number(explicitContext.count);
   const focusApplied = trace.focus_applied && typeof trace.focus_applied === 'object' ? trace.focus_applied : null;
   const focusPrimary = Array.isArray(focusApplied?.primary_domains) ? focusApplied.primary_domains.filter(Boolean) : [];
   const focusMuted = Array.isArray(focusApplied?.muted_domains) ? focusApplied.muted_domains.filter(Boolean) : [];
@@ -284,6 +322,9 @@ function renderContextTraceSummary(trace = {}) {
     : '';
   const summary = [
     focusLabel,
+    Number.isFinite(explicitCount) && explicitCount > 0
+      ? `${explicitCount} exact reference${explicitCount === 1 ? '' : 's'}`
+      : '',
     trace.plan_id ? 'plan scoped' : '',
     savedSimulations.length ? `${savedSimulations.length} saved simulation${savedSimulations.length === 1 ? '' : 's'}` : '',
     Array.isArray(trace.symbols) && trace.symbols.length ? `${trace.symbols.length} symbol${trace.symbols.length === 1 ? '' : 's'}` : '',
@@ -340,6 +381,35 @@ function contextTraceLinks(trace = {}) {
       label: savedSimulation.title || 'Saved Simulation',
       href: savedSimulationHref(savedSimulation.planId || planId, savedSimulation.id),
     });
+  }
+  const explicitContext = trace.explicit_context_references
+    && typeof trace.explicit_context_references === 'object'
+    ? trace.explicit_context_references
+    : {};
+  const explicitReferences = Array.isArray(explicitContext.references)
+    ? explicitContext.references
+    : [];
+  for (const reference of explicitReferences.slice(0, 8)) {
+    const type = String(reference?.type || '').trim();
+    const id = String(reference?.id || '').trim();
+    const label = String(reference?.label || '').trim() || id;
+    const sourceRef = String(reference?.source_ref || '').trim();
+    const planMatch = sourceRef.match(/^plan:([^/]+)/);
+    const referencedPlanId = type === 'plan' ? id : String(planMatch?.[1] || '');
+    if (type === 'plan' && id) {
+      links.push({ label, href: `#plan?id=${encodeURIComponent(id)}` });
+    } else if (type === 'recommendation' && id) {
+      links.push({ label, href: `#inbox?focus=${encodeURIComponent(id)}` });
+    } else if (type === 'saved_simulation' && id) {
+      links.push({ label, href: savedSimulationHref(referencedPlanId, id) });
+    } else if (type === 'plan_artifact' && id) {
+      const query = new URLSearchParams();
+      if (referencedPlanId) query.set('id', referencedPlanId);
+      query.set('section', 'artifacts');
+      links.push({ label, href: `#plan?${query.toString()}` });
+    } else if (type === 'holding' && id) {
+      links.push({ label, href: `#portfolio?fit=${encodeURIComponent(id)}` });
+    }
   }
   const conflictReview = trace.conflict_review_items && typeof trace.conflict_review_items === 'object'
     ? trace.conflict_review_items
@@ -702,21 +772,12 @@ function renderThesisRevisionCard(result) {
   const title = targetType === 'dossier'
     ? String(target.title || target.artifact_id || 'Saved dossier').trim()
     : `${symbol} · ${source}`;
-  const payload = {
-    target_type: targetType,
-    symbol,
-    data_source: source,
-    plan_id: target.plan_id || '',
-    artifact_id: target.artifact_id || '',
-    thesis: proposed.thesis || '',
-    note: proposed.note || '',
-    reference_price_usd: proposed.reference_price_usd,
-    thesis_reference_price_usd: proposed.reference_price_usd,
-    review_window_days: proposed.review_window_days,
-    tags: proposed.tags,
-    rationale: result.rationale || '',
-  };
-  const encoded = encodeURIComponent(JSON.stringify(payload));
+  const reviewTarget = targetType === 'dossier'
+    ? String(target.artifact_id || '').trim()
+    : symbol;
+  const researchParams = new URLSearchParams();
+  researchParams.set('thesisReview', reviewTarget);
+  if (target.plan_id) researchParams.set('plan', String(target.plan_id));
   return html`
     <article class="investment-fit-card thesis-draft-card">
       <div class="investment-fit-head">
@@ -747,10 +808,13 @@ function renderThesisRevisionCard(result) {
       ${result.rationale ? html`<p class="profile-draft-summary">${result.rationale}</p>` : ''}
       ${renderFitList('Evidence gaps', result.evidence_gaps)}
       ${renderFitList('Warnings', result.warnings)}
+      <p class="profile-draft-status">
+        This legacy chat draft is review-only. Open Research to revise the saved thesis against current evidence.
+      </p>
       <div class="entry-actions">
-        <button class="action-link" data-thesis-draft="${encoded}">
-          Save revised thesis <span class="arrow">›</span>
-        </button>
+        <a class="action-link" href="#research?${researchParams.toString()}">
+          Open Research review <span class="arrow">→</span>
+        </a>
       </div>
     </article>
   `;
@@ -894,6 +958,11 @@ function renderAccountLocationList(accountLocation = {}) {
 
 function renderProfileDraftCard(result) {
   const profile = result.proposed_profile || {};
+  const pendingAction = result.pending_action && typeof result.pending_action === 'object'
+    ? result.pending_action
+    : null;
+  const actionId = String(pendingAction?.action_id || '').trim();
+  const actionStatus = String(pendingAction?.status || (actionId ? 'pending' : 'legacy')).trim();
   const sections = [
     renderHouseholdSection(profile.household_members),
     renderItemSection('Income items', profile.income_items, 'monthly_amount_usd'),
@@ -907,20 +976,36 @@ function renderProfileDraftCard(result) {
   const flagLine = profile.flags?.no_debt
     ? html`<p class="profile-draft-flag">No debt</p>`
     : '';
-  const draftPayload = result.patch_payload || profile;
-  const encoded = encodeURIComponent(JSON.stringify(draftPayload));
+  const statusCopy = {
+    applied: 'Applied to your financial profile.',
+    rejected: 'Declined. No profile change was made.',
+    expired: 'Expired. Ask Copilot to prepare a fresh review against current data.',
+    stale: 'Needs a fresh review because your profile changed after this was drafted.',
+    legacy: 'This older draft cannot be applied safely. Ask Copilot to prepare a fresh review.',
+  };
 
   return html`
-    <article class="profile-draft-card">
+    <article class="profile-draft-card pending-action-card ${esc(actionStatus)}">
       <p class="profile-draft-eyebrow">Review profile update</p>
       <p class="profile-draft-summary">${result.summary || 'Copilot drafted changes for your financial profile.'}</p>
       ${raw(sections.join(''))}
       ${raw(flagLine)}
-      <div class="entry-actions">
-        <button class="action-link" data-profile-draft="${encoded}">
-          Apply profile update <span class="arrow">›</span>
-        </button>
-      </div>
+      ${actionStatus === 'pending' ? html`
+        <p class="profile-draft-meta">
+          Nothing changes until you apply this reviewed proposal. It expires
+          ${pendingAction?.expires_at ? formatActionExpiry(pendingAction.expires_at) : 'soon'}.
+        </p>
+        <div class="entry-actions pending-action-controls">
+          <button class="action-link" data-pending-action-apply="${esc(actionId)}">
+            Apply profile update <span class="arrow">›</span>
+          </button>
+          <button class="action-link secondary" data-pending-action-reject="${esc(actionId)}">
+            Decline
+          </button>
+        </div>
+      ` : html`
+        <p class="profile-draft-status" role="status">${esc(statusCopy[actionStatus] || 'This proposal is no longer actionable.')}</p>
+      `}
     </article>
   `;
 }

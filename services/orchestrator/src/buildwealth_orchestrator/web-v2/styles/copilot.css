@@ -2113,6 +2113,71 @@ button.composer-context-chip:active,
 .composer-context-dot.focus { background: var(--gilt); }
 .composer-context-dot.risk { background: #8d6a45; }
 
+.copilot-explicit-context,
+.message-context-references {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.copilot-explicit-context {
+  padding: 7px 2px 0;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.copilot-reference-chip,
+.message-context-references span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: min(280px, calc(100% - 4px));
+  padding: 4px 8px;
+  border: var(--hair) solid color-mix(in srgb, var(--forest) 28%, var(--rule));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--forest) 5%, var(--paper));
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copilot-reference-chip {
+  flex: 0 1 auto;
+}
+
+.copilot-reference-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.copilot-reference-chip button {
+  flex: 0 0 24px;
+  min-width: 24px;
+  min-height: 24px;
+  margin: -4px -6px -4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+
+.copilot-reference-chip button:hover {
+  color: var(--oxblood);
+}
+
+.message-context-references {
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
 .risk-lens-chip.override {
   border-color: color-mix(in srgb, var(--gilt) 55%, var(--rule));
   background: color-mix(in srgb, var(--gilt) 9%, var(--paper));
@@ -2293,9 +2358,55 @@ button.composer-context-chip:active,
 
 .risk-variant-title span,
 .risk-saved-label {
-  color: var(--brass);
+  color: var(--brass-ink);
   font-size: 10px;
   font-weight: 700;
+}
+
+/* Copilot authority and durable review lifecycle */
+.interaction-mode-chip.review {
+  border-color: color-mix(in srgb, var(--brass) 62%, var(--line));
+  background: color-mix(in srgb, var(--brass) 10%, var(--paper));
+  color: var(--ink);
+}
+
+.composer-context-dot.mode {
+  background: var(--brass);
+}
+
+.copilot-mode-panel {
+  min-width: min(360px, calc(100vw - 32px));
+}
+
+.pending-action-controls {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.pending-action-controls .action-link.secondary {
+  color: var(--muted);
+}
+
+.profile-draft-status {
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+  margin: 16px 0 0;
+  padding-top: 12px;
+}
+
+.pending-action-card.applied .profile-draft-status {
+  color: var(--positive, #326646);
+}
+
+.pending-action-card.stale .profile-draft-status,
+.pending-action-card.expired .profile-draft-status {
+  color: var(--brass-ink);
+}
+
+.copilot-activity-row.failed {
+  color: var(--oxblood);
 }
 
 .risk-status {

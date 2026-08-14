@@ -15,8 +15,27 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 
 import buildwealth_orchestrator.main as m
+from buildwealth_orchestrator.services.copilot_context_reference_adapters import (
+    build_workspace_context_reference_lookups,
+)
+from buildwealth_orchestrator.services.copilot_context_references import (
+    ContextReferenceError,
+    build_context_references_prompt_block,
+    build_context_references_trace,
+    resolve_context_references,
+)
+from buildwealth_orchestrator.services.store_locks import locked_store
 
 router = APIRouter()
+
+_COPILOT_FAILURE_DETAIL = (
+    "Copilot could not complete this turn. Your financial data was not changed. "
+    "Please try again."
+)
+_COPILOT_PROVIDER_FAILURE_DETAIL = (
+    "The connected model provider could not complete this turn. "
+    "Check its connection and try again."
+)
 
 __all__ = [
     "get_copilot_context",
@@ -28,9 +47,47 @@ __all__ = [
     "patch_copilot_conversation_llm",
     "get_copilot_llm_options",
     "list_copilot_focus_domains",
+    "get_copilot_pending_action",
+    "apply_copilot_pending_action",
+    "reject_copilot_pending_action",
     "copilot_chat",
     "copilot_chat_stream",
 ]
+
+
+def _pending_action_http_error(exc: Exception) -> m.HTTPException:
+    if isinstance(exc, m.PendingActionNotFoundError):
+        return m.HTTPException(status_code=404, detail=str(exc))
+    if isinstance(
+        exc,
+        (
+            m.PendingActionExpiredError,
+            m.PendingActionStaleError,
+            m.PendingActionStateError,
+        ),
+    ):
+        action = getattr(exc, "action", None)
+        detail: dict[str, m.Any] = {"message": str(exc)}
+        if isinstance(action, m.PendingFinancialAction):
+            detail["action"] = m.public_pending_financial_action(action)
+        return m.HTTPException(status_code=409, detail=detail)
+    return m.HTTPException(status_code=500, detail="Pending action storage failed.")
+
+
+def _sync_pending_action_snapshot(
+    services: m.WorkspaceServices,
+    action: m.PendingFinancialAction,
+) -> None:
+    try:
+        services.conversation_store.update_pending_action_snapshot(
+            action.conversation_id,
+            m.public_pending_financial_action(action),
+        )
+    except Exception:
+        # Lifecycle state remains authoritative in the pending-action store.
+        # Conversation metadata is a read-optimized projection and must never
+        # make an otherwise successful authoritative action fail.
+        pass
 
 
 @router.get("/api/copilot/context", response_model=m.CopilotContextResponse)
@@ -290,6 +347,181 @@ def list_copilot_focus_domains(
     return {"domains": sorted(m.FOCUS_DOMAIN_CATALOG)}
 
 
+@router.get(
+    "/api/copilot/pending-actions/{action_id}",
+    response_model=m.CopilotPendingActionResponse,
+)
+def get_copilot_pending_action(
+    action_id: str,
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> m.CopilotPendingActionResponse:
+    m.require_permission(services.context, "copilot.use")
+    try:
+        action = m.pending_financial_action_store(services).get(action_id)
+    except Exception as exc:
+        raise _pending_action_http_error(exc) from exc
+    _sync_pending_action_snapshot(services, action)
+    return m.CopilotPendingActionResponse(
+        **m.public_pending_financial_action(action, include_payload=True)
+    )
+
+
+@router.post(
+    "/api/copilot/pending-actions/{action_id}/reject",
+    response_model=m.CopilotPendingActionResponse,
+)
+def reject_copilot_pending_action(
+    action_id: str,
+    request: m.CopilotPendingActionRejectRequest,
+    http_request: m.Request = m.Depends(m.get_current_request),
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> m.CopilotPendingActionResponse:
+    m.require_csrf(http_request)
+    m.require_permission(services.context, "profile.write")
+    try:
+        action = m.pending_financial_action_store(services).reject(
+            action_id,
+            reason=request.reason,
+        )
+    except Exception as exc:
+        raise _pending_action_http_error(exc) from exc
+    _sync_pending_action_snapshot(services, action)
+    return m.CopilotPendingActionResponse(
+        **m.public_pending_financial_action(action)
+    )
+
+
+@router.post(
+    "/api/copilot/pending-actions/{action_id}/apply",
+    response_model=m.CopilotPendingActionApplyResponse,
+)
+def apply_copilot_pending_action(
+    action_id: str,
+    http_request: m.Request = m.Depends(m.get_current_request),
+    services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
+) -> m.CopilotPendingActionApplyResponse:
+    """Apply one reviewed action; this endpoint is never a model-facing tool."""
+
+    m.require_csrf(http_request)
+    m.require_permission(services.context, "profile.write")
+    store = m.pending_financial_action_store(services)
+    profile_store = services.financial_profile_store
+
+    # Store methods lock individual JSON files, but an Apply spans the action
+    # lifecycle and Canonical Profile files. Hold both locks for the complete
+    # compare/write/commit sequence so concurrent clicks or profile edits
+    # cannot interleave between validation and the final lifecycle transition.
+    with locked_store(store.path), locked_store(profile_store.profile_path):
+        try:
+            action = store.get(action_id)
+        except Exception as exc:
+            raise _pending_action_http_error(exc) from exc
+
+        if action.status is m.PendingActionStatus.APPLIED:
+            current_profile = m.FinancialProfileResponse(
+                **m.get_financial_profile_payload(profile_store)
+            ).model_dump(mode="json")
+            return m.CopilotPendingActionApplyResponse(
+                action=m.CopilotPendingActionResponse(
+                    **m.public_pending_financial_action(action)
+                ),
+                result={"already_applied": True, "profile": current_profile},
+            )
+        if action.status is not m.PendingActionStatus.PENDING:
+            raise _pending_action_http_error(
+                m.PendingActionStateError(action, operation="apply")
+            )
+        if action.tool_name != "draft_financial_profile_update":
+            raise m.HTTPException(
+                status_code=409,
+                detail="This pending action kind is not supported by the profile apply interface.",
+            )
+
+        original_profile = profile_store.get()
+        current_profile = m.FinancialProfileResponse(
+            **m.get_financial_profile_payload(profile_store)
+        ).model_dump(mode="json")
+        current_fingerprint = m.fingerprint_source_state(current_profile)
+        if not m.validate_source_fingerprint(
+            action.source_state_fingerprint,
+            current_fingerprint,
+        ):
+            try:
+                store.mark_applied(
+                    action.action_id,
+                    current_source_fingerprint=current_fingerprint,
+                )
+            except Exception as exc:
+                stale_action = getattr(exc, "action", None)
+                if isinstance(stale_action, m.PendingFinancialAction):
+                    _sync_pending_action_snapshot(services, stale_action)
+                raise _pending_action_http_error(exc) from exc
+
+        payload = action.payload
+        patch_payload = payload.get("patch_payload")
+        if payload.get("kind") != "financial_profile_update" or not isinstance(
+            patch_payload,
+            dict,
+        ):
+            raise m.HTTPException(
+                status_code=409,
+                detail="The reviewed profile proposal is malformed and cannot be applied.",
+            )
+
+        draft = m._build_financial_profile_update_draft(
+            patch_payload,
+            services=services,
+        )
+        validated = m.FinancialProfileRequest(**draft["proposed_profile"])
+        saved = m.save_financial_profile_payload(
+            validated,
+            source=f"copilot_pending_action:{action.action_id}",
+            profile_store=profile_store,
+        )
+        try:
+            applied = store.mark_applied(
+                action.action_id,
+                current_source_fingerprint=current_fingerprint,
+            )
+        except Exception as exc:
+            # The lifecycle record is the authority for whether Apply
+            # committed. Restore the exact pre-write profile if that record
+            # cannot be durably advanced, keeping the proposal safely pending.
+            try:
+                profile_store.replace(original_profile)
+            except Exception as rollback_exc:
+                raise m.HTTPException(
+                    status_code=500,
+                    detail=(
+                        "The profile write could not be reconciled with its "
+                        "pending-action record. Refresh the Profile before "
+                        "taking another action."
+                    ),
+                ) from rollback_exc
+            raise _pending_action_http_error(exc) from exc
+
+        # Emit activity and backup side effects only after both authoritative
+        # files have committed successfully.
+        m._record_profile_update_activity(
+            source="copilot_pending_action",
+            sections=m._profile_update_sections_from_payload(patch_payload),
+            via_copilot=True,
+        )
+        m._queue_autogit_event("financial_profile_updated")
+
+    _sync_pending_action_snapshot(services, applied)
+
+    return m.CopilotPendingActionApplyResponse(
+        action=m.CopilotPendingActionResponse(
+            **m.public_pending_financial_action(applied)
+        ),
+        result={
+            "already_applied": False,
+            "profile": m.FinancialProfileResponse(**saved).model_dump(mode="json"),
+        },
+    )
+
+
 async def _copilot_chat_pipeline(
     request: m.CopilotChatRequest,
     services: m.WorkspaceServices,
@@ -311,6 +543,31 @@ async def _copilot_chat_pipeline(
         context_options.research_symbols,
         max_symbols=context_options.research_symbol_limit,
     )
+    raw_context_references = [
+        reference.model_dump(mode="json")
+        for reference in request.context_references
+    ]
+    try:
+        resolved_context_references = resolve_context_references(
+            raw_context_references,
+            workspace_id=str(resolved_services.record.id),
+            lookups=build_workspace_context_reference_lookups(resolved_services),
+        )
+    except ContextReferenceError as exc:
+        raise m.HTTPException(status_code=422, detail=exc.to_public_dict()) from exc
+    context_reference_trace = build_context_references_trace(
+        resolved_context_references
+    )
+    context_reference_domains = {
+        {
+            "plan": "plan",
+            "recommendation": "recommendation",
+            "saved_simulation": "plan",
+            "plan_artifact": "plan",
+            "holding": "portfolio",
+        }[reference.reference_type]
+        for reference in resolved_context_references
+    }
     token = m.current_copilot_workspace_services.set(resolved_services) if scoped_services else None
     try:
         store = resolved_services.conversation_store
@@ -321,6 +578,19 @@ async def _copilot_chat_pipeline(
             )
         except FileNotFoundError as exc:
             raise m.HTTPException(status_code=404, detail=str(exc)) from exc
+        if (
+            request.persist_interaction_mode
+            and conversation.get("interaction_mode") != request.interaction_mode
+        ):
+            if hasattr(store, "update_interaction_mode"):
+                conversation = store.update_interaction_mode(
+                    conversation["id"],
+                    request.interaction_mode,
+                )
+            else:
+                # Compatibility for narrow test/adapter stores; production
+                # ConversationStore persists this field durably.
+                conversation["interaction_mode"] = request.interaction_mode
 
         profile_payload = m.get_financial_profile_payload(resolved_services.financial_profile_store)
         request_risk_lens = (
@@ -415,10 +685,21 @@ async def _copilot_chat_pipeline(
             accepts_turn = False
         turn = None
         if accepts_turn:
+            start_turn_kwargs: dict[str, m.Any] = {
+                "conversation": conversation,
+                "question": request.question,
+                "turn_id": request.turn_id,
+            }
+            try:
+                start_turn_parameters = inspect.signature(store.start_turn).parameters
+            except (TypeError, ValueError, AttributeError):
+                start_turn_parameters = {}
+            if "user_metadata" in start_turn_parameters:
+                start_turn_kwargs["user_metadata"] = {
+                    "context_references": context_reference_trace["references"],
+                }
             turn = store.start_turn(
-                conversation,
-                question=request.question,
-                turn_id=request.turn_id,
+                **start_turn_kwargs,
             )
             if progress is not None:
                 progress(
@@ -445,6 +726,11 @@ async def _copilot_chat_pipeline(
             )
 
         conv_token = m.current_copilot_conversation_id.set(str(conversation.get("id") or ""))
+        turn_token = m.current_copilot_turn_id.set(
+            str(turn.get("id") or "")
+            if isinstance(turn, dict)
+            else str(request.turn_id or "")
+        )
         boost_enabled = bool(getattr(m.settings, "copilot_retrieval_focus_boost", True))
         try:
             if progress is not None:
@@ -499,6 +785,13 @@ async def _copilot_chat_pipeline(
             )
             if risk_comparison is not None:
                 contextual_brief += m.risk_comparison_prompt_block(risk_comparison)
+            if resolved_context_references:
+                contextual_brief += (
+                    "\n\n"
+                    + build_context_references_prompt_block(
+                        resolved_context_references
+                    )
+                )
             context_trace = (
                 dict(assembled_context.get("trace"))
                 if isinstance(assembled_context, dict) and isinstance(assembled_context.get("trace"), dict)
@@ -511,6 +804,35 @@ async def _copilot_chat_pipeline(
             )
             if not isinstance(safety_warnings, list):
                 safety_warnings = context_trace.get("safety_warnings") or []
+            interaction_mode = m.InteractionMode(request.interaction_mode)
+            intent_domains = (
+                intent_for_focus.get("domains")
+                if isinstance(intent_for_focus, dict)
+                and isinstance(intent_for_focus.get("domains"), list)
+                else []
+            )
+            intent_domains = sorted(
+                {str(item) for item in intent_domains}
+                | context_reference_domains
+            )
+            provider_id = str(
+                getattr(turn_llm_client, "provider", "")
+                or turn_llm_client.__class__.__name__
+            ).strip().lower()
+            tool_selection = m.resolve_model_tools(
+                m.copilot_tool_metadata.values(),
+                m.ToolSelectionContext(
+                    mode=interaction_mode,
+                    intent_domains=frozenset(str(item) for item in intent_domains),
+                    primary_domains=frozenset(effective_obj.primary_domains),
+                    secondary_domains=frozenset(effective_obj.secondary_domains),
+                    muted_domains=frozenset(effective_obj.muted_domains),
+                ),
+                m.ProviderCapabilities(
+                    provider_id=provider_id,
+                    tool_calling=True,
+                ),
+            )
             context_trace["focus_applied"] = m.focus_applied_brief_and_retrieval(
                 effective=effective_obj,
                 brief_chars=len(contextual_brief),
@@ -523,6 +845,15 @@ async def _copilot_chat_pipeline(
                 retrieval_focus_boost=boost_enabled,
                 detail_level=context_options.detail_level,
             )
+            context_trace["tool_policy"] = {
+                "policy_version": tool_selection.policy_version,
+                "interaction_mode": interaction_mode.value,
+                "provider_id": provider_id,
+                "selected_tool_names": list(tool_selection.names),
+                "selected_tool_count": len(tool_selection.names),
+                "excluded_tool_count": len(tool_selection.excluded),
+            }
+            context_trace["explicit_context_references"] = context_reference_trace
             context_trace["risk_lens_applied"] = {
                 **resolved_risk_lens,
                 "comparison_available": m.question_supports_risk_comparison(request.question),
@@ -556,7 +887,15 @@ async def _copilot_chat_pipeline(
                             "plan_id": request.plan_id,
                             "use_live_snapshot": request.use_live_snapshot,
                         },
+                        "interaction_mode": interaction_mode.value,
+                        "tool_policy": context_trace["tool_policy"],
                     }
+                if "system_prompt" in chat_parameters:
+                    chat_kwargs["system_prompt"] = m.copilot_system_prompt_for_mode(
+                        interaction_mode
+                    )
+                if "allowed_tool_names" in chat_parameters:
+                    chat_kwargs["allowed_tool_names"] = tool_selection.names
                 if risk_comparison is not None and "fallback_answer" in chat_parameters:
                     chat_kwargs["fallback_answer"] = m.risk_comparison_fallback_answer(risk_comparison)
                 if turn is not None:
@@ -619,6 +958,7 @@ async def _copilot_chat_pipeline(
                 result["llm"] = m.ConversationLlm(**resolved_llm)
                 result["risk_lens"] = resolved_risk_lens
                 result["risk_comparison"] = risk_comparison
+                result["interaction_mode"] = interaction_mode.value
                 if conversation_id:
                     store.update_latest_assistant_metadata(
                         conversation_id,
@@ -635,10 +975,15 @@ async def _copilot_chat_pipeline(
             except FileNotFoundError as exc:
                 raise m.HTTPException(status_code=404, detail=str(exc)) from exc
             except m.httpx.HTTPStatusError as exc:
-                detail = f"LLM provider error: {exc.response.text}"
-                raise m.HTTPException(status_code=502, detail=detail) from exc
+                raise m.HTTPException(
+                    status_code=502,
+                    detail=_COPILOT_PROVIDER_FAILURE_DETAIL,
+                ) from exc
             except Exception as exc:
-                raise m.HTTPException(status_code=500, detail=f"Copilot failed: {exc}") from exc
+                raise m.HTTPException(
+                    status_code=500,
+                    detail=_COPILOT_FAILURE_DETAIL,
+                ) from exc
         except asyncio.CancelledError:
             if turn is not None:
                 store.update_turn_status(
@@ -662,10 +1007,14 @@ async def _copilot_chat_pipeline(
                     conversation["id"],
                     str(turn["id"]),
                     "failed",
-                    error=str(exc),
+                    error=_COPILOT_FAILURE_DETAIL,
                 )
-            raise
+            raise m.HTTPException(
+                status_code=500,
+                detail=_COPILOT_FAILURE_DETAIL,
+            ) from exc
         finally:
+            m.current_copilot_turn_id.reset(turn_token)
             m.current_copilot_conversation_id.reset(conv_token)
     finally:
         if token is not None:
@@ -709,8 +1058,8 @@ async def copilot_chat_stream(
             emit({"type": "error", "status": exc.status_code, "detail": str(exc.detail)})
         except asyncio.CancelledError:
             raise
-        except Exception as exc:
-            emit({"type": "error", "status": 500, "detail": f"Copilot failed: {exc}"})
+        except Exception:
+            emit({"type": "error", "status": 500, "detail": _COPILOT_FAILURE_DETAIL})
         finally:
             queue.put_nowait(None)
 

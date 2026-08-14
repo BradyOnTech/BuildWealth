@@ -100,6 +100,47 @@ class StreamingFakeCopilot:
         }
 
 
+class ContextCapturingCopilot(StreamingFakeCopilot):
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+        self.system_prompt = main.copilot.system_prompt
+
+    async def chat(
+        self,
+        *,
+        question,
+        conversation_id=None,
+        conversation=None,
+        turn=None,
+        contextual_brief=None,
+        context_trace=None,
+        conversation_store=None,
+        llm_client=None,
+        progress_cb=None,
+        system_prompt=None,
+        allowed_tool_names=None,
+    ):
+        self.calls.append(
+            {
+                "contextual_brief": contextual_brief,
+                "context_trace": context_trace,
+                "system_prompt": system_prompt,
+                "allowed_tool_names": tuple(allowed_tool_names or ()),
+            }
+        )
+        return await super().chat(
+            question=question,
+            conversation_id=conversation_id,
+            conversation=conversation,
+            turn=turn,
+            contextual_brief=contextual_brief,
+            context_trace=context_trace,
+            conversation_store=conversation_store,
+            llm_client=llm_client,
+            progress_cb=progress_cb,
+        )
+
+
 async def _fake_assemble(**kwargs):
     return {"trace": {}, "question": kwargs.get("question")}
 
@@ -151,12 +192,103 @@ def test_copilot_chat_stream_reports_errors_as_events(monkeypatch, tmp_path: Pat
         events = _sse_events(response.text)
         assert events[-1]["type"] == "error"
         assert events[-1]["status"] == 500
-        assert "context assembly exploded" in events[-1]["detail"]
+        assert "financial data was not changed" in events[-1]["detail"]
+        assert "context assembly exploded" not in events[-1]["detail"]
         conversations = client.get("/api/copilot/conversations").json()
         assert len(conversations) == 1
         failed = client.get(f"/api/copilot/conversations/{conversations[0]['id']}").json()
         assert failed["turns"][-1]["status"] == "failed"
-        assert "context assembly exploded" in failed["turns"][-1]["error"]
+        assert "financial data was not changed" in failed["turns"][-1]["error"]
+        assert "context assembly exploded" not in failed["turns"][-1]["error"]
+
+
+def test_explicit_context_references_are_scoped_visible_and_tool_relevant(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    services = main.default_workspace_services()
+    plan = services.plan_workspace.create_plan(
+        "Retirement decision",
+        "Compare a contribution change.",
+    )
+    recommendation = services.recommendation_inbox.create(
+        title="Review contribution increase",
+        detail="Consider increasing the monthly contribution after review.",
+        plan_id=plan["id"],
+    )
+    capturing = ContextCapturingCopilot()
+    monkeypatch.setattr(main, "assemble_copilot_context_payload", _fake_assemble)
+    monkeypatch.setattr(main, "copilot", capturing)
+
+    with TestClient(main.app) as client:
+        response = client.post(
+            "/api/copilot/chat/stream",
+            json={
+                "question": "Explain these exact items.",
+                "context_references": [
+                    {"type": "plan", "id": plan["id"]},
+                    {"type": "recommendation", "id": recommendation["id"]},
+                ],
+            },
+        )
+        assert response.status_code == 200
+        events = _sse_events(response.text)
+        assert events[-1]["type"] == "result", events
+        result = events[-1]["data"]
+        conversation = client.get(
+            f"/api/copilot/conversations/{result['conversation_id']}"
+        ).json()
+
+    assert len(capturing.calls) == 1
+    call = capturing.calls[0]
+    assert "BEGIN_UNTRUSTED_EXPLICIT_CONTEXT_JSON" in call["contextual_brief"]
+    assert plan["id"] in call["contextual_brief"]
+    assert recommendation["id"] in call["contextual_brief"]
+    assert "get_plan_review_context" in call["allowed_tool_names"]
+    assert "list_recommendations" in call["allowed_tool_names"]
+    assert "update_plan_settings" not in call["allowed_tool_names"]
+    assert "apply_recommendation" not in call["allowed_tool_names"]
+
+    trace = result["context_trace"]["explicit_context_references"]
+    assert trace["count"] == 2
+    assert "evidence" not in trace["references"][0]
+    user_message = next(
+        message for message in conversation["messages"] if message["role"] == "user"
+    )
+    assert [item["type"] for item in user_message["metadata"]["context_references"]] == [
+        "plan",
+        "recommendation",
+    ]
+    assert user_message["metadata"]["context_references"][0]["label"] == (
+        "Retirement decision"
+    )
+
+
+def test_unresolvable_context_reference_fails_before_creating_a_turn(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _install_temp_workspace_spine(monkeypatch, tmp_path)
+    monkeypatch.setattr(main, "assemble_copilot_context_payload", _fake_assemble)
+    monkeypatch.setattr(main, "copilot", ContextCapturingCopilot())
+
+    with TestClient(main.app) as client:
+        response = client.post(
+            "/api/copilot/chat",
+            json={
+                "question": "Explain this.",
+                "context_references": [
+                    {"type": "recommendation", "id": "rec-does-not-exist"},
+                ],
+            },
+        )
+        conversations = client.get("/api/copilot/conversations").json()
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "reference_not_found"
+    assert "rec-does-not-exist" in response.json()["detail"]["id"]
+    assert conversations == []
 
 
 def test_copilot_conversation_can_be_renamed_archived_and_restored(monkeypatch, tmp_path: Path) -> None:

@@ -40,7 +40,7 @@ const PROFILE_SETUP_PROMPT = [
   'Ask me one focused question at a time for missing household members, income, expenses, debt, goals, tax basics, and physical assets.',
   'Start with the household: who is in it, relationships, and birth years — ages drive most planning math.',
   'When you have enough information, call draft_financial_profile_update so I can review the changes.',
-  'do not save anything with update_financial_profile until I explicitly confirm the draft.',
+  'Create a server-owned pending action for the draft. You cannot apply it; I will use the review card.',
 ].join(' ');
 
 const HOUSEHOLD_SETUP_PROMPT = [
@@ -50,7 +50,7 @@ const HOUSEHOLD_SETUP_PROMPT = [
   'Ask me one focused question at a time: who lives in the household (me, a partner, children or other dependents), each person\'s display_name, relationship (self, partner, child, dependent, other), birth_year, and — for adults — an intended retirement_age.',
   'Explain briefly why it matters: birth years drive retirement timing, catch-up contributions, RMDs, Medicare, and education goals; a partner on record keeps married filing statuses coherent.',
   'When you have enough information, call draft_financial_profile_update with household_members so I can review the changes.',
-  'do not save anything with update_financial_profile until I explicitly confirm the draft.',
+  'Create a server-owned pending action for the draft. You cannot apply it; I will use the review card.',
 ].join(' ');
 
 const GOAL_SETUP_PROMPT = [
@@ -59,7 +59,7 @@ const GOAL_SETUP_PROMPT = [
   'Focus only on missing goal_items for now.',
   'Ask me one focused question at a time for each goal label, target_amount_usd, target_date, priority, and any useful notes.',
   'When you have enough information, call draft_financial_profile_update with goal_items so I can review the changes.',
-  'do not save anything with update_financial_profile until I explicitly confirm the draft.',
+  'Create a server-owned pending action for the draft. You cannot apply it; I will use the review card.',
 ].join(' ');
 
 const DEBT_SETUP_PROMPT = [
@@ -69,7 +69,7 @@ const DEBT_SETUP_PROMPT = [
   'Ask me one focused question at a time for each debt label, balance_usd, interest_rate, minimum_monthly_payment_usd, and payoff priority when relevant.',
   'If I have no current debt, call draft_financial_profile_update with flags.no_debt set to true instead of creating debt_items.',
   'When you have enough information, call draft_financial_profile_update with debt_items or flags.no_debt so I can review the changes.',
-  'do not save anything with update_financial_profile until I explicitly confirm the draft.',
+  'Create a server-owned pending action for the draft. You cannot apply it; I will use the review card.',
 ].join(' ');
 
 const PHYSICAL_ASSET_SETUP_PROMPT = [
@@ -78,7 +78,7 @@ const PHYSICAL_ASSET_SETUP_PROMPT = [
   'Focus only on missing physical_assets for now.',
   'Ask me one focused question at a time for each asset label, current_value_usd, asset_type, purchase_date, and annual_growth_rate when known.',
   'When you have enough information, call draft_financial_profile_update with physical_assets so I can review the changes.',
-  'do not save anything with update_financial_profile until I explicitly confirm the draft.',
+  'Create a server-owned pending action for the draft. You cannot apply it; I will use the review card.',
 ].join(' ');
 
 const TAX_SETUP_PROMPT = [
@@ -87,7 +87,7 @@ const TAX_SETUP_PROMPT = [
   'Focus only on missing tax_profile fields for now.',
   'Ask me one focused question at a time for filing_status, marginal_tax_rate, and state.',
   'When you have enough information, call draft_financial_profile_update with tax_profile so I can review the changes.',
-  'do not save anything with update_financial_profile until I explicitly confirm the draft.',
+  'Create a server-owned pending action for the draft. You cannot apply it; I will use the review card.',
 ].join(' ');
 
 const INVESTMENT_POLICY_SETUP_PROMPT = [
@@ -97,7 +97,7 @@ const INVESTMENT_POLICY_SETUP_PROMPT = [
   'Ask me one focused question at a time for max_single_symbol_exposure_pct, max_sector_exposure_pct, minimum_research_confidence, minimum_cash_runway_months, max_asset_class_exposure_pct, simplicity_preference, tax_sensitivity, risk_tolerance, preferred_account_locations, restricted_symbols, and restricted_sectors.',
   'Frame this as investment-fit guardrails, not buy/sell advice.',
   'When you have enough information, call draft_financial_profile_update with investment_policy so I can review the changes.',
-  'do not save anything with update_financial_profile until I explicitly confirm the draft.',
+  'Create a server-owned pending action for the draft. You cannot apply it; I will use the review card.',
 ].join(' ');
 
 const CHART_DESCRIPTIONS = {
@@ -280,6 +280,49 @@ function seedFocusFromEntry(params = {}) {
   return defaultSessionFocus();
 }
 
+function contextReferencesFromEntry(params = {}) {
+  const references = [];
+  const planId = String(params.plan_id || params.plan || '').trim();
+  const recommendationId = String(params.focus || '').trim();
+  const savedSimulationId = String(params.saved || '').trim();
+  const artifactId = String(params.artifact || params.dossier || '').trim();
+  const holdingId = String(params.holding || '').trim();
+  if (planId) references.push({ type: 'plan', id: planId });
+  if (recommendationId.startsWith('rec-')) {
+    references.push({ type: 'recommendation', id: recommendationId });
+  }
+  if (savedSimulationId) {
+    references.push({ type: 'saved_simulation', id: savedSimulationId });
+  }
+  if (artifactId) references.push({ type: 'plan_artifact', id: artifactId });
+  if (holdingId) references.push({ type: 'holding', id: holdingId });
+  return normalizeContextReferences(references);
+}
+
+function normalizeContextReferences(references) {
+  const seen = new Set();
+  return (Array.isArray(references) ? references : []).flatMap(reference => {
+    const type = String(reference?.type || '').trim().toLowerCase();
+    const id = String(reference?.id || '').trim();
+    const key = `${type}:${id}`;
+    if (!type || !id || seen.has(key)) return [];
+    seen.add(key);
+    return [{ type, id, label: String(reference?.label || '').trim() }];
+  }).slice(0, 8);
+}
+
+function contextReferenceLabel(reference) {
+  if (reference?.label) return reference.label;
+  const labels = {
+    plan: 'Plan',
+    recommendation: 'Inbox decision',
+    saved_simulation: 'Saved simulation',
+    plan_artifact: 'Plan evidence',
+    holding: 'Holding',
+  };
+  return `${labels[reference?.type] || 'Reference'} · ${reference?.id || ''}`;
+}
+
 const ui = {
   conversationId: null,
   conversationTitle: '',
@@ -303,10 +346,12 @@ const ui = {
   planId: null,
   useLive: false,
   recommendationFocus: null,
+  contextReferences: [],
   pickerOpen: null,                 // 'plans' | 'focus' | 'risk' | 'model' | null
   draftFocus: null,
   composerReady: false,
   sessionFocus: defaultSessionFocus(),
+  interactionMode: 'explore',
   riskLens: defaultRiskLens(),
   // Model menu (Grok/Codex-style): workspace default + per-conversation override
   llmOptions: null,                 // payload from GET /api/copilot/llm-options
@@ -377,10 +422,12 @@ export async function init(params = {}) {
   ui.renamingTitle = '';
   ui.useLive = false;
   ui.recommendationFocus = String(params.focus || '').trim() || null;
+  ui.contextReferences = contextReferencesFromEntry(params);
   ui.pickerOpen = null;
   ui.draftFocus = null;
   ui.composerReady = false;
   ui.sessionFocus = seedFocusFromEntry(params);
+  ui.interactionMode = 'explore';
   ui.riskLens = defaultRiskLens();
   ui.conversationLlm = null;
   ui.showCheapOnly = false;
@@ -401,6 +448,7 @@ export async function init(params = {}) {
     rerenderBody();
     if (wantsProfileSetup) {
       seedFocusFromOnboardingIfNeeded(true);
+      ui.interactionMode = 'review';
       fillDraft(onboardingPrompt(ui.onboarding));
     }
   }).catch(() => {});
@@ -420,9 +468,11 @@ export async function init(params = {}) {
     loadConversation(ui.conversationId).catch(() => {});
   }
   if (String(params.intent || '').trim().toLowerCase() === 'investment-policy') {
+    ui.interactionMode = 'review';
     fillDraft(INVESTMENT_POLICY_SETUP_PROMPT);
   }
   if (isPlanReviewIntent(params.intent)) {
+    ui.interactionMode = 'review';
     fillDraft(buildPlanReviewPrompt(params.intent, { planId: ui.planId, chart: params.chart }));
   }
   if (
@@ -430,6 +480,7 @@ export async function init(params = {}) {
     && String(params.intent || '').trim().toLowerCase() !== 'statement-payment-conflict'
   ) {
     // Linked from inbox: prefill question. Conversation stays empty until sent.
+    ui.interactionMode = 'review';
     fillDraft(recommendationFocusPrompt(params.focus, params.intent));
   }
   if (
@@ -513,6 +564,14 @@ async function loadConversation(id) {
       Array.isArray(res.messages) ? res.messages : [],
       ui.turns,
     );
+    const lastReferencedMessage = [...ui.messages].reverse().find(
+      message => message?.role === 'user'
+        && Array.isArray(message?.metadata?.context_references)
+        && message.metadata.context_references.length,
+    );
+    ui.contextReferences = normalizeContextReferences(
+      lastReferencedMessage?.metadata?.context_references,
+    );
     const retryableTurn = [...ui.turns].reverse().find(turn => ['failed', 'stopped'].includes(turn?.status));
     if (retryableTurn) {
       const userMessage = ui.messages.find(message => message.id === retryableTurn.user_message_id)
@@ -539,6 +598,7 @@ async function loadConversation(id) {
     if (res.risk_lens && typeof res.risk_lens === 'object') {
       ui.riskLens = normalizeRiskLens(res.risk_lens);
     }
+    ui.interactionMode = res.interaction_mode === 'review' ? 'review' : 'explore';
     loadLlmOptions(id).then(() => rerenderComposer()).catch(() => {});
   } catch (err) {
     ui.error = err.message;
@@ -613,6 +673,8 @@ function resetConversationState() {
   ui.renamingTitle = '';
   ui.draftFocus = true;
   ui.sessionFocus = defaultSessionFocus();
+  ui.interactionMode = 'explore';
+  ui.contextReferences = [];
   ui.riskLens = defaultRiskLens();
   resetConversationLlmToWorkspaceDefault();
 }
@@ -660,7 +722,7 @@ function updateStreamingActivity(streaming, { key, kind, name, status }) {
   streaming.activities = activities;
   if (status === 'running') {
     for (const activity of activities) {
-      if (activity.status === 'running' && activity.key !== key) activity.status = 'done';
+      if (activity.status === 'running' && activity.key !== key) activity.status = 'succeeded';
     }
   }
   const existing = activities.find(activity => activity.key === key);
@@ -696,6 +758,7 @@ function applyChatResult(question, res) {
   if (res.risk_lens && typeof res.risk_lens === 'object') {
     ui.riskLens = normalizeRiskLens(res.risk_lens);
   }
+  ui.interactionMode = res.interaction_mode === 'review' ? 'review' : ui.interactionMode;
   ui.messages.push({
     id: res.assistant_message_id || null,
     turn_id: turnId || null,
@@ -738,6 +801,7 @@ async function sendMessage(question, {
   // creating a duplicate user message.
   const now = new Date().toISOString();
   if (!retry) {
+    const contextReferences = normalizeContextReferences(ui.contextReferences);
     ui.messages.push({
       id: null,
       turn_id: durableTurnId,
@@ -745,7 +809,7 @@ async function sendMessage(question, {
       role: 'user',
       content: question,
       created_at: now,
-      metadata: {},
+      metadata: { context_references: contextReferences },
     });
   } else {
     setClientTurnStatus(durableTurnId, 'running');
@@ -780,6 +844,11 @@ async function sendMessage(question, {
     risk_comparison: {
       mode: forceRiskComparison || ui.riskLens.mode === 'override' ? 'all' : 'none',
     },
+    interaction_mode: ui.interactionMode,
+    persist_interaction_mode: true,
+    context_references: normalizeContextReferences(ui.contextReferences).map(
+      reference => ({ type: reference.type, id: reference.id }),
+    ),
   };
 
   streamController = new AbortController();
@@ -812,17 +881,26 @@ async function sendMessage(question, {
             ui.streaming.tool = '';
           } else if (event.type === 'tool') {
             ui.streaming.tool = event.status === 'start' ? event.name : '';
+            const lifecycleStatus = event.lifecycle_status
+              || (event.status === 'start' ? 'running' : event.status === 'error' ? 'failed' : 'succeeded');
             updateStreamingActivity(ui.streaming, {
-              key: `tool:${event.name}`,
+              key: event.activity_id || event.tool_call_id || `tool:${event.name}`,
               kind: 'tool',
               name: event.name,
-              status: event.status === 'start' ? 'running' : 'done',
+              status: lifecycleStatus,
+            });
+          } else if (event.type === 'pending_action_created') {
+            updateStreamingActivity(ui.streaming, {
+              key: event.activity_id || `pending-action:${event.action_id}`,
+              kind: 'pending_action',
+              name: 'pending_action_created',
+              status: 'succeeded',
             });
           } else if (event.type === 'answer_delta') {
             ui.streaming.partial += event.text || '';
             ui.streaming.tool = '';
             for (const activity of ui.streaming.activities || []) {
-              if (activity.status === 'running') activity.status = 'done';
+              if (activity.status === 'running') activity.status = 'succeeded';
             }
           } else if (event.type === 'result') {
             result = event.data;
@@ -942,6 +1020,18 @@ function renderComposerContext() {
         </span>
       ` : html`<span class="composer-context-static">Profile + portfolio</span>`}
       <span class="copilot-picker composer-context-picker">
+        <button
+          type="button"
+          class="composer-context-chip interaction-mode-chip ${ui.interactionMode === 'review' ? 'review' : ''}"
+          data-picker="mode"
+          title="Choose whether this turn explores scenarios or may prepare a pending action for review"
+        >
+          <span class="composer-context-dot mode"></span>
+          <span>${ui.interactionMode === 'review' ? 'Review' : 'Explore'}</span>
+        </button>
+        ${ui.pickerOpen === 'mode' ? raw(renderInteractionModeMenu()) : ''}
+      </span>
+      <span class="copilot-picker composer-context-picker">
         <button type="button" class="composer-context-chip" data-picker="focus" title="Choose which parts of your financial picture get extra attention">
           <span class="composer-context-dot focus"></span>
           <span>${esc(focusLabel)}</span>
@@ -965,6 +1055,25 @@ function renderComposerContext() {
         ${ui.pickerOpen === 'model' ? raw(renderModelMenu()) : ''}
       </span>
     </div>
+    ${ui.contextReferences.length ? html`
+      <div class="copilot-explicit-context" aria-label="Exact references attached to this message">
+        <span>Exact references</span>
+        ${ui.contextReferences.map(reference => {
+          const key = `${reference.type}:${reference.id}`;
+          return html`
+            <span class="copilot-reference-chip">
+              <span>${esc(contextReferenceLabel(reference))}</span>
+              <button
+                type="button"
+                data-remove-context-reference="${esc(key)}"
+                aria-label="Remove ${esc(contextReferenceLabel(reference))}"
+                title="Remove this exact reference"
+              >×</button>
+            </span>
+          `;
+        })}
+      </div>
+    ` : ''}
     ${ui.riskLens.is_override ? html`
       <div class="risk-lens-override" role="status">
         Exploring <strong>${esc(ui.riskLens.effective_posture)}</strong> · Saved profile remains
@@ -1265,6 +1374,49 @@ function renderFocusMenu() {
         <span class="leg muted">Muted</span>
         <span class="leg idle">Off</span>
       </p>
+    </div>
+  `;
+}
+
+function renderInteractionModeMenu() {
+  const options = [
+    {
+      id: 'explore',
+      label: 'Explore',
+      detail: 'Read, calculate, compare, and simulate. No proposals are created.',
+    },
+    {
+      id: 'review',
+      label: 'Review',
+      detail: 'May prepare a pending action. Applying it still requires your click.',
+    },
+  ];
+  return html`
+    <div class="copilot-picker-menu copilot-mode-panel open" data-menu="mode">
+      <div class="copilot-focus-panel-head">
+        <span class="copilot-focus-panel-title">Interaction mode</span>
+        <span class="copilot-model-tag">no auto-apply</span>
+      </div>
+      <p class="copilot-focus-hint">
+        This controls proposal authority. Session Focus separately controls which evidence gets attention.
+      </p>
+      <div class="copilot-risk-options" role="radiogroup" aria-label="Interaction mode">
+        ${options.map(option => {
+          const active = ui.interactionMode === option.id;
+          return html`
+            <button
+              type="button"
+              class="copilot-risk-option ${active ? 'active' : ''}"
+              data-interaction-mode="${option.id}"
+              role="radio"
+              aria-checked="${active ? 'true' : 'false'}"
+            >
+              <span>${option.label}</span>
+              <small>${option.detail}</small>
+            </button>
+          `;
+        })}
+      </div>
     </div>
   `;
 }
@@ -2219,7 +2371,20 @@ function attachHandlers() {
   delegate(page, 'click', '[data-plan]', (_, t) => {
     const id = t.getAttribute('data-plan');
     ui.planId = id === '__none__' ? null : id;
+    ui.contextReferences = normalizeContextReferences([
+      ...ui.contextReferences.filter(reference => reference.type !== 'plan'),
+      ...(ui.planId ? [{ type: 'plan', id: ui.planId }] : []),
+    ]);
     ui.pickerOpen = null;
+    rerenderComposer();
+  });
+
+  delegate(page, 'click', '[data-remove-context-reference]', (event, target) => {
+    event.preventDefault();
+    const key = target.getAttribute('data-remove-context-reference');
+    ui.contextReferences = ui.contextReferences.filter(
+      reference => `${reference.type}:${reference.id}` !== key,
+    );
     rerenderComposer();
   });
 
@@ -2355,6 +2520,19 @@ function attachHandlers() {
 
   delegate(page, 'click', '[data-menu="risk"]', (e) => {
     e.stopPropagation();
+  });
+
+  delegate(page, 'click', '[data-menu="mode"]', (e) => {
+    e.stopPropagation();
+  });
+
+  delegate(page, 'click', '[data-interaction-mode]', (e, t) => {
+    e.stopPropagation();
+    ui.interactionMode = t.getAttribute('data-interaction-mode') === 'review'
+      ? 'review'
+      : 'explore';
+    ui.pickerOpen = null;
+    rerenderComposer();
   });
 
   delegate(page, 'click', '[data-risk-mode]', (e, t) => {
@@ -2497,14 +2675,6 @@ function attachHandlers() {
     }
   });
 
-  delegate(page, 'click', '[data-risk-default-review]', (_, t) => {
-    t.closest('.risk-default-control')?.classList.add('confirming');
-  });
-
-  delegate(page, 'click', '[data-risk-default-cancel]', (_, t) => {
-    t.closest('.risk-default-control')?.classList.remove('confirming');
-  });
-
   delegate(page, 'click', '[data-message-track]', (_, t) => {
     trackAssistantDecision(t.getAttribute('data-message-track'), t);
   });
@@ -2514,12 +2684,18 @@ function attachHandlers() {
     fillDraft(text);
   });
 
-  delegate(page, 'click', '[data-profile-draft]', (_, t) => {
-    applyProfileDraft(t);
+  delegate(page, 'click', '[data-review-suggest]', (_, t) => {
+    const text = t.getAttribute('data-review-suggest') || '';
+    ui.interactionMode = 'review';
+    fillDraft(text);
   });
 
-  delegate(page, 'click', '[data-thesis-draft]', (_, t) => {
-    saveThesisDraft(t);
+  delegate(page, 'click', '[data-pending-action-apply]', (_, t) => {
+    applyPendingAction(t);
+  });
+
+  delegate(page, 'click', '[data-pending-action-reject]', (_, t) => {
+    rejectPendingAction(t);
   });
 
   delegate(page, 'click', '[data-quick-reply]', (_, t) => {
@@ -2538,6 +2714,7 @@ function attachHandlers() {
   delegate(page, 'click', '[data-profile-onboarding-prompt]', () => {
     const prompt = onboardingPrompt(ui.onboarding);
     seedFocusFromOnboardingIfNeeded(true);
+    ui.interactionMode = 'review';
     fillDraft(prompt);
   });
 
@@ -2550,118 +2727,69 @@ function attachHandlers() {
   window.addEventListener('resize', handleHistoryViewportChange, { passive: true });
 }
 
-async function applyProfileDraft(button) {
-  const encoded = button.getAttribute('data-profile-draft') || '';
-  let patch = null;
-  try {
-    patch = JSON.parse(decodeURIComponent(encoded));
-  } catch {
-    ui.error = 'Could not read the drafted profile update.';
-    rerenderBody();
-    return;
+function updatePendingActionSnapshot(action) {
+  const actionId = String(action?.action_id || '').trim();
+  if (!actionId) return;
+  for (const message of ui.messages) {
+    const traces = Array.isArray(message?.metadata?.tool_calls)
+      ? message.metadata.tool_calls
+      : [];
+    for (const trace of traces) {
+      const snapshot = trace?.result?.pending_action;
+      if (snapshot?.action_id === actionId) {
+        trace.result.pending_action = { ...snapshot, ...action };
+      }
+    }
   }
+}
+
+async function applyPendingAction(button) {
+  const actionId = String(button.getAttribute('data-pending-action-apply') || '').trim();
+  if (!actionId) return;
 
   button.disabled = true;
   button.textContent = 'Applying...';
   ui.error = null;
 
   try {
-    const current = await api.profile();
-    const saved = await api.updateProfile(
-      mergeProfileDraft(current, patch),
-      { source: 'copilot_profile_draft' },
-    );
-    state.financialProfile = saved;
+    const response = await api.applyCopilotPendingAction(actionId);
+    updatePendingActionSnapshot(response?.action);
+    const saved = response?.result?.profile;
+    if (saved && typeof saved === 'object') state.financialProfile = saved;
     ui.riskLens = normalizeRiskLens({
       ...ui.riskLens,
       profile_posture: saved?.investment_policy?.risk_tolerance || null,
     });
-    ui.messages.push({
-      role: 'assistant',
-      content: 'Profile update applied. Your financial profile is now updated for future reviews.',
-      created_at: new Date().toISOString(),
-      metadata: {},
-    });
     await loadOnboarding();
   } catch (err) {
-    ui.error = err.message;
+    const staleAction = err?.detail?.action;
+    if (staleAction) updatePendingActionSnapshot(staleAction);
+    ui.error = err?.status === 409
+      ? 'This proposal is no longer current. Review the latest profile and ask Copilot for a fresh draft.'
+      : err.message;
   } finally {
     rerenderAll();
     scrollToBottom();
   }
 }
 
-async function saveThesisDraft(button) {
-  const encoded = button.getAttribute('data-thesis-draft') || '';
-  let patch = null;
-  try {
-    patch = JSON.parse(decodeURIComponent(encoded));
-  } catch {
-    ui.error = 'Could not read the drafted thesis revision.';
-    rerenderBody();
-    return;
-  }
-  if (ui.recommendationFocus && !patch.recommendation_id) {
-    patch.recommendation_id = ui.recommendationFocus;
-  }
-  const targetType = String(patch?.target_type || 'watchlist').trim().toLowerCase();
-  const symbol = String(patch?.symbol || '').trim().toUpperCase();
-  const planId = String(patch?.plan_id || '').trim();
-  const artifactId = String(patch?.artifact_id || '').trim();
-  if (targetType === 'dossier' && (!planId || !artifactId)) {
-    ui.error = 'Could not identify the saved dossier for this thesis revision.';
-    rerenderBody();
-    return;
-  }
-  if (targetType !== 'dossier' && !symbol) {
-    ui.error = 'Could not identify the watchlist symbol for this thesis revision.';
-    rerenderBody();
-    return;
-  }
-
+async function rejectPendingAction(button) {
+  const actionId = String(button.getAttribute('data-pending-action-reject') || '').trim();
+  if (!actionId) return;
   button.disabled = true;
-  button.textContent = 'Saving...';
+  button.textContent = 'Declining...';
   ui.error = null;
-
   try {
-    if (targetType === 'dossier') {
-      await api.saveDossierThesisRevision(planId, artifactId, patch);
-    } else {
-      await api.saveWatchlistThesisRevision(symbol, patch);
-    }
-    const message = targetType === 'dossier'
-      ? `Dossier thesis updated for ${artifactId}. Future thesis readiness checks will use the revised review window.`
-      : `Watchlist thesis updated for ${symbol}. Future thesis readiness checks will use the revised review window.`;
-    ui.messages.push({
-      role: 'assistant',
-      content: message,
-      created_at: new Date().toISOString(),
-      metadata: {},
-    });
+    const action = await api.rejectCopilotPendingAction(actionId);
+    updatePendingActionSnapshot(action);
   } catch (err) {
+    const action = err?.detail?.action;
+    if (action) updatePendingActionSnapshot(action);
     ui.error = err.message;
   } finally {
-    rerenderBody();
+    rerenderAll();
     scrollToBottom();
   }
-}
-
-function mergeProfileDraft(current, patch) {
-  const merged = { ...(current || {}) };
-  for (const key of ['household_members', 'income_items', 'expense_items', 'debt_items', 'goal_items', 'physical_assets']) {
-    if (Array.isArray(patch?.[key])) merged[key] = patch[key];
-  }
-  if (typeof patch?.notes === 'string') merged.notes = patch.notes;
-  if (patch?.tax_profile && typeof patch.tax_profile === 'object') {
-    merged.tax_profile = { ...(merged.tax_profile || {}), ...patch.tax_profile };
-  }
-  if (patch?.investment_policy && typeof patch.investment_policy === 'object') {
-    merged.investment_policy = { ...(merged.investment_policy || {}), ...patch.investment_policy };
-  }
-  if (patch?.flags && typeof patch.flags === 'object') {
-    merged.flags = { ...(merged.flags || {}), ...patch.flags };
-  }
-  return merged;
 }
 
 function closePickersOnOutsideClick(e) {

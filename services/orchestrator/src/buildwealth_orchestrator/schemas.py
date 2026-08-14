@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from buildwealth_orchestrator.services.timeline_defaults import (
     TIMELINE_DEFAULT_IMPACT_BY_EVENT,
@@ -2110,6 +2110,25 @@ class CopilotRiskComparisonRequest(BaseModel):
     mode: Literal["none", "all"] = "none"
 
 
+class CopilotContextReference(BaseModel):
+    """One exact, request-scoped Canonical State reference."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal[
+        "plan",
+        "recommendation",
+        "saved_simulation",
+        "plan_artifact",
+        "holding",
+    ]
+    id: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:@+|-]*$",
+    )
+
+
 class CopilotChatRequest(BaseModel):
     question: str
     conversation_id: str | None = None
@@ -2124,13 +2143,51 @@ class CopilotChatRequest(BaseModel):
     risk_lens: CopilotRiskLens | None = None
     persist_risk_lens: bool = True
     risk_comparison: CopilotRiskComparisonRequest = Field(default_factory=CopilotRiskComparisonRequest)
+    interaction_mode: Literal["explore", "review"] = "explore"
+    persist_interaction_mode: bool = True
+    context_references: list[CopilotContextReference] = Field(
+        default_factory=list,
+        max_length=8,
+    )
 
 
 class CopilotToolTrace(BaseModel):
+    activity_id: str | None = None
+    lifecycle_status: Literal["running", "succeeded", "failed", "cancelled"] | None = None
+    duration_ms: int | None = None
     name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
     result: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
+
+
+class CopilotPendingActionResponse(BaseModel):
+    action_id: str
+    conversation_id: str
+    turn_id: str
+    tool_name: str
+    tool_call_id: str
+    summary: str
+    impact_level: Literal["low", "medium", "high", "critical"]
+    evidence_refs: list[str] = Field(default_factory=list)
+    created_at: datetime
+    expires_at: datetime
+    status: Literal["pending", "applied", "rejected", "expired", "stale"]
+    applied_at: datetime | None = None
+    rejected_at: datetime | None = None
+    expired_at: datetime | None = None
+    stale_at: datetime | None = None
+    status_reason: str | None = None
+    payload: dict[str, Any] | None = None
+
+
+class CopilotPendingActionRejectRequest(BaseModel):
+    reason: str = Field(default="Rejected by the user.", max_length=1000)
+
+
+class CopilotPendingActionApplyResponse(BaseModel):
+    action: CopilotPendingActionResponse
+    result: dict[str, Any] = Field(default_factory=dict)
 
 
 class CopilotChatResponse(BaseModel):
@@ -2148,6 +2205,7 @@ class CopilotChatResponse(BaseModel):
     llm: ConversationLlm | None = None
     risk_lens: dict[str, Any] = Field(default_factory=dict)
     risk_comparison: dict[str, Any] | None = None
+    interaction_mode: Literal["explore", "review"] = "explore"
 
 
 class CopilotConversationSummary(BaseModel):
@@ -2172,6 +2230,7 @@ class CopilotConversationResponse(BaseModel):
     focus: SessionFocus = Field(default_factory=SessionFocus)
     llm: ConversationLlm | None = None
     risk_lens: dict[str, Any] = Field(default_factory=dict)
+    interaction_mode: Literal["explore", "review"] = "explore"
 
 
 class CopilotConversationUpdateRequest(BaseModel):
