@@ -48,6 +48,34 @@ _Avoid_: Portfolio import, external import flow, CSV uploader
 A durable source-evidence record that explains how one import preview and apply operation affected Canonical State.
 _Avoid_: Import state, transaction ledger, CSV result
 
+**Financial Connection**:
+A household-authorized, read-only relationship through which BuildWealth receives current financial account data from an external institution.
+_Avoid_: Bank login, linked credentials, Plaid account
+
+**Provider Item**:
+One provider-managed institution login and its consent lifecycle, which may expose multiple financial accounts to a Financial Connection.
+_Avoid_: Account, institution, BuildWealth account
+
+**Account Mapping**:
+The reviewed relationship between one provider-reported financial account and one BuildWealth portfolio account.
+_Avoid_: Account merge, automatic match, provider account
+
+**Observation**:
+A timestamped record of financial state reported by a connection provider, such as balances, cash, or current holdings.
+_Avoid_: Transaction, synthetic purchase, live balance
+
+**Connection Report**:
+A durable source-evidence record that explains what one connection review, synchronization, repair, or disconnection changed or observed.
+_Avoid_: Import Report, provider log, raw provider response
+
+**Connection Health**:
+The current ability of a Financial Connection to refresh safely, including whether it is active, needs user attention, is pending disconnection, or has failed.
+_Avoid_: Account health, portfolio quality, provider uptime
+
+**Staleness**:
+The age and expected freshness of the latest successful Observation, interpreted against the connection's update cadence.
+_Avoid_: Incorrect data, connection failure, real-time status
+
 **Asset Registry**:
 The BuildWealth-native capability that resolves, classifies, enriches, prices, and audits investable assets used by Portfolio, Plan, Research, and Copilot.
 _Avoid_: Symbol metadata adapter, Portfolio symbol search, ticker cache
@@ -287,6 +315,12 @@ _Avoid_: Context Registry, live index
 - The **Portfolio Analysis**, **Import Workbench**, and **Asset Registry** belong to the Portfolio and Data & Tools workflows.
 - The **Import Workbench** owns ingestion, mapping, reconciliation, duplicate review, account matching, unknown asset resolution, apply preview, and import reports; Portfolio owns the resulting transactions, accounts, assets, holdings, performance, risk, and audit interpretation after apply.
 - An **Import Report** is **Source Evidence** for an import operation, while the resulting transactions, accounts, assets, and holdings belong in **Canonical State**.
+- A **Financial Connection** belongs to the household workspace and contains one **Provider Item** with one or more **Account Mappings**; a household may have multiple connections.
+- A new **Account Mapping** requires explicit review before provider data affects Portfolio; later **Observations** may update automatically while the connection remains active.
+- Active connected balances, cash, and quantities come from the latest valid **Observation** and are not manually overwritten; BuildWealth-owned classifications, tax treatment, goals, tags, and notes remain editable.
+- Manual entry and CSV import remain first-class paths whether or not a **Financial Connection** exists or has healthy, current data.
+- **Connection Health** describes whether refresh can continue; **Staleness** describes how old the latest successful data is. A connection can be healthy while its latest Observation is older than expected, or unhealthy while its last Observation remains usable but stale.
+- A **Connection Report** is **Source Evidence** for connection activity; accepted connected accounts, mappings, and current observations belong in **Canonical State**.
 - An unresolved import asset may become a limited asset record only with visible uncertainty; if the uncertainty could affect portfolio interpretation or planning quality, BuildWealth creates or updates an **Asset Review Item**.
 - The **Portfolio Analysis** may value a limited asset when price and quantity are usable, but allocation, concentration, sector, region, risk, and plan outputs must show **Needs Review** where missing classification changes interpretation.
 - **Portfolio Audit** contains events that change or explain portfolio financial state; Data & Recovery contains system operations needed to trust, restore, or operate the app.

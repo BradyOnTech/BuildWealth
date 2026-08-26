@@ -11,9 +11,13 @@ For active product direction and current phase sequencing, use:
 For historical roadmap context after Phase 3.7, use:
 - [BuildWealth Product Roadmap (historical source of truth, 2026-04-15)](./ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md)
 
+For the approved read-only financial-connections direction, use:
+- [Plaid Read-Only Financial Connections Implementation Plan (2026-08-25)](./PLAID_READ_ONLY_CONNECTIONS_IMPLEMENTATION_PLAN_2026-08-25.md)
+
 Notes:
 - The Progress Log below remains the canonical historical record of completed slices.
 - Capability audit tables in this document are no longer the active planning baseline.
+- Plaid-backed investment account connections supersede the blanket exclusion below; manual entry and CSV import remain permanent alternatives.
 
 ## Strategic Direction
 
@@ -1398,7 +1402,7 @@ These are not part of this plan but may come later:
 
 - Multi-user support
 - Cloud sync / mobile apps
-- Bank account direct integration (Plaid)
+- Connected bank spending, liabilities, and investment transaction history beyond the approved read-only investment account, balance, cash, and current-holdings phase
 - Crypto exchange integration
 - Real-time price streaming
 - Options/derivatives modeling beyond current OpenBB chains

@@ -17,6 +17,8 @@ The long-term architecture is BuildWealth-native capability ownership. Portfolio
 3. v2 product surface: all current and future user workflows target v2; classic/v1 is temporary migration scaffolding.
 4. Reviewed mutation: Copilot, recommendations, imports, simulations, and strategy comparisons may draft changes, but material changes use review/apply flows.
 5. Plain-language decision support: user-facing copy should describe what is safe to do next, not expose internal model or engine jargon.
+6. Permanent manual paths: financial connections may reduce manual work, but manual entry and CSV import remain first-class workflows.
+7. Read-only connections: external financial data may inform BuildWealth state and advice, but no connection may place trades or move money.
 
 **Runtime Components**
 
@@ -37,6 +39,7 @@ The long-term architecture is BuildWealth-native capability ownership. Portfolio
 ### 3. BuildWealth-Native Capability Modules
 
 - **Import Workbench:** import preview, mapping, reconciliation, duplicate review, account matching, unknown asset resolution, apply, and Import Reports
+- **Financial Connections:** connection consent, account-mapping review, current-state synchronization, health, staleness, repair, disconnection, and Connection Reports
 - **Asset Registry:** asset resolution, classification, metadata quality, manual overrides, price/FX support, and Asset Review Items
 - **Portfolio Analysis:** portfolio performance, benchmark, attribution, allocation, risk, fit review, and trade impact
 - **Portfolio Audit:** import reports, transaction changes, account changes, asset resolutions, manual price/FX overrides, lot/cost-basis changes, corporate actions, review packets, and saved trade simulations
@@ -48,19 +51,24 @@ The long-term architecture is BuildWealth-native capability ownership. Portfolio
 
 - Market/research providers such as OpenBB
 - LLM providers
+- Financial account-data providers, beginning with Plaid
 - Local storage, backup, protection, and git tooling
 
 Providers enrich or operate BuildWealth-owned workflows. They do not own user-facing product surfaces or Canonical State.
+
+Financial account-data providers sit behind a BuildWealth-owned, provider-neutral boundary. Plaid-specific request types, identifiers, credentials, errors, and webhook details stop at that boundary. Manual entry and CSV import remain available when Plaid is disabled, unsupported, stale, or unavailable.
 
 **Data And Control Flow**
 
 1. User/API writes update BuildWealth Canonical State through orchestrator-owned routes.
 2. Imports produce Import Reports as Source Evidence and update Portfolio state only after review/apply.
-3. Portfolio analytics read Portfolio state and produce reviewable metrics, risk signals, and evidence.
-4. Plan simulations test Plans, Scenarios, and Branches without mutating the active Plan.
-5. Saved Simulations and Plan Decisions become Source Evidence.
-6. Recommendations route users to the relevant v2 workflow and preserve outcomes.
-7. Copilot operates through the same BuildWealth APIs and review boundaries as the UI.
+3. A new Financial Connection produces an account-mapping and initial-data preview before it may update Portfolio state.
+4. Approved connections apply valid Observations automatically; active connected balances, cash, and quantities are provider-owned, while BuildWealth metadata remains editable.
+5. Portfolio analytics read Portfolio state and produce reviewable metrics, risk signals, and evidence.
+6. Plan simulations test Plans, Scenarios, and Branches without mutating the active Plan.
+7. Saved Simulations and Plan Decisions become Source Evidence.
+8. Recommendations route users to the relevant v2 workflow and preserve outcomes.
+9. Copilot operates through the same BuildWealth APIs and review boundaries as the UI.
 
 **Legacy And Migration Notes**
 
@@ -72,6 +80,8 @@ See:
 
 - [ADR 0003: BuildWealth-native capabilities replace native capability ownership](./adr/0003-buildwealth-native-capability-ownership.md)
 - [ADR 0004: v2 is the only future product surface](./adr/0004-v2-is-the-only-future-product-surface.md)
+- [ADR 0007: Plaid first for read-only financial connections](./adr/0007-plaid-first-read-only-financial-connections.md)
+- [Plaid Read-Only Financial Connections Implementation Plan](./PLAID_READ_ONLY_CONNECTIONS_IMPLEMENTATION_PLAN_2026-08-25.md)
 - [BuildWealth BuildWealth Native Capability Strategy](./BUILDWEALTH_NATIVE_CAPABILITY_STRATEGY_2026-05-08.md)
 - [Native Portfolio and Plan Modules Implementation Guide](./NATIVE_PORTFOLIO_PLAN_MODULES_IMPLEMENTATION_GUIDE_2026-05-08.md)
 - [Monte Carlo Decision Simulation Plan](./MONTE_CARLO_DECISION_SIMULATION_PLAN_2026-05-08.md)
