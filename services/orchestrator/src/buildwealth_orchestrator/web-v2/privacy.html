@@ -61,6 +61,7 @@
               <li>Account information, such as email address, display name, hosted sign-in provider ID, account status, and workspace role.</li>
               <li>Household profile information, such as income, expenses, debts, goals, tax-related planning inputs, retirement assumptions, and notes.</li>
               <li>Portfolio information, such as accounts, holdings, transactions, prices, benchmarks, allocation targets, risk guardrails, and performance views.</li>
+              <li>Connected-account information you authorize through Plaid, such as institution and masked account details, account types, balances, cash, current holdings, connection status, consent status, and update history. BuildWealth does not receive your institution password.</li>
               <li>Simulation information, such as saved scenarios, contribution assumptions, withdrawal comparisons, retirement settings, tax settings, and results.</li>
               <li>Research and recommendation information, such as watchlist items, evidence packets, thesis notes, recommendation drafts, accepted decisions, rejected decisions, and review history.</li>
               <li>Copilot information, such as messages, tool traces, context packets, drafts, recommendations, and profile-update proposals.</li>
@@ -80,6 +81,13 @@
           </section>
 
           <section class="legal-section">
+            <h2>Financial Connections and Plaid</h2>
+            <p>If you choose to connect an institution, Plaid handles the institution sign-in and provides the account and investment information you authorize to BuildWealth. The connection is read-only: BuildWealth does not use it to place trades or move money.</p>
+            <p>BuildWealth stores the Plaid access token as an encrypted workspace secret and stores current account, balance, cash, and holding observations in your household workspace. Authorized household members can see connected financial data, and BuildWealth records which member created the connection.</p>
+            <p>Approved connections update automatically until they need repair or you disconnect them. Manual entry and CSV import remain available whether or not Plaid is configured or working.</p>
+          </section>
+
+          <section class="legal-section">
             <h2>AI Providers and Copilot</h2>
             <p>If you configure an AI provider or use Copilot, BuildWealth may send the information needed to answer your request to the configured provider. That context may include financial profile details, portfolio data, simulation inputs, research notes, or conversation history when those details are relevant to the request.</p>
             <p>BuildWealth stores provider API keys as encrypted workspace secrets. After a key is saved, BuildWealth does not return the raw key value through the UI or API.</p>
@@ -90,6 +98,7 @@
             <p>You can close BuildWealth access, export available account data, remove provider keys, and request deletion of BuildWealth workspace data through Settings.</p>
             <p>Closing BuildWealth access disables your BuildWealth account and removes active workspace memberships. It does not delete workspace files, backups, encrypted provider secrets, audit records, or your hosted identity-provider account.</p>
             <p>Data deletion is a separate delayed flow. During the recovery window, affected workspaces are unavailable in normal app workflows and you can cancel the request. After the recovery window ends, a private maintenance job removes due workspace files, backups inside those workspaces, and encrypted workspace secrets.</p>
+            <p>Disconnecting a financial connection revokes Plaid access first. You can then keep a frozen, clearly stale local copy or remove provider-imported observations and mappings. Requesting workspace deletion begins revocation immediately; canceling the later local deletion does not restore a revoked connection.</p>
             <p>BuildWealth may retain limited security, audit, legal, operational, abuse-prevention, accounting, dispute, or proof-of-deletion records when needed.</p>
           </section>
 
@@ -111,7 +120,7 @@
         </div>
 
         <footer class="legal-footer">
-          <span>Last updated May 14, 2026</span>
+          <span>Last updated August 25, 2026</span>
           <span>Private beta draft, not legal advice.</span>
         </footer>
       </article>
