@@ -359,7 +359,13 @@ function connectionReview(connection, preview, busy) {
   `;
 }
 
-function connectionAccountRow(account, preview, index) {
+export function isPhaseOneInvestmentAccount(account = {}) {
+  const type = String(account?.account_type || account?.type || '').trim().toLowerCase();
+  const holdingCount = Number(account?.holdings_count ?? account?.holding_count ?? 0);
+  return type === 'investment' || (Number.isFinite(holdingCount) && holdingCount > 0);
+}
+
+export function connectionAccountRow(account, preview, index) {
   const providerId = providerAccountId(account);
   const suggested = account?.suggested_match || account?.match || {};
   const suggestedId = suggested?.buildwealth_account_id || suggested?.account_id || account?.buildwealth_account_id || '';
@@ -367,18 +373,21 @@ function connectionAccountRow(account, preview, index) {
   const balance = account?.current_balance ?? account?.balances?.current;
   const holdingCount = account?.holdings_count ?? account?.holding_count;
   const mask = account?.mask ? `•••• ${account.mask}` : '';
+  const includedByDefault = account?.include == null
+    ? isPhaseOneInvestmentAccount(account)
+    : account.include !== false;
   return html`
     <article class="connection-account-row" data-provider-account-id="${providerId}">
       <label class="connection-account-include">
-        <input type="checkbox" class="connection-account-checkbox" ${account?.include === false ? '' : 'checked'} />
+        <input type="checkbox" class="connection-account-checkbox" ${includedByDefault ? 'checked' : ''} />
         <span>
           <strong>${account?.name || account?.official_name || `Investment account ${index + 1}`}</strong>
           <small>${[account?.account_subtype || account?.subtype || account?.account_type || account?.type, mask].filter(Boolean).join(' · ')}</small>
         </span>
       </label>
       <div class="connection-account-evidence">
-        ${balance != null ? `<span>${esc(fmtUsd(Number(balance)))}</span>` : ''}
-        ${holdingCount != null ? `<span>${esc(holdingCount)} holding${Number(holdingCount) === 1 ? '' : 's'}</span>` : ''}
+        ${balance != null ? raw(`<span>${esc(fmtUsd(Number(balance)))}</span>`) : ''}
+        ${holdingCount != null ? raw(`<span>${esc(holdingCount)} holding${Number(holdingCount) === 1 ? '' : 's'}</span>`) : ''}
       </div>
       <label class="settings-field connection-match-field">
         <span class="settings-label">BuildWealth account</span>
@@ -410,7 +419,7 @@ function disconnectPanel(connection, preview, busy) {
           <p class="settings-eyebrow">Disconnect preview</p>
           <h4>${pending ? 'Cancel this pending connection?' : 'What should happen to connected data?'}</h4>
         </div>
-        ${accountCount != null ? `<span>${esc(accountCount)} account${Number(accountCount) === 1 ? '' : 's'}${holdingCount != null ? ` · ${esc(holdingCount)} holdings` : ''}</span>` : ''}
+        ${accountCount != null ? raw(`<span>${esc(accountCount)} account${Number(accountCount) === 1 ? '' : 's'}${holdingCount != null ? ` · ${esc(holdingCount)} holdings` : ''}</span>`) : ''}
       </header>
       <p class="settings-card-lede">
         Plaid access is revoked in either case. Manual accounts and CSV history are never removed by this action.

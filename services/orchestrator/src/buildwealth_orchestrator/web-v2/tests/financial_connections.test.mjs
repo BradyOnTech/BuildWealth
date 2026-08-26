@@ -5,7 +5,12 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { api } from '../lib/api.js';
-import { loadPlaidLink, PLAID_LINK_SCRIPT_SRC } from '../views/import_sync.js';
+import {
+  connectionAccountRow,
+  isPhaseOneInvestmentAccount,
+  loadPlaidLink,
+  PLAID_LINK_SCRIPT_SRC,
+} from '../views/import_sync.js';
 
 test('financial connection API helpers use the Phase 1 routes and exact bodies', async (t) => {
   const originalFetch = globalThis.fetch;
@@ -100,6 +105,36 @@ test('Plaid Link loads from the official CDN only when the loader is called', as
   assert.equal(script.async, true);
   assert.equal(script.dataset.buildwealthPlaidLink, 'true');
   assert.equal(typeof Plaid.create, 'function');
+});
+
+test('connection review renders balances as markup and selects only Phase 1 investment accounts', () => {
+  const checking = {
+    provider_account_id: 'checking-1',
+    name: 'Plaid Checking',
+    type: 'depository',
+    subtype: 'checking',
+    current_balance: 110,
+    holdings_count: 0,
+  };
+  const brokerage = {
+    provider_account_id: 'investment-1',
+    name: 'Plaid Brokerage',
+    type: 'investment',
+    subtype: 'brokerage',
+    current_balance: 12500,
+    holdings_count: 3,
+  };
+
+  assert.equal(isPhaseOneInvestmentAccount(checking), false);
+  assert.equal(isPhaseOneInvestmentAccount(brokerage), true);
+
+  const checkingMarkup = String(connectionAccountRow(checking, {}, 0));
+  const brokerageMarkup = String(connectionAccountRow(brokerage, {}, 1));
+  assert.match(checkingMarkup, /<span>\$110<\/span>/);
+  assert.doesNotMatch(checkingMarkup, /&lt;span&gt;/);
+  assert.doesNotMatch(checkingMarkup, /connection-account-checkbox" checked/);
+  assert.match(brokerageMarkup, /connection-account-checkbox" checked/);
+  assert.match(brokerageMarkup, /<span>3 holdings<\/span>/);
 });
 
 test('Import & Review covers connection lifecycle while preserving manual and CSV paths', () => {
