@@ -29,7 +29,7 @@ from buildwealth_orchestrator.services.portfolio_risk_alerts import (
 )
 
 PORTFOLIO_STORE_SCHEMA_VERSION = 8
-ACCOUNTS_SCHEMA_VERSION = 2
+ACCOUNTS_SCHEMA_VERSION = 3
 ASSET_METADATA_SCHEMA_VERSION = 1
 COST_BASIS_METHODS_SCHEMA_VERSION = 1
 MANUAL_PRICES_SCHEMA_VERSION = 1
@@ -445,6 +445,12 @@ class PortfolioStore:
             }
             if raw_account.get("updated_at"):
                 account["updated_at"] = str(raw_account["updated_at"])
+            source = str(raw_account.get("source") or "").strip().lower()
+            if source:
+                account["source"] = source
+            provider_metadata = self._normalize_account_provider_metadata(raw_account)
+            if provider_metadata is not None:
+                account["provider_metadata"] = provider_metadata
             accounts.append(account)
 
         if not accounts:
@@ -460,6 +466,44 @@ class PortfolioStore:
             "default_account_id": default_account_id,
             "accounts": accounts,
             "updated_at": str(payload.get("updated_at") or _utc_now()),
+        }
+
+    @staticmethod
+    def _normalize_account_provider_metadata(raw_account: dict[str, Any]) -> dict[str, Any] | None:
+        """Preserve only intentional provider provenance; never raw payloads or tokens."""
+        nested = raw_account.get("provider_metadata")
+        source = nested if isinstance(nested, dict) else raw_account
+
+        def optional_text(key: str) -> str | None:
+            value = source.get(key)
+            if value is None:
+                return None
+            text = str(value).strip()
+            return text or None
+
+        provider = optional_text("provider")
+        connection_id = optional_text("connection_id")
+        provider_account_id = optional_text("provider_account_id")
+        if not provider and not connection_id and not provider_account_id:
+            return None
+        if not provider or not connection_id or not provider_account_id:
+            # Incomplete provenance cannot safely establish authority over an
+            # account. Drop it instead of preserving an ambiguous attachment.
+            return None
+        return {
+            "provider": provider.lower(),
+            "connection_id": connection_id,
+            # Provider identifiers are opaque and case-sensitive.
+            "provider_account_id": provider_account_id,
+            "institution_id": optional_text("institution_id"),
+            "institution_name": optional_text("institution_name"),
+            "provider_name": optional_text("provider_name"),
+            "provider_official_name": optional_text("provider_official_name"),
+            "provider_type": optional_text("provider_type"),
+            "provider_subtype": optional_text("provider_subtype"),
+            "mask": optional_text("mask"),
+            "last_observed_at": optional_text("last_observed_at"),
+            "attached_at": optional_text("attached_at") or _utc_now(),
         }
 
     def _read_accounts_payload(self) -> dict[str, Any]:
@@ -3699,6 +3743,7 @@ class PortfolioStore:
         account_type: str = "taxable",
         currency: str = DEFAULT_CURRENCY,
         account_id: str | None = None,
+        match_existing_name: bool = True,
     ) -> dict[str, Any]:
         payload = self._read_accounts_payload()
         accounts = payload.setdefault("accounts", [])
@@ -3706,7 +3751,10 @@ class PortfolioStore:
         normalized_name = str(name).strip() or "Account"
 
         for account in accounts:
-            if str(account.get("name", "")).strip().lower() == normalized_name.lower():
+            if (
+                match_existing_name
+                and str(account.get("name", "")).strip().lower() == normalized_name.lower()
+            ):
                 return account
             if account_id and str(account.get("id", "")).strip().lower() == account_id.strip().lower():
                 return account
@@ -3754,6 +3802,108 @@ class PortfolioStore:
                 account["type"] = str(account_type).strip().lower() or "taxable"
             if currency is not None:
                 account["currency"] = str(currency).strip().upper() or DEFAULT_CURRENCY
+            account["updated_at"] = _utc_now()
+            payload["updated_at"] = account["updated_at"]
+            self._write_json(self._accounts_path, payload)
+            return dict(account)
+        raise ValueError(f"Account not found: {account_id}")
+
+    def attach_provider_account_mapping(
+        self,
+        account_id: str,
+        *,
+        provider: str,
+        connection_id: str,
+        provider_account_id: str,
+        institution_id: str | None = None,
+        institution_name: str | None = None,
+        provider_name: str | None = None,
+        provider_official_name: str | None = None,
+        provider_type: str | None = None,
+        provider_subtype: str | None = None,
+        mask: str | None = None,
+        last_observed_at: str | None = None,
+    ) -> dict[str, Any]:
+        """Attach provider provenance without changing ledger-derived holdings."""
+        target_id = str(account_id or "").strip().lower()
+        metadata = self._normalize_account_provider_metadata(
+            {
+                "provider": provider,
+                "connection_id": connection_id,
+                "provider_account_id": provider_account_id,
+                "institution_id": institution_id,
+                "institution_name": institution_name,
+                "provider_name": provider_name,
+                "provider_official_name": provider_official_name,
+                "provider_type": provider_type,
+                "provider_subtype": provider_subtype,
+                "mask": mask,
+                "last_observed_at": last_observed_at,
+                "attached_at": _utc_now(),
+            }
+        )
+        if metadata is None:
+            raise ValueError("provider, connection_id, and provider_account_id are required")
+
+        payload = self._read_accounts_payload()
+        target: dict[str, Any] | None = None
+        for account in payload.get("accounts", []):
+            if str(account.get("id") or "").strip().lower() == target_id:
+                target = account
+                continue
+            existing = account.get("provider_metadata")
+            if not isinstance(existing, dict):
+                continue
+            if (
+                str(existing.get("provider") or "") == metadata["provider"]
+                and str(existing.get("connection_id") or "") == metadata["connection_id"]
+                and str(existing.get("provider_account_id") or "")
+                == metadata["provider_account_id"]
+            ):
+                raise ValueError("Provider account is already attached to another account")
+        if target is None:
+            raise ValueError(f"Account not found: {account_id}")
+
+        prior = target.get("provider_metadata")
+        if isinstance(prior, dict):
+            same_identity = all(
+                str(prior.get(key) or "") == str(metadata.get(key) or "")
+                for key in ("provider", "connection_id", "provider_account_id")
+            )
+            if not same_identity:
+                raise ValueError("Account is already attached to another provider account")
+            metadata["attached_at"] = str(prior.get("attached_at") or metadata["attached_at"])
+        target["provider_metadata"] = metadata
+        target["updated_at"] = _utc_now()
+        payload["updated_at"] = target["updated_at"]
+        self._write_json(self._accounts_path, payload)
+        return dict(target)
+
+    def detach_provider_account_mapping(
+        self,
+        account_id: str,
+        *,
+        connection_id: str | None = None,
+        provider_account_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Remove provider authority while preserving the BuildWealth account."""
+        payload = self._read_accounts_payload()
+        target_id = str(account_id or "").strip().lower()
+        for account in payload.get("accounts", []):
+            if str(account.get("id") or "").strip().lower() != target_id:
+                continue
+            metadata = account.get("provider_metadata")
+            if not isinstance(metadata, dict):
+                return dict(account)
+            if connection_id is not None and str(metadata.get("connection_id") or "") != str(
+                connection_id
+            ).strip():
+                raise ValueError("Account is attached to a different connection")
+            if provider_account_id is not None and str(
+                metadata.get("provider_account_id") or ""
+            ) != str(provider_account_id).strip():
+                raise ValueError("Account is attached to a different provider account")
+            account.pop("provider_metadata", None)
             account["updated_at"] = _utc_now()
             payload["updated_at"] = account["updated_at"]
             self._write_json(self._accounts_path, payload)

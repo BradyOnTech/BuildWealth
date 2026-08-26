@@ -125,6 +125,34 @@ def restore_backup(
             backup_id=request.backup_id,
             create_pre_restore_backup=request.create_pre_restore_backup,
         )
+        # Restored provider state is untrusted until a fresh /item/get and
+        # holdings read succeeds. Rebuild the token-free webhook index from
+        # restored workspace metadata, but do not auto-sync quarantined Items.
+        workspace_id = resolved_services.context.workspace_id
+        connection_store = resolved_services.financial_connection_store
+        connections = connection_store.list_connections()
+        m.control_plane_store.remove_financial_connection_indexes_for_workspace(
+            workspace_id=workspace_id
+        )
+        for connection in connections:
+            if connection.get("status") not in {"disconnected"}:
+                m.control_plane_store.register_financial_connection_index(
+                    provider=connection["provider"],
+                    provider_item_id=connection["provider_item_id"],
+                    workspace_id=workspace_id,
+                    connection_id=connection["connection_id"],
+                )
+            if connection.get("status") in {"active", "needs_attention", "error"}:
+                connection_store.update_connection(
+                    connection["connection_id"],
+                    {
+                        "status": "needs_attention",
+                        "last_error_code": "RESTORE_VERIFICATION_REQUIRED",
+                        "last_error_message": (
+                            "This restored connection must be checked with the provider before updates resume."
+                        ),
+                    },
+                )
     except m.BackupNotFoundError as exc:
         raise m.HTTPException(status_code=404, detail=str(exc)) from exc
     except m.BackupRestoreError as exc:

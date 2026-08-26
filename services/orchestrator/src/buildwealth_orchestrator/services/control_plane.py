@@ -9,7 +9,10 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from buildwealth_orchestrator.services.control_database import ControlDatabase
 
 
 DEFAULT_HOUSEHOLD_WORKSPACE_ID = "ws_default_household"
@@ -88,6 +91,18 @@ class AccountDataDeletionRequest:
     failure_reason: str
 
 
+@dataclass(frozen=True)
+class FinancialConnectionIndexRecord:
+    """Token-free route from a provider Item to its workspace-owned record."""
+
+    provider: str
+    provider_item_id: str
+    workspace_id: str
+    connection_id: str
+    created_at: str
+    updated_at: str
+
+
 class AuthenticationError(ValueError):
     pass
 
@@ -107,6 +122,8 @@ class ControlPlaneStore:
             "profile.write",
             "portfolio.read",
             "portfolio.write",
+            "connections.read",
+            "connections.write",
             "plan.read",
             "plan.write",
             "recommendations.read",
@@ -673,6 +690,146 @@ class ControlPlaneStore:
             raise AuthenticationError("User not found")
         return dict(row)
 
+    def register_financial_connection_index(
+        self,
+        *,
+        provider: str,
+        provider_item_id: str,
+        workspace_id: str,
+        connection_id: str,
+    ) -> FinancialConnectionIndexRecord:
+        """Register an Item idempotently without ever storing its access token."""
+        normalized_provider = str(provider or "").strip().lower()
+        opaque_item_id = str(provider_item_id or "").strip()
+        normalized_workspace_id = str(workspace_id or "").strip()
+        normalized_connection_id = str(connection_id or "").strip()
+        if not all(
+            (
+                normalized_provider,
+                opaque_item_id,
+                normalized_workspace_id,
+                normalized_connection_id,
+            )
+        ):
+            raise ValueError(
+                "provider, provider_item_id, workspace_id, and connection_id are required"
+            )
+
+        now = utc_now_iso()
+        with self._connect() as connection:
+            workspace = connection.execute(
+                "SELECT id FROM workspaces WHERE id = ? AND status != 'deleted'",
+                (normalized_workspace_id,),
+            ).fetchone()
+            if workspace is None:
+                raise ValueError("Workspace not found")
+            existing = connection.execute(
+                """
+                SELECT * FROM financial_connection_index
+                WHERE provider = ? AND provider_item_id = ?
+                """,
+                (normalized_provider, opaque_item_id),
+            ).fetchone()
+            if existing is not None and (
+                str(existing["workspace_id"]) != normalized_workspace_id
+                or str(existing["connection_id"]) != normalized_connection_id
+            ):
+                raise ValueError("Provider Item is already assigned to another connection")
+            connection.execute(
+                """
+                INSERT INTO financial_connection_index (
+                    provider, provider_item_id, workspace_id, connection_id,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(provider, provider_item_id) DO UPDATE SET
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    normalized_provider,
+                    opaque_item_id,
+                    normalized_workspace_id,
+                    normalized_connection_id,
+                    now,
+                    now,
+                ),
+            )
+            row = connection.execute(
+                """
+                SELECT * FROM financial_connection_index
+                WHERE provider = ? AND provider_item_id = ?
+                """,
+                (normalized_provider, opaque_item_id),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("Financial connection index was not stored")
+        return self._financial_connection_index_from_row(row)
+
+    def lookup_financial_connection_index(
+        self,
+        *,
+        provider: str,
+        provider_item_id: str,
+    ) -> FinancialConnectionIndexRecord | None:
+        normalized_provider = str(provider or "").strip().lower()
+        opaque_item_id = str(provider_item_id or "").strip()
+        if not normalized_provider or not opaque_item_id:
+            return None
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM financial_connection_index
+                WHERE provider = ? AND provider_item_id = ?
+                """,
+                (normalized_provider, opaque_item_id),
+            ).fetchone()
+        return self._financial_connection_index_from_row(row) if row is not None else None
+
+    def remove_financial_connection_index(
+        self,
+        *,
+        provider: str,
+        provider_item_id: str,
+        workspace_id: str | None = None,
+        connection_id: str | None = None,
+    ) -> bool:
+        normalized_provider = str(provider or "").strip().lower()
+        opaque_item_id = str(provider_item_id or "").strip()
+        if not normalized_provider or not opaque_item_id:
+            return False
+        clauses = ["provider = ?", "provider_item_id = ?"]
+        params: list[str] = [normalized_provider, opaque_item_id]
+        if workspace_id is not None:
+            clauses.append("workspace_id = ?")
+            params.append(str(workspace_id).strip())
+        if connection_id is not None:
+            clauses.append("connection_id = ?")
+            params.append(str(connection_id).strip())
+        with self._connect() as connection:
+            cursor = connection.execute(
+                f"DELETE FROM financial_connection_index WHERE {' AND '.join(clauses)}",
+                tuple(params),
+            )
+        return int(cursor.rowcount or 0) == 1
+
+    def remove_financial_connection_indexes_for_workspace(self, *, workspace_id: str) -> int:
+        normalized_workspace_id = str(workspace_id or "").strip()
+        if not normalized_workspace_id:
+            return 0
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM financial_connection_index WHERE workspace_id = ?",
+                (normalized_workspace_id,),
+            )
+        return int(cursor.rowcount or 0)
+
+    def count_financial_connection_indexes_for_workspace(self, *, workspace_id: str) -> int:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) AS n FROM financial_connection_index WHERE workspace_id = ?",
+                (str(workspace_id or "").strip(),),
+            ).fetchone()
+        return int(row["n"] or 0) if row is not None else 0
+
     def export_account_bundle(self, user_id: str) -> dict[str, Any]:
         with self._connect() as connection:
             user_row = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -720,11 +877,23 @@ class ControlPlaneStore:
                 """,
                 (user_id,),
             ).fetchall()
+            financial_connection_indexes = connection.execute(
+                """
+                SELECT DISTINCT f.provider, f.provider_item_id, f.workspace_id,
+                       f.connection_id, f.created_at, f.updated_at
+                FROM financial_connection_index f
+                JOIN workspaces w ON w.id = f.workspace_id
+                JOIN memberships m ON m.organization_id = w.organization_id
+                WHERE m.user_id = ?
+                ORDER BY f.created_at, f.provider, f.provider_item_id
+                """,
+                (user_id,),
+            ).fetchall()
         user = dict(user_row)
         user.pop("password_hash", None)
         user.pop("auth_provider_subject", None)
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "exported_at": utc_now_iso(),
             "user": user,
             "memberships": [dict(row) for row in memberships],
@@ -737,6 +906,7 @@ class ControlPlaneStore:
                 }
                 for row in audit_events
             ],
+            "financial_connection_indexes": [dict(row) for row in financial_connection_indexes],
         }
 
     def authenticated_user_for_token(self, *, token: str) -> dict[str, Any]:
@@ -1709,6 +1879,19 @@ class ControlPlaneStore:
             workspace_type=str(row["workspace_type"]),
             storage_path=Path(str(row["storage_path"])),
             status=str(row["status"]),
+        )
+
+    @staticmethod
+    def _financial_connection_index_from_row(
+        row: sqlite3.Row,
+    ) -> FinancialConnectionIndexRecord:
+        return FinancialConnectionIndexRecord(
+            provider=str(row["provider"]),
+            provider_item_id=str(row["provider_item_id"]),
+            workspace_id=str(row["workspace_id"]),
+            connection_id=str(row["connection_id"]),
+            created_at=str(row["created_at"]),
+            updated_at=str(row["updated_at"]),
         )
 
     @staticmethod

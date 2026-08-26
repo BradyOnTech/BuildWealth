@@ -1,0 +1,50 @@
+{
+  "accounts": [
+    {
+      "account_id": "Acct_CaseSensitive_01",
+      "balances": {
+        "available": 125.5,
+        "current": 10125.5,
+        "iso_currency_code": "USD",
+        "limit": null,
+        "unofficial_currency_code": null
+      },
+      "mask": "4321",
+      "name": "Retirement Account",
+      "official_name": "Individual Retirement Account",
+      "subtype": "ira",
+      "type": "investment"
+    }
+  ],
+  "holdings": [
+    {
+      "account_id": "Acct_CaseSensitive_01",
+      "cost_basis": 9000.0,
+      "institution_price": 50.25,
+      "institution_price_as_of": "2026-08-24",
+      "institution_value": 10050.0,
+      "iso_currency_code": "USD",
+      "quantity": 200.0,
+      "security_id": "Security_CaseSensitive_01",
+      "unofficial_currency_code": null
+    }
+  ],
+  "request_id": "request-holdings-scrubbed",
+  "securities": [
+    {
+      "close_price": 50.25,
+      "close_price_as_of": "2026-08-24",
+      "cusip": "000000000",
+      "is_cash_equivalent": false,
+      "isin": "US0000000001",
+      "iso_currency_code": "USD",
+      "name": "Example Index Fund",
+      "security_id": "Security_CaseSensitive_01",
+      "sedol": null,
+      "subtype": "exchange traded fund",
+      "ticker_symbol": "EXMPL",
+      "type": "etf",
+      "unofficial_currency_code": null
+    }
+  ]
+}

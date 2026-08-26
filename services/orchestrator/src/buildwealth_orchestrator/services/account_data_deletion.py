@@ -69,6 +69,10 @@ def build_account_data_deletion_preview(
         warnings.append("No active workspace data is available for this deletion scope.")
     if normalized_scope in {"household", "account"}:
         warnings.append("This affects every active workspace in the household.")
+    if totals["financial_connection_index_count"]:
+        warnings.append(
+            "Connected institutions must be revoked before local workspace data can be purged."
+        )
     return {
         "schema_version": 1,
         "scope": normalized_scope,
@@ -88,6 +92,7 @@ def build_account_data_deletion_preview(
             "Copilot conversations",
             "saved simulations and planning artifacts",
             "portfolio review packets",
+            "financial connection metadata and observed holdings",
         ],
         "will_retain": [
             "minimal control-plane deletion request",
@@ -174,6 +179,13 @@ class AccountDataDeletionPurgeWorker:
             return result
         except Exception as exc:
             result["completed_at"] = utc_now_iso()
+            if "Connected institutions must be removed remotely" in str(exc):
+                # Revocation is retryable and the workspace secrets must stay
+                # intact. Leave the request pending so a later worker pass can
+                # complete after provider cleanup succeeds.
+                result["status"] = "pending"
+                result["failure_reason"] = str(exc)
+                return result
             result["status"] = "failed"
             result["failure_reason"] = str(exc)
             self.control_plane.fail_account_data_deletion_request(
@@ -187,6 +199,15 @@ class AccountDataDeletionPurgeWorker:
         paths = self.workspace_service_factory.paths_for_record(workspace)
         root = paths.root.resolve()
         _assert_safe_workspace_root(root)
+        indexed_connections = (
+            self.control_plane.count_financial_connection_indexes_for_workspace(
+                workspace_id=workspace.id
+            )
+        )
+        if indexed_connections:
+            raise AccountDataDeletionPurgeError(
+                "Connected institutions must be removed remotely before workspace secrets are shredded"
+            )
         before = _path_stats(root)
         backup_archives = _backup_archive_count(paths.backup_archive_dir)
         secrets_shredded = _shred_workspace_secrets(paths.secrets_path)
@@ -248,6 +269,11 @@ def _workspace_preview_item(
     categories = [
         _category("profile", "Profile", [paths.profile_path]),
         _category("portfolio", "Portfolio", [paths.portfolio_dir]),
+        _category(
+            "financial_connections",
+            "Financial connections",
+            [paths.financial_connections_dir],
+        ),
         _category("snapshots", "Snapshots", [paths.snapshot_dir]),
         _category("simulations", "Simulations", [paths.plans_dir]),
         _category("recommendations", "Recommendations", [paths.recommendations_path]),
@@ -269,6 +295,11 @@ def _workspace_preview_item(
         _backup_category(paths.backup_archive_dir),
     ]
     secret_keys = _secret_keys(paths.secrets_path)
+    financial_connection_index_count = (
+        workspace_service_factory.control_plane.count_financial_connection_indexes_for_workspace(
+            workspace_id=workspace.id
+        )
+    )
     totals = _sum_categories(categories)
     return {
         "workspace_id": workspace.id,
@@ -280,6 +311,7 @@ def _workspace_preview_item(
         "categories": categories,
         "secret_count": len(secret_keys),
         "secret_keys": secret_keys,
+        "financial_connection_index_count": financial_connection_index_count,
         **totals,
     }
 
@@ -395,4 +427,8 @@ def _sum_workspace_items(workspaces: list[dict[str, Any]]) -> dict[str, Any]:
         "size_bytes": sum(int(workspace.get("size_bytes") or 0) for workspace in workspaces),
         "backup_archive_count": sum(int(workspace.get("backup_archive_count") or 0) for workspace in workspaces),
         "secret_count": sum(int(workspace.get("secret_count") or 0) for workspace in workspaces),
+        "financial_connection_index_count": sum(
+            int(workspace.get("financial_connection_index_count") or 0)
+            for workspace in workspaces
+        ),
     }

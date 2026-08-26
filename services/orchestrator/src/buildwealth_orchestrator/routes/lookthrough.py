@@ -26,5 +26,9 @@ def get_portfolio_look_through(
 
     resolved_services = m.route_workspace_services(services, permission="portfolio.read")
     return FundCompositionService().look_through_report(
-        resolved_services.portfolio_store.get_holdings()
+        (
+            resolved_services.current_portfolio()
+            if isinstance(resolved_services, m.WorkspaceServices)
+            else resolved_services.portfolio_store.get_holdings()
+        )
     )

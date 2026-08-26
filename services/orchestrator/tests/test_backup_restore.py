@@ -38,6 +38,28 @@ def test_create_and_list_backups(tmp_path: Path) -> None:
     assert listing["backups"][0]["backup_id"] == report["backup_id"]
 
 
+def test_backup_excludes_and_restore_preserves_local_decryption_key(tmp_path: Path) -> None:
+    data_root = tmp_path / "data"
+    backup_dir = data_root / "backups"
+    key_path = data_root / "control" / "local_secret.key"
+    _write_text(key_path, "key-material-that-must-not-be-archived")
+    _write_text(data_root / "workspaces" / "one" / "workspace_secrets.json", "encrypted")
+    service = BackupRestoreService(
+        data_root=data_root,
+        backup_dir=backup_dir,
+        excluded_paths=(key_path,),
+    )
+
+    backup = service.create_backup(reason="secret-boundary")
+    import tarfile
+
+    with tarfile.open(backup["archive_path"], "r:gz") as archive:
+        assert "control/local_secret.key" not in archive.getnames()
+    key_path.write_text("current-key", encoding="utf-8")
+    service.restore_backup(backup_id=backup["backup_id"], create_pre_restore_backup=False)
+    assert key_path.read_text(encoding="utf-8") == "current-key"
+
+
 def test_restore_backup_replaces_current_data_and_creates_pre_restore_backup(tmp_path: Path) -> None:
     service, data_root = _build_fixture(tmp_path)
     backup = service.create_backup(reason="baseline")

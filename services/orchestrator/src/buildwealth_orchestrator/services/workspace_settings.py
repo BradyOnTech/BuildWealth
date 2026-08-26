@@ -6,6 +6,7 @@ import hmac
 import json
 import os
 import secrets
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,7 @@ from buildwealth_orchestrator.services.user_settings import (
     MASKED_PLACEHOLDER,
     provider_default_model_ids,
 )
+from buildwealth_orchestrator.services.store_locks import synchronized_store
 
 
 VISIBLE_SUFFIX_LEN = 4
@@ -109,6 +111,7 @@ def _mask_suffix(value: str | None) -> str | None:
     return f"{MASKED_PLACEHOLDER}{suffix}" if suffix else MASKED_PLACEHOLDER
 
 
+@synchronized_store("secrets_path")
 class WorkspaceSecretStore:
     """Workspace-scoped encrypted secret store.
 
@@ -152,7 +155,30 @@ class WorkspaceSecretStore:
             self._write(payload)
 
     def _write(self, payload: dict[str, Any]) -> None:
-        self.secrets_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        encoded = json.dumps(payload, indent=2).encode("utf-8")
+        fd, raw_path = tempfile.mkstemp(
+            prefix=f".{self.secrets_path.name}.",
+            suffix=".tmp",
+            dir=str(self.secrets_path.parent),
+        )
+        temp_path = Path(raw_path)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(temp_path, 0o600)
+            os.replace(temp_path, self.secrets_path)
+            try:
+                directory_fd = os.open(self.secrets_path.parent, os.O_RDONLY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+            except OSError:
+                pass
+        finally:
+            temp_path.unlink(missing_ok=True)
 
     def _read(self) -> dict[str, Any]:
         try:

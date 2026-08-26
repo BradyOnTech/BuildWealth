@@ -15,6 +15,7 @@ from buildwealth_orchestrator.services.context_intelligence import ContextAssemb
 from buildwealth_orchestrator.services.embedding_clients import apply_context_embedding_overrides
 from buildwealth_orchestrator.services.copilot_runtime import ConversationStore
 from buildwealth_orchestrator.services.financial_profile import FinancialProfileStore
+from buildwealth_orchestrator.services.financial_connections import FinancialConnectionStore
 from buildwealth_orchestrator.services.import_workbench import ImportWorkbenchStore
 from buildwealth_orchestrator.services.plan_workspace import PlanWorkspace
 from buildwealth_orchestrator.services.asset_registry import AssetRegistry
@@ -51,6 +52,7 @@ class WorkspacePaths:
     protection_policy_path: Path
     settings_path: Path
     secrets_path: Path
+    financial_connections_dir: Path
 
 
 @dataclass
@@ -71,7 +73,21 @@ class WorkspaceServices:
     today_review_checkpoint_store: TodayReviewCheckpointStore
     settings_store: WorkspaceSettingsStore
     secret_store: WorkspaceSecretStore
+    financial_connection_store: FinancialConnectionStore
+    secret_key_source: str = "data_dir"
     context_assembler: ContextAssembler | None = None
+
+    def current_portfolio(self) -> dict[str, object]:
+        """Return the shared current-state read model, including connections."""
+        from buildwealth_orchestrator.services.connected_portfolio import (
+            resolve_connected_portfolio,
+        )
+
+        return resolve_connected_portfolio(
+            self.portfolio_store.get_holdings(),
+            connection_store=self.financial_connection_store,
+            portfolio_store=self.portfolio_store,
+        )
 
 
 class SecretKeyRotationUnavailable(RuntimeError):
@@ -105,6 +121,7 @@ class WorkspaceServiceFactory:
             protection_policy_path=root / "security" / "protection_policy.json",
             settings_path=root / "settings" / "workspace_settings.json",
             secrets_path=root / "settings" / "workspace_secrets.json",
+            financial_connections_dir=root / "financial_connections",
         )
 
     def settings_for_paths(self, paths: WorkspacePaths):
@@ -130,6 +147,38 @@ class WorkspaceServiceFactory:
             user_id=context.user_id,
             workspace_id=context.workspace_id,
         )
+        return self._for_record(record, context)
+
+    def for_workspace_id(self, workspace_id: str) -> WorkspaceServices:
+        """Resolve a workspace for an already-verified internal provider event.
+
+        This deliberately bypasses user membership lookup. Callers must first
+        authenticate the external event and resolve the workspace through the
+        token-free control-plane Item index.
+        """
+        target = str(workspace_id or "").strip()
+        record = next(
+            (item for item in self.control_plane.list_active_workspaces() if item.id == target),
+            None,
+        )
+        if record is None:
+            raise ValueError("Workspace not found")
+        context = RequestContext(
+            user_id="system:financial_connections",
+            organization_id=record.organization_id,
+            workspace_id=record.id,
+            role="service",
+            permissions=frozenset(),
+            is_demo_workspace=record.workspace_type == "demo",
+            auth_mode="internal",
+        )
+        return self._for_record(record, context)
+
+    def _for_record(
+        self,
+        record: WorkspaceRecord,
+        context: RequestContext,
+    ) -> WorkspaceServices:
         paths = self.paths_for_record(record)
         paths.root.mkdir(parents=True, exist_ok=True)
         secret_store = WorkspaceSecretStore(paths.secrets_path, self.secret_key)
@@ -176,6 +225,11 @@ class WorkspaceServiceFactory:
             today_review_checkpoint_store=TodayReviewCheckpointStore(paths.today_review_checkpoint_path),
             settings_store=settings_store,
             secret_store=secret_store,
+            financial_connection_store=FinancialConnectionStore(
+                paths.financial_connections_dir,
+                workspace_id=record.id,
+            ),
+            secret_key_source=self.secret_key_source,
             context_assembler=ContextAssembler(context_service=context_intelligence_service),
         )
 

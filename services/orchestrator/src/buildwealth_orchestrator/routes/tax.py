@@ -27,7 +27,11 @@ def get_tax_loss_harvest_report(
 
     resolved_services = m.route_workspace_services(services, permission="portfolio.read")
     return build_tax_loss_harvest_report(
-        holdings_payload=resolved_services.portfolio_store.get_holdings(),
+        holdings_payload=(
+            resolved_services.current_portfolio()
+            if isinstance(resolved_services, m.WorkspaceServices)
+            else resolved_services.portfolio_store.get_holdings()
+        ),
         transactions=resolved_services.portfolio_store.list_transactions(limit=2000),
         profile_payload=resolved_services.financial_profile_store.load(),
     )

@@ -50,15 +50,23 @@ class BackupNotFoundError(BackupRestoreError):
 class BackupRestoreService:
     """Creates timestamped backup archives and restores them into data root."""
 
-    def __init__(self, *, data_root: Path, backup_dir: Path):
+    def __init__(
+        self,
+        *,
+        data_root: Path,
+        backup_dir: Path,
+        excluded_paths: tuple[Path, ...] = (),
+    ):
         self.data_root = data_root.resolve()
         self.backup_dir = backup_dir.resolve()
+        self.excluded_paths = tuple(path.resolve() for path in excluded_paths)
 
     @classmethod
     def from_settings(cls, settings: Any) -> "BackupRestoreService":
         return cls(
             data_root=settings.snapshot_dir.parent,
             backup_dir=settings.backup_archive_dir,
+            excluded_paths=(settings.secret_key_path,),
         )
 
     def list_backups(self) -> dict[str, Any]:
@@ -172,6 +180,11 @@ class BackupRestoreService:
             pre_restore_report = self.create_backup(reason=f"pre_restore:{backup_id}")
             pre_restore_backup_id = str(pre_restore_report["backup_id"])
 
+        preserved_files = {
+            path: path.read_bytes()
+            for path in self.excluded_paths
+            if path.is_relative_to(self.data_root) and path.is_file()
+        }
         with tempfile.TemporaryDirectory(prefix="buildwealth-restore-") as tmp_dir_raw:
             tmp_dir = Path(tmp_dir_raw)
             extracted_dir = tmp_dir / "extracted"
@@ -220,10 +233,19 @@ class BackupRestoreService:
                 raise BackupRestoreError("Backup aggregate checksum mismatch")
 
             self._clear_data_root_except_backups()
+            for preserved_path, payload in preserved_files.items():
+                preserved_path.parent.mkdir(parents=True, exist_ok=True)
+                preserved_path.write_bytes(payload)
+                try:
+                    preserved_path.chmod(0o600)
+                except OSError:
+                    pass
             files_restored = 0
             for relative_path, _ in restored_entries:
                 source = extracted_dir / relative_path
                 destination = self.data_root / relative_path
+                if destination.resolve() in self.excluded_paths:
+                    continue
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, destination)
                 files_restored += 1
@@ -247,6 +269,8 @@ class BackupRestoreService:
                 continue
             resolved = path.resolve()
             if resolved.is_relative_to(self.backup_dir):
+                continue
+            if resolved in self.excluded_paths:
                 continue
             relative = resolved.relative_to(self.data_root).as_posix()
             files.append((resolved, relative))
