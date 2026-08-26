@@ -653,11 +653,18 @@ class FinancialConnectionService:
             for mapping in mappings:
                 account_id = mapping.get("buildwealth_account_id")
                 if account_id:
-                    self.services.portfolio_store.detach_provider_account_mapping(
-                        account_id,
-                        connection_id=connection_id,
-                        provider_account_id=mapping["provider_account_id"],
-                    )
+                    if mapping.get("match_status") == "created":
+                        self.services.portfolio_store.remove_provider_created_account(
+                            account_id,
+                            connection_id=connection_id,
+                            provider_account_id=mapping["provider_account_id"],
+                        )
+                    else:
+                        self.services.portfolio_store.detach_provider_account_mapping(
+                            account_id,
+                            connection_id=connection_id,
+                            provider_account_id=mapping["provider_account_id"],
+                        )
                 self.store.remove_account_mapping(
                     connection_id=connection_id,
                     provider_account_id=mapping["provider_account_id"],
@@ -878,7 +885,7 @@ class FinancialConnectionService:
         if normalized in {"401k", "403b", "457b", "pension", "retirement"}:
             return "401k"
         if normalized in {"ira", "traditional ira"}:
-            return "traditional_ira"
+            return "ira"
         if normalized in {"roth", "roth ira"}:
             return "roth_ira"
         if normalized in {"529", "education savings account"}:

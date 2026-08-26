@@ -2,7 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { api } from '../lib/api.js';
 import { renderAnalytics } from '../views/portfolio/analytics.js';
-import { renderFitResult, renderFitReview, renderLookCloser } from '../views/portfolio.js';
+import {
+  accountTypeOptions,
+  renderFitResult,
+  renderFitReview,
+  renderLookCloser,
+} from '../views/portfolio.js';
+
+test('portfolio account types select connected retirement accounts correctly', () => {
+  const iraMarkup = String(accountTypeOptions('traditional_ira'));
+  const retirementMarkup = String(accountTypeOptions('401k'));
+
+  assert.match(iraMarkup, /<option value="traditional" selected>Traditional \/ pre-tax<\/option>/);
+  assert.match(retirementMarkup, /<option value="traditional" selected>Traditional \/ pre-tax<\/option>/);
+  assert.doesNotMatch(iraMarkup, /<option value="taxable" selected>/);
+  assert.doesNotMatch(retirementMarkup, /<option value="taxable" selected>/);
+});
 
 test('portfolio fit review renders safe empty state', () => {
   const markup = String(renderFitReview());

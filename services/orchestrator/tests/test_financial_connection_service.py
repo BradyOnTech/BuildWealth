@@ -295,6 +295,66 @@ def test_sync_preserves_previous_snapshot_and_disconnect_retries_before_token_sh
     asyncio.run(_exercise_sync_and_disconnect(tmp_path))
 
 
+def test_remove_connected_data_deletes_created_account_shell(tmp_path) -> None:
+    asyncio.run(_exercise_remove_connected_data(tmp_path))
+
+
+async def _exercise_remove_connected_data(tmp_path) -> None:
+    provider = _FakeProvider()
+    connection_store = FinancialConnectionStore(
+        tmp_path / "connections", workspace_id="ws_household"
+    )
+    services = SimpleNamespace(
+        context=SimpleNamespace(workspace_id="ws_household"),
+        financial_connection_store=connection_store,
+        secret_store=WorkspaceSecretStore(
+            tmp_path / "settings" / "workspace_secrets.json", b"s" * 32
+        ),
+        portfolio_store=PortfolioStore(tmp_path / "portfolio"),
+        recommendation_inbox=SimpleNamespace(create=lambda **kwargs: kwargs),
+    )
+    service = FinancialConnectionService(
+        provider=provider,
+        services=services,
+        control_plane=_FakeControlPlane(),
+    )
+    assert service._buildwealth_account_type("ira") == "ira"
+    assert service._buildwealth_account_type("401k") == "401k"
+    exchanged = await service.exchange_public_token(
+        user_id="user_household_owner",
+        public_token="one-use-public-token",
+        institution={"institution_id": "ins_110476", "name": "Hills Bank"},
+    )
+    connection_id = exchanged["connection"]["connection_id"]
+    await service.activate_connection(
+        connection_id=connection_id,
+        accounts=[
+            {
+                "provider_account_id": "provider-account-1",
+                "include": True,
+                "buildwealth_account_id": None,
+            }
+        ],
+    )
+    created_account_id = connection_store.list_account_mappings(connection_id)[0][
+        "buildwealth_account_id"
+    ]
+    assert any(
+        account["id"] == created_account_id
+        for account in services.portfolio_store.get_accounts()
+    )
+
+    await service.disconnect_connection(
+        connection_id=connection_id,
+        retention="remove_connected_data",
+    )
+
+    assert all(
+        account["id"] != created_account_id
+        for account in services.portfolio_store.get_accounts()
+    )
+
+
 async def _exercise_sync_and_disconnect(tmp_path) -> None:
     provider = _FakeProvider()
     connection_store = FinancialConnectionStore(

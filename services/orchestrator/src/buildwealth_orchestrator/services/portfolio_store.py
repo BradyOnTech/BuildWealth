@@ -3808,6 +3808,33 @@ class PortfolioStore:
             return dict(account)
         raise ValueError(f"Account not found: {account_id}")
 
+    def remove_provider_created_account(
+        self,
+        account_id: str,
+        *,
+        connection_id: str,
+        provider_account_id: str,
+    ) -> bool:
+        """Remove an account shell created solely for one provider connection."""
+        payload = self._read_accounts_payload()
+        target_id = str(account_id or "").strip().lower()
+        accounts = payload.get("accounts", [])
+        for index, account in enumerate(accounts):
+            if str(account.get("id") or "").strip().lower() != target_id:
+                continue
+            metadata = account.get("provider_metadata")
+            if not isinstance(metadata, dict):
+                raise ValueError("Account is no longer attached to a provider connection")
+            if str(metadata.get("connection_id") or "") != str(connection_id).strip():
+                raise ValueError("Account is attached to a different connection")
+            if str(metadata.get("provider_account_id") or "") != str(provider_account_id).strip():
+                raise ValueError("Account is attached to a different provider account")
+            del accounts[index]
+            payload["updated_at"] = _utc_now()
+            self._write_json(self._accounts_path, payload)
+            return True
+        return False
+
     def attach_provider_account_mapping(
         self,
         account_id: str,

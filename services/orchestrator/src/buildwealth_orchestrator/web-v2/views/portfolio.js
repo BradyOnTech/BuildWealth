@@ -590,7 +590,17 @@ function renderMaintenanceDetail(section, maintenance) {
   `;
 }
 
-function accountTypeOptions(selected = '') {
+export function accountTypeOptions(selected = '') {
+  const normalizedSelected = (() => {
+    const value = String(selected || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (['401k', '403b', '457b', 'ira', 'traditional', 'traditionalira', 'retirement'].includes(value)) {
+      return 'traditional';
+    }
+    if (['roth', 'rothira', 'roth401k', 'roth403b'].includes(value)) return 'roth';
+    if (['cash', 'checking', 'savings'].includes(value)) return 'cash';
+    if (value === 'hsa') return 'hsa';
+    return 'taxable';
+  })();
   const options = [
     ['taxable', 'Taxable brokerage'],
     ['traditional', 'Traditional / pre-tax'],
@@ -599,7 +609,7 @@ function accountTypeOptions(selected = '') {
     ['cash', 'Checking / savings'],
   ];
   return options.map(([value, label]) => html`
-    <option value="${value}" ${String(selected) === value ? 'selected' : ''}>${label}</option>
+    <option value="${value}" ${normalizedSelected === value ? raw('selected') : ''}>${label}</option>
   `).join('');
 }
 
