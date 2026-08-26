@@ -321,6 +321,13 @@ class FinancialConnectionService:
             selected_ids.add(provider_account_id)
             include = bool(selection.get("include", True))
             requested_account_id = str(selection.get("buildwealth_account_id") or "").strip()
+            observed_account = staged_accounts[provider_account_id]
+            if include and not self._is_phase_one_investment_account(observed_account):
+                raise FinancialConnectionServiceError(
+                    "UNSUPPORTED_ACCOUNT_TYPE",
+                    "Only investment accounts can be activated in this version.",
+                    status_code=409,
+                )
             if include and requested_account_id:
                 target = portfolio_accounts.get(requested_account_id)
                 if target is None:
@@ -879,6 +886,10 @@ class FinancialConnectionService:
         if normalized == "hsa":
             return "hsa"
         return "taxable"
+
+    @staticmethod
+    def _is_phase_one_investment_account(observed: dict[str, Any]) -> bool:
+        return str(observed.get("type") or "").strip().lower() == "investment"
 
     def _record_provider_failure(self, connection_id: str, exc: Exception, *, keep_status: str | None = None) -> None:
         disposition = getattr(exc, "disposition", None)

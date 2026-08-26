@@ -133,7 +133,10 @@ test('connection review renders balances as markup and selects only Phase 1 inve
   assert.match(checkingMarkup, /<span>\$110<\/span>/);
   assert.doesNotMatch(checkingMarkup, /&lt;span&gt;/);
   assert.doesNotMatch(checkingMarkup, /connection-account-checkbox" checked/);
+  assert.match(checkingMarkup, /connection-account-checkbox"[^>]*disabled/);
+  assert.match(checkingMarkup, /Not eligible for this investment-only connection/);
   assert.match(brokerageMarkup, /connection-account-checkbox" checked/);
+  assert.doesNotMatch(brokerageMarkup, /connection-account-checkbox"[^>]*disabled/);
   assert.match(brokerageMarkup, /<span>3 holdings<\/span>/);
 });
 

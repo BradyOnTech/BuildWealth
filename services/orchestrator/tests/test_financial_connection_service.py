@@ -153,6 +153,18 @@ def test_exchange_stays_staged_until_user_activates_accounts(tmp_path) -> None:
     asyncio.run(_exercise_exchange_and_activation(tmp_path))
 
 
+def test_phase_one_accepts_only_investment_accounts() -> None:
+    assert FinancialConnectionService._is_phase_one_investment_account(
+        {"type": "investment", "subtype": "ira"}
+    )
+    assert not FinancialConnectionService._is_phase_one_investment_account(
+        {"type": "loan", "subtype": "mortgage"}
+    )
+    assert not FinancialConnectionService._is_phase_one_investment_account(
+        {"type": "credit", "subtype": "credit card"}
+    )
+
+
 def test_duplicate_institution_is_rejected_before_public_token_exchange(tmp_path) -> None:
     async def run() -> None:
         connection_store = FinancialConnectionStore(tmp_path / "connections", workspace_id="ws_household")

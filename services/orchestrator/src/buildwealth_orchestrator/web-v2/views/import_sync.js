@@ -372,14 +372,15 @@ export function connectionAccountRow(account, preview, index) {
   const options = accountMatchOptions(account, preview, suggested);
   const balance = account?.current_balance ?? account?.balances?.current;
   const holdingCount = account?.holdings_count ?? account?.holding_count;
+  const eligible = isPhaseOneInvestmentAccount(account);
   const mask = account?.mask ? `•••• ${account.mask}` : '';
   const includedByDefault = account?.include == null
-    ? isPhaseOneInvestmentAccount(account)
-    : account.include !== false;
+    ? eligible
+    : eligible && account.include !== false;
   return html`
     <article class="connection-account-row" data-provider-account-id="${providerId}">
       <label class="connection-account-include">
-        <input type="checkbox" class="connection-account-checkbox" ${includedByDefault ? 'checked' : ''} />
+        <input type="checkbox" class="connection-account-checkbox" ${includedByDefault ? 'checked' : ''} ${eligible ? '' : 'disabled'} />
         <span>
           <strong>${account?.name || account?.official_name || `Investment account ${index + 1}`}</strong>
           <small>${[account?.account_subtype || account?.subtype || account?.account_type || account?.type, mask].filter(Boolean).join(' · ')}</small>
@@ -391,7 +392,7 @@ export function connectionAccountRow(account, preview, index) {
       </div>
       <label class="settings-field connection-match-field">
         <span class="settings-label">BuildWealth account</span>
-        <select class="settings-input connection-account-match">
+        <select class="settings-input connection-account-match" ${eligible ? '' : 'disabled'}>
           <option value="">Create a new account</option>
           ${raw(options.map(option => `
             <option value="${esc(option.id)}" ${String(option.id) === String(suggestedId) ? 'selected' : ''}>
@@ -400,7 +401,9 @@ export function connectionAccountRow(account, preview, index) {
           `).join(''))}
         </select>
         <span class="settings-hint">
-          ${suggestedId ? `BuildWealth suggested this match${suggested?.reason ? ` because ${suggested.reason}` : ''}. Confirm it or choose another.` : 'No confident match was found. A new account will be created.'}
+          ${eligible
+            ? (suggestedId ? `BuildWealth suggested this match${suggested?.reason ? ` because ${suggested.reason}` : ''}. Confirm it or choose another.` : 'No confident match was found. A new account will be created.')
+            : 'Not eligible for this investment-only connection. Keep using manual entry or CSV for this account.'}
         </span>
       </label>
     </article>
