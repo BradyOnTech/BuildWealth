@@ -145,7 +145,8 @@ function holdingRow(row, index) {
       </span>
       <span class="holding-value">${priced ? fmtUsd(value) : 'Price needed'}</span>
       <span class="holding-alloc">${allocation == null ? '—' : `${allocation.toFixed(1)}%`}</span>
-      <span class="holding-return ${returnPct == null ? '' : returnDir}">${returnPct == null ? '—' : fmtPctSigned(returnPct)}</span>
+      <span class="holding-return ${returnPct == null ? '' : returnDir}"
+        title="Total return vs cost basis — the whole holding period, not a recent window">${returnPct == null ? '—' : fmtPctSigned(returnPct)}</span>
       ${raw(holdingActions(row, symbol))}
     </li>
   `;

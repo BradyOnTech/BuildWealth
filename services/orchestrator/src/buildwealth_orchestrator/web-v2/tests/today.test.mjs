@@ -263,6 +263,26 @@ test('today hero wires the income bend into the marginalia', async () => {
   assert.match(source, /already models this/);
 });
 
+test('today hero leads the marginalia with an honest change chip', async () => {
+  const { renderHeroChangeChip } = await import('../views/today.js');
+  const markup = String(renderHeroChangeChip({
+    recent_change_usd: 23292.75,
+    recent_change_percent: 3.5,
+    recent_change_window_days: 31,
+  }));
+  assert.match(markup, /change-chip delta-up/);
+  assert.match(markup, /\+\$23,293/);
+  assert.match(markup, /\(\+3\.5%\)/);
+  assert.match(markup, /past month/);
+  // The hero number is net worth; the window delta is portfolio-only, so the
+  // chip names its basis rather than laundering one into the other.
+  assert.match(markup, /portfolio/);
+
+  // No history → no chip, never a fabricated one.
+  assert.equal(String(renderHeroChangeChip({})), '');
+  assert.equal(String(renderHeroChangeChip({ recent_change_usd: null })), '');
+});
+
 test('first-run welcome path routes to the life-plans interview', async () => {
   const { renderWelcomeHero } = await import('../views/today.js');
   const markup = String(renderWelcomeHero(new Date('2026-07-07T00:00:00Z')));

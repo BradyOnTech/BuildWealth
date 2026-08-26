@@ -4,8 +4,9 @@
 
 import { html, raw } from '../../lib/dom.js';
 import { fmtUsd, splitUsd, fmtUsdSigned, fmtPctSigned, fmtRelative } from '../../lib/format.js';
+import { changeChip } from '../../lib/change_chip.js';
 
-export function renderStanding(data) {
+export function renderStanding(data, change = null) {
   const knownTotal = data.total_portfolio_value ?? data.total_value ?? 0;
   const cash = data.total_cash ?? 0;
   const performance = data.performance || {};
@@ -25,7 +26,15 @@ export function renderStanding(data) {
 
   const { currency, number } = splitUsd(total);
 
+  // The window chip rides on snapshot history of the same total the hero
+  // shows, so its basis matches exactly. Hidden while valuation is partial —
+  // a delta over half-priced data would be a confident lie.
+  const chip = (!valuationPending && change)
+    ? changeChip({ deltaUsd: change.deltaUsd, deltaPct: change.deltaPct, windowDays: change.windowDays })
+    : '';
+
   const marginalia = [];
+  if (chip) marginalia.push(String(chip));
   if (netPerf != null && netPerfPct != null && (netPerf !== 0 || netPerfPct !== 0)) {
     marginalia.push(margin(
       `${fmtUsdSigned(netPerf)} (${fmtPctSigned(netPerfPct)})`,

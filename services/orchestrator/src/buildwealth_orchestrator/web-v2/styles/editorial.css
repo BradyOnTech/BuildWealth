@@ -69,6 +69,40 @@
 .hero-marginalia .delta-up   b { color: var(--up); }
 .hero-marginalia .delta-down b { color: var(--down); }
 
+/* ───────────  Change chips — no naked numbers  ─────────── */
+
+.change-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.change-chip .chip-arrow {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.change-chip b {
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+.change-chip .chip-label {
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+.change-chip.delta-up   b,
+.change-chip.delta-up   .chip-arrow { color: var(--up); }
+.change-chip.delta-down b,
+.change-chip.delta-down .chip-arrow { color: var(--down); }
+.change-chip.delta-flat b,
+.change-chip.delta-flat .chip-arrow { color: var(--ink-quiet); }
+
 /* ───────────  Section headings  ─────────── */
 
 .section-head {

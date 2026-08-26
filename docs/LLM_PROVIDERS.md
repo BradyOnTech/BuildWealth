@@ -6,6 +6,7 @@ BuildWealth Copilot supports a small, quality-controlled provider set so client-
 
 | Provider | Adapter | Default model | Default base URL |
 | --- | --- | --- | --- |
+| ChatGPT subscription | Codex app-server | `codex-recommended` | n/a |
 | OpenAI | OpenAI-compatible Chat Completions | `gpt-5.5` | `https://api.openai.com/v1` |
 | Gemini | OpenAI-compatible Chat Completions | `gemini-3.1-flash-lite` | `https://generativelanguage.googleapis.com/v1beta/openai` |
 | Anthropic | Native Messages API | `claude-opus-4-7` | `https://api.anthropic.com/v1` |
@@ -13,6 +14,11 @@ BuildWealth Copilot supports a small, quality-controlled provider set so client-
 | Custom OpenAI-compatible | OpenAI-compatible Chat Completions | user supplied | user supplied |
 
 OpenRouter is intentionally not listed. Its broad model catalog makes tool-call behavior too variable for a financial planning assistant.
+
+When a ChatGPT subscription is connected, it is the effective default for
+Copilot conversations without a pinned provider/model. Explicit conversation
+choices still win, and the saved API provider is used when the subscription is
+not connected.
 
 ## Runtime Settings
 

@@ -9,6 +9,7 @@ import {
   fmtDateLong, fmtTimeShort, roman,
 } from '../lib/format.js';
 import { compactUsd } from '../lib/chart.js';
+import { changeChip } from '../lib/change_chip.js';
 import { skeleton } from '../lib/skeleton.js';
 import { renderAffordabilitySection, bindAffordabilitySection, resetAffordabilityResult } from './today/affordability.js';
 
@@ -264,6 +265,7 @@ function renderHero(payload, health = null, analytics = null, peers = null, inco
   const fi = computeFiProgress(health);
 
   const marginalia = [
+    renderHeroChangeChip(payload),
     performance != null ? marginaliaItem('net performance', fmtUsdSigned(performance), performance >= 0 ? 'up' : 'down') : null,
     surplus != null ? marginaliaItem('monthly surplus', fmtUsd(surplus), surplus >= 0 ? 'up' : 'down') : null,
     savings != null ? marginaliaItem('savings rate', `${Math.round(savings)}%`, 'up') : null,
@@ -429,6 +431,19 @@ function marginaliaItem(label, value, dir) {
       <span class="marginalia"> ${label}</span>
     </span>
   `;
+}
+
+// No naked numbers: the hero leads with how the money moved. The hero figure
+// is net worth while snapshot history tracks portfolio value, so the chip
+// names its basis ("portfolio") instead of blurring the two.
+export function renderHeroChangeChip(payload) {
+  const chip = changeChip({
+    deltaUsd: payload?.recent_change_usd,
+    deltaPct: payload?.recent_change_percent,
+    windowDays: payload?.recent_change_window_days,
+    basis: 'portfolio',
+  });
+  return chip ? String(chip) : '';
 }
 
 // FI target = 25x annual expenses (the 4% rule). Progress is measured on

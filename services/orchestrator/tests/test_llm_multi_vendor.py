@@ -154,3 +154,58 @@ def test_resolve_conversation_llm_allows_connected_cross_provider(tmp_path: Path
     assert client.provider == "openai"
     assert client.model == "gpt-4o-mini"
     assert client.enabled is True
+
+
+def test_connected_chatgpt_subscription_is_default_but_explicit_provider_still_wins(
+    tmp_path: Path,
+) -> None:
+    import json
+
+    import buildwealth_orchestrator.main as main
+
+    key = load_or_create_local_secret_key(tmp_path / "local_secret.key")
+    secret_store = WorkspaceSecretStore(tmp_path / "workspace_secrets.json", key)
+    store = WorkspaceSettingsStore(tmp_path / "workspace_settings.json", secret_store)
+    store.save({"llm_provider": "openai", "llm_api_key": "sk-oai", "llm_model": "gpt-5.5"})
+    store.set_provider_api_key(
+        "codex_subscription",
+        json.dumps({"tokens": {"access_token": "subscription-token"}}),
+    )
+    settings = store.load_raw()
+
+    default = main._resolve_conversation_llm(
+        workspace_settings=settings,
+        conversation_llm=None,
+        request_llm=None,
+        settings_store=store,
+    )
+    assert default["provider"] == "codex_subscription"
+    assert default["model"] == "codex-recommended"
+
+    explicit = main._resolve_conversation_llm(
+        workspace_settings=settings,
+        conversation_llm={"provider": "openai", "model": "gpt-5.5"},
+        request_llm=None,
+        settings_store=store,
+    )
+    assert explicit["provider"] == "openai"
+    assert explicit["model"] == "gpt-5.5"
+
+    provider_only = main._resolve_conversation_llm(
+        workspace_settings=settings,
+        conversation_llm=None,
+        request_llm={"provider": "openai"},
+        settings_store=store,
+    )
+    assert provider_only["provider"] == "openai"
+    assert provider_only["model"] == "gpt-5.5"
+
+    store.set_provider_api_key("codex_subscription", "")
+    fallback = main._resolve_conversation_llm(
+        workspace_settings=store.load_raw(),
+        conversation_llm=None,
+        request_llm=None,
+        settings_store=store,
+    )
+    assert fallback["provider"] == "openai"
+    assert fallback["model"] == "gpt-5.5"

@@ -310,6 +310,7 @@ export const api = {
   services:     () => fetchJson('/api/services/status'),
   telemetry:    () => fetchJson('/api/telemetry/runtime'),
   syncStatus:   () => fetchJson('/api/sync/status'),
+  snapshotHistory: (limit = 30) => fetchJson(`/api/snapshot/history?limit=${encodeURIComponent(limit)}`),
   durableStorageStatus: () => fetchJson('/api/storage/durable/status'),
   releaseReadiness: () => fetchJson('/api/release-readiness'),
   recordReleaseWorkflowVerification: (body = {}) => postJson('/api/release-readiness/workflow-verification', body),

@@ -288,7 +288,10 @@ def patch_copilot_conversation_llm(
         raise m.HTTPException(status_code=404, detail=str(exc)) from exc
 
     workspace_settings = services.settings_store.load_raw()
-    workspace_provider = str(workspace_settings.get("llm_provider") or "openai").strip().lower()
+    workspace_provider, _workspace_model = m._preferred_default_llm(
+        workspace_settings,
+        services.settings_store,
+    )
     patch = request.model_dump(exclude_unset=True)
     provider = str(patch.get("provider") or workspace_provider).strip().lower()
     model = str(patch.get("model") or "").strip()
@@ -331,9 +334,13 @@ def get_copilot_llm_options(
         except FileNotFoundError:
             conversation_llm = None
     connected = m._connected_providers_from_settings(workspace_settings, services.settings_store)
+    active_provider, active_model = m._preferred_default_llm(
+        workspace_settings,
+        services.settings_store,
+    )
     return m.build_llm_options_payload(
-        active_provider=str(workspace_settings.get("llm_provider") or "openai"),
-        active_model=str(workspace_settings.get("llm_model") or ""),
+        active_provider=active_provider,
+        active_model=active_model,
         connected_providers=connected,
         conversation_llm=conversation_llm if isinstance(conversation_llm, dict) else None,
     )
@@ -624,8 +631,10 @@ async def _copilot_chat_pipeline(
             model_to_store = str(resolved_llm.get("model") or "").strip()
             provider_to_store = str(resolved_llm.get("provider") or "").strip().lower()
             # Persist only true overrides (not identical to workspace default).
-            workspace_model = str(workspace_settings.get("llm_model") or "").strip()
-            workspace_provider = str(workspace_settings.get("llm_provider") or "").strip().lower()
+            workspace_provider, workspace_model = m._preferred_default_llm(
+                workspace_settings,
+                resolved_services.settings_store,
+            )
             is_default = (
                 provider_to_store == workspace_provider and model_to_store == workspace_model
             )
