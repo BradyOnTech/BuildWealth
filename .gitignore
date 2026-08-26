@@ -22,6 +22,8 @@ data/imports/inbox/*.csv
 data/imports/archive/*.csv
 data/conversations/
 data/control/
+data/backups/
+data/financial_connections/
 data/storage/
 data/workspaces/
 data/plans/
