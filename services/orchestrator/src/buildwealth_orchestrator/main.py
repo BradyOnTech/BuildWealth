@@ -18406,6 +18406,32 @@ def _connected_provider_ids(
     }
 
 
+def _preferred_default_llm(
+    workspace_settings: dict[str, Any],
+    settings_store: Any | None = None,
+) -> tuple[str, str]:
+    """Prefer a connected ChatGPT subscription for unpinned model choices.
+
+    Workspace settings remain the fallback and explicit conversation/request
+    choices still win. This lets an authenticated subscription avoid provider
+    API usage by default without making the other connected providers
+    unavailable.
+    """
+    workspace_provider = str(
+        workspace_settings.get("llm_provider") or "openai"
+    ).strip().lower()
+    workspace_model = str(workspace_settings.get("llm_model") or "").strip()
+    if "codex_subscription" in _connected_provider_ids(
+        workspace_settings,
+        settings_store,
+    ):
+        return (
+            "codex_subscription",
+            default_model_for_provider("codex_subscription"),
+        )
+    return workspace_provider, workspace_model
+
+
 def _resolve_conversation_llm(
     *,
     workspace_settings: dict[str, Any],
@@ -18414,8 +18440,10 @@ def _resolve_conversation_llm(
     settings_store: Any | None = None,
 ) -> dict[str, Any]:
     """Resolve model for a turn across any connected multi-vendor provider."""
-    workspace_provider = str(workspace_settings.get("llm_provider") or "openai").strip().lower()
-    workspace_model = str(workspace_settings.get("llm_model") or "").strip()
+    workspace_provider, workspace_model = _preferred_default_llm(
+        workspace_settings,
+        settings_store,
+    )
     connected_ids = _connected_provider_ids(workspace_settings, settings_store)
     raw: dict[str, Any] = {}
     if isinstance(conversation_llm, dict):
@@ -18434,6 +18462,10 @@ def _resolve_conversation_llm(
     if requested_provider and requested_provider not in connected_ids:
         # Unconnected provider → fall back to workspace default.
         raw = {"provider": workspace_provider, "model": ""}
+    elif requested_provider and not str(raw.get("model") or "").strip():
+        # A provider-only override must not inherit the preferred default's
+        # model (for example, OpenAI + codex-recommended).
+        raw["model"] = default_model_for_provider(requested_provider)
     elif not requested_provider:
         raw["provider"] = workspace_provider
     return normalize_conversation_llm(

@@ -126,6 +126,11 @@ orchestrator image:
 3. Select **Connect ChatGPT**, then enter the one-time code on OpenAI's device
    authorization page.
 
+Once connected, the ChatGPT subscription is the default for Copilot
+conversations that do not pin another provider or model. API-backed providers
+remain available as explicit per-conversation choices and as the fallback when
+the ChatGPT subscription is disconnected.
+
 This connection is deliberately separate from BuildWealth account sign-in.
 ChatGPT is the AI entitlement; BuildWealth local/OIDC auth still protects the
 household workspace. The Codex credential is encrypted in the workspace secret
