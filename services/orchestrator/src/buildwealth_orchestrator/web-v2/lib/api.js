@@ -472,6 +472,34 @@ export const api = {
   importReports:      (limit = 20) => fetchJson(`/api/import/reports?limit=${encodeURIComponent(limit)}`),
   importReport:       (reportId) => fetchJson(`/api/import/reports/${encodeURIComponent(reportId)}`),
 
+  // Read-only financial connections
+  financialConnections: () => fetchJson('/api/connections'),
+  createPlaidLinkToken: () => postJson('/api/connections/plaid/link-token', {}),
+  exchangePlaidPublicToken: (body = {}) => postJson('/api/connections/plaid/exchange', body),
+  financialConnectionPreview: (connectionId) => fetchJson(
+    `/api/connections/${encodeURIComponent(connectionId)}/preview`,
+  ),
+  activateFinancialConnection: (connectionId, body = {}) => postJson(
+    `/api/connections/${encodeURIComponent(connectionId)}/activate`,
+    body,
+  ),
+  syncFinancialConnection: (connectionId) => postJson(
+    `/api/connections/${encodeURIComponent(connectionId)}/sync`,
+    {},
+  ),
+  createFinancialConnectionUpdateLinkToken: (connectionId) => postJson(
+    `/api/connections/${encodeURIComponent(connectionId)}/update-link-token`,
+    {},
+  ),
+  financialConnectionDisconnectPreview: (connectionId) => postJson(
+    `/api/connections/${encodeURIComponent(connectionId)}/disconnect-preview`,
+    {},
+  ),
+  disconnectFinancialConnection: (connectionId, retention) => deleteJson(
+    `/api/connections/${encodeURIComponent(connectionId)}`,
+    { retention },
+  ),
+
   // Workflows
   workflowTemplates:  () => fetchJson('/api/workflows/templates'),
   runWorkflow:        (body = {}) => postJson('/api/workflows/run', body),

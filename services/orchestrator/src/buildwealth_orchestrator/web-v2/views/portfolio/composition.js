@@ -121,6 +121,16 @@ function holdingRow(row, index) {
   const allocation = priced && row.allocation_pct != null ? Number(row.allocation_pct) : null;
   const returnPct = priced && row.gain_loss_pct != null ? Number(row.gain_loss_pct) : null;
   const returnDir = returnPct >= 0 ? 'up' : 'down';
+  const connectedMeta = row.provider_owned
+    ? [
+      row.institution_name || 'Connected institution',
+      'read-only',
+      row.stale ? 'stale' : 'current',
+      row.price_source === 'institution_observation_fallback'
+        ? 'institution value fallback'
+        : 'BuildWealth market price',
+    ].join(' · ')
+    : '';
 
   return html`
     <li class="holding-row">
@@ -129,7 +139,10 @@ function holdingRow(row, index) {
         <span class="holding-symbol">${esc(String(symbol))}</span>
         <span class="holding-name">${esc(String(name))}</span>
       </span>
-      <span class="holding-meta">${row.account ? esc(String(row.account)) : ''}${row.asset_class ? raw(` · ${esc(String(row.asset_class))}`) : ''}</span>
+      <span class="holding-meta">
+        ${row.account ? esc(String(row.account)) : ''}${row.asset_class ? raw(` · ${esc(String(row.asset_class))}`) : ''}
+        ${connectedMeta ? raw(`<br>${esc(connectedMeta)}`) : ''}
+      </span>
       <span class="holding-value">${priced ? fmtUsd(value) : 'Price needed'}</span>
       <span class="holding-alloc">${allocation == null ? '—' : `${allocation.toFixed(1)}%`}</span>
       <span class="holding-return ${returnPct == null ? '' : returnDir}">${returnPct == null ? '—' : fmtPctSigned(returnPct)}</span>
@@ -142,6 +155,13 @@ function holdingRow(row, index) {
 // "Update value" only appears where the price is a manual/local one.
 function holdingActions(row, symbol) {
   if (!symbol || symbol === '—') return '';
+  if (row.provider_owned || row.source === 'connected') {
+    return html`
+      <span class="holding-actions">
+        <a class="action-link muted" href="#import-sync">Manage read-only source</a>
+      </span>
+    `;
+  }
   const manualPriced = row.price_source === 'MANUAL'
     || Boolean(row.is_custom_asset)
     || row.valuation_method === 'MANUAL_PRICE_OVERRIDE'

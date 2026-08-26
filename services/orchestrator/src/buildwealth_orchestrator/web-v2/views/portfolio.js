@@ -521,7 +521,19 @@ function normalizeMaintenanceSection(section) {
 async function loadMaintenanceSection(section, params = {}) {
   try {
     if (section === 'audit') return { section, payload: await api.portfolioAudit(25) };
-    if (section === 'accounts') return { section, rows: await api.portfolioAccounts() };
+    if (section === 'accounts') {
+      const [rows, connectionPayload] = await Promise.all([
+        api.portfolioAccounts(),
+        api.financialConnections().catch(() => ({ connections: [] })),
+      ]);
+      return {
+        section,
+        rows,
+        connections: Array.isArray(connectionPayload?.items)
+          ? connectionPayload.items
+          : (Array.isArray(connectionPayload?.connections) ? connectionPayload.connections : []),
+      };
+    }
     if (section === 'transactions') return { section, rows: await api.portfolioTransactions(100) };
     if (section === 'assets') {
       const [payload, selectedAsset] = await Promise.all([
@@ -563,7 +575,7 @@ function renderMaintenanceDetail(section, maintenance) {
         <p class="section-lede">${maintenanceCopy(section)}</p>
       </header>
       ${section === 'audit' ? raw(renderPortfolioAudit(maintenance?.payload || {})) : ''}
-      ${section === 'accounts' ? raw(renderAccountTools(rows)) : ''}
+      ${section === 'accounts' ? raw(renderAccountTools(rows, maintenance?.connections || [])) : ''}
       ${section === 'assets' ? raw(renderAssetRegistryTools(maintenance)) : ''}
       ${section === 'assets' ? raw(renderAssetDetail(maintenance?.payload?.selectedAsset)) : ''}
       ${section === 'assets' ? raw(renderCustomAssetTools()) : ''}
@@ -578,7 +590,17 @@ function renderMaintenanceDetail(section, maintenance) {
   `;
 }
 
-function accountTypeOptions(selected = '') {
+export function accountTypeOptions(selected = '') {
+  const normalizedSelected = (() => {
+    const value = String(selected || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (['401k', '403b', '457b', 'ira', 'traditional', 'traditionalira', 'retirement'].includes(value)) {
+      return 'traditional';
+    }
+    if (['roth', 'rothira', 'roth401k', 'roth403b'].includes(value)) return 'roth';
+    if (['cash', 'checking', 'savings'].includes(value)) return 'cash';
+    if (value === 'hsa') return 'hsa';
+    return 'taxable';
+  })();
   const options = [
     ['taxable', 'Taxable brokerage'],
     ['traditional', 'Traditional / pre-tax'],
@@ -587,11 +609,14 @@ function accountTypeOptions(selected = '') {
     ['cash', 'Checking / savings'],
   ];
   return options.map(([value, label]) => html`
-    <option value="${value}" ${String(selected) === value ? 'selected' : ''}>${label}</option>
+    <option value="${value}" ${normalizedSelected === value ? raw('selected') : ''}>${label}</option>
   `).join('');
 }
 
-function renderAccountTools(rows = []) {
+function renderAccountTools(rows = [], connections = []) {
+  const connectionsById = new Map(
+    connections.map(connection => [String(connection?.connection_id || ''), connection]),
+  );
   return html`
     <div class="portfolio-accounts-manager">
       <form class="portfolio-custom-asset-form" data-account-create-form>
@@ -610,8 +635,21 @@ function renderAccountTools(rows = []) {
         </p>
       </form>
       <div class="portfolio-account-edit-list">
-        ${raw(rows.map(account => html`
+        ${raw(rows.map(account => {
+          const provider = account?.provider_metadata && typeof account.provider_metadata === 'object'
+            ? account.provider_metadata
+            : null;
+          const connection = provider
+            ? connectionsById.get(String(provider.connection_id || ''))
+            : null;
+          return html`
           <form class="portfolio-custom-asset-form" data-account-edit-form data-account-id="${account.id || ''}">
+            ${provider ? raw(renderConnectedAccountProvenance(provider, connection)) : html`
+              <div class="connection-state-note">
+                <strong>Manual</strong>
+                <p>This account is maintained by you. CSV imports and manual entries remain available.</p>
+              </div>
+            `}
             <label class="fit-field"><span>Name</span>
               <input name="name" type="text" value="${account.name || account.id || ''}" required>
             </label>
@@ -624,10 +662,41 @@ function renderAccountTools(rows = []) {
             <button class="btn btn-ghost" type="submit">Save account</button>
             <p class="portfolio-guardrails-status" data-account-edit-status>${account.id || ''}</p>
           </form>
-        `).join(''))}
+        `}).join(''))}
       </div>
     </div>
   `;
+}
+
+function renderConnectedAccountProvenance(provider = {}, connection = null) {
+  const institution = provider.institution_name || connection?.institution_name || 'Connected institution';
+  const mask = provider.mask ? ` ••••${provider.mask}` : '';
+  const status = connection?.status || 'connected';
+  const freshness = connection?.last_successful_sync_at || provider.last_observed_at || connection?.updated_at || '';
+  const connectedBy = connection?.connected_by_name || 'a household member';
+  const needsAttention = Boolean(connection?.stale)
+    || ['needs_attention', 'error', 'disconnect_pending', 'disconnected'].includes(status);
+  return html`
+    <div class="connection-state-note">
+      <strong>${needsAttention ? 'Needs attention' : 'Read-only connection'}</strong>
+      <p>
+        <span>${institution}${mask}</span><br>
+        Source: ${provider.provider || 'Plaid'} · Status: ${labelize(status)} ·
+        Connected by ${connectedBy} for this household.
+        ${freshness ? raw(`<br>Last provider update: ${esc(formatConnectionTime(freshness))}.`) : ''}
+        Provider balances and holdings are read-only; the name, type, and currency below belong to BuildWealth.
+        <a class="action-link muted" href="#import-sync">Manage connection</a>
+      </p>
+    </div>
+  `;
+}
+
+function formatConnectionTime(value) {
+  const parsed = new Date(String(value || ''));
+  if (Number.isNaN(parsed.getTime())) return String(value || 'Unknown');
+  return parsed.toLocaleString('en-US', {
+    year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
 }
 
 const RISK_GUARDRAIL_FIELDS = [

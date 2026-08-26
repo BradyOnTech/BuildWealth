@@ -182,11 +182,36 @@ def _migration_0001_baseline(connection: Connection) -> None:
         _ensure_column(connection, table, "deletion_completed_at", "TEXT")
 
 
+def _migration_0002_financial_connection_index(connection: Connection) -> None:
+    """Add the token-free, case-sensitive provider Item routing index."""
+    connection.execute(
+        """
+        CREATE TABLE financial_connection_index (
+            provider TEXT NOT NULL,
+            provider_item_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+            connection_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (provider, provider_item_id),
+            UNIQUE (workspace_id, connection_id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX idx_financial_connection_index_workspace
+        ON financial_connection_index(workspace_id, connection_id)
+        """
+    )
+
+
 # Append-only. (id, description, apply callable). Ids are zero-padded and
 # strictly increasing; the runner refuses gaps or reordering by design of the
 # applied-check below.
 MIGRATIONS: list[tuple[str, str, Callable[[Connection], None]]] = [
     ("0001", "baseline control-plane schema", _migration_0001_baseline),
+    ("0002", "financial connection webhook routing index", _migration_0002_financial_connection_index),
 ]
 
 

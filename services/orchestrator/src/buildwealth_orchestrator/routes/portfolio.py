@@ -13,6 +13,14 @@ from buildwealth_orchestrator.services.portfolio_add_flow import execute_add_flo
 
 router = APIRouter()
 
+
+def _current_holdings(services: m.WorkspaceServices) -> dict[str, m.Any]:
+    return (
+        services.current_portfolio()
+        if isinstance(services, m.WorkspaceServices)
+        else services.portfolio_store.get_holdings()
+    )
+
 __all__ = [
     "get_portfolio_holdings",
     "get_portfolio_transactions",
@@ -61,7 +69,7 @@ def get_portfolio_holdings(
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> dict[str, m.Any]:
     m.require_permission(services.context, "portfolio.read")
-    payload = services.portfolio_store.get_holdings()
+    payload = _current_holdings(services)
     profile = services.financial_profile_store.get()
     investment_policy = (
         profile.get("investment_policy")
@@ -222,7 +230,7 @@ async def get_portfolio_analytics(
     services: m.WorkspaceServices = m.Depends(m.get_workspace_services),
 ) -> m.PortfolioAnalyticsResponse:
     m.require_permission(services.context, "portfolio.read")
-    holdings_payload = services.portfolio_store.get_holdings()
+    holdings_payload = _current_holdings(services)
     profile_payload = services.financial_profile_store.get()
     investment_policy = (
         profile_payload.get("investment_policy")
@@ -330,7 +338,7 @@ def get_portfolio_export_bundle(
     m.require_permission(services.context, "export.create")
     bounded_limit = max(1, min(int(limit), 50_000))
     transactions = services.portfolio_store.list_transactions(limit=bounded_limit)
-    holdings_payload = services.portfolio_store.get_holdings()
+    holdings_payload = _current_holdings(services)
     import_reports = services.import_workbench_store.list_reports(limit=200)
     audit_report = m.build_portfolio_audit_payload(
         import_reports=import_reports,
@@ -356,6 +364,26 @@ def get_portfolio_export_bundle(
         for lot in (holding.get("lots") if isinstance(holding.get("lots"), list) else [])
         if isinstance(lot, dict)
     ]
+    connection_store = getattr(services, "financial_connection_store", None)
+    financial_connections = None
+    if connection_store is not None:
+        connection_rows = connection_store.list_connections()
+        financial_connections = {
+            "connections": [
+                {key: value for key, value in row.items() if key != "provider_item_id"}
+                for row in connection_rows
+            ],
+            "account_mappings": [
+                mapping
+                for row in connection_rows
+                for mapping in connection_store.list_account_mappings(row["connection_id"])
+            ],
+            "reports": connection_store.list_connection_reports(),
+            "observations": {
+                row["connection_id"]: connection_store.get_observation_state(row["connection_id"])
+                for row in connection_rows
+            },
+        }
     return {
         "schema_version": 1,
         "generated_at": m.utc_now().isoformat(),
@@ -376,6 +404,7 @@ def get_portfolio_export_bundle(
         "cost_basis_methods": services.portfolio_store.get_cost_basis_methods(),
         "import_reports": import_reports,
         "audit_report": audit_report,
+        "financial_connections": financial_connections,
         "recovery_posture": {
             "manual_changes": "Manual metadata, price, FX, and cost-basis changes are local records that can be edited or cleared in Portfolio maintenance.",
             "imports": "Applied import rows are preserved with an Import Report ID so Portfolio History can be traced back to the source file.",

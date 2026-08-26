@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -148,6 +148,17 @@ class Settings(BaseSettings):
     context_embedding_timeout_seconds: float = Field(default=5.0, alias="CONTEXT_EMBEDDING_TIMEOUT_SECONDS")
 
     openbb_provider: str = Field(default="yfinance", alias="OPENBB_PROVIDER")
+
+    # Financial connections are an explicit opt-in. Deployment credentials
+    # stay in environment/secret-manager configuration, never workspace data.
+    plaid_connections_enabled: bool = Field(default=False, alias="PLAID_CONNECTIONS_ENABLED")
+    plaid_environment: str = Field(default="sandbox", alias="PLAID_ENVIRONMENT")
+    plaid_client_id: str = Field(default="", alias="PLAID_CLIENT_ID")
+    plaid_secret: SecretStr = Field(default=SecretStr(""), alias="PLAID_SECRET")
+    plaid_webhook_url: str = Field(default="", alias="PLAID_WEBHOOK_URL")
+    plaid_redirect_uri: str = Field(default="", alias="PLAID_REDIRECT_URI")
+    plaid_country_codes: str = Field(default="US", alias="PLAID_COUNTRY_CODES")
+    plaid_timeout_seconds: float = Field(default=15.0, gt=0, alias="PLAID_TIMEOUT_SECONDS")
 
     # Heartbeat cadence for scheduled price/snapshot sync. Daily by default so
     # freshness does not depend on the user clicking refresh; 0 disables.

@@ -93,7 +93,7 @@ def list_account_data_deletion_requests(
 
 
 @router.post("/api/account/data-deletion/request")
-def request_account_data_deletion(
+async def request_account_data_deletion(
     request: m.Request,
     payload: dict[str, m.Any],
     context: m.RequestContext = m.Depends(m.get_request_context),
@@ -123,6 +123,7 @@ def request_account_data_deletion(
             purge_after=str(preview["purge_after"] or m.purge_after_for_recovery_window()),
             preview=preview,
         )
+        connection_revocation = await m.revoke_financial_connections_for_deletion(preview)
     except m.AuthenticationError as exc:
         raise m.HTTPException(status_code=401, detail=str(exc)) from exc
     except m.AuthorizationError as exc:
@@ -131,8 +132,12 @@ def request_account_data_deletion(
         raise m.HTTPException(status_code=400, detail=str(exc)) from exc
     return {
         "ok": True,
-        "message": "Data deletion scheduled. You can cancel during the recovery window.",
+        "message": (
+            "Data deletion scheduled. You can cancel local deletion during the recovery window, "
+            "but revoked financial connections are not restored."
+        ),
         "request": m.serialize_deletion_request(deletion_request),
+        "connection_revocation": connection_revocation,
     }
 
 
@@ -154,7 +159,10 @@ def cancel_account_data_deletion(
         raise m.HTTPException(status_code=400, detail=str(exc)) from exc
     return {
         "ok": True,
-        "message": "Data deletion canceled.",
+        "message": (
+            "Data deletion canceled. Financial connections revoked when deletion was requested "
+            "remain disconnected and can be connected again manually."
+        ),
         "request": m.serialize_deletion_request(deletion_request),
     }
 

@@ -60,6 +60,7 @@ class DataProtectionService:
                 settings.financial_profile_path,
                 settings.recommendations_path,
                 data_root / "settings",
+                data_root / "financial_connections",
                 settings.durable_storage_dir,
             ],
             backup_dir=settings.backup_archive_dir,

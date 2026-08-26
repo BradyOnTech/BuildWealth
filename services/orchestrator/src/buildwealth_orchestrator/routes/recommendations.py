@@ -88,7 +88,7 @@ def generate_portfolio_risk_recommendation_candidates(
     if http_request is not None:
         m.require_csrf(http_request)
     m.require_permission(services.context, "recommendations.write")
-    holdings_payload = services.portfolio_store.get_holdings()
+    holdings_payload = services.current_portfolio() if isinstance(services, m.WorkspaceServices) else services.portfolio_store.get_holdings()
     existing_recommendations = services.recommendation_inbox.list(
         limit=None,
         status=None,
@@ -175,7 +175,7 @@ def generate_cash_liquidity_recommendation_candidates(
     if http_request is not None:
         m.require_csrf(http_request)
     m.require_permission(services.context, "recommendations.write")
-    holdings_payload = services.portfolio_store.get_holdings()
+    holdings_payload = services.current_portfolio() if isinstance(services, m.WorkspaceServices) else services.portfolio_store.get_holdings()
     financial_profile_payload = m.get_financial_profile_payload(services.financial_profile_store)
     existing_recommendations = services.recommendation_inbox.list(
         limit=None,
@@ -308,7 +308,7 @@ def generate_allocation_drift_recommendation_candidates(
     if http_request is not None:
         m.require_csrf(http_request)
     m.require_permission(services.context, "recommendations.write")
-    holdings_payload = services.portfolio_store.get_holdings()
+    holdings_payload = services.current_portfolio() if isinstance(services, m.WorkspaceServices) else services.portfolio_store.get_holdings()
     profile_payload = m.get_financial_profile_payload(services.financial_profile_store)
     investment_policy = (
         profile_payload.get("investment_policy")
@@ -354,7 +354,11 @@ def generate_fund_overlap_recommendation_candidates(
         sort="none",
     )
     result = m.generate_fund_overlap_recommendations(
-        holdings_payload=services.portfolio_store.get_holdings(),
+        holdings_payload=(
+            services.current_portfolio()
+            if isinstance(services, m.WorkspaceServices)
+            else services.portfolio_store.get_holdings()
+        ),
         existing_recommendations=existing_recommendations,
         creator=services.recommendation_inbox if not request.dry_run else None,
         dry_run=request.dry_run,

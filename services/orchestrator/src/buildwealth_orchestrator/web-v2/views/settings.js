@@ -1149,7 +1149,14 @@ export function accountDataDeletionPanel(model) {
           ${raw(pending.map(request => deletionRequestRow(request, model)).join(''))}
         </div>
       ` : ''}
-      ${model.accountDeletionResult ? html`<p class="success-banner">${esc(model.accountDeletionResult.message || 'Data deletion updated.')}</p>` : ''}
+      ${model.accountDeletionResult ? html`
+        <p class="success-banner" role="status">${esc(model.accountDeletionResult.message || 'Data deletion updated.')}</p>
+        ${Number(model.accountDeletionResult.connection_revocation?.failed || 0) > 0 ? html`
+          <p class="error-banner" role="alert">
+            ${Number(model.accountDeletionResult.connection_revocation.failed)} financial connection revocation attempt(s) are still pending. BuildWealth will keep the encrypted credential and retry; local deletion will not proceed first.
+          </p>
+        ` : ''}
+      ` : ''}
     </div>
   `;
 }

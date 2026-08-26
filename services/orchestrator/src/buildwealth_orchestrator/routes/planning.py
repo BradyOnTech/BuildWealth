@@ -53,7 +53,11 @@ async def plan_scenarios(
             latest_snapshot = resolved_services.snapshot_store.latest()
             current_value = m.portfolio_value_with_cash(latest_snapshot)
         except FileNotFoundError:
-            holdings = resolved_services.portfolio_store.get_holdings()
+            holdings = (
+                resolved_services.current_portfolio()
+                if isinstance(resolved_services, m.WorkspaceServices)
+                else resolved_services.portfolio_store.get_holdings()
+            )
             current_value = m._coerce_float(holdings.get("total_value"), 0.0)
             positions = holdings.get("holdings")
             if abs(current_value) <= 1e-9 and not (isinstance(positions, dict) and positions):

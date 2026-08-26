@@ -498,9 +498,19 @@ from buildwealth_orchestrator.services.workspace_services import (
     WorkspaceServiceFactory,
     WorkspaceServices,
 )
+from buildwealth_orchestrator.clients.financial_connections import FinancialConnectionError
+from buildwealth_orchestrator.clients.plaid import PlaidConnectionProvider
+from buildwealth_orchestrator.services.financial_connection_service import (
+    FinancialConnectionService,
+    FinancialConnectionServiceError,
+)
+from buildwealth_orchestrator.services.financial_connections import (
+    FinancialConnectionNotFoundError,
+)
 from buildwealth_orchestrator.settings import get_settings
 
 settings = get_settings()
+plaid_connection_provider = PlaidConnectionProvider.from_settings(settings)
 
 
 @asynccontextmanager
@@ -513,6 +523,62 @@ async def _app_lifespan(_: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, lifespan=_app_lifespan)
+
+
+@app.exception_handler(FinancialConnectionServiceError)
+async def _financial_connection_service_error_handler(
+    _request: Request,
+    exc: FinancialConnectionServiceError,
+) -> Any:
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.message, "code": exc.code},
+    )
+
+
+@app.exception_handler(FinancialConnectionNotFoundError)
+async def _financial_connection_not_found_handler(
+    _request: Request,
+    exc: FinancialConnectionNotFoundError,
+) -> Any:
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(FinancialConnectionError)
+async def _financial_connection_provider_error_handler(
+    _request: Request,
+    exc: FinancialConnectionError,
+) -> Any:
+    from fastapi.responses import JSONResponse
+
+    webhook_rejection_codes = {
+        "MISSING_WEBHOOK_SIGNATURE",
+        "INVALID_WEBHOOK_SIGNATURE",
+        "INVALID_WEBHOOK_ALGORITHM",
+        "MISSING_WEBHOOK_KEY_ID",
+        "INVALID_WEBHOOK_ISSUED_AT",
+        "STALE_WEBHOOK_SIGNATURE",
+        "WEBHOOK_BODY_MISMATCH",
+        "INVALID_WEBHOOK_BODY",
+        "INVALID_WEBHOOK_VERIFICATION_KEY",
+        "EXPIRED_WEBHOOK_VERIFICATION_KEY",
+    }
+    if exc.code in webhook_rejection_codes:
+        status_code = 400
+    elif str(exc.disposition) == "repairable":
+        status_code = 409
+    elif str(exc.disposition) == "retryable":
+        status_code = 503
+    else:
+        status_code = 502
+    return JSONResponse(
+        status_code=status_code,
+        content={"detail": exc.message, "code": exc.code},
+    )
 
 # WEB_V2_DIR lets deployments bind-mount the frontend at a stable path
 # (e.g. /app/web-v2 in docker) instead of the interpreter-versioned
@@ -828,6 +894,132 @@ def get_workspace_services(
     context: RequestContext = Depends(get_request_context),
 ) -> WorkspaceServices:
     return workspace_service_factory.for_context(context)
+
+
+def financial_connection_service_for_workspace(
+    services: WorkspaceServices,
+) -> FinancialConnectionService:
+    return FinancialConnectionService(
+        provider=plaid_connection_provider,
+        services=services,
+        control_plane=control_plane_store,
+    )
+
+
+async def handle_plaid_webhook(
+    *,
+    body: bytes,
+    verification_token: str,
+) -> dict[str, Any]:
+    event = await plaid_connection_provider.validate_webhook(
+        raw_body=body,
+        verification_token=verification_token,
+    )
+    configured_environment = plaid_connection_provider.configuration_readiness().environment
+    if event.environment and str(event.environment).strip().lower() != configured_environment:
+        raise HTTPException(status_code=400, detail="Plaid webhook environment does not match this deployment")
+    if not event.provider_item_id:
+        return {"accepted": True, "scheduled": False}
+    index = control_plane_store.lookup_financial_connection_index(
+        provider="plaid",
+        provider_item_id=event.provider_item_id,
+    )
+    if index is None:
+        # A verified event for an already removed Item is safe to acknowledge;
+        # do not reveal whether an Item belongs to this installation.
+        return {"accepted": True, "scheduled": False}
+    services = workspace_service_factory.for_workspace_id(index.workspace_id)
+    connection_store = services.financial_connection_store
+    # The body may be identical for two legitimate holdings deliveries. The
+    # signed JWT is delivery-specific, so its digest blocks exact replays
+    # without suppressing a later update carrying the same payload.
+    event_id = hashlib.sha256(verification_token.encode("utf-8")).hexdigest()
+    is_new = connection_store.record_webhook_event(
+        event_id=event_id,
+        connection_id=index.connection_id,
+        event_type=event.event_type,
+        event_code=event.event_code,
+        received_at=utc_now().isoformat(),
+    )
+    if not is_new:
+        return {"accepted": True, "scheduled": False, "duplicate": True}
+    connection = connection_store.get_connection(index.connection_id)
+    if event.environment and str(connection.get("environment") or "").lower() != str(
+        event.environment
+    ).lower():
+        connection_store.remove_webhook_event(event_id)
+        raise HTTPException(status_code=400, detail="Plaid webhook environment does not match this connection")
+    updates: dict[str, Any] = {"last_webhook_at": utc_now().isoformat()}
+    if event.provider_error_code:
+        updates.update(
+            {
+                "status": "needs_attention",
+                "last_error_code": event.provider_error_code,
+                "last_error_message": "The institution needs attention before updates can continue.",
+            }
+        )
+    connection_store.update_connection(index.connection_id, updates)
+    normalized_type = str(event.event_type or "").upper()
+    normalized_code = str(event.event_code or "").upper()
+    should_sync = (
+        connection.get("status") in {"active", "needs_attention"}
+        and not event.provider_error_code
+        and (
+            normalized_type == "HOLDINGS"
+            or "HOLDINGS" in normalized_code
+            or normalized_code == "DEFAULT_UPDATE"
+        )
+    )
+    if not should_sync:
+        connection_store.finish_webhook_event(event_id, succeeded=True)
+    return {
+        "accepted": True,
+        "scheduled": should_sync,
+        "_workspace_id": index.workspace_id,
+        "_connection_id": index.connection_id,
+        "_event_id": event_id,
+    }
+
+
+async def process_plaid_webhook_event(
+    *,
+    workspace_id: str,
+    connection_id: str,
+    event_id: str,
+) -> bool:
+    """Claim and process durable webhook work; failed work returns to pending."""
+    services = workspace_service_factory.for_workspace_id(workspace_id)
+    store = services.financial_connection_store
+    if not store.claim_webhook_event(event_id):
+        return False
+    event = next(
+        (row for row in store.list_webhook_events(connection_id) if row["event_id"] == event_id),
+        None,
+    )
+    if event is None:
+        return False
+    normalized_type = str(event.get("event_type") or "").upper()
+    normalized_code = str(event.get("event_code") or "").upper()
+    should_sync = (
+        normalized_type == "HOLDINGS"
+        or "HOLDINGS" in normalized_code
+        or normalized_code == "DEFAULT_UPDATE"
+    )
+    try:
+        if should_sync:
+            await financial_connection_service_for_workspace(services).sync_connection(
+                connection_id=connection_id,
+                trigger="webhook",
+            )
+        store.finish_webhook_event(event_id, succeeded=True)
+        return should_sync
+    except Exception as exc:
+        store.finish_webhook_event(
+            event_id,
+            succeeded=False,
+            error_code=str(getattr(exc, "code", "WEBHOOK_WORK_FAILED")),
+        )
+        return False
 
 
 def get_current_request(request: Request) -> Request:
@@ -1562,6 +1754,160 @@ def scheduled_sync_is_due(age_seconds: float | None, interval_seconds: float) ->
     return age_seconds is None or age_seconds >= interval_seconds
 
 
+def financial_connection_sync_is_due(
+    last_successful_sync_at: str | None,
+    *,
+    now: datetime | None = None,
+    interval_hours: float = 24.0,
+) -> bool:
+    if not last_successful_sync_at:
+        return True
+    try:
+        last_sync = datetime.fromisoformat(str(last_successful_sync_at).replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if last_sync.tzinfo is None:
+        last_sync = last_sync.replace(tzinfo=timezone.utc)
+    current = now or utc_now()
+    return (current - last_sync).total_seconds() >= max(1.0, interval_hours) * 3600
+
+
+def financial_connection_age_hours(timestamp: str | None) -> float | None:
+    if not timestamp:
+        return None
+    try:
+        value = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return max(0.0, (utc_now() - value).total_seconds() / 3600)
+
+
+async def sync_due_financial_connections() -> dict[str, int]:
+    """Run daily reads per active workspace connection, never global state."""
+    counts = {"checked": 0, "synced": 0, "failed": 0}
+    if not plaid_connection_provider.configuration_readiness().enabled:
+        return counts
+    for record in control_plane_store.list_active_workspaces():
+        try:
+            services = workspace_service_factory.for_workspace_id(record.id)
+        except Exception:
+            counts["failed"] += 1
+            continue
+        service = financial_connection_service_for_workspace(services)
+        for event in services.financial_connection_store.list_webhook_events():
+            if event.get("status") not in {"pending", "processing"}:
+                continue
+            try:
+                processed = await process_plaid_webhook_event(
+                    workspace_id=record.id,
+                    connection_id=event["connection_id"],
+                    event_id=event["event_id"],
+                )
+                if processed:
+                    counts["synced"] += 1
+            except Exception:
+                counts["failed"] += 1
+        for connection in services.financial_connection_store.list_connections():
+            pending_age = financial_connection_age_hours(connection.get("created_at"))
+            if (
+                (
+                    connection.get("status") == "pending_review"
+                    or (
+                        connection.get("status") == "error"
+                        and not connection.get("last_successful_sync_at")
+                    )
+                )
+                and pending_age is not None
+                and pending_age >= 72
+            ):
+                counts["checked"] += 1
+                try:
+                    await service.disconnect_connection(
+                        connection_id=connection["connection_id"],
+                        retention="remove_connected_data",
+                    )
+                    counts["synced"] += 1
+                except Exception:
+                    counts["failed"] += 1
+                continue
+            if connection.get("status") == "disconnect_pending":
+                counts["checked"] += 1
+                try:
+                    await service.disconnect_connection(
+                        connection_id=connection["connection_id"],
+                        retention=str(
+                            connection.get("disconnect_retention") or "keep_frozen"
+                        ),
+                    )
+                    counts["synced"] += 1
+                except Exception:
+                    counts["failed"] += 1
+                continue
+            if connection.get("status") != "active":
+                continue
+            counts["checked"] += 1
+            if not financial_connection_sync_is_due(connection.get("last_successful_sync_at")):
+                continue
+            try:
+                await service.sync_connection(
+                    connection_id=connection["connection_id"],
+                    trigger="scheduled",
+                )
+                counts["synced"] += 1
+            except Exception:
+                counts["failed"] += 1
+    return counts
+
+
+async def revoke_financial_connections_for_deletion(
+    preview: dict[str, Any],
+) -> dict[str, Any]:
+    """Begin provider revocation immediately; local deletion may remain delayed."""
+    result: dict[str, Any] = {
+        "attempted": 0,
+        "removed": 0,
+        "failed": 0,
+        "failures": [],
+    }
+    workspace_ids = [
+        str(item.get("workspace_id") or "")
+        for item in preview.get("affected_workspaces", [])
+        if isinstance(item, dict) and item.get("workspace_id")
+    ]
+    for workspace_id in workspace_ids:
+        try:
+            services = workspace_service_factory.for_workspace_id(workspace_id)
+        except Exception:
+            result["failed"] += 1
+            result["failures"].append(
+                {"workspace_id": workspace_id, "code": "WORKSPACE_UNAVAILABLE"}
+            )
+            continue
+        service = financial_connection_service_for_workspace(services)
+        for connection in services.financial_connection_store.list_connections():
+            if connection.get("status") == "disconnected":
+                continue
+            result["attempted"] += 1
+            try:
+                await service.disconnect_connection(
+                    connection_id=connection["connection_id"],
+                    retention="remove_connected_data",
+                )
+                result["removed"] += 1
+            except Exception as exc:
+                result["failed"] += 1
+                result["failures"].append(
+                    {
+                        "workspace_id": workspace_id,
+                        "connection_id": connection["connection_id"],
+                        "code": str(getattr(exc, "code", "REMOTE_REMOVAL_FAILED")),
+                    }
+                )
+    return result
+
+
 async def scheduled_sync_loop() -> None:
     """Heartbeat: keep prices and snapshots no staler than the sync interval.
 
@@ -1569,11 +1915,22 @@ async def scheduled_sync_loop() -> None:
     latest snapshot has aged past the interval — so restarts and laptop
     sleeps self-heal stale data without hammering market-data providers.
     """
-    interval_seconds = max(60, int(settings.sync_interval_minutes * 60))
+    market_sync_enabled = settings.sync_interval_minutes > 0
+    interval_seconds = (
+        max(60, int(settings.sync_interval_minutes * 60))
+        if market_sync_enabled
+        else 3600
+    )
     poll_seconds = min(interval_seconds, 3600)
 
     while True:
-        if scheduled_sync_is_due(snapshot_age_seconds(), interval_seconds):
+        try:
+            await sync_due_financial_connections()
+        except Exception:
+            # Connection-specific failures are persisted on the connection;
+            # an unexpected workspace failure must not kill the heartbeat.
+            pass
+        if market_sync_enabled and scheduled_sync_is_due(snapshot_age_seconds(), interval_seconds):
             try:
                 await execute_sync(trigger="scheduled")
             except Exception:
@@ -11154,7 +11511,11 @@ def build_today_dashboard_response(
     last_review_checkpoint = resolved_services.today_review_checkpoint_store.latest()
     portfolio_risk_alerts: dict[str, Any] | None = None
     try:
-        holdings_payload = resolved_services.portfolio_store.get_holdings()
+        holdings_payload = (
+            resolved_services.current_portfolio()
+            if isinstance(resolved_services, WorkspaceServices)
+            else resolved_services.portfolio_store.get_holdings()
+        )
         investment_policy = (
             profile_payload.get("investment_policy")
             if isinstance(profile_payload.get("investment_policy"), dict)
@@ -14380,7 +14741,11 @@ async def tool_get_account_balances(arguments: dict[str, object]) -> dict[str, o
     if use_live_snapshot:
         await build_live_snapshot(services.portfolio_store)
 
-    holdings_payload = services.portfolio_store.get_holdings()
+    holdings_payload = (
+        services.current_portfolio()
+        if isinstance(services, WorkspaceServices)
+        else services.portfolio_store.get_holdings()
+    )
     account_rows = _normalize_account_total_rows(holdings_payload.get("account_totals"))
 
     response: dict[str, Any] = {
@@ -14438,7 +14803,11 @@ async def tool_get_asset_allocation(arguments: dict[str, object]) -> dict[str, o
     if use_live_snapshot:
         await build_live_snapshot(services.portfolio_store)
 
-    holdings_payload = services.portfolio_store.get_holdings()
+    holdings_payload = (
+        services.current_portfolio()
+        if isinstance(services, WorkspaceServices)
+        else services.portfolio_store.get_holdings()
+    )
     breakdowns_raw = holdings_payload.get("allocation_breakdowns")
     if not isinstance(breakdowns_raw, dict):
         breakdowns_raw = {}
@@ -17487,7 +17856,7 @@ async def on_startup() -> None:
 
     _reload_llm_router_from_default_workspace()
     restore_sync_state_from_disk()
-    if settings.sync_interval_minutes > 0:
+    if settings.sync_interval_minutes > 0 or plaid_connection_provider.configuration_readiness().enabled:
         scheduler_task = asyncio.create_task(scheduled_sync_loop())
     autogit_task = asyncio.create_task(autogit_checkpoint_loop())
 
@@ -17627,7 +17996,11 @@ def create_portfolio_review_packet(
         except PlanNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    holdings_payload = services.portfolio_store.get_holdings()
+    holdings_payload = (
+        services.current_portfolio()
+        if isinstance(services, WorkspaceServices)
+        else services.portfolio_store.get_holdings()
+    )
     transactions = services.portfolio_store.list_transactions(limit=request.include_transactions_limit)
     snapshots = services.snapshot_store.recent(limit=request.include_snapshot_history_limit)
     watchlist_items = services.portfolio_store.list_watchlist()
@@ -17718,7 +18091,11 @@ def build_portfolio_fit_assessment_payload(
 
     holdings_payload: dict[str, Any] = {}
     try:
-        holdings_payload = resolved_portfolio_store.get_holdings()
+        holdings_payload = (
+            services.current_portfolio()
+            if isinstance(services, WorkspaceServices)
+            else resolved_portfolio_store.get_holdings()
+        )
     except Exception:
         holdings_payload = {}
 
@@ -18216,3 +18593,6 @@ app.include_router(_tax_router)
 from buildwealth_orchestrator.routes.lookthrough import router as _lookthrough_router
 from buildwealth_orchestrator.routes.lookthrough import *  # noqa: F401,F403 — keep main.<handler> importable
 app.include_router(_lookthrough_router)
+from buildwealth_orchestrator.routes.connections import router as _connections_router
+from buildwealth_orchestrator.routes.connections import *  # noqa: F401,F403 — keep main.<handler> importable
+app.include_router(_connections_router)

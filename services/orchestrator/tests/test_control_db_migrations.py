@@ -20,19 +20,25 @@ def test_fresh_database_applies_baseline_once(tmp_path: Path) -> None:
     db = tmp_path / "control.db"
     with _connect(db) as connection:
         applied = mig.apply_migrations(connection)
-        assert applied == ["0001"]
+        assert applied == ["0001", "0002"]
         tables = {
             row["name"]
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
-        assert {"users", "workspaces", "sessions", "schema_migrations"} <= tables
+        assert {
+            "users",
+            "workspaces",
+            "sessions",
+            "financial_connection_index",
+            "schema_migrations",
+        } <= tables
         # Post-baseline columns exist on a fresh database too.
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(users)").fetchall()}
         assert "deletion_requested_at" in columns
 
         # Re-running is a recorded no-op.
         assert mig.apply_migrations(connection) == []
-        assert mig.applied_migrations(connection) == ["0001"]
+        assert mig.applied_migrations(connection) == ["0001", "0002"]
 
 
 def test_pre_runner_database_adopts_baseline_without_touching_data(tmp_path: Path) -> None:
@@ -49,7 +55,7 @@ def test_pre_runner_database_adopts_baseline_without_touching_data(tmp_path: Pat
 
     with _connect(db) as connection:
         applied = mig.apply_migrations(connection)
-        assert applied == ["0001"]
+        assert applied == ["0001", "0002"]
         row = connection.execute("SELECT email FROM users WHERE id = 'usr_1'").fetchone()
         assert row["email"] == "a@b.c"
 
@@ -64,13 +70,13 @@ def test_failing_migration_rolls_back_and_is_not_recorded(tmp_path: Path, monkey
     monkeypatch.setattr(
         mig,
         "MIGRATIONS",
-        [*mig.MIGRATIONS, ("0002", "explodes", _bad)],
+        [*mig.MIGRATIONS, ("0003", "explodes", _bad)],
     )
     with _connect(db) as connection:
         with pytest.raises(RuntimeError):
             mig.apply_migrations(connection)
-        # 0001 committed before the failure; 0002 rolled back and unrecorded.
-        assert mig.applied_migrations(connection) == ["0001"]
+        # Earlier migrations committed before the failure; 0003 rolled back.
+        assert mig.applied_migrations(connection) == ["0001", "0002"]
         tables = {
             row["name"]
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
@@ -84,11 +90,11 @@ def test_failing_migration_rolls_back_and_is_not_recorded(tmp_path: Path, monkey
     monkeypatch.setattr(
         mig,
         "MIGRATIONS",
-        [*mig.MIGRATIONS[:-1], ("0002", "fixed", _good)],
+        [*mig.MIGRATIONS[:-1], ("0003", "fixed", _good)],
     )
     with _connect(db) as connection:
-        assert mig.apply_migrations(connection) == ["0002"]
-        assert mig.applied_migrations(connection) == ["0001", "0002"]
+        assert mig.apply_migrations(connection) == ["0003"]
+        assert mig.applied_migrations(connection) == ["0001", "0002", "0003"]
 
 
 def test_control_plane_store_boots_through_the_seam(tmp_path: Path) -> None:
@@ -107,4 +113,4 @@ def test_control_plane_store_boots_through_the_seam(tmp_path: Path) -> None:
     again = ControlPlaneStore(db)
     assert [w.id for w in again.list_active_workspaces()] == [w.id for w in workspaces]
     with SQLiteControlDatabase(db).connect() as connection:
-        assert mig.applied_migrations(connection) == ["0001"]
+        assert mig.applied_migrations(connection) == ["0001", "0002"]

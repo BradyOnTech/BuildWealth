@@ -713,7 +713,11 @@ async def _copilot_chat_pipeline(
 
         if compare_all:
             try:
-                holdings_payload = resolved_services.portfolio_store.get_holdings()
+                holdings_payload = (
+                    resolved_services.current_portfolio()
+                    if isinstance(resolved_services, m.WorkspaceServices)
+                    else resolved_services.portfolio_store.get_holdings()
+                )
             except Exception:
                 holdings_payload = {}
             risk_comparison = m.build_risk_comparison(
