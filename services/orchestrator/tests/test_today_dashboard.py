@@ -129,6 +129,22 @@ def test_today_dashboard_payload_with_active_plan() -> None:
     assert cards["recent-changes"].metric_value == "$15,000"
     assert payload.recent_change_usd == 15000
     assert payload.recent_change_percent == 5.2
+    # Dec 1 → Jan 1 window: the hero change chip labels its own basis honestly.
+    assert payload.recent_change_window_days == 31
+
+
+def test_today_dashboard_payload_omits_change_window_without_history() -> None:
+    payload = build_today_dashboard_payload(
+        now=datetime(2026, 1, 1, 16, 0, tzinfo=timezone.utc),
+        currency="USD",
+        state="MN",
+        sync_status=_sync_status(),
+        latest_snapshot=_snapshot(),
+        snapshot_history=SnapshotHistoryResponse(points=[], window_points=0),
+        active_plan_detail=None,
+    )
+    assert payload.recent_change_usd is None
+    assert payload.recent_change_window_days is None
 
 
 def test_today_dashboard_payload_surfaces_changes_since_last_review() -> None:

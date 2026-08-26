@@ -46,8 +46,9 @@ export async function init(params = {}) {
   let maintenance = null;
   let analytics = null;
   let lookThrough = null;
+  let history = null;
   try {
-    const [holdingsData, analyticsData, lookThroughData, maintenanceData] = await Promise.all([
+    const [holdingsData, analyticsData, lookThroughData, maintenanceData, historyData] = await Promise.all([
       api.holdings(),
       api.portfolioAnalytics({ limit: 180, topN: 5, period: params.period || '1y' }).catch((err) => ({
         status: 'unavailable',
@@ -56,10 +57,14 @@ export async function init(params = {}) {
       // Quietly optional: the composition still renders if look-through fails.
       api.portfolioLookThrough().catch(() => null),
       maintenanceSection ? loadMaintenanceSection(maintenanceSection, params) : Promise.resolve(null),
+      // Snapshot history powers the standing change chip; optional, never
+      // blocks the page.
+      api.snapshotHistory(30).catch(() => null),
     ]);
     data = holdingsData;
     analytics = analyticsData;
     lookThrough = lookThroughData;
+    history = historyData;
     maintenance = maintenanceSection === 'risk-policy' && maintenanceData
       ? { ...maintenanceData, riskAlerts: holdingsData?.risk_alerts || null }
       : maintenanceData;
@@ -74,7 +79,7 @@ export async function init(params = {}) {
 
   setView(root, html`
     ${raw(renderSectionNav())}
-    <div id="pf-standing" class="pf-section">${raw(renderStanding(data))}${raw(renderAddFlow(data))}</div>
+    <div id="pf-standing" class="pf-section">${raw(renderStanding(data, standingChange(history)))}${raw(renderAddFlow(data))}</div>
     <div id="pf-composition" class="pf-section">${raw(renderComposition(data))}${raw(renderLookThrough(lookThrough))}</div>
     <div id="pf-performance" class="pf-section">${raw(renderAnalytics(analytics))}</div>
     <div id="pf-watch" class="pf-section">${raw(renderWatch(data))}</div>
@@ -128,6 +133,26 @@ function bindSectionNav(root) {
       if (target) target.scrollIntoView({ block: 'start' });
     });
   });
+}
+
+// Derive the standing change chip from snapshot history. Window days come
+// from the actual as_of span, so the chip labels the window it truly
+// measured. Returns null when history cannot support a delta.
+export function standingChange(history) {
+  if (!history || typeof history !== 'object') return null;
+  const deltaUsd = Number(history.delta_total_value_usd);
+  if (!Number.isFinite(deltaUsd)) return null;
+  const deltaPct = Number(history.delta_total_value_percent);
+  const latest = new Date(history.latest_as_of || '');
+  const oldest = new Date(history.oldest_as_of || '');
+  const windowDays = (!Number.isNaN(latest.getTime()) && !Number.isNaN(oldest.getTime()))
+    ? Math.max(0, Math.floor((latest - oldest) / 86400000))
+    : null;
+  return {
+    deltaUsd,
+    deltaPct: Number.isFinite(deltaPct) ? deltaPct : null,
+    windowDays,
+  };
 }
 
 export function renderFitReview(result = null, { loading = false, error = '', initialSymbol = '' } = {}) {

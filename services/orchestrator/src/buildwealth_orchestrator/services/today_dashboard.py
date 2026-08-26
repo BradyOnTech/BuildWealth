@@ -524,6 +524,18 @@ def _float_or_none(value: Any) -> float | None:
         return None
 
 
+def _change_window_days(history: SnapshotHistoryResponse) -> int | None:
+    """Days spanned by the change window, so the UI labels the delta honestly
+    ("past 31 days") instead of implying a calendar month the snapshots may
+    not cover."""
+    latest = _as_datetime(history.latest_as_of)
+    oldest = _as_datetime(history.oldest_as_of)
+    if latest is None or oldest is None:
+        return None
+    days = (latest - oldest).days
+    return days if days > 0 else None
+
+
 def _int_or_none(value: Any) -> int | None:
     try:
         return int(value)
@@ -705,6 +717,7 @@ def build_today_dashboard_payload(
         net_performance_percent=net_performance_percent,
         recent_change_usd=snapshot_history.delta_total_value_usd,
         recent_change_percent=snapshot_history.delta_total_value_percent,
+        recent_change_window_days=_change_window_days(snapshot_history),
         top_holding_symbol=top_holding_symbol or None,
         top_holding_percent=top_holding_percent,
         concentration_risk=concentration_risk,
