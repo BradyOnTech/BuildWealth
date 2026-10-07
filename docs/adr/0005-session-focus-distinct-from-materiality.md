@@ -11,4 +11,4 @@ Session Focus may control which domains and sections are expanded, ordered, or m
 
 Default chat uses a slim Prompt Brief rather than serializing the full assembled context package. Conversation focus metadata lives on ConversationStore documents, outside the Context Registry (see ADR 0001).
 
-Full design: `docs/COPILOT_SESSION_FOCUS_DESIGN_2026-07-09.md`.
+Full design: `docs/archive/COPILOT_SESSION_FOCUS_DESIGN_2026-07-09.md`.

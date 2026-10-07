@@ -3,7 +3,7 @@
 **Written:** 2026-07-07 · Reference for hosting decisions as BuildWealth
 moves from "runs on my Mac" to a hosted product. Companion to
 [DEPLOYMENT.md](DEPLOYMENT.md) (the how-to) and
-[ROADMAP_PRODUCTION_LLM_UI_2026-07-05.md](ROADMAP_PRODUCTION_LLM_UI_2026-07-05.md).
+[ROADMAP_PRODUCTION_LLM_UI_2026-07-05.md](archive/ROADMAP_PRODUCTION_LLM_UI_2026-07-05.md).
 
 ## The constraint that drives every choice
 

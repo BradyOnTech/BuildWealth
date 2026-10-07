@@ -89,7 +89,7 @@ test('household: round-trip recomputes dependent from relationship', () => {
   const household = sectionForKey('household_members');
   const item = {
     id: 'm-1',
-    display_name: 'Brady',
+    display_name: 'Alex',
     relationship: 'self',
     birth_year: 1988,
     retirement_age: 60,

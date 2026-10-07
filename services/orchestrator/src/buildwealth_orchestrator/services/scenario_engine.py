@@ -1,7 +1,7 @@
 """Tax-aware planning scenario engine.
 
-Projection structure and account/phase processing patterns are adapted from
-BuildWealth simulation workflows:
+Projection structure and account/phase processing patterns are
+written independently; design reference: Ignidash (see ATTRIBUTIONS.md):
 - src/lib/calc/simulation-engine.ts
 - src/lib/calc/returns-providers/stochastic-returns-provider.ts
 - src/lib/calc/returns-providers/lcg-historical-backtest-returns-provider.ts
@@ -149,7 +149,7 @@ MONTE_CARLO_PERCENTILES: tuple[tuple[str, float], ...] = (
     ("p90", 0.90),
 )
 
-# Historical market dataset used by BuildWealth simulation paths:
+# Historical annual-returns data (NYU Stern), taken from the copy Ignidash ships at:
 # src/lib/calc/historical-data/nyu-returns.ts
 HISTORICAL_STOCK_RETURNS: tuple[tuple[int, float, float], ...] = (
     (1928, 0.4549, -0.0116),

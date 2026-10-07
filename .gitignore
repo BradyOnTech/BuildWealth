@@ -40,3 +40,9 @@ data/settings/workspace_settings.json
 .agents/
 .claude/skills/
 skills-lock.json
+
+# Personal profile and runtime state (never publish household details)
+data/profile/
+data/settings/git_activity.jsonl
+data/settings/user_settings.json
+data/today/

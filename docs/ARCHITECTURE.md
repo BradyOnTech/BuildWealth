@@ -78,10 +78,10 @@ Classic/v1 route scaffolding has been removed after product-owner approval. New 
 
 See:
 
-- [ADR 0003: BuildWealth-native capabilities replace native capability ownership](./adr/0003-buildwealth-native-capability-ownership.md)
-- [ADR 0004: v2 is the only future product surface](./adr/0004-v2-is-the-only-future-product-surface.md)
-- [ADR 0007: Plaid first for read-only financial connections](./adr/0007-plaid-first-read-only-financial-connections.md)
-- [Plaid Read-Only Financial Connections Implementation Plan](./PLAID_READ_ONLY_CONNECTIONS_IMPLEMENTATION_PLAN_2026-08-25.md)
-- [BuildWealth BuildWealth Native Capability Strategy](./BUILDWEALTH_NATIVE_CAPABILITY_STRATEGY_2026-05-08.md)
-- [Native Portfolio and Plan Modules Implementation Guide](./NATIVE_PORTFOLIO_PLAN_MODULES_IMPLEMENTATION_GUIDE_2026-05-08.md)
-- [Monte Carlo Decision Simulation Plan](./MONTE_CARLO_DECISION_SIMULATION_PLAN_2026-05-08.md)
+- [ADR 0003: BuildWealth-native capabilities replace native capability ownership](adr/0003-buildwealth-native-capability-ownership.md)
+- [ADR 0004: v2 is the only future product surface](adr/0004-v2-is-the-only-future-product-surface.md)
+- [ADR 0007: Plaid first for read-only financial connections](adr/0007-plaid-first-read-only-financial-connections.md)
+- [Plaid Read-Only Financial Connections Implementation Plan](archive/PLAID_READ_ONLY_CONNECTIONS_IMPLEMENTATION_PLAN_2026-08-25.md)
+- [BuildWealth BuildWealth Native Capability Strategy](archive/BUILDWEALTH_NATIVE_CAPABILITY_STRATEGY_2026-05-08.md)
+- [Native Portfolio and Plan Modules Implementation Guide](archive/NATIVE_PORTFOLIO_PLAN_MODULES_IMPLEMENTATION_GUIDE_2026-05-08.md)
+- [Monte Carlo Decision Simulation Plan](archive/MONTE_CARLO_DECISION_SIMULATION_PLAN_2026-05-08.md)

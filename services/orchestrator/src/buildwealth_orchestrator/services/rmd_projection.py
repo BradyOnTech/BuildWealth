@@ -1,6 +1,6 @@
 """Required Minimum Distribution projection helpers for planning workflows.
 
-RMD table and start-age policy are implemented for BuildWealth simulation workflows:
+RMD table and start-age policy are written independently; design reference: Ignidash (see ATTRIBUTIONS.md):
 - src/lib/calc/historical-data/rmd-table.ts
 - src/lib/calc/simulation-engine.ts
 - src/lib/calc/portfolio.ts

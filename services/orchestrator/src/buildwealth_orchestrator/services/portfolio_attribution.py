@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-# Implemented for BuildWealth portfolio workflows:
+# Written independently; design reference: Ghostfolio (see ATTRIBUTIONS.md):
 # apps/api/src/app/portfolio/calculator/roai/portfolio-calculator.ts
 # apps/api/src/app/portfolio/portfolio.service.ts
 

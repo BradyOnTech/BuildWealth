@@ -1,6 +1,6 @@
 """Historical snapshot backfill using transaction replay and daily pricing.
 
-Implemented for BuildWealth portfolio workflows:
+Written independently; design reference: Ghostfolio (see ATTRIBUTIONS.md):
 - apps/api/src/app/portfolio/calculator/portfolio-calculator.ts
 - apps/api/src/helper/portfolio.helper.ts
 """

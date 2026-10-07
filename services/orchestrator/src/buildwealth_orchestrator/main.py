@@ -11683,7 +11683,7 @@ def _history_close_series_desc(records: list[dict[str, Any]]) -> list[float]:
     return [item[1] for item in rows]
 
 
-# Trend and market-condition rules implemented for BuildWealth portfolio workflows:
+# Trend and market-condition rules written independently; design reference: Ghostfolio (see ATTRIBUTIONS.md):
 # apps/api/src/services/benchmark/benchmark.service.ts
 # libs/common/src/lib/helper.ts (calculateBenchmarkTrend)
 def _calculate_benchmark_trend(*, closes_desc: list[float], days: int) -> str:

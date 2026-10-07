@@ -606,7 +606,7 @@ function defineHousehold() {
       { key: 'notes',          header: 'Notes' },
     ],
     composer: [
-      { key: 'display_name',   kind: 'text',   label: 'Name',        placeholder: 'e.g. Brady' },
+      { key: 'display_name',   kind: 'text',   label: 'Name',        placeholder: 'e.g. Alex' },
       { key: 'relationship',   kind: 'select', label: 'Relationship', options: [
         { value: 'self',      label: 'Self' },
         { value: 'partner',   label: 'Partner / spouse' },
