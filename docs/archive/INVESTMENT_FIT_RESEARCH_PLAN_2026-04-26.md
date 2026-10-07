@@ -7,7 +7,7 @@
 Active domain plan for the investment research, market data, portfolio-fit, and research-backed recommendation side of BuildWealth.
 
 This document expands the Portfolio-Aware Research and Decision-Grade Recommendations pillars in:
-- [BuildWealth Future State Product Plan (2026-04-26)](./FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
+- [BuildWealth Future State Product Plan (2026-04-26)](FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
 
 Use this document when deciding how BuildWealth should use market data providers, OpenBB, research dossiers, watchlists, portfolio simulation, and investment-related recommendation factories.
 
@@ -643,8 +643,8 @@ Recommended sequence:
 
 This plan complements:
 
-- `docs/FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md`
-- `docs/RECOMMENDATION_FACTORY_PLAN.md`
-- `docs/ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md`
+- `docs/archive/FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md`
+- `docs/archive/RECOMMENDATION_FACTORY_PLAN.md`
+- `docs/archive/ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md`
 
 The older roadmap already completed important research foundations, including compare, dossier, watchlist ranking, and research citation quality. This plan reframes the next phase around personal investment fit and safe recommendation loops.

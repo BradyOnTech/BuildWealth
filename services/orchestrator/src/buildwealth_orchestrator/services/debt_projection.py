@@ -1,6 +1,6 @@
 """Debt payoff projection helpers for planning workflows.
 
-Debt processing and strategy behavior are implemented for BuildWealth simulation workflows:
+Debt processing and strategy behavior are written independently; design reference: Ignidash (see ATTRIBUTIONS.md):
 - src/lib/calc/debts.ts
 - src/lib/schemas/inputs/debt-form-schema.ts
 - src/lib/calc/debts.test.ts

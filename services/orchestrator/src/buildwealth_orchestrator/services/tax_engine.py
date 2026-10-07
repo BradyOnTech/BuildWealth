@@ -1,6 +1,6 @@
 """Tax estimate engine for standalone planning workflows.
 
-Implemented for BuildWealth simulation workflows:
+Written independently; design reference: Ignidash (see ATTRIBUTIONS.md):
 - src/lib/calc/taxes.ts
 - src/lib/calc/tax-data/federal-income-tax-brackets.ts
 - src/lib/calc/tax-data/capital-gains-tax-brackets.ts

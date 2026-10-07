@@ -569,7 +569,7 @@ Production application rather than in public documentation.
 - Add an ADR under `docs/adr/`
 - Update `CONTEXT.md`
 - Update `docs/ARCHITECTURE.md`
-- Update `docs/STANDALONE_BUILD_PLAN.md`
+- Update `docs/archive/STANDALONE_BUILD_PLAN.md`
 
 - [x] Define Financial Connection, Provider Item, Account Mapping, Observation,
   Connection Report, Connection Health, and Staleness.

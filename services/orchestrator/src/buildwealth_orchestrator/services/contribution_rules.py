@@ -1,6 +1,6 @@
 """Contribution-rule allocation engine for retirement planning.
 
-Core rule/limit behavior is implemented for BuildWealth simulation workflows:
+Core rule/limit behavior is written independently; design reference: Ignidash (see ATTRIBUTIONS.md):
 - src/lib/calc/contribution-rules.ts
 - src/lib/schemas/inputs/contribution-form-schema.ts
 """

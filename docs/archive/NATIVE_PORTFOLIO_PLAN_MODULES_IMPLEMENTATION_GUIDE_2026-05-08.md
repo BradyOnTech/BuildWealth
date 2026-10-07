@@ -8,7 +8,7 @@
 
 Active implementation guide for BuildWealth-native Portfolio, Plan, and Data & Tools workflows.
 
-This guide follows [ADR 0003](./adr/0003-buildwealth-native-capability-ownership.md) and [ADR 0004](./adr/0004-v2-is-the-only-future-product-surface.md). Do not use external app names, retired calculation module labels, or classic/v1 fallback language for new product surfaces.
+This guide follows [ADR 0003](../adr/0003-buildwealth-native-capability-ownership.md) and [ADR 0004](../adr/0004-v2-is-the-only-future-product-surface.md). Do not use external app names, retired calculation module labels, or classic/v1 fallback language for new product surfaces.
 
 **Guiding Idea**
 

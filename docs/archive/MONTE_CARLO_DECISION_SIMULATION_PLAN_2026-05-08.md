@@ -7,8 +7,8 @@
 Active feature planning and implementation guide for making BuildWealth's simulations decision-grade while preserving BuildWealth's decision-system positioning.
 
 This document expands the Plan, Inbox, Copilot, and recommendation-quality pillars in:
-- [BuildWealth Future State Product Plan](./FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
-- [Native Portfolio and Plan Modules Implementation Guide](./NATIVE_PORTFOLIO_PLAN_MODULES_IMPLEMENTATION_GUIDE_2026-05-08.md)
+- [BuildWealth Future State Product Plan](FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
+- [Native Portfolio and Plan Modules Implementation Guide](NATIVE_PORTFOLIO_PLAN_MODULES_IMPLEMENTATION_GUIDE_2026-05-08.md)
 
 ## Product Position
 

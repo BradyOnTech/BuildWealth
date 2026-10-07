@@ -6,13 +6,13 @@
 Historical implementation plan and progress log.
 
 For active product direction and current phase sequencing, use:
-- [BuildWealth Future State Product Plan (2026-04-26)](./FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
+- [BuildWealth Future State Product Plan (2026-04-26)](FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
 
 For historical roadmap context after Phase 3.7, use:
-- [BuildWealth Product Roadmap (historical source of truth, 2026-04-15)](./ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md)
+- [BuildWealth Product Roadmap (historical source of truth, 2026-04-15)](ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md)
 
 For the approved read-only financial-connections direction, use:
-- [Plaid Read-Only Financial Connections Implementation Plan (2026-08-25)](./PLAID_READ_ONLY_CONNECTIONS_IMPLEMENTATION_PLAN_2026-08-25.md)
+- [Plaid Read-Only Financial Connections Implementation Plan (2026-08-25)](PLAID_READ_ONLY_CONNECTIONS_IMPLEMENTATION_PLAN_2026-08-25.md)
 
 Notes:
 - The Progress Log below remains the canonical historical record of completed slices.
@@ -27,7 +27,7 @@ License note:
 - This historical plan was originally written under an earlier source-license assumption for upstream reuse.
 - Upstream licenses should now be treated as version-specific and verified at implementation time.
 - See active guidance in:
-  - `docs/ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md` (Licensing and Compliance Gate)
+  - `docs/archive/ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md` (Licensing and Compliance Gate)
   - `ATTRIBUTIONS.md`
 
 ## Why This Approach (vs. Full Rewrite)
@@ -102,7 +102,7 @@ These decisions refine the build plan based on the current repository and upstre
 - Applied criteria to current candidates:
   - `services/portfolio_metrics.py` (79 LOC, 3 importers): keep in `services/` for now.
   - `services/timeline_defaults.py` (17 LOC, cross-layer constants): keep in `services/` for now.
-- Decision recorded in `docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md` as the canonical placement rubric for future refactors.
+- Decision recorded in `docs/archive/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md` as the canonical placement rubric for future refactors.
 - Verification:
   - full: `pytest -q` in `services/orchestrator` passes (`482 passed`).
 

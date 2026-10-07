@@ -42,7 +42,7 @@ The hosted product should only make promises the implementation can support:
 
 ### Identity Provider
 
-Recommended first private-beta provider: Auth0. See [Hosted Identity Provider Decision](./HOSTED_IDENTITY_PROVIDER_DECISION_2026-05-14.md).
+Recommended first private-beta provider: Auth0. See [Hosted Identity Provider Decision](HOSTED_IDENTITY_PROVIDER_DECISION_2026-05-14.md).
 
 Choose and document:
 
@@ -84,7 +84,7 @@ Before hosted launch, users should be able to:
 
 Future hosted account deletion should define whether financial workspace files are immediately deleted, soft-deleted, or retained for a defined recovery window.
 
-The current hosted closure policy is defined in [Hosted Account Closure and Retention Policy](./HOSTED_ACCOUNT_CLOSURE_RETENTION_POLICY_2026-05-14.md).
+The current hosted closure policy is defined in [Hosted Account Closure and Retention Policy](archive/HOSTED_ACCOUNT_CLOSURE_RETENTION_POLICY_2026-05-14.md).
 
 ## Security Review Checklist
 
@@ -122,7 +122,7 @@ Before public hosted launch, review product copy with qualified counsel or compl
 
 ## Privacy Policy Inputs
 
-Draft public wording is now tracked in [Hosted Product, Legal, and Privacy Wording Draft](./HOSTED_PRODUCT_LEGAL_PRIVACY_WORDING_DRAFT_2026-05-14.md).
+Draft public wording is now tracked in [Hosted Product, Legal, and Privacy Wording Draft](archive/HOSTED_PRODUCT_LEGAL_PRIVACY_WORDING_DRAFT_2026-05-14.md).
 Hosted draft pages are exposed at `/privacy`, `/terms`, and `/ai-disclosure`.
 
 A privacy policy should accurately describe:

@@ -7,10 +7,10 @@ This document is retained for traceability of the Phase 3.1 to 3.7 workstream th
 
 ## Active Source of Truth
 Use the current future-state product plan instead:
-- [BuildWealth Future State Product Plan (2026-04-26)](./FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
+- [BuildWealth Future State Product Plan (2026-04-26)](FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
 
 For the historical roadmap that immediately followed this document, see:
-- [BuildWealth Product Roadmap (historical source of truth, 2026-04-15)](./ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md)
+- [BuildWealth Product Roadmap (historical source of truth, 2026-04-15)](ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md)
 
 ## Historical Summary
 As of 2026-04-14, the tracked "next execution" priorities in this document were completed:
@@ -23,4 +23,4 @@ As of 2026-04-14, the tracked "next execution" priorities in this document were 
 7. Post-3.7 decision-intelligence and research-to-planning bridge slices.
 
 For full completion detail and change history, see:
-- [Standalone Build Plan](./STANDALONE_BUILD_PLAN.md)
+- [Standalone Build Plan](STANDALONE_BUILD_PLAN.md)

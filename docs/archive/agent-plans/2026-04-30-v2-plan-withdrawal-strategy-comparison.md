@@ -17,7 +17,7 @@
 - Modify `services/orchestrator/src/buildwealth_orchestrator/web-v2/views/plan.js` to render the withdrawal comparison section, handle field/action events, call the API, save decision notes, and retire the last classic Plan footer fallback.
 - Modify `services/orchestrator/src/buildwealth_orchestrator/web-v2/tests/plan.test.mjs` with failing tests first.
 - Extend `services/orchestrator/src/buildwealth_orchestrator/web-v2/tests/plan_workspace.spec.mjs` to cover the v2 withdrawal comparison loop.
-- Update `docs/FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md` and `docs/superpowers/plans/2026-04-29-plan-workspace-migration.md`.
+- Update `docs/archive/FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md` and `docs/archive/agent-plans/2026-04-29-plan-workspace-migration.md`.
 
 ## Tasks
 

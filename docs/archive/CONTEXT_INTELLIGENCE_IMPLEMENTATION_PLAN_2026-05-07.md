@@ -7,8 +7,8 @@
 Active domain plan for high-fidelity Copilot context capture, retrieval, and auditability.
 
 This document expands the Profile Readiness, Portfolio-Aware Research, Copilot as Guided Operator, and Trust pillars in:
-- [BuildWealth Future State Product Plan (2026-04-26)](./FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
-- [BuildWealth Investment Fit and Market Research Plan (2026-04-26)](./INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md)
+- [BuildWealth Future State Product Plan (2026-04-26)](FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
+- [BuildWealth Investment Fit and Market Research Plan (2026-04-26)](INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md)
 
 Use this document when deciding how BuildWealth should capture profile, investment, plan, recommendation, research, and conversation context for LLM use.
 
@@ -265,7 +265,7 @@ Implementation notes:
 
 - store registry rows in a separate SQLite database at `DURABLE_STORAGE_DIR/context_index.db`
 - keep `DURABLE_STORAGE_DIR/buildwealth_durable.db` reserved for durable snapshot and migration behavior
-- storage split is recorded in [ADR 0001](./adr/0001-separate-context-registry-from-durable-snapshot.md)
+- storage split is recorded in [ADR 0001](../adr/0001-separate-context-registry-from-durable-snapshot.md)
 - make the registry rebuildable from canonical files and stores
 - keep embeddings optional per row, not required for every context item
 - never embed raw account credentials, secrets, or unnecessary personally sensitive text
@@ -366,7 +366,7 @@ Initial settings:
 
 If embeddings are enabled, the UI should explain what categories of text will be embedded and provide a delete/rebuild action for the embedding index.
 
-The opt-in default is recorded in [ADR 0002](./adr/0002-embeddings-are-opt-in-for-context-intelligence.md). This can be revisited if local or remote embeddings prove a clear improvement in research and query quality.
+The opt-in default is recorded in [ADR 0002](../adr/0002-embeddings-are-opt-in-for-context-intelligence.md). This can be revisited if local or remote embeddings prove a clear improvement in research and query quality.
 
 Embedding default promotion requires a retrieval-quality evaluation. The eval set should include real BuildWealth questions, expected source refs, and must-not-use sources, then compare:
 

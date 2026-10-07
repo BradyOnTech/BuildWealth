@@ -6,7 +6,7 @@ as the price source.
 
 from __future__ import annotations
 
-# FX pair fallback and historical-rate lookup flow implemented for BuildWealth portfolio workflows:
+# FX pair fallback and historical-rate lookup flow written independently; design reference: Ghostfolio (see ATTRIBUTIONS.md):
 # apps/api/src/services/exchange-rate-data/exchange-rate-data.service.ts
 
 from datetime import datetime, timezone

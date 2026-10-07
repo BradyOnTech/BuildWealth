@@ -9,12 +9,12 @@ Build a production-grade all-in-one financial command center that combines:
 
 ## Planning Source of Truth
 Active product direction and high-level phase sequencing now live in:
-- [BuildWealth Future State Product Plan (2026-04-26)](./FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
+- [BuildWealth Future State Product Plan (2026-04-26)](FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
 
 Historical implementation sequencing and progress logs remain in:
-- [BuildWealth Product Roadmap (historical source of truth, 2026-04-15)](./ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md)
-- [Standalone Build Plan (historical progress log)](./STANDALONE_BUILD_PLAN.md)
-- [Next Execution Steps (2026-04-14, historical)](./NEXT_EXECUTION_STEPS_2026-04-14.md)
+- [BuildWealth Product Roadmap (historical source of truth, 2026-04-15)](ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md)
+- [Standalone Build Plan (historical progress log)](STANDALONE_BUILD_PLAN.md)
+- [Next Execution Steps (2026-04-14, historical)](NEXT_EXECUTION_STEPS_2026-04-14.md)
 
 ## Product Workstreams
 

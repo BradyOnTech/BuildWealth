@@ -5,7 +5,7 @@
 Domain-specific design and implementation reference.
 
 Active product sequencing now lives in:
-- [BuildWealth Future State Product Plan (2026-04-26)](./FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
+- [BuildWealth Future State Product Plan (2026-04-26)](FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
 
 Use this document for Recommendation Factory behavior, payload shape, and historical slice context. Use the future-state product plan to decide how this work fits into the broader product roadmap.
 

@@ -7,11 +7,11 @@
 Historical roadmap and progress log for post-Phase-3.7 execution.
 
 Active product direction and future-state phase sequencing now live in:
-- [BuildWealth Future State Product Plan (2026-04-26)](./FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
+- [BuildWealth Future State Product Plan (2026-04-26)](FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
 
 This document is retained for traceability of completed slices, historical rationale, and domain-specific implementation context. It should not be used as the primary source for choosing the next product slice.
 
-Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active planning sequence and superseded roadmap sections in `docs/STANDALONE_BUILD_PLAN.md`.
+Historical note: on 2026-04-15 this document replaced `docs/archive/NEXT_EXECUTION_STEPS_2026-04-14.md` as the active planning sequence and superseded roadmap sections in `docs/archive/STANDALONE_BUILD_PLAN.md`.
 
 ## Progress Log
 
@@ -343,7 +343,7 @@ Historical note: on 2026-04-15 this document replaced `docs/NEXT_EXECUTION_STEPS
 - new setting/env: `DURABLE_STORAGE_DIR` (default `data/storage`).
 4. Documentation updates:
 - updated standalone operations and migration compatibility runbooks with durable migration/rollback workflow.
-- normalized roadmap filename/date references to `docs/ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md`.
+- normalized roadmap filename/date references to `docs/archive/ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md`.
 5. Verification:
 - targeted: `pytest -q tests/test_durable_storage.py` (`2 passed`).
 - full: `pytest -q` (`455 passed`).
@@ -873,7 +873,7 @@ The highest-leverage missing work is no longer raw parity checkboxes. It is deci
 The section below records the phased plan as it existed on 2026-04-15. Many slices have since been completed, reshaped, or superseded by the future-state operating-loop plan.
 
 For current sequencing, use:
-- [BuildWealth Future State Product Plan (2026-04-26)](./FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
+- [BuildWealth Future State Product Plan (2026-04-26)](FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md)
 
 ### Phase 4.0 - Truth Reset and Platform Baseline (1 week)
 Goal: remove doc drift and reduce architecture entropy before adding major surface area.
@@ -990,7 +990,7 @@ Use this scoring when selecting the next slice:
 3. Extend timeline-default drift harness to cover any future additional mirror files (beyond `web/lib/timeline_defaults.js`) if timeline vocab is reused in new frontend modules.
 
 ## Cross-Cutting Engineering Follow-Up
-1. Post-refactor helper indirection and intentional retired calculation module complexity are documented in [`docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`](./CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md).
+1. Post-refactor helper indirection and intentional retired calculation module complexity are documented in [`docs/archive/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`](CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md).
 2. Execute those cleanup slices when they reduce operational risk or readability without displacing higher-value product slices.
 
 ## Guardrails

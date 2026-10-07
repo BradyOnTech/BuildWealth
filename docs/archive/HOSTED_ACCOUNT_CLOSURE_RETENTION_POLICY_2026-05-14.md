@@ -21,7 +21,7 @@ Do not call the first implementation "delete my account" in the UI, because it d
 
 Future destructive flows can use "Delete workspace data" or "Delete household data" after recovery windows, backup retention, and legal/privacy requirements are finalized.
 
-Product/legal/privacy wording for the hosted UI and public policy pages is tracked in [Hosted Product, Legal, and Privacy Wording Draft](./HOSTED_PRODUCT_LEGAL_PRIVACY_WORDING_DRAFT_2026-05-14.md).
+Product/legal/privacy wording for the hosted UI and public policy pages is tracked in [Hosted Product, Legal, and Privacy Wording Draft](HOSTED_PRODUCT_LEGAL_PRIVACY_WORDING_DRAFT_2026-05-14.md).
 
 ## First Implementation
 

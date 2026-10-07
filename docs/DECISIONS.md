@@ -5,7 +5,7 @@
 1. Native capability ownership
 - Decision: BuildWealth owns portfolio analytics, imports, asset registry, simulations, and plan strategy work as native product capabilities.
 - Rationale: the product goal is to provide the same or better functionality entirely inside BuildWealth, without separate application references in runtime paths, product labels, UX copy, module names, recommendation text, or Copilot answers.
-- ADR: [0003-buildwealth-native-capability-ownership.md](./adr/0003-buildwealth-native-capability-ownership.md)
+- ADR: [0003-buildwealth-native-capability-ownership.md](adr/0003-buildwealth-native-capability-ownership.md)
 
 2. Legacy implementation language
 - Decision: treat prior adapter and bridge references as migration scaffolding unless a document explicitly marks them as active migration notes.
@@ -16,7 +16,7 @@
 1. Canonical UI
 - Decision: v2 is the only future BuildWealth product surface.
 - Rationale: new native capabilities should converge into one coherent user experience instead of splitting workflows across v2, classic/v1, or external app links.
-- ADR: [0004-v2-is-the-only-future-product-surface.md](./adr/0004-v2-is-the-only-future-product-surface.md)
+- ADR: [0004-v2-is-the-only-future-product-surface.md](adr/0004-v2-is-the-only-future-product-surface.md)
 
 2. Classic/v1 exit
 - Decision: treat classic/v1 UI as temporary migration scaffolding.

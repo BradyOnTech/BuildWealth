@@ -16,7 +16,7 @@
 - Create `services/orchestrator/src/buildwealth_orchestrator/web-v2/views/plan/branches.js` for branch template rendering, draft state helpers, payload construction, and result rendering.
 - Modify `services/orchestrator/src/buildwealth_orchestrator/web-v2/views/plan.js` to load branch templates, render the new section, handle branch form events, run branch previews, and save branch decision notes.
 - Modify `services/orchestrator/src/buildwealth_orchestrator/web-v2/tests/plan.test.mjs` with failing tests first.
-- Update `docs/FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md` and `docs/superpowers/plans/2026-04-29-plan-workspace-migration.md` after implementation.
+- Update `docs/archive/FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md` and `docs/archive/agent-plans/2026-04-29-plan-workspace-migration.md` after implementation.
 
 ## Tasks
 

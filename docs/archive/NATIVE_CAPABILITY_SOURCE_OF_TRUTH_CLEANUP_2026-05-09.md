@@ -14,12 +14,12 @@ BuildWealth now targets native capability ownership and the v2 Product Surface. 
 
 This checklist exists so cleanup happens deliberately while implementation proceeds.
 
-Functional completion and deletion gates are tracked in [Native Completion and Deletion Plan](./NATIVE_COMPLETION_AND_DELETION_PLAN_2026-05-12.md).
+Functional completion and deletion gates are tracked in [Native Completion and Deletion Plan](NATIVE_COMPLETION_AND_DELETION_PLAN_2026-05-12.md).
 
 **Canonical Decisions**
 
-- BuildWealth-native capabilities replace native capability ownership: [ADR 0003](./adr/0003-buildwealth-native-capability-ownership.md)
-- v2 is the only future product surface: [ADR 0004](./adr/0004-v2-is-the-only-future-product-surface.md)
+- BuildWealth-native capabilities replace native capability ownership: [ADR 0003](../adr/0003-buildwealth-native-capability-ownership.md)
+- v2 is the only future product surface: [ADR 0004](../adr/0004-v2-is-the-only-future-product-surface.md)
 - Outcome Parity is the standard, not feature or screen cloning.
 - Workflow Replacement is the v2 migration standard.
 - Classic/v1 removal was approved during implementation; the public fallback route and deprecated service-status alias are removed.

@@ -731,8 +731,8 @@ Expected: browser workflow passes. In the Codex sandbox, Chromium may need an el
 
 - Modify `services/orchestrator/src/buildwealth_orchestrator/web-v2/views/plan.js`
 - Modify docs:
-  - `docs/FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md`
-  - `docs/INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md`
+  - `docs/archive/FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md`
+  - `docs/archive/INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md`
 
 - [x] **Step 1: Inventory remaining classic links**
 
@@ -759,8 +759,8 @@ Keep any remaining low-frequency classic tools as fallback until they have v2 su
 
 Mark migrated Plan Workspace slices complete in:
 
-- `docs/FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md`
-- `docs/INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md`
+- `docs/archive/FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md`
+- `docs/archive/INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md`
 
 - [x] **Step 4: Verify**
 

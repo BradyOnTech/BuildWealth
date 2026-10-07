@@ -126,7 +126,7 @@ docker compose -f infra/docker-compose.prod.yml --profile maintenance run --rm a
 
 ## What a public launch adds (not needed for a private instance)
 
-In rough order, per docs/ROADMAP_PRODUCTION_LLM_UI_2026-07-05.md:
+In rough order, per docs/archive/ROADMAP_PRODUCTION_LLM_UI_2026-07-05.md:
 
 1. **Hosted identity provider** — `AUTH_MODE=hosted` with Auth0 (decision:
    docs/HOSTED_IDENTITY_PROVIDER_DECISION_2026-05-14.md). Disables password

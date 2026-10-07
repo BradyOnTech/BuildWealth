@@ -12,4 +12,4 @@ Risk Lens is also distinct from **Session Focus** and **Context Materiality**: F
 
 The initial adapter is cash liquidity, using a versioned 9/6/4-month reserve policy. Portfolio and Plan adapters must preserve the same frozen-input, all-posture, non-blocking contract.
 
-Full implementation plan: `docs/COPILOT_RISK_LENS_IMPLEMENTATION_PLAN_2026-07-15.md`.
+Full implementation plan: `docs/archive/COPILOT_RISK_LENS_IMPLEMENTATION_PLAN_2026-07-15.md`.

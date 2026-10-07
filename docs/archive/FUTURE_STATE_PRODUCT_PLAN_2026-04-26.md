@@ -7,22 +7,22 @@
 Active canonical product plan for future-state strategy and high-level implementation sequencing.
 
 This document supersedes the execution-priority role previously held by:
-- `docs/ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md`
-- `docs/PRODUCT_BACKLOG.md`
-- `docs/STANDALONE_BUILD_PLAN.md`
-- `docs/NEXT_EXECUTION_STEPS_2026-04-14.md`
-- `docs/NEXT_STEPS_PLAN.md`
+- `docs/archive/ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md`
+- `docs/archive/PRODUCT_BACKLOG.md`
+- `docs/archive/STANDALONE_BUILD_PLAN.md`
+- `docs/archive/NEXT_EXECUTION_STEPS_2026-04-14.md`
+- `docs/archive/NEXT_STEPS_PLAN.md`
 
 Those documents remain useful as historical progress logs, implementation records, and domain-specific references. They should not be used as the primary source for deciding what to build next unless this plan explicitly points to them.
 
 Domain expansion plans:
-- [Investment Fit and Market Research Plan (2026-04-26)](./INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md)
-- [Context Intelligence Implementation Plan (2026-05-07)](./CONTEXT_INTELLIGENCE_IMPLEMENTATION_PLAN_2026-05-07.md)
-- [Fresh Product Ideas and Next Build Sequence (2026-04-28)](./FRESH_PRODUCT_IDEAS_AND_NEXT_SEQUENCE_2026-04-28.md)
-- [BuildWealth Native Capability Strategy (2026-05-08)](./BUILDWEALTH_NATIVE_CAPABILITY_STRATEGY_2026-05-08.md)
-- [Native Portfolio and Plan Modules Implementation Guide (2026-05-08)](./NATIVE_PORTFOLIO_PLAN_MODULES_IMPLEMENTATION_GUIDE_2026-05-08.md)
-- [Monte Carlo Decision Simulation Plan (2026-05-08)](./MONTE_CARLO_DECISION_SIMULATION_PLAN_2026-05-08.md)
-- [Native Capability Source-of-Truth Cleanup (2026-05-09)](./NATIVE_CAPABILITY_SOURCE_OF_TRUTH_CLEANUP_2026-05-09.md)
+- [Investment Fit and Market Research Plan (2026-04-26)](INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md)
+- [Context Intelligence Implementation Plan (2026-05-07)](CONTEXT_INTELLIGENCE_IMPLEMENTATION_PLAN_2026-05-07.md)
+- [Fresh Product Ideas and Next Build Sequence (2026-04-28)](FRESH_PRODUCT_IDEAS_AND_NEXT_SEQUENCE_2026-04-28.md)
+- [BuildWealth Native Capability Strategy (2026-05-08)](BUILDWEALTH_NATIVE_CAPABILITY_STRATEGY_2026-05-08.md)
+- [Native Portfolio and Plan Modules Implementation Guide (2026-05-08)](NATIVE_PORTFOLIO_PLAN_MODULES_IMPLEMENTATION_GUIDE_2026-05-08.md)
+- [Monte Carlo Decision Simulation Plan (2026-05-08)](MONTE_CARLO_DECISION_SIMULATION_PLAN_2026-05-08.md)
+- [Native Capability Source-of-Truth Cleanup (2026-05-09)](NATIVE_CAPABILITY_SOURCE_OF_TRUTH_CLEANUP_2026-05-09.md)
 
 ## Product Thesis
 
@@ -311,7 +311,7 @@ High-level implementation:
 - test research-to-plan and research-to-recommendation flows
 
 Detailed domain plan:
-- [Investment Fit and Market Research Plan (2026-04-26)](./INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md)
+- [Investment Fit and Market Research Plan (2026-04-26)](INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md)
 
 ### 6. Copilot As Guided Operator
 
@@ -575,13 +575,13 @@ Use this document for active product direction and phase sequencing.
 
 Use older documents as follows:
 
-- `docs/ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md`: historical roadmap and progress log through April 2026.
-- `docs/STANDALONE_BUILD_PLAN.md`: historical standalone build plan and implementation progress record.
-- `docs/RECOMMENDATION_FACTORY_PLAN.md`: domain-specific recommendation factory design reference.
-- `docs/INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md`: investment-fit, market data, OpenBB, research evidence, and watchlist recommendation strategy.
-- `docs/FRESH_PRODUCT_IDEAS_AND_NEXT_SEQUENCE_2026-04-28.md`: newest idea backlog and agreed near-term build sequence.
-- `docs/superpowers/plans/2026-04-29-plan-workspace-migration.md`: detailed implementation plan for migrating v2 Plan into the living financial thesis workspace.
-- `docs/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`: codebase quality and refactor guardrail reference.
+- `docs/archive/ROADMAP_SOURCE_OF_TRUTH_2026-04-15.md`: historical roadmap and progress log through April 2026.
+- `docs/archive/STANDALONE_BUILD_PLAN.md`: historical standalone build plan and implementation progress record.
+- `docs/archive/RECOMMENDATION_FACTORY_PLAN.md`: domain-specific recommendation factory design reference.
+- `docs/archive/INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md`: investment-fit, market data, OpenBB, research evidence, and watchlist recommendation strategy.
+- `docs/archive/FRESH_PRODUCT_IDEAS_AND_NEXT_SEQUENCE_2026-04-28.md`: newest idea backlog and agreed near-term build sequence.
+- `docs/archive/agent-plans/2026-04-29-plan-workspace-migration.md`: detailed implementation plan for migrating v2 Plan into the living financial thesis workspace.
+- `docs/archive/CODEBASE_QUALITY_FOLLOW_UP_2026-04-15.md`: codebase quality and refactor guardrail reference.
 - `docs/ARCHITECTURE.md`: runtime architecture and system-of-record reference.
 - `docs/OPERATIONS_STANDALONE.md`: local operations reference.
 - `docs/MIGRATION_AND_COMPATIBILITY.md`: migration and compatibility reference.

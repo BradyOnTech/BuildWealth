@@ -6,7 +6,7 @@
 
 **Status**
 
-Active planning companion to [BuildWealth Future State Product Plan](./FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md), [BuildWealth v2 Information Architecture and UX Strategy](./V2_INFORMATION_ARCHITECTURE_UX_STRATEGY_2026-05-08.md), and [ADR 0003](./adr/0003-buildwealth-native-capability-ownership.md).
+Active planning companion to [BuildWealth Future State Product Plan](FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md), [BuildWealth v2 Information Architecture and UX Strategy](V2_INFORMATION_ARCHITECTURE_UX_STRATEGY_2026-05-08.md), and [ADR 0003](../adr/0003-buildwealth-native-capability-ownership.md).
 
 **Decision**
 

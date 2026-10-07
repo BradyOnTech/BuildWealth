@@ -6,7 +6,7 @@
 ## Status
 Completed migration record for replacing classic v1 workflows with the v2 Product Surface.
 
-This document follows [ADR 0004](./adr/0004-v2-is-the-only-future-product-surface.md): v2 is the BuildWealth product surface. The public classic/v1 fallback route has been removed after replacement coverage and product-owner approval.
+This document follows [ADR 0004](../adr/0004-v2-is-the-only-future-product-surface.md): v2 is the BuildWealth product surface. The public classic/v1 fallback route has been removed after replacement coverage and product-owner approval.
 
 ## Why This Exists
 
@@ -693,7 +693,7 @@ This gives users a coherent v2 entrypoint now, while keeping every v1 capability
 
 This plan complements:
 
-- `docs/V2_PROFILE_SETTINGS_UX_PLAN_2026-05-08.md`
-- `docs/CONTEXT_INTELLIGENCE_IMPLEMENTATION_PLAN_2026-05-07.md`
+- `docs/archive/V2_PROFILE_SETTINGS_UX_PLAN_2026-05-08.md`
+- `docs/archive/CONTEXT_INTELLIGENCE_IMPLEMENTATION_PLAN_2026-05-07.md`
 
 The Profile/Settings UX plan describes the target pages. This migration plan describes how to get there without losing the broader v1 functionality that currently lives in the classic UI.

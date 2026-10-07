@@ -2,7 +2,7 @@
 
 **Status**
 
-Active companion to [ADR 0003: BuildWealth-native capability ownership](./adr/0003-buildwealth-native-capability-ownership.md).
+Active companion to [ADR 0003: BuildWealth-native capability ownership](adr/0003-buildwealth-native-capability-ownership.md).
 
 **Direction**
 
@@ -24,7 +24,7 @@ Optional calculation services may still exist while migration is underway, but t
 
 **Use For New Work**
 
-- [Architecture](./ARCHITECTURE.md)
-- [BuildWealth Native Capability Strategy](./BUILDWEALTH_NATIVE_CAPABILITY_STRATEGY_2026-05-08.md)
-- [Native Portfolio and Plan Modules Implementation Guide](./NATIVE_PORTFOLIO_PLAN_MODULES_IMPLEMENTATION_GUIDE_2026-05-08.md)
-- [Monte Carlo Decision Simulation Plan](./MONTE_CARLO_DECISION_SIMULATION_PLAN_2026-05-08.md)
+- [Architecture](ARCHITECTURE.md)
+- [BuildWealth Native Capability Strategy](archive/BUILDWEALTH_NATIVE_CAPABILITY_STRATEGY_2026-05-08.md)
+- [Native Portfolio and Plan Modules Implementation Guide](archive/NATIVE_PORTFOLIO_PLAN_MODULES_IMPLEMENTATION_GUIDE_2026-05-08.md)
+- [Monte Carlo Decision Simulation Plan](archive/MONTE_CARLO_DECISION_SIMULATION_PLAN_2026-05-08.md)

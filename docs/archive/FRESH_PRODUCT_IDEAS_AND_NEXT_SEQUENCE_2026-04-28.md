@@ -6,8 +6,8 @@
 ## Status
 Active idea backlog and near-term sequencing companion to:
 
-- `docs/FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md`
-- `docs/INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md`
+- `docs/archive/FUTURE_STATE_PRODUCT_PLAN_2026-04-26.md`
+- `docs/archive/INVESTMENT_FIT_RESEARCH_PLAN_2026-04-26.md`
 
 Use this document to preserve the newest product ideas before they are decomposed into implementation slices.
 

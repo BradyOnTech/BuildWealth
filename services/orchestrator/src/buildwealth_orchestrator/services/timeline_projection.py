@@ -1,6 +1,6 @@
 """Timeline event impact helpers for planning workflows.
 
-Retirement-timeline schema and persistence patterns are implemented for BuildWealth simulation workflows:
+Retirement-timeline schema and persistence patterns are written independently; design reference: Ignidash (see ATTRIBUTIONS.md):
 - src/lib/schemas/inputs/timeline-form-schema.ts
 - convex/timeline.ts
 - convex/validators/timeline_validator.ts

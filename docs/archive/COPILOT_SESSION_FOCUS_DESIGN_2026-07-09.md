@@ -7,8 +7,8 @@
 | **Date** | 2026-07-09 |
 | **Status** | Approved for implementation |
 | **Revision** | r6 — open-question resolution (pin prefixes lenient; retrieval boost flag default on) |
-| **Intended path (when approved)** | `docs/COPILOT_SESSION_FOCUS_DESIGN_2026-07-09.md` |
-| **Related** | `CONTEXT.md`, `docs/CONTEXT_INTELLIGENCE_IMPLEMENTATION_PLAN_2026-05-07.md`, ADRs 0001–0004; proposed ADR 0005 |
+| **Intended path (when approved)** | `docs/archive/COPILOT_SESSION_FOCUS_DESIGN_2026-07-09.md` |
+| **Related** | `CONTEXT.md`, `docs/archive/CONTEXT_INTELLIGENCE_IMPLEMENTATION_PLAN_2026-05-07.md`, ADRs 0001–0004; proposed ADR 0005 |
 
 ---
 
@@ -1164,7 +1164,7 @@ Applies to **Context Candidates** only. Independent of Session Focus domain expa
 
 **Consequences**: Conversation documents gain focus; assembler/brief complexity increases; tokens and distraction decrease; tests must cover mute×safety and first-message lifecycle.
 
-Keep ADR thin; full design remains in `docs/COPILOT_SESSION_FOCUS_DESIGN_2026-07-09.md`. Land with CONTEXT.md vocabulary (PR7).
+Keep ADR thin; full design remains in `docs/archive/COPILOT_SESSION_FOCUS_DESIGN_2026-07-09.md`. Land with CONTEXT.md vocabulary (PR7).
 
 ---
 
@@ -1199,7 +1199,7 @@ Keep ADR thin; full design remains in `docs/COPILOT_SESSION_FOCUS_DESIGN_2026-07
 ## References
 
 - `CONTEXT.md`
-- `docs/CONTEXT_INTELLIGENCE_IMPLEMENTATION_PLAN_2026-05-07.md`
+- `docs/archive/CONTEXT_INTELLIGENCE_IMPLEMENTATION_PLAN_2026-05-07.md`
 - ADRs 0001–0004
 - `main.py` — `copilot_chat`, `assemble_copilot_context_payload`, `build_buildwealth_context_payload`, `build_contextual_brief`, system_prompt, tools
 - `copilot_runtime.py` — `ConversationStore`, `FinancialCopilot`
@@ -1263,7 +1263,7 @@ Keep ADR thin; full design remains in `docs/COPILOT_SESSION_FOCUS_DESIGN_2026-07
 ### PR7 — CONTEXT.md vocabulary + ADR 0005 + design copy
 
 - **Title**: `docs: Session Focus vocabulary, ADR 0005, design doc`
-- **Files**: `CONTEXT.md`, `docs/adr/0005-session-focus-distinct-from-materiality.md`, copy design to `docs/COPILOT_SESSION_FOCUS_DESIGN_2026-07-09.md`
+- **Files**: `CONTEXT.md`, `docs/adr/0005-session-focus-distinct-from-materiality.md`, copy design to `docs/archive/COPILOT_SESSION_FOCUS_DESIGN_2026-07-09.md`
 - **Dependencies**: after PR4 behavior stable (can draft earlier)
 - **Acceptance**: terms + non-collision with Candidate Prompt Influence published with ADR
 

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-# Exchange-rate payload and rate-normalization flow implemented for BuildWealth portfolio workflows:
+# Exchange-rate payload and rate-normalization flow written independently; design reference: Ghostfolio (see ATTRIBUTIONS.md):
 # apps/api/src/services/exchange-rate-data/exchange-rate-data.service.ts
-# Watchlist item identity pattern (symbol + data source) implemented for BuildWealth portfolio workflows:
+# Watchlist item identity pattern (symbol + data source) written independently; design reference: Ghostfolio (see ATTRIBUTIONS.md):
 # apps/api/src/app/endpoints/watchlist/watchlist.service.ts
 
 import json
