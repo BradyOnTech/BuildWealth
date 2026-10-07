@@ -25,7 +25,7 @@ I wanted one place that answers the questions I actually have about money: *Are 
 
 Off-the-shelf apps each answer a slice of that. None of them knows my whole picture, and I didn't want to hand all of it to a third-party server. So I built my own.
 
-BuildWealth is **personal software**: built for one household (mine), shaped around my own questions, and changed whenever I need something new. It has no moat and no business model; I'm not competing with Monarch or Empower. What it does have is depth. It's ~90k lines of Python and ~33k lines of hand-written JavaScript, backed by 1,500+ tests. That's the scale where architecture, testing discipline and good judgment start to matter.
+BuildWealth is **personal software**: built for one household (mine), shaped around my own questions, and changed whenever I need something new. It has no moat and no business model; I'm not competing with Monarch or Empower. What it does have is depth.
 
 I'm open-sourcing it so people can see how I build software. If you're a hiring manager or an engineer, the [engineering highlights](#engineering-highlights) and [how I build](#how-i-build) sections are the best place to start.
 
